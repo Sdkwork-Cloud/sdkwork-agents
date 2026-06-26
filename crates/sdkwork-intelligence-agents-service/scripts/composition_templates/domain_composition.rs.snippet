@@ -1,0 +1,104 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentCompositionSlotKind {
+    Memory,
+    Knowledge,
+    Skill,
+    Prompt,
+    Drive,
+    Tool,
+}
+
+impl AgentCompositionSlotKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::Knowledge => "knowledge",
+            Self::Skill => "skill",
+            Self::Prompt => "prompt",
+            Self::Drive => "drive",
+            Self::Tool => "tool",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "memory" => Some(Self::Memory),
+            "knowledge" => Some(Self::Knowledge),
+            "skill" => Some(Self::Skill),
+            "prompt" => Some(Self::Prompt),
+            "drive" => Some(Self::Drive),
+            "tool" => Some(Self::Tool),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentCompositionTargetModule {
+    Memory,
+    Knowledgebase,
+    Skills,
+    Prompts,
+    Drive,
+}
+
+impl AgentCompositionTargetModule {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::Knowledgebase => "knowledgebase",
+            Self::Skills => "skills",
+            Self::Prompts => "prompts",
+            Self::Drive => "drive",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "memory" => Some(Self::Memory),
+            "knowledgebase" => Some(Self::Knowledgebase),
+            "skills" => Some(Self::Skills),
+            "prompts" => Some(Self::Prompts),
+            "drive" => Some(Self::Drive),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCompositionSlotRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub agent_id: String,
+    pub slot_id: String,
+    pub slot_kind: AgentCompositionSlotKind,
+    pub target_module: AgentCompositionTargetModule,
+    pub target_ref: String,
+    pub target_version_ref: Option<String>,
+    pub priority: i32,
+    pub enabled: bool,
+    pub policy_json: String,
+    pub status: AgentBusinessStatus,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+impl AgentCompositionSlotRecord {
+    pub fn is_deleted(&self) -> bool {
+        self.deleted_at.is_some()
+    }
+
+    pub fn mark_updated(&mut self, updated_at: impl Into<String>) {
+        self.updated_at = updated_at.into();
+        self.version = self.version.saturating_add(1);
+    }
+
+    pub fn mark_deleted(&mut self, deleted_at: impl Into<String>) {
+        self.deleted_at = Some(deleted_at.into());
+        self.status = AgentBusinessStatus::Deleted;
+        self.mark_updated(self.deleted_at.clone().unwrap_or_default());
+    }
+}

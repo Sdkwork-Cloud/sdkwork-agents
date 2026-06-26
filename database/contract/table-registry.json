@@ -3,10 +3,53 @@
   "kind": "sdkwork.database.table-registry",
   "tables": [
     {
-      "table_name": "agents_app_registry",
+      "table_name": "ai_app_registry",
       "owner": "agents-platform",
       "compliance_level": "L2",
       "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_runtime_binding",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_deployment",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_composition_slot",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_audit_event",
+      "owner": "agents-platform",
+      "compliance_level": "L3",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_outbox_event",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "a_agent_mcp_server",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active",
+      "notes": "legacy until sdkwork-mcp lands"
     }
   ]
 }

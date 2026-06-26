@@ -1,0 +1,83 @@
+#[tokio::test]
+async fn composition_slots_should_work_over_http() {
+    let app = build_test_app();
+    let agent_id = "agent.composition.http";
+    create_agent(&app, agent_id, "Composition HTTP Agent").await;
+
+    let create_body = json!({
+        "data": {
+            "tenantId": "100001",
+            "organizationId": "0",
+            "slotId": "slot.knowledge.product",
+            "slotKind": "knowledge",
+            "targetModule": "knowledgebase",
+            "targetRef": "kb.space.product",
+            "priority": 1,
+            "enabled": true,
+            "policyJson": "{}"
+        },
+        "requestedAt": "2026-06-17T00:00:00Z"
+    });
+    let create_response = post_json(
+        &app,
+        format!("/app/v3/api/ai/agents/{agent_id}/composition_slots"),
+        create_body,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(create_response["data"]["slotId"], json!("slot.knowledge.product"));
+
+    let list_response = get_json(
+        &app,
+        format!("/app/v3/api/ai/agents/{agent_id}/composition_slots"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(list_response["data"]["items"].as_array().unwrap().len(), 1);
+
+    let slot_id = "slot.knowledge.product";
+    let get_response = get_json(
+        &app,
+        format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(get_response["data"]["targetRef"], json!("kb.space.product"));
+
+    let update_body = json!({
+        "data": {
+            "tenantId": "100001",
+            "targetRef": "kb.space.product.v2"
+        },
+        "requestedAt": "2026-06-17T00:01:00Z"
+    });
+    let update_response = patch_json(
+        &app,
+        format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}"),
+        update_body,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(update_response["data"]["targetRef"], json!("kb.space.product.v2"));
+
+    let delete_uri = format!(
+        "/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}?expectedVersion={}&requestedAt=2026-06-17T00:02:00Z",
+        update_response["data"]["version"].as_str().unwrap()
+    );
+    let delete_request = Request::builder()
+        .method("DELETE")
+        .uri(delete_uri)
+        .body(Body::empty())
+        .expect("delete request should be built");
+    let delete_response = app
+        .clone()
+        .oneshot(auth_headers(delete_request))
+        .await
+        .expect("delete request should succeed");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+    let delete_body = to_bytes(delete_response.into_body(), usize::MAX)
+        .await
+        .expect("delete body should be readable");
+    let delete_json: Value = serde_json::from_slice(&delete_body).expect("valid json");
+    assert!(delete_json["data"]["deletedAt"].is_string());
+}

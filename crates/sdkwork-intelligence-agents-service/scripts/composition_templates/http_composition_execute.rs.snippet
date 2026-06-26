@@ -1,0 +1,191 @@
+async fn execute_list_composition_slots(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+) -> Result<Json<AgentCompositionSlotListResponse>, ApiProblem> {
+    let tenant_id = scope.tenant_id_u64()?;
+    let command = AgentCompositionSlotListCommand {
+        tenant_id,
+        agent_id,
+        requested_by: scope.subject,
+    };
+    let records = with_service_mut(&state, move |service| service.list_composition_slots(command))
+        .await?;
+    let items = records
+        .iter()
+        .map(|record| map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(record)))
+        .collect();
+    Ok(Json(AgentCompositionSlotListResponse {
+        data: AgentCompositionSlotListDataResponse { items },
+    }))
+}
+
+async fn execute_create_composition_slot(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    body: AgentCompositionSlotCreateRequestDto,
+) -> Result<(StatusCode, Json<AgentCompositionSlotResponse>), ApiProblem> {
+    let tenant_id = parse_tenant_id(body.data.tenant_id.as_str())?;
+    let organization_id = parse_tenant_id(body.data.organization_id.as_str())?;
+    validate_requested_at(body.requested_at.as_str())?;
+    let slot_kind = AgentCompositionSlotKind::from_str(body.data.slot_kind.as_str())
+        .ok_or_else(|| ApiProblem::bad_request("invalid slotKind"))?;
+    let target_module = AgentCompositionTargetModule::from_str(body.data.target_module.as_str())
+        .ok_or_else(|| ApiProblem::bad_request("invalid targetModule"))?;
+    let command = AgentCompositionSlotCreateCommand {
+        tenant_id,
+        organization_id,
+        agent_id,
+        slot_id: body.data.slot_id,
+        slot_kind,
+        target_module,
+        target_ref: body.data.target_ref,
+        target_version_ref: body.data.target_version_ref,
+        priority: body.data.priority.unwrap_or(0),
+        enabled: body.data.enabled.unwrap_or(true),
+        policy_json: body.data.policy_json.unwrap_or_else(|| "{}".to_string()),
+        requested_by: scope.subject,
+        requested_at: body.requested_at,
+    };
+    let record = with_service_mut(&state, move |service| service.create_composition_slot(command))
+        .await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(AgentCompositionSlotResponse {
+            data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
+        }),
+    ))
+}
+
+async fn execute_get_composition_slot(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    slot_id: String,
+) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    let tenant_id = scope.tenant_id_u64()?;
+    let command = AgentCompositionSlotGetCommand {
+        tenant_id,
+        agent_id,
+        slot_id,
+        requested_by: scope.subject,
+    };
+    let record = with_service_mut(&state, move |service| service.get_composition_slot(command))
+        .await?;
+    Ok(Json(AgentCompositionSlotResponse {
+        data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
+    }))
+}
+
+async fn execute_update_composition_slot(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    slot_id: String,
+    body: AgentCompositionSlotUpdateRequestDto,
+) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    let tenant_id = parse_tenant_id(body.data.tenant_id.as_str())?;
+    validate_requested_at(body.requested_at.as_str())?;
+    let expected_version = body
+        .data
+        .expected_version
+        .as_deref()
+        .map(parse_expected_version)
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?;
+    let slot_kind = body
+        .data
+        .slot_kind
+        .as_deref()
+        .map(|value| {
+            AgentCompositionSlotKind::from_str(value)
+                .ok_or_else(|| KernelError::validation("invalid slotKind"))
+        })
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?;
+    let target_module = body
+        .data
+        .target_module
+        .as_deref()
+        .map(|value| {
+            AgentCompositionTargetModule::from_str(value)
+                .ok_or_else(|| KernelError::validation("invalid targetModule"))
+        })
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?;
+    let command = AgentCompositionSlotUpdateCommand {
+        tenant_id,
+        agent_id,
+        slot_id,
+        expected_version,
+        slot_kind,
+        target_module,
+        target_ref: body.data.target_ref,
+        target_version_ref: body.data.target_version_ref,
+        priority: body.data.priority,
+        enabled: body.data.enabled,
+        policy_json: body.data.policy_json,
+        requested_by: scope.subject,
+        requested_at: body.requested_at,
+    };
+    let record = with_service_mut(&state, move |service| service.update_composition_slot(command))
+        .await?;
+    Ok(Json(AgentCompositionSlotResponse {
+        data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
+    }))
+}
+
+async fn execute_delete_composition_slot(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    slot_id: String,
+    query: CompositionSlotDeleteQueryParams,
+) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    validate_requested_at(query.requested_at.as_str())?;
+    let tenant_id = scope.tenant_id_u64()?;
+    let expected_version = query
+        .expected_version
+        .as_deref()
+        .map(parse_expected_version)
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?;
+    let command = AgentCompositionSlotDeleteCommand {
+        tenant_id,
+        agent_id,
+        slot_id,
+        expected_version,
+        requested_by: scope.subject,
+        requested_at: query.requested_at,
+    };
+    let record = with_service_mut(&state, move |service| service.delete_composition_slot(command))
+        .await?;
+    Ok(Json(AgentCompositionSlotResponse {
+        data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
+    }))
+}
+
+fn map_composition_slot_record(
+    record: &AgentCompositionSlotRecordDto,
+) -> AgentCompositionSlotRecordResponse {
+    AgentCompositionSlotRecordResponse {
+        id: record.id.clone(),
+        tenant_id: record.tenant_id.clone(),
+        organization_id: record.organization_id.clone(),
+        agent_id: record.agent_id.clone(),
+        slot_id: record.slot_id.clone(),
+        slot_kind: record.slot_kind.clone(),
+        target_module: record.target_module.clone(),
+        target_ref: record.target_ref.clone(),
+        target_version_ref: record.target_version_ref.clone(),
+        priority: record.priority,
+        enabled: record.enabled,
+        policy_json: record.policy_json.clone(),
+        status: record.status.clone(),
+        version: record.version.clone(),
+        created_at: record.created_at.clone(),
+        updated_at: record.updated_at.clone(),
+        deleted_at: record.deleted_at.clone(),
+    }
+}

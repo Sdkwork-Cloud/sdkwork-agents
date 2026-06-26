@@ -1,16 +1,7 @@
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentDeploymentRecord, AgentDeploymentStatus,
-    AgentImplementationKind, AgentImplementationType, AgentKnowledgeBaseKind,
-    AgentKnowledgeBaseRecord, AgentKnowledgeBindingRecord, AgentKnowledgeBindingScopeKind,
-    AgentKnowledgeChunkRecord, AgentKnowledgeDocumentKind, AgentKnowledgeDocumentRecord,
-    AgentKnowledgeIndexKind, AgentKnowledgeIndexRecord, AgentKnowledgeSourceKind,
-    AgentKnowledgeSourceRecord, AgentKnowledgeSyncJobKind, AgentKnowledgeSyncJobRecord,
-    AgentKnowledgeSyncJobStatus, AgentMcpAuthKind, AgentMcpServerRecord, AgentMcpTransportKind,
-    AgentMemoryBindingRecord, AgentMemoryBindingScopeKind, AgentMemoryIndexKind,
-    AgentMemoryNamespaceKind, AgentMemoryNamespaceRecord, AgentMemoryProfileRecord,
-    AgentMemoryRecord, AgentMemoryRecordKind, AgentMemoryRelationKind, AgentMemoryRelationRecord,
-    AgentMemoryRetrievalIndexRecord, AgentMemorySourceKind, AgentMemorySourceRecord,
-    AgentMemoryStoreKind, AgentMemoryStoreRecord, AgentProviderBindingRecord,
+    AgentImplementationKind, AgentImplementationType, AgentMcpAuthKind, AgentMcpServerRecord, AgentMcpTransportKind,
+    AgentMemoryRecord, AgentProviderBindingRecord,
     AgentVisibility,
 };
 use crate::ports::{AgentAuditSink, AgentListQuery, AgentMarketplaceListQuery, AgentRepository};
@@ -32,37 +23,32 @@ use time::{OffsetDateTime, PrimitiveDateTime};
 #[cfg(feature = "postgres-sync")]
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 
-const MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS: usize = 1024;
-const MAX_KNOWLEDGE_HASH_STORAGE_CHARS: usize = 128;
-const MAX_KNOWLEDGE_HEADING_STORAGE_CHARS: usize = 512;
-const MAX_KNOWLEDGE_SCOPE_REF_STORAGE_CHARS: usize = 128;
-const MAX_KNOWLEDGE_REDACTION_CLASSIFICATION_STORAGE_CHARS: usize = 64;
 
 pub const SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, version FROM a_agent_business WHERE tenant_id = $1 AND agent_id = $2 LIMIT 1";
-pub const SQL_INSERT_AGENT_BUSINESS: &str =
-    "INSERT INTO a_agent_business (id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at, updated_at, deleted_at, version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)";
-pub const SQL_UPDATE_AGENT_BUSINESS: &str =
-    "UPDATE a_agent_business SET organization_id = $1, owner_user_id = $2, code = $3, display_name = $4, description = $5, manifest_json = $6, default_code_task_intent_json = $7, implementation_provider_id = $8, implementation_kind = $9, implementation_type = $10, status = $11, visibility = $12, tags_json = $13, updated_at = $14, deleted_at = $15, version = $16 WHERE tenant_id = $17 AND agent_id = $18 AND version = $19";
-pub const SQL_LIST_AGENT_BUSINESS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, version FROM a_agent_business WHERE tenant_id = $1 ORDER BY updated_at DESC";
+    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, version FROM ai_agent WHERE tenant_id = $1 AND agent_id = $2 LIMIT 1";
+pub const SQL_INSERT_AGENT: &str =
+    "INSERT INTO ai_agent (id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at, updated_at, deleted_at, version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)";
+pub const SQL_UPDATE_AGENT: &str =
+    "UPDATE ai_agent SET organization_id = $1, owner_user_id = $2, code = $3, display_name = $4, description = $5, manifest_json = $6, default_code_task_intent_json = $7, implementation_provider_id = $8, implementation_kind = $9, implementation_type = $10, status = $11, visibility = $12, tags_json = $13, updated_at = $14, deleted_at = $15, version = $16 WHERE tenant_id = $17 AND agent_id = $18 AND version = $19";
+pub const SQL_LIST_AGENT: &str =
+    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, version FROM ai_agent WHERE tenant_id = $1 ORDER BY updated_at DESC";
 pub const SQL_INSERT_AGENT_PROVIDER_BINDING: &str =
-    "INSERT INTO a_agent_provider_binding (id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
+    "INSERT INTO ai_agent_runtime_binding (id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
 pub const SQL_UPDATE_AGENT_PROVIDER_BINDING: &str =
-    "UPDATE a_agent_provider_binding SET provider_id = $1, implementation_kind = $2, configuration_profile_id = $3, capabilities_json = $4, active = $5, version = $6, updated_at = $7 WHERE tenant_id = $8 AND agent_id = $9 AND binding_id = $10 AND version = $11";
+    "UPDATE ai_agent_runtime_binding SET provider_id = $1, implementation_kind = $2, configuration_profile_id = $3, capabilities_json = $4, active = $5, version = $6, updated_at = $7 WHERE tenant_id = $8 AND agent_id = $9 AND binding_id = $10 AND version = $11";
 pub const SQL_SELECT_AGENT_PROVIDER_BINDING: &str =
-    "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_provider_binding WHERE tenant_id = $1 AND agent_id = $2 AND binding_id = $3 LIMIT 1";
+    "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM ai_agent_runtime_binding WHERE tenant_id = $1 AND agent_id = $2 AND binding_id = $3 LIMIT 1";
 pub const SQL_LIST_AGENT_PROVIDER_BINDINGS: &str =
-    "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_provider_binding WHERE tenant_id = $1 AND agent_id = $2 ORDER BY active DESC, updated_at DESC, binding_id ASC";
+    "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM ai_agent_runtime_binding WHERE tenant_id = $1 AND agent_id = $2 ORDER BY active DESC, updated_at DESC, binding_id ASC";
 pub const SQL_INSERT_AGENT_DEPLOYMENT: &str =
     "INSERT INTO a_agent_deployment (id, uuid, tenant_id, agent_id, deployment_id, binding_id, provider_id_snapshot, implementation_kind_snapshot, configuration_profile_id_snapshot, capabilities_snapshot_json, status, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)";
 pub const SQL_LIST_AGENT_DEPLOYMENTS: &str =
     "SELECT id, uuid, tenant_id, agent_id, deployment_id, binding_id, provider_id_snapshot, implementation_kind_snapshot, configuration_profile_id_snapshot, capabilities_snapshot_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_deployment WHERE tenant_id = $1 AND agent_id = $2 ORDER BY created_at DESC, deployment_id ASC";
 pub const SQL_INSERT_AUDIT_EVENT: &str =
-    "INSERT INTO a_agent_business_audit_event (id, uuid, tenant_id, organization_id, agent_business_id, agent_id, action, subject_id, subject_tenant_id, request_id, trace_id, payload_json, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
+    "INSERT INTO ai_agent_audit_event (id, uuid, tenant_id, organization_id, agent_internal_id, agent_id, action, subject_id, subject_tenant_id, request_id, trace_id, payload_json, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID: &str =
-    "SELECT id, uuid, tenant_id, organization_id, agent_business_id, agent_id, action, subject_id, subject_tenant_id, request_id, trace_id, payload_json, created_at::text AS created_at FROM a_agent_business_audit_event WHERE tenant_id = $1 AND agent_id = $2 ORDER BY created_at DESC, id DESC";
+    "SELECT id, uuid, tenant_id, organization_id, agent_internal_id, agent_id, action, subject_id, subject_tenant_id, request_id, trace_id, payload_json, created_at::text AS created_at FROM ai_agent_audit_event WHERE tenant_id = $1 AND agent_id = $2 ORDER BY created_at DESC, id DESC";
 pub const SQL_INSERT_AGENT_MCP_SERVER: &str =
     "INSERT INTO a_agent_mcp_server (id, uuid, tenant_id, organization_id, owner_user_id, mcp_server_id, code, display_name, description, protocol_version, transport_kind, endpoint_ref, command_ref, auth_kind, auth_profile_id, capability_ids_json, tool_count, resource_count, prompt_count, capabilities_json, categories_json, tags_json, security_profile_id, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)";
 pub const SQL_UPDATE_AGENT_MCP_SERVER: &str =
@@ -71,119 +57,20 @@ pub const SQL_SELECT_AGENT_MCP_SERVER: &str =
     "SELECT id, uuid, tenant_id, organization_id, owner_user_id, mcp_server_id, code, display_name, description, protocol_version, transport_kind, endpoint_ref, command_ref, auth_kind, auth_profile_id, capability_ids_json, tool_count, resource_count, prompt_count, capabilities_json, categories_json, tags_json, security_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_mcp_server WHERE tenant_id = $1 AND mcp_server_id = $2 LIMIT 1";
 pub const SQL_LIST_AGENT_MCP_SERVERS: &str =
     "SELECT id, uuid, tenant_id, organization_id, owner_user_id, mcp_server_id, code, display_name, description, protocol_version, transport_kind, endpoint_ref, command_ref, auth_kind, auth_profile_id, capability_ids_json, tool_count, resource_count, prompt_count, capabilities_json, categories_json, tags_json, security_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_mcp_server WHERE tenant_id = $1 ORDER BY updated_at DESC, code ASC";
+
+pub const SQL_INSERT_AGENT_COMPOSITION_SLOT: &str =
+    "INSERT INTO ai_agent_composition_slot (id, uuid, tenant_id, organization_id, agent_id, slot_id, slot_kind, target_module, target_ref, target_version_ref, priority, enabled, policy_json, status, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18)";
+pub const SQL_UPDATE_AGENT_COMPOSITION_SLOT: &str =
+    "UPDATE ai_agent_composition_slot SET organization_id = $1, slot_kind = $2, target_module = $3, target_ref = $4, target_version_ref = $5, priority = $6, enabled = $7, policy_json = $8::jsonb, status = $9, version = $10, updated_at = $11, deleted_at = $12 WHERE tenant_id = $13 AND agent_id = $14 AND slot_id = $15 AND version = $16";
+pub const SQL_SELECT_AGENT_COMPOSITION_SLOT: &str =
+    "SELECT id, uuid, tenant_id, organization_id, agent_id, slot_id, slot_kind, target_module, target_ref, target_version_ref, priority, enabled, policy_json::text AS policy_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM ai_agent_composition_slot WHERE tenant_id = $1 AND agent_id = $2 AND slot_id = $3 LIMIT 1";
+pub const SQL_LIST_AGENT_COMPOSITION_SLOTS: &str =
+    "SELECT id, uuid, tenant_id, organization_id, agent_id, slot_id, slot_kind, target_module, target_ref, target_version_ref, priority, enabled, policy_json::text AS policy_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM ai_agent_composition_slot WHERE tenant_id = $1 AND agent_id = $2 ORDER BY priority ASC, slot_id ASC";
 pub const SQL_INSERT_AGENT_KNOWLEDGE_BASE: &str =
     "INSERT INTO a_agent_knowledge_base (id, uuid, tenant_id, organization_id, owner_user_id, knowledge_base_id, code, display_name, description, provider_id, base_kind, retrieval_modes_json, capability_ids_json, configuration_profile_id, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)";
 pub const SQL_UPDATE_AGENT_KNOWLEDGE_BASE: &str =
     "UPDATE a_agent_knowledge_base SET organization_id = $1, owner_user_id = $2, code = $3, display_name = $4, description = $5, provider_id = $6, base_kind = $7, retrieval_modes_json = $8, capability_ids_json = $9, configuration_profile_id = $10, status = $11, visibility = $12, version = $13, updated_at = $14, deleted_at = $15 WHERE tenant_id = $16 AND knowledge_base_id = $17 AND version = $18";
 pub const SQL_SELECT_AGENT_KNOWLEDGE_BASE: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, knowledge_base_id, code, display_name, description, provider_id, base_kind, retrieval_modes_json, capability_ids_json, configuration_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_knowledge_base WHERE tenant_id = $1 AND knowledge_base_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_KNOWLEDGE_BASES: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, knowledge_base_id, code, display_name, description, provider_id, base_kind, retrieval_modes_json, capability_ids_json, configuration_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_knowledge_base WHERE tenant_id = $1 ORDER BY updated_at DESC, code ASC";
-pub const SQL_INSERT_AGENT_KNOWLEDGE_SOURCE: &str =
-    "INSERT INTO a_agent_knowledge_source (id, uuid, tenant_id, organization_id, knowledge_source_id, knowledge_base_id, source_kind, source_ref, source_hash, sync_policy_json, metadata_json, status, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)";
-pub const SQL_UPDATE_AGENT_KNOWLEDGE_SOURCE: &str =
-    "UPDATE a_agent_knowledge_source SET organization_id = $1, knowledge_base_id = $2, source_kind = $3, source_ref = $4, source_hash = $5, sync_policy_json = $6, metadata_json = $7, status = $8, version = $9, updated_at = $10, deleted_at = $11 WHERE tenant_id = $12 AND knowledge_source_id = $13 AND version = $14";
-pub const SQL_SELECT_AGENT_KNOWLEDGE_SOURCE: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_source_id, knowledge_base_id, source_kind, source_ref, source_hash, sync_policy_json, metadata_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_knowledge_source WHERE tenant_id = $1 AND knowledge_source_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_KNOWLEDGE_SOURCES: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_source_id, knowledge_base_id, source_kind, source_ref, source_hash, sync_policy_json, metadata_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_knowledge_source WHERE tenant_id = $1 AND knowledge_base_id = $2 AND status <> 4 AND deleted_at IS NULL ORDER BY updated_at DESC, knowledge_source_id ASC";
-pub const SQL_INSERT_AGENT_KNOWLEDGE_DOCUMENT: &str =
-    "INSERT INTO a_agent_knowledge_document (id, uuid, tenant_id, organization_id, knowledge_document_id, knowledge_base_id, knowledge_source_id, document_kind, title, content_ref, content_hash, summary, metadata_json, tags_json, categories_json, trust_level, redaction_classification, chunk_count, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)";
-pub const SQL_UPDATE_AGENT_KNOWLEDGE_DOCUMENT: &str =
-    "UPDATE a_agent_knowledge_document SET knowledge_base_id = $1, knowledge_source_id = $2, document_kind = $3, title = $4, content_ref = $5, content_hash = $6, summary = $7, metadata_json = $8, tags_json = $9, categories_json = $10, trust_level = $11, redaction_classification = $12, chunk_count = $13, status = $14, visibility = $15, version = $16, updated_at = $17, deleted_at = $18 WHERE tenant_id = $19 AND knowledge_document_id = $20 AND version = $21";
-pub const SQL_SELECT_AGENT_KNOWLEDGE_DOCUMENT: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_document_id, knowledge_base_id, knowledge_source_id, document_kind, title, content_ref, content_hash, summary, metadata_json, tags_json, categories_json, trust_level, redaction_classification, chunk_count, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_knowledge_document WHERE tenant_id = $1 AND knowledge_document_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_KNOWLEDGE_DOCUMENTS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_document_id, knowledge_base_id, knowledge_source_id, document_kind, title, content_ref, content_hash, summary, metadata_json, tags_json, categories_json, trust_level, redaction_classification, chunk_count, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_knowledge_document WHERE tenant_id = $1 AND knowledge_base_id = $2 AND status <> 4 AND deleted_at IS NULL ORDER BY updated_at DESC, knowledge_document_id ASC";
-pub const SQL_INSERT_AGENT_KNOWLEDGE_CHUNK: &str =
-    "INSERT INTO a_agent_knowledge_chunk (id, uuid, tenant_id, organization_id, knowledge_chunk_id, knowledge_document_id, parent_chunk_id, chunk_ordinal, heading, content_ref, content_hash, token_estimate, summary, metadata_json, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)";
-pub const SQL_SELECT_AGENT_KNOWLEDGE_CHUNK: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_chunk_id, knowledge_document_id, parent_chunk_id, chunk_ordinal, heading, content_ref, content_hash, token_estimate, summary, metadata_json, status, created_at::text AS created_at FROM a_agent_knowledge_chunk WHERE tenant_id = $1 AND knowledge_chunk_id = $2 LIMIT 1";
-pub const SQL_INCREMENT_AGENT_KNOWLEDGE_DOCUMENT_CHUNK_COUNT: &str =
-    "UPDATE a_agent_knowledge_document SET chunk_count = chunk_count + 1, version = version + 1, updated_at = $1 WHERE tenant_id = $2 AND knowledge_document_id = $3";
-pub const SQL_LIST_AGENT_KNOWLEDGE_CHUNKS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_chunk_id, knowledge_document_id, parent_chunk_id, chunk_ordinal, heading, content_ref, content_hash, token_estimate, summary, metadata_json, status, created_at::text AS created_at FROM a_agent_knowledge_chunk WHERE tenant_id = $1 AND knowledge_document_id = $2 AND status <> 4 ORDER BY chunk_ordinal ASC, knowledge_chunk_id ASC";
-pub const SQL_UPSERT_AGENT_KNOWLEDGE_INDEX: &str =
-    "INSERT INTO a_agent_knowledge_index (id, uuid, tenant_id, knowledge_index_id, knowledge_base_id, knowledge_document_id, knowledge_chunk_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) ON CONFLICT (tenant_id, knowledge_index_id) DO UPDATE SET knowledge_base_id = EXCLUDED.knowledge_base_id, knowledge_document_id = EXCLUDED.knowledge_document_id, knowledge_chunk_id = EXCLUDED.knowledge_chunk_id, index_kind = EXCLUDED.index_kind, index_provider_id = EXCLUDED.index_provider_id, external_ref = EXCLUDED.external_ref, embedding_model_id = EXCLUDED.embedding_model_id, vector_dimension = EXCLUDED.vector_dimension, content_hash = EXCLUDED.content_hash, indexed_at = EXCLUDED.indexed_at, status = EXCLUDED.status";
-pub const SQL_SELECT_AGENT_KNOWLEDGE_INDEX: &str =
-    "SELECT id, uuid, tenant_id, knowledge_index_id, knowledge_base_id, knowledge_document_id, knowledge_chunk_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at::text AS indexed_at, status FROM a_agent_knowledge_index WHERE tenant_id = $1 AND knowledge_index_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_KNOWLEDGE_INDEXES: &str =
-    "SELECT id, uuid, tenant_id, knowledge_index_id, knowledge_base_id, knowledge_document_id, knowledge_chunk_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at::text AS indexed_at, status FROM a_agent_knowledge_index WHERE tenant_id = $1 AND knowledge_document_id = $2 AND status <> 4 ORDER BY indexed_at DESC, knowledge_index_id ASC";
-pub const SQL_LIST_AGENT_KNOWLEDGE_INDEXES_BY_BASE: &str =
-    "SELECT id, uuid, tenant_id, knowledge_index_id, knowledge_base_id, knowledge_document_id, knowledge_chunk_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at::text AS indexed_at, status FROM a_agent_knowledge_index WHERE tenant_id = $1 AND knowledge_base_id = $2 AND status <> 4 ORDER BY indexed_at DESC, knowledge_index_id ASC";
-pub const SQL_INSERT_AGENT_KNOWLEDGE_BINDING: &str =
-    "INSERT INTO a_agent_knowledge_binding (id, uuid, tenant_id, organization_id, knowledge_binding_id, knowledge_base_id, agent_id, deployment_id, scope_kind, scope_ref, active, default_binding, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)";
-pub const SQL_SELECT_AGENT_KNOWLEDGE_BINDING: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_binding_id, knowledge_base_id, agent_id, deployment_id, scope_kind, scope_ref, active, default_binding, version, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_knowledge_binding WHERE tenant_id = $1 AND knowledge_binding_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_KNOWLEDGE_BINDINGS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, knowledge_binding_id, knowledge_base_id, agent_id, deployment_id, scope_kind, scope_ref, active, default_binding, version, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_knowledge_binding WHERE tenant_id = $1 AND knowledge_base_id = $2 ORDER BY active DESC, default_binding DESC, updated_at DESC, knowledge_binding_id ASC";
-pub const SQL_INSERT_AGENT_KNOWLEDGE_SYNC_JOB: &str =
-    "INSERT INTO a_agent_knowledge_sync_job (id, uuid, tenant_id, organization_id, sync_job_id, knowledge_base_id, knowledge_source_id, job_kind, status, input_ref, input_json, output_json, error_json, requested_at, started_at, completed_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)";
-pub const SQL_UPDATE_AGENT_KNOWLEDGE_SYNC_JOB: &str =
-    "UPDATE a_agent_knowledge_sync_job SET status = $1, output_json = $2, error_json = $3, started_at = $4, completed_at = $5, updated_at = $6 WHERE tenant_id = $7 AND sync_job_id = $8";
-pub const SQL_SELECT_AGENT_KNOWLEDGE_SYNC_JOB: &str =
-    "SELECT id, uuid, tenant_id, organization_id, sync_job_id, knowledge_base_id, knowledge_source_id, job_kind, status, input_ref, input_json, output_json, error_json, requested_at::text AS requested_at, started_at::text AS started_at, completed_at::text AS completed_at, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_knowledge_sync_job WHERE tenant_id = $1 AND sync_job_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_KNOWLEDGE_SYNC_JOBS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, sync_job_id, knowledge_base_id, knowledge_source_id, job_kind, status, input_ref, input_json, output_json, error_json, requested_at::text AS requested_at, started_at::text AS started_at, completed_at::text AS completed_at, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_knowledge_sync_job WHERE tenant_id = $1 AND knowledge_base_id = $2 ORDER BY requested_at DESC, sync_job_id ASC";
-pub const SQL_INSERT_AGENT_MEMORY_STORE: &str =
-    "INSERT INTO a_agent_memory_store (id, uuid, tenant_id, organization_id, owner_user_id, memory_store_id, code, display_name, description, provider_id, store_kind, retrieval_modes_json, capability_ids_json, configuration_profile_id, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)";
-pub const SQL_UPDATE_AGENT_MEMORY_STORE: &str =
-    "UPDATE a_agent_memory_store SET organization_id = $1, owner_user_id = $2, code = $3, display_name = $4, description = $5, provider_id = $6, store_kind = $7, retrieval_modes_json = $8, capability_ids_json = $9, configuration_profile_id = $10, status = $11, visibility = $12, version = $13, updated_at = $14, deleted_at = $15 WHERE tenant_id = $16 AND memory_store_id = $17 AND version = $18";
-pub const SQL_SELECT_AGENT_MEMORY_STORE: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, memory_store_id, code, display_name, description, provider_id, store_kind, retrieval_modes_json, capability_ids_json, configuration_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_memory_store WHERE tenant_id = $1 AND memory_store_id = $2 LIMIT 1";
-pub const SQL_INSERT_AGENT_MEMORY_PROFILE: &str =
-    "INSERT INTO a_agent_memory_profile (id, uuid, tenant_id, organization_id, owner_user_id, memory_profile_id, memory_store_id, code, display_name, description, write_policy_json, retrieval_policy_json, compaction_policy_json, retention_policy_json, privacy_policy_json, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)";
-pub const SQL_SELECT_AGENT_MEMORY_PROFILE: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, memory_profile_id, memory_store_id, code, display_name, description, write_policy_json, retrieval_policy_json, compaction_policy_json, retention_policy_json, privacy_policy_json, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_memory_profile WHERE tenant_id = $1 AND memory_profile_id = $2 LIMIT 1";
-pub const SQL_INSERT_AGENT_MEMORY_BINDING: &str =
-    "INSERT INTO a_agent_memory_binding (id, uuid, tenant_id, organization_id, memory_binding_id, memory_profile_id, agent_id, deployment_id, scope_kind, scope_ref, active, default_binding, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)";
-pub const SQL_SELECT_AGENT_MEMORY_BINDING: &str =
-    "SELECT id, uuid, tenant_id, organization_id, memory_binding_id, memory_profile_id, agent_id, deployment_id, scope_kind, scope_ref, active, default_binding, version, created_at::text AS created_at, updated_at::text AS updated_at FROM a_agent_memory_binding WHERE tenant_id = $1 AND memory_binding_id = $2 LIMIT 1";
-pub const SQL_INSERT_AGENT_MEMORY_NAMESPACE: &str =
-    "INSERT INTO a_agent_memory_namespace (id, uuid, tenant_id, organization_id, memory_namespace_id, agent_id, user_ref, session_ref, thread_ref, namespace_kind, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)";
-pub const SQL_SELECT_AGENT_MEMORY_NAMESPACE: &str =
-    "SELECT id, uuid, tenant_id, organization_id, memory_namespace_id, agent_id, user_ref, session_ref, thread_ref, namespace_kind, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_memory_namespace WHERE tenant_id = $1 AND memory_namespace_id = $2 LIMIT 1";
-pub const SQL_INSERT_AGENT_MEMORY_RECORD: &str =
-    "INSERT INTO a_agent_memory_record (id, uuid, tenant_id, organization_id, memory_id, memory_namespace_id, agent_id, memory_kind, content_format, content_json, summary, salience_score, confidence_score, freshness_score, sensitivity_level, source_count, effective_at, expires_at, last_used_at, use_count, status, version, created_at, updated_at, deleted_at, redacted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)";
-pub const SQL_UPDATE_AGENT_MEMORY_RECORD: &str =
-    "UPDATE a_agent_memory_record SET content_format = $1, content_json = $2, summary = $3, salience_score = $4, confidence_score = $5, freshness_score = $6, sensitivity_level = $7, source_count = $8, effective_at = $9, expires_at = $10, last_used_at = $11, use_count = $12, status = $13, version = $14, updated_at = $15, deleted_at = $16, redacted_at = $17 WHERE tenant_id = $18 AND memory_id = $19 AND version = $20";
-pub const SQL_SELECT_AGENT_MEMORY_RECORD: &str =
-    "SELECT id, uuid, tenant_id, organization_id, memory_id, memory_namespace_id, agent_id, memory_kind, content_format, content_json, summary, salience_score, confidence_score, freshness_score, sensitivity_level, source_count, effective_at::text AS effective_at, expires_at::text AS expires_at, last_used_at::text AS last_used_at, use_count, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, redacted_at::text AS redacted_at FROM a_agent_memory_record WHERE tenant_id = $1 AND memory_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_MEMORY_RECORDS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, memory_id, memory_namespace_id, agent_id, memory_kind, content_format, content_json, summary, salience_score, confidence_score, freshness_score, sensitivity_level, source_count, effective_at::text AS effective_at, expires_at::text AS expires_at, last_used_at::text AS last_used_at, use_count, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, redacted_at::text AS redacted_at FROM a_agent_memory_record WHERE tenant_id = $1 AND memory_namespace_id = $2 AND status <> 4 AND deleted_at IS NULL ORDER BY updated_at DESC, memory_id ASC";
-pub const SQL_INSERT_AGENT_MEMORY_SOURCE: &str =
-    "INSERT INTO a_agent_memory_source (id, uuid, tenant_id, memory_source_id, memory_id, source_kind, source_ref, source_hash, evidence_json, captured_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)";
-pub const SQL_INCREMENT_AGENT_MEMORY_RECORD_SOURCE_COUNT: &str =
-    "UPDATE a_agent_memory_record SET source_count = source_count + 1, updated_at = $1 WHERE tenant_id = $2 AND memory_id = $3";
-pub const SQL_LIST_AGENT_MEMORY_SOURCES: &str =
-    "SELECT id, uuid, tenant_id, memory_source_id, memory_id, source_kind, source_ref, source_hash, evidence_json, captured_at::text AS captured_at, created_at::text AS created_at FROM a_agent_memory_source WHERE tenant_id = $1 AND memory_id = $2 ORDER BY captured_at DESC, id DESC";
-pub const SQL_INSERT_AGENT_MEMORY_RELATION: &str =
-    "INSERT INTO a_agent_memory_relation (id, uuid, tenant_id, memory_relation_id, from_memory_id, to_memory_id, relation_kind, weight, valid_from, valid_until, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)";
-pub const SQL_LIST_AGENT_MEMORY_RELATIONS: &str =
-    "SELECT id, uuid, tenant_id, memory_relation_id, from_memory_id, to_memory_id, relation_kind, weight, valid_from::text AS valid_from, valid_until::text AS valid_until, created_at::text AS created_at FROM a_agent_memory_relation WHERE tenant_id = $1 AND (from_memory_id = $2 OR to_memory_id = $2) ORDER BY created_at DESC, id DESC";
-pub const SQL_UPSERT_AGENT_MEMORY_RETRIEVAL_INDEX: &str =
-    "INSERT INTO a_agent_memory_retrieval_index (id, uuid, tenant_id, memory_index_id, memory_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT (tenant_id, memory_index_id) DO UPDATE SET index_kind = EXCLUDED.index_kind, index_provider_id = EXCLUDED.index_provider_id, external_ref = EXCLUDED.external_ref, embedding_model_id = EXCLUDED.embedding_model_id, vector_dimension = EXCLUDED.vector_dimension, content_hash = EXCLUDED.content_hash, indexed_at = EXCLUDED.indexed_at, status = EXCLUDED.status";
-pub const SQL_LIST_AGENT_MEMORY_RETRIEVAL_INDEXES: &str =
-    "SELECT id, uuid, tenant_id, memory_index_id, memory_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at::text AS indexed_at, status FROM a_agent_memory_retrieval_index WHERE tenant_id = $1 AND memory_id = $2 ORDER BY indexed_at DESC, memory_index_id ASC";
-pub const SQL_LIST_AGENT_MEMORY_STORES: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, memory_store_id, code, display_name, description, provider_id, store_kind, retrieval_modes_json, capability_ids_json, configuration_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_memory_store WHERE tenant_id = $1 ORDER BY updated_at DESC, code ASC";
-pub const SQL_UPDATE_AGENT_MEMORY_PROFILE: &str =
-    "UPDATE a_agent_memory_profile SET organization_id = $1, owner_user_id = $2, code = $3, display_name = $4, description = $5, memory_store_id = $6, write_policy_json = $7, retrieval_policy_json = $8, compaction_policy_json = $9, retention_policy_json = $10, privacy_policy_json = $11, status = $12, visibility = $13, version = $14, updated_at = $15, deleted_at = $16 WHERE tenant_id = $17 AND memory_profile_id = $18 AND version = $19";
-pub const SQL_UPDATE_AGENT_MEMORY_BINDING: &str =
-    "UPDATE a_agent_memory_binding SET memory_profile_id = $1, agent_id = $2, deployment_id = $3, scope_kind = $4, scope_ref = $5, active = $6, default_binding = $7, version = $8, updated_at = $9 WHERE tenant_id = $10 AND memory_binding_id = $11 AND version = $12";
-pub const SQL_UPDATE_AGENT_MEMORY_NAMESPACE: &str =
-    "UPDATE a_agent_memory_namespace SET organization_id = $1, agent_id = $2, user_ref = $3, session_ref = $4, thread_ref = $5, namespace_kind = $6, status = $7, visibility = $8, version = $9, updated_at = $10, deleted_at = $11 WHERE tenant_id = $12 AND memory_namespace_id = $13 AND version = $14";
-pub const SQL_SELECT_AGENT_MEMORY_SOURCE: &str =
-    "SELECT id, uuid, tenant_id, memory_source_id, memory_id, source_kind, source_ref, source_hash, evidence_json, captured_at::text AS captured_at, created_at::text AS created_at FROM a_agent_memory_source WHERE tenant_id = $1 AND memory_source_id = $2 LIMIT 1";
-pub const SQL_SELECT_AGENT_MEMORY_RELATION: &str =
-    "SELECT id, uuid, tenant_id, memory_relation_id, from_memory_id, to_memory_id, relation_kind, weight, valid_from::text AS valid_from, valid_until::text AS valid_until, created_at::text AS created_at FROM a_agent_memory_relation WHERE tenant_id = $1 AND memory_relation_id = $2 LIMIT 1";
-pub const SQL_SELECT_AGENT_MEMORY_RETRIEVAL_INDEX: &str =
-    "SELECT id, uuid, tenant_id, memory_index_id, memory_id, index_kind, index_provider_id, external_ref, embedding_model_id, vector_dimension, content_hash, indexed_at::text AS indexed_at, status FROM a_agent_memory_retrieval_index WHERE tenant_id = $1 AND memory_index_id = $2 LIMIT 1";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentBusinessRow {
-    pub id: u64,
-    pub uuid: String,
     pub tenant_id: u64,
     pub organization_id: u64,
     pub owner_user_id: u64,
@@ -220,8 +107,7 @@ impl AgentBusinessRow {
             description: record.description.clone(),
             manifest_json: manifest_to_json(&record.manifest)?,
             default_code_task_intent_json: intent_to_json(
-                record.default_code_task_intent.as_ref(),
-            )?,
+                record.default_code_task_intent.as_ref())?,
             implementation_provider_id: record.implementation_provider_id.clone(),
             implementation_kind: record
                 .implementation_kind
@@ -249,8 +135,7 @@ impl AgentBusinessRow {
             description: self.description,
             manifest: manifest_from_json(&self.manifest_json)?,
             default_code_task_intent: intent_from_json(
-                self.default_code_task_intent_json.as_deref(),
-            )?,
+                self.default_code_task_intent_json.as_deref())?,
             implementation_provider_id: self.implementation_provider_id,
             implementation_kind: self
                 .implementation_kind
@@ -300,8 +185,7 @@ impl AgentProviderBindingRow {
             uuid: build_agent_provider_binding_uuid(
                 record.tenant_id,
                 &record.agent_id,
-                &record.binding_id,
-            ),
+                &record.binding_id),
             tenant_id: record.tenant_id,
             agent_id: record.agent_id.clone(),
             binding_id: record.binding_id.clone(),
@@ -363,8 +247,7 @@ impl AgentDeploymentRow {
             uuid: build_agent_deployment_uuid(
                 record.tenant_id,
                 &record.agent_id,
-                &record.deployment_id,
-            ),
+                &record.deployment_id),
             tenant_id: record.tenant_id,
             agent_id: record.agent_id.clone(),
             deployment_id: record.deployment_id.clone(),
@@ -374,8 +257,7 @@ impl AgentDeploymentRow {
             configuration_profile_id_snapshot: record.configuration_profile_id_snapshot.clone(),
             capabilities_snapshot_json: string_list_to_json(
                 &record.capabilities_snapshot,
-                "capabilities_snapshot",
-            )?,
+                "capabilities_snapshot")?,
             status: record.status.as_db_code(),
             version: record.version,
             created_at: record.created_at.clone(),
@@ -394,8 +276,7 @@ impl AgentDeploymentRow {
             binding_id: self.binding_id,
             provider_id_snapshot: self.provider_id_snapshot,
             implementation_kind_snapshot: parse_implementation_kind(
-                &self.implementation_kind_snapshot,
-            )?,
+                &self.implementation_kind_snapshot)?,
             configuration_profile_id_snapshot: self.configuration_profile_id_snapshot,
             capabilities_snapshot,
             status: AgentDeploymentStatus::from_db_code(self.status).ok_or_else(|| {
@@ -546,7 +427,7 @@ pub struct AgentKnowledgeBaseRow {
 }
 
 impl AgentKnowledgeBaseRow {
-    pub fn from_record(record: &AgentKnowledgeBaseRecord) -> KernelResult<Self> {
+    pub fn from_record(record: &) -> KernelResult<Self> {
         validate_knowledge_base_storage_contract(record)?;
         Ok(Self {
             id: record.id,
@@ -572,8 +453,8 @@ impl AgentKnowledgeBaseRow {
         })
     }
 
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeBaseRecord> {
-        let record = AgentKnowledgeBaseRecord {
+    pub fn into_record(self) -> KernelResult<> {
+        let record = {
             id: self.id,
             tenant_id: self.tenant_id,
             organization_id: self.organization_id,
@@ -625,1140 +506,7 @@ pub struct AgentKnowledgeSourceRow {
     pub status: i16,
     pub version: u64,
     pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-}
-
-impl AgentKnowledgeSourceRow {
-    pub fn from_record(record: &AgentKnowledgeSourceRecord) -> KernelResult<Self> {
-        validate_knowledge_source_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_knowledge_source_uuid(record.tenant_id, &record.knowledge_source_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            knowledge_source_id: record.knowledge_source_id.clone(),
-            knowledge_base_id: record.knowledge_base_id.clone(),
-            source_kind: record.source_kind.as_str().to_string(),
-            source_ref: record.source_ref.clone(),
-            source_hash: record.source_hash.clone(),
-            sync_policy_json: record.sync_policy_json.clone(),
-            metadata_json: record.metadata_json.clone(),
-            status: record.status.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeSourceRecord> {
-        let record = AgentKnowledgeSourceRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            knowledge_source_id: self.knowledge_source_id,
-            knowledge_base_id: self.knowledge_base_id,
-            source_kind: parse_knowledge_source_kind(&self.source_kind)?,
-            source_ref: self.source_ref,
-            source_hash: self.source_hash,
-            sync_policy_json: self.sync_policy_json,
-            metadata_json: self.metadata_json,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid knowledge source status code: {}",
-                    self.status
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-        };
-        validate_knowledge_source_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentKnowledgeDocumentRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub knowledge_document_id: String,
-    pub knowledge_base_id: String,
-    pub knowledge_source_id: Option<String>,
-    pub document_kind: String,
-    pub title: String,
-    pub content_ref: String,
-    pub content_hash: String,
-    pub summary: Option<String>,
-    pub metadata_json: String,
-    pub tags_json: String,
-    pub categories_json: String,
-    pub trust_level: i16,
-    pub redaction_classification: String,
-    pub chunk_count: u32,
-    pub status: i16,
-    pub visibility: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-}
-
-impl AgentKnowledgeDocumentRow {
-    pub fn from_record(record: &AgentKnowledgeDocumentRecord) -> KernelResult<Self> {
-        validate_knowledge_document_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_knowledge_document_uuid(
-                record.tenant_id,
-                &record.knowledge_document_id,
-            ),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            knowledge_document_id: record.knowledge_document_id.clone(),
-            knowledge_base_id: record.knowledge_base_id.clone(),
-            knowledge_source_id: record.knowledge_source_id.clone(),
-            document_kind: record.document_kind.as_str().to_string(),
-            title: record.title.clone(),
-            content_ref: record.content_ref.clone(),
-            content_hash: record.content_hash.clone(),
-            summary: record.summary.clone(),
-            metadata_json: record.metadata_json.clone(),
-            tags_json: string_list_to_json(&record.tags, "tags")?,
-            categories_json: string_list_to_json(&record.categories, "categories")?,
-            trust_level: record.trust_level,
-            redaction_classification: record.redaction_classification.clone(),
-            chunk_count: record.chunk_count,
-            status: record.status.as_db_code(),
-            visibility: record.visibility.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeDocumentRecord> {
-        let record = AgentKnowledgeDocumentRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            knowledge_document_id: self.knowledge_document_id,
-            knowledge_base_id: self.knowledge_base_id,
-            knowledge_source_id: self.knowledge_source_id,
-            document_kind: parse_knowledge_document_kind(&self.document_kind)?,
-            title: self.title,
-            content_ref: self.content_ref,
-            content_hash: self.content_hash,
-            summary: self.summary,
-            metadata_json: self.metadata_json,
-            tags: string_list_from_json(&self.tags_json, "tags")?,
-            categories: string_list_from_json(&self.categories_json, "categories")?,
-            trust_level: self.trust_level,
-            redaction_classification: self.redaction_classification,
-            chunk_count: self.chunk_count,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid knowledge document status code: {}",
-                    self.status
-                ))
-            })?,
-            visibility: AgentVisibility::from_db_code(self.visibility).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid knowledge document visibility code: {}",
-                    self.visibility
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-        };
-        validate_knowledge_document_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentKnowledgeChunkRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub knowledge_chunk_id: String,
-    pub knowledge_document_id: String,
-    pub parent_chunk_id: Option<String>,
-    pub chunk_ordinal: u32,
-    pub heading: Option<String>,
-    pub content_ref: String,
-    pub content_hash: String,
-    pub token_estimate: u32,
-    pub summary: Option<String>,
-    pub metadata_json: String,
-    pub status: i16,
-    pub created_at: String,
-}
-
-impl AgentKnowledgeChunkRow {
-    pub fn from_record(record: &AgentKnowledgeChunkRecord) -> KernelResult<Self> {
-        validate_knowledge_chunk_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_knowledge_chunk_uuid(record.tenant_id, &record.knowledge_chunk_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            knowledge_chunk_id: record.knowledge_chunk_id.clone(),
-            knowledge_document_id: record.knowledge_document_id.clone(),
-            parent_chunk_id: record.parent_chunk_id.clone(),
-            chunk_ordinal: record.chunk_ordinal,
-            heading: record.heading.clone(),
-            content_ref: record.content_ref.clone(),
-            content_hash: record.content_hash.clone(),
-            token_estimate: record.token_estimate,
-            summary: record.summary.clone(),
-            metadata_json: record.metadata_json.clone(),
-            status: record.status.as_db_code(),
-            created_at: record.created_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeChunkRecord> {
-        let record = AgentKnowledgeChunkRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            knowledge_chunk_id: self.knowledge_chunk_id,
-            knowledge_document_id: self.knowledge_document_id,
-            parent_chunk_id: self.parent_chunk_id,
-            chunk_ordinal: self.chunk_ordinal,
-            heading: self.heading,
-            content_ref: self.content_ref,
-            content_hash: self.content_hash,
-            token_estimate: self.token_estimate,
-            summary: self.summary,
-            metadata_json: self.metadata_json,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid knowledge chunk status code: {}",
-                    self.status
-                ))
-            })?,
-            created_at: self.created_at,
-        };
-        validate_knowledge_chunk_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentKnowledgeIndexRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub knowledge_index_id: String,
-    pub knowledge_base_id: String,
-    pub knowledge_document_id: Option<String>,
-    pub knowledge_chunk_id: Option<String>,
-    pub index_kind: String,
-    pub index_provider_id: String,
-    pub external_ref: String,
-    pub embedding_model_id: Option<String>,
-    pub vector_dimension: Option<u32>,
-    pub content_hash: String,
-    pub indexed_at: String,
-    pub status: i16,
-}
-
-impl AgentKnowledgeIndexRow {
-    pub fn from_record(record: &AgentKnowledgeIndexRecord) -> KernelResult<Self> {
-        validate_knowledge_index_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_knowledge_index_uuid(record.tenant_id, &record.knowledge_index_id),
-            tenant_id: record.tenant_id,
-            knowledge_index_id: record.knowledge_index_id.clone(),
-            knowledge_base_id: record.knowledge_base_id.clone(),
-            knowledge_document_id: record.knowledge_document_id.clone(),
-            knowledge_chunk_id: record.knowledge_chunk_id.clone(),
-            index_kind: record.index_kind.as_str().to_string(),
-            index_provider_id: record.index_provider_id.clone(),
-            external_ref: record.external_ref.clone(),
-            embedding_model_id: record.embedding_model_id.clone(),
-            vector_dimension: record.vector_dimension,
-            content_hash: record.content_hash.clone(),
-            indexed_at: record.indexed_at.clone(),
-            status: record.status.as_db_code(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeIndexRecord> {
-        let record = AgentKnowledgeIndexRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            knowledge_index_id: self.knowledge_index_id,
-            knowledge_base_id: self.knowledge_base_id,
-            knowledge_document_id: self.knowledge_document_id,
-            knowledge_chunk_id: self.knowledge_chunk_id,
-            index_kind: parse_knowledge_index_kind(&self.index_kind)?,
-            index_provider_id: self.index_provider_id,
-            external_ref: self.external_ref,
-            embedding_model_id: self.embedding_model_id,
-            vector_dimension: self.vector_dimension,
-            content_hash: self.content_hash,
-            indexed_at: self.indexed_at,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid knowledge index status code: {}",
-                    self.status
-                ))
-            })?,
-        };
-        validate_knowledge_index_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentKnowledgeBindingRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub knowledge_binding_id: String,
-    pub knowledge_base_id: String,
-    pub agent_id: Option<String>,
-    pub deployment_id: Option<String>,
-    pub scope_kind: String,
-    pub scope_ref: String,
-    pub active: bool,
-    pub default_binding: bool,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl AgentKnowledgeBindingRow {
-    pub fn from_record(record: &AgentKnowledgeBindingRecord) -> KernelResult<Self> {
-        validate_knowledge_binding_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_knowledge_binding_uuid(
-                record.tenant_id,
-                &record.knowledge_binding_id,
-            ),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            knowledge_binding_id: record.knowledge_binding_id.clone(),
-            knowledge_base_id: record.knowledge_base_id.clone(),
-            agent_id: record.agent_id.clone(),
-            deployment_id: record.deployment_id.clone(),
-            scope_kind: record.scope_kind.as_str().to_string(),
-            scope_ref: record.scope_ref.clone(),
-            active: record.active,
-            default_binding: record.default_binding,
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeBindingRecord> {
-        let record = AgentKnowledgeBindingRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            knowledge_binding_id: self.knowledge_binding_id,
-            knowledge_base_id: self.knowledge_base_id,
-            agent_id: self.agent_id,
-            deployment_id: self.deployment_id,
-            scope_kind: parse_knowledge_binding_scope_kind(&self.scope_kind)?,
-            scope_ref: self.scope_ref,
-            active: self.active,
-            default_binding: self.default_binding,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        };
-        validate_knowledge_binding_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentKnowledgeSyncJobRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub sync_job_id: String,
-    pub knowledge_base_id: String,
-    pub knowledge_source_id: Option<String>,
-    pub job_kind: String,
-    pub status: String,
-    pub input_ref: String,
-    pub input_json: String,
-    pub output_json: Option<String>,
-    pub error_json: Option<String>,
-    pub requested_at: String,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl AgentKnowledgeSyncJobRow {
-    pub fn from_record(record: &AgentKnowledgeSyncJobRecord) -> KernelResult<Self> {
-        validate_knowledge_sync_job_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_knowledge_sync_job_uuid(record.tenant_id, &record.sync_job_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            sync_job_id: record.sync_job_id.clone(),
-            knowledge_base_id: record.knowledge_base_id.clone(),
-            knowledge_source_id: record.knowledge_source_id.clone(),
-            job_kind: record.job_kind.as_str().to_string(),
-            status: record.status.as_str().to_string(),
-            input_ref: record.input_ref.clone(),
-            input_json: record.input_json.clone(),
-            output_json: record.output_json.clone(),
-            error_json: record.error_json.clone(),
-            requested_at: record.requested_at.clone(),
-            started_at: record.started_at.clone(),
-            completed_at: record.completed_at.clone(),
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentKnowledgeSyncJobRecord> {
-        let record = AgentKnowledgeSyncJobRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            sync_job_id: self.sync_job_id,
-            knowledge_base_id: self.knowledge_base_id,
-            knowledge_source_id: self.knowledge_source_id,
-            job_kind: parse_knowledge_sync_job_kind(&self.job_kind)?,
-            status: parse_knowledge_sync_job_status(&self.status)?,
-            input_ref: self.input_ref,
-            input_json: self.input_json,
-            output_json: self.output_json,
-            error_json: self.error_json,
-            requested_at: self.requested_at,
-            started_at: self.started_at,
-            completed_at: self.completed_at,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        };
-        validate_knowledge_sync_job_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AgentMemoryStoreRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub owner_user_id: u64,
-    pub memory_store_id: String,
-    pub code: String,
-    pub display_name: String,
-    pub description: Option<String>,
-    pub provider_id: String,
-    pub store_kind: String,
-    pub retrieval_modes_json: String,
-    pub capability_ids_json: String,
-    pub configuration_profile_id: String,
-    pub status: i16,
-    pub visibility: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-}
-
-impl AgentMemoryStoreRow {
-    pub fn from_record(record: &AgentMemoryStoreRecord) -> KernelResult<Self> {
-        validate_memory_store_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_store_uuid(record.tenant_id, &record.memory_store_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            owner_user_id: record.owner_user_id,
-            memory_store_id: record.memory_store_id.clone(),
-            code: record.code.clone(),
-            display_name: record.display_name.clone(),
-            description: record.description.clone(),
-            provider_id: record.provider_id.clone(),
-            store_kind: record.store_kind.as_str().to_string(),
-            retrieval_modes_json: memory_index_kinds_to_json(&record.retrieval_modes)?,
-            capability_ids_json: string_list_to_json(&record.capability_ids, "capability_ids")?,
-            configuration_profile_id: record.configuration_profile_id.clone(),
-            status: record.status.as_db_code(),
-            visibility: record.visibility.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryStoreRecord> {
-        let record = AgentMemoryStoreRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            owner_user_id: self.owner_user_id,
-            memory_store_id: self.memory_store_id,
-            code: self.code,
-            display_name: self.display_name,
-            description: self.description,
-            provider_id: self.provider_id,
-            store_kind: parse_memory_store_kind(&self.store_kind)?,
-            retrieval_modes: memory_index_kinds_from_json(&self.retrieval_modes_json)?,
-            capability_ids: string_list_from_json(&self.capability_ids_json, "capability_ids")?,
-            configuration_profile_id: self.configuration_profile_id,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory store status code: {}",
-                    self.status
-                ))
-            })?,
-            visibility: AgentVisibility::from_db_code(self.visibility).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory store visibility code: {}",
-                    self.visibility
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-        };
-        validate_memory_store_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMemoryProfileRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub owner_user_id: u64,
-    pub memory_profile_id: String,
-    pub memory_store_id: String,
-    pub code: String,
-    pub display_name: String,
-    pub description: Option<String>,
-    pub write_policy_json: String,
-    pub retrieval_policy_json: String,
-    pub compaction_policy_json: String,
-    pub retention_policy_json: String,
-    pub privacy_policy_json: String,
-    pub status: i16,
-    pub visibility: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-}
-
-impl AgentMemoryProfileRow {
-    pub fn from_record(record: &AgentMemoryProfileRecord) -> KernelResult<Self> {
-        validate_memory_profile_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_profile_uuid(record.tenant_id, &record.memory_profile_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            owner_user_id: record.owner_user_id,
-            memory_profile_id: record.memory_profile_id.clone(),
-            memory_store_id: record.memory_store_id.clone(),
-            code: record.code.clone(),
-            display_name: record.display_name.clone(),
-            description: record.description.clone(),
-            write_policy_json: record.write_policy_json.clone(),
-            retrieval_policy_json: record.retrieval_policy_json.clone(),
-            compaction_policy_json: record.compaction_policy_json.clone(),
-            retention_policy_json: record.retention_policy_json.clone(),
-            privacy_policy_json: record.privacy_policy_json.clone(),
-            status: record.status.as_db_code(),
-            visibility: record.visibility.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryProfileRecord> {
-        let record = AgentMemoryProfileRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            owner_user_id: self.owner_user_id,
-            memory_profile_id: self.memory_profile_id,
-            memory_store_id: self.memory_store_id,
-            code: self.code,
-            display_name: self.display_name,
-            description: self.description,
-            write_policy_json: self.write_policy_json,
-            retrieval_policy_json: self.retrieval_policy_json,
-            compaction_policy_json: self.compaction_policy_json,
-            retention_policy_json: self.retention_policy_json,
-            privacy_policy_json: self.privacy_policy_json,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory profile status code: {}",
-                    self.status
-                ))
-            })?,
-            visibility: AgentVisibility::from_db_code(self.visibility).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory profile visibility code: {}",
-                    self.visibility
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-        };
-        validate_memory_profile_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMemoryBindingRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub memory_binding_id: String,
-    pub memory_profile_id: String,
-    pub agent_id: Option<String>,
-    pub deployment_id: Option<String>,
-    pub scope_kind: String,
-    pub scope_ref: String,
-    pub active: bool,
-    pub default_binding: bool,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl AgentMemoryBindingRow {
-    pub fn from_record(record: &AgentMemoryBindingRecord) -> KernelResult<Self> {
-        validate_memory_binding_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_binding_uuid(record.tenant_id, &record.memory_binding_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            memory_binding_id: record.memory_binding_id.clone(),
-            memory_profile_id: record.memory_profile_id.clone(),
-            agent_id: record.agent_id.clone(),
-            deployment_id: record.deployment_id.clone(),
-            scope_kind: record.scope_kind.as_str().to_string(),
-            scope_ref: record.scope_ref.clone(),
-            active: record.active,
-            default_binding: record.default_binding,
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryBindingRecord> {
-        let record = AgentMemoryBindingRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            memory_binding_id: self.memory_binding_id,
-            memory_profile_id: self.memory_profile_id,
-            agent_id: self.agent_id,
-            deployment_id: self.deployment_id,
-            scope_kind: parse_memory_binding_scope_kind(&self.scope_kind)?,
-            scope_ref: self.scope_ref,
-            active: self.active,
-            default_binding: self.default_binding,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        };
-        validate_memory_binding_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMemoryNamespaceRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub memory_namespace_id: String,
-    pub agent_id: Option<String>,
-    pub user_ref: Option<String>,
-    pub session_ref: Option<String>,
-    pub thread_ref: Option<String>,
-    pub namespace_kind: String,
-    pub status: i16,
-    pub visibility: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-}
-
-impl AgentMemoryNamespaceRow {
-    pub fn from_record(record: &AgentMemoryNamespaceRecord) -> KernelResult<Self> {
-        validate_memory_namespace_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_namespace_uuid(record.tenant_id, &record.memory_namespace_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            memory_namespace_id: record.memory_namespace_id.clone(),
-            agent_id: record.agent_id.clone(),
-            user_ref: record.user_ref.clone(),
-            session_ref: record.session_ref.clone(),
-            thread_ref: record.thread_ref.clone(),
-            namespace_kind: record.namespace_kind.as_str().to_string(),
-            status: record.status.as_db_code(),
-            visibility: record.visibility.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryNamespaceRecord> {
-        let record = AgentMemoryNamespaceRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            memory_namespace_id: self.memory_namespace_id,
-            agent_id: self.agent_id,
-            user_ref: self.user_ref,
-            session_ref: self.session_ref,
-            thread_ref: self.thread_ref,
-            namespace_kind: parse_memory_namespace_kind(&self.namespace_kind)?,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory namespace status code: {}",
-                    self.status
-                ))
-            })?,
-            visibility: AgentVisibility::from_db_code(self.visibility).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory namespace visibility code: {}",
-                    self.visibility
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-        };
-        validate_memory_namespace_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AgentMemoryRecordRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub memory_id: String,
-    pub memory_namespace_id: String,
-    pub agent_id: Option<String>,
-    pub memory_kind: String,
-    pub content_format: String,
-    pub content_json: String,
-    pub summary: Option<String>,
-    pub salience_score: f32,
-    pub confidence_score: f32,
-    pub freshness_score: f32,
-    pub sensitivity_level: i16,
-    pub source_count: u32,
-    pub effective_at: Option<String>,
-    pub expires_at: Option<String>,
-    pub last_used_at: Option<String>,
-    pub use_count: u64,
-    pub status: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub redacted_at: Option<String>,
-}
-
-impl AgentMemoryRecordRow {
-    pub fn from_record(record: &AgentMemoryRecord) -> KernelResult<Self> {
-        validate_memory_record_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_record_uuid(record.tenant_id, &record.memory_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            memory_id: record.memory_id.clone(),
-            memory_namespace_id: record.memory_namespace_id.clone(),
-            agent_id: record.agent_id.clone(),
-            memory_kind: record.memory_kind.as_str().to_string(),
-            content_format: record.content_format.clone(),
-            content_json: record.content_json.clone(),
-            summary: record.summary.clone(),
-            salience_score: record.salience_score,
-            confidence_score: record.confidence_score,
-            freshness_score: record.freshness_score,
-            sensitivity_level: record.sensitivity_level,
-            source_count: record.source_count,
-            effective_at: record.effective_at.clone(),
-            expires_at: record.expires_at.clone(),
-            last_used_at: record.last_used_at.clone(),
-            use_count: record.use_count,
-            status: record.status.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-            redacted_at: record.redacted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryRecord> {
-        let record = AgentMemoryRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            memory_id: self.memory_id,
-            memory_namespace_id: self.memory_namespace_id,
-            agent_id: self.agent_id,
-            memory_kind: parse_memory_record_kind(&self.memory_kind)?,
-            content_format: self.content_format,
-            content_json: self.content_json,
-            summary: self.summary,
-            salience_score: self.salience_score,
-            confidence_score: self.confidence_score,
-            freshness_score: self.freshness_score,
-            sensitivity_level: self.sensitivity_level,
-            source_count: self.source_count,
-            effective_at: self.effective_at,
-            expires_at: self.expires_at,
-            last_used_at: self.last_used_at,
-            use_count: self.use_count,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory record status code: {}",
-                    self.status
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-            redacted_at: self.redacted_at,
-        };
-        validate_memory_record_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMemorySourceRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub memory_source_id: String,
-    pub memory_id: String,
-    pub source_kind: String,
-    pub source_ref: String,
-    pub source_hash: String,
-    pub evidence_json: String,
-    pub captured_at: String,
-    pub created_at: String,
-}
-
-impl AgentMemorySourceRow {
-    pub fn from_record(record: &AgentMemorySourceRecord) -> KernelResult<Self> {
-        validate_memory_source_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_source_uuid(record.tenant_id, &record.memory_source_id),
-            tenant_id: record.tenant_id,
-            memory_source_id: record.memory_source_id.clone(),
-            memory_id: record.memory_id.clone(),
-            source_kind: record.source_kind.as_str().to_string(),
-            source_ref: record.source_ref.clone(),
-            source_hash: record.source_hash.clone(),
-            evidence_json: record.evidence_json.clone(),
-            captured_at: record.captured_at.clone(),
-            created_at: record.created_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemorySourceRecord> {
-        let record = AgentMemorySourceRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            memory_source_id: self.memory_source_id,
-            memory_id: self.memory_id,
-            source_kind: parse_memory_source_kind(&self.source_kind)?,
-            source_ref: self.source_ref,
-            source_hash: self.source_hash,
-            evidence_json: self.evidence_json,
-            captured_at: self.captured_at,
-            created_at: self.created_at,
-        };
-        validate_memory_source_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AgentMemoryRelationRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub memory_relation_id: String,
-    pub from_memory_id: String,
-    pub to_memory_id: String,
-    pub relation_kind: String,
-    pub weight: f32,
-    pub valid_from: Option<String>,
-    pub valid_until: Option<String>,
-    pub created_at: String,
-}
-
-impl AgentMemoryRelationRow {
-    pub fn from_record(record: &AgentMemoryRelationRecord) -> KernelResult<Self> {
-        validate_memory_relation_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_relation_uuid(record.tenant_id, &record.memory_relation_id),
-            tenant_id: record.tenant_id,
-            memory_relation_id: record.memory_relation_id.clone(),
-            from_memory_id: record.from_memory_id.clone(),
-            to_memory_id: record.to_memory_id.clone(),
-            relation_kind: record.relation_kind.as_str().to_string(),
-            weight: record.weight,
-            valid_from: record.valid_from.clone(),
-            valid_until: record.valid_until.clone(),
-            created_at: record.created_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryRelationRecord> {
-        let record = AgentMemoryRelationRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            memory_relation_id: self.memory_relation_id,
-            from_memory_id: self.from_memory_id,
-            to_memory_id: self.to_memory_id,
-            relation_kind: parse_memory_relation_kind(&self.relation_kind)?,
-            weight: self.weight,
-            valid_from: self.valid_from,
-            valid_until: self.valid_until,
-            created_at: self.created_at,
-        };
-        validate_memory_relation_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMemoryRetrievalIndexRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub memory_index_id: String,
-    pub memory_id: String,
-    pub index_kind: String,
-    pub index_provider_id: String,
-    pub external_ref: String,
-    pub embedding_model_id: Option<String>,
-    pub vector_dimension: Option<u32>,
-    pub content_hash: String,
-    pub indexed_at: String,
-    pub status: i16,
-}
-
-impl AgentMemoryRetrievalIndexRow {
-    pub fn from_record(record: &AgentMemoryRetrievalIndexRecord) -> KernelResult<Self> {
-        validate_memory_retrieval_index_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_memory_retrieval_index_uuid(
-                record.tenant_id,
-                &record.memory_index_id,
-            ),
-            tenant_id: record.tenant_id,
-            memory_index_id: record.memory_index_id.clone(),
-            memory_id: record.memory_id.clone(),
-            index_kind: record.index_kind.as_str().to_string(),
-            index_provider_id: record.index_provider_id.clone(),
-            external_ref: record.external_ref.clone(),
-            embedding_model_id: record.embedding_model_id.clone(),
-            vector_dimension: record.vector_dimension,
-            content_hash: record.content_hash.clone(),
-            indexed_at: record.indexed_at.clone(),
-            status: record.status.as_db_code(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMemoryRetrievalIndexRecord> {
-        let record = AgentMemoryRetrievalIndexRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            memory_index_id: self.memory_index_id,
-            memory_id: self.memory_id,
-            index_kind: parse_memory_index_kind(&self.index_kind)?,
-            index_provider_id: self.index_provider_id,
-            external_ref: self.external_ref,
-            embedding_model_id: self.embedding_model_id,
-            vector_dimension: self.vector_dimension,
-            content_hash: self.content_hash,
-            indexed_at: self.indexed_at,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid memory retrieval index status code: {}",
-                    self.status
-                ))
-            })?,
-        };
-        validate_memory_retrieval_index_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-fn parse_implementation_kind(input: &str) -> KernelResult<AgentImplementationKind> {
-    AgentImplementationKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid implementation kind: {input}")))
-}
-
-fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationType> {
-    AgentImplementationType::from_code(input).ok_or_else(|| {
-        KernelError::validation(format!(
-            "implementationType must be one of sdkwork-native, rig-rust, openai-agents, langchain, langgraph, crewai, autogen, semantic-kernel, custom: {input}"
-        ))
-    })
-}
-
-fn parse_mcp_transport_kind(input: &str) -> KernelResult<AgentMcpTransportKind> {
-    AgentMcpTransportKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid mcp transport kind: {input}")))
-}
-
-fn parse_mcp_auth_kind(input: &str) -> KernelResult<AgentMcpAuthKind> {
-    AgentMcpAuthKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid mcp auth kind: {input}")))
-}
-
-fn parse_memory_store_kind(input: &str) -> KernelResult<AgentMemoryStoreKind> {
-    AgentMemoryStoreKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid memory store kind: {input}")))
-}
-
-fn parse_memory_index_kind(input: &str) -> KernelResult<AgentMemoryIndexKind> {
-    AgentMemoryIndexKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid memory index kind: {input}")))
-}
-
-fn parse_memory_binding_scope_kind(input: &str) -> KernelResult<AgentMemoryBindingScopeKind> {
-    AgentMemoryBindingScopeKind::from_code(input).ok_or_else(|| {
-        KernelError::validation(format!("invalid memory binding scope kind: {input}"))
-    })
-}
-
-fn parse_memory_namespace_kind(input: &str) -> KernelResult<AgentMemoryNamespaceKind> {
-    AgentMemoryNamespaceKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid memory namespace kind: {input}")))
-}
-
-fn parse_memory_record_kind(input: &str) -> KernelResult<AgentMemoryRecordKind> {
-    AgentMemoryRecordKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid memory record kind: {input}")))
-}
-
-fn parse_memory_source_kind(input: &str) -> KernelResult<AgentMemorySourceKind> {
-    AgentMemorySourceKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid memory source kind: {input}")))
-}
-
-fn parse_memory_relation_kind(input: &str) -> KernelResult<AgentMemoryRelationKind> {
-    AgentMemoryRelationKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid memory relation kind: {input}")))
-}
-
-fn parse_knowledge_base_kind(input: &str) -> KernelResult<AgentKnowledgeBaseKind> {
-    AgentKnowledgeBaseKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid knowledge base kind: {input}")))
-}
-
-fn parse_knowledge_index_kind(input: &str) -> KernelResult<AgentKnowledgeIndexKind> {
-    AgentKnowledgeIndexKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid knowledge index kind: {input}")))
-}
-
-fn parse_knowledge_source_kind(input: &str) -> KernelResult<AgentKnowledgeSourceKind> {
-    AgentKnowledgeSourceKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid knowledge source kind: {input}")))
-}
-
-fn parse_knowledge_document_kind(input: &str) -> KernelResult<AgentKnowledgeDocumentKind> {
-    AgentKnowledgeDocumentKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid knowledge document kind: {input}")))
-}
-
-fn parse_knowledge_binding_scope_kind(input: &str) -> KernelResult<AgentKnowledgeBindingScopeKind> {
-    AgentKnowledgeBindingScopeKind::from_code(input).ok_or_else(|| {
-        KernelError::validation(format!("invalid knowledge binding scope kind: {input}"))
-    })
-}
-
-fn parse_knowledge_sync_job_kind(input: &str) -> KernelResult<AgentKnowledgeSyncJobKind> {
-    AgentKnowledgeSyncJobKind::from_code(input)
-        .ok_or_else(|| KernelError::validation(format!("invalid knowledge sync job kind: {input}")))
-}
-
-fn parse_knowledge_sync_job_status(input: &str) -> KernelResult<AgentKnowledgeSyncJobStatus> {
-    AgentKnowledgeSyncJobStatus::from_code(input).ok_or_else(|| {
-        KernelError::validation(format!("invalid knowledge sync job status: {input}"))
-    })
-}
-
-fn validate_agent_business_storage_contract(record: &AgentBusinessRecord) -> KernelResult<()> {
-    if let Some(provider_id) = record.implementation_provider_id.as_deref() {
-        validate_standard_id(provider_id, "implementationProviderId", Some("provider."))?;
-    }
-    Ok(())
-}
-
-fn validate_provider_binding_storage_contract(
-    record: &AgentProviderBindingRecord,
-) -> KernelResult<()> {
-    validate_standard_id(record.binding_id.as_str(), "bindingId", Some("binding."))?;
-    validate_standard_id(record.provider_id.as_str(), "providerId", Some("provider."))?;
-    validate_standard_id(
-        record.configuration_profile_id.as_str(),
-        "configurationProfileId",
-        Some("profile."),
-    )?;
+    pub updated_at: String)?;
     validate_capabilities(record.capabilities.as_slice(), "capabilities")
 }
 
@@ -1766,31 +514,26 @@ fn validate_deployment_storage_contract(record: &AgentDeploymentRecord) -> Kerne
     validate_standard_id(
         record.deployment_id.as_str(),
         "deploymentId",
-        Some("deployment."),
-    )?;
+        Some("deployment."))?;
     validate_standard_id(record.binding_id.as_str(), "bindingId", Some("binding."))?;
     validate_standard_id(
         record.provider_id_snapshot.as_str(),
         "providerId",
-        Some("provider."),
-    )?;
+        Some("provider."))?;
     validate_standard_id(
         record.configuration_profile_id_snapshot.as_str(),
         "configurationProfileId",
-        Some("profile."),
-    )?;
+        Some("profile."))?;
     validate_capabilities(
         record.capabilities_snapshot.as_slice(),
-        "capabilitiesSnapshot",
-    )
+        "capabilitiesSnapshot")
 }
 
 fn validate_mcp_server_storage_contract(record: &AgentMcpServerRecord) -> KernelResult<()> {
     validate_standard_id(
         record.mcp_server_id.as_str(),
         "mcpServerId",
-        Some("mcp.server."),
-    )?;
+        Some("mcp.server."))?;
     if let Some(endpoint_ref) = record.endpoint_ref.as_deref() {
         validate_standard_id(endpoint_ref, "endpointRef", Some("endpoint."))?;
     }
@@ -1809,35 +552,31 @@ fn validate_mcp_server_storage_contract(record: &AgentMcpServerRecord) -> Kernel
     validate_slug_list(record.tags.as_slice(), "tags")
 }
 
-fn validate_memory_store_storage_contract(record: &AgentMemoryStoreRecord) -> KernelResult<()> {
+fn validate_memory_store_storage_contract(record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_store_id.as_str(),
         "memoryStoreId",
-        Some("memory.store."),
-    )?;
+        Some("memory.store."))?;
     validate_slug_code(record.code.as_str(), "code")?;
     validate_non_empty_storage_text(record.display_name.as_str(), "displayName")?;
     validate_standard_id(record.provider_id.as_str(), "providerId", Some("provider."))?;
     validate_standard_id(
         record.configuration_profile_id.as_str(),
         "configurationProfileId",
-        Some("profile."),
-    )?;
+        Some("profile."))?;
     validate_memory_index_kinds(record.retrieval_modes.as_slice())?;
     validate_capabilities(record.capability_ids.as_slice(), "capabilityIds")
 }
 
-fn validate_memory_profile_storage_contract(record: &AgentMemoryProfileRecord) -> KernelResult<()> {
+fn validate_memory_profile_storage_contract(record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_profile_id.as_str(),
         "memoryProfileId",
-        Some("memory.profile."),
-    )?;
+        Some("memory.profile."))?;
     validate_standard_id(
         record.memory_store_id.as_str(),
         "memoryStoreId",
-        Some("memory.store."),
-    )?;
+        Some("memory.store."))?;
     validate_slug_code(record.code.as_str(), "code")?;
     validate_non_empty_storage_text(record.display_name.as_str(), "displayName")?;
     for (value, field_name) in [
@@ -1845,8 +584,7 @@ fn validate_memory_profile_storage_contract(record: &AgentMemoryProfileRecord) -
         (record.retrieval_policy_json.as_str(), "retrievalPolicyJson"),
         (
             record.compaction_policy_json.as_str(),
-            "compactionPolicyJson",
-        ),
+            "compactionPolicyJson"),
         (record.retention_policy_json.as_str(), "retentionPolicyJson"),
         (record.privacy_policy_json.as_str(), "privacyPolicyJson"),
     ] {
@@ -1856,17 +594,15 @@ fn validate_memory_profile_storage_contract(record: &AgentMemoryProfileRecord) -
     Ok(())
 }
 
-fn validate_memory_binding_storage_contract(record: &AgentMemoryBindingRecord) -> KernelResult<()> {
+fn validate_memory_binding_storage_contract(record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_binding_id.as_str(),
         "memoryBindingId",
-        Some("memory.binding."),
-    )?;
+        Some("memory.binding."))?;
     validate_standard_id(
         record.memory_profile_id.as_str(),
         "memoryProfileId",
-        Some("memory.profile."),
-    )?;
+        Some("memory.profile."))?;
     if let Some(agent_id) = record.agent_id.as_deref() {
         validate_standard_id(agent_id, "agentId", Some("agent."))?;
     }
@@ -1879,62 +615,52 @@ fn validate_memory_binding_storage_contract(record: &AgentMemoryBindingRecord) -
         record.scope_kind,
         record.scope_ref.as_str(),
         record.agent_id.as_deref(),
-        record.deployment_id.as_deref(),
-    )
+        record.deployment_id.as_deref())
 }
 
 fn validate_memory_binding_storage_scope(
-    scope_kind: AgentMemoryBindingScopeKind,
-    scope_ref: &str,
+    scope_kind: scope_ref: &str,
     agent_id: Option<&str>,
-    deployment_id: Option<&str>,
-) -> KernelResult<()> {
+    deployment_id: Option<&str>) -> KernelResult<()> {
     match scope_kind {
-        AgentMemoryBindingScopeKind::Agent => {
+        ::Agent => {
             let Some(agent_id) = agent_id else {
                 return Err(KernelError::validation(
-                    "agentId is required for agent memory binding scope",
-                ));
+                    "agentId is required for agent memory binding scope"));
             };
             if scope_ref != agent_id {
                 return Err(KernelError::validation(
-                    "scopeRef must match agentId for agent memory binding scope",
-                ));
+                    "scopeRef must match agentId for agent memory binding scope"));
             }
         }
-        AgentMemoryBindingScopeKind::Deployment => {
+        ::Deployment => {
             if agent_id.is_none() {
                 return Err(KernelError::validation(
-                    "agentId is required for deployment memory binding scope",
-                ));
+                    "agentId is required for deployment memory binding scope"));
             }
             let Some(deployment_id) = deployment_id else {
                 return Err(KernelError::validation(
-                    "deploymentId is required for deployment memory binding scope",
-                ));
+                    "deploymentId is required for deployment memory binding scope"));
             };
             if scope_ref != deployment_id {
                 return Err(KernelError::validation(
-                    "scopeRef must match deploymentId for deployment memory binding scope",
-                ));
+                    "scopeRef must match deploymentId for deployment memory binding scope"));
             }
         }
-        AgentMemoryBindingScopeKind::User
-        | AgentMemoryBindingScopeKind::Session
-        | AgentMemoryBindingScopeKind::Organization
-        | AgentMemoryBindingScopeKind::Tenant => {}
+        ::User
+        | ::Session
+        | ::Organization
+        | ::Tenant => {}
     }
     Ok(())
 }
 
 fn validate_memory_namespace_storage_contract(
-    record: &AgentMemoryNamespaceRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_namespace_id.as_str(),
         "memoryNamespaceId",
-        Some("memory.namespace."),
-    )?;
+        Some("memory.namespace."))?;
     if let Some(agent_id) = record.agent_id.as_deref() {
         validate_standard_id(agent_id, "agentId", Some("agent."))?;
     }
@@ -1947,13 +673,11 @@ fn validate_memory_record_storage_contract(record: &AgentMemoryRecord) -> Kernel
     validate_standard_id(
         record.memory_id.as_str(),
         "memoryId",
-        Some("memory.record."),
-    )?;
+        Some("memory.record."))?;
     validate_standard_id(
         record.memory_namespace_id.as_str(),
         "memoryNamespaceId",
-        Some("memory.namespace."),
-    )?;
+        Some("memory.namespace."))?;
     if let Some(agent_id) = record.agent_id.as_deref() {
         validate_standard_id(agent_id, "agentId", Some("agent."))?;
     }
@@ -1967,23 +691,20 @@ fn validate_memory_record_storage_contract(record: &AgentMemoryRecord) -> Kernel
     validate_score_value(record.freshness_score, "freshnessScore")?;
     if !(0..=4).contains(&record.sensitivity_level) {
         return Err(KernelError::validation(
-            "sensitivityLevel must be between 0 and 4",
-        ));
+            "sensitivityLevel must be between 0 and 4"));
     }
     Ok(())
 }
 
-fn validate_memory_source_storage_contract(record: &AgentMemorySourceRecord) -> KernelResult<()> {
+fn validate_memory_source_storage_contract(record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_source_id.as_str(),
         "memorySourceId",
-        Some("memory.source."),
-    )?;
+        Some("memory.source."))?;
     validate_standard_id(
         record.memory_id.as_str(),
         "memoryId",
-        Some("memory.record."),
-    )?;
+        Some("memory.record."))?;
     validate_non_empty_storage_text(record.source_ref.as_str(), "sourceRef")?;
     reject_plaintext_secret_material(record.source_ref.as_str(), "sourceRef")?;
     validate_non_empty_storage_text(record.source_hash.as_str(), "sourceHash")?;
@@ -1992,58 +713,48 @@ fn validate_memory_source_storage_contract(record: &AgentMemorySourceRecord) -> 
 }
 
 fn validate_memory_relation_storage_contract(
-    record: &AgentMemoryRelationRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_relation_id.as_str(),
         "memoryRelationId",
-        Some("memory.relation."),
-    )?;
+        Some("memory.relation."))?;
     validate_standard_id(
         record.from_memory_id.as_str(),
         "fromMemoryId",
-        Some("memory.record."),
-    )?;
+        Some("memory.record."))?;
     validate_standard_id(
         record.to_memory_id.as_str(),
         "toMemoryId",
-        Some("memory.record."),
-    )?;
+        Some("memory.record."))?;
     if record.from_memory_id == record.to_memory_id {
         return Err(KernelError::validation(
-            "memory relation endpoints must be different",
-        ));
+            "memory relation endpoints must be different"));
     }
     validate_score_value(record.weight, "weight")
 }
 
 fn validate_memory_retrieval_index_storage_contract(
-    record: &AgentMemoryRetrievalIndexRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.memory_index_id.as_str(),
         "memoryIndexId",
-        Some("memory.index."),
-    )?;
+        Some("memory.index."))?;
     validate_standard_id(
         record.memory_id.as_str(),
         "memoryId",
-        Some("memory.record."),
-    )?;
+        Some("memory.record."))?;
     validate_standard_id(
         record.index_provider_id.as_str(),
         "indexProviderId",
-        Some("provider."),
-    )?;
+        Some("provider."))?;
     validate_non_empty_storage_text(record.external_ref.as_str(), "externalRef")?;
     reject_plaintext_secret_material(record.external_ref.as_str(), "externalRef")?;
     validate_non_empty_storage_text(record.content_hash.as_str(), "contentHash")?;
-    if record.index_kind == AgentMemoryIndexKind::Vector
+    if record.index_kind == ::Vector
         && (record.embedding_model_id.is_none() || record.vector_dimension.is_none())
     {
         return Err(KernelError::validation(
-            "vector memory index requires embeddingModelId and vectorDimension",
-        ));
+            "vector memory index requires embeddingModelId and vectorDimension"));
     }
     if let Some(embedding_model_id) = record.embedding_model_id.as_deref() {
         validate_standard_id(embedding_model_id, "embeddingModelId", Some("model."))?;
@@ -2051,47 +762,40 @@ fn validate_memory_retrieval_index_storage_contract(
     Ok(())
 }
 
-fn validate_knowledge_base_storage_contract(record: &AgentKnowledgeBaseRecord) -> KernelResult<()> {
+fn validate_knowledge_base_storage_contract(record: &) -> KernelResult<()> {
     validate_standard_id(
         record.knowledge_base_id.as_str(),
         "knowledgeBaseId",
-        Some("knowledge.base."),
-    )?;
+        Some("knowledge.base."))?;
     validate_slug_code(record.code.as_str(), "code")?;
     validate_non_empty_storage_text(record.display_name.as_str(), "displayName")?;
     validate_standard_id(record.provider_id.as_str(), "providerId", Some("provider."))?;
     validate_standard_id(
         record.configuration_profile_id.as_str(),
         "configurationProfileId",
-        Some("profile."),
-    )?;
+        Some("profile."))?;
     validate_knowledge_index_kinds(record.retrieval_modes.as_slice())?;
     validate_capabilities(record.capability_ids.as_slice(), "capabilityIds")
 }
 
 fn validate_knowledge_source_storage_contract(
-    record: &AgentKnowledgeSourceRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.knowledge_source_id.as_str(),
         "knowledgeSourceId",
-        Some("knowledge.source."),
-    )?;
+        Some("knowledge.source."))?;
     validate_standard_id(
         record.knowledge_base_id.as_str(),
         "knowledgeBaseId",
-        Some("knowledge.base."),
-    )?;
+        Some("knowledge.base."))?;
     validate_safe_storage_text_field(
         record.source_ref.as_str(),
         "sourceRef",
-        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS)?;
     validate_safe_storage_text_field(
         record.source_hash.as_str(),
         "sourceHash",
-        MAX_KNOWLEDGE_HASH_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_HASH_STORAGE_CHARS)?;
     validate_json_text(record.sync_policy_json.as_str(), "syncPolicyJson")?;
     reject_plaintext_secret_material(record.sync_policy_json.as_str(), "syncPolicyJson")?;
     validate_json_text(record.metadata_json.as_str(), "metadataJson")?;
@@ -2099,18 +803,15 @@ fn validate_knowledge_source_storage_contract(
 }
 
 fn validate_knowledge_document_storage_contract(
-    record: &AgentKnowledgeDocumentRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.knowledge_document_id.as_str(),
         "knowledgeDocumentId",
-        Some("knowledge.document."),
-    )?;
+        Some("knowledge.document."))?;
     validate_standard_id(
         record.knowledge_base_id.as_str(),
         "knowledgeBaseId",
-        Some("knowledge.base."),
-    )?;
+        Some("knowledge.base."))?;
     if let Some(source_id) = record.knowledge_source_id.as_deref() {
         validate_standard_id(source_id, "knowledgeSourceId", Some("knowledge.source."))?;
     }
@@ -2118,13 +819,11 @@ fn validate_knowledge_document_storage_contract(
     validate_safe_storage_text_field(
         record.content_ref.as_str(),
         "contentRef",
-        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS)?;
     validate_safe_storage_text_field(
         record.content_hash.as_str(),
         "contentHash",
-        MAX_KNOWLEDGE_HASH_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_HASH_STORAGE_CHARS)?;
     validate_optional_storage_text(record.summary.as_deref(), "summary")?;
     validate_json_text(record.metadata_json.as_str(), "metadataJson")?;
     reject_plaintext_secret_material(record.metadata_json.as_str(), "metadataJson")?;
@@ -2132,36 +831,30 @@ fn validate_knowledge_document_storage_contract(
     validate_slug_list(record.categories.as_slice(), "categories")?;
     if !(0..=5).contains(&record.trust_level) {
         return Err(KernelError::validation(
-            "trustLevel must be between 0 and 5",
-        ));
+            "trustLevel must be between 0 and 5"));
     }
     validate_safe_storage_text_field(
         record.redaction_classification.as_str(),
         "redactionClassification",
-        MAX_KNOWLEDGE_REDACTION_CLASSIFICATION_STORAGE_CHARS,
-    )
+        MAX_KNOWLEDGE_REDACTION_CLASSIFICATION_STORAGE_CHARS)
 }
 
 fn validate_knowledge_chunk_storage_contract(
-    record: &AgentKnowledgeChunkRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.knowledge_chunk_id.as_str(),
         "knowledgeChunkId",
-        Some("knowledge.chunk."),
-    )?;
+        Some("knowledge.chunk."))?;
     validate_standard_id(
         record.knowledge_document_id.as_str(),
         "knowledgeDocumentId",
-        Some("knowledge.document."),
-    )?;
+        Some("knowledge.document."))?;
     if let Some(parent_chunk_id) = record.parent_chunk_id.as_deref() {
         validate_standard_id(parent_chunk_id, "parentChunkId", Some("knowledge.chunk."))?;
     }
     if record.chunk_ordinal == 0 {
         return Err(KernelError::validation(
-            "chunkOrdinal must be greater than 0",
-        ));
+            "chunkOrdinal must be greater than 0"));
     }
     if let Some(heading) = record.heading.as_deref() {
         validate_safe_storage_text_field(heading, "heading", MAX_KNOWLEDGE_HEADING_STORAGE_CHARS)?;
@@ -2169,17 +862,14 @@ fn validate_knowledge_chunk_storage_contract(
     validate_safe_storage_text_field(
         record.content_ref.as_str(),
         "contentRef",
-        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS)?;
     validate_safe_storage_text_field(
         record.content_hash.as_str(),
         "contentHash",
-        MAX_KNOWLEDGE_HASH_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_HASH_STORAGE_CHARS)?;
     if record.token_estimate == 0 {
         return Err(KernelError::validation(
-            "tokenEstimate must be greater than 0",
-        ));
+            "tokenEstimate must be greater than 0"));
     }
     validate_optional_storage_text(record.summary.as_deref(), "summary")?;
     validate_json_text(record.metadata_json.as_str(), "metadataJson")?;
@@ -2187,58 +877,48 @@ fn validate_knowledge_chunk_storage_contract(
 }
 
 fn validate_knowledge_index_storage_contract(
-    record: &AgentKnowledgeIndexRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.knowledge_index_id.as_str(),
         "knowledgeIndexId",
-        Some("knowledge.index."),
-    )?;
+        Some("knowledge.index."))?;
     validate_standard_id(
         record.knowledge_base_id.as_str(),
         "knowledgeBaseId",
-        Some("knowledge.base."),
-    )?;
+        Some("knowledge.base."))?;
     if let Some(document_id) = record.knowledge_document_id.as_deref() {
         validate_standard_id(
             document_id,
             "knowledgeDocumentId",
-            Some("knowledge.document."),
-        )?;
+            Some("knowledge.document."))?;
     }
     if let Some(chunk_id) = record.knowledge_chunk_id.as_deref() {
         validate_standard_id(chunk_id, "knowledgeChunkId", Some("knowledge.chunk."))?;
         if record.knowledge_document_id.is_none() {
             return Err(KernelError::validation(
-                "knowledgeDocumentId is required when knowledgeChunkId is provided",
-            ));
+                "knowledgeDocumentId is required when knowledgeChunkId is provided"));
         }
     }
     validate_standard_id(
         record.index_provider_id.as_str(),
         "indexProviderId",
-        Some("provider."),
-    )?;
+        Some("provider."))?;
     validate_safe_storage_text_field(
         record.external_ref.as_str(),
         "externalRef",
-        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS)?;
     validate_safe_storage_text_field(
         record.content_hash.as_str(),
         "contentHash",
-        MAX_KNOWLEDGE_HASH_STORAGE_CHARS,
-    )?;
-    if record.index_kind == AgentKnowledgeIndexKind::Vector {
+        MAX_KNOWLEDGE_HASH_STORAGE_CHARS)?;
+    if record.index_kind == ::Vector {
         if record.embedding_model_id.is_none() || record.vector_dimension.is_none() {
             return Err(KernelError::validation(
-                "vector knowledge index requires embeddingModelId and vectorDimension",
-            ));
+                "vector knowledge index requires embeddingModelId and vectorDimension"));
         }
         if record.vector_dimension == Some(0) {
             return Err(KernelError::validation(
-                "vectorDimension must be greater than 0",
-            ));
+                "vectorDimension must be greater than 0"));
         }
     }
     if let Some(embedding_model_id) = record.embedding_model_id.as_deref() {
@@ -2248,18 +928,15 @@ fn validate_knowledge_index_storage_contract(
 }
 
 fn validate_knowledge_binding_storage_contract(
-    record: &AgentKnowledgeBindingRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.knowledge_binding_id.as_str(),
         "knowledgeBindingId",
-        Some("knowledge.binding."),
-    )?;
+        Some("knowledge.binding."))?;
     validate_standard_id(
         record.knowledge_base_id.as_str(),
         "knowledgeBaseId",
-        Some("knowledge.base."),
-    )?;
+        Some("knowledge.base."))?;
     if let Some(agent_id) = record.agent_id.as_deref() {
         validate_standard_id(agent_id, "agentId", Some("agent."))?;
     }
@@ -2269,81 +946,68 @@ fn validate_knowledge_binding_storage_contract(
     validate_safe_storage_text_field(
         record.scope_ref.as_str(),
         "scopeRef",
-        MAX_KNOWLEDGE_SCOPE_REF_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_SCOPE_REF_STORAGE_CHARS)?;
     validate_knowledge_binding_storage_scope(
         record.scope_kind,
         record.scope_ref.as_str(),
         record.agent_id.as_deref(),
-        record.deployment_id.as_deref(),
-    )
+        record.deployment_id.as_deref())
 }
 
 fn validate_knowledge_binding_storage_scope(
-    scope_kind: AgentKnowledgeBindingScopeKind,
-    scope_ref: &str,
+    scope_kind: scope_ref: &str,
     agent_id: Option<&str>,
-    deployment_id: Option<&str>,
-) -> KernelResult<()> {
+    deployment_id: Option<&str>) -> KernelResult<()> {
     match scope_kind {
-        AgentKnowledgeBindingScopeKind::Agent => {
+        ::Agent => {
             let Some(agent_id) = agent_id else {
                 return Err(KernelError::validation(
-                    "agentId is required for agent knowledge binding scope",
-                ));
+                    "agentId is required for agent knowledge binding scope"));
             };
             if scope_ref != agent_id {
                 return Err(KernelError::validation(
-                    "scopeRef must match agentId for agent knowledge binding scope",
-                ));
+                    "scopeRef must match agentId for agent knowledge binding scope"));
             }
         }
-        AgentKnowledgeBindingScopeKind::Deployment => {
+        ::Deployment => {
             if agent_id.is_none() {
                 return Err(KernelError::validation(
-                    "agentId is required for deployment knowledge binding scope",
-                ));
+                    "agentId is required for deployment knowledge binding scope"));
             }
             let Some(deployment_id) = deployment_id else {
                 return Err(KernelError::validation(
-                    "deploymentId is required for deployment knowledge binding scope",
-                ));
+                    "deploymentId is required for deployment knowledge binding scope"));
             };
             if scope_ref != deployment_id {
                 return Err(KernelError::validation(
-                    "scopeRef must match deploymentId for deployment knowledge binding scope",
-                ));
+                    "scopeRef must match deploymentId for deployment knowledge binding scope"));
             }
         }
-        AgentKnowledgeBindingScopeKind::User
-        | AgentKnowledgeBindingScopeKind::Session
-        | AgentKnowledgeBindingScopeKind::Organization
-        | AgentKnowledgeBindingScopeKind::Tenant => {}
+        ::User
+        | ::Session
+        | ::Organization
+        | ::Tenant => {}
     }
     Ok(())
 }
 
 fn validate_knowledge_sync_job_storage_contract(
-    record: &AgentKnowledgeSyncJobRecord,
-) -> KernelResult<()> {
+    record: &) -> KernelResult<()> {
     validate_standard_id(
         record.sync_job_id.as_str(),
         "syncJobId",
-        Some("knowledge.sync."),
-    )?;
+        Some("knowledge.sync."))?;
     validate_standard_id(
         record.knowledge_base_id.as_str(),
         "knowledgeBaseId",
-        Some("knowledge.base."),
-    )?;
+        Some("knowledge.base."))?;
     if let Some(source_id) = record.knowledge_source_id.as_deref() {
         validate_standard_id(source_id, "knowledgeSourceId", Some("knowledge.source."))?;
     }
     validate_safe_storage_text_field(
         record.input_ref.as_str(),
         "inputRef",
-        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS,
-    )?;
+        MAX_KNOWLEDGE_REFERENCE_STORAGE_CHARS)?;
     validate_json_text(record.input_json.as_str(), "inputJson")?;
     reject_plaintext_secret_material(record.input_json.as_str(), "inputJson")?;
     if let Some(output_json) = record.output_json.as_deref() {
@@ -2357,11 +1021,10 @@ fn validate_knowledge_sync_job_storage_contract(
     Ok(())
 }
 
-fn validate_memory_index_kinds(values: &[AgentMemoryIndexKind]) -> KernelResult<()> {
+fn validate_memory_index_kinds(values: &[]) -> KernelResult<()> {
     if values.is_empty() {
         return Err(KernelError::validation(
-            "retrievalModes must contain at least one mode",
-        ));
+            "retrievalModes must contain at least one mode"));
     }
     let mut seen = std::collections::HashSet::new();
     for value in values {
@@ -2375,11 +1038,10 @@ fn validate_memory_index_kinds(values: &[AgentMemoryIndexKind]) -> KernelResult<
     Ok(())
 }
 
-fn validate_knowledge_index_kinds(values: &[AgentKnowledgeIndexKind]) -> KernelResult<()> {
+fn validate_knowledge_index_kinds(values: &[]) -> KernelResult<()> {
     if values.is_empty() {
         return Err(KernelError::validation(
-            "retrievalModes must contain at least one mode",
-        ));
+            "retrievalModes must contain at least one mode"));
     }
     let mut seen = std::collections::HashSet::new();
     for value in values {
@@ -2423,8 +1085,7 @@ fn validate_optional_plain_storage_ref(value: Option<&str>, field_name: &str) ->
 fn validate_safe_storage_text_field(
     value: &str,
     field_name: &str,
-    max_chars: usize,
-) -> KernelResult<()> {
+    max_chars: usize) -> KernelResult<()> {
     validate_non_empty_storage_text(value, field_name)?;
     reject_plaintext_secret_material(value, field_name)?;
     if value.chars().count() > max_chars {
@@ -2515,7 +1176,7 @@ pub struct AgentAuditEventRow {
     pub uuid: String,
     pub tenant_id: u64,
     pub organization_id: u64,
-    pub agent_business_id: u64,
+    pub agent_internal_id: u64,
     pub agent_id: String,
     pub action: String,
     pub subject_id: String,
@@ -2532,9 +1193,8 @@ impl AgentAuditEventRow {
         id: u64,
         tenant_id: u64,
         organization_id: u64,
-        agent_business_id: u64,
-        agent_id: &str,
-    ) -> KernelResult<Self> {
+        agent_internal_id: u64,
+        agent_id: &str) -> KernelResult<Self> {
         let occurred_at = event
             .occurred_at
             .clone()
@@ -2545,7 +1205,7 @@ impl AgentAuditEventRow {
             uuid: format!("audit_{}_{}", tenant_id, event.event_id),
             tenant_id,
             organization_id,
-            agent_business_id,
+            agent_internal_id,
             agent_id: agent_id.to_string(),
             action: event
                 .event_type
@@ -2586,8 +1246,7 @@ impl AgentAuditEventRow {
             payload.event_id,
             payload.event_type,
             severity_from_str(payload.severity.as_str())?,
-            payload.payload,
-        )
+            payload.payload)
         .from_source(source_from_str(payload.source.as_str())?)
         .occurred_at(self.created_at))
     }
@@ -2599,18 +1258,15 @@ impl AgentAuditEventRow {
             uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
             tenant_id: int64_to_u64(
                 row.try_get::<i64, _>("tenant_id").map_err(map_sqlx_error)?,
-                "tenant_id",
-            )?,
+                "tenant_id")?,
             organization_id: int64_to_u64(
                 row.try_get::<i64, _>("organization_id")
                     .map_err(map_sqlx_error)?,
-                "organization_id",
-            )?,
-            agent_business_id: int64_to_u64(
-                row.try_get::<i64, _>("agent_business_id")
+                "organization_id")?,
+            agent_internal_id: int64_to_u64(
+                row.try_get::<i64, _>("agent_internal_id")
                     .map_err(map_sqlx_error)?,
-                "agent_business_id",
-            )?,
+                "agent_internal_id")?,
             agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
             action: row.try_get("action").map_err(map_sqlx_error)?,
             subject_id: row.try_get("subject_id").map_err(map_sqlx_error)?,
@@ -2635,13 +1291,11 @@ pub trait PostgresAgentRepositoryAdapter {
         &self,
         tenant_id: u64,
         agent_id: &str,
-        binding_id: &str,
-    ) -> Option<AgentProviderBindingRow>;
+        binding_id: &str) -> Option<AgentProviderBindingRow>;
     fn list_provider_binding_rows(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> Vec<AgentProviderBindingRow>;
+        agent_id: &str) -> Vec<AgentProviderBindingRow>;
     fn insert_deployment_row(&mut self, row: AgentDeploymentRow) -> KernelResult<()>;
     fn list_deployment_rows(&self, tenant_id: u64, agent_id: &str) -> Vec<AgentDeploymentRow>;
     fn insert_mcp_server_row(&mut self, row: AgentMcpServerRow) -> KernelResult<()>;
@@ -2653,24 +1307,20 @@ pub trait PostgresAgentRepositoryAdapter {
     fn get_knowledge_base_row(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Option<AgentKnowledgeBaseRow>;
+        knowledge_base_id: &str) -> Option<AgentKnowledgeBaseRow>;
     fn list_knowledge_base_rows(
         &self,
-        query: &AgentMarketplaceListQuery,
-    ) -> Vec<AgentKnowledgeBaseRow>;
+        query: &AgentMarketplaceListQuery) -> Vec<AgentKnowledgeBaseRow>;
     fn insert_knowledge_source_row(&mut self, row: AgentKnowledgeSourceRow) -> KernelResult<()>;
     fn update_knowledge_source_row(&mut self, row: AgentKnowledgeSourceRow) -> KernelResult<()>;
     fn get_knowledge_source_row(
         &self,
         tenant_id: u64,
-        knowledge_source_id: &str,
-    ) -> Option<AgentKnowledgeSourceRow>;
+        knowledge_source_id: &str) -> Option<AgentKnowledgeSourceRow>;
     fn list_knowledge_source_rows(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSourceRow>;
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeSourceRow>;
     fn insert_knowledge_document_row(&mut self, row: AgentKnowledgeDocumentRow)
         -> KernelResult<()>;
     fn update_knowledge_document_row(&mut self, row: AgentKnowledgeDocumentRow)
@@ -2678,133 +1328,122 @@ pub trait PostgresAgentRepositoryAdapter {
     fn get_knowledge_document_row(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Option<AgentKnowledgeDocumentRow>;
+        knowledge_document_id: &str) -> Option<AgentKnowledgeDocumentRow>;
     fn list_knowledge_document_rows(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeDocumentRow>;
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeDocumentRow>;
     fn insert_knowledge_chunk_row(&mut self, row: AgentKnowledgeChunkRow) -> KernelResult<()>;
     fn get_knowledge_chunk_row(
         &self,
         tenant_id: u64,
-        knowledge_chunk_id: &str,
-    ) -> Option<AgentKnowledgeChunkRow>;
+        knowledge_chunk_id: &str) -> Option<AgentKnowledgeChunkRow>;
     fn list_knowledge_chunk_rows(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeChunkRow>;
+        knowledge_document_id: &str) -> Vec<AgentKnowledgeChunkRow>;
     fn upsert_knowledge_index_row(&mut self, row: AgentKnowledgeIndexRow) -> KernelResult<()>;
     fn get_knowledge_index_row(
         &self,
         tenant_id: u64,
-        knowledge_index_id: &str,
-    ) -> Option<AgentKnowledgeIndexRow>;
+        knowledge_index_id: &str) -> Option<AgentKnowledgeIndexRow>;
     fn list_knowledge_index_rows(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRow>;
+        knowledge_document_id: &str) -> Vec<AgentKnowledgeIndexRow>;
     fn list_knowledge_index_rows_by_base(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRow>;
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeIndexRow>;
     fn insert_knowledge_binding_row(&mut self, row: AgentKnowledgeBindingRow) -> KernelResult<()>;
     fn get_knowledge_binding_row(
         &self,
         tenant_id: u64,
-        knowledge_binding_id: &str,
-    ) -> Option<AgentKnowledgeBindingRow>;
+        knowledge_binding_id: &str) -> Option<AgentKnowledgeBindingRow>;
     fn list_knowledge_binding_rows(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeBindingRow>;
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeBindingRow>;
     fn insert_knowledge_sync_job_row(&mut self, row: AgentKnowledgeSyncJobRow) -> KernelResult<()>;
     fn update_knowledge_sync_job_row(&mut self, row: AgentKnowledgeSyncJobRow) -> KernelResult<()>;
     fn get_knowledge_sync_job_row(
         &self,
         tenant_id: u64,
-        sync_job_id: &str,
-    ) -> Option<AgentKnowledgeSyncJobRow>;
+        sync_job_id: &str) -> Option<AgentKnowledgeSyncJobRow>;
     fn list_knowledge_sync_job_rows(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSyncJobRow>;
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeSyncJobRow>;
     fn insert_memory_store_row(&mut self, row: AgentMemoryStoreRow) -> KernelResult<()>;
     fn update_memory_store_row(&mut self, row: AgentMemoryStoreRow) -> KernelResult<()>;
     fn get_memory_store_row(
         &self,
         tenant_id: u64,
-        memory_store_id: &str,
-    ) -> Option<AgentMemoryStoreRow>;
+        memory_store_id: &str) -> Option<AgentMemoryStoreRow>;
     fn insert_memory_profile_row(&mut self, row: AgentMemoryProfileRow) -> KernelResult<()>;
     fn get_memory_profile_row(
         &self,
         tenant_id: u64,
-        memory_profile_id: &str,
-    ) -> Option<AgentMemoryProfileRow>;
+        memory_profile_id: &str) -> Option<AgentMemoryProfileRow>;
     fn insert_memory_binding_row(&mut self, row: AgentMemoryBindingRow) -> KernelResult<()>;
     fn get_memory_binding_row(
         &self,
         tenant_id: u64,
-        memory_binding_id: &str,
-    ) -> Option<AgentMemoryBindingRow>;
+        memory_binding_id: &str) -> Option<AgentMemoryBindingRow>;
     fn insert_memory_namespace_row(&mut self, row: AgentMemoryNamespaceRow) -> KernelResult<()>;
     fn get_memory_namespace_row(
         &self,
         tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Option<AgentMemoryNamespaceRow>;
+        memory_namespace_id: &str) -> Option<AgentMemoryNamespaceRow>;
     fn insert_memory_record_row(&mut self, row: AgentMemoryRecordRow) -> KernelResult<()>;
     fn update_memory_record_row(&mut self, row: AgentMemoryRecordRow) -> KernelResult<()>;
     fn get_memory_record_row(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Option<AgentMemoryRecordRow>;
+        memory_id: &str) -> Option<AgentMemoryRecordRow>;
     fn list_memory_record_rows(
         &self,
         tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Vec<AgentMemoryRecordRow>;
+        memory_namespace_id: &str) -> Vec<AgentMemoryRecordRow>;
     fn insert_memory_source_row(&mut self, row: AgentMemorySourceRow) -> KernelResult<()>;
     fn get_memory_source_row(
         &self,
         tenant_id: u64,
-        memory_source_id: &str,
-    ) -> Option<AgentMemorySourceRow>;
+        memory_source_id: &str) -> Option<AgentMemorySourceRow>;
     fn list_memory_source_rows(&self, tenant_id: u64, memory_id: &str)
         -> Vec<AgentMemorySourceRow>;
     fn insert_memory_relation_row(&mut self, row: AgentMemoryRelationRow) -> KernelResult<()>;
     fn get_memory_relation_row(
         &self,
         tenant_id: u64,
-        memory_relation_id: &str,
-    ) -> Option<AgentMemoryRelationRow>;
+        memory_relation_id: &str) -> Option<AgentMemoryRelationRow>;
     fn list_memory_relation_rows(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRelationRow>;
+        memory_id: &str) -> Vec<AgentMemoryRelationRow>;
     fn upsert_memory_retrieval_index_row(
         &mut self,
-        row: AgentMemoryRetrievalIndexRow,
-    ) -> KernelResult<()>;
+        row: AgentMemoryRetrievalIndexRow) -> KernelResult<()>;
     fn get_memory_retrieval_index_row(
         &self,
         tenant_id: u64,
-        memory_index_id: &str,
-    ) -> Option<AgentMemoryRetrievalIndexRow>;
+        memory_index_id: &str) -> Option<AgentMemoryRetrievalIndexRow>;
     fn list_memory_retrieval_index_rows(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRetrievalIndexRow>;
+        memory_id: &str) -> Vec<AgentMemoryRetrievalIndexRow>;
+
+    fn insert_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()>;
+    fn update_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()>;
+    fn get_composition_slot_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str) -> Option<AgentCompositionSlotRow>;
+    fn list_composition_slot_rows(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentCompositionSlotRow>;
 }
 
 pub struct PostgresAgentRepository<A>
@@ -2869,8 +1508,7 @@ where
         &self,
         tenant_id: u64,
         agent_id: &str,
-        binding_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
+        binding_id: &str) -> Option<AgentProviderBindingRecord> {
         self.adapter
             .get_provider_binding_row(tenant_id, agent_id, binding_id)
             .and_then(|row| row.into_record().ok())
@@ -2879,8 +1517,7 @@ where
     fn list_provider_bindings(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> Vec<AgentProviderBindingRecord> {
+        agent_id: &str) -> Vec<AgentProviderBindingRecord> {
         self.adapter
             .list_provider_binding_rows(tenant_id, agent_id)
             .into_iter()
@@ -2925,12 +1562,12 @@ where
             .collect()
     }
 
-    fn insert_knowledge_base(&mut self, record: AgentKnowledgeBaseRecord) -> KernelResult<()> {
+    fn insert_knowledge_base(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_knowledge_base_row(AgentKnowledgeBaseRow::from_record(&record)?)
     }
 
-    fn update_knowledge_base(&mut self, record: AgentKnowledgeBaseRecord) -> KernelResult<()> {
+    fn update_knowledge_base(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .update_knowledge_base_row(AgentKnowledgeBaseRow::from_record(&record)?)
     }
@@ -2938,8 +1575,7 @@ where
     fn get_knowledge_base(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Option<AgentKnowledgeBaseRecord> {
+        knowledge_base_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_base_row(tenant_id, knowledge_base_id)
             .and_then(|row| row.into_record().ok())
@@ -2947,8 +1583,7 @@ where
 
     fn list_knowledge_bases(
         &self,
-        query: &AgentMarketplaceListQuery,
-    ) -> Vec<AgentKnowledgeBaseRecord> {
+        query: &AgentMarketplaceListQuery) -> Vec<> {
         self.adapter
             .list_knowledge_base_rows(query)
             .into_iter()
@@ -2956,12 +1591,12 @@ where
             .collect()
     }
 
-    fn insert_knowledge_source(&mut self, record: AgentKnowledgeSourceRecord) -> KernelResult<()> {
+    fn insert_knowledge_source(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_knowledge_source_row(AgentKnowledgeSourceRow::from_record(&record)?)
     }
 
-    fn update_knowledge_source(&mut self, record: AgentKnowledgeSourceRecord) -> KernelResult<()> {
+    fn update_knowledge_source(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .update_knowledge_source_row(AgentKnowledgeSourceRow::from_record(&record)?)
     }
@@ -2969,8 +1604,7 @@ where
     fn get_knowledge_source(
         &self,
         tenant_id: u64,
-        knowledge_source_id: &str,
-    ) -> Option<AgentKnowledgeSourceRecord> {
+        knowledge_source_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_source_row(tenant_id, knowledge_source_id)
             .and_then(|row| row.into_record().ok())
@@ -2979,8 +1613,7 @@ where
     fn list_knowledge_sources(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSourceRecord> {
+        knowledge_base_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_source_rows(tenant_id, knowledge_base_id)
             .into_iter()
@@ -2990,16 +1623,14 @@ where
 
     fn insert_knowledge_document(
         &mut self,
-        record: AgentKnowledgeDocumentRecord,
-    ) -> KernelResult<()> {
+        record: ) -> KernelResult<()> {
         self.adapter
             .insert_knowledge_document_row(AgentKnowledgeDocumentRow::from_record(&record)?)
     }
 
     fn update_knowledge_document(
         &mut self,
-        record: AgentKnowledgeDocumentRecord,
-    ) -> KernelResult<()> {
+        record: ) -> KernelResult<()> {
         self.adapter
             .update_knowledge_document_row(AgentKnowledgeDocumentRow::from_record(&record)?)
     }
@@ -3007,8 +1638,7 @@ where
     fn get_knowledge_document(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Option<AgentKnowledgeDocumentRecord> {
+        knowledge_document_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_document_row(tenant_id, knowledge_document_id)
             .and_then(|row| row.into_record().ok())
@@ -3017,8 +1647,7 @@ where
     fn list_knowledge_documents(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeDocumentRecord> {
+        knowledge_base_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_document_rows(tenant_id, knowledge_base_id)
             .into_iter()
@@ -3026,7 +1655,7 @@ where
             .collect()
     }
 
-    fn insert_knowledge_chunk(&mut self, record: AgentKnowledgeChunkRecord) -> KernelResult<()> {
+    fn insert_knowledge_chunk(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_knowledge_chunk_row(AgentKnowledgeChunkRow::from_record(&record)?)
     }
@@ -3034,8 +1663,7 @@ where
     fn get_knowledge_chunk(
         &self,
         tenant_id: u64,
-        knowledge_chunk_id: &str,
-    ) -> Option<AgentKnowledgeChunkRecord> {
+        knowledge_chunk_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_chunk_row(tenant_id, knowledge_chunk_id)
             .and_then(|row| row.into_record().ok())
@@ -3044,8 +1672,7 @@ where
     fn list_knowledge_chunks(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeChunkRecord> {
+        knowledge_document_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_chunk_rows(tenant_id, knowledge_document_id)
             .into_iter()
@@ -3053,7 +1680,7 @@ where
             .collect()
     }
 
-    fn upsert_knowledge_index(&mut self, record: AgentKnowledgeIndexRecord) -> KernelResult<()> {
+    fn upsert_knowledge_index(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .upsert_knowledge_index_row(AgentKnowledgeIndexRow::from_record(&record)?)
     }
@@ -3061,8 +1688,7 @@ where
     fn get_knowledge_index(
         &self,
         tenant_id: u64,
-        knowledge_index_id: &str,
-    ) -> Option<AgentKnowledgeIndexRecord> {
+        knowledge_index_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_index_row(tenant_id, knowledge_index_id)
             .and_then(|row| row.into_record().ok())
@@ -3071,8 +1697,7 @@ where
     fn list_knowledge_indexes(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRecord> {
+        knowledge_document_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_index_rows(tenant_id, knowledge_document_id)
             .into_iter()
@@ -3083,8 +1708,7 @@ where
     fn list_knowledge_indexes_by_base(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRecord> {
+        knowledge_base_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_index_rows_by_base(tenant_id, knowledge_base_id)
             .into_iter()
@@ -3094,8 +1718,7 @@ where
 
     fn insert_knowledge_binding(
         &mut self,
-        record: AgentKnowledgeBindingRecord,
-    ) -> KernelResult<()> {
+        record: ) -> KernelResult<()> {
         self.adapter
             .insert_knowledge_binding_row(AgentKnowledgeBindingRow::from_record(&record)?)
     }
@@ -3103,8 +1726,7 @@ where
     fn get_knowledge_binding(
         &self,
         tenant_id: u64,
-        knowledge_binding_id: &str,
-    ) -> Option<AgentKnowledgeBindingRecord> {
+        knowledge_binding_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_binding_row(tenant_id, knowledge_binding_id)
             .and_then(|row| row.into_record().ok())
@@ -3113,8 +1735,7 @@ where
     fn list_knowledge_bindings(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeBindingRecord> {
+        knowledge_base_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_binding_rows(tenant_id, knowledge_base_id)
             .into_iter()
@@ -3124,16 +1745,14 @@ where
 
     fn insert_knowledge_sync_job(
         &mut self,
-        record: AgentKnowledgeSyncJobRecord,
-    ) -> KernelResult<()> {
+        record: ) -> KernelResult<()> {
         self.adapter
             .insert_knowledge_sync_job_row(AgentKnowledgeSyncJobRow::from_record(&record)?)
     }
 
     fn update_knowledge_sync_job(
         &mut self,
-        record: AgentKnowledgeSyncJobRecord,
-    ) -> KernelResult<()> {
+        record: ) -> KernelResult<()> {
         self.adapter
             .update_knowledge_sync_job_row(AgentKnowledgeSyncJobRow::from_record(&record)?)
     }
@@ -3141,8 +1760,7 @@ where
     fn get_knowledge_sync_job(
         &self,
         tenant_id: u64,
-        sync_job_id: &str,
-    ) -> Option<AgentKnowledgeSyncJobRecord> {
+        sync_job_id: &str) -> Option<> {
         self.adapter
             .get_knowledge_sync_job_row(tenant_id, sync_job_id)
             .and_then(|row| row.into_record().ok())
@@ -3151,8 +1769,7 @@ where
     fn list_knowledge_sync_jobs(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSyncJobRecord> {
+        knowledge_base_id: &str) -> Vec<> {
         self.adapter
             .list_knowledge_sync_job_rows(tenant_id, knowledge_base_id)
             .into_iter()
@@ -3160,12 +1777,12 @@ where
             .collect()
     }
 
-    fn insert_memory_store(&mut self, record: AgentMemoryStoreRecord) -> KernelResult<()> {
+    fn insert_memory_store(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_memory_store_row(AgentMemoryStoreRow::from_record(&record)?)
     }
 
-    fn update_memory_store(&mut self, record: AgentMemoryStoreRecord) -> KernelResult<()> {
+    fn update_memory_store(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .update_memory_store_row(AgentMemoryStoreRow::from_record(&record)?)
     }
@@ -3173,14 +1790,13 @@ where
     fn get_memory_store(
         &self,
         tenant_id: u64,
-        memory_store_id: &str,
-    ) -> Option<AgentMemoryStoreRecord> {
+        memory_store_id: &str) -> Option<> {
         self.adapter
             .get_memory_store_row(tenant_id, memory_store_id)
             .and_then(|row| row.into_record().ok())
     }
 
-    fn insert_memory_profile(&mut self, record: AgentMemoryProfileRecord) -> KernelResult<()> {
+    fn insert_memory_profile(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_memory_profile_row(AgentMemoryProfileRow::from_record(&record)?)
     }
@@ -3188,14 +1804,13 @@ where
     fn get_memory_profile(
         &self,
         tenant_id: u64,
-        memory_profile_id: &str,
-    ) -> Option<AgentMemoryProfileRecord> {
+        memory_profile_id: &str) -> Option<> {
         self.adapter
             .get_memory_profile_row(tenant_id, memory_profile_id)
             .and_then(|row| row.into_record().ok())
     }
 
-    fn insert_memory_binding(&mut self, record: AgentMemoryBindingRecord) -> KernelResult<()> {
+    fn insert_memory_binding(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_memory_binding_row(AgentMemoryBindingRow::from_record(&record)?)
     }
@@ -3203,14 +1818,13 @@ where
     fn get_memory_binding(
         &self,
         tenant_id: u64,
-        memory_binding_id: &str,
-    ) -> Option<AgentMemoryBindingRecord> {
+        memory_binding_id: &str) -> Option<> {
         self.adapter
             .get_memory_binding_row(tenant_id, memory_binding_id)
             .and_then(|row| row.into_record().ok())
     }
 
-    fn insert_memory_namespace(&mut self, record: AgentMemoryNamespaceRecord) -> KernelResult<()> {
+    fn insert_memory_namespace(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_memory_namespace_row(AgentMemoryNamespaceRow::from_record(&record)?)
     }
@@ -3218,8 +1832,7 @@ where
     fn get_memory_namespace(
         &self,
         tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Option<AgentMemoryNamespaceRecord> {
+        memory_namespace_id: &str) -> Option<> {
         self.adapter
             .get_memory_namespace_row(tenant_id, memory_namespace_id)
             .and_then(|row| row.into_record().ok())
@@ -3244,8 +1857,7 @@ where
     fn list_memory_records(
         &self,
         tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Vec<AgentMemoryRecord> {
+        memory_namespace_id: &str) -> Vec<AgentMemoryRecord> {
         self.adapter
             .list_memory_record_rows(tenant_id, memory_namespace_id)
             .into_iter()
@@ -3253,12 +1865,12 @@ where
             .collect()
     }
 
-    fn insert_memory_source(&mut self, record: AgentMemorySourceRecord) -> KernelResult<()> {
+    fn insert_memory_source(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_memory_source_row(AgentMemorySourceRow::from_record(&record)?)
     }
 
-    fn list_memory_sources(&self, tenant_id: u64, memory_id: &str) -> Vec<AgentMemorySourceRecord> {
+    fn list_memory_sources(&self, tenant_id: u64, memory_id: &str) -> Vec<> {
         self.adapter
             .list_memory_source_rows(tenant_id, memory_id)
             .into_iter()
@@ -3269,14 +1881,13 @@ where
     fn get_memory_source(
         &self,
         tenant_id: u64,
-        memory_source_id: &str,
-    ) -> Option<AgentMemorySourceRecord> {
+        memory_source_id: &str) -> Option<> {
         self.adapter
             .get_memory_source_row(tenant_id, memory_source_id)
             .and_then(|row| row.into_record().ok())
     }
 
-    fn insert_memory_relation(&mut self, record: AgentMemoryRelationRecord) -> KernelResult<()> {
+    fn insert_memory_relation(&mut self, record: ) -> KernelResult<()> {
         self.adapter
             .insert_memory_relation_row(AgentMemoryRelationRow::from_record(&record)?)
     }
@@ -3284,8 +1895,7 @@ where
     fn list_memory_relations(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRelationRecord> {
+        memory_id: &str) -> Vec<> {
         self.adapter
             .list_memory_relation_rows(tenant_id, memory_id)
             .into_iter()
@@ -3296,8 +1906,7 @@ where
     fn get_memory_relation(
         &self,
         tenant_id: u64,
-        memory_relation_id: &str,
-    ) -> Option<AgentMemoryRelationRecord> {
+        memory_relation_id: &str) -> Option<> {
         self.adapter
             .get_memory_relation_row(tenant_id, memory_relation_id)
             .and_then(|row| row.into_record().ok())
@@ -3305,8 +1914,7 @@ where
 
     fn upsert_memory_retrieval_index(
         &mut self,
-        record: AgentMemoryRetrievalIndexRecord,
-    ) -> KernelResult<()> {
+        record: ) -> KernelResult<()> {
         self.adapter
             .upsert_memory_retrieval_index_row(AgentMemoryRetrievalIndexRow::from_record(&record)?)
     }
@@ -3314,8 +1922,7 @@ where
     fn list_memory_retrieval_indexes(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRetrievalIndexRecord> {
+        memory_id: &str) -> Vec<> {
         self.adapter
             .list_memory_retrieval_index_rows(tenant_id, memory_id)
             .into_iter()
@@ -3326,12 +1933,42 @@ where
     fn get_memory_retrieval_index(
         &self,
         tenant_id: u64,
-        retrieval_index_id: &str,
-    ) -> Option<AgentMemoryRetrievalIndexRecord> {
+        retrieval_index_id: &str) -> Option<> {
         self.adapter
             .get_memory_retrieval_index_row(tenant_id, retrieval_index_id)
             .and_then(|row| row.into_record().ok())
     }
+    fn insert_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_composition_slot_row(AgentCompositionSlotRow::from_record(&record)?)
+    }
+
+    fn update_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.adapter
+            .update_composition_slot_row(AgentCompositionSlotRow::from_record(&record)?)
+    }
+
+    fn get_composition_slot(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str) -> Option<AgentCompositionSlotRecord> {
+        self.adapter
+            .get_composition_slot_row(tenant_id, agent_id, slot_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn list_composition_slots(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentCompositionSlotRecord> {
+        self.adapter
+            .list_composition_slot_rows(tenant_id, agent_id)
+            .into_iter()
+            .filter_map(|row| row.into_record().ok())
+            .collect()
+    }
+
 }
 
 pub trait PostgresAuditAdapter {
@@ -3340,11 +1977,135 @@ pub trait PostgresAuditAdapter {
     fn list_audit_rows(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> KernelResult<Vec<AgentAuditEventRow>> {
+        agent_id: &str) -> KernelResult<Vec<AgentAuditEventRow>> {
         let _ = (tenant_id, agent_id);
         Ok(Vec::new())
     }
+    fn insert_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_COMPOSITION_SLOT,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.agent_id,
+                row.slot_id,
+                row.slot_kind,
+                row.target_module,
+                row.target_ref,
+                row.target_version_ref,
+                row.priority,
+                row.enabled,
+                row.policy_json,
+                row.status,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.deleted_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let expected_version = u64_to_i64(row.version.saturating_sub(1), "version")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_COMPOSITION_SLOT,
+                organization_id,
+                row.slot_kind,
+                row.target_module,
+                row.target_ref,
+                row.target_version_ref,
+                row.priority,
+                row.enabled,
+                row.policy_json,
+                row.status,
+                version,
+                row.updated_at,
+                row.deleted_at,
+                tenant_id,
+                row.agent_id,
+                row.slot_id,
+                expected_version
+            )?;
+            Ok(())
+        })
+    }
+
+    fn get_composition_slot_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str) -> Option<AgentCompositionSlotRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_COMPOSITION_SLOT,
+                tenant_id,
+                agent_id,
+                slot_id
+            )?;
+            row.map(pg_row_to_agent_composition_slot_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn list_composition_slot_rows(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentCompositionSlotRow> {
+        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        };
+        self.with_pool(|pool| {
+            let rows = pg_query!(pool, SQL_LIST_AGENT_COMPOSITION_SLOTS, tenant_id, agent_id)?;
+            rows.into_iter()
+                .map(pg_row_to_agent_composition_slot_row)
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_composition_slot_row(row: PgRow) -> KernelResult<AgentCompositionSlotRow> {
+    Ok(AgentCompositionSlotRow {
+        id: int64_to_u64(row.try_get::<i64, _>("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(row.try_get::<i64, _>("tenant_id").map_err(map_sqlx_error)?, "tenant_id")?,
+        organization_id: int64_to_u64(
+            row.try_get::<i64, _>("organization_id").map_err(map_sqlx_error)?,
+            "organization_id")?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        slot_id: row.try_get("slot_id").map_err(map_sqlx_error)?,
+        slot_kind: row.try_get("slot_kind").map_err(map_sqlx_error)?,
+        target_module: row.try_get("target_module").map_err(map_sqlx_error)?,
+        target_ref: row.try_get("target_ref").map_err(map_sqlx_error)?,
+        target_version_ref: row.try_get("target_version_ref").map_err(map_sqlx_error)?,
+        priority: row.try_get("priority").map_err(map_sqlx_error)?,
+        enabled: row.try_get("enabled").map_err(map_sqlx_error)?,
+        policy_json: row.try_get("policy_json").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get::<i64, _>("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
+    })
+}
+
 }
 
 #[cfg(feature = "postgres-sync")]
@@ -3393,8 +2154,7 @@ impl SyncPostgresAdapter {
 
     pub fn with_pool_and_id_generator(
         pool: BlockingPostgresPool,
-        id_generator: AgentBusinessIdGenerator,
-    ) -> Self {
+        id_generator: AgentBusinessIdGenerator) -> Self {
         Self { pool, id_generator }
     }
 
@@ -3405,8 +2165,7 @@ impl SyncPostgresAdapter {
 
     fn with_pool<T>(
         &self,
-        action: impl FnOnce(&BlockingPostgresPool) -> KernelResult<T>,
-    ) -> KernelResult<T> {
+        action: impl FnOnce(&BlockingPostgresPool) -> KernelResult<T>) -> KernelResult<T> {
         action(&self.pool)
     }
 }
@@ -3427,7 +2186,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             pg_execute!(
                 pool,
-                SQL_INSERT_AGENT_BUSINESS,
+                SQL_INSERT_AGENT,
                 id,
                 row.uuid,
                 tenant_id,
@@ -3465,7 +2224,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             let updated_rows = pg_execute!(
                 pool,
-                SQL_UPDATE_AGENT_BUSINESS,
+                SQL_UPDATE_AGENT,
                 organization_id,
                 owner_user_id,
                 row.code,
@@ -3526,7 +2285,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         };
 
         self.with_pool(|pool| {
-            let rows = pg_query!(pool, SQL_LIST_AGENT_BUSINESS, tenant_id)?;
+            let rows = pg_query!(pool, SQL_LIST_AGENT, tenant_id)?;
 
             let mut mapped_rows = Vec::with_capacity(rows.len());
             for row in rows {
@@ -3646,8 +2405,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .is_some();
                 if exists {
                     return Err(KernelError::conflict(
-                        "agent provider binding version mismatch",
-                    ));
+                        "agent provider binding version mismatch"));
                 }
                 return Err(KernelError::validation("agent provider binding not found"));
             }
@@ -3659,8 +2417,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         &self,
         tenant_id: u64,
         agent_id: &str,
-        binding_id: &str,
-    ) -> Option<AgentProviderBindingRow> {
+        binding_id: &str) -> Option<AgentProviderBindingRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -3679,8 +2436,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_provider_binding_rows(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> Vec<AgentProviderBindingRow> {
+        agent_id: &str) -> Vec<AgentProviderBindingRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -3883,173 +2639,6 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                         row.visibility,
                         row.deleted_at.as_deref(),
                         row.mcp_server_id.as_str(),
-                        row.code.as_str(),
-                        row.display_name.as_str(),
-                        row.description.as_deref(),
-                        row.categories_json.as_str(),
-                        row.tags_json.as_str(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn insert_knowledge_base_row(&mut self, row: AgentKnowledgeBaseRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_KNOWLEDGE_BASE,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                owner_user_id,
-                row.knowledge_base_id,
-                row.code,
-                row.display_name,
-                row.description,
-                row.provider_id,
-                row.base_kind,
-                row.retrieval_modes_json,
-                row.capability_ids_json,
-                row.configuration_profile_id,
-                row.status,
-                row.visibility,
-                version,
-                row.created_at,
-                row.updated_at,
-                row.deleted_at
-            )?;
-            Ok(())
-        })
-    }
-
-    fn update_knowledge_base_row(&mut self, row: AgentKnowledgeBaseRow) -> KernelResult<()> {
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        let previous_version =
-            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
-        self.with_pool(|pool| {
-            let updated_rows = pg_execute!(
-                pool,
-                SQL_UPDATE_AGENT_KNOWLEDGE_BASE,
-                organization_id,
-                owner_user_id,
-                row.code,
-                row.display_name,
-                row.description,
-                row.provider_id,
-                row.base_kind,
-                row.retrieval_modes_json,
-                row.capability_ids_json,
-                row.configuration_profile_id,
-                row.status,
-                row.visibility,
-                version,
-                row.updated_at,
-                row.deleted_at,
-                tenant_id,
-                row.knowledge_base_id,
-                previous_version
-            )?;
-            if updated_rows == 0 {
-                let exists = pg_query_optional!(
-                    pool,
-                    SQL_SELECT_AGENT_KNOWLEDGE_BASE,
-                    tenant_id,
-                    row.knowledge_base_id
-                )?
-                .is_some();
-                if exists {
-                    return Err(KernelError::conflict(
-                        "agent knowledge base version mismatch",
-                    ));
-                }
-                return Err(KernelError::validation("agent knowledge base not found"));
-            }
-            Ok(())
-        })
-    }
-
-    fn get_knowledge_base_row(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Option<AgentKnowledgeBaseRow> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_SELECT_AGENT_KNOWLEDGE_BASE,
-                tenant_id,
-                knowledge_base_id
-            )?;
-            row.map(pg_row_to_agent_knowledge_base_row).transpose()
-        })
-        .ok()
-        .flatten()
-    }
-
-    fn list_knowledge_base_rows(
-        &self,
-        query: &AgentMarketplaceListQuery,
-    ) -> Vec<AgentKnowledgeBaseRow> {
-        let tenant_id = match u64_to_i64(query.tenant_id, "tenant_id") {
-            Ok(value) => value,
-            Err(_) => return Vec::new(),
-        };
-        self.with_pool(|pool| {
-            let rows = pg_query!(pool, SQL_LIST_AGENT_KNOWLEDGE_BASES, tenant_id)?;
-            rows.into_iter()
-                .map(pg_row_to_agent_knowledge_base_row)
-                .collect()
-        })
-        .map(|rows: Vec<AgentKnowledgeBaseRow>| {
-            rows.into_iter()
-                .filter(|row| {
-                    marketplace_row_matches(
-                        query,
-                        row.organization_id,
-                        row.owner_user_id,
-                        row.status,
-                        row.visibility,
-                        row.deleted_at.as_deref(),
-                        row.knowledge_base_id.as_str(),
-                        row.code.as_str(),
-                        row.display_name.as_str(),
-                        row.description.as_deref(),
-                        "[]",
-                        "[]",
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn insert_knowledge_source_row(&mut self, row: AgentKnowledgeSourceRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_KNOWLEDGE_SOURCE,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                row.knowledge_source_id,
-                row.knowledge_base_id,
                 row.source_kind,
                 row.source_ref,
                 row.source_hash,
@@ -4100,8 +2689,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .is_some();
                 if exists {
                     return Err(KernelError::conflict(
-                        "agent knowledge source version mismatch",
-                    ));
+                        "agent knowledge source version mismatch"));
                 }
                 return Err(KernelError::validation("agent knowledge source not found"));
             }
@@ -4112,8 +2700,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_knowledge_source_row(
         &self,
         tenant_id: u64,
-        knowledge_source_id: &str,
-    ) -> Option<AgentKnowledgeSourceRow> {
+        knowledge_source_id: &str) -> Option<AgentKnowledgeSourceRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -4131,8 +2718,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_knowledge_source_rows(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSourceRow> {
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeSourceRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -4153,8 +2739,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn insert_knowledge_document_row(
         &mut self,
-        row: AgentKnowledgeDocumentRow,
-    ) -> KernelResult<()> {
+        row: AgentKnowledgeDocumentRow) -> KernelResult<()> {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
@@ -4195,8 +2780,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn update_knowledge_document_row(
         &mut self,
-        row: AgentKnowledgeDocumentRow,
-    ) -> KernelResult<()> {
+        row: AgentKnowledgeDocumentRow) -> KernelResult<()> {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let chunk_count = i64::from(row.chunk_count);
         let version = u64_to_i64(row.version, "version")?;
@@ -4238,12 +2822,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .is_some();
                 if exists {
                     return Err(KernelError::conflict(
-                        "agent knowledge document version mismatch",
-                    ));
+                        "agent knowledge document version mismatch"));
                 }
                 return Err(KernelError::validation(
-                    "agent knowledge document not found",
-                ));
+                    "agent knowledge document not found"));
             }
             Ok(())
         })
@@ -4252,8 +2834,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_knowledge_document_row(
         &self,
         tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Option<AgentKnowledgeDocumentRow> {
+        knowledge_document_id: &str) -> Option<AgentKnowledgeDocumentRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -4271,8 +2852,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_knowledge_document_rows(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeDocumentRow> {
+        knowledge_base_id: &str) -> Vec<AgentKnowledgeDocumentRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -4332,418 +2912,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_knowledge_chunk_row(
         &self,
         tenant_id: u64,
-        knowledge_chunk_id: &str,
-    ) -> Option<AgentKnowledgeChunkRow> {
+        knowledge_chunk_id: &str) -> Option<AgentKnowledgeChunkRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
-                pool,
-                SQL_SELECT_AGENT_KNOWLEDGE_CHUNK,
-                tenant_id,
-                knowledge_chunk_id
-            )?;
-            row.map(pg_row_to_agent_knowledge_chunk_row).transpose()
-        })
-        .ok()
-        .flatten()
-    }
-
-    fn list_knowledge_chunk_rows(
-        &self,
-        tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeChunkRow> {
-        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
-            Ok(value) => value,
-            Err(_) => return Vec::new(),
-        };
-        self.with_pool(|pool| {
-            let rows = pg_query!(
-                pool,
-                SQL_LIST_AGENT_KNOWLEDGE_CHUNKS,
-                tenant_id,
-                knowledge_document_id
-            )?;
-            rows.into_iter()
-                .map(pg_row_to_agent_knowledge_chunk_row)
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn upsert_knowledge_index_row(&mut self, row: AgentKnowledgeIndexRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let vector_dimension = row.vector_dimension.map(i64::from);
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_UPSERT_AGENT_KNOWLEDGE_INDEX,
-                id,
-                row.uuid,
-                tenant_id,
-                row.knowledge_index_id,
-                row.knowledge_base_id,
-                row.knowledge_document_id,
-                row.knowledge_chunk_id,
-                row.index_kind,
-                row.index_provider_id,
-                row.external_ref,
-                row.embedding_model_id,
-                vector_dimension,
-                row.content_hash,
-                row.indexed_at,
-                row.status
-            )?;
-            Ok(())
-        })
-    }
-
-    fn get_knowledge_index_row(
-        &self,
-        tenant_id: u64,
-        knowledge_index_id: &str,
-    ) -> Option<AgentKnowledgeIndexRow> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_SELECT_AGENT_KNOWLEDGE_INDEX,
-                tenant_id,
-                knowledge_index_id
-            )?;
-            row.map(pg_row_to_agent_knowledge_index_row).transpose()
-        })
-        .ok()
-        .flatten()
-    }
-
-    fn list_knowledge_index_rows(
-        &self,
-        tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRow> {
-        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
-            Ok(value) => value,
-            Err(_) => return Vec::new(),
-        };
-        self.with_pool(|pool| {
-            let rows = pg_query!(
-                pool,
-                SQL_LIST_AGENT_KNOWLEDGE_INDEXES,
-                tenant_id,
-                knowledge_document_id
-            )?;
-            rows.into_iter()
-                .map(pg_row_to_agent_knowledge_index_row)
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn list_knowledge_index_rows_by_base(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRow> {
-        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
-            Ok(value) => value,
-            Err(_) => return Vec::new(),
-        };
-        self.with_pool(|pool| {
-            let rows = pg_query!(
-                pool,
-                SQL_LIST_AGENT_KNOWLEDGE_INDEXES_BY_BASE,
-                tenant_id,
-                knowledge_base_id
-            )?;
-            rows.into_iter()
-                .map(pg_row_to_agent_knowledge_index_row)
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn insert_knowledge_binding_row(&mut self, row: AgentKnowledgeBindingRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_KNOWLEDGE_BINDING,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                row.knowledge_binding_id,
-                row.knowledge_base_id,
-                row.agent_id,
-                row.deployment_id,
-                row.scope_kind,
-                row.scope_ref,
-                row.active,
-                row.default_binding,
-                version,
-                row.created_at,
-                row.updated_at
-            )?;
-            Ok(())
-        })
-    }
-
-    fn get_knowledge_binding_row(
-        &self,
-        tenant_id: u64,
-        knowledge_binding_id: &str,
-    ) -> Option<AgentKnowledgeBindingRow> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_SELECT_AGENT_KNOWLEDGE_BINDING,
-                tenant_id,
-                knowledge_binding_id
-            )?;
-            row.map(pg_row_to_agent_knowledge_binding_row).transpose()
-        })
-        .ok()
-        .flatten()
-    }
-
-    fn list_knowledge_binding_rows(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeBindingRow> {
-        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
-            Ok(value) => value,
-            Err(_) => return Vec::new(),
-        };
-        self.with_pool(|pool| {
-            let rows = pg_query!(
-                pool,
-                SQL_LIST_AGENT_KNOWLEDGE_BINDINGS,
-                tenant_id,
-                knowledge_base_id
-            )?;
-            rows.into_iter()
-                .map(pg_row_to_agent_knowledge_binding_row)
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn insert_knowledge_sync_job_row(&mut self, row: AgentKnowledgeSyncJobRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_KNOWLEDGE_SYNC_JOB,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                row.sync_job_id,
-                row.knowledge_base_id,
-                row.knowledge_source_id,
-                row.job_kind,
-                row.status,
-                row.input_ref,
-                row.input_json,
-                row.output_json,
-                row.error_json,
-                row.requested_at,
-                row.started_at,
-                row.completed_at,
-                row.created_at,
-                row.updated_at
-            )?;
-            Ok(())
-        })
-    }
-
-    fn update_knowledge_sync_job_row(&mut self, row: AgentKnowledgeSyncJobRow) -> KernelResult<()> {
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        self.with_pool(|pool| {
-            let updated_rows = pg_execute!(
-                pool,
-                SQL_UPDATE_AGENT_KNOWLEDGE_SYNC_JOB,
-                row.status,
-                row.output_json,
-                row.error_json,
-                row.started_at,
-                row.completed_at,
-                row.updated_at,
-                tenant_id,
-                row.sync_job_id
-            )?;
-            if updated_rows == 0 {
-                return Err(KernelError::validation(
-                    "agent knowledge sync job not found",
-                ));
-            }
-            Ok(())
-        })
-    }
-
-    fn get_knowledge_sync_job_row(
-        &self,
-        tenant_id: u64,
-        sync_job_id: &str,
-    ) -> Option<AgentKnowledgeSyncJobRow> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_SELECT_AGENT_KNOWLEDGE_SYNC_JOB,
-                tenant_id,
-                sync_job_id
-            )?;
-            row.map(pg_row_to_agent_knowledge_sync_job_row).transpose()
-        })
-        .ok()
-        .flatten()
-    }
-
-    fn list_knowledge_sync_job_rows(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSyncJobRow> {
-        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
-            Ok(value) => value,
-            Err(_) => return Vec::new(),
-        };
-        self.with_pool(|pool| {
-            let rows = pg_query!(
-                pool,
-                SQL_LIST_AGENT_KNOWLEDGE_SYNC_JOBS,
-                tenant_id,
-                knowledge_base_id
-            )?;
-            rows.into_iter()
-                .map(pg_row_to_agent_knowledge_sync_job_row)
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn insert_memory_store_row(&mut self, row: AgentMemoryStoreRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_MEMORY_STORE,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                owner_user_id,
-                row.memory_store_id,
-                row.code,
-                row.display_name,
-                row.description,
-                row.provider_id,
-                row.store_kind,
-                row.retrieval_modes_json,
-                row.capability_ids_json,
-                row.configuration_profile_id,
-                row.status,
-                row.visibility,
-                version,
-                row.created_at,
-                row.updated_at,
-                row.deleted_at
-            )?;
-            Ok(())
-        })
-    }
-
-    fn update_memory_store_row(&mut self, row: AgentMemoryStoreRow) -> KernelResult<()> {
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        let previous_version =
-            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
-        self.with_pool(|pool| {
-            let updated_rows = pg_execute!(
-                pool,
-                SQL_UPDATE_AGENT_MEMORY_STORE,
-                organization_id,
-                owner_user_id,
-                row.code,
-                row.display_name,
-                row.description,
-                row.provider_id,
-                row.store_kind,
-                row.retrieval_modes_json,
-                row.capability_ids_json,
-                row.configuration_profile_id,
-                row.status,
-                row.visibility,
-                version,
-                row.updated_at,
-                row.deleted_at,
-                tenant_id,
-                row.memory_store_id,
-                previous_version
-            )?;
-            if updated_rows == 0 {
-                let exists = pg_query_optional!(
-                    pool,
-                    SQL_SELECT_AGENT_MEMORY_STORE,
-                    tenant_id,
-                    row.memory_store_id
-                )?
-                .is_some();
-                if exists {
-                    return Err(KernelError::conflict("agent memory store version mismatch"));
-                }
-                return Err(KernelError::validation("agent memory store not found"));
-            }
-            Ok(())
-        })
-    }
-
-    fn get_memory_store_row(
-        &self,
-        tenant_id: u64,
-        memory_store_id: &str,
-    ) -> Option<AgentMemoryStoreRow> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_SELECT_AGENT_MEMORY_STORE,
-                tenant_id,
-                memory_store_id
-            )?;
-            row.map(pg_row_to_agent_memory_store_row).transpose()
-        })
-        .ok()
-        .flatten()
-    }
-
-    fn insert_memory_profile_row(&mut self, row: AgentMemoryProfileRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_MEMORY_PROFILE,
-                id,
                 row.uuid,
                 tenant_id,
                 organization_id,
@@ -4772,8 +2944,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_profile_row(
         &self,
         tenant_id: u64,
-        memory_profile_id: &str,
-    ) -> Option<AgentMemoryProfileRow> {
+        memory_profile_id: &str) -> Option<AgentMemoryProfileRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -4820,8 +2991,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_binding_row(
         &self,
         tenant_id: u64,
-        memory_binding_id: &str,
-    ) -> Option<AgentMemoryBindingRow> {
+        memory_binding_id: &str) -> Option<AgentMemoryBindingRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -4869,8 +3039,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_namespace_row(
         &self,
         tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Option<AgentMemoryNamespaceRow> {
+        memory_namespace_id: &str) -> Option<AgentMemoryNamespaceRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -4975,8 +3144,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .is_some();
                 if exists {
                     return Err(KernelError::conflict(
-                        "agent memory record version mismatch",
-                    ));
+                        "agent memory record version mismatch"));
                 }
                 return Err(KernelError::validation("agent memory record not found"));
             }
@@ -4987,8 +3155,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_record_row(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Option<AgentMemoryRecordRow> {
+        memory_id: &str) -> Option<AgentMemoryRecordRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row =
@@ -5002,8 +3169,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_memory_record_rows(
         &self,
         tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Vec<AgentMemoryRecordRow> {
+        memory_namespace_id: &str) -> Vec<AgentMemoryRecordRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -5055,8 +3221,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_source_row(
         &self,
         tenant_id: u64,
-        memory_source_id: &str,
-    ) -> Option<AgentMemorySourceRow> {
+        memory_source_id: &str) -> Option<AgentMemorySourceRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -5074,8 +3239,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_memory_source_rows(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemorySourceRow> {
+        memory_id: &str) -> Vec<AgentMemorySourceRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -5119,8 +3283,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_relation_row(
         &self,
         tenant_id: u64,
-        memory_relation_id: &str,
-    ) -> Option<AgentMemoryRelationRow> {
+        memory_relation_id: &str) -> Option<AgentMemoryRelationRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -5138,8 +3301,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_memory_relation_rows(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRelationRow> {
+        memory_id: &str) -> Vec<AgentMemoryRelationRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -5155,8 +3317,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn upsert_memory_retrieval_index_row(
         &mut self,
-        row: AgentMemoryRetrievalIndexRow,
-    ) -> KernelResult<()> {
+        row: AgentMemoryRetrievalIndexRow) -> KernelResult<()> {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let vector_dimension = row.vector_dimension.map(i64::from);
@@ -5185,8 +3346,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_memory_retrieval_index_row(
         &self,
         tenant_id: u64,
-        memory_index_id: &str,
-    ) -> Option<AgentMemoryRetrievalIndexRow> {
+        memory_index_id: &str) -> Option<AgentMemoryRetrievalIndexRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -5205,8 +3365,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_memory_retrieval_index_rows(
         &self,
         tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRetrievalIndexRow> {
+        memory_id: &str) -> Vec<AgentMemoryRetrievalIndexRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -5236,7 +3395,7 @@ impl PostgresAuditAdapter for SyncPostgresAdapter {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let agent_business_id = u64_to_i64(row.agent_business_id, "agent_business_id")?;
+        let agent_internal_id = u64_to_i64(row.agent_internal_id, "agent_internal_id")?;
 
         self.with_pool(|pool| {
             pg_execute!(
@@ -5246,7 +3405,7 @@ impl PostgresAuditAdapter for SyncPostgresAdapter {
                 row.uuid,
                 tenant_id,
                 organization_id,
-                agent_business_id,
+                agent_internal_id,
                 row.agent_id,
                 row.action,
                 row.subject_id,
@@ -5263,8 +3422,7 @@ impl PostgresAuditAdapter for SyncPostgresAdapter {
     fn list_audit_rows(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> KernelResult<Vec<AgentAuditEventRow>> {
+        agent_id: &str) -> KernelResult<Vec<AgentAuditEventRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         self.with_pool(|pool| {
             let rows = pg_query!(
@@ -5285,7 +3443,7 @@ where
     adapter: A,
     tenant_id: u64,
     organization_id: u64,
-    agent_business_id: u64,
+    agent_internal_id: u64,
     agent_id: String,
 }
 
@@ -5297,14 +3455,13 @@ where
         adapter: A,
         tenant_id: u64,
         organization_id: u64,
-        agent_business_id: u64,
-        agent_id: impl Into<String>,
-    ) -> Self {
+        agent_internal_id: u64,
+        agent_id: impl Into<String>) -> Self {
         Self {
             adapter,
             tenant_id,
             organization_id,
-            agent_business_id,
+            agent_internal_id,
             agent_id: agent_id.into(),
         }
     }
@@ -5321,9 +3478,8 @@ where
             id,
             self.tenant_id,
             self.organization_id,
-            self.agent_business_id,
-            self.agent_id.as_str(),
-        )?;
+            self.agent_internal_id,
+            self.agent_id.as_str())?;
         self.adapter.insert_audit_row(row)
     }
 
@@ -5587,14 +3743,14 @@ fn string_list_from_json(input: &str, field_name: &str) -> KernelResult<Vec<Stri
         .map_err(|error| KernelError::validation(format!("invalid {field_name} json: {error}")))
 }
 
-fn memory_index_kinds_to_json(values: &[AgentMemoryIndexKind]) -> KernelResult<String> {
+fn memory_index_kinds_to_json(values: &[]) -> KernelResult<String> {
     validate_memory_index_kinds(values)?;
-    let serialized: Vec<&str> = values.iter().map(AgentMemoryIndexKind::as_str).collect();
+    let serialized: Vec<&str> = values.iter().map(::as_str).collect();
     serde_json::to_string(&serialized)
         .map_err(|error| KernelError::validation(format!("invalid retrieval_modes json: {error}")))
 }
 
-fn memory_index_kinds_from_json(input: &str) -> KernelResult<Vec<AgentMemoryIndexKind>> {
+fn memory_index_kinds_from_json(input: &str) -> KernelResult<Vec<>> {
     let values: Vec<String> = serde_json::from_str(input).map_err(|error| {
         KernelError::validation(format!("invalid retrieval_modes json: {error}"))
     })?;
@@ -5606,14 +3762,14 @@ fn memory_index_kinds_from_json(input: &str) -> KernelResult<Vec<AgentMemoryInde
     Ok(parsed)
 }
 
-fn knowledge_index_kinds_to_json(values: &[AgentKnowledgeIndexKind]) -> KernelResult<String> {
+fn knowledge_index_kinds_to_json(values: &[]) -> KernelResult<String> {
     validate_knowledge_index_kinds(values)?;
-    let serialized: Vec<&str> = values.iter().map(AgentKnowledgeIndexKind::as_str).collect();
+    let serialized: Vec<&str> = values.iter().map(::as_str).collect();
     serde_json::to_string(&serialized)
         .map_err(|error| KernelError::validation(format!("invalid retrieval_modes json: {error}")))
 }
 
-fn knowledge_index_kinds_from_json(input: &str) -> KernelResult<Vec<AgentKnowledgeIndexKind>> {
+fn knowledge_index_kinds_from_json(input: &str) -> KernelResult<Vec<>> {
     let values: Vec<String> = serde_json::from_str(input).map_err(|error| {
         KernelError::validation(format!("invalid retrieval_modes json: {error}"))
     })?;
@@ -5714,1335 +3870,6 @@ fn map_sqlx_error(error: sqlx::Error) -> KernelError {
 }
 
 #[cfg(feature = "postgres-sync")]
-fn u64_to_i64(value: u64, field: &str) -> KernelResult<i64> {
-    i64::try_from(value)
-        .map_err(|_| KernelError::validation(format!("{field} exceeds postgres int64 range")))
-}
-
-#[cfg(feature = "postgres-sync")]
-fn int64_to_u64(value: i64, field: &str) -> KernelResult<u64> {
-    u64::try_from(value).map_err(|_| {
-        KernelError::validation(format!("{field} must be a positive postgres int64 value"))
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn int64_to_u32(value: i64, field: &str) -> KernelResult<u32> {
-    u32::try_from(value).map_err(|_| {
-        KernelError::validation(format!("{field} must be a positive postgres int32 value"))
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn marketplace_row_matches(
-    query: &AgentMarketplaceListQuery,
-    organization_id: u64,
-    owner_user_id: u64,
-    status: i16,
-    visibility: i16,
-    deleted_at: Option<&str>,
-    item_id: &str,
-    code: &str,
-    display_name: &str,
-    description: Option<&str>,
-    categories_json: &str,
-    tags_json: &str,
-) -> bool {
-    if let Some(query_organization_id) = query.organization_id {
-        if organization_id != query_organization_id {
-            return false;
-        }
-    }
-    if let Some(query_owner_user_id) = query.owner_user_id {
-        if owner_user_id != query_owner_user_id {
-            return false;
-        }
-    }
-    if let Some(query_status) = query.status {
-        if status != query_status.as_db_code() {
-            return false;
-        }
-    }
-    if let Some(query_visibility) = query.visibility {
-        if visibility != query_visibility.as_db_code() {
-            return false;
-        }
-    }
-    if !query.include_deleted
-        && (status == AgentBusinessStatus::Deleted.as_db_code() || deleted_at.is_some())
-    {
-        return false;
-    }
-    if let Some(category) = query.category.as_ref() {
-        let categories = match string_list_from_json(categories_json, "categories") {
-            Ok(values) => values,
-            Err(_) => return false,
-        };
-        if !categories.iter().any(|value| value == category) {
-            return false;
-        }
-    }
-    if let Some(tag) = query.tag.as_ref() {
-        let tags = match string_list_from_json(tags_json, "tags") {
-            Ok(values) => values,
-            Err(_) => return false,
-        };
-        if !tags.iter().any(|value| value == tag) {
-            return false;
-        }
-    }
-    if let Some(search_query) = query.search_query.as_ref() {
-        let normalized_query = search_query.trim().to_lowercase();
-        if normalized_query.is_empty() {
-            return true;
-        }
-        let description = description.unwrap_or("");
-        return item_id.to_lowercase().contains(normalized_query.as_str())
-            || code.to_lowercase().contains(normalized_query.as_str())
-            || display_name
-                .to_lowercase()
-                .contains(normalized_query.as_str())
-            || description
-                .to_lowercase()
-                .contains(normalized_query.as_str());
-    }
-    true
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_business_row(row: PgRow) -> KernelResult<AgentBusinessRow> {
-    Ok(AgentBusinessRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        owner_user_id: int64_to_u64(
-            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
-            "owner_user_id",
-        )?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        code: row.try_get("code").map_err(map_sqlx_error)?,
-        display_name: row.try_get("display_name").map_err(map_sqlx_error)?,
-        description: row.try_get("description").map_err(map_sqlx_error)?,
-        manifest_json: row.try_get("manifest_json").map_err(map_sqlx_error)?,
-        default_code_task_intent_json: row
-            .try_get("default_code_task_intent_json")
-            .map_err(map_sqlx_error)?,
-        implementation_provider_id: row
-            .try_get("implementation_provider_id")
-            .map_err(map_sqlx_error)?,
-        implementation_kind: row.try_get("implementation_kind").map_err(map_sqlx_error)?,
-        implementation_type: row.try_get("implementation_type").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        tags_json: row.try_get("tags_json").map_err(map_sqlx_error)?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_mcp_server_row(row: PgRow) -> KernelResult<AgentMcpServerRow> {
-    Ok(AgentMcpServerRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        owner_user_id: int64_to_u64(
-            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
-            "owner_user_id",
-        )?,
-        mcp_server_id: row.try_get("mcp_server_id").map_err(map_sqlx_error)?,
-        code: row.try_get("code").map_err(map_sqlx_error)?,
-        display_name: row.try_get("display_name").map_err(map_sqlx_error)?,
-        description: row.try_get("description").map_err(map_sqlx_error)?,
-        protocol_version: row.try_get("protocol_version").map_err(map_sqlx_error)?,
-        transport_kind: row.try_get("transport_kind").map_err(map_sqlx_error)?,
-        endpoint_ref: row.try_get("endpoint_ref").map_err(map_sqlx_error)?,
-        command_ref: row.try_get("command_ref").map_err(map_sqlx_error)?,
-        auth_kind: row.try_get("auth_kind").map_err(map_sqlx_error)?,
-        auth_profile_id: row.try_get("auth_profile_id").map_err(map_sqlx_error)?,
-        capability_ids_json: row.try_get("capability_ids_json").map_err(map_sqlx_error)?,
-        tool_count: int64_to_u32(
-            row.try_get("tool_count").map_err(map_sqlx_error)?,
-            "tool_count",
-        )?,
-        resource_count: int64_to_u32(
-            row.try_get("resource_count").map_err(map_sqlx_error)?,
-            "resource_count",
-        )?,
-        prompt_count: int64_to_u32(
-            row.try_get("prompt_count").map_err(map_sqlx_error)?,
-            "prompt_count",
-        )?,
-        capabilities_json: row.try_get("capabilities_json").map_err(map_sqlx_error)?,
-        categories_json: row.try_get("categories_json").map_err(map_sqlx_error)?,
-        tags_json: row.try_get("tags_json").map_err(map_sqlx_error)?,
-        security_profile_id: row.try_get("security_profile_id").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_base_row(row: PgRow) -> KernelResult<AgentKnowledgeBaseRow> {
-    Ok(AgentKnowledgeBaseRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        owner_user_id: int64_to_u64(
-            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
-            "owner_user_id",
-        )?,
-        knowledge_base_id: row.try_get("knowledge_base_id").map_err(map_sqlx_error)?,
-        code: row.try_get("code").map_err(map_sqlx_error)?,
-        display_name: row.try_get("display_name").map_err(map_sqlx_error)?,
-        description: row.try_get("description").map_err(map_sqlx_error)?,
-        provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
-        base_kind: row.try_get("base_kind").map_err(map_sqlx_error)?,
-        retrieval_modes_json: row
-            .try_get("retrieval_modes_json")
-            .map_err(map_sqlx_error)?,
-        capability_ids_json: row.try_get("capability_ids_json").map_err(map_sqlx_error)?,
-        configuration_profile_id: row
-            .try_get("configuration_profile_id")
-            .map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_source_row(row: PgRow) -> KernelResult<AgentKnowledgeSourceRow> {
-    Ok(AgentKnowledgeSourceRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        knowledge_source_id: row.try_get("knowledge_source_id").map_err(map_sqlx_error)?,
-        knowledge_base_id: row.try_get("knowledge_base_id").map_err(map_sqlx_error)?,
-        source_kind: row.try_get("source_kind").map_err(map_sqlx_error)?,
-        source_ref: row.try_get("source_ref").map_err(map_sqlx_error)?,
-        source_hash: row.try_get("source_hash").map_err(map_sqlx_error)?,
-        sync_policy_json: row.try_get("sync_policy_json").map_err(map_sqlx_error)?,
-        metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_document_row(row: PgRow) -> KernelResult<AgentKnowledgeDocumentRow> {
-    Ok(AgentKnowledgeDocumentRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        knowledge_document_id: row
-            .try_get("knowledge_document_id")
-            .map_err(map_sqlx_error)?,
-        knowledge_base_id: row.try_get("knowledge_base_id").map_err(map_sqlx_error)?,
-        knowledge_source_id: row.try_get("knowledge_source_id").map_err(map_sqlx_error)?,
-        document_kind: row.try_get("document_kind").map_err(map_sqlx_error)?,
-        title: row.try_get("title").map_err(map_sqlx_error)?,
-        content_ref: row.try_get("content_ref").map_err(map_sqlx_error)?,
-        content_hash: row.try_get("content_hash").map_err(map_sqlx_error)?,
-        summary: row.try_get("summary").map_err(map_sqlx_error)?,
-        metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
-        tags_json: row.try_get("tags_json").map_err(map_sqlx_error)?,
-        categories_json: row.try_get("categories_json").map_err(map_sqlx_error)?,
-        trust_level: row.try_get("trust_level").map_err(map_sqlx_error)?,
-        redaction_classification: row
-            .try_get("redaction_classification")
-            .map_err(map_sqlx_error)?,
-        chunk_count: int64_to_u32(
-            row.try_get("chunk_count").map_err(map_sqlx_error)?,
-            "chunk_count",
-        )?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_chunk_row(row: PgRow) -> KernelResult<AgentKnowledgeChunkRow> {
-    Ok(AgentKnowledgeChunkRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        knowledge_chunk_id: row.try_get("knowledge_chunk_id").map_err(map_sqlx_error)?,
-        knowledge_document_id: row
-            .try_get("knowledge_document_id")
-            .map_err(map_sqlx_error)?,
-        parent_chunk_id: row.try_get("parent_chunk_id").map_err(map_sqlx_error)?,
-        chunk_ordinal: int64_to_u32(
-            row.try_get("chunk_ordinal").map_err(map_sqlx_error)?,
-            "chunk_ordinal",
-        )?,
-        heading: row.try_get("heading").map_err(map_sqlx_error)?,
-        content_ref: row.try_get("content_ref").map_err(map_sqlx_error)?,
-        content_hash: row.try_get("content_hash").map_err(map_sqlx_error)?,
-        token_estimate: int64_to_u32(
-            row.try_get("token_estimate").map_err(map_sqlx_error)?,
-            "token_estimate",
-        )?,
-        summary: row.try_get("summary").map_err(map_sqlx_error)?,
-        metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_index_row(row: PgRow) -> KernelResult<AgentKnowledgeIndexRow> {
-    let vector_dimension: Option<i64> = row.try_get("vector_dimension").map_err(map_sqlx_error)?;
-    Ok(AgentKnowledgeIndexRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        knowledge_index_id: row.try_get("knowledge_index_id").map_err(map_sqlx_error)?,
-        knowledge_base_id: row.try_get("knowledge_base_id").map_err(map_sqlx_error)?,
-        knowledge_document_id: row
-            .try_get("knowledge_document_id")
-            .map_err(map_sqlx_error)?,
-        knowledge_chunk_id: row.try_get("knowledge_chunk_id").map_err(map_sqlx_error)?,
-        index_kind: row.try_get("index_kind").map_err(map_sqlx_error)?,
-        index_provider_id: row.try_get("index_provider_id").map_err(map_sqlx_error)?,
-        external_ref: row.try_get("external_ref").map_err(map_sqlx_error)?,
-        embedding_model_id: row.try_get("embedding_model_id").map_err(map_sqlx_error)?,
-        vector_dimension: vector_dimension
-            .map(|value| int64_to_u32(value, "vector_dimension"))
-            .transpose()?,
-        content_hash: row.try_get("content_hash").map_err(map_sqlx_error)?,
-        indexed_at: row.try_get("indexed_at").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_binding_row(row: PgRow) -> KernelResult<AgentKnowledgeBindingRow> {
-    Ok(AgentKnowledgeBindingRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        knowledge_binding_id: row
-            .try_get("knowledge_binding_id")
-            .map_err(map_sqlx_error)?,
-        knowledge_base_id: row.try_get("knowledge_base_id").map_err(map_sqlx_error)?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        deployment_id: row.try_get("deployment_id").map_err(map_sqlx_error)?,
-        scope_kind: row.try_get("scope_kind").map_err(map_sqlx_error)?,
-        scope_ref: row.try_get("scope_ref").map_err(map_sqlx_error)?,
-        active: row.try_get("active").map_err(map_sqlx_error)?,
-        default_binding: row.try_get("default_binding").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_knowledge_sync_job_row(row: PgRow) -> KernelResult<AgentKnowledgeSyncJobRow> {
-    Ok(AgentKnowledgeSyncJobRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        sync_job_id: row.try_get("sync_job_id").map_err(map_sqlx_error)?,
-        knowledge_base_id: row.try_get("knowledge_base_id").map_err(map_sqlx_error)?,
-        knowledge_source_id: row.try_get("knowledge_source_id").map_err(map_sqlx_error)?,
-        job_kind: row.try_get("job_kind").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        input_ref: row.try_get("input_ref").map_err(map_sqlx_error)?,
-        input_json: row.try_get("input_json").map_err(map_sqlx_error)?,
-        output_json: row.try_get("output_json").map_err(map_sqlx_error)?,
-        error_json: row.try_get("error_json").map_err(map_sqlx_error)?,
-        requested_at: row.try_get("requested_at").map_err(map_sqlx_error)?,
-        started_at: row.try_get("started_at").map_err(map_sqlx_error)?,
-        completed_at: row.try_get("completed_at").map_err(map_sqlx_error)?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_store_row(row: PgRow) -> KernelResult<AgentMemoryStoreRow> {
-    Ok(AgentMemoryStoreRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        owner_user_id: int64_to_u64(
-            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
-            "owner_user_id",
-        )?,
-        memory_store_id: row.try_get("memory_store_id").map_err(map_sqlx_error)?,
-        code: row.try_get("code").map_err(map_sqlx_error)?,
-        display_name: row.try_get("display_name").map_err(map_sqlx_error)?,
-        description: row.try_get("description").map_err(map_sqlx_error)?,
-        provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
-        store_kind: row.try_get("store_kind").map_err(map_sqlx_error)?,
-        retrieval_modes_json: row
-            .try_get("retrieval_modes_json")
-            .map_err(map_sqlx_error)?,
-        capability_ids_json: row.try_get("capability_ids_json").map_err(map_sqlx_error)?,
-        configuration_profile_id: row
-            .try_get("configuration_profile_id")
-            .map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_profile_row(row: PgRow) -> KernelResult<AgentMemoryProfileRow> {
-    Ok(AgentMemoryProfileRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        owner_user_id: int64_to_u64(
-            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
-            "owner_user_id",
-        )?,
-        memory_profile_id: row.try_get("memory_profile_id").map_err(map_sqlx_error)?,
-        memory_store_id: row.try_get("memory_store_id").map_err(map_sqlx_error)?,
-        code: row.try_get("code").map_err(map_sqlx_error)?,
-        display_name: row.try_get("display_name").map_err(map_sqlx_error)?,
-        description: row.try_get("description").map_err(map_sqlx_error)?,
-        write_policy_json: row.try_get("write_policy_json").map_err(map_sqlx_error)?,
-        retrieval_policy_json: row
-            .try_get("retrieval_policy_json")
-            .map_err(map_sqlx_error)?,
-        compaction_policy_json: row
-            .try_get("compaction_policy_json")
-            .map_err(map_sqlx_error)?,
-        retention_policy_json: row
-            .try_get("retention_policy_json")
-            .map_err(map_sqlx_error)?,
-        privacy_policy_json: row.try_get("privacy_policy_json").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_binding_row(row: PgRow) -> KernelResult<AgentMemoryBindingRow> {
-    Ok(AgentMemoryBindingRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        memory_binding_id: row.try_get("memory_binding_id").map_err(map_sqlx_error)?,
-        memory_profile_id: row.try_get("memory_profile_id").map_err(map_sqlx_error)?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        deployment_id: row.try_get("deployment_id").map_err(map_sqlx_error)?,
-        scope_kind: row.try_get("scope_kind").map_err(map_sqlx_error)?,
-        scope_ref: row.try_get("scope_ref").map_err(map_sqlx_error)?,
-        active: row.try_get("active").map_err(map_sqlx_error)?,
-        default_binding: row.try_get("default_binding").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_namespace_row(row: PgRow) -> KernelResult<AgentMemoryNamespaceRow> {
-    Ok(AgentMemoryNamespaceRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        memory_namespace_id: row.try_get("memory_namespace_id").map_err(map_sqlx_error)?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        user_ref: row.try_get("user_ref").map_err(map_sqlx_error)?,
-        session_ref: row.try_get("session_ref").map_err(map_sqlx_error)?,
-        thread_ref: row.try_get("thread_ref").map_err(map_sqlx_error)?,
-        namespace_kind: row.try_get("namespace_kind").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_record_row(row: PgRow) -> KernelResult<AgentMemoryRecordRow> {
-    Ok(AgentMemoryRecordRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
-        memory_id: row.try_get("memory_id").map_err(map_sqlx_error)?,
-        memory_namespace_id: row.try_get("memory_namespace_id").map_err(map_sqlx_error)?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        memory_kind: row.try_get("memory_kind").map_err(map_sqlx_error)?,
-        content_format: row.try_get("content_format").map_err(map_sqlx_error)?,
-        content_json: row.try_get("content_json").map_err(map_sqlx_error)?,
-        summary: row.try_get("summary").map_err(map_sqlx_error)?,
-        salience_score: row.try_get("salience_score").map_err(map_sqlx_error)?,
-        confidence_score: row.try_get("confidence_score").map_err(map_sqlx_error)?,
-        freshness_score: row.try_get("freshness_score").map_err(map_sqlx_error)?,
-        sensitivity_level: row.try_get("sensitivity_level").map_err(map_sqlx_error)?,
-        source_count: int64_to_u32(
-            row.try_get("source_count").map_err(map_sqlx_error)?,
-            "source_count",
-        )?,
-        effective_at: row.try_get("effective_at").map_err(map_sqlx_error)?,
-        expires_at: row.try_get("expires_at").map_err(map_sqlx_error)?,
-        last_used_at: row.try_get("last_used_at").map_err(map_sqlx_error)?,
-        use_count: int64_to_u64(
-            row.try_get("use_count").map_err(map_sqlx_error)?,
-            "use_count",
-        )?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
-        redacted_at: row.try_get("redacted_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_source_row(row: PgRow) -> KernelResult<AgentMemorySourceRow> {
-    Ok(AgentMemorySourceRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        memory_source_id: row.try_get("memory_source_id").map_err(map_sqlx_error)?,
-        memory_id: row.try_get("memory_id").map_err(map_sqlx_error)?,
-        source_kind: row.try_get("source_kind").map_err(map_sqlx_error)?,
-        source_ref: row.try_get("source_ref").map_err(map_sqlx_error)?,
-        source_hash: row.try_get("source_hash").map_err(map_sqlx_error)?,
-        evidence_json: row.try_get("evidence_json").map_err(map_sqlx_error)?,
-        captured_at: row.try_get("captured_at").map_err(map_sqlx_error)?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_relation_row(row: PgRow) -> KernelResult<AgentMemoryRelationRow> {
-    Ok(AgentMemoryRelationRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        memory_relation_id: row.try_get("memory_relation_id").map_err(map_sqlx_error)?,
-        from_memory_id: row.try_get("from_memory_id").map_err(map_sqlx_error)?,
-        to_memory_id: row.try_get("to_memory_id").map_err(map_sqlx_error)?,
-        relation_kind: row.try_get("relation_kind").map_err(map_sqlx_error)?,
-        weight: row.try_get("weight").map_err(map_sqlx_error)?,
-        valid_from: row.try_get("valid_from").map_err(map_sqlx_error)?,
-        valid_until: row.try_get("valid_until").map_err(map_sqlx_error)?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_memory_retrieval_index_row(
-    row: PgRow,
-) -> KernelResult<AgentMemoryRetrievalIndexRow> {
-    let vector_dimension: Option<i64> = row.try_get("vector_dimension").map_err(map_sqlx_error)?;
-    Ok(AgentMemoryRetrievalIndexRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        memory_index_id: row.try_get("memory_index_id").map_err(map_sqlx_error)?,
-        memory_id: row.try_get("memory_id").map_err(map_sqlx_error)?,
-        index_kind: row.try_get("index_kind").map_err(map_sqlx_error)?,
-        index_provider_id: row.try_get("index_provider_id").map_err(map_sqlx_error)?,
-        external_ref: row.try_get("external_ref").map_err(map_sqlx_error)?,
-        embedding_model_id: row.try_get("embedding_model_id").map_err(map_sqlx_error)?,
-        vector_dimension: vector_dimension
-            .map(|value| int64_to_u32(value, "vector_dimension"))
-            .transpose()?,
-        content_hash: row.try_get("content_hash").map_err(map_sqlx_error)?,
-        indexed_at: row.try_get("indexed_at").map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_provider_binding_row(row: PgRow) -> KernelResult<AgentProviderBindingRow> {
-    Ok(AgentProviderBindingRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        binding_id: row.try_get("binding_id").map_err(map_sqlx_error)?,
-        provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
-        implementation_kind: row.try_get("implementation_kind").map_err(map_sqlx_error)?,
-        configuration_profile_id: row
-            .try_get("configuration_profile_id")
-            .map_err(map_sqlx_error)?,
-        capabilities_json: row.try_get("capabilities_json").map_err(map_sqlx_error)?,
-        active: row.try_get("active").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_deployment_row(row: PgRow) -> KernelResult<AgentDeploymentRow> {
-    Ok(AgentDeploymentRow {
-        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
-        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
-        tenant_id: int64_to_u64(
-            row.try_get("tenant_id").map_err(map_sqlx_error)?,
-            "tenant_id",
-        )?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        deployment_id: row.try_get("deployment_id").map_err(map_sqlx_error)?,
-        binding_id: row.try_get("binding_id").map_err(map_sqlx_error)?,
-        provider_id_snapshot: row
-            .try_get("provider_id_snapshot")
-            .map_err(map_sqlx_error)?,
-        implementation_kind_snapshot: row
-            .try_get("implementation_kind_snapshot")
-            .map_err(map_sqlx_error)?,
-        configuration_profile_id_snapshot: row
-            .try_get("configuration_profile_id_snapshot")
-            .map_err(map_sqlx_error)?,
-        capabilities_snapshot_json: row
-            .try_get("capabilities_snapshot_json")
-            .map_err(map_sqlx_error)?,
-        status: row.try_get("status").map_err(map_sqlx_error)?,
-        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_manifest(agent_id: &str) -> AgentManifest {
-        AgentManifest {
-            schema_version: "1.0.0".to_string(),
-            manifest_type: "agent".to_string(),
-            agent_id: agent_id.to_string(),
-            name: "sample-agent".to_string(),
-            display_name: "Sample Agent".to_string(),
-            description: "sample".to_string(),
-            version: "0.1.0".to_string(),
-            domain: "intelligence".to_string(),
-            required_capabilities: vec!["model.chat".to_string()],
-            optional_capabilities: vec!["tool.invoke".to_string()],
-            required_capability_requirements: vec![],
-            optional_capability_requirements: vec![],
-            event_families: vec!["agent.lifecycle".to_string()],
-            owner_name: "sdkwork".to_string(),
-            status: "active".to_string(),
-        }
-    }
-
-    fn sample_provider_binding_row() -> AgentProviderBindingRow {
-        AgentProviderBindingRow {
-            id: 1,
-            uuid: "agent_provider_binding_100001_agent.alpha_binding.rig.default".to_string(),
-            tenant_id: 100_001,
-            agent_id: "agent.alpha".to_string(),
-            binding_id: "binding.rig.default".to_string(),
-            provider_id: "provider.model.rig-rust".to_string(),
-            implementation_kind: "typed-local-provider".to_string(),
-            configuration_profile_id: "profile.rig.local".to_string(),
-            capabilities_json: r#"["model.chat","tool.invoke"]"#.to_string(),
-            active: true,
-            version: 1,
-            created_at: "2026-06-01T00:00:00Z".to_string(),
-            updated_at: "2026-06-01T00:00:00Z".to_string(),
-        }
-    }
-
-    fn sample_deployment_row() -> AgentDeploymentRow {
-        AgentDeploymentRow {
-            id: 1,
-            uuid: "agent_deployment_100001_agent.alpha_deployment.rig.local.001".to_string(),
-            tenant_id: 100_001,
-            agent_id: "agent.alpha".to_string(),
-            deployment_id: "deployment.rig.local.001".to_string(),
-            binding_id: "binding.rig.default".to_string(),
-            provider_id_snapshot: "provider.model.rig-rust".to_string(),
-            implementation_kind_snapshot: "typed-local-provider".to_string(),
-            configuration_profile_id_snapshot: "profile.rig.local".to_string(),
-            capabilities_snapshot_json: r#"["model.chat","planning.create"]"#.to_string(),
-            status: 0,
-            version: 1,
-            created_at: "2026-06-01T03:00:00Z".to_string(),
-            updated_at: "2026-06-01T03:00:00Z".to_string(),
-        }
-    }
-
-    fn sample_agent_business_row() -> AgentBusinessRow {
-        AgentBusinessRow {
-            id: 1,
-            uuid: "agent_business_100001_agent.alpha".to_string(),
-            tenant_id: 100_001,
-            organization_id: 0,
-            owner_user_id: 700,
-            agent_id: "agent.alpha".to_string(),
-            code: "alpha".to_string(),
-            display_name: "Alpha".to_string(),
-            description: Some("desc".to_string()),
-            manifest_json: manifest_to_json(&sample_manifest("agent.alpha"))
-                .expect("manifest json should be valid"),
-            default_code_task_intent_json: None,
-            implementation_provider_id: Some("provider.model.rig-rust".to_string()),
-            implementation_kind: Some("typed-local-provider".to_string()),
-            implementation_type: "sdkwork-native".to_string(),
-            status: 1,
-            visibility: 1,
-            tags_json: "[]".to_string(),
-            created_at: "2026-06-01T00:00:00Z".to_string(),
-            updated_at: "2026-06-01T00:00:00Z".to_string(),
-            deleted_at: None,
-            version: 1,
-        }
-    }
-
-    fn sample_mcp_server_record() -> AgentMcpServerRecord {
-        AgentMcpServerRecord {
-            id: 11,
-            tenant_id: 100_001,
-            organization_id: 0,
-            owner_user_id: 700,
-            mcp_server_id: "mcp.server.filesystem".to_string(),
-            code: "filesystem-mcp".to_string(),
-            display_name: "Filesystem MCP".to_string(),
-            description: Some("mcp server".to_string()),
-            protocol_version: "2025-06-18".to_string(),
-            transport_kind: AgentMcpTransportKind::Http,
-            endpoint_ref: Some("endpoint.mcp.filesystem".to_string()),
-            command_ref: None,
-            auth_kind: AgentMcpAuthKind::OAuth2,
-            auth_profile_id: Some("profile.auth.mcp.filesystem".to_string()),
-            capability_ids: vec![
-                "mcp.tools".to_string(),
-                "mcp.resources".to_string(),
-                "mcp.prompts".to_string(),
-            ],
-            tool_count: 12,
-            resource_count: 3,
-            prompt_count: 2,
-            capabilities_json: r#"{"tools":true,"resources":true,"prompts":true}"#.to_string(),
-            categories: vec!["filesystem".to_string()],
-            tags: vec!["mcp".to_string()],
-            security_profile_id: Some("profile.security.mcp.filesystem".to_string()),
-            status: AgentBusinessStatus::Active,
-            visibility: AgentVisibility::Organization,
-            version: 3,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:01:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_memory_store_record() -> AgentMemoryStoreRecord {
-        AgentMemoryStoreRecord {
-            id: 20,
-            tenant_id: 100_001,
-            organization_id: 0,
-            owner_user_id: 700,
-            memory_store_id: "memory.store.primary".to_string(),
-            code: "primary-memory".to_string(),
-            display_name: "Primary Memory".to_string(),
-            description: Some("memory store".to_string()),
-            provider_id: "provider.memory.local-postgres".to_string(),
-            store_kind: AgentMemoryStoreKind::HybridStore,
-            retrieval_modes: vec![
-                AgentMemoryIndexKind::Keyword,
-                AgentMemoryIndexKind::Graph,
-                AgentMemoryIndexKind::Wiki,
-            ],
-            capability_ids: vec!["memory.write".to_string(), "memory.retrieve".to_string()],
-            configuration_profile_id: "profile.memory.local".to_string(),
-            status: AgentBusinessStatus::Active,
-            visibility: AgentVisibility::Tenant,
-            version: 2,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:01:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_memory_profile_record() -> AgentMemoryProfileRecord {
-        AgentMemoryProfileRecord {
-            id: 21,
-            tenant_id: 100_001,
-            organization_id: 0,
-            owner_user_id: 700,
-            memory_profile_id: "memory.profile.default".to_string(),
-            memory_store_id: "memory.store.primary".to_string(),
-            code: "default-memory".to_string(),
-            display_name: "Default Memory".to_string(),
-            description: Some("memory profile".to_string()),
-            write_policy_json: r#"{"mode":"curated"}"#.to_string(),
-            retrieval_policy_json: r#"{"modes":["keyword","wiki"]}"#.to_string(),
-            compaction_policy_json: r#"{"summaryAfterTurns":20}"#.to_string(),
-            retention_policy_json: r#"{"defaultTtlDays":365}"#.to_string(),
-            privacy_policy_json: r#"{"pii":"redact"}"#.to_string(),
-            status: AgentBusinessStatus::Active,
-            visibility: AgentVisibility::Tenant,
-            version: 1,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:00:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_memory_binding_record() -> AgentMemoryBindingRecord {
-        AgentMemoryBindingRecord {
-            id: 24,
-            tenant_id: 100_001,
-            organization_id: 0,
-            memory_binding_id: "memory.binding.agent.default".to_string(),
-            memory_profile_id: "memory.profile.default".to_string(),
-            agent_id: Some("agent.alpha".to_string()),
-            deployment_id: Some("deployment.alpha.local".to_string()),
-            scope_kind: AgentMemoryBindingScopeKind::Agent,
-            scope_ref: "agent.alpha".to_string(),
-            active: true,
-            default_binding: true,
-            version: 1,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:00:00Z".to_string(),
-        }
-    }
-
-    fn sample_memory_namespace_record() -> AgentMemoryNamespaceRecord {
-        AgentMemoryNamespaceRecord {
-            id: 22,
-            tenant_id: 100_001,
-            organization_id: 0,
-            memory_namespace_id: "memory.namespace.agent.alpha".to_string(),
-            agent_id: Some("agent.alpha".to_string()),
-            user_ref: Some("user.700".to_string()),
-            session_ref: Some("session.1".to_string()),
-            thread_ref: Some("thread.1".to_string()),
-            namespace_kind: AgentMemoryNamespaceKind::Agent,
-            status: AgentBusinessStatus::Active,
-            visibility: AgentVisibility::Organization,
-            version: 1,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:00:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_memory_record() -> AgentMemoryRecord {
-        AgentMemoryRecord {
-            id: 23,
-            tenant_id: 100_001,
-            organization_id: 0,
-            memory_id: "memory.record.fact.prefix".to_string(),
-            memory_namespace_id: "memory.namespace.agent.alpha".to_string(),
-            agent_id: Some("agent.alpha".to_string()),
-            memory_kind: AgentMemoryRecordKind::Semantic,
-            content_format: "application/json".to_string(),
-            content_json: r#"{"fact":"business tables use a_ prefix"}"#.to_string(),
-            summary: Some("Business tables use a_ prefix".to_string()),
-            salience_score: 0.8,
-            confidence_score: 0.9,
-            freshness_score: 1.0,
-            sensitivity_level: 0,
-            source_count: 1,
-            effective_at: Some("2026-06-04T00:00:00Z".to_string()),
-            expires_at: None,
-            last_used_at: Some("2026-06-04T00:02:00Z".to_string()),
-            use_count: 2,
-            status: AgentBusinessStatus::Active,
-            version: 2,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:02:00Z".to_string(),
-            deleted_at: None,
-            redacted_at: None,
-        }
-    }
-
-    fn sample_memory_source_record() -> AgentMemorySourceRecord {
-        AgentMemorySourceRecord {
-            id: 25,
-            tenant_id: 100_001,
-            memory_source_id: "memory.source.fact.prefix.doc".to_string(),
-            memory_id: "memory.record.fact.prefix".to_string(),
-            source_kind: AgentMemorySourceKind::KnowledgeRef,
-            source_ref: "knowledge://kernel/database-spec#tables".to_string(),
-            source_hash: "sha256:memory-source".to_string(),
-            evidence_json: r#"{"path":"specs/sql/agents_managed_store_postgres.sql"}"#.to_string(),
-            captured_at: "2026-06-04T00:01:00Z".to_string(),
-            created_at: "2026-06-04T00:01:00Z".to_string(),
-        }
-    }
-
-    fn sample_memory_relation_record() -> AgentMemoryRelationRecord {
-        AgentMemoryRelationRecord {
-            id: 26,
-            tenant_id: 100_001,
-            memory_relation_id: "memory.relation.prefix.supports.marketplace".to_string(),
-            from_memory_id: "memory.record.fact.prefix".to_string(),
-            to_memory_id: "memory.record.fact.marketplace".to_string(),
-            relation_kind: AgentMemoryRelationKind::Supports,
-            weight: 0.7,
-            valid_from: Some("2026-06-04T00:01:00Z".to_string()),
-            valid_until: None,
-            created_at: "2026-06-04T00:01:00Z".to_string(),
-        }
-    }
-
-    fn sample_memory_retrieval_index_record() -> AgentMemoryRetrievalIndexRecord {
-        AgentMemoryRetrievalIndexRecord {
-            id: 27,
-            tenant_id: 100_001,
-            memory_index_id: "memory.index.fact.prefix.wiki".to_string(),
-            memory_id: "memory.record.fact.prefix".to_string(),
-            index_kind: AgentMemoryIndexKind::Wiki,
-            index_provider_id: "provider.memory.llm-wiki".to_string(),
-            external_ref: "wiki://kernel/database-spec#memory.record.fact.prefix".to_string(),
-            embedding_model_id: None,
-            vector_dimension: None,
-            content_hash: "sha256:memory-index".to_string(),
-            indexed_at: "2026-06-04T00:02:00Z".to_string(),
-            status: AgentBusinessStatus::Active,
-        }
-    }
-
-    fn sample_knowledge_base_record() -> AgentKnowledgeBaseRecord {
-        AgentKnowledgeBaseRecord {
-            id: 40,
-            tenant_id: 100_001,
-            organization_id: 0,
-            owner_user_id: 700,
-            knowledge_base_id: "knowledge.base.kernel".to_string(),
-            code: "kernel-knowledge".to_string(),
-            display_name: "Kernel Knowledge".to_string(),
-            description: Some("kernel knowledge base".to_string()),
-            provider_id: "provider.knowledge.llm-wiki".to_string(),
-            base_kind: AgentKnowledgeBaseKind::Hybrid,
-            retrieval_modes: vec![
-                AgentKnowledgeIndexKind::Keyword,
-                AgentKnowledgeIndexKind::Wiki,
-                AgentKnowledgeIndexKind::Graph,
-                AgentKnowledgeIndexKind::Hybrid,
-            ],
-            capability_ids: vec!["knowledge.search".to_string(), "knowledge.read".to_string()],
-            configuration_profile_id: "profile.knowledge.kernel".to_string(),
-            status: AgentBusinessStatus::Active,
-            visibility: AgentVisibility::Tenant,
-            version: 2,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:01:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_knowledge_source_record() -> AgentKnowledgeSourceRecord {
-        AgentKnowledgeSourceRecord {
-            id: 41,
-            tenant_id: 100_001,
-            organization_id: 0,
-            knowledge_source_id: "knowledge.source.kernel.wiki".to_string(),
-            knowledge_base_id: "knowledge.base.kernel".to_string(),
-            source_kind: AgentKnowledgeSourceKind::Wiki,
-            source_ref: "wiki://kernel/agent-standard".to_string(),
-            source_hash: "sha256:knowledge-source".to_string(),
-            sync_policy_json: r#"{"mode":"manual"}"#.to_string(),
-            metadata_json: r#"{"namespace":"kernel"}"#.to_string(),
-            status: AgentBusinessStatus::Active,
-            version: 1,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:00:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_knowledge_document_record() -> AgentKnowledgeDocumentRecord {
-        AgentKnowledgeDocumentRecord {
-            id: 42,
-            tenant_id: 100_001,
-            organization_id: 0,
-            knowledge_document_id: "knowledge.document.kernel.spi".to_string(),
-            knowledge_base_id: "knowledge.base.kernel".to_string(),
-            knowledge_source_id: Some("knowledge.source.kernel.wiki".to_string()),
-            document_kind: AgentKnowledgeDocumentKind::WikiPage,
-            title: "Kernel SPI".to_string(),
-            content_ref: "knowledge-content://kernel/spi".to_string(),
-            content_hash: "sha256:knowledge-document".to_string(),
-            summary: Some("Kernel SPI standard".to_string()),
-            metadata_json: r#"{"format":"wiki"}"#.to_string(),
-            tags: vec!["kernel".to_string(), "rag".to_string()],
-            categories: vec!["architecture".to_string()],
-            trust_level: 4,
-            redaction_classification: "internal".to_string(),
-            chunk_count: 1,
-            status: AgentBusinessStatus::Active,
-            visibility: AgentVisibility::Tenant,
-            version: 2,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:01:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    fn sample_knowledge_chunk_record() -> AgentKnowledgeChunkRecord {
-        AgentKnowledgeChunkRecord {
-            id: 43,
-            tenant_id: 100_001,
-            organization_id: 0,
-            knowledge_chunk_id: "knowledge.chunk.kernel.spi.intro".to_string(),
-            knowledge_document_id: "knowledge.document.kernel.spi".to_string(),
-            parent_chunk_id: None,
-            chunk_ordinal: 1,
-            heading: Some("Intro".to_string()),
-            content_ref: "knowledge-content://kernel/spi#intro".to_string(),
-            content_hash: "sha256:knowledge-chunk".to_string(),
-            token_estimate: 120,
-            summary: Some("SPI introduction".to_string()),
-            metadata_json: r#"{"section":"intro"}"#.to_string(),
-            status: AgentBusinessStatus::Active,
-            created_at: "2026-06-04T00:01:00Z".to_string(),
-        }
-    }
-
-    fn sample_knowledge_index_record() -> AgentKnowledgeIndexRecord {
-        AgentKnowledgeIndexRecord {
-            id: 44,
-            tenant_id: 100_001,
-            knowledge_index_id: "knowledge.index.kernel.spi.wiki".to_string(),
-            knowledge_base_id: "knowledge.base.kernel".to_string(),
-            knowledge_document_id: Some("knowledge.document.kernel.spi".to_string()),
-            knowledge_chunk_id: Some("knowledge.chunk.kernel.spi.intro".to_string()),
-            index_kind: AgentKnowledgeIndexKind::Wiki,
-            index_provider_id: "provider.knowledge.llm-wiki".to_string(),
-            external_ref: "wiki://kernel/spi#intro".to_string(),
-            embedding_model_id: None,
-            vector_dimension: None,
-            content_hash: "sha256:knowledge-index".to_string(),
-            indexed_at: "2026-06-04T00:02:00Z".to_string(),
-            status: AgentBusinessStatus::Active,
-        }
-    }
-
-    fn sample_knowledge_binding_record() -> AgentKnowledgeBindingRecord {
-        AgentKnowledgeBindingRecord {
-            id: 45,
-            tenant_id: 100_001,
-            organization_id: 0,
-            knowledge_binding_id: "knowledge.binding.agent.default".to_string(),
-            knowledge_base_id: "knowledge.base.kernel".to_string(),
-            agent_id: Some("agent.alpha".to_string()),
-            deployment_id: Some("deployment.alpha.local".to_string()),
-            scope_kind: AgentKnowledgeBindingScopeKind::Agent,
-            scope_ref: "agent.alpha".to_string(),
-            active: true,
-            default_binding: true,
-            version: 1,
-            created_at: "2026-06-04T00:00:00Z".to_string(),
-            updated_at: "2026-06-04T00:00:00Z".to_string(),
-        }
-    }
-
-    fn sample_knowledge_sync_job_record() -> AgentKnowledgeSyncJobRecord {
-        AgentKnowledgeSyncJobRecord {
-            id: 46,
-            tenant_id: 100_001,
-            organization_id: 0,
-            sync_job_id: "knowledge.sync.kernel.reindex.1".to_string(),
-            knowledge_base_id: "knowledge.base.kernel".to_string(),
-            knowledge_source_id: Some("knowledge.source.kernel.wiki".to_string()),
-            job_kind: AgentKnowledgeSyncJobKind::Reindex,
-            status: AgentKnowledgeSyncJobStatus::Queued,
-            input_ref: "job-input://knowledge/kernel/reindex/1".to_string(),
-            input_json: r#"{"scope":"document"}"#.to_string(),
-            output_json: None,
-            error_json: None,
-            requested_at: "2026-06-04T00:03:00Z".to_string(),
-            started_at: None,
-            completed_at: None,
-            created_at: "2026-06-04T00:03:00Z".to_string(),
-            updated_at: "2026-06-04T00:03:00Z".to_string(),
-        }
-    }
-
-    fn assert_validation_contains(error: KernelError, expected: &str) {
-        match error {
-            KernelError::Validation { message } => assert!(
-                message.contains(expected),
-                "expected validation message to contain {expected:?}, got {message:?}"
-            ),
-            _ => panic!("expected validation error"),
-        }
-    }
-
-    #[test]
-    fn sql_contracts_use_expected_placeholders_and_filters() {
-        let postgres_schema = include_str!("../specs/sql/agents_managed_store_postgres.sql");
-
-        assert!(!postgres_schema.contains("ai_agent"));
-        assert!(!postgres_schema.contains("ck_ai_"));
-        assert!(!postgres_schema.contains("idx_ai_"));
-        assert!(!postgres_schema.contains("uk_ai_"));
-        for sql in [
-            SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
-            SQL_INSERT_AGENT_BUSINESS,
-            SQL_UPDATE_AGENT_BUSINESS,
-            SQL_LIST_AGENT_BUSINESS,
-            SQL_INSERT_AGENT_PROVIDER_BINDING,
-            SQL_UPDATE_AGENT_PROVIDER_BINDING,
-            SQL_SELECT_AGENT_PROVIDER_BINDING,
-            SQL_LIST_AGENT_PROVIDER_BINDINGS,
-            SQL_INSERT_AGENT_DEPLOYMENT,
-            SQL_LIST_AGENT_DEPLOYMENTS,
-            SQL_INSERT_AUDIT_EVENT,
-            SQL_INSERT_AGENT_MCP_SERVER,
-            SQL_UPDATE_AGENT_MCP_SERVER,
-            SQL_SELECT_AGENT_MCP_SERVER,
-            SQL_LIST_AGENT_MCP_SERVERS,
-            SQL_INSERT_AGENT_KNOWLEDGE_BASE,
-            SQL_UPDATE_AGENT_KNOWLEDGE_BASE,
-            SQL_SELECT_AGENT_KNOWLEDGE_BASE,
-            SQL_LIST_AGENT_KNOWLEDGE_BASES,
-            SQL_INSERT_AGENT_KNOWLEDGE_SOURCE,
-            SQL_UPDATE_AGENT_KNOWLEDGE_SOURCE,
-            SQL_SELECT_AGENT_KNOWLEDGE_SOURCE,
-            SQL_LIST_AGENT_KNOWLEDGE_SOURCES,
-            SQL_INSERT_AGENT_KNOWLEDGE_DOCUMENT,
-            SQL_UPDATE_AGENT_KNOWLEDGE_DOCUMENT,
-            SQL_SELECT_AGENT_KNOWLEDGE_DOCUMENT,
-            SQL_LIST_AGENT_KNOWLEDGE_DOCUMENTS,
-            SQL_INSERT_AGENT_KNOWLEDGE_CHUNK,
-            SQL_SELECT_AGENT_KNOWLEDGE_CHUNK,
-            SQL_LIST_AGENT_KNOWLEDGE_CHUNKS,
-            SQL_UPSERT_AGENT_KNOWLEDGE_INDEX,
-            SQL_SELECT_AGENT_KNOWLEDGE_INDEX,
-            SQL_LIST_AGENT_KNOWLEDGE_INDEXES,
-            SQL_LIST_AGENT_KNOWLEDGE_INDEXES_BY_BASE,
-            SQL_INSERT_AGENT_KNOWLEDGE_BINDING,
-            SQL_SELECT_AGENT_KNOWLEDGE_BINDING,
-            SQL_LIST_AGENT_KNOWLEDGE_BINDINGS,
-            SQL_INSERT_AGENT_KNOWLEDGE_SYNC_JOB,
-            SQL_UPDATE_AGENT_KNOWLEDGE_SYNC_JOB,
-            SQL_SELECT_AGENT_KNOWLEDGE_SYNC_JOB,
-            SQL_LIST_AGENT_KNOWLEDGE_SYNC_JOBS,
-            SQL_INSERT_AGENT_MEMORY_STORE,
-            SQL_UPDATE_AGENT_MEMORY_STORE,
-            SQL_SELECT_AGENT_MEMORY_STORE,
-            SQL_INSERT_AGENT_MEMORY_PROFILE,
-            SQL_SELECT_AGENT_MEMORY_PROFILE,
-            SQL_INSERT_AGENT_MEMORY_BINDING,
-            SQL_SELECT_AGENT_MEMORY_BINDING,
-            SQL_INSERT_AGENT_MEMORY_NAMESPACE,
-            SQL_SELECT_AGENT_MEMORY_NAMESPACE,
-            SQL_INSERT_AGENT_MEMORY_RECORD,
-            SQL_UPDATE_AGENT_MEMORY_RECORD,
-            SQL_SELECT_AGENT_MEMORY_RECORD,
-            SQL_LIST_AGENT_MEMORY_RECORDS,
-            SQL_INSERT_AGENT_MEMORY_SOURCE,
-            SQL_INCREMENT_AGENT_MEMORY_RECORD_SOURCE_COUNT,
-            SQL_LIST_AGENT_MEMORY_SOURCES,
-            SQL_INSERT_AGENT_MEMORY_RELATION,
-            SQL_LIST_AGENT_MEMORY_RELATIONS,
-            SQL_UPSERT_AGENT_MEMORY_RETRIEVAL_INDEX,
-            SQL_LIST_AGENT_MEMORY_RETRIEVAL_INDEXES,
-        ] {
-            assert!(
-                !sql.contains("ai_agent"),
-                "sql must use a_ table prefix: {sql}"
-            );
-        }
-
-        assert!(SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID.contains("tenant_id = $1"));
-        assert!(SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID.contains("agent_id = $2"));
-        assert!(SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID.contains("implementation_type"));
-        assert!(SQL_INSERT_AGENT_BUSINESS.contains("VALUES ($1"));
-        assert!(SQL_INSERT_AGENT_BUSINESS.contains("$21"));
-        assert!(SQL_INSERT_AGENT_BUSINESS.contains("implementation_provider_id"));
-        assert!(SQL_INSERT_AGENT_BUSINESS.contains("implementation_type"));
-        assert!(SQL_UPDATE_AGENT_BUSINESS.contains("implementation_type = $10"));
-        assert!(SQL_UPDATE_AGENT_BUSINESS
-            .contains("WHERE tenant_id = $17 AND agent_id = $18 AND version = $19"));
-        assert!(SQL_LIST_AGENT_BUSINESS.contains("implementation_type"));
-        assert!(SQL_LIST_AGENT_BUSINESS.contains("ORDER BY updated_at DESC"));
-        assert!(
-            SQL_INSERT_AUDIT_EVENT.starts_with("INSERT INTO a_agent_business_audit_event (id, ")
-        );
-        assert!(SQL_INSERT_AUDIT_EVENT.contains("$13"));
-        for action in [
-            "started",
-            "completed",
-            "failed",
-            "cancelled",
-            "knowledge_base_created",
-            "knowledge_base_updated",
-            "knowledge_base_deleted",
-            "knowledge_base_restored",
-            "knowledge_source_created",
-            "knowledge_source_updated",
-            "knowledge_source_deleted",
-            "knowledge_source_restored",
-            "knowledge_document_created",
-            "knowledge_document_updated",
-            "knowledge_document_deleted",
-            "knowledge_document_restored",
-            "knowledge_sync_job_created",
-            "knowledge_sync_job_started",
-            "knowledge_sync_job_completed",
-            "knowledge_sync_job_failed",
-            "knowledge_sync_job_cancelled",
-        ] {
-            assert!(
-                postgres_schema.contains(action),
-                "audit action check constraint must allow {action}"
-            );
-        }
-        #[cfg(feature = "postgres-sync")]
-        assert!(SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID
-            .contains("ORDER BY created_at DESC, id DESC"));
-        assert!(SQL_INSERT_AGENT_PROVIDER_BINDING.contains("INSERT INTO a_agent_provider_binding"));
-        assert!(SQL_INSERT_AGENT_PROVIDER_BINDING.contains("$13"));
-        assert!(SQL_UPDATE_AGENT_PROVIDER_BINDING
-            .contains("WHERE tenant_id = $8 AND agent_id = $9 AND binding_id = $10"));
-        assert!(SQL_UPDATE_AGENT_PROVIDER_BINDING.contains("AND version = $11"));
-        assert!(SQL_SELECT_AGENT_PROVIDER_BINDING.contains("binding_id = $3"));
-        assert!(SQL_LIST_AGENT_PROVIDER_BINDINGS
-            .contains("ORDER BY active DESC, updated_at DESC, binding_id ASC"));
-        assert!(SQL_INSERT_AGENT_DEPLOYMENT.contains("INSERT INTO a_agent_deployment"));
-        assert!(SQL_INSERT_AGENT_DEPLOYMENT.contains("$14"));
-        assert!(SQL_LIST_AGENT_DEPLOYMENTS.contains("ORDER BY created_at DESC, deployment_id ASC"));
-        assert!(SQL_INSERT_AGENT_MCP_SERVER.contains("INSERT INTO a_agent_mcp_server"));
-        assert!(SQL_INSERT_AGENT_MCP_SERVER.contains("$29"));
-        assert!(SQL_UPDATE_AGENT_MCP_SERVER
-            .contains("WHERE tenant_id = $25 AND mcp_server_id = $26 AND version = $27"));
-        assert!(SQL_INSERT_AGENT_KNOWLEDGE_BASE.contains("INSERT INTO a_agent_knowledge_base"));
-        assert!(SQL_INSERT_AGENT_KNOWLEDGE_BASE.contains("$20"));
-        assert!(SQL_UPDATE_AGENT_KNOWLEDGE_BASE
-            .contains("WHERE tenant_id = $16 AND knowledge_base_id = $17 AND version = $18"));
-        assert!(SQL_INSERT_AGENT_KNOWLEDGE_SOURCE.contains("INSERT INTO a_agent_knowledge_source"));
         assert!(SQL_INSERT_AGENT_KNOWLEDGE_SOURCE.contains("$16"));
         assert!(
             SQL_INSERT_AGENT_KNOWLEDGE_DOCUMENT.contains("INSERT INTO a_agent_knowledge_document")
@@ -7103,7 +3930,7 @@ mod tests {
             .contains("ON CONFLICT (tenant_id, memory_index_id) DO UPDATE"));
 
         for sql in [
-            SQL_INSERT_AGENT_BUSINESS,
+            SQL_INSERT_AGENT,
             SQL_INSERT_AGENT_PROVIDER_BINDING,
             SQL_INSERT_AGENT_DEPLOYMENT,
             SQL_INSERT_AUDIT_EVENT,
@@ -7147,20 +3974,20 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS a_agent_memory_retrieval_index",
             "CREATE TABLE IF NOT EXISTS a_agent_memory_access_event",
             "CREATE TABLE IF NOT EXISTS a_agent_memory_compaction_job",
-            "ck_a_agent_business_implementation_provider_id_standard",
+            "ck_ai_agent_implementation_provider_id_standard",
             "implementation_provider_id ~ '^provider\\.[a-z0-9_-]+(\\.[a-z0-9_-]+)*$'",
             "implementation_type VARCHAR(64) NOT NULL DEFAULT 'sdkwork-native'",
-            "ck_a_agent_business_implementation_type",
+            "ck_ai_agent_implementation_type",
             "'sdkwork-native'",
             "'openai-agents'",
             "'semantic-kernel'",
-            "ck_a_agent_provider_binding_binding_id_standard",
+            "ck_ai_agent_runtime_binding_binding_id_standard",
             "binding_id ~ '^binding\\.[a-z0-9_-]+(\\.[a-z0-9_-]+)*$'",
-            "ck_a_agent_provider_binding_provider_id_standard",
+            "ck_ai_agent_runtime_binding_provider_id_standard",
             "provider_id ~ '^provider\\.[a-z0-9_-]+(\\.[a-z0-9_-]+)*$'",
-            "ck_a_agent_provider_binding_configuration_profile_id_standard",
+            "ck_ai_agent_runtime_binding_configuration_profile_id_standard",
             "configuration_profile_id ~ '^profile\\.[a-z0-9_-]+(\\.[a-z0-9_-]+)*$'",
-            "ck_a_agent_provider_binding_capabilities_standard",
+            "ck_ai_agent_runtime_binding_capabilities_standard",
             "sdkwork_intelligence_agents_service_capabilities_json_is_standard(capabilities_json)",
             "ck_a_agent_deployment_deployment_id_standard",
             "deployment_id ~ '^deployment\\.[a-z0-9_-]+(\\.[a-z0-9_-]+)*$'",
@@ -7580,8 +4407,8 @@ mod tests {
         assert_validation_contains(error, "endpoints");
 
         let retrieval_index =
-            AgentMemoryRetrievalIndexRow::from_record(&AgentMemoryRetrievalIndexRecord {
-                index_kind: AgentMemoryIndexKind::Vector,
+            AgentMemoryRetrievalIndexRow::from_record(&{
+                index_kind: ::Vector,
                 embedding_model_id: None,
                 vector_dimension: None,
                 ..sample_memory_retrieval_index_record()
@@ -7589,9 +4416,9 @@ mod tests {
             .expect_err("vector index without embedding metadata should fail");
         assert_validation_contains(retrieval_index, "vector memory index");
 
-        let agent_scope_mismatch = AgentMemoryBindingRow::from_record(&AgentMemoryBindingRecord {
+        let agent_scope_mismatch = AgentMemoryBindingRow::from_record(&{
             agent_id: Some("agent.alpha".to_string()),
-            scope_kind: AgentMemoryBindingScopeKind::Agent,
+            scope_kind: ::Agent,
             scope_ref: "agent.beta".to_string(),
             ..sample_memory_binding_record()
         })
@@ -7599,10 +4426,10 @@ mod tests {
         assert_validation_contains(agent_scope_mismatch, "scopeRef");
 
         let deployment_scope_mismatch =
-            AgentMemoryBindingRow::from_record(&AgentMemoryBindingRecord {
+            AgentMemoryBindingRow::from_record(&{
                 agent_id: Some("agent.alpha".to_string()),
                 deployment_id: Some("deployment.alpha.local".to_string()),
-                scope_kind: AgentMemoryBindingScopeKind::Deployment,
+                scope_kind: ::Deployment,
                 scope_ref: "deployment.beta.local".to_string(),
                 ..sample_memory_binding_record()
             })
@@ -7767,15 +4594,15 @@ mod tests {
         assert_validation_contains(error, "contentHash");
 
         let oversized_chunk_hash =
-            AgentKnowledgeChunkRow::from_record(&AgentKnowledgeChunkRecord {
+            AgentKnowledgeChunkRow::from_record(&{
                 content_hash: "h".repeat(129),
                 ..sample_knowledge_chunk_record()
             })
             .expect_err("oversized chunk content hash should fail before row build");
         assert_validation_contains(oversized_chunk_hash, "contentHash");
 
-        let vector_index = AgentKnowledgeIndexRow::from_record(&AgentKnowledgeIndexRecord {
-            index_kind: AgentKnowledgeIndexKind::Vector,
+        let vector_index = AgentKnowledgeIndexRow::from_record(&{
+            index_kind: ::Vector,
             embedding_model_id: None,
             vector_dimension: None,
             ..sample_knowledge_index_record()
@@ -7784,7 +4611,7 @@ mod tests {
         assert_validation_contains(vector_index, "vector knowledge index");
 
         let chunk_without_document =
-            AgentKnowledgeIndexRow::from_record(&AgentKnowledgeIndexRecord {
+            AgentKnowledgeIndexRow::from_record(&{
                 knowledge_document_id: None,
                 knowledge_chunk_id: Some("knowledge.chunk.kernel.spi.intro".to_string()),
                 ..sample_knowledge_index_record()
@@ -7793,7 +4620,7 @@ mod tests {
         assert_validation_contains(chunk_without_document, "knowledgeDocumentId");
 
         let oversized_index_hash =
-            AgentKnowledgeIndexRow::from_record(&AgentKnowledgeIndexRecord {
+            AgentKnowledgeIndexRow::from_record(&{
                 content_hash: "h".repeat(129),
                 ..sample_knowledge_index_record()
             })
@@ -7801,7 +4628,7 @@ mod tests {
         assert_validation_contains(oversized_index_hash, "contentHash");
 
         let oversized_scope_ref =
-            AgentKnowledgeBindingRow::from_record(&AgentKnowledgeBindingRecord {
+            AgentKnowledgeBindingRow::from_record(&{
                 scope_ref: "s".repeat(129),
                 ..sample_knowledge_binding_record()
             })
@@ -7809,9 +4636,9 @@ mod tests {
         assert_validation_contains(oversized_scope_ref, "scopeRef");
 
         let agent_scope_mismatch =
-            AgentKnowledgeBindingRow::from_record(&AgentKnowledgeBindingRecord {
+            AgentKnowledgeBindingRow::from_record(&{
                 agent_id: Some("agent.alpha".to_string()),
-                scope_kind: AgentKnowledgeBindingScopeKind::Agent,
+                scope_kind: ::Agent,
                 scope_ref: "agent.beta".to_string(),
                 ..sample_knowledge_binding_record()
             })
@@ -7819,16 +4646,15 @@ mod tests {
         assert_validation_contains(agent_scope_mismatch, "scopeRef");
 
         let deployment_scope_mismatch =
-            AgentKnowledgeBindingRow::from_record(&AgentKnowledgeBindingRecord {
+            AgentKnowledgeBindingRow::from_record(&{
                 agent_id: Some("agent.alpha".to_string()),
                 deployment_id: Some("deployment.alpha.local".to_string()),
-                scope_kind: AgentKnowledgeBindingScopeKind::Deployment,
+                scope_kind: ::Deployment,
                 scope_ref: "deployment.beta.local".to_string(),
                 ..sample_knowledge_binding_record()
             })
             .expect_err(
-                "deployment-scoped knowledge binding row should require matching scope ref",
-            );
+                "deployment-scoped knowledge binding row should require matching scope ref");
         assert_validation_contains(deployment_scope_mismatch, "scopeRef");
     }
 
@@ -7993,4 +4819,81 @@ let mut mcp = AgentMcpServerRow::from_record(&sample_mcp_server_record())
             _ => panic!("expected validation error"),
         }
     }
+}#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCompositionSlotRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub agent_id: String,
+    pub slot_id: String,
+    pub slot_kind: String,
+    pub target_module: String,
+    pub target_ref: String,
+    pub target_version_ref: Option<String>,
+    pub priority: i32,
+    pub enabled: bool,
+    pub policy_json: String,
+    pub status: i16,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
 }
+
+impl AgentCompositionSlotRow {
+    pub fn from_record(record: &AgentCompositionSlotRecord) -> KernelResult<Self> {
+        Ok(Self {
+            id: record.id,
+            uuid: build_composition_slot_uuid(record.tenant_id, &record.agent_id, &record.slot_id),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            agent_id: record.agent_id.clone(),
+            slot_id: record.slot_id.clone(),
+            slot_kind: record.slot_kind.as_str().to_string(),
+            target_module: record.target_module.as_str().to_string(),
+            target_ref: record.target_ref.clone(),
+            target_version_ref: record.target_version_ref.clone(),
+            priority: record.priority,
+            enabled: record.enabled,
+            policy_json: record.policy_json.clone(),
+            status: record.status.as_db_code(),
+            version: record.version,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            deleted_at: record.deleted_at.clone(),
+        })
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentCompositionSlotRecord> {
+        Ok(AgentCompositionSlotRecord {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            agent_id: self.agent_id,
+            slot_id: self.slot_id,
+            slot_kind: AgentCompositionSlotKind::from_str(self.slot_kind.as_str())
+                .ok_or_else(|| KernelError::validation(format!("invalid slot_kind: {}", self.slot_kind)))?,
+            target_module: AgentCompositionTargetModule::from_str(self.target_module.as_str())
+                .ok_or_else(|| KernelError::validation(format!("invalid target_module: {}", self.target_module)))?,
+            target_ref: self.target_ref,
+            target_version_ref: self.target_version_ref,
+            priority: self.priority,
+            enabled: self.enabled,
+            policy_json: self.policy_json,
+            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
+                KernelError::validation(format!("invalid composition slot status: {}", self.status))
+            })?,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            deleted_at: self.deleted_at,
+        })
+    }
+}
+
+fn build_composition_slot_uuid(tenant_id: u64, agent_id: &str, slot_id: &str) -> String {
+    format!("composition_slot_{tenant_id}_{agent_id}_{slot_id}")
+}
+
+

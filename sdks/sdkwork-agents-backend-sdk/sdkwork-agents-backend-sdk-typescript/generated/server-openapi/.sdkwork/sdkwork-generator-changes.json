@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 1,
+  "generator": "@sdkwork/sdk-generator",
+  "sdk": {
+    "name": "sdkwork-agents-backend-sdk",
+    "version": "0.1.0",
+    "language": "typescript",
+    "sdkType": "backend",
+    "protocol": "http",
+    "packageName": "@sdkwork/agents-backend-sdk"
+  },
+  "changeFingerprint": "49a532ab2a81e714adefc66c549020aedc6d702d836c0f896d973df81f17b0a5",
+  "changes": {
+    "createdGeneratedFiles": [
+      "bin/publish-core.mjs",
+      "bin/publish.ps1",
+      "bin/publish.sh",
+      "bin/sdk-gen.bat",
+      "bin/sdk-gen.sh",
+      "CHANGELOG.md",
+      "LICENSE",
+      "package.json",
+      "README.md",
+      "sdkwork-sdk.json",
+      "src/api/ai.ts",
+      "src/api/base.ts",
+      "src/api/index.ts",
+      "src/api/paths.ts",
+      "src/auth/index.ts",
+      "src/http/client.ts",
+      "src/http/index.ts",
+      "src/index.ts",
+      "src/sdk.ts",
+      "src/types/activate-agent-provider-binding-request.ts",
+      "src/types/agent-audit-event-list-response.ts",
+      "src/types/agent-audit-event.ts",
+      "src/types/agent-composition-slot-create-data.ts",
+      "src/types/agent-composition-slot-kind.ts",
+      "src/types/agent-composition-slot-list-response.ts",
+      "src/types/agent-composition-slot-record.ts",
+      "src/types/agent-composition-slot-response.ts",
+      "src/types/agent-composition-target-module.ts",
+      "src/types/agent-deployment-list-response.ts",
+      "src/types/agent-deployment-record.ts",
+      "src/types/agent-deployment-response.ts",
+      "src/types/agent-implementation-kind.ts",
+      "src/types/agent-implementation-type.ts",
+      "src/types/agent-list-response.ts",
+      "src/types/agent-management-profile.ts",
+      "src/types/agent-provider-binding-list-response.ts",
+      "src/types/agent-provider-binding-record.ts",
+      "src/types/agent-provider-binding-response.ts",
+      "src/types/agent-record.ts",
+      "src/types/agent-response.ts",
+      "src/types/agent-status.ts",
+      "src/types/agent-visibility.ts",
+      "src/types/audit-action.ts",
+      "src/types/common.ts",
+      "src/types/create-agent-composition-slot-request.ts",
+      "src/types/create-agent-deployment-request.ts",
+      "src/types/create-agent-provider-binding-request.ts",
+      "src/types/create-agent-request.ts",
+      "src/types/delete-agent-request.ts",
+      "src/types/deployment-status.ts",
+      "src/types/field-error.ts",
+      "src/types/index.ts",
+      "src/types/int64-string.ts",
+      "src/types/page-info.ts",
+      "src/types/problem-detail.ts",
+      "src/types/restore-agent-request.ts",
+      "src/types/update-agent-composition-slot-data.ts",
+      "src/types/update-agent-composition-slot-request.ts",
+      "src/types/update-agent-request.ts",
+      "src/types/update-agent-status-request.ts",
+      "tsconfig.json"
+    ],
+    "updatedGeneratedFiles": [],
+    "unchangedGeneratedFiles": [],
+    "deletedGeneratedFiles": [],
+    "scaffoldedFiles": [
+      "custom/build-runtime.mjs",
+      "custom/README.md"
+    ],
+    "preservedScaffoldFiles": [],
+    "backedUpFiles": []
+  },
+  "impact": {
+    "schemaVersion": 1,
+    "areas": [
+      "api-surface",
+      "models",
+      "runtime",
+      "build-metadata",
+      "publish-workflow",
+      "documentation",
+      "custom-scaffold",
+      "unknown"
+    ],
+    "details": [
+      {
+        "area": "api-surface",
+        "paths": [
+          "src/api/ai.ts",
+          "src/api/base.ts",
+          "src/api/index.ts",
+          "src/api/paths.ts",
+          "src/http/client.ts",
+          "src/sdk.ts"
+        ]
+      },
+      {
+        "area": "models",
+        "paths": [
+          "src/types/activate-agent-provider-binding-request.ts",
+          "src/types/agent-audit-event-list-response.ts",
+          "src/types/agent-audit-event.ts",
+          "src/types/agent-composition-slot-create-data.ts",
+          "src/types/agent-composition-slot-kind.ts",
+          "src/types/agent-composition-slot-list-response.ts",
+          "src/types/agent-composition-slot-record.ts",
+          "src/types/agent-composition-slot-response.ts",
+          "src/types/agent-composition-target-module.ts",
+          "src/types/agent-deployment-list-response.ts",
+          "src/types/agent-deployment-record.ts",
+          "src/types/agent-deployment-response.ts",
+          "src/types/agent-implementation-kind.ts",
+          "src/types/agent-implementation-type.ts",
+          "src/types/agent-list-response.ts",
+          "src/types/agent-management-profile.ts",
+          "src/types/agent-provider-binding-list-response.ts",
+          "src/types/agent-provider-binding-record.ts",
+          "src/types/agent-provider-binding-response.ts",
+          "src/types/agent-record.ts",
+          "src/types/agent-response.ts",
+          "src/types/agent-status.ts",
+          "src/types/agent-visibility.ts",
+          "src/types/audit-action.ts",
+          "src/types/common.ts",
+          "src/types/create-agent-composition-slot-request.ts",
+          "src/types/create-agent-deployment-request.ts",
+          "src/types/create-agent-provider-binding-request.ts",
+          "src/types/create-agent-request.ts",
+          "src/types/delete-agent-request.ts",
+          "src/types/deployment-status.ts",
+          "src/types/field-error.ts",
+          "src/types/index.ts",
+          "src/types/int64-string.ts",
+          "src/types/page-info.ts",
+          "src/types/problem-detail.ts",
+          "src/types/restore-agent-request.ts",
+          "src/types/update-agent-composition-slot-data.ts",
+          "src/types/update-agent-composition-slot-request.ts",
+          "src/types/update-agent-request.ts",
+          "src/types/update-agent-status-request.ts"
+        ]
+      },
+      {
+        "area": "runtime",
+        "paths": [
+          "src/auth/index.ts",
+          "src/http/client.ts",
+          "src/http/index.ts"
+        ]
+      },
+      {
+        "area": "build-metadata",
+        "paths": [
+          "package.json",
+          "sdkwork-sdk.json",
+          "tsconfig.json"
+        ]
+      },
+      {
+        "area": "publish-workflow",
+        "paths": [
+          "bin/publish-core.mjs",
+          "bin/publish.ps1",
+          "bin/publish.sh",
+          "bin/sdk-gen.bat",
+          "bin/sdk-gen.sh"
+        ]
+      },
+      {
+        "area": "documentation",
+        "paths": [
+          "CHANGELOG.md",
+          "custom/README.md",
+          "README.md"
+        ]
+      },
+      {
+        "area": "custom-scaffold",
+        "paths": [
+          "custom/build-runtime.mjs",
+          "custom/README.md"
+        ]
+      },
+      {
+        "area": "unknown",
+        "paths": [
+          "LICENSE",
+          "src/index.ts"
+        ]
+      }
+    ],
+    "requiresVerification": true,
+    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown. Verification is required."
+  },
+  "verificationPlan": {
+    "shouldRun": true,
+    "runPhase": "now",
+    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "steps": [
+      {
+        "id": "check",
+        "title": "Unified package check",
+        "required": true,
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown.",
+        "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
+        "command": "node",
+        "args": [
+          "./bin/publish-core.mjs",
+          "--language",
+          "typescript",
+          "--project-dir",
+          ".",
+          "--action",
+          "check"
+        ],
+        "displayCommand": "node ./bin/publish-core.mjs --language typescript --project-dir . --action check"
+      },
+      {
+        "id": "build",
+        "title": "Unified package build",
+        "required": true,
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown.",
+        "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
+        "command": "node",
+        "args": [
+          "./bin/publish-core.mjs",
+          "--language",
+          "typescript",
+          "--project-dir",
+          ".",
+          "--action",
+          "build"
+        ],
+        "displayCommand": "node ./bin/publish-core.mjs --language typescript --project-dir . --action build"
+      }
+    ]
+  },
+  "executionDecision": {
+    "schemaVersion": 1,
+    "riskLevel": "high",
+    "nextAction": "verify",
+    "requiresManualReview": false,
+    "applyRequiresExpectedFingerprint": false,
+    "summary": "Changes have been applied. Run the required verification plan now.",
+    "reasons": [
+      "manual-review-required",
+      "preserved-legacy-files",
+      "unknown-impact",
+      "verification-required"
+    ]
+  },
+  "preservedLegacyFiles": true
+}

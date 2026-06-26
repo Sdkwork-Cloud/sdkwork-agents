@@ -1,0 +1,20 @@
+[package]
+name = "sdkwork-agents-runtime-facade"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Agents application facade for kernel code-engine provider bootstrap and runtime execution"
+
+[dependencies]
+sdkwork-agent-kernel = { workspace = true }
+sdkwork-utils-rust = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+sdkwork-agent-provider-codex = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-codex" }
+sdkwork-agent-provider-claude-code = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-claude-code" }
+sdkwork-agent-provider-gemini-cli = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-gemini-cli" }
+sdkwork-agent-provider-opencode = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-opencode" }
+sdkwork-agent-provider-openclaw = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-openclaw" }
+sdkwork-agent-provider-hermes = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-hermes" }
+sdkwork-agent-provider-spi = { path = "../../../sdkwork-kernel/sdkwork-agent-provider-spi" }

@@ -1,0 +1,10 @@
+                .route(
+                    "/app/v3/api/ai/agents/{agentId}/composition_slots",
+                    get(app_list_composition_slots).post(app_create_composition_slot),
+                )
+                .route(
+                    "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+                    get(app_get_composition_slot)
+                        .patch(app_update_composition_slot)
+                        .delete(app_delete_composition_slot),
+                )

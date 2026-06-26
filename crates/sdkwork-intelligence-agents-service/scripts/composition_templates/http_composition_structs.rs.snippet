@@ -1,0 +1,50 @@
+#[derive(Debug, Clone, Deserialize)]
+struct TenantAgentSlotPathParams {
+    #[serde(rename = "agentId")]
+    agent_id: String,
+    #[serde(rename = "slotId")]
+    slot_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CompositionSlotDeleteQueryParams {
+    expected_version: Option<String>,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentCompositionSlotRecordResponse {
+    id: String,
+    tenant_id: String,
+    organization_id: String,
+    agent_id: String,
+    slot_id: String,
+    slot_kind: String,
+    target_module: String,
+    target_ref: String,
+    target_version_ref: Option<String>,
+    priority: i32,
+    enabled: bool,
+    policy_json: String,
+    status: String,
+    version: String,
+    created_at: String,
+    updated_at: String,
+    deleted_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AgentCompositionSlotResponse {
+    data: AgentCompositionSlotRecordResponse,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AgentCompositionSlotListDataResponse {
+    items: Vec<AgentCompositionSlotRecordResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AgentCompositionSlotListResponse {
+    data: AgentCompositionSlotListDataResponse,
+}

@@ -2120,54 +2120,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdkwork-agent-adapter-codex"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-adapter-core",
- "sdkwork-agent-kernel",
- "sdkwork-agent-sdk-backend-core",
- "sdkwork-agent-sdk-backend-node",
- "sdkwork-agent-sdk-backend-rust",
- "sdkwork-agent-sdk-spi",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sdkwork-agent-adapter-core"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-kernel",
- "serde_json",
-]
-
-[[package]]
-name = "sdkwork-agent-adapter-hermes"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-adapter-core",
- "sdkwork-agent-kernel",
- "sdkwork-agent-sdk-backend-core",
- "sdkwork-agent-sdk-backend-python",
- "sdkwork-agent-sdk-spi",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sdkwork-agent-adapter-openclaw"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-adapter-core",
- "sdkwork-agent-kernel",
- "sdkwork-agent-sdk-backend-core",
- "sdkwork-agent-sdk-backend-node",
- "sdkwork-agent-sdk-spi",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "sdkwork-agent-api-bridge"
 version = "0.1.0"
 dependencies = [
@@ -2199,15 +2151,6 @@ name = "sdkwork-agent-kernel"
 version = "0.1.0"
 
 [[package]]
-name = "sdkwork-agent-plugin-codex"
-version = "0.2.0"
-dependencies = [
- "sdkwork-agent-adapter-codex",
- "sdkwork-agent-kernel",
- "sdkwork-agent-plugin-core",
-]
-
-[[package]]
 name = "sdkwork-agent-plugin-core"
 version = "0.1.0"
 dependencies = [
@@ -2215,83 +2158,116 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdkwork-agent-plugin-hermes"
+name = "sdkwork-agent-provider-codex"
 version = "0.2.0"
 dependencies = [
- "sdkwork-agent-adapter-hermes",
  "sdkwork-agent-kernel",
  "sdkwork-agent-plugin-core",
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-core",
+ "sdkwork-agent-provider-transport-node",
+ "sdkwork-agent-provider-transport-rust",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
-name = "sdkwork-agent-plugin-openclaw"
+name = "sdkwork-agent-provider-core"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-hermes"
 version = "0.2.0"
 dependencies = [
- "sdkwork-agent-adapter-openclaw",
+ "sdkwork-agent-kernel",
+ "sdkwork-agent-plugin-core",
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-core",
+ "sdkwork-agent-provider-transport-python",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-openclaw"
+version = "0.2.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "sdkwork-agent-plugin-core",
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-core",
+ "sdkwork-agent-provider-transport-node",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-rig"
+version = "0.2.0"
+dependencies = [
  "sdkwork-agent-kernel",
  "sdkwork-agent-plugin-core",
 ]
 
 [[package]]
-name = "sdkwork-agent-plugin-rig"
+name = "sdkwork-agent-provider-spi"
 version = "0.1.0"
 dependencies = [
  "sdkwork-agent-kernel",
- "sdkwork-agent-plugin-core",
-]
-
-[[package]]
-name = "sdkwork-agent-sdk-backend-core"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-sdk-spi",
- "serde",
-]
-
-[[package]]
-name = "sdkwork-agent-sdk-backend-ipc"
-version = "0.1.0"
-dependencies = [
+ "sdkwork-agent-provider-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "sdkwork-agent-sdk-backend-node"
+name = "sdkwork-agent-provider-transport-core"
 version = "0.1.0"
 dependencies = [
- "sdkwork-agent-adapter-core",
- "sdkwork-agent-sdk-backend-ipc",
- "sdkwork-agent-sdk-spi",
- "serde_json",
-]
-
-[[package]]
-name = "sdkwork-agent-sdk-backend-python"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-adapter-core",
- "sdkwork-agent-sdk-backend-ipc",
- "sdkwork-agent-sdk-spi",
- "serde_json",
-]
-
-[[package]]
-name = "sdkwork-agent-sdk-backend-rust"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-kernel",
- "sdkwork-agent-sdk-spi",
- "serde_json",
-]
-
-[[package]]
-name = "sdkwork-agent-sdk-spi"
-version = "0.1.0"
-dependencies = [
- "sdkwork-agent-adapter-core",
- "sdkwork-agent-kernel",
+ "sdkwork-agent-provider-spi",
  "serde",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-transport-ipc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-transport-node"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-ipc",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-transport-python"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-ipc",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-transport-rust"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "sdkwork-agent-provider-spi",
  "serde_json",
 ]
 
@@ -2312,11 +2288,11 @@ dependencies = [
  "sdkwork-agent-api-bridge",
  "sdkwork-agent-database",
  "sdkwork-agent-kernel",
- "sdkwork-agent-plugin-codex",
  "sdkwork-agent-plugin-core",
- "sdkwork-agent-plugin-hermes",
- "sdkwork-agent-plugin-openclaw",
- "sdkwork-agent-plugin-rig",
+ "sdkwork-agent-provider-codex",
+ "sdkwork-agent-provider-hermes",
+ "sdkwork-agent-provider-openclaw",
+ "sdkwork-agent-provider-rig",
  "sdkwork-agent-session",
  "sdkwork-agent-streaming",
  "sdkwork-code-kernel",

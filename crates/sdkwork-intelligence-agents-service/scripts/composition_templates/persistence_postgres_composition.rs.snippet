@@ -1,0 +1,128 @@
+
+    fn insert_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_COMPOSITION_SLOT,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.agent_id,
+                row.slot_id,
+                row.slot_kind,
+                row.target_module,
+                row.target_ref,
+                row.target_version_ref,
+                row.priority,
+                row.enabled,
+                row.policy_json,
+                row.status,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.deleted_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let expected_version = u64_to_i64(row.version.saturating_sub(1), "version")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_COMPOSITION_SLOT,
+                organization_id,
+                row.slot_kind,
+                row.target_module,
+                row.target_ref,
+                row.target_version_ref,
+                row.priority,
+                row.enabled,
+                row.policy_json,
+                row.status,
+                version,
+                row.updated_at,
+                row.deleted_at,
+                tenant_id,
+                row.agent_id,
+                row.slot_id,
+                expected_version
+            )?;
+            Ok(())
+        })
+    }
+
+    fn get_composition_slot_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str,
+    ) -> Option<AgentCompositionSlotRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_COMPOSITION_SLOT,
+                tenant_id,
+                agent_id,
+                slot_id
+            )?;
+            row.map(pg_row_to_agent_composition_slot_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn list_composition_slot_rows(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Vec<AgentCompositionSlotRow> {
+        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        };
+        self.with_pool(|pool| {
+            let rows = pg_query!(pool, SQL_LIST_AGENT_COMPOSITION_SLOTS, tenant_id, agent_id)?;
+            rows.into_iter()
+                .map(pg_row_to_agent_composition_slot_row)
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_composition_slot_row(row: PgRow) -> KernelResult<AgentCompositionSlotRow> {
+    Ok(AgentCompositionSlotRow {
+        id: int64_to_u64(row.try_get::<i64, _>("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(row.try_get::<i64, _>("tenant_id").map_err(map_sqlx_error)?, "tenant_id")?,
+        organization_id: int64_to_u64(
+            row.try_get::<i64, _>("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        slot_id: row.try_get("slot_id").map_err(map_sqlx_error)?,
+        slot_kind: row.try_get("slot_kind").map_err(map_sqlx_error)?,
+        target_module: row.try_get("target_module").map_err(map_sqlx_error)?,
+        target_ref: row.try_get("target_ref").map_err(map_sqlx_error)?,
+        target_version_ref: row.try_get("target_version_ref").map_err(map_sqlx_error)?,
+        priority: row.try_get("priority").map_err(map_sqlx_error)?,
+        enabled: row.try_get("enabled").map_err(map_sqlx_error)?,
+        policy_json: row.try_get("policy_json").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get::<i64, _>("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
+    })
+}
