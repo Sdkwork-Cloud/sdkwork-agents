@@ -1,0 +1,11 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/agents/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "SDKWork Agents",
+    "navigationBarBackgroundColor": "#0f766e",
+    "navigationBarTextStyle": "white"
+  }
+}

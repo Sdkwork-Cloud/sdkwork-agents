@@ -1,0 +1,1 @@
+{"version":3,"file":"knowledge-sync-job-response.d.ts","sourceRoot":"","sources":["../../src/types/knowledge-sync-job-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,sBAAsB,EAAE,MAAM,6BAA6B,CAAC;AAE1E,MAAM,WAAW,wBAAwB;IACvC,IAAI,EAAE,sBAAsB,CAAC;IAC7B,SAAS,CAAC,EAAE,MAAM,CAAC;CACpB"}

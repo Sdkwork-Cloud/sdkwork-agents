@@ -1,0 +1,38 @@
+{
+  "name": "@sdkwork/agents-pc",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.app.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test:agent-contracts": "tsx --tsconfig tsconfig.app.json scripts/agent-service-scope-consistency-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-service-management-profile-contract.test.ts"
+  },
+  "dependencies": {
+    "@sdkwork/agents-app-sdk": "workspace:*",
+    "@sdkwork/agents-pc-agents": "workspace:*",
+    "@sdkwork/agents-pc-core": "workspace:*",
+    "@sdkwork/agents-pc-commons": "workspace:*",
+    "@sdkwork/agents-pc-shell": "workspace:*",
+    "@sdkwork/sdk-common": "workspace:*",
+    "clsx": "catalog:",
+    "lucide-react": "catalog:",
+    "motion": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-router-dom": "^7.17.0",
+    "tailwind-merge": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

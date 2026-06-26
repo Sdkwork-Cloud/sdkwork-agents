@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork_agents_flutter_mobile_core",
+    "type": "dart-package",
+    "domain": "agents",
+    "capability": "core",
+    "surface": "app",
+    "languages": [
+      "dart"
+    ],
+    "generated": false
+  },
+  "contracts": {
+    "dependencyComposition": "../../../specs/dependency.composition.json"
+  }
+}

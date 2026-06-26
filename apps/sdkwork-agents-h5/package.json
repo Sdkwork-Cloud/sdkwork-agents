@@ -1,0 +1,41 @@
+{
+  "name": "@sdkwork/agents-h5",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.app.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+  },
+  "dependencies": {
+    "@sdkwork/agents-app-sdk": "workspace:*",
+    "@sdkwork/agents-h5-agents": "workspace:*",
+    "@sdkwork/agents-h5-core": "workspace:*",
+    "@sdkwork/agents-h5-commons": "workspace:*",
+    "@sdkwork/agents-h5-shell": "workspace:*",
+    "@sdkwork/sdk-common": "workspace:*",
+    "clsx": "catalog:",
+    "lucide-react": "catalog:",
+    "motion": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-router-dom": "^7.17.0",
+    "tailwind-merge": "catalog:",
+    "@tiptap/extension-placeholder": "catalog:",
+    "@tiptap/pm": "catalog:",
+    "@tiptap/react": "catalog:",
+    "@tiptap/starter-kit": "catalog:",
+    "emoji-picker-react": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

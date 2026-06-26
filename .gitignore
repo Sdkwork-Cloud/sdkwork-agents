@@ -1,0 +1,11 @@
+/target/
+node_modules/
+.env
+.env.*
+!.env.example
+*.local.toml
+config/*.local.toml
+.sdkwork/local/
+.sdkwork/tmp/
+.sdkwork/cache/
+.sdkwork/secrets/

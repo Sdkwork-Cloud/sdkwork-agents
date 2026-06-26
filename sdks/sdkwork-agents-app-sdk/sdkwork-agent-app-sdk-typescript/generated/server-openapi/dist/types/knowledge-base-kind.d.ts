@@ -1,0 +1,2 @@
+export type KnowledgeBaseKind = 'wiki' | 'document-repository' | 'database' | 'api-reference' | 'graph' | 'hybrid' | 'external-provider' | 'file-store';
+//# sourceMappingURL=knowledge-base-kind.d.ts.map

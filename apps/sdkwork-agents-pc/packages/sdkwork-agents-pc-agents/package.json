@@ -1,0 +1,22 @@
+{
+  "name": "@sdkwork/agents-pc-agents",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@sdkwork/agents-app-sdk": "workspace:*",
+    "@sdkwork/agents-pc-commons": "workspace:*",
+    "@sdkwork/agents-pc-core": "workspace:*",
+    "@tiptap/extension-placeholder": "catalog:",
+    "@tiptap/pm": "catalog:",
+    "@tiptap/react": "catalog:",
+    "@tiptap/starter-kit": "catalog:",
+    "emoji-picker-react": "catalog:",
+    "lucide-react": "catalog:",
+    "motion": "catalog:",
+    "react": "catalog:"
+  }
+}

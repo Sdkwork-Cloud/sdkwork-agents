@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.dependency.composition",
+  "applicationCode": "agents",
+  "clientArchitecture": "mp",
+  "surfaces": [
+    {
+      "surface": "app",
+      "corePackage": "sdkwork-agents-mp-core",
+      "sdkClients": [],
+      "reusableModules": [],
+      "hostAdapters": [],
+      "dependencyApiExports": [],
+      "dependencyApiSurfaces": []
+    }
+  ],
+  "buildToolEntries": {
+    "pnpm": {
+      "workspacePackages": [
+        "sdkwork-agents-mp-core",
+        "@sdkwork/agents-mp-core",
+        "@sdkwork/agents-mp-host"
+      ]
+    }
+  }
+}

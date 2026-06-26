@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-mp-host",
+    "displayName": "sdkwork-agents-mp-host",
+    "version": "0.1.0",
+    "type": "typescript-package",
+    "root": "apps/sdkwork-agents-mini-program/packages/sdkwork-agents-mp-host",
+    "domain": "agents",
+    "capability": "host",
+    "surface": "app",
+    "languages": [
+      "typescript"
+    ],
+    "generated": false,
+    "manifests": [
+      "package.json"
+    ]
+  },
+  "contracts": {
+    "publicExports": [
+      "."
+    ],
+    "sdkClients": []
+  }
+}

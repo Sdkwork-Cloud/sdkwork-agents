@@ -1,0 +1,120 @@
+{
+  "$schema": "../sdkwork-github-workflow/schemas/sdkwork-workflow.schema.json",
+  "schemaVersion": "2026-06-06.sdkwork.workflow.v1",
+  "app": {
+    "id": "sdkwork-agents",
+    "name": "SDKWork Agents",
+    "repository": "Sdkwork-Cloud/sdkwork-agents",
+    "sourcePath": ".",
+    "configPath": "sdkwork.app.config.json"
+  },
+  "release": {
+    "artifactPrefix": "sdkwork-agents",
+    "defaultVersion": "0.1.0",
+    "changelog": {
+      "source": "app-manifest",
+      "maxCommitSubjects": 50
+    }
+  },
+  "dependencies": [
+    {
+      "id": "sdkwork-kernel",
+      "repository": "Sdkwork-Cloud/sdkwork-kernel",
+      "refInput": "SDKWORK_KERNEL_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-web-framework",
+      "repository": "Sdkwork-Cloud/sdkwork-web-framework",
+      "refInput": "SDKWORK_WEB_FRAMEWORK_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-database",
+      "repository": "Sdkwork-Cloud/sdkwork-database",
+      "refInput": "SDKWORK_DATABASE_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-utils",
+      "repository": "Sdkwork-Cloud/sdkwork-utils",
+      "refInput": "SDKWORK_UTILS_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-drive",
+      "repository": "Sdkwork-Cloud/sdkwork-drive",
+      "refInput": "SDKWORK_DRIVE_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-app-topology",
+      "repository": "Sdkwork-Cloud/sdkwork-app-topology",
+      "refInput": "SDKWORK_APP_TOPOLOGY_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    }
+  ],
+  "toolchains": {
+    "node": "22",
+    "pnpm": "10.30.2",
+    "rust": "stable"
+  },
+  "lifecycle": {
+    "install": [
+      {
+        "name": "Install workspace dependencies",
+        "shell": "pwsh",
+        "run": "pnpm install --frozen-lockfile || echo skip-pnpm-lockfile"
+      }
+    ],
+    "build": [
+      {
+        "name": "Verify agents architecture alignment",
+        "shell": "pwsh",
+        "run": "node tools/check_sdkwork_agents_architecture_alignment.mjs"
+      },
+      {
+        "name": "Build Rust workspace",
+        "shell": "pwsh",
+        "run": "cargo build --workspace --release"
+      }
+    ],
+    "package": [
+      {
+        "name": "Package Agents server artifact",
+        "shell": "pwsh",
+        "run": "cargo build --release -p sdkwork-agents-api-server"
+      }
+    ],
+    "validate": [
+      {
+        "name": "Validate Agents architecture",
+        "shell": "pwsh",
+        "run": "cargo test --workspace && node tools/check_sdkwork_agents_architecture_alignment.mjs"
+      }
+    ]
+  },
+  "targets": [
+    {
+      "id": "linux-x64-cloud-container-server-tar-gz",
+      "profile": "server",
+      "platform": "linux",
+      "architecture": "x64",
+      "formats": ["tar.gz"],
+      "runner": "ubuntu-24.04",
+      "outputGlobs": ["target/release/sdkwork-agents-api-server*"],
+      "deploymentProfile": "cloud",
+      "runtimeTarget": "container"
+    }
+  ],
+  "security": {
+    "artifactAttestations": false,
+    "sbomRequired": false,
+    "signingRequired": false
+  },
+  "publish": {
+    "workflowArtifact": true,
+    "githubRelease": false,
+    "retentionDays": 30
+  }
+}

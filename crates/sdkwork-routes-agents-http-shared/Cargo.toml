@@ -1,0 +1,22 @@
+[package]
+name = "sdkwork-routes-agents-http-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared sdkwork-web-framework route manifests and bootstrap for agents managed store HTTP surfaces."
+
+[dependencies]
+axum.workspace = true
+sdkwork-intelligence-agents-service = { workspace = true, features = ["http-axum"] }
+sdkwork-iam-web-adapter.workspace = true
+sdkwork-web-axum.workspace = true
+sdkwork-web-contract.workspace = true
+sdkwork-web-core.workspace = true
+tokio.workspace = true
+
+[build-dependencies]
+serde.workspace = true
+serde_yaml.workspace = true
+
+[dev-dependencies]
+sdkwork-web-contract.workspace = true

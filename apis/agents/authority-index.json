@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "domain": "intelligence",
+  "capability": "agents",
+  "owner": "sdkwork-agents",
+  "description": "Authoritative OpenAPI contracts for SDKWork Agents managed-store HTTP surfaces.",
+  "authorities": [
+    {
+      "surface": "open-api",
+      "apiAuthority": "sdkwork-agents-open-api",
+      "relativePath": "../../crates/sdkwork-intelligence-agents-service/specs/openapi/agents-open-api.openapi.yaml",
+      "pathPrefix": "/agent/v3/api"
+    },
+    {
+      "surface": "app-api",
+      "apiAuthority": "sdkwork-agents-app-api",
+      "relativePath": "../../crates/sdkwork-intelligence-agents-service/specs/openapi/agents-app-api.openapi.yaml",
+      "pathPrefix": "/app/v3/api"
+    },
+    {
+      "surface": "backend-api",
+      "apiAuthority": "sdkwork-agents-backend-api",
+      "relativePath": "../../crates/sdkwork-intelligence-agents-service/specs/openapi/agents-backend-api.openapi.yaml",
+      "pathPrefix": "/backend/v3/api"
+    }
+  ],
+  "sdkFamilies": [
+    {
+      "workspace": "sdks/sdkwork-agents-sdk",
+      "surface": "open-api"
+    },
+    {
+      "workspace": "sdks/sdkwork-agents-app-sdk",
+      "surface": "app-api"
+    },
+    {
+      "workspace": "sdks/sdkwork-agents-backend-sdk",
+      "surface": "backend-api"
+    }
+  ],
+  "relatedSpecs": [
+    "../sdkwork-specs/API_SPEC.md",
+    "../sdkwork-specs/WEB_FRAMEWORK_SPEC.md",
+    "../sdkwork-specs/WEB_BACKEND_SPEC.md",
+    "../sdkwork-specs/SDK_SPEC.md",
+    "../sdkwork-specs/SDK_WORKSPACE_GENERATION_SPEC.md"
+  ]
+}

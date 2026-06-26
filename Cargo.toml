@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sdkwork-agents-contract",
+    "crates/sdkwork-intelligence-agents-service",
+    "crates/sdkwork-routes-agents-http-shared",
+    "crates/sdkwork-routes-agents-open-api",
+    "crates/sdkwork-routes-agents-app-api",
+    "crates/sdkwork-routes-agents-backend-api",
+    "crates/sdkwork-agents-kernel-bridge",
+    "crates/sdkwork-agents-database-host",
+    "crates/sdkwork-agents-gateway-assembly",
+    "crates/sdkwork-agents-api-server",
+    "crates/sdkwork-agents-integration-tests",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+dotenvy = "0.15"
+http = "1"
+tower = { version = "0.5", features = ["util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "time"] }
+time = { version = "0.3", features = ["parsing"] }
+async-trait = "0.1"
+
+# sdkwork-kernel runtime (SPI only — no application domain logic)
+sdkwork-agent-kernel = { path = "../sdkwork-kernel/sdkwork-agent-kernel" }
+sdkwork-code-kernel = { path = "../sdkwork-kernel/sdkwork-code-kernel" }
+sdkwork-agent-server = { path = "../sdkwork-kernel/sdkwork-agent-server" }
+
+# Platform frameworks
+sdkwork-web-core = { path = "../sdkwork-web-framework/crates/sdkwork-web-core" }
+sdkwork-web-axum = { path = "../sdkwork-web-framework/crates/sdkwork-web-axum" }
+sdkwork-web-contract = { path = "../sdkwork-web-framework/crates/sdkwork-web-contract" }
+sdkwork-web-bootstrap = { path = "../sdkwork-web-framework/crates/sdkwork-web-bootstrap" }
+sdkwork-iam-web-adapter = { path = "../sdkwork-iam/crates/sdkwork-iam-web-adapter" }
+sdkwork-database-config = { path = "../sdkwork-database/crates/sdkwork-database-config" }
+sdkwork-database-sqlx = { path = "../sdkwork-database/crates/sdkwork-database-sqlx" }
+sdkwork-database-lifecycle = { path = "../sdkwork-database/crates/sdkwork-database-lifecycle" }
+sdkwork-database-spi = { path = "../sdkwork-database/crates/sdkwork-database-spi" }
+sdkwork-database-repository = { path = "../sdkwork-database/crates/sdkwork-database-repository" }
+sdkwork-utils-rust = { path = "../sdkwork-utils/packages/sdkwork-utils-rust" }
+sdkwork-id-core = { path = "../sdkwork-id/crates/sdkwork-id-core" }
+sdkwork-intelligence-prompts-ai-contract = { path = "../sdkwork-prompts/crates/sdkwork-intelligence-prompts-ai-contract" }
+
+# Local intelligence agents service + HTTP routes (application-owned)
+sdkwork-intelligence-agents-service = { path = "crates/sdkwork-intelligence-agents-service", features = ["http-axum", "postgres-sync"] }
+sdkwork-routes-agents-http-shared = { path = "crates/sdkwork-routes-agents-http-shared" }
+sdkwork-routes-agents-open-api = { path = "crates/sdkwork-routes-agents-open-api" }
+sdkwork-routes-agents-app-api = { path = "crates/sdkwork-routes-agents-app-api" }
+sdkwork-routes-agents-backend-api = { path = "crates/sdkwork-routes-agents-backend-api" }
+sdkwork-agents-contract = { path = "crates/sdkwork-agents-contract" }
+sdkwork-agents-kernel-bridge = { path = "crates/sdkwork-agents-kernel-bridge" }
+sdkwork-agents-database-host = { path = "crates/sdkwork-agents-database-host" }
+sdkwork-agents-gateway-assembly = { path = "crates/sdkwork-agents-gateway-assembly" }
+sdkwork-agents-api-server = { path = "crates/sdkwork-agents-api-server" }
+sdkwork-agents-integration-tests = { path = "crates/sdkwork-agents-integration-tests" }

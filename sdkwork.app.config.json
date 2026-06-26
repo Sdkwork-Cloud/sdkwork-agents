@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 3,
+  "kind": "sdkwork.app",
+  "app": {
+    "key": "sdkwork-agents",
+    "name": "sdkwork-agents",
+    "displayName": "SDKWork Agents",
+    "officialWebsiteUrl": "https://sdkwork.com",
+    "appType": "APP_API",
+    "description": "SDKWork hosted agent product application composed from sdkwork-kernel.",
+    "identifiers": {
+      "containerImage": "sdkwork-agents"
+    }
+  },
+  "backend": {
+    "primaryLanguage": "rust",
+    "framework": "axum",
+    "appId": "sdkwork-agents",
+    "tenantId": "100001",
+    "organizationId": "0",
+    "accessTokenPermissionScope": [
+      "iam.users.read",
+      "iam.organizations.read",
+      "iam.roles.read",
+      "iam.permissions.read"
+    ]
+  },
+  "runtime": {
+    "family": "server",
+    "framework": "rust-service",
+    "defaultPlatform": "API",
+    "defaultArchitecture": "x64",
+    "supportedDeploymentProfiles": ["standalone", "cloud"],
+    "defaultDeploymentProfile": "standalone"
+  },
+  "media": {
+    "icons": {
+      "primary": {
+        "id": "icon-primary",
+        "type": "ICON",
+        "purpose": "PRIMARY",
+        "platform": "OTHER",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024,
+        "enabled": true
+      },
+      "platform": []
+    },
+    "screenshots": [],
+    "previews": []
+  },
+  "publish": {
+    "status": "BETA",
+    "platforms": ["API", "WEB", "CLI"],
+    "installPlatforms": ["API"],
+    "installSkill": false
+  },
+  "environments": {
+    "development": {
+      "topologyProfileId": "standalone.split-services.development",
+      "accessUrlEnv": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL"
+    },
+    "production": {
+      "topologyProfileId": "cloud.split-services.production",
+      "accessUrlEnv": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL"
+    }
+  },
+  "artifacts": {
+    "installConfig": {
+      "packages": [
+        {
+          "id": "linux-x64-cloud-server-tar-gz",
+          "name": "SDKWork Agents Linux x64 Server",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "TAR_GZ",
+          "platform": "API",
+          "architecture": "x64",
+          "deploymentProfile": "cloud",
+          "runtimeTarget": "server",
+          "enabled": true
+        }
+      ]
+    }
+  },
+  "release": {
+    "currentVersion": "0.1.0",
+    "latest": {
+      "STABLE": "0.1.0"
+    },
+    "notes": [
+      {
+        "version": "0.1.0",
+        "channel": "STABLE",
+        "current": true,
+        "packageIds": ["linux-x64-cloud-server-tar-gz"]
+      }
+    ]
+  },
+  "security": {
+    "checksumRequired": true,
+    "signatureRequired": false,
+    "sbomRequired": true
+  },
+  "metadata": {
+    "topologySpec": "specs/topology.spec.json",
+    "workflowManifest": "sdkwork.workflow.json",
+    "kernelDependency": "../sdkwork-kernel"
+  }
+}

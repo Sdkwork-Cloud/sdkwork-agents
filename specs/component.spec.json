@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents",
+    "displayName": "SDKWork Agents",
+    "version": "0.1.0",
+    "type": "web-backend-service",
+    "root": "sdkwork-agents",
+    "domain": "intelligence",
+    "capability": "agents",
+    "surface": "backend-service",
+    "languages": ["rust", "typescript"],
+    "generated": false,
+    "status": "active",
+    "manifests": [
+      "sdkwork.app.config.json",
+      "AGENTS.md",
+      "specs/component.spec.json"
+    ]
+  },
+  "canonicalSpecs": [
+    {
+      "file": "SOUL.md",
+      "path": "../sdkwork-specs/SOUL.md",
+      "purpose": "SDKWork execution soul."
+    },
+    {
+      "file": "WEB_FRAMEWORK_SPEC.md",
+      "path": "../sdkwork-specs/WEB_FRAMEWORK_SPEC.md",
+      "purpose": "Mandatory sdkwork-web-framework integration."
+    },
+    {
+      "file": "DATABASE_FRAMEWORK_SPEC.md",
+      "path": "../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md",
+      "purpose": "Database lifecycle and SPI."
+    },
+    {
+      "file": "DRIVE_SPEC.md",
+      "path": "../sdkwork-specs/DRIVE_SPEC.md",
+      "purpose": "Mandatory Drive Uploader for file uploads."
+    },
+    {
+      "file": "AGENT_KERNEL_SPEC.md",
+      "path": "../sdkwork-kernel/specs/AGENT_KERNEL_SPEC.md",
+      "purpose": "Agent runtime kernel SPI (no application domain logic)."
+    },
+    {
+      "file": "AGENTS_MANAGED_STORE_DATABASE_SPEC.md",
+      "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_MANAGED_STORE_DATABASE_SPEC.md",
+      "purpose": "Agents-owned managed-store persistence contract."
+    },
+    {
+      "file": "AGENTS_HTTP_TRUST_BOUNDARY.md",
+      "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_HTTP_TRUST_BOUNDARY.md",
+      "purpose": "Agents-owned HTTP trust boundary for open/app/backend surfaces."
+    }
+  ],
+  "contracts": {
+    "publicExports": [],
+    "runtimeEntrypoints": ["crates/sdkwork-agents-api-server"],
+    "routeManifest": "apis/agents/authority-index.json",
+    "apiAuthorities": [
+      "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-open-api.openapi.yaml",
+      "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-app-api.openapi.yaml",
+      "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-backend-api.openapi.yaml"
+    ],
+    "sdkClients": [
+      "sdks/sdkwork-agents-sdk",
+      "sdks/sdkwork-agents-app-sdk",
+      "sdks/sdkwork-agents-backend-sdk"
+    ],
+    "sdkDependencies": [
+      {
+        "workspace": "sdkwork-kernel",
+        "role": "agent-runtime-kernel",
+        "required": true,
+        "dependencyMode": "platform-kernel",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-web-framework",
+        "role": "http-web-framework-runtime",
+        "required": true,
+        "dependencyMode": "platform-framework",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-database",
+        "role": "database-runtime",
+        "required": true,
+        "dependencyMode": "platform-framework",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-utils",
+        "role": "cross-language-utility-runtime",
+        "required": true,
+        "dependencyMode": "platform-framework",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-drive",
+        "role": "drive-uploader-file-storage",
+        "required": true,
+        "dependencyMode": "consumer-sdk",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/drive-app-sdk",
+          "rust": "sdkwork-kernel-plugin-drive"
+        }
+      }
+    ],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": [],
+    "events": [],
+    "configKeys": []
+  },
+  "integration": {
+    "authority": "Application domain logic, HTTP routes, SDKs, and managed-store persistence live in sdkwork-agents. sdkwork-kernel provides runtime SPI only.",
+    "kernelPolicy": "Compose sdkwork-agent-server and sdkwork-agent-database for runtime; never embed application domain rules in kernel.",
+    "uploadPolicy": "All file uploads must use sdkwork-drive Drive Uploader; no app-local upload APIs.",
+    "discoveryPolicy": "sdkwork-discovery is deferred until RPC services ship."
+  },
+  "verification": {
+    "commands": [
+      "pnpm check:architecture-alignment",
+      "pnpm verify",
+      "cargo test -p sdkwork-intelligence-agents-service",
+      "cargo test -p sdkwork-routes-agents-http-shared"
+    ]
+  },
+  "metadata": {
+    "standardVersion": "2026-06-26",
+    "status": "active"
+  }
+}

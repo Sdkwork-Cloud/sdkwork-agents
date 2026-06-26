@@ -1,0 +1,1 @@
+{"version":3,"file":"memory-binding-response.d.ts","sourceRoot":"","sources":["../../src/types/memory-binding-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,yBAAyB,CAAC;AAEnE,MAAM,WAAW,qBAAqB;IACpC,IAAI,EAAE,mBAAmB,CAAC;IAC1B,SAAS,CAAC,EAAE,MAAM,CAAC;CACpB"}

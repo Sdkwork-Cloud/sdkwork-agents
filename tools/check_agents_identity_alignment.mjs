@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const failures = [];
+
+const EXPECTED = {
+  tenantId: '100001',
+  organizationId: '0',
+  appId: 'sdkwork-agents',
+  applicationRegistryKey: 'sdkwork-agents',
+};
+
+const CLIENT_MANIFEST_KEYS = {
+  'apps/sdkwork-agents-pc/sdkwork.app.config.json': 'agents-pc',
+  'apps/sdkwork-agents-h5/sdkwork.app.config.json': 'agents-h5',
+  'apps/sdkwork-agents-mini-program/sdkwork.app.config.json': 'agents-mini-program',
+  'apps/sdkwork-agents-flutter-mobile/sdkwork.app.config.json': 'agents-flutter-mobile',
+};
+
+const FORBIDDEN_PATTERNS = [
+  { label: 'legacy tenant_id: 1 fixture', pattern: /\btenant_id:\s*1\b/g },
+  { label: 'legacy tenant_id: 7 fixture', pattern: /\btenant_id:\s*7\b/g },
+  { label: 'legacy organization_id: 10 fixture', pattern: /\borganization_id:\s*10\b/g },
+  { label: 'legacy organization_id: 70 fixture', pattern: /\borganization_id:\s*70\b/g },
+  { label: 'legacy organization_id string "10"', pattern: /organization_id:\s*"10"/g },
+  { label: 'legacy organizationId string "10"', pattern: /"organizationId":\s*"10"/g },
+  { label: 'legacy with_organization_id("10")', pattern: /with_organization_id\("10"\)/g },
+  { label: 'doubled sdkwork-agents app.key', pattern: /"key":\s*"sdkwork-agents-sdkwork-agents-/g },
+  { label: 'legacy tenant_id query param =1', pattern: /tenant_id=1(?:[^0-9]|$)/g },
+  { label: 'legacy AgentListQuery::for_tenant(1)', pattern: /for_tenant\(1\)/g },
+  { label: 'legacy PolicySubject tenant.1', pattern: /PolicySubject::new\([^,]+,\s*"tenant\.1"\)/g },
+  { label: 'legacy fixture uuid tenant segment _7_', pattern: /agent_[a-z_]+_7_/g },
+  { label: 'surface-specific backend.appId on client manifest', pattern: /"appId":\s*"sdkwork-agents-(?:pc|h5|mini-program|flutter-mobile)"/g },
+];
+
+function readJson(relativePath) {
+  return JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), 'utf8').replace(/^\uFEFF/u, ''));
+}
+
+function assert(condition, message) {
+  if (!condition) failures.push(message);
+}
+
+function walk(dir, files = []) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'target' || entry.name === 'generated') {
+        continue;
+      }
+      walk(absolute, files);
+      continue;
+    }
+    if (/\.(rs|ts|tsx|mjs|json|sql|env\.example)$/u.test(entry.name)) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
+function checkManifest(relativePath, expectedKey = null) {
+  const manifest = readJson(relativePath);
+  assert(manifest.backend?.tenantId === EXPECTED.tenantId, `${relativePath}: backend.tenantId must be ${EXPECTED.tenantId}`);
+  assert(manifest.backend?.organizationId === EXPECTED.organizationId, `${relativePath}: backend.organizationId must be ${EXPECTED.organizationId}`);
+  if (manifest.backend?.appId != null) {
+    assert(manifest.backend.appId === EXPECTED.appId, `${relativePath}: backend.appId must be ${EXPECTED.appId}`);
+  }
+  if (expectedKey) {
+    assert(manifest.app?.key === expectedKey, `${relativePath}: app.key must be ${expectedKey}`);
+  }
+}
+
+checkManifest('sdkwork.app.config.json');
+for (const [relativePath, expectedKey] of Object.entries(CLIENT_MANIFEST_KEYS)) {
+  checkManifest(relativePath, expectedKey);
+}
+
+const envExample = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+assert(envExample.includes('SDKWORK_TENANT_ID=100001'), '.env.example must declare SDKWORK_TENANT_ID=100001');
+assert(envExample.includes('SDKWORK_ORGANIZATION_ID=0'), '.env.example must declare SDKWORK_ORGANIZATION_ID=0');
+
+const seedManifest = readJson('database/seeds/seed.manifest.json');
+const standardCommon = seedManifest.profiles?.standard?.common ?? [];
+assert(
+  standardCommon.includes('0001_agents_app_registry.sql'),
+  'database/seeds/seed.manifest.json standard profile must include 0001_agents_app_registry.sql',
+);
+
+for (const file of walk(repoRoot)) {
+  const relative = path.relative(repoRoot, file).replaceAll('\\', '/');
+  if (relative.startsWith('sdks/') && relative.includes('/generated/')) continue;
+  if (relative.includes('check_agents_identity_alignment.mjs')) continue;
+  const text = fs.readFileSync(file, 'utf8');
+  for (const { label, pattern } of FORBIDDEN_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(text)) {
+      failures.push(`${relative}: forbidden ${label}`);
+    }
+  }
+}
+
+if (failures.length > 0) {
+  console.error('agents identity alignment failures:');
+  for (const failure of failures) console.error(`- ${failure}`);
+  process.exit(1);
+}
+
+console.log('agents identity alignment passed');

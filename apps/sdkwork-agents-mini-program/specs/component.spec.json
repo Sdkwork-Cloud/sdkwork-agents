@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-mini-program",
+    "displayName": "SDKWork Agents Mini Program",
+    "version": "0.1.0",
+    "type": "mini-program-app-root",
+    "root": "apps/sdkwork-agents-mini-program",
+    "domain": "agents",
+    "capability": "agents",
+    "surface": "app",
+    "languages": [
+      "typescript"
+    ],
+    "generated": false,
+    "manifests": [
+      "package.json",
+      "sdkwork.app.config.json",
+      "project.config.json"
+    ]
+  },
+  "contracts": {
+    "sdkDependencies": [
+      "sdkwork-agents-app-sdk"
+    ],
+    "dependencyComposition": "specs/dependency.composition.json"
+  },
+  "verification": {
+    "commands": [
+      "pnpm run build",
+      "pnpm run typecheck"
+    ]
+  }
+}

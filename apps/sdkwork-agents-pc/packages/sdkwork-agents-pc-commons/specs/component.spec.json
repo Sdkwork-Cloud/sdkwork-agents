@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-pc-commons",
+    "displayName": "sdkwork-agents-pc-commons",
+    "version": "0.1.0",
+    "type": "typescript-package",
+    "root": "apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-commons",
+    "domain": "agents",
+    "capability": "commons",
+    "surface": "app",
+    "languages": [
+      "typescript"
+    ],
+    "generated": false,
+    "manifests": [
+      "package.json"
+    ]
+  },
+  "contracts": {
+    "publicExports": [
+      "."
+    ],
+    "sdkClients": []
+  }
+}

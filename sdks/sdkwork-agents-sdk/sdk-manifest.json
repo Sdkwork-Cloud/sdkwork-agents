@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sdkName": "sdkwork-agents-sdk",
+  "packageName": "@sdkwork/agents-sdk",
+  "sdkOwner": "sdkwork-agents",
+  "apiAuthority": "sdkwork-agents-open-api",
+  "sdkFamily": "sdkwork-agents-sdk",
+  "sdkType": "custom",
+  "sdkSurface": "open",
+  "language": "typescript",
+  "apiPrefix": "/agent/v3/api",
+  "generationInputSpec": "openapi/sdkwork-agents-open-api.sdkgen.yaml",
+  "generatedOutput": "sdkwork-agents-sdk-typescript/generated/server-openapi",
+  "standardProfile": "sdkwork-v3",
+  "sdkDependencies": [],
+  "ownerOnlyOperationCount": 68,
+  "standardVersion": "2026-06-06",
+  "managedBy": "sdks/_shared/agent-sdk-ownership.mjs"
+}

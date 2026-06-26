@@ -1,0 +1,39 @@
+[package]
+name = "sdkwork-intelligence-agents-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SDKWork intelligence agents domain service (managed agents, marketplace, knowledge registry)"
+
+[features]
+default = []
+postgres-sync = ["dep:sdkwork-database-config", "dep:sdkwork-database-sqlx", "dep:sqlx", "dep:tokio"]
+http-axum = ["dep:axum", "dep:tokio", "dep:tower"]
+
+[lib]
+name = "sdkwork_intelligence_agents_service"
+path = "src/lib.rs"
+
+[dependencies]
+sdkwork-agent-kernel.workspace = true
+sdkwork-code-kernel.workspace = true
+sdkwork-utils-rust.workspace = true
+sdkwork-id-core.workspace = true
+sdkwork-intelligence-prompts-ai-contract.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sdkwork-database-config = { workspace = true, optional = true }
+sdkwork-database-sqlx = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
+axum = { workspace = true, optional = true, features = ["json"] }
+tokio = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+time.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+
+[[test]]
+name = "agent_postgres_sync_contracts"
+path = "tests/agent_postgres_sync_contracts.rs"
+required-features = ["postgres-sync"]

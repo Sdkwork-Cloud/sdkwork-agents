@@ -1,0 +1,9 @@
+[package]
+name = "sdkwork-agents-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SDKWork Agents runtime contract helpers"
+
+[dependencies]
+sdkwork-utils-rust.workspace = true

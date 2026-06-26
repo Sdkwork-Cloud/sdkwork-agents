@@ -1,0 +1,17 @@
+[package]
+name = "sdkwork-agents-gateway-assembly"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Gateway assembly for SDKWork Agents HTTP plane (kernel route composition)"
+
+[lib]
+name = "sdkwork_agents_gateway_assembly"
+path = "src/lib.rs"
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+sdkwork-agent-server.workspace = true
+sdkwork-agents-kernel-bridge.workspace = true

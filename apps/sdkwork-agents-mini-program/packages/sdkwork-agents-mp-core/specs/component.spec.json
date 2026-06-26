@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-mp-core",
+    "displayName": "sdkwork-agents-mp-core",
+    "version": "0.1.0",
+    "type": "typescript-package",
+    "root": "apps/sdkwork-agents-mini-program/packages/sdkwork-agents-mp-core",
+    "domain": "agents",
+    "capability": "core",
+    "surface": "app",
+    "languages": [
+      "typescript"
+    ],
+    "generated": false,
+    "manifests": [
+      "package.json"
+    ]
+  },
+  "contracts": {
+    "publicExports": [
+      "."
+    ],
+    "sdkClients": [
+      "sdkwork-agents-app-sdk"
+    ],
+    "dependencyComposition": "../../../specs/dependency.composition.json"
+  }
+}

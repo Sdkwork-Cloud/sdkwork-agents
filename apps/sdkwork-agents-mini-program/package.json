@@ -1,0 +1,20 @@
+{
+  "name": "@sdkwork/agents-mini-program",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-runtime.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@sdkwork/agents-mp-core": "workspace:*",
+    "@sdkwork/agents-mp-host": "workspace:*",
+    "@sdkwork/sdk-common": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10",
+    "miniprogram-api-typings": "^4.1.0",
+    "typescript": "catalog:"
+  }
+}

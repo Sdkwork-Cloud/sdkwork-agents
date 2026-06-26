@@ -1,0 +1,20 @@
+{
+  "name": "@sdkwork/agents-pc-core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sdk": "./src/sdk/index.ts",
+    "./sdk/agentsAppSdkClient": "./src/sdk/agentsAppSdkClient.ts",
+    "./modules": "./src/modules/index.ts",
+    "./host": "./src/host/index.ts",
+    "./session": "./src/session/index.ts",
+    "./composition": "./src/composition/index.ts"
+  },
+  "dependencies": {
+    "@sdkwork/agents-app-sdk": "workspace:*",
+    "@sdkwork/iam-contracts": "workspace:*",
+    "@sdkwork/sdk-common": "workspace:*"
+  }
+}

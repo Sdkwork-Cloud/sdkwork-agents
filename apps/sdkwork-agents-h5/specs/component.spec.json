@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-h5",
+    "displayName": "SDKWork Agents H5",
+    "version": "0.1.0",
+    "type": "h5-app-root",
+    "root": "apps/sdkwork-agents-h5",
+    "domain": "agents",
+    "capability": "agents",
+    "surface": "app",
+    "languages": [
+      "typescript"
+    ],
+    "generated": false,
+    "manifests": [
+      "package.json",
+      "sdkwork.app.config.json"
+    ]
+  },
+  "canonicalSpecs": [
+    {
+      "file": "APP_H5_ARCHITECTURE_SPEC.md",
+      "path": "../../../../sdkwork-specs/APP_H5_ARCHITECTURE_SPEC.md",
+      "purpose": "h5 application root architecture standard."
+    },
+    {
+      "file": "APP_SDK_INTEGRATION_SPEC.md",
+      "path": "../../../../sdkwork-specs/APP_SDK_INTEGRATION_SPEC.md",
+      "purpose": "SDK integration and TokenManager wiring."
+    }
+  ],
+  "contracts": {
+    "publicExports": [
+      "src/main.tsx"
+    ],
+    "runtimeEntrypoints": [
+      "package.json#scripts.dev"
+    ],
+    "sdkClients": [],
+    "sdkDependencies": [
+      "sdkwork-agents-app-sdk"
+    ],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": [],
+    "dependencyComposition": "specs/dependency.composition.json"
+  },
+  "verification": {
+    "commands": [
+      "pnpm run typecheck",
+      "pnpm run build"
+    ]
+  }
+}

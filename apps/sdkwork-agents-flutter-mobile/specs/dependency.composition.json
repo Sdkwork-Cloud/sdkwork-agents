@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.dependency.composition",
+  "applicationCode": "agents",
+  "clientArchitecture": "flutter-mobile",
+  "surfaces": [
+    {
+      "surface": "app",
+      "corePackage": "sdkwork_agents_flutter_mobile_core",
+      "sdkClients": [],
+      "reusableModules": [],
+      "hostAdapters": [],
+      "dependencyApiExports": [],
+      "dependencyApiSurfaces": []
+    }
+  ],
+  "buildToolEntries": {
+    "pnpm": {
+      "workspacePackages": [
+        "sdkwork_agents_flutter_mobile_core"
+      ]
+    }
+  }
+}

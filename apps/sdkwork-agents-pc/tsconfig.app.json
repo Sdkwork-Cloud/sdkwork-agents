@@ -1,0 +1,39 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@sdkwork/agents-pc-core": [
+        "./packages/sdkwork-agents-pc-core/src/index.ts"
+      ],
+      "@sdkwork/agents-pc-core/*": [
+        "./packages/sdkwork-agents-pc-core/src/*"
+      ],
+      "@sdkwork/agents-pc-commons": [
+        "./packages/sdkwork-agents-pc-commons/src/index.ts"
+      ],
+      "@sdkwork/agents-pc-agents": [
+        "./packages/sdkwork-agents-pc-agents/src/index.ts"
+      ],
+      "@sdkwork/agents-pc-shell": [
+        "./packages/sdkwork-agents-pc-shell/src/index.ts"
+      ],
+      "@sdkwork/agents-app-sdk": [
+        "../../sdks/sdkwork-agents-app-sdk/sdkwork-agent-app-sdk-typescript/generated/server-openapi/src/index.ts"
+      ],
+      "@sdkwork/sdk-common": [
+        "../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript/src/index.ts"
+      ],
+      "@sdkwork/iam-contracts": [
+        "../../../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-contracts/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "packages/sdkwork-agents-pc-core/src",
+    "packages/sdkwork-agents-pc-commons/src",
+    "packages/sdkwork-agents-pc-agents/src",
+    "packages/sdkwork-agents-pc-shell/src",
+    "src/vite-env.d.ts"
+  ]
+}

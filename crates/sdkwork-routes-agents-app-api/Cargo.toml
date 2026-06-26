@@ -1,0 +1,21 @@
+[package]
+name = "sdkwork-routes-agents-app-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "App API route boundary for SDKWork agents managed store HTTP surfaces."
+
+[dependencies]
+axum.workspace = true
+sdkwork-intelligence-agents-service = { workspace = true, features = ["http-axum"] }
+sdkwork-routes-agents-http-shared.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+sdkwork-intelligence-agents-service = { workspace = true, features = ["http-axum"] }
+sdkwork-agents-contract.workspace = true
+sdkwork-iam-web-adapter.workspace = true
+serde_json.workspace = true
+sdkwork-web-core.workspace = true
+sdkwork-web-contract.workspace = true
+tower.workspace = true

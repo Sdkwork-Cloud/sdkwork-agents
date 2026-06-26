@@ -1,0 +1,14 @@
+{
+  "name": "@sdkwork/agents-pc-commons",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "clsx": "catalog:",
+    "motion": "catalog:",
+    "tailwind-merge": "catalog:"
+  }
+}

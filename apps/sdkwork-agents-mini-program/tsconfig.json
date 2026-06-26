@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [
+      "miniprogram-api-typings"
+    ],
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "packages"
+  ]
+}

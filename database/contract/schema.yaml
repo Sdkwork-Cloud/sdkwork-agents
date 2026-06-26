@@ -1,0 +1,13 @@
+schema_version: 1
+kind: sdkwork.database.schema
+module_id: agents
+contract_version: 1.0.0
+owner_team: agents-platform
+compliance_level: L2
+engines:
+  - postgres
+table_prefix: agents_
+tables:
+  - name: agents_app_registry
+    lifecycle_status: active
+    owner: agents-platform

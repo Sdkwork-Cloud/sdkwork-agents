@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "applicationCode": "agents",
+  "routeCrates": [
+    "crates/sdkwork-routes-agents-open-api",
+    "crates/sdkwork-routes-agents-app-api",
+    "crates/sdkwork-routes-agents-backend-api"
+  ],
+  "composition": "sdkwork-agents-kernel-bridge"
+}

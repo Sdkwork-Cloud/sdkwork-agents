@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "sdkName": "sdkwork-agents-backend-sdk",
+  "packageName": "@sdkwork/agents-backend-sdk",
+  "sdkOwner": "sdkwork-agents",
+  "apiAuthority": "sdkwork-agents-backend-api",
+  "sdkFamily": "sdkwork-agents-backend-sdk",
+  "sdkType": "backend",
+  "sdkSurface": "backend",
+  "language": "typescript",
+  "apiPrefix": "/backend/v3/api",
+  "generationInputSpec": "openapi/sdkwork-agents-backend-api.sdkgen.yaml",
+  "generatedOutput": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
+  "standardProfile": "sdkwork-v3",
+  "sdkDependencies": [
+    {
+      "workspace": "sdkwork-iam-backend-sdk",
+      "role": "appbase-backend-management-capability",
+      "required": true,
+      "dependencyMode": "consumer-sdk",
+      "apiPrefix": "/backend/v3/api",
+      "apiAuthority": "sdkwork-iam-backend-api",
+      "generatedTransportImportPolicy": "forbidden",
+      "packageByLanguage": {
+        "typescript": "@sdkwork/iam-backend-sdk"
+      }
+    }
+  ],
+  "ownerOnlyOperationCount": 67,
+  "standardVersion": "2026-06-06",
+  "managedBy": "sdks/_shared/agent-sdk-ownership.mjs"
+}

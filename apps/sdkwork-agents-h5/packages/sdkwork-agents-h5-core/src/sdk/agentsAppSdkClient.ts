@@ -1,0 +1,83 @@
+import {
+  createClient,
+  type SdkworkAppClient as GeneratedSdkworkAgentsAppClient,
+  type SdkworkAppConfig,
+} from "@sdkwork/agents-app-sdk";
+import type { Interceptors } from "@sdkwork/sdk-common";
+
+import {
+  createSdkworkChatRequestContextInterceptors,
+  getSdkworkChatGlobalTokenManager,
+  readAppSdkSessionTokens,
+  resolveAppSdkAccessToken,
+  resolveAppSdkAuthToken,
+  type SdkworkChatSession,
+} from "../session/session";
+
+export type SdkworkAgentsAppClient = GeneratedSdkworkAgentsAppClient;
+export type SdkworkAgentsAppClientConfig = SdkworkAppConfig & {
+  interceptors?: Interceptors;
+};
+
+let agentsAppSdkClient: SdkworkAgentsAppClient | null = null;
+
+export function resolveAgentsAppSdkBaseUrl(): string {
+  const fromEnv = import.meta.env.VITE_SDKWORK_AGENTS_H5_APP_API_BASE_URL;
+  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
+    return fromEnv.trim();
+  }
+  const publicUrl = import.meta.env.VITE_SDKWORK_AGENTS_H5_APPLICATION_PUBLIC_HTTP_URL ?? "http://127.0.0.1:8095";
+  return `${String(publicUrl).replace(/\/+$/u, "")}/app/v3/api`;
+}
+
+export function createAgentsAppSdkClientConfig(
+  session?: SdkworkChatSession | null,
+): SdkworkAgentsAppClientConfig {
+  const currentSession = session ?? readAppSdkSessionTokens();
+  const envAccessToken =
+    typeof import.meta.env.SDKWORK_ACCESS_TOKEN === "string"
+      ? import.meta.env.SDKWORK_ACCESS_TOKEN.trim()
+      : undefined;
+
+  return {
+    baseUrl: resolveAgentsAppSdkBaseUrl(),
+    accessToken: resolveAppSdkAccessToken(currentSession) ?? envAccessToken,
+    authToken: resolveAppSdkAuthToken(currentSession),
+    interceptors: createSdkworkChatRequestContextInterceptors(
+      () => readAppSdkSessionTokens() ?? currentSession,
+    ),
+    platform: "h5",
+    tokenManager: getSdkworkChatGlobalTokenManager(),
+  };
+}
+
+export function initAgentsAppSdkClient(
+  config: SdkworkAgentsAppClientConfig = createAgentsAppSdkClientConfig(),
+): SdkworkAgentsAppClient {
+  agentsAppSdkClient = createClient(config);
+  return agentsAppSdkClient;
+}
+
+export function getAgentsAppSdkClient(): SdkworkAgentsAppClient {
+  return agentsAppSdkClient ?? initAgentsAppSdkClient();
+}
+
+export function getAgentsAppSdkClientWithSession(
+  session = readAppSdkSessionTokens(),
+): SdkworkAgentsAppClient {
+  return initAgentsAppSdkClient(createAgentsAppSdkClientConfig(session));
+}
+
+export function resetAgentsAppSdkClient(): void {
+  agentsAppSdkClient = null;
+}
+
+export function useAgentsAppSdkClient(): SdkworkAgentsAppClient {
+  return getAgentsAppSdkClientWithSession();
+}
+
+/** @deprecated Use SdkworkAgentsAppClient — kept for migrated AgentService source compatibility. */
+export type SdkworkAgentAppClient = SdkworkAgentsAppClient;
+
+/** @deprecated Use getAgentsAppSdkClientWithSession */
+export const getAgentAppSdkClientWithSession = getAgentsAppSdkClientWithSession;

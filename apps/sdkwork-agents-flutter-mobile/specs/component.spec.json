@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-flutter-mobile",
+    "displayName": "SDKWork Agents Flutter Mobile",
+    "version": "0.1.0",
+    "type": "flutter-mobile-app-root",
+    "root": "apps/sdkwork-agents-flutter-mobile",
+    "domain": "agents",
+    "capability": "agents",
+    "surface": "app",
+    "languages": [
+      "dart"
+    ],
+    "generated": false,
+    "manifests": [
+      "pubspec.yaml",
+      "sdkwork.app.config.json"
+    ]
+  },
+  "contracts": {
+    "sdkDependencies": [
+      "sdkwork-agents-app-sdk"
+    ],
+    "dependencyComposition": "specs/dependency.composition.json"
+  },
+  "verification": {
+    "commands": [
+      "flutter analyze"
+    ]
+  }
+}

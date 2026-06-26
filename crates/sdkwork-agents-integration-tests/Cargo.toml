@@ -1,0 +1,14 @@
+[package]
+name = "sdkwork-agents-integration-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+axum.workspace = true
+http.workspace = true
+tokio.workspace = true
+tower.workspace = true
+sdkwork-agents-contract.workspace = true
+sdkwork-agents-api-server = { path = "../sdkwork-agents-api-server" }
+sdkwork-agents-gateway-assembly = { path = "../sdkwork-agents-gateway-assembly" }
