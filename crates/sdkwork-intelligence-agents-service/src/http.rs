@@ -1,42 +1,17 @@
-use crate::application::{
-    AgentsService, AgentKnowledgeSyncJobCancelCommand, AgentKnowledgeSyncJobCompleteCommand,
-    AgentKnowledgeSyncJobFailCommand, AgentKnowledgeSyncJobStartCommand,
-    DeleteAgentMarketplaceItemCommand, GetAgentMarketplaceItemCommand,
-    RestoreAgentMarketplaceItemCommand,
-};
+use crate::application::AgentsService;
 use crate::domain::{
-    AgentDeploymentRecord, AgentKnowledgeBaseRecord, AgentKnowledgeBindingRecord,
-    AgentKnowledgeChunkRecord, AgentKnowledgeDocumentRecord, AgentKnowledgeIndexRecord,
-    AgentKnowledgeSourceRecord, AgentKnowledgeSyncJobRecord, AgentMemoryBindingRecord,
-    AgentMemoryNamespaceRecord, AgentMemoryProfileRecord, AgentMemoryRecord,
-    AgentMemoryRelationRecord, AgentMemoryRetrievalIndexRecord, AgentMemorySourceRecord,
-    AgentMemoryStoreRecord, AgentProviderBindingRecord,
+    AgentCompositionSlotRecord, AgentDeploymentRecord, AgentProviderBindingRecord,
 };
 use crate::dto::{
-    ActivateAgentProviderBindingRequestDto, AgentDeploymentRecordDto,
-    AgentKnowledgeBaseCreateRequestDto, AgentKnowledgeBaseRecordDto,
-    AgentKnowledgeBaseUpdateRequestDto, AgentKnowledgeBindingCreateRequestDto,
-    AgentKnowledgeBindingRecordDto, AgentKnowledgeChunkCreateRequestDto,
-    AgentKnowledgeChunkRecordDto, AgentKnowledgeDocumentCreateRequestDto,
-    AgentKnowledgeDocumentProfileDto, AgentKnowledgeDocumentRecordDto,
-    AgentKnowledgeDocumentUpdateRequestDto, AgentKnowledgeIndexRecordDto,
-    AgentKnowledgeIndexUpsertRequestDto, AgentKnowledgeSearchRequestDto,
-    AgentKnowledgeSearchResultDto, AgentKnowledgeSourceCreateRequestDto,
-    AgentKnowledgeSourceRecordDto, AgentKnowledgeSourceUpdateRequestDto,
-    AgentKnowledgeSyncJobCreateRequestDto, AgentKnowledgeSyncJobRecordDto,
-    AgentManagementProfileDto, AgentMemoryBindingCreateRequestDto, AgentMemoryBindingRecordDto,
-    AgentMemoryNamespaceCreateRequestDto, AgentMemoryNamespaceRecordDto,
-    AgentMemoryProfileCreateRequestDto, AgentMemoryProfileRecordDto,
-    AgentMemoryRecordCreateRequestDto, AgentMemoryRecordDto, AgentMemoryRelationCreateRequestDto,
-    AgentMemoryRelationRecordDto, AgentMemoryRetrievalIndexRecordDto,
-    AgentMemoryRetrievalIndexUpsertRequestDto, AgentMemorySourceCreateRequestDto,
-    AgentMemorySourceRecordDto, AgentMemoryStoreCreateRequestDto, AgentMemoryStoreRecordDto,
-    AgentMemoryStoreUpdateRequestDto, AgentPreviewResponseRequestDto,
+    ActivateAgentProviderBindingRequestDto, AgentCompositionSlotCreateRequestDto,
+    AgentCompositionSlotDeleteRequestDto, AgentCompositionSlotListResponseDto,
+    AgentCompositionSlotResponseDto, AgentCompositionSlotUpdateRequestDto,
+    AgentDeploymentRecordDto, AgentManagementProfileDto, AgentPreviewResponseRequestDto,
     AgentPromptOptimizationRequestDto, AgentProviderBindingRecordDto,
     AgentProviderBindingRequestDto, AgentProviderDeploymentRequestDto, AgentRecordDto,
     AgentRuntimeExecutionRecordDto, CreateAgentRequestDto, DeleteAgentRequestDto,
-    GetAgentRequestDto, ListAgentKnowledgeBasesRequestDto, ListAgentsRequestDto,
-    RestoreAgentRequestDto, UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
+    GetAgentRequestDto, ListAgentsRequestDto, RestoreAgentRequestDto, UpdateAgentRequestDto,
+    UpdateAgentStatusRequestDto,
 };
 use crate::ports::{AgentAuditSink, AgentRepository};
 use crate::validation::{
@@ -87,6 +62,9 @@ const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "runtime_executed",
     "provider_binding_changed",
     "deployment_created",
+    "composition_slot_created",
+    "composition_slot_updated",
+    "composition_slot_deleted",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,18 +111,15 @@ impl AgentRequestContext {
                 HEADER_SUBJECT_ID,
                 HEADER_SDKWORK_USER_ID,
                 HEADER_SDKWORK_ACTOR_ID,
-            ],
-        )?;
+            ])?;
         let tenant_id = optional_header_any(
             headers,
-            &[HEADER_SUBJECT_TENANT_ID, HEADER_SDKWORK_TENANT_ID],
-        )
+            &[HEADER_SUBJECT_TENANT_ID, HEADER_SDKWORK_TENANT_ID])
         .unwrap_or_default();
         let mut roles = Vec::new();
         if let Some(roles_header) = optional_header_any(
             headers,
-            &[HEADER_SUBJECT_ROLES, HEADER_SDKWORK_PERMISSION_SCOPE],
-        ) {
+            &[HEADER_SUBJECT_ROLES, HEADER_SDKWORK_PERMISSION_SCOPE]) {
             for role in roles_header
                 .split([',', ' '])
                 .map(str::trim)
@@ -194,8 +169,7 @@ impl RequestScope {
         mut context: AgentRequestContext,
         resource_tenant_id: String,
         organization_id: Option<String>,
-        owner_user_id: Option<String>,
-    ) -> Result<Self, ApiProblem> {
+        owner_user_id: Option<String>) -> Result<Self, ApiProblem> {
         let header_tenant = if context.tenant_id.is_empty() {
             None
         } else {
@@ -203,8 +177,7 @@ impl RequestScope {
         };
         let tenant_id = reconcile_resource_tenant_with_subject_header(
             resource_tenant_id.as_str(),
-            header_tenant,
-        )?;
+            header_tenant)?;
         context.tenant_id = tenant_id;
         if let Some(organization_id) = organization_id {
             context.organization_id = Some(organization_id);
@@ -270,8 +243,7 @@ impl AgentRepository for DynAgentRepository {
 
     fn list(
         &self,
-        query: &crate::ports::AgentListQuery,
-    ) -> Vec<crate::domain::AgentBusinessRecord> {
+        query: &crate::ports::AgentListQuery) -> Vec<crate::domain::AgentBusinessRecord> {
         self.0.list(query)
     }
 
@@ -287,16 +259,14 @@ impl AgentRepository for DynAgentRepository {
         &self,
         tenant_id: u64,
         agent_id: &str,
-        binding_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
+        binding_id: &str) -> Option<AgentProviderBindingRecord> {
         self.0.get_provider_binding(tenant_id, agent_id, binding_id)
     }
 
     fn list_provider_bindings(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> Vec<AgentProviderBindingRecord> {
+        agent_id: &str) -> Vec<AgentProviderBindingRecord> {
         self.0.list_provider_bindings(tenant_id, agent_id)
     }
 
@@ -308,297 +278,30 @@ impl AgentRepository for DynAgentRepository {
         self.0.list_deployments(tenant_id, agent_id)
     }
 
-    fn insert_knowledge_base(&mut self, record: AgentKnowledgeBaseRecord) -> KernelResult<()> {
-        self.0.insert_knowledge_base(record)
+
+    fn insert_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.0.insert_composition_slot(record)
     }
 
-    fn update_knowledge_base(&mut self, record: AgentKnowledgeBaseRecord) -> KernelResult<()> {
-        self.0.update_knowledge_base(record)
+    fn update_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.0.update_composition_slot(record)
     }
 
-    fn get_knowledge_base(
+    fn get_composition_slot(
         &self,
         tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Option<AgentKnowledgeBaseRecord> {
-        self.0.get_knowledge_base(tenant_id, knowledge_base_id)
+        agent_id: &str,
+        slot_id: &str) -> Option<AgentCompositionSlotRecord> {
+        self.0.get_composition_slot(tenant_id, agent_id, slot_id)
     }
 
-    fn list_knowledge_bases(
-        &self,
-        query: &crate::ports::AgentMarketplaceListQuery,
-    ) -> Vec<AgentKnowledgeBaseRecord> {
-        self.0.list_knowledge_bases(query)
-    }
-
-    fn insert_knowledge_source(&mut self, record: AgentKnowledgeSourceRecord) -> KernelResult<()> {
-        self.0.insert_knowledge_source(record)
-    }
-
-    fn update_knowledge_source(&mut self, record: AgentKnowledgeSourceRecord) -> KernelResult<()> {
-        self.0.update_knowledge_source(record)
-    }
-
-    fn get_knowledge_source(
+    fn list_composition_slots(
         &self,
         tenant_id: u64,
-        knowledge_source_id: &str,
-    ) -> Option<AgentKnowledgeSourceRecord> {
-        self.0.get_knowledge_source(tenant_id, knowledge_source_id)
+        agent_id: &str) -> Vec<AgentCompositionSlotRecord> {
+        self.0.list_composition_slots(tenant_id, agent_id)
     }
 
-    fn list_knowledge_sources(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSourceRecord> {
-        self.0.list_knowledge_sources(tenant_id, knowledge_base_id)
-    }
-
-    fn insert_knowledge_document(
-        &mut self,
-        record: AgentKnowledgeDocumentRecord,
-    ) -> KernelResult<()> {
-        self.0.insert_knowledge_document(record)
-    }
-
-    fn update_knowledge_document(
-        &mut self,
-        record: AgentKnowledgeDocumentRecord,
-    ) -> KernelResult<()> {
-        self.0.update_knowledge_document(record)
-    }
-
-    fn get_knowledge_document(
-        &self,
-        tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Option<AgentKnowledgeDocumentRecord> {
-        self.0
-            .get_knowledge_document(tenant_id, knowledge_document_id)
-    }
-
-    fn list_knowledge_documents(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeDocumentRecord> {
-        self.0
-            .list_knowledge_documents(tenant_id, knowledge_base_id)
-    }
-
-    fn insert_knowledge_chunk(&mut self, record: AgentKnowledgeChunkRecord) -> KernelResult<()> {
-        self.0.insert_knowledge_chunk(record)
-    }
-
-    fn get_knowledge_chunk(
-        &self,
-        tenant_id: u64,
-        knowledge_chunk_id: &str,
-    ) -> Option<AgentKnowledgeChunkRecord> {
-        self.0.get_knowledge_chunk(tenant_id, knowledge_chunk_id)
-    }
-
-    fn list_knowledge_chunks(
-        &self,
-        tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeChunkRecord> {
-        self.0
-            .list_knowledge_chunks(tenant_id, knowledge_document_id)
-    }
-
-    fn upsert_knowledge_index(&mut self, record: AgentKnowledgeIndexRecord) -> KernelResult<()> {
-        self.0.upsert_knowledge_index(record)
-    }
-
-    fn get_knowledge_index(
-        &self,
-        tenant_id: u64,
-        knowledge_index_id: &str,
-    ) -> Option<AgentKnowledgeIndexRecord> {
-        self.0.get_knowledge_index(tenant_id, knowledge_index_id)
-    }
-
-    fn list_knowledge_indexes(
-        &self,
-        tenant_id: u64,
-        knowledge_document_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRecord> {
-        self.0
-            .list_knowledge_indexes(tenant_id, knowledge_document_id)
-    }
-
-    fn list_knowledge_indexes_by_base(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeIndexRecord> {
-        self.0
-            .list_knowledge_indexes_by_base(tenant_id, knowledge_base_id)
-    }
-
-    fn insert_knowledge_binding(
-        &mut self,
-        record: AgentKnowledgeBindingRecord,
-    ) -> KernelResult<()> {
-        self.0.insert_knowledge_binding(record)
-    }
-
-    fn get_knowledge_binding(
-        &self,
-        tenant_id: u64,
-        knowledge_binding_id: &str,
-    ) -> Option<AgentKnowledgeBindingRecord> {
-        self.0
-            .get_knowledge_binding(tenant_id, knowledge_binding_id)
-    }
-
-    fn list_knowledge_bindings(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeBindingRecord> {
-        self.0.list_knowledge_bindings(tenant_id, knowledge_base_id)
-    }
-
-    fn insert_knowledge_sync_job(
-        &mut self,
-        record: AgentKnowledgeSyncJobRecord,
-    ) -> KernelResult<()> {
-        self.0.insert_knowledge_sync_job(record)
-    }
-
-    fn update_knowledge_sync_job(
-        &mut self,
-        record: AgentKnowledgeSyncJobRecord,
-    ) -> KernelResult<()> {
-        self.0.update_knowledge_sync_job(record)
-    }
-
-    fn get_knowledge_sync_job(
-        &self,
-        tenant_id: u64,
-        sync_job_id: &str,
-    ) -> Option<AgentKnowledgeSyncJobRecord> {
-        self.0.get_knowledge_sync_job(tenant_id, sync_job_id)
-    }
-
-    fn list_knowledge_sync_jobs(
-        &self,
-        tenant_id: u64,
-        knowledge_base_id: &str,
-    ) -> Vec<AgentKnowledgeSyncJobRecord> {
-        self.0
-            .list_knowledge_sync_jobs(tenant_id, knowledge_base_id)
-    }
-
-    fn insert_memory_store(&mut self, record: AgentMemoryStoreRecord) -> KernelResult<()> {
-        self.0.insert_memory_store(record)
-    }
-
-    fn update_memory_store(&mut self, record: AgentMemoryStoreRecord) -> KernelResult<()> {
-        self.0.update_memory_store(record)
-    }
-
-    fn get_memory_store(
-        &self,
-        tenant_id: u64,
-        memory_store_id: &str,
-    ) -> Option<AgentMemoryStoreRecord> {
-        self.0.get_memory_store(tenant_id, memory_store_id)
-    }
-
-    fn insert_memory_profile(&mut self, record: AgentMemoryProfileRecord) -> KernelResult<()> {
-        self.0.insert_memory_profile(record)
-    }
-
-    fn get_memory_profile(
-        &self,
-        tenant_id: u64,
-        memory_profile_id: &str,
-    ) -> Option<AgentMemoryProfileRecord> {
-        self.0.get_memory_profile(tenant_id, memory_profile_id)
-    }
-
-    fn insert_memory_binding(&mut self, record: AgentMemoryBindingRecord) -> KernelResult<()> {
-        self.0.insert_memory_binding(record)
-    }
-
-    fn get_memory_binding(
-        &self,
-        tenant_id: u64,
-        memory_binding_id: &str,
-    ) -> Option<AgentMemoryBindingRecord> {
-        self.0.get_memory_binding(tenant_id, memory_binding_id)
-    }
-
-    fn insert_memory_namespace(&mut self, record: AgentMemoryNamespaceRecord) -> KernelResult<()> {
-        self.0.insert_memory_namespace(record)
-    }
-
-    fn get_memory_namespace(
-        &self,
-        tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Option<AgentMemoryNamespaceRecord> {
-        self.0.get_memory_namespace(tenant_id, memory_namespace_id)
-    }
-
-    fn insert_memory_record(&mut self, record: AgentMemoryRecord) -> KernelResult<()> {
-        self.0.insert_memory_record(record)
-    }
-
-    fn update_memory_record(&mut self, record: AgentMemoryRecord) -> KernelResult<()> {
-        self.0.update_memory_record(record)
-    }
-
-    fn get_memory_record(&self, tenant_id: u64, memory_id: &str) -> Option<AgentMemoryRecord> {
-        self.0.get_memory_record(tenant_id, memory_id)
-    }
-
-    fn list_memory_records(
-        &self,
-        tenant_id: u64,
-        memory_namespace_id: &str,
-    ) -> Vec<AgentMemoryRecord> {
-        self.0.list_memory_records(tenant_id, memory_namespace_id)
-    }
-
-    fn insert_memory_source(&mut self, record: AgentMemorySourceRecord) -> KernelResult<()> {
-        self.0.insert_memory_source(record)
-    }
-
-    fn list_memory_sources(&self, tenant_id: u64, memory_id: &str) -> Vec<AgentMemorySourceRecord> {
-        self.0.list_memory_sources(tenant_id, memory_id)
-    }
-
-    fn insert_memory_relation(&mut self, record: AgentMemoryRelationRecord) -> KernelResult<()> {
-        self.0.insert_memory_relation(record)
-    }
-
-    fn list_memory_relations(
-        &self,
-        tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRelationRecord> {
-        self.0.list_memory_relations(tenant_id, memory_id)
-    }
-
-    fn upsert_memory_retrieval_index(
-        &mut self,
-        record: AgentMemoryRetrievalIndexRecord,
-    ) -> KernelResult<()> {
-        self.0.upsert_memory_retrieval_index(record)
-    }
-
-    fn list_memory_retrieval_indexes(
-        &self,
-        tenant_id: u64,
-        memory_id: &str,
-    ) -> Vec<AgentMemoryRetrievalIndexRecord> {
-        self.0.list_memory_retrieval_indexes(tenant_id, memory_id)
-    }
 }
 
 impl AgentAuditSink for DynAgentAuditSink {
@@ -609,8 +312,7 @@ impl AgentAuditSink for DynAgentAuditSink {
     fn list_events(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> KernelResult<Vec<sdkwork_agent_kernel::KernelEvent>> {
+        agent_id: &str) -> KernelResult<Vec<sdkwork_agent_kernel::KernelEvent>> {
         self.0.list_events(tenant_id, agent_id)
     }
 }
@@ -642,8 +344,7 @@ impl AgentHttpState {
         let service = AgentsService::new(
             DynAgentRepository::new(repository),
             DynAgentAuditSink::new(audit_sink),
-            DynPolicyProvider::new(policy_provider),
-        );
+            DynPolicyProvider::new(policy_provider));
         Self {
             service: Arc::new(ServiceMutex::new(service)),
         }
@@ -652,8 +353,7 @@ impl AgentHttpState {
 
 async fn inject_gateway_agent_context(
     mut request: Request<axum::body::Body>,
-    next: Next,
-) -> Response {
+    next: Next) -> Response {
     match AgentRequestContext::from_gateway_subject_headers(request.headers()) {
         Ok(context) => {
             request.extensions_mut().insert(context);
@@ -669,47 +369,42 @@ fn with_gateway_trusted_context(router: Router<AgentHttpState>) -> Router<AgentH
 
 /// Raw app-api route tree without gateway or web-framework middleware.
 pub fn build_app_routes() -> Router<AgentHttpState> {
-    add_app_memory_routes(
-        add_app_knowledge_routes(
+    
             Router::new()
                 .route(
                     "/app/v3/api/ai/agents",
-                    get(app_list_agents).post(app_create_agent),
-                )
+                    get(app_list_agents).post(app_create_agent))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}",
                     get(app_get_agent)
                         .patch(app_update_agent)
-                        .delete(app_delete_agent),
-                )
+                        .delete(app_delete_agent))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/restore",
-                    post(app_restore_agent),
-                )
+                    post(app_restore_agent))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/provider_bindings",
-                    get(app_list_provider_bindings).post(app_add_provider_binding),
-                )
+                    get(app_list_provider_bindings).post(app_add_provider_binding))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
-                    post(app_activate_provider_binding),
-                )
+                    post(app_activate_provider_binding))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/deployments",
-                    get(app_list_deployments).post(app_create_deployment),
-                )
+                    get(app_list_deployments).post(app_create_deployment))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/preview_responses",
-                    post(app_create_preview_response),
-                )
+                    post(app_create_preview_response))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/prompt_optimizations",
-                    post(app_create_prompt_optimization),
-                ),
-            "/app/v3/api",
-        ),
-        "/app/v3/api",
-    )
+                    post(app_create_prompt_optimization))
+                .route(
+                    "/app/v3/api/ai/agents/{agentId}/composition_slots",
+                    get(app_list_composition_slots).post(app_create_composition_slot))
+                .route(
+                    "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+                    get(app_get_composition_slot)
+                        .patch(app_update_composition_slot)
+                        .delete(app_delete_composition_slot))
 }
 
 pub fn build_app_router() -> Router<AgentHttpState> {
@@ -718,47 +413,42 @@ pub fn build_app_router() -> Router<AgentHttpState> {
 
 /// Raw open-api route tree without gateway or web-framework middleware.
 pub fn build_open_routes() -> Router<AgentHttpState> {
-    add_memory_routes(
-        add_knowledge_routes(
+    
             Router::new()
                 .route(
                     "/agent/v3/api/ai/agents",
-                    get(backend_list_agents).post(backend_create_agent),
-                )
+                    get(backend_list_agents).post(backend_create_agent))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}",
                     get(backend_get_agent)
                         .patch(backend_update_agent)
-                        .delete(open_delete_agent),
-                )
+                        .delete(open_delete_agent))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/restore",
-                    post(backend_restore_agent),
-                )
+                    post(backend_restore_agent))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/provider_bindings",
-                    get(backend_list_provider_bindings).post(backend_add_provider_binding),
-                )
+                    get(backend_list_provider_bindings).post(backend_add_provider_binding))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
-                    post(backend_activate_provider_binding),
-                )
+                    post(backend_activate_provider_binding))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/deployments",
-                    get(backend_list_deployments).post(backend_create_deployment),
-                )
+                    get(backend_list_deployments).post(backend_create_deployment))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/preview_responses",
-                    post(open_create_preview_response),
-                )
+                    post(open_create_preview_response))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/prompt_optimizations",
-                    post(open_create_prompt_optimization),
-                ),
-            "/agent/v3/api",
-        ),
-        "/agent/v3/api",
-    )
+                    post(open_create_prompt_optimization))
+                .route(
+                    "/agent/v3/api/ai/agents/{agentId}/composition_slots",
+                    get(backend_list_composition_slots).post(backend_create_composition_slot))
+                .route(
+                    "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+                    get(backend_get_composition_slot)
+                        .patch(backend_update_composition_slot)
+                        .delete(backend_delete_composition_slot))
 }
 
 /// Legacy gateway-trusted open-api router for contract tests.
@@ -770,45 +460,40 @@ pub fn build_open_router() -> Router<AgentHttpState> {
 
 /// Raw backend-api route tree without gateway or web-framework middleware.
 pub fn build_backend_routes() -> Router<AgentHttpState> {
-    add_memory_routes(
-        add_knowledge_routes(
+    
             Router::new()
                 .route(
                     "/backend/v3/api/ai/agents",
-                    get(backend_list_agents).post(backend_create_agent),
-                )
+                    get(backend_list_agents).post(backend_create_agent))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}",
-                    get(backend_get_agent).patch(backend_update_agent),
-                )
+                    get(backend_get_agent).patch(backend_update_agent))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/status",
-                    post(backend_update_agent_status),
-                )
+                    post(backend_update_agent_status))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/restore",
-                    post(backend_restore_agent),
-                )
+                    post(backend_restore_agent))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/audit_events",
-                    get(backend_list_agent_audit_events),
-                )
+                    get(backend_list_agent_audit_events))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/provider_bindings",
-                    get(backend_list_provider_bindings).post(backend_add_provider_binding),
-                )
+                    get(backend_list_provider_bindings).post(backend_add_provider_binding))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
-                    post(backend_activate_provider_binding),
-                )
+                    post(backend_activate_provider_binding))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/deployments",
-                    get(backend_list_deployments).post(backend_create_deployment),
-                ),
-            "/backend/v3/api",
-        ),
-        "/backend/v3/api",
-    )
+                    get(backend_list_deployments).post(backend_create_deployment))
+                .route(
+                    "/backend/v3/api/ai/agents/{agentId}/composition_slots",
+                    get(backend_list_composition_slots).post(backend_create_composition_slot))
+                .route(
+                    "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+                    get(backend_get_composition_slot)
+                        .patch(backend_update_composition_slot)
+                        .delete(backend_delete_composition_slot))
 }
 
 /// Legacy gateway-trusted backend-api router for contract tests.
@@ -818,340 +503,13 @@ pub fn build_backend_router() -> Router<AgentHttpState> {
     with_gateway_trusted_context(build_backend_routes())
 }
 
-fn add_knowledge_routes(router: Router<AgentHttpState>, prefix: &str) -> Router<AgentHttpState> {
-    router
-        .route(
-            &format!("{prefix}/ai/knowledge_bases"),
-            get(list_knowledge_bases).post(create_knowledge_base),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}"),
-            get(get_knowledge_base)
-                .patch(update_knowledge_base)
-                .delete(delete_knowledge_base),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/restore"),
-            post(restore_knowledge_base),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/sources"),
-            get(list_knowledge_sources).post(create_knowledge_source),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sources/{{knowledgeSourceId}}"),
-            get(get_knowledge_source)
-                .patch(update_knowledge_source)
-                .delete(delete_knowledge_source),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sources/{{knowledgeSourceId}}/restore"),
-            post(restore_knowledge_source),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/documents"),
-            get(list_knowledge_documents).post(create_knowledge_document),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/search"),
-            post(search_knowledge),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/bindings"),
-            get(list_knowledge_bindings).post(create_knowledge_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/sync_jobs"),
-            get(list_knowledge_sync_jobs).post(create_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}"),
-            get(get_knowledge_document)
-                .patch(update_knowledge_document)
-                .delete(delete_knowledge_document),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}/restore"),
-            post(restore_knowledge_document),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}/chunks"),
-            get(list_knowledge_chunks).post(create_knowledge_chunk),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_chunks/{{knowledgeChunkId}}"),
-            get(get_knowledge_chunk),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}/indexes"),
-            get(list_knowledge_indexes),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_indexes"),
-            post(upsert_knowledge_index),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_indexes/{{knowledgeIndexId}}"),
-            get(get_knowledge_index),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bindings/{{knowledgeBindingId}}"),
-            get(get_knowledge_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}"),
-            get(get_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/start"),
-            post(start_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/complete"),
-            post(complete_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/fail"),
-            post(fail_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/cancel"),
-            post(cancel_knowledge_sync_job),
-        )
-}
 
-fn add_app_knowledge_routes(
-    router: Router<AgentHttpState>,
-    prefix: &str,
-) -> Router<AgentHttpState> {
-    router
-        .route(
-            &format!("{prefix}/ai/knowledge_bases"),
-            get(app_list_knowledge_bases).post(app_create_knowledge_base),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}"),
-            get(app_get_knowledge_base)
-                .patch(app_update_knowledge_base)
-                .delete(app_delete_knowledge_base),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/restore"),
-            post(app_restore_knowledge_base),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/sources"),
-            get(app_list_knowledge_sources).post(app_create_knowledge_source),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sources/{{knowledgeSourceId}}"),
-            get(app_get_knowledge_source)
-                .patch(app_update_knowledge_source)
-                .delete(app_delete_knowledge_source),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sources/{{knowledgeSourceId}}/restore"),
-            post(app_restore_knowledge_source),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/documents"),
-            get(app_list_knowledge_documents).post(app_create_knowledge_document),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/search"),
-            post(app_search_knowledge),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/bindings"),
-            get(app_list_knowledge_bindings).post(app_create_knowledge_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bases/{{knowledgeBaseId}}/sync_jobs"),
-            get(app_list_knowledge_sync_jobs).post(app_create_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}"),
-            get(app_get_knowledge_document)
-                .patch(app_update_knowledge_document)
-                .delete(app_delete_knowledge_document),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}/restore"),
-            post(app_restore_knowledge_document),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}/chunks"),
-            get(app_list_knowledge_chunks).post(app_create_knowledge_chunk),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_chunks/{{knowledgeChunkId}}"),
-            get(app_get_knowledge_chunk),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_documents/{{knowledgeDocumentId}}/indexes"),
-            get(app_list_knowledge_indexes),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_indexes"),
-            post(app_upsert_knowledge_index),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_indexes/{{knowledgeIndexId}}"),
-            get(app_get_knowledge_index),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_bindings/{{knowledgeBindingId}}"),
-            get(app_get_knowledge_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}"),
-            get(app_get_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/start"),
-            post(app_start_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/complete"),
-            post(app_complete_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/fail"),
-            post(app_fail_knowledge_sync_job),
-        )
-        .route(
-            &format!("{prefix}/ai/knowledge_sync_jobs/{{syncJobId}}/cancel"),
-            post(app_cancel_knowledge_sync_job),
-        )
-}
 
-fn add_memory_routes(router: Router<AgentHttpState>, prefix: &str) -> Router<AgentHttpState> {
-    router
-        .route(
-            &format!("{prefix}/ai/memory_stores"),
-            post(create_memory_store),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_stores/{{memoryStoreId}}"),
-            get(get_memory_store).patch(update_memory_store),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_stores/{{memoryStoreId}}/profiles"),
-            post(create_memory_profile),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_profiles/{{memoryProfileId}}"),
-            get(get_memory_profile),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_profiles/{{memoryProfileId}}/bindings"),
-            post(create_memory_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_bindings/{{memoryBindingId}}"),
-            get(get_memory_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_namespaces"),
-            post(create_memory_namespace),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_namespaces/{{memoryNamespaceId}}"),
-            get(get_memory_namespace),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_namespaces/{{memoryNamespaceId}}/records"),
-            get(list_memory_records).post(create_memory_record),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}"),
-            get(get_memory_record).delete(delete_memory_record),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/restore"),
-            post(restore_memory_record),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/sources"),
-            get(list_memory_sources).post(create_memory_source),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/relations"),
-            get(list_memory_relations).post(create_memory_relation),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/retrieval_indexes"),
-            get(list_memory_retrieval_indexes),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_retrieval_indexes"),
-            post(upsert_memory_retrieval_index),
-        )
-}
 
-fn add_app_memory_routes(router: Router<AgentHttpState>, prefix: &str) -> Router<AgentHttpState> {
-    router
-        .route(
-            &format!("{prefix}/ai/memory_stores"),
-            post(app_create_memory_store),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_stores/{{memoryStoreId}}"),
-            get(app_get_memory_store).patch(app_update_memory_store),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_stores/{{memoryStoreId}}/profiles"),
-            post(app_create_memory_profile),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_profiles/{{memoryProfileId}}"),
-            get(app_get_memory_profile),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_profiles/{{memoryProfileId}}/bindings"),
-            post(app_create_memory_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_bindings/{{memoryBindingId}}"),
-            get(app_get_memory_binding),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_namespaces"),
-            post(app_create_memory_namespace),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_namespaces/{{memoryNamespaceId}}"),
-            get(app_get_memory_namespace),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_namespaces/{{memoryNamespaceId}}/records"),
-            get(app_list_memory_records).post(app_create_memory_record),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}"),
-            get(app_get_memory_record).delete(app_delete_memory_record),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/restore"),
-            post(app_restore_memory_record),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/sources"),
-            get(app_list_memory_sources).post(app_create_memory_source),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/relations"),
-            get(app_list_memory_relations).post(app_create_memory_relation),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_records/{{memoryId}}/retrieval_indexes"),
-            get(app_list_memory_retrieval_indexes),
-        )
-        .route(
-            &format!("{prefix}/ai/memory_retrieval_indexes"),
-            post(app_upsert_memory_retrieval_index),
-        )
-}
+
+
+
+
 
 /// Legacy combined router for gateway-trusted contract tests (`http_axum_contracts.rs`).
 ///
@@ -1257,6 +615,57 @@ struct TenantAgentBindingPathParams {
     #[serde(rename = "bindingId")]
     binding_id: String,
 }
+#[derive(Debug, Clone, Deserialize)]
+struct TenantAgentSlotPathParams {
+    #[serde(rename = "agentId")]
+    agent_id: String,
+    #[serde(rename = "slotId")]
+    slot_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CompositionSlotDeleteQueryParams {
+    expected_version: Option<String>,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentCompositionSlotRecordResponse {
+    id: String,
+    tenant_id: String,
+    organization_id: String,
+    agent_id: String,
+    slot_id: String,
+    slot_kind: String,
+    target_module: String,
+    target_ref: String,
+    target_version_ref: Option<String>,
+    priority: i32,
+    enabled: bool,
+    policy_json: String,
+    status: String,
+    version: String,
+    created_at: String,
+    updated_at: String,
+    deleted_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AgentCompositionSlotResponse {
+    data: AgentCompositionSlotRecordResponse,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AgentCompositionSlotListDataResponse {
+    items: Vec<AgentCompositionSlotRecordResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AgentCompositionSlotListResponse {
+    data: AgentCompositionSlotListDataResponse,
+}
+
 
 #[derive(Debug, Clone, Deserialize)]
 struct AuditEventsQueryParams {
@@ -2695,27 +2104,23 @@ impl AgentManagementProfileBody {
 }
 
 fn validate_agent_management_profile_body(
-    profile: &AgentManagementProfileBody,
-) -> Result<(), ApiProblem> {
+    profile: &AgentManagementProfileBody) -> Result<(), ApiProblem> {
     validate_optional_profile_string(profile.author.as_deref(), "managementProfile.author", 128)?;
     validate_optional_profile_string(profile.avatar.as_deref(), "managementProfile.avatar", 512)?;
     validate_optional_profile_string(
         profile.category_id.as_deref(),
         "managementProfile.categoryId",
-        64,
-    )?;
+        64)?;
     validate_optional_profile_string(profile.color.as_deref(), "managementProfile.color", 32)?;
     validate_optional_profile_string(
         profile.icon_name.as_deref(),
         "managementProfile.iconName",
-        64,
-    )?;
+        64)?;
     validate_profile_standard_ids(
         profile.knowledge_base_ids.as_deref().unwrap_or_default(),
         "managementProfile.knowledgeBaseIds",
         "knowledge.base.",
-        128,
-    )?;
+        128)?;
     if let Some(model) = profile.model.as_deref() {
         validate_standard_id(model, "managementProfile.model", Some("model."))
             .map_err(ApiProblem::from_kernel_error)?;
@@ -2724,37 +2129,31 @@ fn validate_agent_management_profile_body(
         profile.skill_ids.as_deref().unwrap_or_default(),
         "managementProfile.skillIds",
         "skill.",
-        128,
-    )?;
+        128)?;
     validate_profile_suggested_prompts(profile.suggested_prompts.as_deref().unwrap_or_default())?;
     validate_optional_profile_string(
         profile.system_prompt.as_deref(),
         "managementProfile.systemPrompt",
-        32768,
-    )?;
+        32768)?;
     if let Some(temperature) = profile.temperature {
         if temperature < 0.0 {
             return Err(ApiProblem::validation(
-                "managementProfile.temperature must be greater than or equal to 0",
-            ));
+                "managementProfile.temperature must be greater than or equal to 0"));
         }
         if temperature > 2.0 {
             return Err(ApiProblem::validation(
-                "managementProfile.temperature must be less than or equal to 2",
-            ));
+                "managementProfile.temperature must be less than or equal to 2"));
         }
     }
     validate_profile_standard_ids(
         profile.tool_ids.as_deref().unwrap_or_default(),
         "managementProfile.toolIds",
         "tool.",
-        128,
-    )?;
+        128)?;
     if let Some(agent_type) = profile.agent_type.as_deref() {
         if !matches!(agent_type, "normal" | "independent") {
             return Err(ApiProblem::validation(
-                "managementProfile.type must be one of normal, independent",
-            ));
+                "managementProfile.type must be one of normal, independent"));
         }
     }
     validate_optional_profile_string(profile.users.as_deref(), "managementProfile.users", 128)?;
@@ -2762,21 +2161,18 @@ fn validate_agent_management_profile_body(
         profile.voice_ids.as_deref().unwrap_or_default(),
         "managementProfile.voiceIds",
         "voice.",
-        16,
-    )?;
+        16)?;
     validate_optional_profile_string(
         profile.welcome_message.as_deref(),
         "managementProfile.welcomeMessage",
-        4096,
-    )?;
+        4096)?;
     Ok(())
 }
 
 fn validate_optional_profile_string(
     value: Option<&str>,
     field_name: &str,
-    max_length: usize,
-) -> Result<(), ApiProblem> {
+    max_length: usize) -> Result<(), ApiProblem> {
     let Some(value) = value else {
         return Ok(());
     };
@@ -2796,8 +2192,7 @@ fn validate_profile_standard_ids(
     values: &[String],
     field_name: &str,
     required_prefix: &str,
-    max_items: usize,
-) -> Result<(), ApiProblem> {
+    max_items: usize) -> Result<(), ApiProblem> {
     if values.len() > max_items {
         return Err(ApiProblem::validation(format!(
             "{field_name} must contain at most {max_items} items"
@@ -2807,8 +2202,7 @@ fn validate_profile_standard_ids(
         validate_standard_id(
             value.as_str(),
             format!("{field_name} items").as_str(),
-            Some(required_prefix),
-        )
+            Some(required_prefix))
         .map_err(ApiProblem::from_kernel_error)?;
     }
     Ok(())
@@ -2817,20 +2211,17 @@ fn validate_profile_standard_ids(
 fn validate_profile_suggested_prompts(values: &[String]) -> Result<(), ApiProblem> {
     if values.len() > 12 {
         return Err(ApiProblem::validation(
-            "managementProfile.suggestedPrompts must contain at most 12 items",
-        ));
+            "managementProfile.suggestedPrompts must contain at most 12 items"));
     }
     for value in values {
         let length = value.chars().count();
         if length == 0 {
             return Err(ApiProblem::validation(
-                "managementProfile.suggestedPrompts items is required",
-            ));
+                "managementProfile.suggestedPrompts items is required"));
         }
         if length > 256 {
             return Err(ApiProblem::validation(
-                "managementProfile.suggestedPrompts items must be at most 256 characters",
-            ));
+                "managementProfile.suggestedPrompts items must be at most 256 characters"));
         }
     }
     Ok(())
@@ -2873,41 +2264,35 @@ impl KnowledgeDocumentProfileBody {
 }
 
 fn validate_knowledge_document_profile_body(
-    profile: &KnowledgeDocumentProfileBody,
-) -> Result<(), ApiProblem> {
+    profile: &KnowledgeDocumentProfileBody) -> Result<(), ApiProblem> {
     validate_optional_profile_string(profile.author.as_deref(), "documentProfile.author", 128)?;
     validate_optional_document_profile_content(profile.content.as_deref())?;
     if let Some(parent_id) = profile.parent_id.as_deref() {
         validate_standard_id(
             parent_id,
             "documentProfile.parentId",
-            Some("knowledge.document."),
-        )
+            Some("knowledge.document."))
         .map_err(ApiProblem::from_kernel_error)?;
     }
     if let Some(document_type) = profile.document_type.as_deref() {
         if !matches!(document_type, "markdown" | "file" | "folder") {
             return Err(ApiProblem::validation(
-                "documentProfile.type must be one of markdown, file, folder",
-            ));
+                "documentProfile.type must be one of markdown, file, folder"));
         }
     }
     validate_optional_profile_string(
         profile.file_name.as_deref(),
         "documentProfile.fileName",
-        512,
-    )?;
+        512)?;
     validate_optional_profile_string(profile.file_size.as_deref(), "documentProfile.fileSize", 64)?;
     validate_optional_profile_string(
         profile.mime_type.as_deref(),
         "documentProfile.mimeType",
-        255,
-    )?;
+        255)?;
     validate_optional_profile_string(
         profile.drive_uri.as_deref(),
         "documentProfile.driveUri",
-        1024,
-    )?;
+        1024)?;
     Ok(())
 }
 
@@ -2917,8 +2302,7 @@ fn validate_optional_document_profile_content(value: Option<&str>) -> Result<(),
     };
     if value.chars().count() > 1_048_576 {
         return Err(ApiProblem::validation(
-            "documentProfile.content must be at most 1048576 characters",
-        ));
+            "documentProfile.content must be at most 1048576 characters"));
     }
     Ok(())
 }
@@ -2971,8 +2355,7 @@ impl ApiProblem {
             "validation_error",
             ErrorCategory::Validation,
             false,
-            detail,
-        )
+            detail)
     }
 
     fn permission(detail: impl Into<String>) -> Self {
@@ -2981,8 +2364,7 @@ impl ApiProblem {
             "permission_required",
             ErrorCategory::Permission,
             false,
-            detail,
-        )
+            detail)
     }
 
     fn conflict(detail: impl Into<String>) -> Self {
@@ -2991,8 +2373,7 @@ impl ApiProblem {
             "conflict",
             ErrorCategory::Business,
             false,
-            detail,
-        )
+            detail)
     }
 
     fn version_conflict(detail: impl Into<String>) -> Self {
@@ -3001,8 +2382,7 @@ impl ApiProblem {
             "version_conflict",
             ErrorCategory::Concurrency,
             true,
-            detail,
-        )
+            detail)
     }
 
     fn not_found(detail: impl Into<String>) -> Self {
@@ -3011,8 +2391,7 @@ impl ApiProblem {
             "not_found",
             ErrorCategory::Resource,
             false,
-            detail,
-        )
+            detail)
     }
 
     fn internal(detail: impl Into<String>) -> Self {
@@ -3021,8 +2400,7 @@ impl ApiProblem {
             "internal_error",
             ErrorCategory::Internal,
             false,
-            detail,
-        )
+            detail)
     }
 
     fn new(
@@ -3030,8 +2408,7 @@ impl ApiProblem {
         code: impl Into<String>,
         error_category: ErrorCategory,
         retryable: bool,
-        detail: impl Into<String>,
-    ) -> Self {
+        detail: impl Into<String>) -> Self {
         let code = code.into();
         Self {
             status,
@@ -3074,8 +2451,7 @@ impl ApiProblem {
             "validation_error",
             ErrorCategory::Validation,
             false,
-            format!("invalid json request: {}", rejection.body_text()),
-        )
+            format!("invalid json request: {}", rejection.body_text()))
     }
 
     fn from_query_rejection(rejection: QueryRejection) -> Self {
@@ -3084,8 +2460,7 @@ impl ApiProblem {
             "validation_error",
             ErrorCategory::Validation,
             false,
-            format!("invalid query request: {}", rejection.body_text()),
-        )
+            format!("invalid query request: {}", rejection.body_text()))
     }
 
     fn from_path_rejection(rejection: PathRejection) -> Self {
@@ -3094,8 +2469,7 @@ impl ApiProblem {
             "validation_error",
             ErrorCategory::Validation,
             false,
-            format!("invalid path request: {}", rejection.body_text()),
-        )
+            format!("invalid path request: {}", rejection.body_text()))
     }
 }
 
@@ -3104,8 +2478,7 @@ impl IntoResponse for ApiProblem {
         let mut response = (self.status, Json(self.response)).into_response();
         response.headers_mut().insert(
             CONTENT_TYPE,
-            HeaderValue::from_static("application/problem+json"),
-        );
+            HeaderValue::from_static("application/problem+json"));
         response
     }
 }
@@ -3113,8 +2486,7 @@ impl IntoResponse for ApiProblem {
 async fn app_list_agents(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
-    query: Result<Query<AppListAgentsQueryParams>, QueryRejection>,
-) -> Result<Json<AgentListResponse>, ApiProblem> {
+    query: Result<Query<AppListAgentsQueryParams>, QueryRejection>) -> Result<Json<AgentListResponse>, ApiProblem> {
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_context(context);
     let owner_user_id = match query.scope.as_deref() {
@@ -3137,23 +2509,20 @@ async fn app_list_agents(
 async fn backend_list_agents(
     State(state): State<AgentHttpState>,
     query: Result<Query<ListAgentsQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<AgentListResponse>, ApiProblem> {
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentListResponse>, ApiProblem> {
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_trusted_extension(
         context,
         query.tenant_id.clone(),
         query.organization_id.clone(),
-        query.owner_user_id.clone(),
-    )?;
+        query.owner_user_id.clone())?;
     execute_list(state, query, scope).await
 }
 
 async fn app_create_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<CreateAgentBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<AgentResponse>), ApiProblem> {
+    body: Result<Json<CreateAgentBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentResponse>), ApiProblem> {
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_create(state, RequestScope::from_context(context), body).await
 }
@@ -3162,24 +2531,21 @@ async fn backend_create_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<CreateAgentBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<AgentResponse>), ApiProblem> {
+    body: Result<Json<CreateAgentBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentResponse>), ApiProblem> {
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     let scope = RequestScope::from_trusted_extension(
         context,
         query.tenant_id,
         body.organization_id.clone(),
-        body.owner_user_id.clone(),
-    )?;
+        body.owner_user_id.clone())?;
     execute_create(state, scope, body).await
 }
 
 async fn app_get_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
-    agent_id: Result<Path<String>, PathRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    agent_id: Result<Path<String>, PathRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     execute_get(state, RequestScope::from_context(context), agent_id).await
 }
@@ -3188,8 +2554,7 @@ async fn backend_get_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     agent_id: Result<Path<String>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    query: Result<Query<TenantQueryParams>, QueryRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
@@ -3200,8 +2565,7 @@ async fn app_update_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     agent_id: Result<Path<String>, PathRejection>,
-    body: Result<Json<UpdateAgentBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<UpdateAgentBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_update(state, RequestScope::from_context(context), agent_id, body).await
@@ -3212,8 +2576,7 @@ async fn backend_update_agent(
     agent_id: Result<Path<String>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<UpdateAgentBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<UpdateAgentBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3225,8 +2588,7 @@ async fn app_delete_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     agent_id: Result<Path<String>, PathRejection>,
-    body: Result<Json<DeleteAgentBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<DeleteAgentBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_delete(state, RequestScope::from_context(context), agent_id, body).await
@@ -3237,8 +2599,7 @@ async fn open_delete_agent(
     agent_id: Result<Path<String>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<DeleteAgentBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<DeleteAgentBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3250,8 +2611,7 @@ async fn app_restore_agent(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     agent_id: Result<Path<String>, PathRejection>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<RestoreAgentBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_restore(state, RequestScope::from_context(context), agent_id, body).await
@@ -3262,8 +2622,7 @@ async fn backend_update_agent_status(
     agent_id: Result<Path<String>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<UpdateAgentStatusBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<UpdateAgentStatusBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3290,8 +2649,7 @@ async fn backend_restore_agent(
     agent_id: Result<Path<String>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<AgentResponse>, ApiProblem> {
+    body: Result<Json<RestoreAgentBody>, JsonRejection>) -> Result<Json<AgentResponse>, ApiProblem> {
     let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3303,8 +2661,7 @@ async fn backend_list_agent_audit_events(
     State(state): State<AgentHttpState>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<AuditEventsQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<AgentAuditEventsListResponse>, ApiProblem> {
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentAuditEventsListResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
@@ -3353,8 +2710,7 @@ async fn app_list_provider_bindings(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<AgentProviderBindingListResponse>, ApiProblem> {
+    query: Result<Query<AppListQueryParams>, QueryRejection>) -> Result<Json<AgentProviderBindingListResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     execute_list_provider_bindings(
@@ -3362,8 +2718,7 @@ async fn app_list_provider_bindings(
         RequestScope::from_context(context),
         query.page,
         query.page_size,
-        path.agent_id,
-    )
+        path.agent_id)
     .await
 }
 
@@ -3371,8 +2726,7 @@ async fn backend_list_provider_bindings(
     State(state): State<AgentHttpState>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<AgentProviderBindingListResponse>, ApiProblem> {
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentProviderBindingListResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
@@ -3383,16 +2737,14 @@ async fn app_add_provider_binding(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    body: Result<Json<AgentProviderBindingBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<AgentProviderBindingResponse>), ApiProblem> {
+    body: Result<Json<AgentProviderBindingBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentProviderBindingResponse>), ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_add_provider_binding(
         state,
         RequestScope::from_context(context),
         path.agent_id,
-        body,
-    )
+        body)
     .await
 }
 
@@ -3401,8 +2753,7 @@ async fn backend_add_provider_binding(
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<AgentProviderBindingBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<AgentProviderBindingResponse>), ApiProblem> {
+    body: Result<Json<AgentProviderBindingBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentProviderBindingResponse>), ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3414,8 +2765,7 @@ async fn app_activate_provider_binding(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentBindingPathParams>, PathRejection>,
-    body: Result<Json<ActivateProviderBindingBody>, JsonRejection>,
-) -> Result<Json<AgentProviderBindingResponse>, ApiProblem> {
+    body: Result<Json<ActivateProviderBindingBody>, JsonRejection>) -> Result<Json<AgentProviderBindingResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_activate_provider_binding(state, RequestScope::from_context(context), path, body).await
@@ -3426,8 +2776,7 @@ async fn backend_activate_provider_binding(
     path: Result<Path<TenantAgentBindingPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<ActivateProviderBindingBody>, JsonRejection>,
-) -> Result<Json<AgentProviderBindingResponse>, ApiProblem> {
+    body: Result<Json<ActivateProviderBindingBody>, JsonRejection>) -> Result<Json<AgentProviderBindingResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3439,8 +2788,7 @@ async fn app_list_deployments(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
+    query: Result<Query<AppListQueryParams>, QueryRejection>) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     execute_list_deployments(
@@ -3448,8 +2796,7 @@ async fn app_list_deployments(
         RequestScope::from_context(context),
         query.page,
         query.page_size,
-        path.agent_id,
-    )
+        path.agent_id)
     .await
 }
 
@@ -3457,8 +2804,7 @@ async fn backend_list_deployments(
     State(state): State<AgentHttpState>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
@@ -3469,16 +2815,14 @@ async fn app_create_deployment(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    body: Result<Json<AgentDeploymentBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
+    body: Result<Json<AgentDeploymentBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_create_deployment(
         state,
         RequestScope::from_context(context),
         path.agent_id,
-        body,
-    )
+        body)
     .await
 }
 
@@ -3487,8 +2831,7 @@ async fn backend_create_deployment(
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<AgentDeploymentBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
+    body: Result<Json<AgentDeploymentBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3500,16 +2843,14 @@ async fn app_create_preview_response(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    body: Result<Json<AgentPreviewResponseBody>, JsonRejection>,
-) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
+    body: Result<Json<AgentPreviewResponseBody>, JsonRejection>) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_create_preview_response(
         state,
         RequestScope::from_context(context),
         path.agent_id,
-        body,
-    )
+        body)
     .await
 }
 
@@ -3517,16 +2858,14 @@ async fn app_create_prompt_optimization(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    body: Result<Json<AgentPromptOptimizationBody>, JsonRejection>,
-) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
+    body: Result<Json<AgentPromptOptimizationBody>, JsonRejection>) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     execute_create_prompt_optimization(
         state,
         RequestScope::from_context(context),
         path.agent_id,
-        body,
-    )
+        body)
     .await
 }
 
@@ -3535,8 +2874,7 @@ async fn open_create_preview_response(
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<AgentPreviewResponseBody>, JsonRejection>,
-) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
+    body: Result<Json<AgentPreviewResponseBody>, JsonRejection>) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3549,8 +2887,7 @@ async fn open_create_prompt_optimization(
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<AgentPromptOptimizationBody>, JsonRejection>,
-) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
+    body: Result<Json<AgentPromptOptimizationBody>, JsonRejection>) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
@@ -3558,3755 +2895,332 @@ async fn open_create_prompt_optimization(
     execute_create_prompt_optimization(state, scope, path.agent_id, body).await
 }
 
-async fn app_list_knowledge_bases(
+async fn app_list_composition_slots(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
-    query: Result<Query<AppKnowledgeBaseListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeBaseListResponse>, ApiProblem> {
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_context(context);
-    let query = KnowledgeBaseListQueryParams {
-        tenant_id: scope.tenant_id.clone(),
-        organization_id: Some(scope.organization_id.clone()),
-        owner_user_id: Some(scope.owner_user_id.clone()),
-        include_deleted: query.include_deleted,
-        q: query.q,
-        status: query.status,
-        visibility: query.visibility,
-        category: query.category,
-        tag: query.tag,
-        page: query.page,
-        page_size: query.page_size,
-    };
-    execute_list_knowledge_bases(state, query, scope).await
-}
-
-async fn app_create_knowledge_base(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeBaseBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeBaseResponse>), ApiProblem> {
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_knowledge_base(state, RequestScope::from_context(context), body).await
-}
-
-async fn app_get_knowledge_base(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
+    path: Result<Path<TenantAgentPathParams>, PathRejection>) -> Result<Json<AgentCompositionSlotListResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_base(
+    execute_list_composition_slots(state, RequestScope::from_context(context), path.agent_id).await
+}
+
+async fn app_create_composition_slot(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    path: Result<Path<TenantAgentPathParams>, PathRejection>,
+    body: Result<Json<AgentCompositionSlotCreateRequestDto>, JsonRejection>) -> Result<(StatusCode, Json<AgentCompositionSlotResponse>), ApiProblem> {
+    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
+    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+    execute_create_composition_slot(
         state,
         RequestScope::from_context(context),
-        path.knowledge_base_id,
-    )
+        path.agent_id,
+        body)
     .await
 }
 
-async fn app_update_knowledge_base(
+async fn app_get_composition_slot(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeBaseUpdateBody>, JsonRejection>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
+    path: Result<Path<TenantAgentSlotPathParams>, PathRejection>) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_update_knowledge_base(
+    execute_get_composition_slot(
         state,
         RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
+        path.agent_id,
+        path.slot_id)
     .await
 }
 
-async fn app_delete_knowledge_base(
+async fn app_update_composition_slot(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<AppDeleteQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
+    path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
+    body: Result<Json<AgentCompositionSlotUpdateRequestDto>, JsonRejection>) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
+    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+    execute_update_composition_slot(
+        state,
+        RequestScope::from_context(context),
+        path.agent_id,
+        path.slot_id,
+        body)
+    .await
+}
+
+async fn app_delete_composition_slot(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
+    query: Result<Query<CompositionSlotDeleteQueryParams>, QueryRejection>) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_delete_knowledge_base(
+    execute_delete_composition_slot(
         state,
         RequestScope::from_context(context),
-        path.knowledge_base_id,
-        query.expected_version,
-        query.requested_at,
-    )
+        path.agent_id,
+        path.slot_id,
+        query)
     .await
 }
 
-async fn app_restore_knowledge_base(
+async fn backend_list_composition_slots(
     State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_restore_knowledge_base(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
-    .await
-}
-
-async fn app_list_knowledge_sources(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeSourceListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_knowledge_sources(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn app_create_knowledge_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSourceBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeSourceResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_knowledge_source(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_knowledge_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_source(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_source_id,
-    )
-    .await
-}
-
-async fn app_update_knowledge_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSourceUpdateBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_update_knowledge_source(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_source_id,
-        body,
-    )
-    .await
-}
-
-async fn app_delete_knowledge_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    query: Result<Query<AppDeleteQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_delete_knowledge_source(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_source_id,
-        query.expected_version,
-        query.requested_at,
-    )
-    .await
-}
-
-async fn app_restore_knowledge_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_restore_knowledge_source(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_source_id,
-        body,
-    )
-    .await
-}
-
-async fn app_list_knowledge_documents(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeDocumentListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_knowledge_documents(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn app_create_knowledge_document(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeDocumentBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeDocumentResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_knowledge_document(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
-    .await
-}
-
-async fn app_search_knowledge(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSearchBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSearchResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_search_knowledge(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_knowledge_document(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_document(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_document_id,
-    )
-    .await
-}
-
-async fn app_update_knowledge_document(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    body: Result<Json<KnowledgeDocumentUpdateBody>, JsonRejection>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_update_knowledge_document(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_document_id,
-        body,
-    )
-    .await
-}
-
-async fn app_delete_knowledge_document(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<AppDeleteQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_delete_knowledge_document(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_document_id,
-        query.expected_version,
-        query.requested_at,
-    )
-    .await
-}
-
-async fn app_restore_knowledge_document(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_restore_knowledge_document(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_document_id,
-        body,
-    )
-    .await
-}
-
-async fn app_list_knowledge_chunks(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeChunkListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_knowledge_chunks(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.knowledge_document_id,
-    )
-    .await
-}
-
-async fn app_create_knowledge_chunk(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    body: Result<Json<KnowledgeChunkBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeChunkResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_knowledge_chunk(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_document_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_knowledge_chunk(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeChunkPathParams>, PathRejection>,
-) -> Result<Json<KnowledgeChunkResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_chunk(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_chunk_id,
-    )
-    .await
-}
-
-async fn app_list_knowledge_indexes(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeIndexListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_knowledge_indexes(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.knowledge_document_id,
-    )
-    .await
-}
-
-async fn app_upsert_knowledge_index(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeIndexBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeIndexResponse>), ApiProblem> {
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_upsert_knowledge_index(state, RequestScope::from_context(context), body).await
-}
-
-async fn app_get_knowledge_index(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeIndexPathParams>, PathRejection>,
-) -> Result<Json<KnowledgeIndexResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_index(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_index_id,
-    )
-    .await
-}
-
-async fn app_list_knowledge_bindings(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeBindingListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_knowledge_bindings(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn app_create_knowledge_binding(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeBindingBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeBindingResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_knowledge_binding(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_knowledge_binding(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBindingPathParams>, PathRejection>,
-) -> Result<Json<KnowledgeBindingResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_binding(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_binding_id,
-    )
-    .await
-}
-
-async fn app_list_knowledge_sync_jobs(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeSyncJobListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_knowledge_sync_jobs(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn app_create_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSyncJobBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeSyncJobResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_knowledge_sync_job(
-        state,
-        RequestScope::from_context(context),
-        path.knowledge_base_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_knowledge_sync_job(state, RequestScope::from_context(context), path.sync_job_id)
-        .await
-}
-
-async fn app_start_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSyncJobStartBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_start_knowledge_sync_job(
-        state,
-        RequestScope::from_context(context),
-        path.sync_job_id,
-        body,
-    )
-    .await
-}
-
-async fn app_complete_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSyncJobCompleteBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_complete_knowledge_sync_job(
-        state,
-        RequestScope::from_context(context),
-        path.sync_job_id,
-        body,
-    )
-    .await
-}
-
-async fn app_fail_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSyncJobFailBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_fail_knowledge_sync_job(
-        state,
-        RequestScope::from_context(context),
-        path.sync_job_id,
-        body,
-    )
-    .await
-}
-
-async fn app_cancel_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    body: Result<Json<KnowledgeSyncJobCancelBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_cancel_knowledge_sync_job(
-        state,
-        RequestScope::from_context(context),
-        path.sync_job_id,
-        body,
-    )
-    .await
-}
-
-async fn list_knowledge_bases(
-    State(state): State<AgentHttpState>,
-    query: Result<Query<KnowledgeBaseListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeBaseListResponse>, ApiProblem> {
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id.clone(),
-        query.organization_id.clone(),
-        query.owner_user_id.clone(),
-    )?;
-    execute_list_knowledge_bases(state, query, scope).await
-}
-
-async fn create_knowledge_base(
-    State(state): State<AgentHttpState>,
+    path: Result<Path<TenantAgentPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeBaseBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeBaseResponse>), ApiProblem> {
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentCompositionSlotListResponse>, ApiProblem> {
+    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
+    execute_list_composition_slots(state, scope, path.agent_id).await
+}
+
+async fn backend_create_composition_slot(
+    State(state): State<AgentHttpState>,
+    path: Result<Path<TenantAgentPathParams>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    body: Result<Json<AgentCompositionSlotCreateRequestDto>, JsonRejection>) -> Result<(StatusCode, Json<AgentCompositionSlotResponse>), ApiProblem> {
+    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        body.owner_user_id.clone(),
-    )?;
-    execute_create_knowledge_base(state, scope, body).await
-}
-
-async fn get_knowledge_base(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_base(state, scope, path.knowledge_base_id).await
-}
-
-async fn update_knowledge_base(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeBaseUpdateBody>, JsonRejection>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_update_knowledge_base(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn delete_knowledge_base(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<DeleteKnowledgeBaseQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_delete_knowledge_base(
-        state,
-        scope,
-        path.knowledge_base_id,
-        query.expected_version,
-        query.requested_at,
-    )
-    .await
-}
-
-async fn restore_knowledge_base(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_restore_knowledge_base(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn list_knowledge_sources(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeSourceListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_knowledge_sources(
-        state,
-        scope,
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn create_knowledge_source(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeSourceBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeSourceResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_knowledge_source(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn get_knowledge_source(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_source(state, scope, path.knowledge_source_id).await
-}
-
-async fn update_knowledge_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeSourceUpdateBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_update_knowledge_source(state, scope, path.knowledge_source_id, body).await
-}
-
-async fn delete_knowledge_source(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    query: Result<Query<DeleteKnowledgeSourceQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_delete_knowledge_source(
-        state,
-        scope,
-        path.knowledge_source_id,
-        query.expected_version,
-        query.requested_at,
-    )
-    .await
-}
-
-async fn restore_knowledge_source(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeSourcePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_restore_knowledge_source(state, scope, path.knowledge_source_id, body).await
-}
-
-async fn list_knowledge_documents(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeDocumentListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_knowledge_documents(
-        state,
-        scope,
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn create_knowledge_document(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeDocumentBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeDocumentResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_knowledge_document(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn search_knowledge(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeSearchBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSearchResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_search_knowledge(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn get_knowledge_document(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_document(state, scope, path.knowledge_document_id).await
-}
-
-async fn update_knowledge_document(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeDocumentUpdateBody>, JsonRejection>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_update_knowledge_document(state, scope, path.knowledge_document_id, body).await
-}
-
-async fn delete_knowledge_document(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<DeleteKnowledgeDocumentQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_delete_knowledge_document(
-        state,
-        scope,
-        path.knowledge_document_id,
-        query.expected_version,
-        query.requested_at,
-    )
-    .await
-}
-
-async fn restore_knowledge_document(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_restore_knowledge_document(state, scope, path.knowledge_document_id, body).await
-}
-
-async fn list_knowledge_chunks(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeChunkListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_knowledge_chunks(
-        state,
-        scope,
-        query.page,
-        query.page_size,
-        path.knowledge_document_id,
-    )
-    .await
-}
-
-async fn create_knowledge_chunk(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeChunkBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeChunkResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_knowledge_chunk(state, scope, path.knowledge_document_id, body).await
-}
-
-async fn get_knowledge_chunk(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeChunkPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeChunkResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_chunk(state, scope, path.knowledge_chunk_id).await
-}
-
-async fn list_knowledge_indexes(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeDocumentPathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeIndexListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_knowledge_indexes(
-        state,
-        scope,
-        query.page,
-        query.page_size,
-        path.knowledge_document_id,
-    )
-    .await
-}
-
-async fn upsert_knowledge_index(
-    State(state): State<AgentHttpState>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeIndexBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeIndexResponse>), ApiProblem> {
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_upsert_knowledge_index(state, scope, body).await
-}
-
-async fn get_knowledge_index(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeIndexPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeIndexResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_index(state, scope, path.knowledge_index_id).await
-}
-
-async fn list_knowledge_bindings(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeBindingListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_knowledge_bindings(
-        state,
-        scope,
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn create_knowledge_binding(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeBindingBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeBindingResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_knowledge_binding(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn get_knowledge_binding(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBindingPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeBindingResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_binding(state, scope, path.knowledge_binding_id).await
-}
-
-async fn list_knowledge_sync_jobs(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-) -> Result<Json<KnowledgeSyncJobListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_knowledge_sync_jobs(
-        state,
-        scope,
-        query.page,
-        query.page_size,
-        path.knowledge_base_id,
-    )
-    .await
-}
-
-async fn create_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeBasePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<KnowledgeSyncJobBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<KnowledgeSyncJobResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_knowledge_sync_job(state, scope, path.knowledge_base_id, body).await
-}
-
-async fn get_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_knowledge_sync_job(state, scope, path.sync_job_id).await
-}
-
-async fn start_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeSyncJobStartBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_start_knowledge_sync_job(state, scope, path.sync_job_id, body).await
-}
-
-async fn complete_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeSyncJobCompleteBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_complete_knowledge_sync_job(state, scope, path.sync_job_id, body).await
-}
-
-async fn fail_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeSyncJobFailBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_fail_knowledge_sync_job(state, scope, path.sync_job_id, body).await
-}
-
-async fn cancel_knowledge_sync_job(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<KnowledgeSyncJobPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<KnowledgeSyncJobCancelBody>, JsonRejection>,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_cancel_knowledge_sync_job(state, scope, path.sync_job_id, body).await
-}
-
-async fn app_create_memory_store(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<MemoryStoreBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryStoreResponse>), ApiProblem> {
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_store(state, RequestScope::from_context(context), body).await
-}
-
-async fn app_get_memory_store(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryStorePathParams>, PathRejection>,
-) -> Result<Json<MemoryStoreResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_memory_store(
+    execute_create_composition_slot(
         state,
         RequestScope::from_context(context),
-        path.memory_store_id,
-    )
+        path.agent_id,
+        body)
     .await
 }
 
-async fn app_update_memory_store(
+async fn backend_get_composition_slot(
     State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryStorePathParams>, PathRejection>,
-    body: Result<Json<MemoryStoreUpdateBody>, JsonRejection>,
-) -> Result<Json<MemoryStoreResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_update_memory_store(
-        state,
-        RequestScope::from_context(context),
-        path.memory_store_id,
-        body,
-    )
-    .await
-}
-
-async fn app_create_memory_profile(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryStorePathParams>, PathRejection>,
-    body: Result<Json<MemoryProfileBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryProfileResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_profile(
-        state,
-        RequestScope::from_context(context),
-        path.memory_store_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_memory_profile(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryProfilePathParams>, PathRejection>,
-) -> Result<Json<MemoryProfileResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_memory_profile(
-        state,
-        RequestScope::from_context(context),
-        path.memory_profile_id,
-    )
-    .await
-}
-
-async fn app_create_memory_binding(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryProfilePathParams>, PathRejection>,
-    body: Result<Json<MemoryBindingBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryBindingResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_binding(
-        state,
-        RequestScope::from_context(context),
-        path.memory_profile_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_memory_binding(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryBindingPathParams>, PathRejection>,
-) -> Result<Json<MemoryBindingResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_memory_binding(
-        state,
-        RequestScope::from_context(context),
-        path.memory_binding_id,
-    )
-    .await
-}
-
-async fn app_create_memory_namespace(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<MemoryNamespaceBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryNamespaceResponse>), ApiProblem> {
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_namespace(state, RequestScope::from_context(context), body).await
-}
-
-async fn app_get_memory_namespace(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryNamespacePathParams>, PathRejection>,
-) -> Result<Json<MemoryNamespaceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_memory_namespace(
-        state,
-        RequestScope::from_context(context),
-        path.memory_namespace_id,
-    )
-    .await
-}
-
-async fn app_list_memory_records(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryNamespacePathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<MemoryRecordListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_memory_records(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.memory_namespace_id,
-    )
-    .await
-}
-
-async fn app_create_memory_record(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryNamespacePathParams>, PathRejection>,
-    body: Result<Json<MemoryRecordBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryRecordResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_record(
-        state,
-        RequestScope::from_context(context),
-        path.memory_namespace_id,
-        body,
-    )
-    .await
-}
-
-async fn app_get_memory_record(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    execute_get_memory_record(state, RequestScope::from_context(context), path.memory_id).await
-}
-
-async fn app_delete_memory_record(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<AppDeleteQueryParams>, QueryRejection>,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_delete_memory_record(
-        state,
-        RequestScope::from_context(context),
-        path.memory_id,
-        query.expected_version,
-        query.requested_at,
-    )
-    .await
-}
-
-async fn app_restore_memory_record(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_restore_memory_record(
-        state,
-        RequestScope::from_context(context),
-        path.memory_id,
-        body,
-    )
-    .await
-}
-
-async fn app_list_memory_sources(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<MemorySourceListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_memory_sources(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.memory_id,
-    )
-    .await
-}
-
-async fn app_create_memory_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    body: Result<Json<MemorySourceBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemorySourceResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_source(
-        state,
-        RequestScope::from_context(context),
-        path.memory_id,
-        body,
-    )
-    .await
-}
-
-async fn app_list_memory_relations(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<MemoryRelationListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_memory_relations(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.memory_id,
-    )
-    .await
-}
-
-async fn app_create_memory_relation(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    body: Result<Json<MemoryRelationBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryRelationResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_memory_relation(
-        state,
-        RequestScope::from_context(context),
-        path.memory_id,
-        body,
-    )
-    .await
-}
-
-async fn app_list_memory_retrieval_indexes(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
-) -> Result<Json<MemoryRetrievalIndexListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_memory_retrieval_indexes(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.memory_id,
-    )
-    .await
-}
-
-async fn app_upsert_memory_retrieval_index(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<MemoryRetrievalIndexBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryRetrievalIndexResponse>), ApiProblem> {
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_upsert_memory_retrieval_index(state, RequestScope::from_context(context), body).await
-}
-
-async fn create_memory_store(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
+    path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemoryStoreBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryStoreResponse>), ApiProblem> {
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        body.owner_user_id.clone(),
-    )?;
-    execute_create_memory_store(state, scope, body).await
-}
-
-async fn get_memory_store(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryStorePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryStoreResponse>, ApiProblem> {
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_memory_store(state, scope, path.memory_store_id).await
+    execute_get_composition_slot(state, scope, path.agent_id, path.slot_id).await
 }
 
-async fn update_memory_store(
+async fn backend_update_composition_slot(
     State(state): State<AgentHttpState>,
+    path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryStorePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemoryStoreUpdateBody>, JsonRejection>,
-) -> Result<Json<MemoryStoreResponse>, ApiProblem> {
+    body: Result<Json<AgentCompositionSlotUpdateRequestDto>, JsonRejection>) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_update_memory_store(state, scope, path.memory_store_id, body).await
-}
-
-async fn create_memory_profile(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryStorePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<MemoryProfileBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryProfileResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        body.owner_user_id.clone(),
-    )?;
-    execute_create_memory_profile(state, scope, path.memory_store_id, body).await
-}
-
-async fn get_memory_profile(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryProfilePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryProfileResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_memory_profile(state, scope, path.memory_profile_id).await
-}
-
-async fn create_memory_binding(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryProfilePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemoryBindingBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryBindingResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_memory_binding(state, scope, path.memory_profile_id, body).await
-}
-
-async fn get_memory_binding(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryBindingPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryBindingResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_memory_binding(state, scope, path.memory_binding_id).await
-}
-
-async fn create_memory_namespace(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemoryNamespaceBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryNamespaceResponse>), ApiProblem> {
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_memory_namespace(state, scope, body).await
-}
-
-async fn get_memory_namespace(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryNamespacePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryNamespaceResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_memory_namespace(state, scope, path.memory_namespace_id).await
-}
-
-async fn list_memory_records(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryNamespacePathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-) -> Result<Json<MemoryRecordListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_memory_records(
+    execute_update_composition_slot(
         state,
-        scope,
-        query.page,
-        query.page_size,
-        path.memory_namespace_id,
-    )
+        RequestScope::from_context(context),
+        path.agent_id,
+        path.slot_id,
+        body)
     .await
 }
 
-async fn create_memory_record(
+async fn backend_delete_composition_slot(
     State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryNamespacePathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<MemoryRecordBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryRecordResponse>), ApiProblem> {
+    path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
+    query: Result<Query<CompositionSlotDeleteQueryParams>, QueryRejection>,
+    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
     let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
     let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(
-        context,
-        query.tenant_id,
-        body.organization_id.clone(),
-        None,
-    )?;
-    execute_create_memory_record(state, scope, path.memory_namespace_id, body).await
-}
-
-async fn get_memory_record(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_get_memory_record(state, scope, path.memory_id).await
-}
-
-async fn delete_memory_record(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<DeleteMemoryRecordQueryParams>, QueryRejection>,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_delete_memory_record(
+    execute_delete_composition_slot(
         state,
-        scope,
-        path.memory_id,
-        query.expected_version,
-        query.requested_at,
-    )
+        RequestScope::from_context(context),
+        path.agent_id,
+        path.slot_id,
+        query)
     .await
 }
-
-async fn restore_memory_record(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<RestoreAgentBody>, JsonRejection>,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_restore_memory_record(state, scope, path.memory_id, body).await
-}
-
-async fn list_memory_sources(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemorySourceListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_memory_sources(state, scope, query.page, query.page_size, path.memory_id).await
-}
-
-async fn create_memory_source(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemorySourceBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemorySourceResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_create_memory_source(state, scope, path.memory_id, body).await
-}
-
-async fn list_memory_relations(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryRelationListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_memory_relations(state, scope, query.page, query.page_size, path.memory_id).await
-}
-
-async fn create_memory_relation(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemoryRelationBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryRelationResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_create_memory_relation(state, scope, path.memory_id, body).await
-}
-
-async fn list_memory_retrieval_indexes(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<MemoryRecordPathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-) -> Result<Json<MemoryRetrievalIndexListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_memory_retrieval_indexes(state, scope, query.page, query.page_size, path.memory_id)
-        .await
-}
-
-async fn upsert_memory_retrieval_index(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    body: Result<Json<MemoryRetrievalIndexBody>, JsonRejection>,
-) -> Result<(StatusCode, Json<MemoryRetrievalIndexResponse>), ApiProblem> {
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_upsert_memory_retrieval_index(state, scope, body).await
-}
-
-#[cfg(not(feature = "postgres-sync"))]
-async fn with_service_mut<T>(
-    state: &AgentHttpState,
-    action: impl FnOnce(&mut HttpService) -> KernelResult<T>,
-) -> Result<T, ApiProblem> {
-    let mut service = state.service.lock().await;
-    action(&mut *service).map_err(ApiProblem::from_kernel_error)
-}
-
-#[cfg(feature = "postgres-sync")]
-async fn with_service_mut<T, F>(state: &AgentHttpState, action: F) -> Result<T, ApiProblem>
-where
-    F: FnOnce(&mut HttpService) -> KernelResult<T> + Send + 'static,
-    T: Send + 'static,
-{
-    let service = Arc::clone(&state.service);
-    let result = tokio::task::spawn_blocking(move || {
-        let mut guard = service.lock().map_err(|_| KernelError::Internal {
-            message: "agents managed store service lock poisoned".to_string(),
-        })?;
-        action(&mut *guard)
-    })
-    .await
-    .map_err(|_| {
-        ApiProblem::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
-            ErrorCategory::Internal,
-            false,
-            "agents managed store service worker failed",
-        )
-    })?;
-    result.map_err(ApiProblem::from_kernel_error)
-}
-
-fn knowledge_base_document_count(
-    service: &mut HttpService,
-    tenant_id: u64,
-    knowledge_base_id: &str,
-    subject: PolicySubject,
-) -> KernelResult<u32> {
-    let documents = service.list_knowledge_documents(tenant_id, knowledge_base_id, subject)?;
-    u32::try_from(documents.len()).map_err(|_| KernelError::Internal {
-        message: "knowledge base document count exceeds u32 range".to_string(),
-    })
-}
-
-async fn execute_list_knowledge_bases(
+async fn execute_list_composition_slots(
     state: AgentHttpState,
-    query: KnowledgeBaseListQueryParams,
     scope: RequestScope,
-) -> Result<Json<KnowledgeBaseListResponse>, ApiProblem> {
-    let subject = scope.subject.clone();
-    let request_dto = ListAgentKnowledgeBasesRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: query.organization_id,
-        owner_user_id: query.owner_user_id,
-        include_deleted: query.include_deleted.unwrap_or(false),
-        search_query: query.q,
-        status: query.status,
-        visibility: query.visibility,
-        category: query.category,
-        tag: query.tag,
+    agent_id: String) -> Result<Json<AgentCompositionSlotListResponse>, ApiProblem> {
+    let tenant_id = scope.tenant_id_u64()?;
+    let command = AgentCompositionSlotListCommand {
+        tenant_id,
+        agent_id,
+        requested_by: scope.subject,
     };
-    let list_query = request_dto
-        .into_query()
-        .map_err(ApiProblem::from_kernel_error)?;
-
-    let list_subject = subject.clone();
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_bases(list_query, list_subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = with_service_mut(&state, move |service| {
-        paged
-            .iter()
-            .map(|record| {
-                let document_count = if record.is_deleted() {
-                    0
-                } else {
-                    knowledge_base_document_count(
-                        service,
-                        record.tenant_id,
-                        record.knowledge_base_id.as_str(),
-                        subject.clone(),
-                    )?
-                };
-                Ok(map_knowledge_base_record(
-                    &AgentKnowledgeBaseRecordDto::from_record(record),
-                    document_count,
-                ))
-            })
-            .collect::<KernelResult<Vec<_>>>()
-    })
-    .await?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeBaseListResponse {
-        data: KnowledgeBaseListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
+    let records = with_service_mut(&state, move |service| service.list_composition_slots(command))
+        .await?;
+    let items = records
+        .iter()
+        .map(|record| map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(record)))
+        .collect();
+    Ok(Json(AgentCompositionSlotListResponse {
+        data: AgentCompositionSlotListDataResponse { items },
     }))
 }
 
-async fn execute_create_knowledge_base(
+async fn execute_create_composition_slot(
     state: AgentHttpState,
     scope: RequestScope,
-    body: KnowledgeBaseBody,
-) -> Result<(StatusCode, Json<KnowledgeBaseResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentKnowledgeBaseCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        owner_user_id: scope.owner_user_id,
-        knowledge_base_id: body.knowledge_base_id,
-        code: body.code,
-        display_name: body.display_name,
-        description: body.description,
-        provider_id: body.provider_id,
-        base_kind: body.base_kind,
-        retrieval_modes: body.retrieval_modes,
-        capability_ids: body.capability_ids.unwrap_or_default(),
-        configuration_profile_id: body.configuration_profile_id,
-        visibility: body.visibility,
+    agent_id: String,
+    body: AgentCompositionSlotCreateRequestDto) -> Result<(StatusCode, Json<AgentCompositionSlotResponse>), ApiProblem> {
+    let tenant_id = parse_tenant_id(body.data.tenant_id.as_str())?;
+    let organization_id = parse_tenant_id(body.data.organization_id.as_str())?;
+    validate_requested_at(body.requested_at.as_str())?;
+    let slot_kind = AgentCompositionSlotKind::from_str(body.data.slot_kind.as_str())
+        .ok_or_else(|| ApiProblem::bad_request("invalid slotKind"))?;
+    let target_module = AgentCompositionTargetModule::from_str(body.data.target_module.as_str())
+        .ok_or_else(|| ApiProblem::bad_request("invalid targetModule"))?;
+    let command = AgentCompositionSlotCreateCommand {
+        tenant_id,
+        organization_id,
+        agent_id,
+        slot_id: body.data.slot_id,
+        slot_kind,
+        target_module,
+        target_ref: body.data.target_ref,
+        target_version_ref: body.data.target_version_ref,
+        priority: body.data.priority.unwrap_or(0),
+        enabled: body.data.enabled.unwrap_or(true),
+        policy_json: body.data.policy_json.unwrap_or_else(|| "{}".to_string()),
+        requested_by: scope.subject,
         requested_at: body.requested_at,
-    }
-    .into_command(subject.clone())
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let (record, document_count) = with_service_mut(&state, move |service| {
-        let record = service.create_knowledge_base(command)?;
-        let document_count = knowledge_base_document_count(
-            service,
-            record.tenant_id,
-            record.knowledge_base_id.as_str(),
-            subject.clone(),
-        )?;
-        Ok((record, document_count))
-    })
-    .await?;
+    };
+    let record = with_service_mut(&state, move |service| service.create_composition_slot(command))
+        .await?;
     Ok((
         StatusCode::CREATED,
-        Json(KnowledgeBaseResponse {
-            data: map_knowledge_base_record(
-                &AgentKnowledgeBaseRecordDto::from_record(&record),
-                document_count,
-            ),
-        }),
-    ))
+        Json(AgentCompositionSlotResponse {
+            data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
+        })))
 }
 
-async fn execute_get_knowledge_base(
+async fn execute_get_composition_slot(
     state: AgentHttpState,
     scope: RequestScope,
-    knowledge_base_id: String,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_base_id,
-        requested_by: subject.clone(),
-    };
-    let (record, document_count) = with_service_mut(&state, move |service| {
-        let record = service.get_knowledge_base(command)?;
-        let document_count = knowledge_base_document_count(
-            service,
-            record.tenant_id,
-            record.knowledge_base_id.as_str(),
-            subject.clone(),
-        )?;
-        Ok((record, document_count))
-    })
-    .await?;
-    Ok(Json(KnowledgeBaseResponse {
-        data: map_knowledge_base_record(
-            &AgentKnowledgeBaseRecordDto::from_record(&record),
-            document_count,
-        ),
-    }))
-}
-
-async fn execute_update_knowledge_base(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    body: KnowledgeBaseUpdateBody,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentKnowledgeBaseUpdateRequestDto {
-        tenant_id: scope.tenant_id,
-        knowledge_base_id,
-        expected_version: body.expected_version,
-        display_name: body.display_name,
-        description: body.description,
-        provider_id: body.provider_id,
-        base_kind: body.base_kind,
-        retrieval_modes: body.retrieval_modes,
-        capability_ids: body.capability_ids,
-        configuration_profile_id: body.configuration_profile_id,
-        visibility: body.visibility,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject.clone())
-    .map_err(ApiProblem::from_kernel_error)?;
-    let (record, document_count) = with_service_mut(&state, move |service| {
-        let record = service.update_knowledge_base(command)?;
-        let document_count = knowledge_base_document_count(
-            service,
-            record.tenant_id,
-            record.knowledge_base_id.as_str(),
-            subject.clone(),
-        )?;
-        Ok((record, document_count))
-    })
-    .await?;
-    Ok(Json(KnowledgeBaseResponse {
-        data: map_knowledge_base_record(
-            &AgentKnowledgeBaseRecordDto::from_record(&record),
-            document_count,
-        ),
-    }))
-}
-
-async fn execute_delete_knowledge_base(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    validate_requested_at(requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = expected_version
-        .as_deref()
-        .map(parse_expected_version)
-        .transpose()
-        .map_err(ApiProblem::from_kernel_error)?;
-    let command = DeleteAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_base_id,
-        expected_version,
+    agent_id: String,
+    slot_id: String) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    let tenant_id = scope.tenant_id_u64()?;
+    let command = AgentCompositionSlotGetCommand {
+        tenant_id,
+        agent_id,
+        slot_id,
         requested_by: scope.subject,
-        requested_at,
     };
-    let record = with_service_mut(&state, move |service| {
-        service.delete_knowledge_base(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeBaseResponse {
-        data: map_knowledge_base_record(&AgentKnowledgeBaseRecordDto::from_record(&record), 0),
+    let record = with_service_mut(&state, move |service| service.get_composition_slot(command))
+        .await?;
+    Ok(Json(AgentCompositionSlotResponse {
+        data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
     }))
 }
 
-async fn execute_restore_knowledge_base(
+async fn execute_update_composition_slot(
     state: AgentHttpState,
     scope: RequestScope,
-    knowledge_base_id: String,
-    body: RestoreAgentBody,
-) -> Result<Json<KnowledgeBaseResponse>, ApiProblem> {
-    let subject = scope.subject.clone();
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
+    agent_id: String,
+    slot_id: String,
+    body: AgentCompositionSlotUpdateRequestDto) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    let tenant_id = parse_tenant_id(body.data.tenant_id.as_str())?;
+    validate_requested_at(body.requested_at.as_str())?;
     let expected_version = body
+        .data
         .expected_version
         .as_deref()
         .map(parse_expected_version)
         .transpose()
         .map_err(ApiProblem::from_kernel_error)?;
-    let command = RestoreAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_base_id,
-        expected_version,
-        requested_by: subject.clone(),
-        requested_at: body.requested_at,
-    };
-    let (record, document_count) = with_service_mut(&state, move |service| {
-        let record = service.restore_knowledge_base(command)?;
-        let document_count = knowledge_base_document_count(
-            service,
-            record.tenant_id,
-            record.knowledge_base_id.as_str(),
-            subject.clone(),
-        )?;
-        Ok((record, document_count))
-    })
-    .await?;
-    Ok(Json(KnowledgeBaseResponse {
-        data: map_knowledge_base_record(
-            &AgentKnowledgeBaseRecordDto::from_record(&record),
-            document_count,
-        ),
-    }))
-}
-
-async fn execute_list_knowledge_sources(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    knowledge_base_id: String,
-) -> Result<Json<KnowledgeSourceListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_sources(tenant_id, knowledge_base_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_knowledge_source_record(&AgentKnowledgeSourceRecordDto::from_record(record))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeSourceListResponse {
-        data: KnowledgeSourceListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_knowledge_source(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    body: KnowledgeSourceBody,
-) -> Result<(StatusCode, Json<KnowledgeSourceResponse>), ApiProblem> {
-    let sync_policy_json =
-        json_value_to_string(body.sync_policy.unwrap_or_else(|| json!({})), "syncPolicy")?;
-    let metadata_json =
-        json_value_to_string(body.metadata.unwrap_or_else(|| json!({})), "metadata")?;
-    let command = AgentKnowledgeSourceCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        knowledge_source_id: body.knowledge_source_id,
-        knowledge_base_id,
-        source_kind: body.source_kind,
-        source_ref: body.source_ref,
-        source_hash: body.source_hash,
-        sync_policy_json,
-        metadata_json,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_knowledge_source(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(KnowledgeSourceResponse {
-            data: map_knowledge_source_record(&AgentKnowledgeSourceRecordDto::from_record(
-                &record,
-            ))?,
-        }),
-    ))
-}
-
-async fn execute_get_knowledge_source(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_source_id: String,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_source_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_knowledge_source(command)).await?;
-    Ok(Json(KnowledgeSourceResponse {
-        data: map_knowledge_source_record(&AgentKnowledgeSourceRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_update_knowledge_source(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_source_id: String,
-    body: KnowledgeSourceUpdateBody,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    let sync_policy_json = body
-        .sync_policy
-        .map(|value| json_value_to_string(value, "syncPolicy"))
-        .transpose()?;
-    let metadata_json = body
-        .metadata
-        .map(|value| json_value_to_string(value, "metadata"))
-        .transpose()?;
-    let command = AgentKnowledgeSourceUpdateRequestDto {
-        tenant_id: scope.tenant_id,
-        knowledge_source_id,
-        expected_version: body.expected_version,
-        source_kind: body.source_kind,
-        source_ref: body.source_ref,
-        source_hash: body.source_hash,
-        sync_policy_json,
-        metadata_json,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-    let record = with_service_mut(&state, move |service| {
-        service.update_knowledge_source(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSourceResponse {
-        data: map_knowledge_source_record(&AgentKnowledgeSourceRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_delete_knowledge_source(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_source_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    validate_requested_at(requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = expected_version
+    let slot_kind = body
+        .data
+        .slot_kind
         .as_deref()
-        .map(parse_expected_version)
+        .map(|value| {
+            AgentCompositionSlotKind::from_str(value)
+                .ok_or_else(|| KernelError::validation("invalid slotKind"))
+        })
         .transpose()
         .map_err(ApiProblem::from_kernel_error)?;
-    let command = DeleteAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_source_id,
+    let target_module = body
+        .data
+        .target_module
+        .as_deref()
+        .map(|value| {
+            AgentCompositionTargetModule::from_str(value)
+                .ok_or_else(|| KernelError::validation("invalid targetModule"))
+        })
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?;
+    let command = AgentCompositionSlotUpdateCommand {
+        tenant_id,
+        agent_id,
+        slot_id,
         expected_version,
+        slot_kind,
+        target_module,
+        target_ref: body.data.target_ref,
+        target_version_ref: body.data.target_version_ref,
+        priority: body.data.priority,
+        enabled: body.data.enabled,
+        policy_json: body.data.policy_json,
         requested_by: scope.subject,
-        requested_at,
+        requested_at: body.requested_at,
     };
-    let record = with_service_mut(&state, move |service| {
-        service.delete_knowledge_source(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSourceResponse {
-        data: map_knowledge_source_record(&AgentKnowledgeSourceRecordDto::from_record(&record))?,
+    let record = with_service_mut(&state, move |service| service.update_composition_slot(command))
+        .await?;
+    Ok(Json(AgentCompositionSlotResponse {
+        data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
     }))
 }
 
-async fn execute_restore_knowledge_source(
+async fn execute_delete_composition_slot(
     state: AgentHttpState,
     scope: RequestScope,
-    knowledge_source_id: String,
-    body: RestoreAgentBody,
-) -> Result<Json<KnowledgeSourceResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = body
+    agent_id: String,
+    slot_id: String,
+    query: CompositionSlotDeleteQueryParams) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
+    validate_requested_at(query.requested_at.as_str())?;
+    let tenant_id = scope.tenant_id_u64()?;
+    let expected_version = query
         .expected_version
         .as_deref()
         .map(parse_expected_version)
         .transpose()
         .map_err(ApiProblem::from_kernel_error)?;
-    let command = RestoreAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_source_id,
-        expected_version,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.restore_knowledge_source(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSourceResponse {
-        data: map_knowledge_source_record(&AgentKnowledgeSourceRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_list_knowledge_documents(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    knowledge_base_id: String,
-) -> Result<Json<KnowledgeDocumentListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_documents(tenant_id, knowledge_base_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_knowledge_document_record(&AgentKnowledgeDocumentRecordDto::from_record(record))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeDocumentListResponse {
-        data: KnowledgeDocumentListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_knowledge_document(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    body: KnowledgeDocumentBody,
-) -> Result<(StatusCode, Json<KnowledgeDocumentResponse>), ApiProblem> {
-    let mut metadata_json =
-        json_value_to_string(body.metadata.unwrap_or_else(|| json!({})), "metadata")?;
-    if let Some(document_profile) = body.document_profile {
-        metadata_json = document_profile
-            .into_validated_dto()?
-            .merge_into_metadata_json(Some(metadata_json))
-            .map_err(ApiProblem::from_kernel_error)?;
-    }
-    let command = AgentKnowledgeDocumentCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        knowledge_document_id: body.knowledge_document_id,
-        knowledge_base_id,
-        knowledge_source_id: body.knowledge_source_id,
-        document_kind: body.document_kind,
-        title: body.title,
-        content_ref: body.content_ref,
-        content_hash: body.content_hash,
-        summary: body.summary,
-        metadata_json,
-        tags: body.tags.unwrap_or_default(),
-        categories: body.categories.unwrap_or_default(),
-        trust_level: body.trust_level.unwrap_or(0),
-        redaction_classification: body
-            .redaction_classification
-            .unwrap_or_else(|| "public".to_string()),
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_knowledge_document(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(KnowledgeDocumentResponse {
-            data: map_knowledge_document_record(&AgentKnowledgeDocumentRecordDto::from_record(
-                &record,
-            ))?,
-        }),
-    ))
-}
-
-async fn execute_search_knowledge(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    body: KnowledgeSearchBody,
-) -> Result<Json<KnowledgeSearchResponse>, ApiProblem> {
-    let command = AgentKnowledgeSearchRequestDto {
-        tenant_id: scope.tenant_id,
-        knowledge_base_id,
-        query: body.query,
-        top_k: body.top_k.unwrap_or(10),
-        retrieval_modes: body.retrieval_modes.unwrap_or_default(),
-        include_external: body.include_external.unwrap_or(false),
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let results =
-        with_service_mut(&state, move |service| service.search_knowledge(command)).await?;
-    let items = results
-        .iter()
-        .map(|record| {
-            map_knowledge_search_result(&AgentKnowledgeSearchResultDto::from_record(record))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(Json(KnowledgeSearchResponse {
-        data: KnowledgeSearchDataResponse { items },
-    }))
-}
-
-async fn execute_get_knowledge_document(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_document_id: String,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_document_id,
-        requested_by: scope.subject,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.get_knowledge_document(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeDocumentResponse {
-        data: map_knowledge_document_record(&AgentKnowledgeDocumentRecordDto::from_record(
-            &record,
-        ))?,
-    }))
-}
-
-async fn execute_update_knowledge_document(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_document_id: String,
-    body: KnowledgeDocumentUpdateBody,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    let subject = scope.subject.clone();
-    let mut metadata_json = body
-        .metadata
-        .map(|value| json_value_to_string(value, "metadata"))
-        .transpose()?;
-    if let Some(document_profile) = body.document_profile {
-        let base_metadata_json = match metadata_json.take() {
-            Some(metadata_json) => metadata_json,
-            None => {
-                let command = GetAgentMarketplaceItemCommand {
-                    tenant_id: scope.tenant_id_u64()?,
-                    item_id: knowledge_document_id.clone(),
-                    requested_by: subject.clone(),
-                };
-                let current = with_service_mut(&state, move |service| {
-                    service.get_knowledge_document(command)
-                })
-                .await?;
-                current.metadata_json
-            }
-        };
-        metadata_json = Some(
-            document_profile
-                .into_validated_dto()?
-                .merge_into_metadata_json(Some(base_metadata_json))
-                .map_err(ApiProblem::from_kernel_error)?,
-        );
-    }
-    let command = AgentKnowledgeDocumentUpdateRequestDto {
-        tenant_id: scope.tenant_id,
-        knowledge_document_id,
-        expected_version: body.expected_version,
-        knowledge_source_id: body.knowledge_source_id,
-        document_kind: body.document_kind,
-        title: body.title,
-        content_ref: body.content_ref,
-        content_hash: body.content_hash,
-        summary: body.summary,
-        metadata_json,
-        tags: body.tags,
-        categories: body.categories,
-        trust_level: body.trust_level,
-        redaction_classification: body.redaction_classification,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-    let record = with_service_mut(&state, move |service| {
-        service.update_knowledge_document(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeDocumentResponse {
-        data: map_knowledge_document_record(&AgentKnowledgeDocumentRecordDto::from_record(
-            &record,
-        ))?,
-    }))
-}
-
-async fn execute_delete_knowledge_document(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_document_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    validate_requested_at(requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = expected_version
-        .as_deref()
-        .map(parse_expected_version)
-        .transpose()
-        .map_err(ApiProblem::from_kernel_error)?;
-    let command = DeleteAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_document_id,
-        expected_version,
-        requested_by: scope.subject,
-        requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.delete_knowledge_document(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeDocumentResponse {
-        data: map_knowledge_document_record(&AgentKnowledgeDocumentRecordDto::from_record(
-            &record,
-        ))?,
-    }))
-}
-
-async fn execute_restore_knowledge_document(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_document_id: String,
-    body: RestoreAgentBody,
-) -> Result<Json<KnowledgeDocumentResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = body
-        .expected_version
-        .as_deref()
-        .map(parse_expected_version)
-        .transpose()
-        .map_err(ApiProblem::from_kernel_error)?;
-    let command = RestoreAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_document_id,
-        expected_version,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.restore_knowledge_document(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeDocumentResponse {
-        data: map_knowledge_document_record(&AgentKnowledgeDocumentRecordDto::from_record(
-            &record,
-        ))?,
-    }))
-}
-
-async fn execute_list_knowledge_chunks(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    knowledge_document_id: String,
-) -> Result<Json<KnowledgeChunkListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_chunks(tenant_id, knowledge_document_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_knowledge_chunk_record(&AgentKnowledgeChunkRecordDto::from_record(record))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeChunkListResponse {
-        data: KnowledgeChunkListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_knowledge_chunk(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_document_id: String,
-    body: KnowledgeChunkBody,
-) -> Result<(StatusCode, Json<KnowledgeChunkResponse>), ApiProblem> {
-    let metadata_json =
-        json_value_to_string(body.metadata.unwrap_or_else(|| json!({})), "metadata")?;
-    let command = AgentKnowledgeChunkCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        knowledge_chunk_id: body.knowledge_chunk_id,
-        knowledge_document_id,
-        parent_chunk_id: body.parent_chunk_id,
-        chunk_ordinal: body.chunk_ordinal,
-        heading: body.heading,
-        content_ref: body.content_ref,
-        content_hash: body.content_hash,
-        token_estimate: body.token_estimate,
-        summary: body.summary,
-        metadata_json,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_knowledge_chunk(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(KnowledgeChunkResponse {
-            data: map_knowledge_chunk_record(&AgentKnowledgeChunkRecordDto::from_record(&record))?,
-        }),
-    ))
-}
-
-async fn execute_get_knowledge_chunk(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_chunk_id: String,
-) -> Result<Json<KnowledgeChunkResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_chunk_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_knowledge_chunk(command)).await?;
-    Ok(Json(KnowledgeChunkResponse {
-        data: map_knowledge_chunk_record(&AgentKnowledgeChunkRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_list_knowledge_indexes(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    knowledge_document_id: String,
-) -> Result<Json<KnowledgeIndexListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_indexes(tenant_id, knowledge_document_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_knowledge_index_record(&AgentKnowledgeIndexRecordDto::from_record(record))
-        })
-        .collect();
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeIndexListResponse {
-        data: KnowledgeIndexListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_upsert_knowledge_index(
-    state: AgentHttpState,
-    scope: RequestScope,
-    body: KnowledgeIndexBody,
-) -> Result<(StatusCode, Json<KnowledgeIndexResponse>), ApiProblem> {
-    let command = AgentKnowledgeIndexUpsertRequestDto {
-        tenant_id: scope.tenant_id,
-        knowledge_index_id: body.knowledge_index_id,
-        knowledge_base_id: body.knowledge_base_id,
-        knowledge_document_id: body.knowledge_document_id,
-        knowledge_chunk_id: body.knowledge_chunk_id,
-        index_kind: body.index_kind,
-        index_provider_id: body.index_provider_id,
-        external_ref: body.external_ref,
-        embedding_model_id: body.embedding_model_id,
-        vector_dimension: body.vector_dimension,
-        content_hash: body.content_hash,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.upsert_knowledge_index(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(KnowledgeIndexResponse {
-            data: map_knowledge_index_record(&AgentKnowledgeIndexRecordDto::from_record(&record)),
-        }),
-    ))
-}
-
-async fn execute_get_knowledge_index(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_index_id: String,
-) -> Result<Json<KnowledgeIndexResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_index_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_knowledge_index(command)).await?;
-    Ok(Json(KnowledgeIndexResponse {
-        data: map_knowledge_index_record(&AgentKnowledgeIndexRecordDto::from_record(&record)),
-    }))
-}
-
-async fn execute_list_knowledge_bindings(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    knowledge_base_id: String,
-) -> Result<Json<KnowledgeBindingListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_bindings(tenant_id, knowledge_base_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_knowledge_binding_record(&AgentKnowledgeBindingRecordDto::from_record(record))
-        })
-        .collect();
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeBindingListResponse {
-        data: KnowledgeBindingListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_knowledge_binding(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    body: KnowledgeBindingBody,
-) -> Result<(StatusCode, Json<KnowledgeBindingResponse>), ApiProblem> {
-    let command = AgentKnowledgeBindingCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        knowledge_binding_id: body.knowledge_binding_id,
-        knowledge_base_id,
-        agent_id: body.agent_id,
-        deployment_id: body.deployment_id,
-        scope_kind: body.scope_kind,
-        scope_ref: body.scope_ref,
-        active: body.active.unwrap_or(true),
-        default_binding: body.default_binding.unwrap_or(false),
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_knowledge_binding(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(KnowledgeBindingResponse {
-            data: map_knowledge_binding_record(&AgentKnowledgeBindingRecordDto::from_record(
-                &record,
-            )),
-        }),
-    ))
-}
-
-async fn execute_get_knowledge_binding(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_binding_id: String,
-) -> Result<Json<KnowledgeBindingResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: knowledge_binding_id,
-        requested_by: scope.subject,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.get_knowledge_binding(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeBindingResponse {
-        data: map_knowledge_binding_record(&AgentKnowledgeBindingRecordDto::from_record(&record)),
-    }))
-}
-
-async fn execute_list_knowledge_sync_jobs(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    knowledge_base_id: String,
-) -> Result<Json<KnowledgeSyncJobListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let records = with_service_mut(&state, move |service| {
-        service.list_knowledge_sync_jobs(tenant_id, knowledge_base_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(record))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(KnowledgeSyncJobListResponse {
-        data: KnowledgeSyncJobListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_knowledge_sync_job(
-    state: AgentHttpState,
-    scope: RequestScope,
-    knowledge_base_id: String,
-    body: KnowledgeSyncJobBody,
-) -> Result<(StatusCode, Json<KnowledgeSyncJobResponse>), ApiProblem> {
-    let input_json = json_value_to_string(body.input.unwrap_or_else(|| json!({})), "input")?;
-    let command = AgentKnowledgeSyncJobCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        sync_job_id: body.sync_job_id,
-        knowledge_base_id,
-        knowledge_source_id: body.knowledge_source_id,
-        job_kind: body.job_kind,
-        input_ref: body.input_ref,
-        input_json,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_knowledge_sync_job(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(KnowledgeSyncJobResponse {
-            data: map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(
-                &record,
-            ))?,
-        }),
-    ))
-}
-
-async fn execute_get_knowledge_sync_job(
-    state: AgentHttpState,
-    scope: RequestScope,
-    sync_job_id: String,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: sync_job_id,
-        requested_by: scope.subject,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.get_knowledge_sync_job(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSyncJobResponse {
-        data: map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_start_knowledge_sync_job(
-    state: AgentHttpState,
-    scope: RequestScope,
-    sync_job_id: String,
-    body: KnowledgeSyncJobStartBody,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let command = AgentKnowledgeSyncJobStartCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        sync_job_id,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.start_knowledge_sync_job(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSyncJobResponse {
-        data: map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_complete_knowledge_sync_job(
-    state: AgentHttpState,
-    scope: RequestScope,
-    sync_job_id: String,
-    body: KnowledgeSyncJobCompleteBody,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let output_json = json_value_to_string(body.output, "output")?;
-    let command = AgentKnowledgeSyncJobCompleteCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        sync_job_id,
-        output_json,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.complete_knowledge_sync_job(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSyncJobResponse {
-        data: map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_fail_knowledge_sync_job(
-    state: AgentHttpState,
-    scope: RequestScope,
-    sync_job_id: String,
-    body: KnowledgeSyncJobFailBody,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let error_json = json_value_to_string(body.error, "error")?;
-    let command = AgentKnowledgeSyncJobFailCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        sync_job_id,
-        error_json,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.fail_knowledge_sync_job(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSyncJobResponse {
-        data: map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_cancel_knowledge_sync_job(
-    state: AgentHttpState,
-    scope: RequestScope,
-    sync_job_id: String,
-    body: KnowledgeSyncJobCancelBody,
-) -> Result<Json<KnowledgeSyncJobResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let cancellation_json = json_value_to_string(body.cancellation, "cancellation")?;
-    let command = AgentKnowledgeSyncJobCancelCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        sync_job_id,
-        cancellation_json,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.cancel_knowledge_sync_job(command)
-    })
-    .await?;
-    Ok(Json(KnowledgeSyncJobResponse {
-        data: map_knowledge_sync_job_record(&AgentKnowledgeSyncJobRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_create_memory_store(
-    state: AgentHttpState,
-    scope: RequestScope,
-    body: MemoryStoreBody,
-) -> Result<(StatusCode, Json<MemoryStoreResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentMemoryStoreCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        owner_user_id: scope.owner_user_id,
-        memory_store_id: body.memory_store_id,
-        code: body.code,
-        display_name: body.display_name,
-        description: body.description,
-        provider_id: body.provider_id,
-        store_kind: body.store_kind,
-        retrieval_modes: body.retrieval_modes,
-        capability_ids: body.capability_ids.unwrap_or_default(),
-        configuration_profile_id: body.configuration_profile_id,
-        visibility: body.visibility,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record =
-        with_service_mut(&state, move |service| service.create_memory_store(command)).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryStoreResponse {
-            data: map_memory_store_record(&AgentMemoryStoreRecordDto::from_record(&record)),
-        }),
-    ))
-}
-
-async fn execute_get_memory_store(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_store_id: String,
-) -> Result<Json<MemoryStoreResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_store_id,
-        requested_by: scope.subject,
-    };
-    let record = with_service_mut(&state, move |service| service.get_memory_store(command)).await?;
-    Ok(Json(MemoryStoreResponse {
-        data: map_memory_store_record(&AgentMemoryStoreRecordDto::from_record(&record)),
-    }))
-}
-
-async fn execute_update_memory_store(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_store_id: String,
-    body: MemoryStoreUpdateBody,
-) -> Result<Json<MemoryStoreResponse>, ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentMemoryStoreUpdateRequestDto {
-        tenant_id: scope.tenant_id,
-        memory_store_id,
-        expected_version: body.expected_version,
-        display_name: body.display_name,
-        description: body.description,
-        provider_id: body.provider_id,
-        store_kind: body.store_kind,
-        retrieval_modes: body.retrieval_modes,
-        capability_ids: body.capability_ids,
-        configuration_profile_id: body.configuration_profile_id,
-        visibility: body.visibility,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record =
-        with_service_mut(&state, move |service| service.update_memory_store(command)).await?;
-    Ok(Json(MemoryStoreResponse {
-        data: map_memory_store_record(&AgentMemoryStoreRecordDto::from_record(&record)),
-    }))
-}
-
-async fn execute_create_memory_profile(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_store_id: String,
-    body: MemoryProfileBody,
-) -> Result<(StatusCode, Json<MemoryProfileResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentMemoryProfileCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        owner_user_id: scope.owner_user_id,
-        memory_profile_id: body.memory_profile_id,
-        memory_store_id,
-        code: body.code,
-        display_name: body.display_name,
-        description: body.description,
-        write_policy_json: json_value_to_string(
-            body.write_policy.unwrap_or_else(|| json!({})),
-            "writePolicy",
-        )?,
-        retrieval_policy_json: json_value_to_string(
-            body.retrieval_policy.unwrap_or_else(|| json!({})),
-            "retrievalPolicy",
-        )?,
-        compaction_policy_json: json_value_to_string(
-            body.compaction_policy.unwrap_or_else(|| json!({})),
-            "compactionPolicy",
-        )?,
-        retention_policy_json: json_value_to_string(
-            body.retention_policy.unwrap_or_else(|| json!({})),
-            "retentionPolicy",
-        )?,
-        privacy_policy_json: json_value_to_string(
-            body.privacy_policy.unwrap_or_else(|| json!({})),
-            "privacyPolicy",
-        )?,
-        visibility: body.visibility,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_memory_profile(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryProfileResponse {
-            data: map_memory_profile_record(&AgentMemoryProfileRecordDto::from_record(&record))?,
-        }),
-    ))
-}
-
-async fn execute_get_memory_profile(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_profile_id: String,
-) -> Result<Json<MemoryProfileResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_profile_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_memory_profile(command)).await?;
-    Ok(Json(MemoryProfileResponse {
-        data: map_memory_profile_record(&AgentMemoryProfileRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_create_memory_binding(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_profile_id: String,
-    body: MemoryBindingBody,
-) -> Result<(StatusCode, Json<MemoryBindingResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentMemoryBindingCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        memory_binding_id: body.memory_binding_id,
-        memory_profile_id,
-        agent_id: body.agent_id,
-        deployment_id: body.deployment_id,
-        scope_kind: body.scope_kind,
-        scope_ref: body.scope_ref,
-        active: body.active.unwrap_or(true),
-        default_binding: body.default_binding.unwrap_or(false),
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_memory_binding(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryBindingResponse {
-            data: map_memory_binding_record(&AgentMemoryBindingRecordDto::from_record(&record)),
-        }),
-    ))
-}
-
-async fn execute_get_memory_binding(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_binding_id: String,
-) -> Result<Json<MemoryBindingResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_binding_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_memory_binding(command)).await?;
-    Ok(Json(MemoryBindingResponse {
-        data: map_memory_binding_record(&AgentMemoryBindingRecordDto::from_record(&record)),
-    }))
-}
-
-async fn execute_create_memory_namespace(
-    state: AgentHttpState,
-    scope: RequestScope,
-    body: MemoryNamespaceBody,
-) -> Result<(StatusCode, Json<MemoryNamespaceResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentMemoryNamespaceCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        memory_namespace_id: body.memory_namespace_id,
-        agent_id: body.agent_id,
-        user_ref: body.user_ref,
-        session_ref: body.session_ref,
-        thread_ref: body.thread_ref,
-        namespace_kind: body.namespace_kind,
-        visibility: body.visibility,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_memory_namespace(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryNamespaceResponse {
-            data: map_memory_namespace_record(&AgentMemoryNamespaceRecordDto::from_record(&record)),
-        }),
-    ))
-}
-
-async fn execute_get_memory_namespace(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_namespace_id: String,
-) -> Result<Json<MemoryNamespaceResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_namespace_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_memory_namespace(command)).await?;
-    Ok(Json(MemoryNamespaceResponse {
-        data: map_memory_namespace_record(&AgentMemoryNamespaceRecordDto::from_record(&record)),
-    }))
-}
-
-async fn execute_list_memory_records(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    memory_namespace_id: String,
-) -> Result<Json<MemoryRecordListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let subject = scope.subject;
-    let records = with_service_mut(&state, move |service| {
-        service.list_memory_records(tenant_id, memory_namespace_id.as_str(), subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| map_memory_record(&AgentMemoryRecordDto::from_record(record)))
-        .collect::<Result<Vec<_>, _>>()?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(MemoryRecordListResponse {
-        data: MemoryRecordListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_memory_record(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_namespace_id: String,
-    body: MemoryRecordBody,
-) -> Result<(StatusCode, Json<MemoryRecordResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let content_json = json_value_to_string(body.content, "content")?;
-    let command = AgentMemoryRecordCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        memory_id: body.memory_id,
-        memory_namespace_id,
-        agent_id: body.agent_id,
-        memory_kind: body.memory_kind,
-        content_format: body.content_format,
-        content_json,
-        summary: body.summary,
-        salience_score: body.salience_score,
-        confidence_score: body.confidence_score,
-        freshness_score: body.freshness_score,
-        sensitivity_level: body.sensitivity_level,
-        effective_at: body.effective_at,
-        expires_at: body.expires_at,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record =
-        with_service_mut(&state, move |service| service.create_memory_record(command)).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryRecordResponse {
-            data: map_memory_record(&AgentMemoryRecordDto::from_record(&record))?,
-        }),
-    ))
-}
-
-async fn execute_get_memory_record(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_id: String,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    let command = GetAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_id,
-        requested_by: scope.subject,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.get_memory_record(command)).await?;
-    Ok(Json(MemoryRecordResponse {
-        data: map_memory_record(&AgentMemoryRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_delete_memory_record(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    validate_requested_at(requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = expected_version
-        .as_deref()
-        .map(parse_expected_version)
-        .transpose()
-        .map_err(ApiProblem::from_kernel_error)?;
-    let command = DeleteAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_id,
-        expected_version,
-        requested_by: scope.subject,
-        requested_at,
-    };
-    let record =
-        with_service_mut(&state, move |service| service.delete_memory_record(command)).await?;
-    Ok(Json(MemoryRecordResponse {
-        data: map_memory_record(&AgentMemoryRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_restore_memory_record(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_id: String,
-    body: RestoreAgentBody,
-) -> Result<Json<MemoryRecordResponse>, ApiProblem> {
-    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-    let expected_version = body
-        .expected_version
-        .as_deref()
-        .map(parse_expected_version)
-        .transpose()
-        .map_err(ApiProblem::from_kernel_error)?;
-    let command = RestoreAgentMarketplaceItemCommand {
-        tenant_id: scope.tenant_id_u64()?,
-        item_id: memory_id,
-        expected_version,
-        requested_by: scope.subject,
-        requested_at: body.requested_at,
-    };
-    let record = with_service_mut(&state, move |service| {
-        service.restore_memory_record(command)
-    })
-    .await?;
-    Ok(Json(MemoryRecordResponse {
-        data: map_memory_record(&AgentMemoryRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_list_memory_sources(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    memory_id: String,
-) -> Result<Json<MemorySourceListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let subject = scope.subject;
-    let records = with_service_mut(&state, move |service| {
-        service.list_memory_sources(tenant_id, memory_id.as_str(), subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| map_memory_source_record(&AgentMemorySourceRecordDto::from_record(record)))
-        .collect::<Result<Vec<_>, _>>()?;
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(MemorySourceListResponse {
-        data: MemorySourceListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_memory_source(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_id: String,
-    body: MemorySourceBody,
-) -> Result<(StatusCode, Json<MemorySourceResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let evidence_json =
-        json_value_to_string(body.evidence.unwrap_or_else(|| json!({})), "evidence")?;
-    let command = AgentMemorySourceCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        memory_source_id: body.memory_source_id,
-        memory_id,
-        source_kind: body.source_kind,
-        source_ref: body.source_ref,
-        source_hash: body.source_hash,
-        evidence_json,
-        captured_at: body.captured_at,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record =
-        with_service_mut(&state, move |service| service.create_memory_source(command)).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemorySourceResponse {
-            data: map_memory_source_record(&AgentMemorySourceRecordDto::from_record(&record))?,
-        }),
-    ))
-}
-
-async fn execute_list_memory_relations(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    memory_id: String,
-) -> Result<Json<MemoryRelationListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let subject = scope.subject;
-    let records = with_service_mut(&state, move |service| {
-        service.list_memory_relations(tenant_id, memory_id.as_str(), subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_memory_relation_record(&AgentMemoryRelationRecordDto::from_record(record))
-        })
-        .collect();
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(MemoryRelationListResponse {
-        data: MemoryRelationListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_memory_relation(
-    state: AgentHttpState,
-    scope: RequestScope,
-    memory_id: String,
-    body: MemoryRelationBody,
-) -> Result<(StatusCode, Json<MemoryRelationResponse>), ApiProblem> {
-    if body.from_memory_id != memory_id {
-        return Err(ApiProblem::validation(
-            "fromMemoryId must match the memoryId path parameter",
-        ));
-    }
-    let subject = scope.subject.clone();
-    let command = AgentMemoryRelationCreateRequestDto {
-        tenant_id: scope.tenant_id,
-        memory_relation_id: body.memory_relation_id,
-        from_memory_id: body.from_memory_id,
-        to_memory_id: body.to_memory_id,
-        relation_kind: body.relation_kind,
-        weight: body.weight,
-        valid_from: body.valid_from,
-        valid_until: body.valid_until,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.create_memory_relation(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryRelationResponse {
-            data: map_memory_relation_record(&AgentMemoryRelationRecordDto::from_record(&record)),
-        }),
-    ))
-}
-
-async fn execute_list_memory_retrieval_indexes(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    memory_id: String,
-) -> Result<Json<MemoryRetrievalIndexListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-    let subject = scope.subject;
-    let records = with_service_mut(&state, move |service| {
-        service.list_memory_retrieval_indexes(tenant_id, memory_id.as_str(), subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-    let items = paged
-        .iter()
-        .map(|record| {
-            map_memory_retrieval_index_record(&AgentMemoryRetrievalIndexRecordDto::from_record(
-                record,
-            ))
-        })
-        .collect();
-    let total_pages = total_pages(total_items, page_size);
-
-    Ok(Json(MemoryRetrievalIndexListResponse {
-        data: MemoryRetrievalIndexListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_upsert_memory_retrieval_index(
-    state: AgentHttpState,
-    scope: RequestScope,
-    body: MemoryRetrievalIndexBody,
-) -> Result<(StatusCode, Json<MemoryRetrievalIndexResponse>), ApiProblem> {
-    let subject = scope.subject.clone();
-    let command = AgentMemoryRetrievalIndexUpsertRequestDto {
-        tenant_id: scope.tenant_id,
-        memory_index_id: body.memory_index_id,
-        memory_id: body.memory_id,
-        index_kind: body.index_kind,
-        index_provider_id: body.index_provider_id,
-        external_ref: body.external_ref,
-        embedding_model_id: body.embedding_model_id,
-        vector_dimension: body.vector_dimension,
-        content_hash: body.content_hash,
-        requested_at: body.requested_at,
-    }
-    .into_command(subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| {
-        service.upsert_memory_retrieval_index(command)
-    })
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(MemoryRetrievalIndexResponse {
-            data: map_memory_retrieval_index_record(
-                &AgentMemoryRetrievalIndexRecordDto::from_record(&record),
-            ),
-        }),
-    ))
-}
-
-async fn execute_list(
-    state: AgentHttpState,
-    query: ListAgentsQueryParams,
-    scope: RequestScope,
-) -> Result<Json<AgentListResponse>, ApiProblem> {
-    let include_deleted = query.include_deleted.unwrap_or(false);
-    let request_dto = ListAgentsRequestDto {
-        tenant_id: scope.tenant_id,
-        organization_id: query.organization_id,
-        owner_user_id: query.owner_user_id,
-        include_deleted,
-        search_query: query.q,
-    };
-    let command = request_dto
-        .into_command(scope.subject)
-        .map_err(ApiProblem::from_kernel_error)?;
-
-    let mut records = with_service_mut(&state, move |service| service.list_agents(command)).await?;
-    if matches!(
-        query.scope.as_deref(),
-        Some("market" | "public" | "published")
-    ) {
-        records.retain(|record| record.visibility.as_str() == "public");
-    }
-    let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-
-    let items: Vec<AgentRecordResponse> = paged
-        .iter()
-        .map(|record| map_agent_record(&AgentRecordDto::from_record(record)))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let total_pages = if total_items == 0 {
-        0
-    } else {
-        total_items.div_ceil(page_size)
-    };
-
-    Ok(Json(AgentListResponse {
-        data: AgentListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create(
-    state: AgentHttpState,
-    scope: RequestScope,
-    body: CreateAgentBody,
-) -> Result<(StatusCode, Json<AgentResponse>), ApiProblem> {
-    let manifest = parse_manifest(body.manifest)?;
-    let mut default_code_task_intent = body.default_code_task_intent.map(Into::into);
-    if let Some(management_profile) = body.management_profile {
-        default_code_task_intent = management_profile
-            .into_validated_dto()?
-            .merge_into_default_code_task_intent(default_code_task_intent)
-            .map_err(ApiProblem::from_kernel_error)?;
-    }
-
-    let command = CreateAgentRequestDto {
-        agent_id: body.agent_id,
-        tenant_id: scope.tenant_id,
-        organization_id: scope.organization_id,
-        owner_user_id: scope.owner_user_id,
-        code: body.code,
-        display_name: body.display_name,
-        description: body.description,
-        manifest,
-        visibility: body.visibility,
-        tags: body.tags.unwrap_or_default(),
-        default_code_task_intent,
-        implementation_provider_id: body.implementation_provider_id,
-        implementation_kind: body.implementation_kind,
-        implementation_type: body.implementation_type,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| service.create_agent(command)).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(AgentResponse {
-            data: map_agent_record(&AgentRecordDto::from_record(&record))?,
-        }),
-    ))
-}
-
-async fn execute_get(
-    state: AgentHttpState,
-    scope: RequestScope,
-    agent_id: String,
-) -> Result<Json<AgentResponse>, ApiProblem> {
-    let command = GetAgentRequestDto {
-        tenant_id: scope.tenant_id,
+    let command = AgentCompositionSlotDeleteCommand {
+        tenant_id,
         agent_id,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| service.get_agent(command)).await?;
-    Ok(Json(AgentResponse {
-        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
+        slot_id,
+        expected_version,
+        requested_by: scope.subject,
+        requested_at: query.requested_at,
+    };
+    let record = with_service_mut(&state, move |service| service.delete_composition_slot(command))
+        .await?;
+    Ok(Json(AgentCompositionSlotResponse {
+        data: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
     }))
 }
 
-async fn execute_update(
-    state: AgentHttpState,
-    scope: RequestScope,
-    agent_id: String,
-    body: UpdateAgentBody,
-) -> Result<Json<AgentResponse>, ApiProblem> {
-    let mut default_code_task_intent = body.default_code_task_intent.map(Into::into);
-    if let Some(management_profile) = body.management_profile {
-        let base_intent = match default_code_task_intent.take() {
-            Some(intent) => Some(intent),
-            None => {
-                let command = GetAgentRequestDto {
-                    tenant_id: scope.tenant_id.clone(),
-                    agent_id: agent_id.clone(),
-                }
-                .into_command(scope.subject.clone())
-                .map_err(ApiProblem::from_kernel_error)?;
-                let current =
-                    with_service_mut(&state, move |service| service.get_agent(command)).await?;
-                current.default_code_task_intent
-            }
-        };
-        default_code_task_intent = management_profile
-            .into_validated_dto()?
-            .merge_into_default_code_task_intent(base_intent)
-            .map_err(ApiProblem::from_kernel_error)?;
+fn map_composition_slot_record(
+    record: &AgentCompositionSlotRecordDto) -> AgentCompositionSlotRecordResponse {
+    AgentCompositionSlotRecordResponse {
+        id: record.id.clone(),
+        tenant_id: record.tenant_id.clone(),
+        organization_id: record.organization_id.clone(),
+        agent_id: record.agent_id.clone(),
+        slot_id: record.slot_id.clone(),
+        slot_kind: record.slot_kind.clone(),
+        target_module: record.target_module.clone(),
+        target_ref: record.target_ref.clone(),
+        target_version_ref: record.target_version_ref.clone(),
+        priority: record.priority,
+        enabled: record.enabled,
+        policy_json: record.policy_json.clone(),
+        status: record.status.clone(),
+        version: record.version.clone(),
+        created_at: record.created_at.clone(),
+        updated_at: record.updated_at.clone(),
+        deleted_at: record.deleted_at.clone(),
     }
-    let command = UpdateAgentRequestDto {
-        tenant_id: scope.tenant_id,
-        agent_id,
-        expected_version: body.expected_version,
-        display_name: body.display_name,
-        description: body.description,
-        manifest: body.manifest.map(parse_manifest).transpose()?,
-        visibility: body.visibility,
-        tags: body.tags,
-        default_code_task_intent,
-        implementation_provider_id: body.implementation_provider_id,
-        implementation_kind: body.implementation_kind,
-        implementation_type: body.implementation_type,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| service.update_agent(command)).await?;
-    Ok(Json(AgentResponse {
-        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
-    }))
 }
-
-async fn execute_delete(
-    state: AgentHttpState,
-    scope: RequestScope,
-    agent_id: String,
-    body: DeleteAgentBody,
-) -> Result<Json<AgentResponse>, ApiProblem> {
-    let command = DeleteAgentRequestDto {
-        tenant_id: scope.tenant_id,
-        agent_id,
-        expected_version: body.expected_version,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| service.delete_agent(command)).await?;
-    Ok(Json(AgentResponse {
-        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
-    }))
-}
-
-async fn execute_restore(
-    state: AgentHttpState,
-    scope: RequestScope,
-    agent_id: String,
-    body: RestoreAgentBody,
-) -> Result<Json<AgentResponse>, ApiProblem> {
-    let command = RestoreAgentRequestDto {
-        tenant_id: scope.tenant_id,
-        agent_id,
-        expected_version: body.expected_version,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record = with_service_mut(&state, move |service| service.restore_agent(command)).await?;
-    Ok(Json(AgentResponse {
-        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
-    }))
-}
-
 async fn execute_list_provider_bindings(
     state: AgentHttpState,
     scope: RequestScope,
     page: Option<usize>,
     page_size: Option<usize>,
-    agent_id: String,
-) -> Result<Json<AgentProviderBindingListResponse>, ApiProblem> {
+    agent_id: String) -> Result<Json<AgentProviderBindingListResponse>, ApiProblem> {
     let tenant_id = scope.tenant_id_u64()?;
 
     let records = with_service_mut(&state, move |service| {
@@ -7346,8 +3260,7 @@ async fn execute_add_provider_binding(
     state: AgentHttpState,
     scope: RequestScope,
     agent_id: String,
-    body: AgentProviderBindingBody,
-) -> Result<(StatusCode, Json<AgentProviderBindingResponse>), ApiProblem> {
+    body: AgentProviderBindingBody) -> Result<(StatusCode, Json<AgentProviderBindingResponse>), ApiProblem> {
     let command = AgentProviderBindingRequestDto {
         tenant_id: scope.tenant_id,
         agent_id,
@@ -7368,16 +3281,14 @@ async fn execute_add_provider_binding(
         StatusCode::CREATED,
         Json(AgentProviderBindingResponse {
             data: map_provider_binding_record(&AgentProviderBindingRecordDto::from_record(&record)),
-        }),
-    ))
+        })))
 }
 
 async fn execute_activate_provider_binding(
     state: AgentHttpState,
     scope: RequestScope,
     path: TenantAgentBindingPathParams,
-    body: ActivateProviderBindingBody,
-) -> Result<Json<AgentProviderBindingResponse>, ApiProblem> {
+    body: ActivateProviderBindingBody) -> Result<Json<AgentProviderBindingResponse>, ApiProblem> {
     let command = ActivateAgentProviderBindingRequestDto {
         tenant_id: scope.tenant_id,
         agent_id: path.agent_id,
@@ -7401,8 +3312,7 @@ async fn execute_list_deployments(
     scope: RequestScope,
     page: Option<usize>,
     page_size: Option<usize>,
-    agent_id: String,
-) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
+    agent_id: String) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
     let tenant_id = scope.tenant_id_u64()?;
 
     let records = with_service_mut(&state, move |service| {
@@ -7440,8 +3350,7 @@ async fn execute_create_deployment(
     state: AgentHttpState,
     scope: RequestScope,
     agent_id: String,
-    body: AgentDeploymentBody,
-) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
+    body: AgentDeploymentBody) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
     let command = AgentProviderDeploymentRequestDto {
         tenant_id: scope.tenant_id,
         agent_id,
@@ -7458,21 +3367,18 @@ async fn execute_create_deployment(
         StatusCode::CREATED,
         Json(AgentDeploymentResponse {
             data: map_deployment_record(&AgentDeploymentRecordDto::from_record(&record)),
-        }),
-    ))
+        })))
 }
 
 async fn execute_create_preview_response(
     state: AgentHttpState,
     scope: RequestScope,
     agent_id: String,
-    body: AgentPreviewResponseBody,
-) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
+    body: AgentPreviewResponseBody) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
     let input_payload_json = json_value_to_string(
         body.input_payload
             .unwrap_or_else(|| json!({ "content": body.content })),
-        "inputPayload",
-    )?;
+        "inputPayload")?;
     let command = AgentPreviewResponseRequestDto {
         tenant_id: scope.tenant_id,
         agent_id,
@@ -7501,13 +3407,11 @@ async fn execute_create_prompt_optimization(
     state: AgentHttpState,
     scope: RequestScope,
     agent_id: String,
-    body: AgentPromptOptimizationBody,
-) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
+    body: AgentPromptOptimizationBody) -> Result<Json<AgentRuntimeExecutionResponse>, ApiProblem> {
     let input_payload_json = json_value_to_string(
         body.input_payload
             .unwrap_or_else(|| json!({ "prompt": body.prompt })),
-        "inputPayload",
-    )?;
+        "inputPayload")?;
     let command = AgentPromptOptimizationRequestDto {
         tenant_id: scope.tenant_id,
         agent_id,
@@ -7570,8 +3474,7 @@ fn map_agent_record(record: &AgentRecordDto) -> Result<AgentRecordResponse, ApiP
 }
 
 fn map_agent_management_profile(
-    profile: &AgentManagementProfileDto,
-) -> AgentManagementProfileResponse {
+    profile: &AgentManagementProfileDto) -> AgentManagementProfileResponse {
     AgentManagementProfileResponse {
         author: profile.author.clone(),
         avatar: profile.avatar.clone(),
@@ -7596,8 +3499,7 @@ fn map_agent_management_profile(
 }
 
 fn map_provider_binding_record(
-    record: &AgentProviderBindingRecordDto,
-) -> AgentProviderBindingRecordResponse {
+    record: &AgentProviderBindingRecordDto) -> AgentProviderBindingRecordResponse {
     AgentProviderBindingRecordResponse {
         tenant_id: record.tenant_id.clone(),
         agent_id: record.agent_id.clone(),
@@ -7631,8 +3533,7 @@ fn map_deployment_record(record: &AgentDeploymentRecordDto) -> AgentDeploymentRe
 }
 
 fn map_runtime_execution_record(
-    record: &AgentRuntimeExecutionRecordDto,
-) -> Result<AgentRuntimeExecutionRecordResponse, ApiProblem> {
+    record: &AgentRuntimeExecutionRecordDto) -> Result<AgentRuntimeExecutionRecordResponse, ApiProblem> {
     Ok(AgentRuntimeExecutionRecordResponse {
         tenant_id: record.tenant_id.clone(),
         agent_id: record.agent_id.clone(),
@@ -7647,9 +3548,8 @@ fn map_runtime_execution_record(
 }
 
 fn map_knowledge_base_record(
-    record: &AgentKnowledgeBaseRecordDto,
-    document_count: u32,
-) -> KnowledgeBaseRecordResponse {
+    record: &Dto,
+    document_count: u32) -> KnowledgeBaseRecordResponse {
     KnowledgeBaseRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7675,8 +3575,7 @@ fn map_knowledge_base_record(
 }
 
 fn map_knowledge_source_record(
-    record: &AgentKnowledgeSourceRecordDto,
-) -> Result<KnowledgeSourceRecordResponse, ApiProblem> {
+    record: &Dto) -> Result<KnowledgeSourceRecordResponse, ApiProblem> {
     Ok(KnowledgeSourceRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7697,8 +3596,7 @@ fn map_knowledge_source_record(
 }
 
 fn map_knowledge_document_record(
-    record: &AgentKnowledgeDocumentRecordDto,
-) -> Result<KnowledgeDocumentRecordResponse, ApiProblem> {
+    record: &Dto) -> Result<KnowledgeDocumentRecordResponse, ApiProblem> {
     Ok(KnowledgeDocumentRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7731,8 +3629,7 @@ fn map_knowledge_document_record(
 }
 
 fn map_knowledge_document_profile(
-    profile: &AgentKnowledgeDocumentProfileDto,
-) -> KnowledgeDocumentProfileResponse {
+    profile: &AgentKnowledgeDocumentProfileDto) -> KnowledgeDocumentProfileResponse {
     KnowledgeDocumentProfileResponse {
         author: profile.author.clone(),
         content: profile.content.clone(),
@@ -7746,8 +3643,7 @@ fn map_knowledge_document_profile(
 }
 
 fn map_knowledge_chunk_record(
-    record: &AgentKnowledgeChunkRecordDto,
-) -> Result<KnowledgeChunkRecordResponse, ApiProblem> {
+    record: &Dto) -> Result<KnowledgeChunkRecordResponse, ApiProblem> {
     Ok(KnowledgeChunkRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7768,8 +3664,7 @@ fn map_knowledge_chunk_record(
 }
 
 fn map_knowledge_index_record(
-    record: &AgentKnowledgeIndexRecordDto,
-) -> KnowledgeIndexRecordResponse {
+    record: &Dto) -> KnowledgeIndexRecordResponse {
     KnowledgeIndexRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7789,8 +3684,7 @@ fn map_knowledge_index_record(
 }
 
 fn map_knowledge_search_result(
-    record: &AgentKnowledgeSearchResultDto,
-) -> Result<KnowledgeSearchResultResponse, ApiProblem> {
+    record: &Dto) -> Result<KnowledgeSearchResultResponse, ApiProblem> {
     Ok(KnowledgeSearchResultResponse {
         tenant_id: record.tenant_id.clone(),
         knowledge_base_id: record.knowledge_base_id.clone(),
@@ -7814,8 +3708,7 @@ fn map_knowledge_search_result(
 }
 
 fn map_knowledge_binding_record(
-    record: &AgentKnowledgeBindingRecordDto,
-) -> KnowledgeBindingRecordResponse {
+    record: &Dto) -> KnowledgeBindingRecordResponse {
     KnowledgeBindingRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7835,8 +3728,7 @@ fn map_knowledge_binding_record(
 }
 
 fn map_knowledge_sync_job_record(
-    record: &AgentKnowledgeSyncJobRecordDto,
-) -> Result<KnowledgeSyncJobRecordResponse, ApiProblem> {
+    record: &Dto) -> Result<KnowledgeSyncJobRecordResponse, ApiProblem> {
     Ok(KnowledgeSyncJobRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7866,7 +3758,7 @@ fn map_knowledge_sync_job_record(
     })
 }
 
-fn map_memory_store_record(record: &AgentMemoryStoreRecordDto) -> MemoryStoreRecordResponse {
+fn map_memory_store_record(record: &Dto) -> MemoryStoreRecordResponse {
     MemoryStoreRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7891,8 +3783,7 @@ fn map_memory_store_record(record: &AgentMemoryStoreRecordDto) -> MemoryStoreRec
 }
 
 fn map_memory_profile_record(
-    record: &AgentMemoryProfileRecordDto,
-) -> Result<MemoryProfileRecordResponse, ApiProblem> {
+    record: &Dto) -> Result<MemoryProfileRecordResponse, ApiProblem> {
     Ok(MemoryProfileRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7906,16 +3797,13 @@ fn map_memory_profile_record(
         write_policy: json_string_to_value(record.write_policy_json.as_str(), "writePolicy")?,
         retrieval_policy: json_string_to_value(
             record.retrieval_policy_json.as_str(),
-            "retrievalPolicy",
-        )?,
+            "retrievalPolicy")?,
         compaction_policy: json_string_to_value(
             record.compaction_policy_json.as_str(),
-            "compactionPolicy",
-        )?,
+            "compactionPolicy")?,
         retention_policy: json_string_to_value(
             record.retention_policy_json.as_str(),
-            "retentionPolicy",
-        )?,
+            "retentionPolicy")?,
         privacy_policy: json_string_to_value(record.privacy_policy_json.as_str(), "privacyPolicy")?,
         status: record.status.clone(),
         visibility: record.visibility.clone(),
@@ -7926,7 +3814,7 @@ fn map_memory_profile_record(
     })
 }
 
-fn map_memory_binding_record(record: &AgentMemoryBindingRecordDto) -> MemoryBindingRecordResponse {
+fn map_memory_binding_record(record: &Dto) -> MemoryBindingRecordResponse {
     MemoryBindingRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7946,8 +3834,7 @@ fn map_memory_binding_record(record: &AgentMemoryBindingRecordDto) -> MemoryBind
 }
 
 fn map_memory_namespace_record(
-    record: &AgentMemoryNamespaceRecordDto,
-) -> MemoryNamespaceRecordResponse {
+    record: &Dto) -> MemoryNamespaceRecordResponse {
     MemoryNamespaceRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -7968,8 +3855,7 @@ fn map_memory_namespace_record(
 }
 
 fn map_memory_record(
-    record: &AgentMemoryRecordDto,
-) -> Result<MemoryRecordRecordResponse, ApiProblem> {
+    record: &AgentMemoryRecordDto) -> Result<MemoryRecordRecordResponse, ApiProblem> {
     Ok(MemoryRecordRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -8000,8 +3886,7 @@ fn map_memory_record(
 }
 
 fn map_memory_source_record(
-    record: &AgentMemorySourceRecordDto,
-) -> Result<MemorySourceRecordResponse, ApiProblem> {
+    record: &Dto) -> Result<MemorySourceRecordResponse, ApiProblem> {
     Ok(MemorySourceRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -8017,8 +3902,7 @@ fn map_memory_source_record(
 }
 
 fn map_memory_relation_record(
-    record: &AgentMemoryRelationRecordDto,
-) -> MemoryRelationRecordResponse {
+    record: &Dto) -> MemoryRelationRecordResponse {
     MemoryRelationRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -8034,8 +3918,7 @@ fn map_memory_relation_record(
 }
 
 fn map_memory_retrieval_index_record(
-    record: &AgentMemoryRetrievalIndexRecordDto,
-) -> MemoryRetrievalIndexRecordResponse {
+    record: &Dto) -> MemoryRetrievalIndexRecordResponse {
     MemoryRetrievalIndexRecordResponse {
         id: record.id.clone(),
         tenant_id: record.tenant_id.clone(),
@@ -8104,8 +3987,7 @@ fn kernel_event_severity(severity: sdkwork_agent_kernel::KernelEventSeverity) ->
 
 fn filter_audit_events(
     events: Vec<sdkwork_agent_kernel::KernelEvent>,
-    query: &AuditEventsQueryParams,
-) -> Result<Vec<sdkwork_agent_kernel::KernelEvent>, ApiProblem> {
+    query: &AuditEventsQueryParams) -> Result<Vec<sdkwork_agent_kernel::KernelEvent>, ApiProblem> {
     if let Some(action) = query.action.as_ref() {
         if !ALLOWED_AUDIT_ACTIONS.contains(&action.as_str()) {
             return Err(ApiProblem::validation(format!(
@@ -8120,8 +4002,7 @@ fn filter_audit_events(
     if let (Some(from_value), Some(to_value)) = (from.as_ref(), to.as_ref()) {
         if from_value > to_value {
             return Err(ApiProblem::validation(
-                "from must be less than or equal to to",
-            ));
+                "from must be less than or equal to to"));
         }
     }
 
@@ -8164,15 +4045,13 @@ fn audit_event_action(event_type: &str) -> &str {
 
 fn parse_optional_query_datetime(
     field_name: &str,
-    value: Option<&str>,
-) -> Result<Option<OffsetDateTime>, ApiProblem> {
+    value: Option<&str>) -> Result<Option<OffsetDateTime>, ApiProblem> {
     parse_optional_rfc3339_datetime(value, field_name).map_err(ApiProblem::from_kernel_error)
 }
 
 fn reconcile_resource_tenant_with_subject_header(
     resource_tenant_id: &str,
-    header_tenant_id: Option<String>,
-) -> Result<String, ApiProblem> {
+    header_tenant_id: Option<String>) -> Result<String, ApiProblem> {
     let resource_tenant =
         parse_tenant_id(resource_tenant_id).map_err(ApiProblem::from_kernel_error)?;
     let Some(header_tenant_id) = header_tenant_id else {
@@ -8182,8 +4061,7 @@ fn reconcile_resource_tenant_with_subject_header(
         .map_err(|_| ApiProblem::permission("subject tenant does not match resource tenant"))?;
     if header_tenant != resource_tenant {
         return Err(ApiProblem::permission(
-            "subject tenant does not match resource tenant",
-        ));
+            "subject tenant does not match resource tenant"));
     }
     Ok(resource_tenant_id.to_string())
 }
@@ -8207,20 +4085,17 @@ fn optional_header(headers: &HeaderMap, key: &str) -> Option<String> {
 
 fn normalized_pagination(
     page: Option<usize>,
-    page_size: Option<usize>,
-) -> Result<(usize, usize), ApiProblem> {
+    page_size: Option<usize>) -> Result<(usize, usize), ApiProblem> {
     let page = page.unwrap_or(1);
     if page == 0 {
         return Err(ApiProblem::validation(
-            "page must be greater than or equal to 1",
-        ));
+            "page must be greater than or equal to 1"));
     }
 
     let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE);
     if page_size == 0 {
         return Err(ApiProblem::validation(
-            "page_size must be greater than or equal to 1",
-        ));
+            "page_size must be greater than or equal to 1"));
     }
     if page_size > MAX_PAGE_SIZE {
         return Err(ApiProblem::validation(format!(
@@ -8292,8 +4167,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
-        );
+            AllowAllPolicyProvider::allow("policy.memory"));
         let app = build_combined_router(state).layer(Extension(test_agent_context()));
 
         let create_body = json!({
@@ -8349,8 +4223,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
-        );
+            AllowAllPolicyProvider::allow("policy.memory"));
         let app = build_combined_router(state);
 
         let create_body = json!({
@@ -8396,8 +4269,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
-        );
+            AllowAllPolicyProvider::allow("policy.memory"));
         let app = build_combined_router(state);
 
         let create_body = json!({

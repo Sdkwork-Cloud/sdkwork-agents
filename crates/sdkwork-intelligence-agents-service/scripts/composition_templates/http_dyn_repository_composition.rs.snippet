@@ -1,0 +1,25 @@
+
+    fn insert_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.0.insert_composition_slot(record)
+    }
+
+    fn update_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.0.update_composition_slot(record)
+    }
+
+    fn get_composition_slot(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str,
+    ) -> Option<AgentCompositionSlotRecord> {
+        self.0.get_composition_slot(tenant_id, agent_id, slot_id)
+    }
+
+    fn list_composition_slots(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Vec<AgentCompositionSlotRecord> {
+        self.0.list_composition_slots(tenant_id, agent_id)
+    }

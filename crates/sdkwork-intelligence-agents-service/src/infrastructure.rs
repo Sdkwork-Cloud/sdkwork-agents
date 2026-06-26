@@ -1,5 +1,6 @@
 use crate::domain::{
-    AgentBusinessRecord, AgentDeploymentRecord, AgentMcpServerRecord, AgentMemoryRecord, AgentProviderBindingRecord,
+    AgentBusinessRecord, AgentCompositionSlotRecord, AgentDeploymentRecord, AgentMcpServerRecord,
+    AgentProviderBindingRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 use crate::ports::{AgentAuditSink, AgentListQuery, AgentMarketplaceListQuery, AgentRepository};
@@ -401,6 +402,7 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned()
             .collect()
     }
+}
 
 #[cfg(test)]
 mod tests {

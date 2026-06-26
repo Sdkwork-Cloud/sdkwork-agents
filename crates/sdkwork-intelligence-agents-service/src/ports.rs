@@ -1,5 +1,6 @@
 use crate::domain::{
-    AgentBusinessRecord, AgentBusinessStatus, AgentDeploymentRecord, AgentMcpServerRecord, AgentMemoryRecord, AgentProviderBindingRecord,
+    AgentBusinessRecord, AgentBusinessStatus, AgentDeploymentRecord, AgentMcpServerRecord,
+    AgentProviderBindingRecord,
     AgentVisibility,
 };
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};

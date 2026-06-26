@@ -9,3 +9,13 @@ config/*.local.toml
 .sdkwork/tmp/
 .sdkwork/cache/
 .sdkwork/secrets/
+
+# IDE / tooling caches
+.qoder/
+**/__pycache__/
+*.pyc
+
+# Build output
+dist/
+**/dist/
+coverage/
