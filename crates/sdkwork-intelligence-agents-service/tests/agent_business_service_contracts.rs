@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use sdkwork_intelligence_agents_service::{
     ActivateAgentProviderBindingCommand, AgentAuditSink, AgentsService, AgentBusinessStatus,
     AgentImplementationKind, AgentImplementationType, AgentListQuery, AgentPreviewResponseCommand,
-    AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentProviderDeploymentCommand,
+    AgentPromptOptimizationCommand, AgentProviderBindingCommand,
     AgentVisibility, AllowAllPolicyProvider, ChangeAgentStatusCommand, CreateAgentCommand,
     DeleteAgentCommand, GetAgentCommand, InMemoryAgentRepository, ListAgentsCommand, PolicyMode,
     RestoreAgentCommand, UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
@@ -431,30 +431,12 @@ fn agent_resource_entry_points_validate_standard_agent_id_before_authorization()
     );
     assert_agent_id_validation(
         service
-            .create_deployment(AgentProviderDeploymentCommand {
-                tenant_id: 100_001,
-                agent_id: invalid_agent_id.to_string(),
-                deployment_id: "deployment.invalid.default".to_string(),
-                binding_id: "binding.invalid.default".to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T01:37:00Z".to_string(),
-            })
-            .expect_err("invalid agent_id must be rejected before deployment authorization"),
-    );
-    assert_agent_id_validation(
-        service
-            .list_deployments(100_001, invalid_agent_id, sample_subject())
-            .expect_err("invalid agent_id must be rejected before deployment list authorization"),
-    );
-    assert_agent_id_validation(
-        service
             .create_preview_response(AgentPreviewResponseCommand {
                 tenant_id: 100_001,
                 agent_id: invalid_agent_id.to_string(),
                 execution_id: "execution.invalid.preview".to_string(),
                 content: "preview".to_string(),
                 debug_mode: false,
-                memory_enabled: false,
                 model: None,
                 temperature: None,
                 input_payload_json: "{}".to_string(),

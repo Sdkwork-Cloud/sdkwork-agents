@@ -11,7 +11,6 @@ const EXPECTED = {
   tenantId: '100001',
   organizationId: '0',
   appId: 'sdkwork-agents',
-  applicationRegistryKey: 'sdkwork-agents',
 };
 
 const CLIENT_MANIFEST_KEYS = {
@@ -82,13 +81,6 @@ for (const [relativePath, expectedKey] of Object.entries(CLIENT_MANIFEST_KEYS)) 
 const envExample = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
 assert(envExample.includes('SDKWORK_TENANT_ID=100001'), '.env.example must declare SDKWORK_TENANT_ID=100001');
 assert(envExample.includes('SDKWORK_ORGANIZATION_ID=0'), '.env.example must declare SDKWORK_ORGANIZATION_ID=0');
-
-const seedManifest = readJson('database/seeds/seed.manifest.json');
-const standardCommon = seedManifest.profiles?.standard?.common ?? [];
-assert(
-  standardCommon.includes('0001_agents_app_registry.sql'),
-  'database/seeds/seed.manifest.json standard profile must include 0001_agents_app_registry.sql',
-);
 
 for (const file of walk(repoRoot)) {
   const relative = path.relative(repoRoot, file).replaceAll('\\', '/');

@@ -14,6 +14,3 @@ pub const AGENTS_DEFAULT_TENANT_ID_I64: i64 = 100_001;
 
 /// Numeric organization id for database rows and service fixtures.
 pub const AGENTS_DEFAULT_ORGANIZATION_ID_I64: i64 = 0;
-
-/// Application registry key stored in `agents_app_registry.application_key`.
-pub const AGENTS_APPLICATION_REGISTRY_KEY: &str = AGENTS_APP_ID;

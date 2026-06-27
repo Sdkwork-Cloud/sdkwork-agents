@@ -12,12 +12,12 @@ test("agents database manifest declares postgres and sqlite engines", () => {
   );
   assert.equal(manifest.moduleId, "agents");
   assert.deepEqual(manifest.engines, ["postgres", "sqlite"]);
-  assert.equal(manifest.tablePrefix, "agents_");
+  assert.equal(manifest.tablePrefix, "ai_");
 });
 
 test("agents database contract is materialized without placeholders", () => {
   const schemaPath = path.join(repoRoot, "database/contract/schema.yaml");
   const schema = readFileSync(schemaPath, "utf8");
   assert.doesNotMatch(schema, /<module-id>/);
-  assert.match(schema, /agents_/);
+  assert.match(schema, /ai_/);
 });

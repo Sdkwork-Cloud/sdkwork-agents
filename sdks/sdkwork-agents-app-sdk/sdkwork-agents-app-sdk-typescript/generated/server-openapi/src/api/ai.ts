@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentDeploymentListResponse, AgentDeploymentResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AgentRuntimeExecutionResponse, CreateAgentCompositionSlotRequest, CreateAgentDeploymentRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, RestoreAgentRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AgentRuntimeExecutionResponse, CreateAgentCompositionSlotRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, RestoreAgentRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest } from '../types';
 
 
 export interface AiAgentsCompositionSlotsDeleteParams {
@@ -75,34 +75,6 @@ export class AiAgentsPreviewResponsesApi {
   }
 }
 
-export interface AiAgentsDeploymentsListParams {
-  page?: number;
-  pageSize?: number;
-}
-
-export class AiAgentsDeploymentsApi {
-  private client: HttpClient;
-
-  constructor(client: HttpClient) {
-    this.client = client;
-  }
-
-
-/** List deployments for one managed agent */
-  async list(agentId: string, params?: AiAgentsDeploymentsListParams): Promise<AgentDeploymentListResponse> {
-    const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
-      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
-    ]);
-    return this.client.get<AgentDeploymentListResponse>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/deployments`), query));
-  }
-
-/** Create a deployment snapshot for one managed agent provider binding */
-  async create(agentId: string, body: CreateAgentDeploymentRequest): Promise<AgentDeploymentResponse> {
-    return this.client.post<AgentDeploymentResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/deployments`), body, undefined, undefined, 'application/json');
-  }
-}
-
 export interface AiAgentsProviderBindingsListParams {
   page?: number;
   pageSize?: number;
@@ -146,7 +118,6 @@ export interface AiAgentsListParams {
 export class AiAgentsApi {
   private client: HttpClient;
   public readonly providerBindings: AiAgentsProviderBindingsApi;
-  public readonly deployments: AiAgentsDeploymentsApi;
   public readonly previewResponses: AiAgentsPreviewResponsesApi;
   public readonly promptOptimizations: AiAgentsPromptOptimizationsApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
@@ -154,7 +125,6 @@ export class AiAgentsApi {
   constructor(client: HttpClient) {
     this.client = client;
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
-    this.deployments = new AiAgentsDeploymentsApi(client);
     this.previewResponses = new AiAgentsPreviewResponsesApi(client);
     this.promptOptimizations = new AiAgentsPromptOptimizationsApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);

@@ -1,7 +1,7 @@
 import { backendApiPath } from './paths';
 import type { HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentAuditEventListResponse, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentDeploymentListResponse, AgentDeploymentResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AuditAction, CreateAgentCompositionSlotRequest, CreateAgentDeploymentRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, RestoreAgentRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentStatusRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentAuditEventListResponse, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AuditAction, CreateAgentCompositionSlotRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, RestoreAgentRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentStatusRequest } from '../types';
 
 
 export interface AiAgentsCompositionSlotsDeleteParams {
@@ -44,43 +44,6 @@ export class AiAgentsCompositionSlotsApi {
       { name: 'requested_at', value: params.requestedAt, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.delete<AgentCompositionSlotResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), query));
-  }
-}
-
-export interface AiAgentsDeploymentsListParams {
-  tenantId: Int64String;
-  page?: number;
-  pageSize?: number;
-}
-
-export interface AiAgentsDeploymentsCreateParams {
-  tenantId: Int64String;
-}
-
-export class AiAgentsDeploymentsApi {
-  private client: HttpClient;
-
-  constructor(client: HttpClient) {
-    this.client = client;
-  }
-
-
-/** List deployments for one managed agent */
-  async list(agentId: string, params: AiAgentsDeploymentsListParams): Promise<AgentDeploymentListResponse> {
-    const query = buildQueryString([
-      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
-      { name: 'page', value: params.page, style: 'form', explode: true, allowReserved: false },
-      { name: 'page_size', value: params.pageSize, style: 'form', explode: true, allowReserved: false },
-    ]);
-    return this.client.get<AgentDeploymentListResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/deployments`), query));
-  }
-
-/** Create a deployment snapshot for one managed agent provider binding */
-  async create(agentId: string, body: CreateAgentDeploymentRequest, params: AiAgentsDeploymentsCreateParams): Promise<AgentDeploymentResponse> {
-    const query = buildQueryString([
-      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
-    ]);
-    return this.client.post<AgentDeploymentResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/deployments`), query), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -216,7 +179,6 @@ export class AiAgentsApi {
   public readonly status: AiAgentsStatusApi;
   public readonly auditEvents: AiAgentsAuditEventsApi;
   public readonly providerBindings: AiAgentsProviderBindingsApi;
-  public readonly deployments: AiAgentsDeploymentsApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
 
   constructor(client: HttpClient) {
@@ -224,7 +186,6 @@ export class AiAgentsApi {
     this.status = new AiAgentsStatusApi(client);
     this.auditEvents = new AiAgentsAuditEventsApi(client);
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
-    this.deployments = new AiAgentsDeploymentsApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
   }
 

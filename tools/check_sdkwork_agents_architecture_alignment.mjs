@@ -115,10 +115,10 @@ assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-integration-test
 assert(fs.existsSync(path.join(repoRoot, 'deployments/docker/Dockerfile')), 'deployments/docker/Dockerfile must exist');
 assert(fs.existsSync(path.join(repoRoot, '.env.example')), '.env.example must exist');
 
-const apiServerCargo = readText('crates/sdkwork-agents-api-server/Cargo.toml');
+const apiServerCargo = readText('crates/sdkwork-agents-standalone-gateway/Cargo.toml');
 assert(
   apiServerCargo.includes('sdkwork-agents-standalone-gateway'),
-  'api-server must expose sdkwork-agents-standalone-gateway binary alias',
+  'standalone-gateway must expose sdkwork-agents-standalone-gateway binary alias',
 );
 
 const topologySpec = readJson('specs/topology.spec.json');

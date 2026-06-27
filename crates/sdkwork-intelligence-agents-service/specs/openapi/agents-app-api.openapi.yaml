@@ -462,74 +462,6 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
-  /app/v3/api/ai/agents/{agentId}/deployments:
-    get:
-      tags: [ai]
-      summary: List deployments for one managed agent
-      operationId: agents.deployments.list
-      security:
-        - AuthToken: []
-          AccessToken: []
-      x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.deployments
-      x-sdkwork-permission: agent.business.deployment.list
-      x-sdkwork-tenant-scope: tenant
-      parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-      responses:
-        '200':
-          description: Managed agent deployment list response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentDeploymentListResponse'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
-    post:
-      tags: [ai]
-      summary: Create a deployment snapshot for one managed agent provider binding
-      operationId: agents.deployments.create
-      security:
-        - AuthToken: []
-          AccessToken: []
-      x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.deployments
-      x-sdkwork-permission: agent.business.deployment.create
-      x-sdkwork-tenant-scope: tenant
-      x-sdkwork-audit-event: agent.business.deployment_created
-      parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateAgentDeploymentRequest'
-      responses:
-        '201':
-          description: Created managed agent deployment snapshot
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentDeploymentResponse'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/preview_responses:
     post:
       tags: [ai]
@@ -916,9 +848,6 @@ components:
     AgentImplementationType:
       type: string
       enum: [sdkwork-native, rig-rust, openai-agents, langchain, langgraph, crewai, autogen, semantic-kernel, custom]
-    DeploymentStatus:
-      type: string
-      enum: [created, active, failed, archived]
     PageInfo:
       type: object
       additionalProperties: false
@@ -1203,86 +1132,6 @@ components:
               $ref: '#/components/schemas/PageInfo'
         requestId:
           type: string
-    AgentDeploymentRecord:
-      type: object
-      additionalProperties: false
-      required: [tenantId, agentId, deploymentId, bindingId, providerIdSnapshot, implementationKindSnapshot, configurationProfileIdSnapshot, capabilitiesSnapshot, status, version, createdAt, updatedAt]
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        agentId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        deploymentId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^deployment\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        bindingId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        providerIdSnapshot:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        implementationKindSnapshot:
-          $ref: '#/components/schemas/AgentImplementationKind'
-        configurationProfileIdSnapshot:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^profile\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        capabilitiesSnapshot:
-          type: array
-          uniqueItems: true
-          items:
-            type: string
-            minLength: 1
-            maxLength: 128
-            pattern: '^[a-z0-9_-]+(\.[a-z0-9_-]+)+$'
-          maxItems: 128
-        status:
-          $ref: '#/components/schemas/DeploymentStatus'
-        version:
-          $ref: '#/components/schemas/Int64String'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-    AgentDeploymentResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentDeploymentRecord'
-        requestId:
-          type: string
-    AgentDeploymentListResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required: [items, pageInfo]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/AgentDeploymentRecord'
-            pageInfo:
-              $ref: '#/components/schemas/PageInfo'
-        requestId:
-          type: string
     AgentRuntimeExecutionRecord:
       type: object
       additionalProperties: false
@@ -1382,8 +1231,7 @@ components:
           type: [string, 'null']
           maxLength: 128
         priority:
-          type: integer
-          format: int32
+          $ref: '#/components/schemas/Int64String'
         enabled:
           type: boolean
         policyJson:
@@ -1452,9 +1300,7 @@ components:
           type: [string, 'null']
           maxLength: 128
         priority:
-          type: integer
-          format: int32
-          default: 0
+          $ref: '#/components/schemas/Int64String'
         enabled:
           type: boolean
           default: true
@@ -1492,8 +1338,7 @@ components:
           type: [string, 'null']
           maxLength: 128
         priority:
-          type: integer
-          format: int32
+          $ref: '#/components/schemas/Int64String'
         enabled:
           type: boolean
         policyJson:
@@ -1604,24 +1449,6 @@ components:
       additionalProperties: false
       required: [requestedAt]
       properties:
-        requestedAt:
-          type: string
-          format: date-time
-    CreateAgentDeploymentRequest:
-      type: object
-      additionalProperties: false
-      required: [deploymentId, bindingId, requestedAt]
-      properties:
-        deploymentId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^deployment\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        bindingId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
         requestedAt:
           type: string
           format: date-time

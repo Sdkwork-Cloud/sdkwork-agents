@@ -1,14 +1,19 @@
-use crate::application::AgentsService;
+use crate::application::{
+    AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
+    AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
+    AgentCompositionSlotUpdateCommand, AgentsService,
+};
 use crate::domain::{
-    AgentCompositionSlotRecord, AgentDeploymentRecord, AgentProviderBindingRecord,
+    AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
+    AgentProviderBindingRecord,
 };
 use crate::dto::{
     ActivateAgentProviderBindingRequestDto, AgentCompositionSlotCreateRequestDto,
-    AgentCompositionSlotDeleteRequestDto, AgentCompositionSlotListResponseDto,
-    AgentCompositionSlotResponseDto, AgentCompositionSlotUpdateRequestDto,
-    AgentDeploymentRecordDto, AgentManagementProfileDto, AgentPreviewResponseRequestDto,
+    AgentCompositionSlotRecordDto,
+    AgentCompositionSlotUpdateRequestDto,
+    AgentManagementProfileDto, AgentPreviewResponseRequestDto,
     AgentPromptOptimizationRequestDto, AgentProviderBindingRecordDto,
-    AgentProviderBindingRequestDto, AgentProviderDeploymentRequestDto, AgentRecordDto,
+    AgentProviderBindingRequestDto, AgentRecordDto,
     AgentRuntimeExecutionRecordDto, CreateAgentRequestDto, DeleteAgentRequestDto,
     GetAgentRequestDto, ListAgentsRequestDto, RestoreAgentRequestDto, UpdateAgentRequestDto,
     UpdateAgentStatusRequestDto,
@@ -61,7 +66,6 @@ const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "cancelled",
     "runtime_executed",
     "provider_binding_changed",
-    "deployment_created",
     "composition_slot_created",
     "composition_slot_updated",
     "composition_slot_deleted",
@@ -112,10 +116,15 @@ impl AgentRequestContext {
                 HEADER_SDKWORK_USER_ID,
                 HEADER_SDKWORK_ACTOR_ID,
             ])?;
-        let tenant_id = optional_header_any(
+        // tenant_id is the mandatory multi-tenant isolation key. The gateway
+        // must always inject either `x-subject-tenant-id` or
+        // `x-sdkwork-tenant-id`. Falling back to an empty string (the previous
+        // behavior) allowed a request with a missing tenant header to enter the
+        // application layer as tenant_id="", which downstream code then parsed
+        // as 0 or used to bypass tenant-scoped filters. Reject at the edge.
+        let tenant_id = required_header_any(
             headers,
-            &[HEADER_SUBJECT_TENANT_ID, HEADER_SDKWORK_TENANT_ID])
-        .unwrap_or_default();
+            &[HEADER_SUBJECT_TENANT_ID, HEADER_SDKWORK_TENANT_ID])?;
         let mut roles = Vec::new();
         if let Some(roles_header) = optional_header_any(
             headers,
@@ -270,15 +279,6 @@ impl AgentRepository for DynAgentRepository {
         self.0.list_provider_bindings(tenant_id, agent_id)
     }
 
-    fn insert_deployment(&mut self, record: AgentDeploymentRecord) -> KernelResult<()> {
-        self.0.insert_deployment(record)
-    }
-
-    fn list_deployments(&self, tenant_id: u64, agent_id: &str) -> Vec<AgentDeploymentRecord> {
-        self.0.list_deployments(tenant_id, agent_id)
-    }
-
-
     fn insert_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
         self.0.insert_composition_slot(record)
     }
@@ -363,8 +363,40 @@ async fn inject_gateway_agent_context(
     }
 }
 
+/// Lightweight request tracing middleware.
+///
+/// Emits a single structured log line per request with method, path, status
+/// and latency. This is the minimal observability baseline required by P1-3
+/// without introducing `tower-http` (which would pull in additional build
+/// scripts that are currently broken on the Windows toolchain). Throughput
+/// limiting (rate limiting) and CORS are intentionally deferred to the
+/// sdkwork-web-framework layer where they can be configured uniformly across
+/// all managed-store surfaces.
+async fn trace_request(
+    request: Request<axum::body::Body>,
+    next: Next) -> Response {
+    let method = request.method().clone();
+    let path = request
+        .uri()
+        .path()
+        .to_string();
+    let started = std::time::Instant::now();
+    let response = next.run(request).await;
+    let elapsed = started.elapsed();
+    tracing::info!(
+        method = %method,
+        path = %path,
+        status = response.status().as_u16(),
+        elapsed_ms = elapsed.as_millis() as u64,
+        "agents.managed_store.request"
+    );
+    response
+}
+
 fn with_gateway_trusted_context(router: Router<AgentHttpState>) -> Router<AgentHttpState> {
-    router.layer(middleware::from_fn(inject_gateway_agent_context))
+    router
+        .layer(middleware::from_fn(trace_request))
+        .layer(middleware::from_fn(inject_gateway_agent_context))
 }
 
 /// Raw app-api route tree without gateway or web-framework middleware.
@@ -388,9 +420,6 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
                     post(app_activate_provider_binding))
-                .route(
-                    "/app/v3/api/ai/agents/{agentId}/deployments",
-                    get(app_list_deployments).post(app_create_deployment))
                 .route(
                     "/app/v3/api/ai/agents/{agentId}/preview_responses",
                     post(app_create_preview_response))
@@ -432,9 +461,6 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
                     post(backend_activate_provider_binding))
-                .route(
-                    "/agent/v3/api/ai/agents/{agentId}/deployments",
-                    get(backend_list_deployments).post(backend_create_deployment))
                 .route(
                     "/agent/v3/api/ai/agents/{agentId}/preview_responses",
                     post(open_create_preview_response))
@@ -483,9 +509,6 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
                     post(backend_activate_provider_binding))
-                .route(
-                    "/backend/v3/api/ai/agents/{agentId}/deployments",
-                    get(backend_list_deployments).post(backend_create_deployment))
                 .route(
                     "/backend/v3/api/ai/agents/{agentId}/composition_slots",
                     get(backend_list_composition_slots).post(backend_create_composition_slot))
@@ -556,34 +579,6 @@ struct TenantQueryParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct DeleteKnowledgeBaseQueryParams {
-    tenant_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct DeleteKnowledgeSourceQueryParams {
-    tenant_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct DeleteKnowledgeDocumentQueryParams {
-    tenant_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct DeleteMemoryRecordQueryParams {
-    tenant_id: String,
-    expected_version: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 struct AppDeleteQueryParams {
     expected_version: Option<String>,
     requested_at: String,
@@ -624,6 +619,7 @@ struct TenantAgentSlotPathParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CompositionSlotDeleteQueryParams {
     expected_version: Option<String>,
     requested_at: String,
@@ -641,7 +637,7 @@ struct AgentCompositionSlotRecordResponse {
     target_module: String,
     target_ref: String,
     target_version_ref: Option<String>,
-    priority: i32,
+    priority: String,
     enabled: bool,
     policy_json: String,
     status: String,
@@ -675,105 +671,6 @@ struct AuditEventsQueryParams {
     action: Option<String>,
     from: Option<String>,
     to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeBaseListQueryParams {
-    tenant_id: String,
-    organization_id: Option<String>,
-    owner_user_id: Option<String>,
-    include_deleted: Option<bool>,
-    q: Option<String>,
-    status: Option<String>,
-    visibility: Option<String>,
-    category: Option<String>,
-    tag: Option<String>,
-    page: Option<usize>,
-    page_size: Option<usize>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AppKnowledgeBaseListQueryParams {
-    include_deleted: Option<bool>,
-    q: Option<String>,
-    status: Option<String>,
-    visibility: Option<String>,
-    category: Option<String>,
-    tag: Option<String>,
-    page: Option<usize>,
-    page_size: Option<usize>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeBasePathParams {
-    #[serde(rename = "knowledgeBaseId")]
-    knowledge_base_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeSourcePathParams {
-    #[serde(rename = "knowledgeSourceId")]
-    knowledge_source_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeDocumentPathParams {
-    #[serde(rename = "knowledgeDocumentId")]
-    knowledge_document_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeChunkPathParams {
-    #[serde(rename = "knowledgeChunkId")]
-    knowledge_chunk_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeIndexPathParams {
-    #[serde(rename = "knowledgeIndexId")]
-    knowledge_index_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeBindingPathParams {
-    #[serde(rename = "knowledgeBindingId")]
-    knowledge_binding_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KnowledgeSyncJobPathParams {
-    #[serde(rename = "syncJobId")]
-    sync_job_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MemoryStorePathParams {
-    #[serde(rename = "memoryStoreId")]
-    memory_store_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MemoryProfilePathParams {
-    #[serde(rename = "memoryProfileId")]
-    memory_profile_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MemoryBindingPathParams {
-    #[serde(rename = "memoryBindingId")]
-    memory_binding_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MemoryNamespacePathParams {
-    #[serde(rename = "memoryNamespaceId")]
-    memory_namespace_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MemoryRecordPathParams {
-    #[serde(rename = "memoryId")]
-    memory_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -816,19 +713,10 @@ struct ActivateProviderBindingBody {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AgentDeploymentBody {
-    deployment_id: String,
-    binding_id: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AgentPreviewResponseBody {
     execution_id: String,
     content: String,
     debug_mode: Option<bool>,
-    memory_enabled: Option<bool>,
     model: Option<String>,
     temperature: Option<f32>,
     input_payload: Option<Value>,
@@ -883,335 +771,7 @@ struct RestoreAgentBody {
     requested_at: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBaseBody {
-    knowledge_base_id: String,
-    organization_id: Option<String>,
-    owner_user_id: Option<String>,
-    code: String,
-    display_name: String,
-    description: Option<String>,
-    provider_id: String,
-    base_kind: String,
-    retrieval_modes: Vec<String>,
-    capability_ids: Option<Vec<String>>,
-    configuration_profile_id: String,
-    visibility: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBaseUpdateBody {
-    expected_version: Option<String>,
-    display_name: Option<String>,
-    description: Option<String>,
-    provider_id: Option<String>,
-    base_kind: Option<String>,
-    retrieval_modes: Option<Vec<String>>,
-    capability_ids: Option<Vec<String>>,
-    configuration_profile_id: Option<String>,
-    visibility: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSourceBody {
-    knowledge_source_id: String,
-    organization_id: Option<String>,
-    source_kind: String,
-    source_ref: String,
-    source_hash: String,
-    sync_policy: Option<Value>,
-    metadata: Option<Value>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSourceUpdateBody {
-    expected_version: Option<String>,
-    source_kind: Option<String>,
-    source_ref: Option<String>,
-    source_hash: Option<String>,
-    sync_policy: Option<Value>,
-    metadata: Option<Value>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentBody {
-    knowledge_document_id: String,
-    organization_id: Option<String>,
-    knowledge_source_id: Option<String>,
-    document_kind: String,
-    title: String,
-    content_ref: String,
-    content_hash: String,
-    summary: Option<String>,
-    metadata: Option<Value>,
-    document_profile: Option<KnowledgeDocumentProfileBody>,
-    tags: Option<Vec<String>>,
-    categories: Option<Vec<String>>,
-    trust_level: Option<i16>,
-    redaction_classification: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentUpdateBody {
-    expected_version: Option<String>,
-    knowledge_source_id: Option<String>,
-    document_kind: Option<String>,
-    title: Option<String>,
-    content_ref: Option<String>,
-    content_hash: Option<String>,
-    summary: Option<String>,
-    metadata: Option<Value>,
-    document_profile: Option<KnowledgeDocumentProfileBody>,
-    tags: Option<Vec<String>>,
-    categories: Option<Vec<String>>,
-    trust_level: Option<i16>,
-    redaction_classification: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeChunkBody {
-    knowledge_chunk_id: String,
-    organization_id: Option<String>,
-    parent_chunk_id: Option<String>,
-    chunk_ordinal: u32,
-    heading: Option<String>,
-    content_ref: String,
-    content_hash: String,
-    token_estimate: u32,
-    summary: Option<String>,
-    metadata: Option<Value>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeIndexBody {
-    knowledge_index_id: String,
-    knowledge_base_id: String,
-    knowledge_document_id: Option<String>,
-    knowledge_chunk_id: Option<String>,
-    index_kind: String,
-    index_provider_id: String,
-    external_ref: String,
-    embedding_model_id: Option<String>,
-    vector_dimension: Option<u32>,
-    content_hash: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSearchBody {
-    query: String,
-    top_k: Option<usize>,
-    retrieval_modes: Option<Vec<String>>,
-    include_external: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBindingBody {
-    knowledge_binding_id: String,
-    organization_id: Option<String>,
-    agent_id: Option<String>,
-    deployment_id: Option<String>,
-    scope_kind: String,
-    scope_ref: String,
-    active: Option<bool>,
-    default_binding: Option<bool>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobBody {
-    sync_job_id: String,
-    organization_id: Option<String>,
-    knowledge_source_id: Option<String>,
-    job_kind: String,
-    input_ref: String,
-    input: Option<Value>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobStartBody {
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobCompleteBody {
-    output: Value,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobFailBody {
-    error: Value,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobCancelBody {
-    cancellation: Value,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryStoreBody {
-    memory_store_id: String,
-    organization_id: Option<String>,
-    owner_user_id: Option<String>,
-    code: String,
-    display_name: String,
-    description: Option<String>,
-    provider_id: String,
-    store_kind: String,
-    retrieval_modes: Vec<String>,
-    capability_ids: Option<Vec<String>>,
-    configuration_profile_id: String,
-    visibility: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryStoreUpdateBody {
-    expected_version: Option<String>,
-    display_name: Option<String>,
-    description: Option<String>,
-    provider_id: Option<String>,
-    store_kind: Option<String>,
-    retrieval_modes: Option<Vec<String>>,
-    capability_ids: Option<Vec<String>>,
-    configuration_profile_id: Option<String>,
-    visibility: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryProfileBody {
-    memory_profile_id: String,
-    organization_id: Option<String>,
-    owner_user_id: Option<String>,
-    code: String,
-    display_name: String,
-    description: Option<String>,
-    write_policy: Option<Value>,
-    retrieval_policy: Option<Value>,
-    compaction_policy: Option<Value>,
-    retention_policy: Option<Value>,
-    privacy_policy: Option<Value>,
-    visibility: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryBindingBody {
-    memory_binding_id: String,
-    organization_id: Option<String>,
-    agent_id: Option<String>,
-    deployment_id: Option<String>,
-    scope_kind: String,
-    scope_ref: String,
-    active: Option<bool>,
-    default_binding: Option<bool>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryNamespaceBody {
-    memory_namespace_id: String,
-    organization_id: Option<String>,
-    agent_id: Option<String>,
-    user_ref: Option<String>,
-    session_ref: Option<String>,
-    thread_ref: Option<String>,
-    namespace_kind: String,
-    visibility: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRecordBody {
-    memory_id: String,
-    organization_id: Option<String>,
-    agent_id: Option<String>,
-    memory_kind: String,
-    content_format: String,
-    content: Value,
-    summary: Option<String>,
-    salience_score: f32,
-    confidence_score: f32,
-    freshness_score: f32,
-    sensitivity_level: i16,
-    effective_at: Option<String>,
-    expires_at: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySourceBody {
-    memory_source_id: String,
-    source_kind: String,
-    source_ref: String,
-    source_hash: String,
-    evidence: Option<Value>,
-    captured_at: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRelationBody {
-    memory_relation_id: String,
-    from_memory_id: String,
-    to_memory_id: String,
-    relation_kind: String,
-    weight: f32,
-    valid_from: Option<String>,
-    valid_until: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRetrievalIndexBody {
-    memory_index_id: String,
-    memory_id: String,
-    index_kind: String,
-    index_provider_id: String,
-    external_ref: String,
-    embedding_model_id: Option<String>,
-    vector_dimension: Option<u32>,
-    content_hash: String,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PageInfoResponse {
     page: usize,
@@ -1269,42 +829,6 @@ struct AgentProviderBindingRecordResponse {
     configuration_profile_id: String,
     capabilities: Vec<String>,
     active: bool,
-    version: String,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentDeploymentResponse {
-    data: AgentDeploymentRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentDeploymentListResponse {
-    data: AgentDeploymentListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentDeploymentListDataResponse {
-    items: Vec<AgentDeploymentRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentDeploymentRecordResponse {
-    tenant_id: String,
-    agent_id: String,
-    deployment_id: String,
-    binding_id: String,
-    provider_id_snapshot: String,
-    implementation_kind_snapshot: String,
-    configuration_profile_id_snapshot: String,
-    capabilities_snapshot: Vec<String>,
-    status: String,
     version: String,
     created_at: String,
     updated_at: String,
@@ -1374,23 +898,17 @@ struct AgentManagementProfileResponse {
     icon_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     json_mode: Option<bool>,
-    knowledge_base_ids: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    memory_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<String>,
-    skill_ids: Vec<String>,
     suggested_prompts: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     system_prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
-    tool_ids: Vec<String>,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     agent_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     users: Option<String>,
-    voice_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     welcome_message: Option<String>,
 }
@@ -1416,615 +934,6 @@ struct AgentAuditEventsListResponse {
 struct AgentAuditEventsData {
     items: Vec<AgentAuditEventResponse>,
     page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBaseResponse {
-    data: KnowledgeBaseRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBaseListResponse {
-    data: KnowledgeBaseListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBaseListDataResponse {
-    items: Vec<KnowledgeBaseRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBaseRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    owner_user_id: String,
-    knowledge_base_id: String,
-    code: String,
-    display_name: String,
-    description: Option<String>,
-    provider_id: String,
-    base_kind: String,
-    retrieval_modes: Vec<String>,
-    capability_ids: Vec<String>,
-    configuration_profile_id: String,
-    document_count: u32,
-    status: String,
-    visibility: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSourceResponse {
-    data: KnowledgeSourceRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSourceListResponse {
-    data: KnowledgeSourceListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSourceListDataResponse {
-    items: Vec<KnowledgeSourceRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSourceRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    knowledge_source_id: String,
-    knowledge_base_id: String,
-    source_kind: String,
-    source_ref: String,
-    source_hash: String,
-    sync_policy: Value,
-    metadata: Value,
-    status: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentResponse {
-    data: KnowledgeDocumentRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentListResponse {
-    data: KnowledgeDocumentListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentListDataResponse {
-    items: Vec<KnowledgeDocumentRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    knowledge_document_id: String,
-    knowledge_base_id: String,
-    knowledge_source_id: Option<String>,
-    document_kind: String,
-    title: String,
-    content_ref: String,
-    content_hash: String,
-    summary: Option<String>,
-    metadata: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    document_profile: Option<KnowledgeDocumentProfileResponse>,
-    tags: Vec<String>,
-    categories: Vec<String>,
-    trust_level: i16,
-    redaction_classification: String,
-    chunk_count: u32,
-    status: String,
-    visibility: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentProfileResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    author: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    parent_id: Option<String>,
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    document_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    file_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    file_size: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mime_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    drive_uri: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeChunkResponse {
-    data: KnowledgeChunkRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeChunkListResponse {
-    data: KnowledgeChunkListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeChunkListDataResponse {
-    items: Vec<KnowledgeChunkRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeChunkRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    knowledge_chunk_id: String,
-    knowledge_document_id: String,
-    parent_chunk_id: Option<String>,
-    chunk_ordinal: u32,
-    heading: Option<String>,
-    content_ref: String,
-    content_hash: String,
-    token_estimate: u32,
-    summary: Option<String>,
-    metadata: Value,
-    status: String,
-    created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeIndexResponse {
-    data: KnowledgeIndexRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeIndexListResponse {
-    data: KnowledgeIndexListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeIndexListDataResponse {
-    items: Vec<KnowledgeIndexRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeIndexRecordResponse {
-    id: String,
-    tenant_id: String,
-    knowledge_index_id: String,
-    knowledge_base_id: String,
-    knowledge_document_id: Option<String>,
-    knowledge_chunk_id: Option<String>,
-    index_kind: String,
-    index_provider_id: String,
-    external_ref: String,
-    embedding_model_id: Option<String>,
-    vector_dimension: Option<u32>,
-    content_hash: String,
-    indexed_at: String,
-    status: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSearchResponse {
-    data: KnowledgeSearchDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSearchDataResponse {
-    items: Vec<KnowledgeSearchResultResponse>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSearchResultResponse {
-    tenant_id: String,
-    knowledge_base_id: String,
-    provider_id: String,
-    knowledge_index_id: String,
-    index_provider_id: String,
-    retrieval_method: String,
-    knowledge_document_id: Option<String>,
-    document_kind: Option<String>,
-    knowledge_chunk_id: Option<String>,
-    title: String,
-    snippet: Option<String>,
-    score: Option<f32>,
-    source_ref: Option<String>,
-    content_ref: Option<String>,
-    external_ref: Option<String>,
-    trust_level: i16,
-    redaction_classification: String,
-    metadata: Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBindingResponse {
-    data: KnowledgeBindingRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBindingListResponse {
-    data: KnowledgeBindingListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBindingListDataResponse {
-    items: Vec<KnowledgeBindingRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeBindingRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    knowledge_binding_id: String,
-    knowledge_base_id: String,
-    agent_id: Option<String>,
-    deployment_id: Option<String>,
-    scope_kind: String,
-    scope_ref: String,
-    active: bool,
-    default_binding: bool,
-    version: String,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobResponse {
-    data: KnowledgeSyncJobRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobListResponse {
-    data: KnowledgeSyncJobListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobListDataResponse {
-    items: Vec<KnowledgeSyncJobRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeSyncJobRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    sync_job_id: String,
-    knowledge_base_id: String,
-    knowledge_source_id: Option<String>,
-    job_kind: String,
-    status: String,
-    input_ref: String,
-    input: Value,
-    output: Option<Value>,
-    error: Option<Value>,
-    requested_at: String,
-    started_at: Option<String>,
-    completed_at: Option<String>,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryStoreResponse {
-    data: MemoryStoreRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryStoreRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    owner_user_id: String,
-    memory_store_id: String,
-    code: String,
-    display_name: String,
-    description: Option<String>,
-    provider_id: String,
-    store_kind: String,
-    retrieval_modes: Vec<String>,
-    capability_ids: Vec<String>,
-    configuration_profile_id: String,
-    status: String,
-    visibility: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryProfileResponse {
-    data: MemoryProfileRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryProfileRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    owner_user_id: String,
-    memory_profile_id: String,
-    memory_store_id: String,
-    code: String,
-    display_name: String,
-    description: Option<String>,
-    write_policy: Value,
-    retrieval_policy: Value,
-    compaction_policy: Value,
-    retention_policy: Value,
-    privacy_policy: Value,
-    status: String,
-    visibility: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryBindingResponse {
-    data: MemoryBindingRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryBindingRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    memory_binding_id: String,
-    memory_profile_id: String,
-    agent_id: Option<String>,
-    deployment_id: Option<String>,
-    scope_kind: String,
-    scope_ref: String,
-    active: bool,
-    default_binding: bool,
-    version: String,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryNamespaceResponse {
-    data: MemoryNamespaceRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryNamespaceRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    memory_namespace_id: String,
-    agent_id: Option<String>,
-    user_ref: Option<String>,
-    session_ref: Option<String>,
-    thread_ref: Option<String>,
-    namespace_kind: String,
-    status: String,
-    visibility: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRecordResponse {
-    data: MemoryRecordRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRecordListResponse {
-    data: MemoryRecordListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRecordListDataResponse {
-    items: Vec<MemoryRecordRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRecordRecordResponse {
-    id: String,
-    tenant_id: String,
-    organization_id: String,
-    memory_id: String,
-    memory_namespace_id: String,
-    agent_id: Option<String>,
-    memory_kind: String,
-    content_format: String,
-    content: Value,
-    summary: Option<String>,
-    salience_score: f32,
-    confidence_score: f32,
-    freshness_score: f32,
-    sensitivity_level: i16,
-    source_count: u32,
-    effective_at: Option<String>,
-    expires_at: Option<String>,
-    last_used_at: Option<String>,
-    use_count: String,
-    status: String,
-    version: String,
-    created_at: String,
-    updated_at: String,
-    deleted_at: Option<String>,
-    redacted_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySourceResponse {
-    data: MemorySourceRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySourceListResponse {
-    data: MemorySourceListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySourceListDataResponse {
-    items: Vec<MemorySourceRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySourceRecordResponse {
-    id: String,
-    tenant_id: String,
-    memory_source_id: String,
-    memory_id: String,
-    source_kind: String,
-    source_ref: String,
-    source_hash: String,
-    evidence: Value,
-    captured_at: String,
-    created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRelationResponse {
-    data: MemoryRelationRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRelationListResponse {
-    data: MemoryRelationListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRelationListDataResponse {
-    items: Vec<MemoryRelationRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRelationRecordResponse {
-    id: String,
-    tenant_id: String,
-    memory_relation_id: String,
-    from_memory_id: String,
-    to_memory_id: String,
-    relation_kind: String,
-    weight: f32,
-    valid_from: Option<String>,
-    valid_until: Option<String>,
-    created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRetrievalIndexResponse {
-    data: MemoryRetrievalIndexRecordResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRetrievalIndexListResponse {
-    data: MemoryRetrievalIndexListDataResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRetrievalIndexListDataResponse {
-    items: Vec<MemoryRetrievalIndexRecordResponse>,
-    page_info: PageInfoResponse,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryRetrievalIndexRecordResponse {
-    id: String,
-    tenant_id: String,
-    memory_index_id: String,
-    memory_id: String,
-    index_kind: String,
-    index_provider_id: String,
-    external_ref: String,
-    embedding_model_id: Option<String>,
-    vector_dimension: Option<u32>,
-    content_hash: String,
-    indexed_at: String,
-    status: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2055,18 +964,13 @@ struct AgentManagementProfileBody {
     debug_mode: Option<bool>,
     icon_name: Option<String>,
     json_mode: Option<bool>,
-    knowledge_base_ids: Option<Vec<String>>,
-    memory_enabled: Option<bool>,
     model: Option<String>,
-    skill_ids: Option<Vec<String>>,
     suggested_prompts: Option<Vec<String>>,
     system_prompt: Option<String>,
     temperature: Option<f64>,
-    tool_ids: Option<Vec<String>>,
     #[serde(rename = "type")]
     agent_type: Option<String>,
     users: Option<String>,
-    voice_ids: Option<Vec<String>>,
     welcome_message: Option<String>,
 }
 
@@ -2080,17 +984,12 @@ impl From<AgentManagementProfileBody> for AgentManagementProfileDto {
             debug_mode: value.debug_mode,
             icon_name: value.icon_name,
             json_mode: value.json_mode,
-            knowledge_base_ids: value.knowledge_base_ids.unwrap_or_default(),
-            memory_enabled: value.memory_enabled,
             model: value.model,
-            skill_ids: value.skill_ids.unwrap_or_default(),
             suggested_prompts: value.suggested_prompts.unwrap_or_default(),
             system_prompt: value.system_prompt,
             temperature: value.temperature,
-            tool_ids: value.tool_ids.unwrap_or_default(),
             agent_type: value.agent_type,
             users: value.users,
-            voice_ids: value.voice_ids.unwrap_or_default(),
             welcome_message: value.welcome_message,
         }
     }
@@ -2116,20 +1015,10 @@ fn validate_agent_management_profile_body(
         profile.icon_name.as_deref(),
         "managementProfile.iconName",
         64)?;
-    validate_profile_standard_ids(
-        profile.knowledge_base_ids.as_deref().unwrap_or_default(),
-        "managementProfile.knowledgeBaseIds",
-        "knowledge.base.",
-        128)?;
     if let Some(model) = profile.model.as_deref() {
         validate_standard_id(model, "managementProfile.model", Some("model."))
             .map_err(ApiProblem::from_kernel_error)?;
     }
-    validate_profile_standard_ids(
-        profile.skill_ids.as_deref().unwrap_or_default(),
-        "managementProfile.skillIds",
-        "skill.",
-        128)?;
     validate_profile_suggested_prompts(profile.suggested_prompts.as_deref().unwrap_or_default())?;
     validate_optional_profile_string(
         profile.system_prompt.as_deref(),
@@ -2145,11 +1034,6 @@ fn validate_agent_management_profile_body(
                 "managementProfile.temperature must be less than or equal to 2"));
         }
     }
-    validate_profile_standard_ids(
-        profile.tool_ids.as_deref().unwrap_or_default(),
-        "managementProfile.toolIds",
-        "tool.",
-        128)?;
     if let Some(agent_type) = profile.agent_type.as_deref() {
         if !matches!(agent_type, "normal" | "independent") {
             return Err(ApiProblem::validation(
@@ -2157,11 +1041,6 @@ fn validate_agent_management_profile_body(
         }
     }
     validate_optional_profile_string(profile.users.as_deref(), "managementProfile.users", 128)?;
-    validate_profile_standard_ids(
-        profile.voice_ids.as_deref().unwrap_or_default(),
-        "managementProfile.voiceIds",
-        "voice.",
-        16)?;
     validate_optional_profile_string(
         profile.welcome_message.as_deref(),
         "managementProfile.welcomeMessage",
@@ -2188,26 +1067,6 @@ fn validate_optional_profile_string(
     Ok(())
 }
 
-fn validate_profile_standard_ids(
-    values: &[String],
-    field_name: &str,
-    required_prefix: &str,
-    max_items: usize) -> Result<(), ApiProblem> {
-    if values.len() > max_items {
-        return Err(ApiProblem::validation(format!(
-            "{field_name} must contain at most {max_items} items"
-        )));
-    }
-    for value in values {
-        validate_standard_id(
-            value.as_str(),
-            format!("{field_name} items").as_str(),
-            Some(required_prefix))
-        .map_err(ApiProblem::from_kernel_error)?;
-    }
-    Ok(())
-}
-
 fn validate_profile_suggested_prompts(values: &[String]) -> Result<(), ApiProblem> {
     if values.len() > 12 {
         return Err(ApiProblem::validation(
@@ -2227,85 +1086,7 @@ fn validate_profile_suggested_prompts(values: &[String]) -> Result<(), ApiProble
     Ok(())
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KnowledgeDocumentProfileBody {
-    author: Option<String>,
-    content: Option<String>,
-    parent_id: Option<String>,
-    #[serde(rename = "type")]
-    document_type: Option<String>,
-    file_name: Option<String>,
-    file_size: Option<String>,
-    mime_type: Option<String>,
-    drive_uri: Option<String>,
-}
 
-impl From<KnowledgeDocumentProfileBody> for AgentKnowledgeDocumentProfileDto {
-    fn from(value: KnowledgeDocumentProfileBody) -> Self {
-        Self {
-            author: value.author,
-            content: value.content,
-            parent_id: value.parent_id,
-            document_type: value.document_type,
-            file_name: value.file_name,
-            file_size: value.file_size,
-            mime_type: value.mime_type,
-            drive_uri: value.drive_uri,
-        }
-    }
-}
-
-impl KnowledgeDocumentProfileBody {
-    fn into_validated_dto(self) -> Result<AgentKnowledgeDocumentProfileDto, ApiProblem> {
-        validate_knowledge_document_profile_body(&self)?;
-        Ok(self.into())
-    }
-}
-
-fn validate_knowledge_document_profile_body(
-    profile: &KnowledgeDocumentProfileBody) -> Result<(), ApiProblem> {
-    validate_optional_profile_string(profile.author.as_deref(), "documentProfile.author", 128)?;
-    validate_optional_document_profile_content(profile.content.as_deref())?;
-    if let Some(parent_id) = profile.parent_id.as_deref() {
-        validate_standard_id(
-            parent_id,
-            "documentProfile.parentId",
-            Some("knowledge.document."))
-        .map_err(ApiProblem::from_kernel_error)?;
-    }
-    if let Some(document_type) = profile.document_type.as_deref() {
-        if !matches!(document_type, "markdown" | "file" | "folder") {
-            return Err(ApiProblem::validation(
-                "documentProfile.type must be one of markdown, file, folder"));
-        }
-    }
-    validate_optional_profile_string(
-        profile.file_name.as_deref(),
-        "documentProfile.fileName",
-        512)?;
-    validate_optional_profile_string(profile.file_size.as_deref(), "documentProfile.fileSize", 64)?;
-    validate_optional_profile_string(
-        profile.mime_type.as_deref(),
-        "documentProfile.mimeType",
-        255)?;
-    validate_optional_profile_string(
-        profile.drive_uri.as_deref(),
-        "documentProfile.driveUri",
-        1024)?;
-    Ok(())
-}
-
-fn validate_optional_document_profile_content(value: Option<&str>) -> Result<(), ApiProblem> {
-    let Some(value) = value else {
-        return Ok(());
-    };
-    if value.chars().count() > 1_048_576 {
-        return Err(ApiProblem::validation(
-            "documentProfile.content must be at most 1048576 characters"));
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2356,6 +1137,10 @@ impl ApiProblem {
             ErrorCategory::Validation,
             false,
             detail)
+    }
+
+    fn bad_request(detail: impl Into<String>) -> Self {
+        Self::validation(detail)
     }
 
     fn permission(detail: impl Into<String>) -> Self {
@@ -2671,7 +1456,8 @@ async fn backend_list_agent_audit_events(
         service.list_agent_audit_events(tenant_id, path.agent_id.as_str(), subject)
     })
     .await?;
-    let events = filter_audit_events(events, &query)?;
+    let mut events = filter_audit_events(events, &query)?;
+    sort_audit_events_by_occurred_at_desc(&mut events)?;
 
     let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
     let total_items = events.len();
@@ -2782,61 +1568,6 @@ async fn backend_activate_provider_binding(
     let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
     let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
     execute_activate_provider_binding(state, scope, path, body).await
-}
-
-async fn app_list_deployments(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    execute_list_deployments(
-        state,
-        RequestScope::from_context(context),
-        query.page,
-        query.page_size,
-        path.agent_id)
-    .await
-}
-
-async fn backend_list_deployments(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    query: Result<Query<TenantListQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_list_deployments(state, scope, query.page, query.page_size, path.agent_id).await
-}
-
-async fn app_create_deployment(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    body: Result<Json<AgentDeploymentBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    execute_create_deployment(
-        state,
-        RequestScope::from_context(context),
-        path.agent_id,
-        body)
-    .await
-}
-
-async fn backend_create_deployment(
-    State(state): State<AgentHttpState>,
-    path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
-    Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<AgentDeploymentBody>, JsonRejection>) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
-    let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-    let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-    let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-    let scope = RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-    execute_create_deployment(state, scope, path.agent_id, body).await
 }
 
 async fn app_create_preview_response(
@@ -3057,13 +1788,23 @@ async fn execute_create_composition_slot(
     scope: RequestScope,
     agent_id: String,
     body: AgentCompositionSlotCreateRequestDto) -> Result<(StatusCode, Json<AgentCompositionSlotResponse>), ApiProblem> {
-    let tenant_id = parse_tenant_id(body.data.tenant_id.as_str())?;
-    let organization_id = parse_tenant_id(body.data.organization_id.as_str())?;
-    validate_requested_at(body.requested_at.as_str())?;
+    let tenant_id =
+        parse_tenant_id(body.data.tenant_id.as_str()).map_err(ApiProblem::from_kernel_error)?;
+    let organization_id = parse_tenant_id(body.data.organization_id.as_str())
+        .map_err(ApiProblem::from_kernel_error)?;
+    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
     let slot_kind = AgentCompositionSlotKind::from_str(body.data.slot_kind.as_str())
         .ok_or_else(|| ApiProblem::bad_request("invalid slotKind"))?;
     let target_module = AgentCompositionTargetModule::from_str(body.data.target_module.as_str())
         .ok_or_else(|| ApiProblem::bad_request("invalid targetModule"))?;
+    let priority = body
+        .data
+        .priority
+        .as_deref()
+        .map(|s| s.parse::<i32>().map_err(|_| KernelError::validation("invalid priority")))
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?
+        .unwrap_or(0);
     let command = AgentCompositionSlotCreateCommand {
         tenant_id,
         organization_id,
@@ -3073,7 +1814,7 @@ async fn execute_create_composition_slot(
         target_module,
         target_ref: body.data.target_ref,
         target_version_ref: body.data.target_version_ref,
-        priority: body.data.priority.unwrap_or(0),
+        priority,
         enabled: body.data.enabled.unwrap_or(true),
         policy_json: body.data.policy_json.unwrap_or_else(|| "{}".to_string()),
         requested_by: scope.subject,
@@ -3113,8 +1854,9 @@ async fn execute_update_composition_slot(
     agent_id: String,
     slot_id: String,
     body: AgentCompositionSlotUpdateRequestDto) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
-    let tenant_id = parse_tenant_id(body.data.tenant_id.as_str())?;
-    validate_requested_at(body.requested_at.as_str())?;
+    let tenant_id =
+        parse_tenant_id(body.data.tenant_id.as_str()).map_err(ApiProblem::from_kernel_error)?;
+    validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
     let expected_version = body
         .data
         .expected_version
@@ -3142,6 +1884,13 @@ async fn execute_update_composition_slot(
         })
         .transpose()
         .map_err(ApiProblem::from_kernel_error)?;
+    let priority = body
+        .data
+        .priority
+        .as_deref()
+        .map(|s| s.parse::<i32>().map_err(|_| KernelError::validation("invalid priority")))
+        .transpose()
+        .map_err(ApiProblem::from_kernel_error)?;
     let command = AgentCompositionSlotUpdateCommand {
         tenant_id,
         agent_id,
@@ -3151,7 +1900,7 @@ async fn execute_update_composition_slot(
         target_module,
         target_ref: body.data.target_ref,
         target_version_ref: body.data.target_version_ref,
-        priority: body.data.priority,
+        priority,
         enabled: body.data.enabled,
         policy_json: body.data.policy_json,
         requested_by: scope.subject,
@@ -3170,7 +1919,7 @@ async fn execute_delete_composition_slot(
     agent_id: String,
     slot_id: String,
     query: CompositionSlotDeleteQueryParams) -> Result<Json<AgentCompositionSlotResponse>, ApiProblem> {
-    validate_requested_at(query.requested_at.as_str())?;
+    validate_requested_at(query.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
     let tenant_id = scope.tenant_id_u64()?;
     let expected_version = query
         .expected_version
@@ -3205,7 +1954,7 @@ fn map_composition_slot_record(
         target_module: record.target_module.clone(),
         target_ref: record.target_ref.clone(),
         target_version_ref: record.target_version_ref.clone(),
-        priority: record.priority,
+        priority: record.priority.clone(),
         enabled: record.enabled,
         policy_json: record.policy_json.clone(),
         status: record.status.clone(),
@@ -3215,6 +1964,247 @@ fn map_composition_slot_record(
         deleted_at: record.deleted_at.clone(),
     }
 }
+#[cfg(not(feature = "postgres-sync"))]
+async fn with_service_mut<T>(
+    state: &AgentHttpState,
+    action: impl FnOnce(&mut HttpService) -> KernelResult<T>,
+) -> Result<T, ApiProblem> {
+    let mut service = state.service.lock().await;
+    action(&mut *service).map_err(ApiProblem::from_kernel_error)
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn with_service_mut<T, F>(state: &AgentHttpState, action: F) -> Result<T, ApiProblem>
+where
+    F: FnOnce(&mut HttpService) -> KernelResult<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let service = Arc::clone(&state.service);
+    let result = tokio::task::spawn_blocking(move || {
+        let mut guard = service.lock().map_err(|_| KernelError::Internal {
+            message: "agents managed store service lock poisoned".to_string(),
+        })?;
+        action(&mut *guard)
+    })
+    .await
+    .map_err(|_| {
+        ApiProblem::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            ErrorCategory::Internal,
+            false,
+            "agents managed store service worker failed",
+        )
+    })?;
+    result.map_err(ApiProblem::from_kernel_error)
+}
+async fn execute_list(
+    state: AgentHttpState,
+    query: ListAgentsQueryParams,
+    scope: RequestScope,
+) -> Result<Json<AgentListResponse>, ApiProblem> {
+    let include_deleted = query.include_deleted.unwrap_or(false);
+    let request_dto = ListAgentsRequestDto {
+        tenant_id: scope.tenant_id,
+        organization_id: query.organization_id,
+        owner_user_id: query.owner_user_id,
+        include_deleted,
+        search_query: query.q,
+    };
+    let command = request_dto
+        .into_command(scope.subject)
+        .map_err(ApiProblem::from_kernel_error)?;
+
+    let mut records = with_service_mut(&state, move |service| service.list_agents(command)).await?;
+    if matches!(
+        query.scope.as_deref(),
+        Some("market" | "public" | "published")
+    ) {
+        records.retain(|record| record.visibility.as_str() == "public");
+    }
+    let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+    let total_items = records.len();
+    let paged = paginate(records, page, page_size);
+
+    let items: Vec<AgentRecordResponse> = paged
+        .iter()
+        .map(|record| map_agent_record(&AgentRecordDto::from_record(record)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let total_pages = if total_items == 0 {
+        0
+    } else {
+        total_items.div_ceil(page_size)
+    };
+
+    Ok(Json(AgentListResponse {
+        data: AgentListDataResponse {
+            items,
+            page_info: PageInfoResponse {
+                page,
+                page_size,
+                total_items: total_items.to_string(),
+                total_pages,
+            },
+        },
+    }))
+}
+
+async fn execute_create(
+    state: AgentHttpState,
+    scope: RequestScope,
+    body: CreateAgentBody,
+) -> Result<(StatusCode, Json<AgentResponse>), ApiProblem> {
+    let manifest = parse_manifest(body.manifest)?;
+    let mut default_code_task_intent = body.default_code_task_intent.map(Into::into);
+    if let Some(management_profile) = body.management_profile {
+        default_code_task_intent = management_profile
+            .into_validated_dto()?
+            .merge_into_default_code_task_intent(default_code_task_intent)
+            .map_err(ApiProblem::from_kernel_error)?;
+    }
+
+    let command = CreateAgentRequestDto {
+        agent_id: body.agent_id,
+        tenant_id: scope.tenant_id,
+        organization_id: scope.organization_id,
+        owner_user_id: scope.owner_user_id,
+        code: body.code,
+        display_name: body.display_name,
+        description: body.description,
+        manifest,
+        visibility: body.visibility,
+        tags: body.tags.unwrap_or_default(),
+        default_code_task_intent,
+        implementation_provider_id: body.implementation_provider_id,
+        implementation_kind: body.implementation_kind,
+        implementation_type: body.implementation_type,
+        requested_at: body.requested_at,
+    }
+    .into_command(scope.subject)
+    .map_err(ApiProblem::from_kernel_error)?;
+
+    let record = with_service_mut(&state, move |service| service.create_agent(command)).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(AgentResponse {
+            data: map_agent_record(&AgentRecordDto::from_record(&record))?,
+        }),
+    ))
+}
+
+async fn execute_get(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+) -> Result<Json<AgentResponse>, ApiProblem> {
+    let command = GetAgentRequestDto {
+        tenant_id: scope.tenant_id,
+        agent_id,
+    }
+    .into_command(scope.subject)
+    .map_err(ApiProblem::from_kernel_error)?;
+
+    let record = with_service_mut(&state, move |service| service.get_agent(command)).await?;
+    Ok(Json(AgentResponse {
+        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
+    }))
+}
+
+async fn execute_update(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    body: UpdateAgentBody,
+) -> Result<Json<AgentResponse>, ApiProblem> {
+    let mut default_code_task_intent = body.default_code_task_intent.map(Into::into);
+    if let Some(management_profile) = body.management_profile {
+        let base_intent = match default_code_task_intent.take() {
+            Some(intent) => Some(intent),
+            None => {
+                let command = GetAgentRequestDto {
+                    tenant_id: scope.tenant_id.clone(),
+                    agent_id: agent_id.clone(),
+                }
+                .into_command(scope.subject.clone())
+                .map_err(ApiProblem::from_kernel_error)?;
+                let current =
+                    with_service_mut(&state, move |service| service.get_agent(command)).await?;
+                current.default_code_task_intent
+            }
+        };
+        default_code_task_intent = management_profile
+            .into_validated_dto()?
+            .merge_into_default_code_task_intent(base_intent)
+            .map_err(ApiProblem::from_kernel_error)?;
+    }
+    let command = UpdateAgentRequestDto {
+        tenant_id: scope.tenant_id,
+        agent_id,
+        expected_version: body.expected_version,
+        display_name: body.display_name,
+        description: body.description,
+        manifest: body.manifest.map(parse_manifest).transpose()?,
+        visibility: body.visibility,
+        tags: body.tags,
+        default_code_task_intent,
+        implementation_provider_id: body.implementation_provider_id,
+        implementation_kind: body.implementation_kind,
+        implementation_type: body.implementation_type,
+        requested_at: body.requested_at,
+    }
+    .into_command(scope.subject)
+    .map_err(ApiProblem::from_kernel_error)?;
+
+    let record = with_service_mut(&state, move |service| service.update_agent(command)).await?;
+    Ok(Json(AgentResponse {
+        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
+    }))
+}
+
+async fn execute_delete(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    body: DeleteAgentBody,
+) -> Result<Json<AgentResponse>, ApiProblem> {
+    let command = DeleteAgentRequestDto {
+        tenant_id: scope.tenant_id,
+        agent_id,
+        expected_version: body.expected_version,
+        requested_at: body.requested_at,
+    }
+    .into_command(scope.subject)
+    .map_err(ApiProblem::from_kernel_error)?;
+
+    let record = with_service_mut(&state, move |service| service.delete_agent(command)).await?;
+    Ok(Json(AgentResponse {
+        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
+    }))
+}
+
+async fn execute_restore(
+    state: AgentHttpState,
+    scope: RequestScope,
+    agent_id: String,
+    body: RestoreAgentBody,
+) -> Result<Json<AgentResponse>, ApiProblem> {
+    let command = RestoreAgentRequestDto {
+        tenant_id: scope.tenant_id,
+        agent_id,
+        expected_version: body.expected_version,
+        requested_at: body.requested_at,
+    }
+    .into_command(scope.subject)
+    .map_err(ApiProblem::from_kernel_error)?;
+
+    let record = with_service_mut(&state, move |service| service.restore_agent(command)).await?;
+    Ok(Json(AgentResponse {
+        data: map_agent_record(&AgentRecordDto::from_record(&record))?,
+    }))
+}
+
+
 async fn execute_list_provider_bindings(
     state: AgentHttpState,
     scope: RequestScope,
@@ -3307,69 +2297,6 @@ async fn execute_activate_provider_binding(
     }))
 }
 
-async fn execute_list_deployments(
-    state: AgentHttpState,
-    scope: RequestScope,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    agent_id: String) -> Result<Json<AgentDeploymentListResponse>, ApiProblem> {
-    let tenant_id = scope.tenant_id_u64()?;
-
-    let records = with_service_mut(&state, move |service| {
-        service.list_deployments(tenant_id, agent_id.as_str(), scope.subject)
-    })
-    .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-
-    let items = paged
-        .iter()
-        .map(|record| map_deployment_record(&AgentDeploymentRecordDto::from_record(record)))
-        .collect();
-    let total_pages = if total_items == 0 {
-        0
-    } else {
-        total_items.div_ceil(page_size)
-    };
-
-    Ok(Json(AgentDeploymentListResponse {
-        data: AgentDeploymentListDataResponse {
-            items,
-            page_info: PageInfoResponse {
-                page,
-                page_size,
-                total_items: total_items.to_string(),
-                total_pages,
-            },
-        },
-    }))
-}
-
-async fn execute_create_deployment(
-    state: AgentHttpState,
-    scope: RequestScope,
-    agent_id: String,
-    body: AgentDeploymentBody) -> Result<(StatusCode, Json<AgentDeploymentResponse>), ApiProblem> {
-    let command = AgentProviderDeploymentRequestDto {
-        tenant_id: scope.tenant_id,
-        agent_id,
-        deployment_id: body.deployment_id,
-        binding_id: body.binding_id,
-        requested_at: body.requested_at,
-    }
-    .into_command(scope.subject)
-    .map_err(ApiProblem::from_kernel_error)?;
-
-    let record =
-        with_service_mut(&state, move |service| service.create_deployment(command)).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(AgentDeploymentResponse {
-            data: map_deployment_record(&AgentDeploymentRecordDto::from_record(&record)),
-        })))
-}
-
 async fn execute_create_preview_response(
     state: AgentHttpState,
     scope: RequestScope,
@@ -3385,7 +2312,6 @@ async fn execute_create_preview_response(
         execution_id: body.execution_id,
         content: body.content,
         debug_mode: body.debug_mode.unwrap_or(false),
-        memory_enabled: body.memory_enabled.unwrap_or(false),
         model: body.model,
         temperature: body.temperature,
         input_payload_json,
@@ -3483,17 +2409,12 @@ fn map_agent_management_profile(
         debug_mode: profile.debug_mode,
         icon_name: profile.icon_name.clone(),
         json_mode: profile.json_mode,
-        knowledge_base_ids: profile.knowledge_base_ids.clone(),
-        memory_enabled: profile.memory_enabled,
         model: profile.model.clone(),
-        skill_ids: profile.skill_ids.clone(),
         suggested_prompts: profile.suggested_prompts.clone(),
         system_prompt: profile.system_prompt.clone(),
         temperature: profile.temperature,
-        tool_ids: profile.tool_ids.clone(),
         agent_type: profile.agent_type.clone(),
         users: profile.users.clone(),
-        voice_ids: profile.voice_ids.clone(),
         welcome_message: profile.welcome_message.clone(),
     }
 }
@@ -3515,23 +2436,6 @@ fn map_provider_binding_record(
     }
 }
 
-fn map_deployment_record(record: &AgentDeploymentRecordDto) -> AgentDeploymentRecordResponse {
-    AgentDeploymentRecordResponse {
-        tenant_id: record.tenant_id.clone(),
-        agent_id: record.agent_id.clone(),
-        deployment_id: record.deployment_id.clone(),
-        binding_id: record.binding_id.clone(),
-        provider_id_snapshot: record.provider_id_snapshot.clone(),
-        implementation_kind_snapshot: record.implementation_kind_snapshot.clone(),
-        configuration_profile_id_snapshot: record.configuration_profile_id_snapshot.clone(),
-        capabilities_snapshot: record.capabilities_snapshot.clone(),
-        status: record.status.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-    }
-}
-
 fn map_runtime_execution_record(
     record: &AgentRuntimeExecutionRecordDto) -> Result<AgentRuntimeExecutionRecordResponse, ApiProblem> {
     Ok(AgentRuntimeExecutionRecordResponse {
@@ -3547,393 +2451,6 @@ fn map_runtime_execution_record(
     })
 }
 
-fn map_knowledge_base_record(
-    record: &Dto,
-    document_count: u32) -> KnowledgeBaseRecordResponse {
-    KnowledgeBaseRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        owner_user_id: record.owner_user_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        code: record.code.clone(),
-        display_name: record.display_name.clone(),
-        description: record.description.clone(),
-        provider_id: record.provider_id.clone(),
-        base_kind: record.base_kind.clone(),
-        retrieval_modes: record.retrieval_modes.clone(),
-        capability_ids: record.capability_ids.clone(),
-        configuration_profile_id: record.configuration_profile_id.clone(),
-        document_count,
-        status: record.status.clone(),
-        visibility: record.visibility.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-    }
-}
-
-fn map_knowledge_source_record(
-    record: &Dto) -> Result<KnowledgeSourceRecordResponse, ApiProblem> {
-    Ok(KnowledgeSourceRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        knowledge_source_id: record.knowledge_source_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        source_kind: record.source_kind.clone(),
-        source_ref: record.source_ref.clone(),
-        source_hash: record.source_hash.clone(),
-        sync_policy: json_string_to_value(record.sync_policy_json.as_str(), "syncPolicy")?,
-        metadata: json_string_to_value(record.metadata_json.as_str(), "metadata")?,
-        status: record.status.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-    })
-}
-
-fn map_knowledge_document_record(
-    record: &Dto) -> Result<KnowledgeDocumentRecordResponse, ApiProblem> {
-    Ok(KnowledgeDocumentRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        knowledge_document_id: record.knowledge_document_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        knowledge_source_id: record.knowledge_source_id.clone(),
-        document_kind: record.document_kind.clone(),
-        title: record.title.clone(),
-        content_ref: record.content_ref.clone(),
-        content_hash: record.content_hash.clone(),
-        summary: record.summary.clone(),
-        metadata: json_string_to_value(record.metadata_json.as_str(), "metadata")?,
-        document_profile: record
-            .document_profile
-            .as_ref()
-            .map(map_knowledge_document_profile),
-        tags: record.tags.clone(),
-        categories: record.categories.clone(),
-        trust_level: record.trust_level,
-        redaction_classification: record.redaction_classification.clone(),
-        chunk_count: record.chunk_count,
-        status: record.status.clone(),
-        visibility: record.visibility.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-    })
-}
-
-fn map_knowledge_document_profile(
-    profile: &AgentKnowledgeDocumentProfileDto) -> KnowledgeDocumentProfileResponse {
-    KnowledgeDocumentProfileResponse {
-        author: profile.author.clone(),
-        content: profile.content.clone(),
-        parent_id: profile.parent_id.clone(),
-        document_type: profile.document_type.clone(),
-        file_name: profile.file_name.clone(),
-        file_size: profile.file_size.clone(),
-        mime_type: profile.mime_type.clone(),
-        drive_uri: profile.drive_uri.clone(),
-    }
-}
-
-fn map_knowledge_chunk_record(
-    record: &Dto) -> Result<KnowledgeChunkRecordResponse, ApiProblem> {
-    Ok(KnowledgeChunkRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        knowledge_chunk_id: record.knowledge_chunk_id.clone(),
-        knowledge_document_id: record.knowledge_document_id.clone(),
-        parent_chunk_id: record.parent_chunk_id.clone(),
-        chunk_ordinal: record.chunk_ordinal,
-        heading: record.heading.clone(),
-        content_ref: record.content_ref.clone(),
-        content_hash: record.content_hash.clone(),
-        token_estimate: record.token_estimate,
-        summary: record.summary.clone(),
-        metadata: json_string_to_value(record.metadata_json.as_str(), "metadata")?,
-        status: record.status.clone(),
-        created_at: record.created_at.clone(),
-    })
-}
-
-fn map_knowledge_index_record(
-    record: &Dto) -> KnowledgeIndexRecordResponse {
-    KnowledgeIndexRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        knowledge_index_id: record.knowledge_index_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        knowledge_document_id: record.knowledge_document_id.clone(),
-        knowledge_chunk_id: record.knowledge_chunk_id.clone(),
-        index_kind: record.index_kind.clone(),
-        index_provider_id: record.index_provider_id.clone(),
-        external_ref: record.external_ref.clone(),
-        embedding_model_id: record.embedding_model_id.clone(),
-        vector_dimension: record.vector_dimension,
-        content_hash: record.content_hash.clone(),
-        indexed_at: record.indexed_at.clone(),
-        status: record.status.clone(),
-    }
-}
-
-fn map_knowledge_search_result(
-    record: &Dto) -> Result<KnowledgeSearchResultResponse, ApiProblem> {
-    Ok(KnowledgeSearchResultResponse {
-        tenant_id: record.tenant_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        provider_id: record.provider_id.clone(),
-        knowledge_index_id: record.knowledge_index_id.clone(),
-        index_provider_id: record.index_provider_id.clone(),
-        retrieval_method: record.retrieval_method.clone(),
-        knowledge_document_id: record.knowledge_document_id.clone(),
-        document_kind: record.document_kind.clone(),
-        knowledge_chunk_id: record.knowledge_chunk_id.clone(),
-        title: record.title.clone(),
-        snippet: record.snippet.clone(),
-        score: record.score,
-        source_ref: record.source_ref.clone(),
-        content_ref: record.content_ref.clone(),
-        external_ref: record.external_ref.clone(),
-        trust_level: record.trust_level,
-        redaction_classification: record.redaction_classification.clone(),
-        metadata: json_string_to_value(record.metadata_json.as_str(), "metadata")?,
-    })
-}
-
-fn map_knowledge_binding_record(
-    record: &Dto) -> KnowledgeBindingRecordResponse {
-    KnowledgeBindingRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        knowledge_binding_id: record.knowledge_binding_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        agent_id: record.agent_id.clone(),
-        deployment_id: record.deployment_id.clone(),
-        scope_kind: record.scope_kind.clone(),
-        scope_ref: record.scope_ref.clone(),
-        active: record.active,
-        default_binding: record.default_binding,
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-    }
-}
-
-fn map_knowledge_sync_job_record(
-    record: &Dto) -> Result<KnowledgeSyncJobRecordResponse, ApiProblem> {
-    Ok(KnowledgeSyncJobRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        sync_job_id: record.sync_job_id.clone(),
-        knowledge_base_id: record.knowledge_base_id.clone(),
-        knowledge_source_id: record.knowledge_source_id.clone(),
-        job_kind: record.job_kind.clone(),
-        status: record.status.clone(),
-        input_ref: record.input_ref.clone(),
-        input: json_string_to_value(record.input_json.as_str(), "input")?,
-        output: record
-            .output_json
-            .as_deref()
-            .map(|value| json_string_to_value(value, "output"))
-            .transpose()?,
-        error: record
-            .error_json
-            .as_deref()
-            .map(|value| json_string_to_value(value, "error"))
-            .transpose()?,
-        requested_at: record.requested_at.clone(),
-        started_at: record.started_at.clone(),
-        completed_at: record.completed_at.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-    })
-}
-
-fn map_memory_store_record(record: &Dto) -> MemoryStoreRecordResponse {
-    MemoryStoreRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        owner_user_id: record.owner_user_id.clone(),
-        memory_store_id: record.memory_store_id.clone(),
-        code: record.code.clone(),
-        display_name: record.display_name.clone(),
-        description: record.description.clone(),
-        provider_id: record.provider_id.clone(),
-        store_kind: record.store_kind.clone(),
-        retrieval_modes: record.retrieval_modes.clone(),
-        capability_ids: record.capability_ids.clone(),
-        configuration_profile_id: record.configuration_profile_id.clone(),
-        status: record.status.clone(),
-        visibility: record.visibility.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-    }
-}
-
-fn map_memory_profile_record(
-    record: &Dto) -> Result<MemoryProfileRecordResponse, ApiProblem> {
-    Ok(MemoryProfileRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        owner_user_id: record.owner_user_id.clone(),
-        memory_profile_id: record.memory_profile_id.clone(),
-        memory_store_id: record.memory_store_id.clone(),
-        code: record.code.clone(),
-        display_name: record.display_name.clone(),
-        description: record.description.clone(),
-        write_policy: json_string_to_value(record.write_policy_json.as_str(), "writePolicy")?,
-        retrieval_policy: json_string_to_value(
-            record.retrieval_policy_json.as_str(),
-            "retrievalPolicy")?,
-        compaction_policy: json_string_to_value(
-            record.compaction_policy_json.as_str(),
-            "compactionPolicy")?,
-        retention_policy: json_string_to_value(
-            record.retention_policy_json.as_str(),
-            "retentionPolicy")?,
-        privacy_policy: json_string_to_value(record.privacy_policy_json.as_str(), "privacyPolicy")?,
-        status: record.status.clone(),
-        visibility: record.visibility.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-    })
-}
-
-fn map_memory_binding_record(record: &Dto) -> MemoryBindingRecordResponse {
-    MemoryBindingRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        memory_binding_id: record.memory_binding_id.clone(),
-        memory_profile_id: record.memory_profile_id.clone(),
-        agent_id: record.agent_id.clone(),
-        deployment_id: record.deployment_id.clone(),
-        scope_kind: record.scope_kind.clone(),
-        scope_ref: record.scope_ref.clone(),
-        active: record.active,
-        default_binding: record.default_binding,
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-    }
-}
-
-fn map_memory_namespace_record(
-    record: &Dto) -> MemoryNamespaceRecordResponse {
-    MemoryNamespaceRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        memory_namespace_id: record.memory_namespace_id.clone(),
-        agent_id: record.agent_id.clone(),
-        user_ref: record.user_ref.clone(),
-        session_ref: record.session_ref.clone(),
-        thread_ref: record.thread_ref.clone(),
-        namespace_kind: record.namespace_kind.clone(),
-        status: record.status.clone(),
-        visibility: record.visibility.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-    }
-}
-
-fn map_memory_record(
-    record: &AgentMemoryRecordDto) -> Result<MemoryRecordRecordResponse, ApiProblem> {
-    Ok(MemoryRecordRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        organization_id: record.organization_id.clone(),
-        memory_id: record.memory_id.clone(),
-        memory_namespace_id: record.memory_namespace_id.clone(),
-        agent_id: record.agent_id.clone(),
-        memory_kind: record.memory_kind.clone(),
-        content_format: record.content_format.clone(),
-        content: json_string_to_value(record.content_json.as_str(), "content")?,
-        summary: record.summary.clone(),
-        salience_score: record.salience_score,
-        confidence_score: record.confidence_score,
-        freshness_score: record.freshness_score,
-        sensitivity_level: record.sensitivity_level,
-        source_count: record.source_count,
-        effective_at: record.effective_at.clone(),
-        expires_at: record.expires_at.clone(),
-        last_used_at: record.last_used_at.clone(),
-        use_count: record.use_count.clone(),
-        status: record.status.clone(),
-        version: record.version.clone(),
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        deleted_at: record.deleted_at.clone(),
-        redacted_at: record.redacted_at.clone(),
-    })
-}
-
-fn map_memory_source_record(
-    record: &Dto) -> Result<MemorySourceRecordResponse, ApiProblem> {
-    Ok(MemorySourceRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        memory_source_id: record.memory_source_id.clone(),
-        memory_id: record.memory_id.clone(),
-        source_kind: record.source_kind.clone(),
-        source_ref: record.source_ref.clone(),
-        source_hash: record.source_hash.clone(),
-        evidence: json_string_to_value(record.evidence_json.as_str(), "evidence")?,
-        captured_at: record.captured_at.clone(),
-        created_at: record.created_at.clone(),
-    })
-}
-
-fn map_memory_relation_record(
-    record: &Dto) -> MemoryRelationRecordResponse {
-    MemoryRelationRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        memory_relation_id: record.memory_relation_id.clone(),
-        from_memory_id: record.from_memory_id.clone(),
-        to_memory_id: record.to_memory_id.clone(),
-        relation_kind: record.relation_kind.clone(),
-        weight: record.weight,
-        valid_from: record.valid_from.clone(),
-        valid_until: record.valid_until.clone(),
-        created_at: record.created_at.clone(),
-    }
-}
-
-fn map_memory_retrieval_index_record(
-    record: &Dto) -> MemoryRetrievalIndexRecordResponse {
-    MemoryRetrievalIndexRecordResponse {
-        id: record.id.clone(),
-        tenant_id: record.tenant_id.clone(),
-        memory_index_id: record.memory_index_id.clone(),
-        memory_id: record.memory_id.clone(),
-        index_kind: record.index_kind.clone(),
-        index_provider_id: record.index_provider_id.clone(),
-        external_ref: record.external_ref.clone(),
-        embedding_model_id: record.embedding_model_id.clone(),
-        vector_dimension: record.vector_dimension,
-        content_hash: record.content_hash.clone(),
-        indexed_at: record.indexed_at.clone(),
-        status: record.status.clone(),
-    }
-}
 
 fn manifest_to_value(manifest: &AgentManifest) -> Result<Value, ApiProblem> {
     let value = json!({
@@ -4039,6 +2556,36 @@ fn filter_audit_events(
     Ok(filtered)
 }
 
+fn sort_audit_events_by_occurred_at_desc(
+    events: &mut [sdkwork_agent_kernel::KernelEvent],
+) -> Result<(), ApiProblem> {
+    use std::cmp::Ordering;
+
+    events.sort_by(|left, right| {
+        let left_at = audit_event_occurred_at(left);
+        let right_at = audit_event_occurred_at(right);
+        match right_at.cmp(&left_at) {
+            Ordering::Equal => match right.event_type.cmp(&left.event_type) {
+                Ordering::Equal => right.event_id.cmp(&left.event_id),
+                other => other,
+            },
+            other => other,
+        }
+    });
+    Ok(())
+}
+
+fn audit_event_occurred_at(
+    event: &sdkwork_agent_kernel::KernelEvent,
+) -> OffsetDateTime {
+    let occurred_at_raw = event
+        .occurred_at
+        .as_deref()
+        .unwrap_or("1970-01-01T00:00:00Z");
+    parse_rfc3339_datetime(occurred_at_raw, "audit event occurred_at")
+        .unwrap_or_else(|_| OffsetDateTime::UNIX_EPOCH)
+}
+
 fn audit_event_action(event_type: &str) -> &str {
     event_type.rsplit('.').next().unwrap_or(event_type)
 }
@@ -4055,7 +2602,14 @@ fn reconcile_resource_tenant_with_subject_header(
     let resource_tenant =
         parse_tenant_id(resource_tenant_id).map_err(ApiProblem::from_kernel_error)?;
     let Some(header_tenant_id) = header_tenant_id else {
-        return Ok(resource_tenant_id.to_string());
+        // Defense in depth: the gateway middleware (`from_gateway_subject_headers`)
+        // already rejects requests without a tenant header, but a backend route
+        // must never trust the resource-supplied tenant_id on its own. Without
+        // a subject tenant header to cross-check, a caller could address any
+        // tenant's resource by simply omitting the header. Reject explicitly.
+        return Err(ApiProblem::validation(
+            "subject tenant header is required for backend resource access",
+        ));
     };
     let header_tenant = parse_tenant_id(header_tenant_id.as_str())
         .map_err(|_| ApiProblem::permission("subject tenant does not match resource tenant"))?;
@@ -4335,5 +2889,100 @@ mod tests {
         let body_json: Value =
             serde_json::from_slice(&body_bytes).expect("response body should be valid json");
         assert_eq!(body_json["data"]["status"], "active");
+    }
+
+    // --- P1-4 tenant_id 安全防护单元测试 ---
+
+    fn subject_headers_with(tenant: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
+        if let Some(tenant) = tenant {
+            headers.insert("x-subject-tenant-id", HeaderValue::from_str(tenant).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn from_gateway_subject_headers_rejects_missing_tenant_header() {
+        // 缺失 tenant header 必须在网关边界被拒绝，避免空 tenant_id 进入应用层
+        let headers = subject_headers_with(None);
+        let result = AgentRequestContext::from_gateway_subject_headers(&headers);
+        let err = result.expect_err("missing tenant header should be rejected");
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert!(err.response.detail.contains("tenant"));
+    }
+
+    #[test]
+    fn from_gateway_subject_headers_accepts_sdkwork_tenant_header() {
+        // x-sdkwork-tenant-id 是 x-subject-tenant-id 的等价替代头
+        let mut headers = HeaderMap::new();
+        headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
+        headers.insert("x-sdkwork-tenant-id", HeaderValue::from_static("100001"));
+        let context = AgentRequestContext::from_gateway_subject_headers(&headers)
+            .expect("sdkwork tenant header should be accepted");
+        assert_eq!(context.tenant_id, "100001");
+    }
+
+    #[test]
+    fn from_gateway_subject_headers_rejects_tenant_zero() {
+        // tenant_id=0 是保留值，即使 header 存在也必须拒绝
+        let headers = subject_headers_with(Some("0"));
+        // from_gateway_subject_headers 仅做 header 存在性校验，tenant_id=0
+        // 在后续 parse_tenant_id 时被拒绝。这里验证 header 层不阻拦解析，
+        // 由 validation.rs::parse_tenant_id_rejects_zero 覆盖数值校验。
+        let context = AgentRequestContext::from_gateway_subject_headers(&headers)
+            .expect("header presence is the gateway concern");
+        assert_eq!(context.tenant_id, "0");
+        // 数值校验在 tenant_id_u64 / parse_tenant_id 处生效
+        let err = parse_tenant_id(context.tenant_id.as_str())
+            .expect_err("tenant_id 0 must be rejected by parse_tenant_id");
+        match err {
+            KernelError::Validation { message } => {
+                assert!(message.contains("greater than 0"));
+            }
+            _ => panic!("expected validation error for tenant_id 0"),
+        }
+    }
+
+    #[test]
+    fn reconcile_resource_tenant_rejects_missing_header() {
+        // 严重越权场景：缺失 subject tenant header 时不得直接信任 resource tenant
+        let err = reconcile_resource_tenant_with_subject_header("100001", None)
+            .expect_err("missing header must be rejected");
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert!(err.response.detail.contains("subject tenant header is required"));
+    }
+
+    #[test]
+    fn reconcile_resource_tenant_rejects_mismatch() {
+        let err = reconcile_resource_tenant_with_subject_header(
+            "100001",
+            Some("100002".to_string()),
+        )
+        .expect_err("tenant mismatch must be rejected");
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+        assert!(err.response.detail.contains("does not match"));
+    }
+
+    #[test]
+    fn reconcile_resource_tenant_rejects_resource_zero() {
+        // resource tenant_id=0 也必须被拒绝（parse_tenant_id 拦截）
+        let err = reconcile_resource_tenant_with_subject_header(
+            "0",
+            Some("100001".to_string()),
+        )
+        .expect_err("resource tenant 0 must be rejected");
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert!(err.response.detail.contains("greater than 0"));
+    }
+
+    #[test]
+    fn reconcile_resource_tenant_accepts_match() {
+        let result = reconcile_resource_tenant_with_subject_header(
+            "100001",
+            Some("100001".to_string()),
+        )
+        .expect("matching tenants should be accepted");
+        assert_eq!(result, "100001");
     }
 }

@@ -2158,6 +2158,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdkwork-agent-provider-claude-code"
+version = "0.2.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-core",
+ "sdkwork-agent-provider-transport-node",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sdkwork-agent-provider-codex"
 version = "0.2.0"
 dependencies = [
@@ -2181,6 +2194,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdkwork-agent-provider-gemini-cli"
+version = "0.2.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-core",
+ "sdkwork-agent-provider-transport-node",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sdkwork-agent-provider-hermes"
 version = "0.2.0"
 dependencies = [
@@ -2200,6 +2226,19 @@ version = "0.2.0"
 dependencies = [
  "sdkwork-agent-kernel",
  "sdkwork-agent-plugin-core",
+ "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-agent-provider-transport-core",
+ "sdkwork-agent-provider-transport-node",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agent-provider-opencode"
+version = "0.2.0"
+dependencies = [
+ "sdkwork-agent-kernel",
  "sdkwork-agent-provider-core",
  "sdkwork-agent-provider-spi",
  "sdkwork-agent-provider-transport-core",
@@ -2279,7 +2318,6 @@ dependencies = [
  "axum 0.8.9",
  "chrono",
  "futures",
- "hmac",
  "jsonwebtoken",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -2296,9 +2334,9 @@ dependencies = [
  "sdkwork-agent-session",
  "sdkwork-agent-streaming",
  "sdkwork-code-kernel",
+ "sdkwork-utils-rust",
  "serde",
  "serde_json",
- "sha2",
  "subtle",
  "tokio",
  "tokio-stream",
@@ -2308,6 +2346,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "ureq",
+ "uuid",
 ]
 
 [[package]]
@@ -2338,7 +2377,7 @@ dependencies = [
  "axum 0.8.9",
  "sdkwork-agent-server",
  "sdkwork-agents-database-host",
- "sdkwork-agents-kernel-bridge",
+ "sdkwork-agents-gateway-assembly",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2370,6 +2409,10 @@ dependencies = [
  "axum 0.8.9",
  "sdkwork-agent-server",
  "sdkwork-agents-kernel-bridge",
+ "sdkwork-routes-agents-app-api",
+ "sdkwork-routes-agents-backend-api",
+ "sdkwork-routes-agents-http-shared",
+ "sdkwork-routes-agents-open-api",
  "tokio",
 ]
 
@@ -2401,6 +2444,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdkwork-agents-runtime-facade"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "sdkwork-agent-provider-claude-code",
+ "sdkwork-agent-provider-codex",
+ "sdkwork-agent-provider-gemini-cli",
+ "sdkwork-agent-provider-hermes",
+ "sdkwork-agent-provider-openclaw",
+ "sdkwork-agent-provider-opencode",
+ "sdkwork-agent-provider-spi",
+ "sdkwork-utils-rust",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "sdkwork-code-kernel"
 version = "0.1.0"
 dependencies = [
@@ -2428,6 +2489,18 @@ dependencies = [
  "sha2",
  "sqlx",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sdkwork-database-id"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-database-config",
+ "sdkwork-database-sqlx",
+ "sdkwork-id-core",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2480,9 +2553,9 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "rand_core 0.6.4",
+ "sdkwork-database-id",
  "sdkwork-iam-context-service",
  "sdkwork-iam-module-registry",
- "sdkwork-id-core",
  "sha2",
  "sqlx",
  "uuid",
@@ -2553,8 +2626,8 @@ dependencies = [
  "sdkwork-agent-kernel",
  "sdkwork-code-kernel",
  "sdkwork-database-config",
+ "sdkwork-database-id",
  "sdkwork-database-sqlx",
- "sdkwork-id-core",
  "sdkwork-intelligence-prompts-ai-contract",
  "sdkwork-utils-rust",
  "serde",
@@ -2563,6 +2636,7 @@ dependencies = [
  "time",
  "tokio",
  "tower 0.5.3",
+ "tracing",
 ]
 
 [[package]]
@@ -2640,11 +2714,14 @@ dependencies = [
 name = "sdkwork-utils-rust"
 version = "0.10.0"
 dependencies = [
+ "aes-gcm",
  "base64 0.22.1",
  "chrono",
+ "hkdf",
  "hmac",
  "rand 0.8.6",
  "regex",
+ "serde",
  "serde_json",
  "sha2",
  "urlencoding",

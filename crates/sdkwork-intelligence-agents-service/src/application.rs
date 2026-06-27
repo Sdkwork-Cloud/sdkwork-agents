@@ -1,18 +1,19 @@
 use crate::domain::{
-    AgentAuditAction, AgentBusinessRecord, AgentBusinessStatus, AgentDeploymentRecord,
-    AgentDeploymentStatus, AgentImplementationKind, AgentImplementationType,
-    AgentMcpAuthKind, AgentMcpServerRecord, AgentMcpTransportKind, AgentCompositionSlotRecord, AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProviderBindingRecord, AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
+    AgentAuditAction, AgentBusinessRecord, AgentBusinessStatus,
+    AgentImplementationKind, AgentImplementationType,
+    AgentCompositionSlotRecord,
+    AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProviderBindingRecord,
+    AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
     AgentRuntimeExecutionStatus, AgentVisibility, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
-use crate::ports::{AgentAuditSink, AgentListQuery, AgentMarketplaceListQuery, AgentRepository};
-use crate::validation::{require_non_blank, require_trimmed_non_blank, validate_capabilities, validate_standard_id};
+use crate::ports::{AgentAuditSink, AgentListQuery, AgentRepository};
+use crate::validation::{require_non_blank, validate_capabilities, validate_standard_id};
 use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelEvent, KernelEventRedaction, KernelEventSeverity,
     KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider,
     PolicyRequest, PolicySubject,
 };
 use sdkwork_code_kernel::CodeTaskIntent;
-use std::{cmp::Ordering, collections::HashSet};
 
 
 struct AgentBusinessAuditEventInput<'a> {
@@ -130,16 +131,6 @@ pub struct ActivateAgentProviderBindingCommand {
     pub requested_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentProviderDeploymentCommand {
-    pub tenant_id: u64,
-    pub agent_id: String,
-    pub deployment_id: String,
-    pub binding_id: String,
-    pub requested_by: PolicySubject,
-    pub requested_at: String,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentPreviewResponseCommand {
     pub tenant_id: u64,
@@ -147,7 +138,6 @@ pub struct AgentPreviewResponseCommand {
     pub execution_id: String,
     pub content: String,
     pub debug_mode: bool,
-    pub memory_enabled: bool,
     pub model: Option<String>,
     pub temperature: Option<f32>,
     pub input_payload_json: String,
@@ -166,85 +156,6 @@ pub struct AgentPromptOptimizationCommand {
     pub requested_at: String,
 }
 
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMcpServerCreateCommand {
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub owner_user_id: u64,
-    pub mcp_server_id: String,
-    pub code: String,
-    pub display_name: String,
-    pub description: Option<String>,
-    pub protocol_version: String,
-    pub transport_kind: AgentMcpTransportKind,
-    pub endpoint_ref: Option<String>,
-    pub command_ref: Option<String>,
-    pub auth_kind: AgentMcpAuthKind,
-    pub auth_profile_id: Option<String>,
-    pub capability_ids: Vec<String>,
-    pub tool_count: u32,
-    pub resource_count: u32,
-    pub prompt_count: u32,
-    pub capabilities_json: String,
-    pub categories: Vec<String>,
-    pub tags: Vec<String>,
-    pub security_profile_id: Option<String>,
-    pub visibility: AgentVisibility,
-    pub requested_by: PolicySubject,
-    pub requested_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMcpServerUpdateCommand {
-    pub tenant_id: u64,
-    pub mcp_server_id: String,
-    pub expected_version: Option<u64>,
-    pub display_name: Option<String>,
-    pub description: Option<String>,
-    pub protocol_version: Option<String>,
-    pub transport_kind: Option<AgentMcpTransportKind>,
-    pub endpoint_ref: Option<Option<String>>,
-    pub command_ref: Option<Option<String>>,
-    pub auth_kind: Option<AgentMcpAuthKind>,
-    pub auth_profile_id: Option<Option<String>>,
-    pub capability_ids: Option<Vec<String>>,
-    pub tool_count: Option<u32>,
-    pub resource_count: Option<u32>,
-    pub prompt_count: Option<u32>,
-    pub capabilities_json: Option<String>,
-    pub categories: Option<Vec<String>>,
-    pub tags: Option<Vec<String>>,
-    pub security_profile_id: Option<Option<String>>,
-    pub visibility: Option<AgentVisibility>,
-    pub requested_by: PolicySubject,
-    pub requested_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetAgentMarketplaceItemCommand {
-    pub tenant_id: u64,
-    pub item_id: String,
-    pub requested_by: PolicySubject,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeleteAgentMarketplaceItemCommand {
-    pub tenant_id: u64,
-    pub item_id: String,
-    pub expected_version: Option<u64>,
-    pub requested_by: PolicySubject,
-    pub requested_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RestoreAgentMarketplaceItemCommand {
-    pub tenant_id: u64,
-    pub item_id: String,
-    pub expected_version: Option<u64>,
-    pub requested_by: PolicySubject,
-    pub requested_at: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCompositionSlotCreateCommand {
@@ -515,75 +426,6 @@ where
         Ok(self.repository.list_provider_bindings(tenant_id, agent_id))
     }
 
-    pub fn create_deployment(
-        &mut self,
-        command: AgentProviderDeploymentCommand) -> KernelResult<AgentDeploymentRecord> {
-        validate_agent_id(command.agent_id.as_str())?;
-        self.authorize(
-            "agent.business.deployment.create",
-            command.requested_by.clone(),
-            format!("agent.business.{}", command.agent_id),
-            "deployment.create")?;
-
-        self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
-        validate_standard_id(
-            command.deployment_id.as_str(),
-            "deploymentId",
-            Some("deployment."))?;
-        validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
-
-        let binding = self
-            .repository
-            .get_provider_binding(
-                command.tenant_id,
-                command.agent_id.as_str(),
-                command.binding_id.as_str())
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
-
-        let record = AgentDeploymentRecord {
-            id: self.repository.next_id()?,
-            tenant_id: command.tenant_id,
-            agent_id: command.agent_id,
-            deployment_id: command.deployment_id,
-            binding_id: binding.binding_id,
-            provider_id_snapshot: binding.provider_id,
-            implementation_kind_snapshot: binding.implementation_kind,
-            configuration_profile_id_snapshot: binding.configuration_profile_id,
-            capabilities_snapshot: binding.capabilities,
-            status: AgentDeploymentStatus::Created,
-            version: 1,
-            created_at: command.requested_at.clone(),
-            updated_at: command.requested_at.clone(),
-        };
-
-        self.repository.insert_deployment(record.clone())?;
-        self.emit_deployment_audit_event(
-            AgentAuditAction::DeploymentCreated,
-            &record,
-            command.requested_by,
-            command.requested_at)?;
-        Ok(record)
-    }
-
-    pub fn list_deployments(
-        &mut self,
-        tenant_id: u64,
-        agent_id: &str,
-        requested_by: PolicySubject) -> KernelResult<Vec<AgentDeploymentRecord>> {
-        validate_agent_id(agent_id)?;
-        self.authorize(
-            "agent.business.deployment.list",
-            requested_by,
-            format!("agent.business.{}", agent_id),
-            "deployment.list")?;
-        self.repository
-            .get(tenant_id, agent_id)
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
-        Ok(self.repository.list_deployments(tenant_id, agent_id))
-    }
-
     pub fn create_preview_response(
         &mut self,
         command: AgentPreviewResponseCommand) -> KernelResult<AgentRuntimeExecutionRecord> {
@@ -616,7 +458,6 @@ where
         let output_payload_json = serde_json::json!({
             "content": command.content,
             "debugMode": command.debug_mode,
-            "memoryEnabled": command.memory_enabled,
             "model": command.model,
             "temperature": command.temperature,
             "runtimeMode": "deterministic-local-contract"
@@ -687,306 +528,6 @@ where
             &record,
             command.requested_by,
             command.requested_at)?;
-        Ok(record)
-    }
-
-    pub fn create_mcp_server(
-        &mut self,
-        command: AgentMcpServerCreateCommand) -> KernelResult<AgentMcpServerRecord> {
-        self.authorize(
-            "agent.business.mcp.create",
-            command.requested_by.clone(),
-            format!("agent.business.mcp.{}", command.mcp_server_id),
-            "mcp.create")?;
-
-        validate_marketplace_identity(
-            command.mcp_server_id.as_str(),
-            "mcpServerId",
-            Some("mcp.server."),
-            command.code.as_str(),
-            command.display_name.as_str())?;
-        validate_non_empty(command.protocol_version.as_str(), "protocolVersion")?;
-        validate_optional_standard_ref(
-            command.endpoint_ref.as_deref(),
-            "endpointRef",
-            "endpoint.")?;
-        validate_optional_standard_ref(command.command_ref.as_deref(), "commandRef", "command.")?;
-        validate_optional_standard_ref(
-            command.auth_profile_id.as_deref(),
-            "authProfileId",
-            "profile.")?;
-        validate_optional_standard_ref(
-            command.security_profile_id.as_deref(),
-            "securityProfileId",
-            "profile.")?;
-        validate_capabilities(command.capability_ids.as_slice(), "capabilityIds")?;
-        validate_marketplace_json(command.capabilities_json.as_str(), "capabilitiesJson")?;
-        validate_marketplace_labels(command.categories.as_slice(), "categories")?;
-        validate_marketplace_labels(command.tags.as_slice(), "tags")?;
-        validate_mcp_transport_reference_pair(
-            command.transport_kind,
-            command.endpoint_ref.as_deref(),
-            command.command_ref.as_deref())?;
-
-        if self
-            .repository
-            .get_mcp_server(command.tenant_id, command.mcp_server_id.as_str())
-            .is_some()
-        {
-            return Err(KernelError::conflict("agent mcp server already exists"));
-        }
-
-        let record = AgentMcpServerRecord {
-            id: self.repository.next_id()?,
-            tenant_id: command.tenant_id,
-            organization_id: command.organization_id,
-            owner_user_id: command.owner_user_id,
-            mcp_server_id: command.mcp_server_id,
-            code: command.code,
-            display_name: command.display_name,
-            description: command.description,
-            protocol_version: command.protocol_version,
-            transport_kind: command.transport_kind,
-            endpoint_ref: command.endpoint_ref,
-            command_ref: command.command_ref,
-            auth_kind: command.auth_kind,
-            auth_profile_id: command.auth_profile_id,
-            capability_ids: command.capability_ids,
-            tool_count: command.tool_count,
-            resource_count: command.resource_count,
-            prompt_count: command.prompt_count,
-            capabilities_json: command.capabilities_json,
-            categories: command.categories,
-            tags: command.tags,
-            security_profile_id: command.security_profile_id,
-            status: AgentBusinessStatus::Draft,
-            visibility: command.visibility,
-            version: 1,
-            created_at: command.requested_at.clone(),
-            updated_at: command.requested_at.clone(),
-            deleted_at: None,
-        };
-
-        self.repository.insert_mcp_server(record.clone())?;
-        self.emit_marketplace_audit_event(AgentBusinessAuditEventInput {
-            action: AgentAuditAction::McpServerCreated,
-            item_kind: "mcp",
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            item_id: record.mcp_server_id.as_str(),
-            status: record.status,
-            visibility: record.visibility,
-            version: record.version,
-            subject: command.requested_by,
-            occurred_at: command.requested_at,
-        })?;
-        Ok(record)
-    }
-
-    pub fn update_mcp_server(
-        &mut self,
-        command: AgentMcpServerUpdateCommand) -> KernelResult<AgentMcpServerRecord> {
-        self.authorize(
-            "agent.business.mcp.update",
-            command.requested_by.clone(),
-            format!("agent.business.mcp.{}", command.mcp_server_id),
-            "mcp.update")?;
-        validate_standard_id(
-            command.mcp_server_id.as_str(),
-            "mcpServerId",
-            Some("mcp.server."))?;
-        let mut record = self
-            .repository
-            .get_mcp_server(command.tenant_id, command.mcp_server_id.as_str())
-            .ok_or_else(|| KernelError::validation("agent mcp server not found"))?;
-        ensure_marketplace_update_allowed(
-            record.is_deleted(),
-            record.version,
-            command.expected_version,
-            "agent mcp server")?;
-
-        if let Some(display_name) = command.display_name {
-            validate_non_empty(display_name.as_str(), "displayName")?;
-            record.display_name = display_name;
-        }
-        if let Some(description) = command.description {
-            record.description = Some(description);
-        }
-        if let Some(protocol_version) = command.protocol_version {
-            validate_non_empty(protocol_version.as_str(), "protocolVersion")?;
-            record.protocol_version = protocol_version;
-        }
-        if let Some(transport_kind) = command.transport_kind {
-            record.transport_kind = transport_kind;
-        }
-        if let Some(endpoint_ref) = command.endpoint_ref {
-            validate_optional_standard_ref(endpoint_ref.as_deref(), "endpointRef", "endpoint.")?;
-            record.endpoint_ref = endpoint_ref;
-        }
-        if let Some(command_ref) = command.command_ref {
-            validate_optional_standard_ref(command_ref.as_deref(), "commandRef", "command.")?;
-            record.command_ref = command_ref;
-        }
-        if let Some(auth_kind) = command.auth_kind {
-            record.auth_kind = auth_kind;
-        }
-        if let Some(auth_profile_id) = command.auth_profile_id {
-            validate_optional_standard_ref(
-                auth_profile_id.as_deref(),
-                "authProfileId",
-                "profile.")?;
-            record.auth_profile_id = auth_profile_id;
-        }
-        if let Some(capability_ids) = command.capability_ids {
-            validate_capabilities(capability_ids.as_slice(), "capabilityIds")?;
-            record.capability_ids = capability_ids;
-        }
-        if let Some(tool_count) = command.tool_count {
-            record.tool_count = tool_count;
-        }
-        if let Some(resource_count) = command.resource_count {
-            record.resource_count = resource_count;
-        }
-        if let Some(prompt_count) = command.prompt_count {
-            record.prompt_count = prompt_count;
-        }
-        if let Some(capabilities_json) = command.capabilities_json {
-            validate_marketplace_json(capabilities_json.as_str(), "capabilitiesJson")?;
-            record.capabilities_json = capabilities_json;
-        }
-        if let Some(categories) = command.categories {
-            validate_marketplace_labels(categories.as_slice(), "categories")?;
-            record.categories = categories;
-        }
-        if let Some(tags) = command.tags {
-            validate_marketplace_labels(tags.as_slice(), "tags")?;
-            record.tags = tags;
-        }
-        if let Some(security_profile_id) = command.security_profile_id {
-            validate_optional_standard_ref(
-                security_profile_id.as_deref(),
-                "securityProfileId",
-                "profile.")?;
-            record.security_profile_id = security_profile_id;
-        }
-        if let Some(visibility) = command.visibility {
-            record.visibility = visibility;
-        }
-        validate_mcp_transport_reference_pair(
-            record.transport_kind,
-            record.endpoint_ref.as_deref(),
-            record.command_ref.as_deref())?;
-        record.mark_updated(command.requested_at.clone());
-
-        self.repository.update_mcp_server(record.clone())?;
-        self.emit_marketplace_audit_event(AgentBusinessAuditEventInput {
-            action: AgentAuditAction::McpServerUpdated,
-            item_kind: "mcp",
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            item_id: record.mcp_server_id.as_str(),
-            status: record.status,
-            visibility: record.visibility,
-            version: record.version,
-            subject: command.requested_by,
-            occurred_at: command.requested_at,
-        })?;
-        Ok(record)
-    }
-
-    pub fn get_mcp_server(
-        &mut self,
-        command: GetAgentMarketplaceItemCommand) -> KernelResult<AgentMcpServerRecord> {
-        self.authorize(
-            "agent.business.mcp.retrieve",
-            command.requested_by,
-            format!("agent.business.mcp.{}", command.item_id),
-            "mcp.retrieve")?;
-        validate_standard_id(command.item_id.as_str(), "mcpServerId", Some("mcp.server."))?;
-        self.repository
-            .get_mcp_server(command.tenant_id, command.item_id.as_str())
-            .ok_or_else(|| KernelError::validation("agent mcp server not found"))
-    }
-
-    pub fn list_mcp_servers(
-        &mut self,
-        query: AgentMarketplaceListQuery,
-        requested_by: PolicySubject) -> KernelResult<Vec<AgentMcpServerRecord>> {
-        self.authorize(
-            "agent.business.mcp.list",
-            requested_by,
-            format!("agent.business.mcp.tenant.{}", query.tenant_id),
-            "mcp.list")?;
-        Ok(self.repository.list_mcp_servers(&query))
-    }
-
-    pub fn delete_mcp_server(
-        &mut self,
-        command: DeleteAgentMarketplaceItemCommand) -> KernelResult<AgentMcpServerRecord> {
-        self.authorize(
-            "agent.business.mcp.delete",
-            command.requested_by.clone(),
-            format!("agent.business.mcp.{}", command.item_id),
-            "mcp.delete")?;
-        validate_standard_id(command.item_id.as_str(), "mcpServerId", Some("mcp.server."))?;
-        let mut record = self
-            .repository
-            .get_mcp_server(command.tenant_id, command.item_id.as_str())
-            .ok_or_else(|| KernelError::validation("agent mcp server not found"))?;
-        ensure_marketplace_delete_allowed(
-            record.is_deleted(),
-            record.version,
-            command.expected_version,
-            "agent mcp server")?;
-        record.mark_deleted(command.requested_at.clone());
-        self.repository.update_mcp_server(record.clone())?;
-        self.emit_marketplace_audit_event(AgentBusinessAuditEventInput {
-            action: AgentAuditAction::McpServerDeleted,
-            item_kind: "mcp",
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            item_id: record.mcp_server_id.as_str(),
-            status: record.status,
-            visibility: record.visibility,
-            version: record.version,
-            subject: command.requested_by,
-            occurred_at: command.requested_at,
-        })?;
-        Ok(record)
-    }
-
-    pub fn restore_mcp_server(
-        &mut self,
-        command: RestoreAgentMarketplaceItemCommand) -> KernelResult<AgentMcpServerRecord> {
-        self.authorize(
-            "agent.business.mcp.restore",
-            command.requested_by.clone(),
-            format!("agent.business.mcp.{}", command.item_id),
-            "mcp.restore")?;
-        validate_standard_id(command.item_id.as_str(), "mcpServerId", Some("mcp.server."))?;
-        let mut record = self
-            .repository
-            .get_mcp_server(command.tenant_id, command.item_id.as_str())
-            .ok_or_else(|| KernelError::validation("agent mcp server not found"))?;
-        ensure_marketplace_restore_allowed(
-            record.is_deleted(),
-            record.version,
-            command.expected_version,
-            "agent mcp server")?;
-        record.mark_restored(command.requested_at.clone());
-        self.repository.update_mcp_server(record.clone())?;
-        self.emit_marketplace_audit_event(AgentBusinessAuditEventInput {
-            action: AgentAuditAction::McpServerRestored,
-            item_kind: "mcp",
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            item_id: record.mcp_server_id.as_str(),
-            status: record.status,
-            visibility: record.visibility,
-            version: record.version,
-            subject: command.requested_by,
-            occurred_at: command.requested_at,
-        })?;
         Ok(record)
     }
 
@@ -1459,6 +1000,10 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context("organization_id", record.organization_id.to_string().as_str())
+        .with_context("agent_internal_id", record.id.to_string().as_str())
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.audit.v1");
 
@@ -1505,42 +1050,10 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.provider_binding.v1");
-
-        self.audit_sink.record(event)
-    }
-
-    fn emit_deployment_audit_event(
-        &mut self,
-        action: AgentAuditAction,
-        record: &AgentDeploymentRecord,
-        subject: PolicySubject,
-        occurred_at: String) -> KernelResult<()> {
-        let payload = format!(
-            "action={};agent_id={};tenant_id={};deployment_id={};binding_id={};provider_id_snapshot={};implementation_kind_snapshot={}",
-            action.event_type(),
-            record.agent_id,
-            record.tenant_id,
-            record.deployment_id,
-            record.binding_id,
-            record.provider_id_snapshot,
-            record.implementation_kind_snapshot.as_str()
-        );
-        let event = KernelEvent::new(
-            format!(
-                "agent_deployment_{}_{}",
-                record.deployment_id, record.version
-            ),
-            action.event_type(),
-            KernelEventSeverity::Info,
-            payload)
-        .from_source(KernelEventSource::Runtime)
-        .with_redaction(KernelEventRedaction::TenantSensitive)
-        .with_context("subject_id", subject.subject_id.as_str())
-        .with_context("subject_tenant_id", subject.tenant_id.as_str())
-        .occurred_at(occurred_at)
-        .with_payload_schema("sdkwork.agent.business.deployment.v1");
 
         self.audit_sink.record(event)
     }
@@ -1569,6 +1082,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.runtime_execution.v1");
 
@@ -1600,6 +1115,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("subject_id", input.subject.subject_id.as_str())
         .with_context("subject_tenant_id", input.subject.tenant_id.as_str())
+        .with_context("tenant_id", input.tenant_id.to_string().as_str())
+        .with_context("organization_id", input.organization_id.to_string().as_str())
         .occurred_at(input.occurred_at)
         .with_payload_schema("sdkwork.agent.business.marketplace.v1");
 
@@ -1660,54 +1177,6 @@ fn validate_optional_plain_ref(value: Option<&str>, field_name: &str) -> KernelR
     Ok(())
 }
 
-fn validate_score(value: f32, field_name: &str) -> KernelResult<()> {
-    if !(0.0..=1.0).contains(&value) || !value.is_finite() {
-        return Err(KernelError::validation(format!(
-            "{field_name} must be between 0 and 1"
-        )));
-    }
-    Ok(())
-}
-
-fn ensure_marketplace_update_allowed(
-    is_deleted: bool,
-    actual_version: u64,
-    expected_version: Option<u64>,
-    entity_name: &str) -> KernelResult<()> {
-    if is_deleted {
-        return Err(KernelError::validation(format!(
-            "deleted {entity_name} cannot be updated"
-        )));
-    }
-    ensure_expected_version(actual_version, expected_version, entity_name)
-}
-
-fn ensure_marketplace_delete_allowed(
-    is_deleted: bool,
-    actual_version: u64,
-    expected_version: Option<u64>,
-    entity_name: &str) -> KernelResult<()> {
-    if is_deleted {
-        return Err(KernelError::validation(format!(
-            "{entity_name} already deleted"
-        )));
-    }
-    ensure_expected_version(actual_version, expected_version, entity_name)
-}
-
-fn ensure_marketplace_restore_allowed(
-    is_deleted: bool,
-    actual_version: u64,
-    expected_version: Option<u64>,
-    entity_name: &str) -> KernelResult<()> {
-    if !is_deleted {
-        return Err(KernelError::validation(format!(
-            "{entity_name} is not deleted"
-        )));
-    }
-    ensure_expected_version(actual_version, expected_version, entity_name)
-}
-
 fn ensure_expected_version(
     actual_version: u64,
     expected_version: Option<u64>,
@@ -1719,6 +1188,42 @@ fn ensure_expected_version(
         return Err(KernelError::conflict(format!(
             "{entity_name} version mismatch: expected={expected_version}, actual={actual_version}"
         )));
+    }
+    Ok(())
+}
+
+fn validate_non_empty(value: &str, field_name: &str) -> KernelResult<()> {
+    require_non_blank(value, field_name)
+}
+
+fn validate_json_payload(value: &str, field_name: &str) -> KernelResult<()> {
+    let _: serde_json::Value = serde_json::from_str(value).map_err(|error| {
+        KernelError::validation(format!("{field_name} must be valid JSON: {error}"))
+    })?;
+    Ok(())
+}
+
+fn normalize_prompt_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn reject_secret_material(value: &str, field_name: &str) -> KernelResult<()> {
+    let normalized = value.to_lowercase();
+    for marker in [
+        "api_key=",
+        "apikey=",
+        "access_token=",
+        "refresh_token=",
+        "secret=",
+        "password=",
+        "bearer ",
+        "sk-",
+    ] {
+        if normalized.contains(marker) {
+            return Err(KernelError::validation(format!(
+                "{field_name} must not contain plaintext secret material"
+            )));
+        }
     }
     Ok(())
 }

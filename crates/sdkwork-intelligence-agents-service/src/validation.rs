@@ -38,7 +38,18 @@ pub(crate) fn parse_int64_string_field(value: &str, field_name: &str) -> KernelR
 }
 
 pub(crate) fn parse_tenant_id(value: &str) -> KernelResult<u64> {
-    parse_int64_string_field(value, "tenant_id")
+    let parsed = parse_int64_string_field(value, "tenant_id")?;
+    // tenant_id is the mandatory multi-tenant isolation key. The value `0` is
+    // reserved (used by `unwrap_or(0)` fallbacks in audit/persistence code
+    // paths) and must never be accepted as a real tenant identifier, otherwise
+    // a request that loses its tenant header could read or write cross-tenant
+    // data scoped to the synthetic tenant `0`. Reject it at the parsing boundary.
+    if parsed == 0 {
+        return Err(KernelError::validation(
+            "tenant_id must be greater than 0",
+        ));
+    }
+    Ok(parsed)
 }
 
 pub(crate) fn parse_organization_id(value: &str) -> KernelResult<u64> {
@@ -213,6 +224,26 @@ mod tests {
             }
             _ => panic!("expected validation error"),
         }
+    }
+
+    #[test]
+    fn parse_tenant_id_rejects_zero() {
+        // tenant_id=0 is reserved and must never be accepted as a real
+        // tenant identifier, otherwise cross-tenant access becomes possible.
+        let error = parse_tenant_id("0").expect_err("tenant_id 0 should be rejected");
+        match error {
+            KernelError::Validation { message } => {
+                assert!(message.contains("tenant_id"));
+                assert!(message.contains("greater than 0"));
+            }
+            _ => panic!("expected validation error for tenant_id 0"),
+        }
+    }
+
+    #[test]
+    fn parse_tenant_id_accepts_positive_value() {
+        let value = parse_tenant_id("100001").expect("positive tenant_id should parse");
+        assert_eq!(value, 100001);
     }
 
     #[test]

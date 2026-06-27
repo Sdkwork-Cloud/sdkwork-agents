@@ -1,11 +1,10 @@
 use crate::domain::{
-    AgentBusinessRecord, AgentBusinessStatus, AgentDeploymentRecord, AgentDeploymentStatus,
-    AgentImplementationKind, AgentImplementationType, AgentMcpAuthKind, AgentMcpServerRecord, AgentMcpTransportKind,
-    AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
-    AgentProviderBindingRecord,
-    AgentVisibility,
+    AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind,
+    AgentCompositionSlotRecord, AgentCompositionTargetModule,
+    AgentImplementationKind, AgentImplementationType,
+    AgentProviderBindingRecord, AgentVisibility,
 };
-use crate::ports::{AgentAuditSink, AgentListQuery, AgentMarketplaceListQuery, AgentRepository};
+use crate::ports::{AgentAuditSink, AgentListQuery, AgentRepository};
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
 use crate::validation::{validate_capabilities, validate_standard_id};
@@ -18,12 +17,9 @@ use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "postgres-sync")]
 use sqlx::Row;
-#[cfg(feature = "postgres-sync")]
-use time::{OffsetDateTime, PrimitiveDateTime};
 
 #[cfg(feature = "postgres-sync")]
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
-
 
 pub const SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID: &str =
     "SELECT id, uuid, tenant_id, organization_id, owner_user_id, agent_id, code, display_name, description, manifest_json, default_code_task_intent_json, implementation_provider_id, implementation_kind, implementation_type, status, visibility, tags_json, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at, version FROM ai_agent WHERE tenant_id = $1 AND agent_id = $2 LIMIT 1";
@@ -41,24 +37,11 @@ pub const SQL_SELECT_AGENT_PROVIDER_BINDING: &str =
     "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM ai_agent_runtime_binding WHERE tenant_id = $1 AND agent_id = $2 AND binding_id = $3 LIMIT 1";
 pub const SQL_LIST_AGENT_PROVIDER_BINDINGS: &str =
     "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM ai_agent_runtime_binding WHERE tenant_id = $1 AND agent_id = $2 ORDER BY active DESC, updated_at DESC, binding_id ASC";
-pub const SQL_INSERT_AGENT_DEPLOYMENT: &str =
-    "INSERT INTO ai_agent_deployment (id, uuid, tenant_id, agent_id, deployment_id, binding_id, provider_id_snapshot, implementation_kind_snapshot, configuration_profile_id_snapshot, capabilities_snapshot_json, status, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)";
-pub const SQL_LIST_AGENT_DEPLOYMENTS: &str =
-    "SELECT id, uuid, tenant_id, agent_id, deployment_id, binding_id, provider_id_snapshot, implementation_kind_snapshot, configuration_profile_id_snapshot, capabilities_snapshot_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at FROM ai_agent_deployment WHERE tenant_id = $1 AND agent_id = $2 ORDER BY created_at DESC, deployment_id ASC";
 pub const SQL_INSERT_AUDIT_EVENT: &str =
     "INSERT INTO ai_agent_audit_event (id, uuid, tenant_id, organization_id, agent_internal_id, agent_id, action, subject_id, subject_tenant_id, request_id, trace_id, payload_json, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID: &str =
     "SELECT id, uuid, tenant_id, organization_id, agent_internal_id, agent_id, action, subject_id, subject_tenant_id, request_id, trace_id, payload_json, created_at::text AS created_at FROM ai_agent_audit_event WHERE tenant_id = $1 AND agent_id = $2 ORDER BY created_at DESC, id DESC";
-pub const SQL_INSERT_AGENT_MCP_SERVER: &str =
-    "INSERT INTO a_agent_mcp_server (id, uuid, tenant_id, organization_id, owner_user_id, mcp_server_id, code, display_name, description, protocol_version, transport_kind, endpoint_ref, command_ref, auth_kind, auth_profile_id, capability_ids_json, tool_count, resource_count, prompt_count, capabilities_json, categories_json, tags_json, security_profile_id, status, visibility, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)";
-pub const SQL_UPDATE_AGENT_MCP_SERVER: &str =
-    "UPDATE a_agent_mcp_server SET organization_id = $1, owner_user_id = $2, code = $3, display_name = $4, description = $5, protocol_version = $6, transport_kind = $7, endpoint_ref = $8, command_ref = $9, auth_kind = $10, auth_profile_id = $11, capability_ids_json = $12, tool_count = $13, resource_count = $14, prompt_count = $15, capabilities_json = $16, categories_json = $17, tags_json = $18, security_profile_id = $19, status = $20, visibility = $21, version = $22, updated_at = $23, deleted_at = $24 WHERE tenant_id = $25 AND mcp_server_id = $26 AND version = $27";
-pub const SQL_SELECT_AGENT_MCP_SERVER: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, mcp_server_id, code, display_name, description, protocol_version, transport_kind, endpoint_ref, command_ref, auth_kind, auth_profile_id, capability_ids_json, tool_count, resource_count, prompt_count, capabilities_json, categories_json, tags_json, security_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_mcp_server WHERE tenant_id = $1 AND mcp_server_id = $2 LIMIT 1";
-pub const SQL_LIST_AGENT_MCP_SERVERS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, owner_user_id, mcp_server_id, code, display_name, description, protocol_version, transport_kind, endpoint_ref, command_ref, auth_kind, auth_profile_id, capability_ids_json, tool_count, resource_count, prompt_count, capabilities_json, categories_json, tags_json, security_profile_id, status, visibility, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM a_agent_mcp_server WHERE tenant_id = $1 ORDER BY updated_at DESC, code ASC";
-
 pub const SQL_INSERT_AGENT_COMPOSITION_SLOT: &str =
     "INSERT INTO ai_agent_composition_slot (id, uuid, tenant_id, organization_id, agent_id, slot_id, slot_kind, target_module, target_ref, target_version_ref, priority, enabled, policy_json, status, version, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18)";
 pub const SQL_UPDATE_AGENT_COMPOSITION_SLOT: &str =
@@ -68,7 +51,7 @@ pub const SQL_SELECT_AGENT_COMPOSITION_SLOT: &str =
 pub const SQL_LIST_AGENT_COMPOSITION_SLOTS: &str =
     "SELECT id, uuid, tenant_id, organization_id, agent_id, slot_id, slot_kind, target_module, target_ref, target_version_ref, priority, enabled, policy_json::text AS policy_json, status, version, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM ai_agent_composition_slot WHERE tenant_id = $1 AND agent_id = $2 ORDER BY priority ASC, slot_id ASC";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentBusinessRow {
     pub id: u64,
     pub uuid: String,
@@ -223,187 +206,6 @@ impl AgentProviderBindingRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDeploymentRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub agent_id: String,
-    pub deployment_id: String,
-    pub binding_id: String,
-    pub provider_id_snapshot: String,
-    pub implementation_kind_snapshot: String,
-    pub configuration_profile_id_snapshot: String,
-    pub capabilities_snapshot_json: String,
-    pub status: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl AgentDeploymentRow {
-    pub fn from_record(record: &AgentDeploymentRecord) -> KernelResult<Self> {
-        validate_deployment_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_deployment_uuid(
-                record.tenant_id,
-                &record.agent_id,
-                &record.deployment_id),
-            tenant_id: record.tenant_id,
-            agent_id: record.agent_id.clone(),
-            deployment_id: record.deployment_id.clone(),
-            binding_id: record.binding_id.clone(),
-            provider_id_snapshot: record.provider_id_snapshot.clone(),
-            implementation_kind_snapshot: record.implementation_kind_snapshot.as_str().to_string(),
-            configuration_profile_id_snapshot: record.configuration_profile_id_snapshot.clone(),
-            capabilities_snapshot_json: string_list_to_json(
-                &record.capabilities_snapshot,
-                "capabilities_snapshot")?,
-            status: record.status.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentDeploymentRecord> {
-        let capabilities_snapshot =
-            string_list_from_json(&self.capabilities_snapshot_json, "capabilities_snapshot")?;
-        let record = AgentDeploymentRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            agent_id: self.agent_id,
-            deployment_id: self.deployment_id,
-            binding_id: self.binding_id,
-            provider_id_snapshot: self.provider_id_snapshot,
-            implementation_kind_snapshot: parse_implementation_kind(
-                &self.implementation_kind_snapshot)?,
-            configuration_profile_id_snapshot: self.configuration_profile_id_snapshot,
-            capabilities_snapshot,
-            status: AgentDeploymentStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!("invalid deployment status code: {}", self.status))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        };
-        validate_deployment_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMcpServerRow {
-    pub id: u64,
-    pub uuid: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub owner_user_id: u64,
-    pub mcp_server_id: String,
-    pub code: String,
-    pub display_name: String,
-    pub description: Option<String>,
-    pub protocol_version: String,
-    pub transport_kind: String,
-    pub endpoint_ref: Option<String>,
-    pub command_ref: Option<String>,
-    pub auth_kind: String,
-    pub auth_profile_id: Option<String>,
-    pub capability_ids_json: String,
-    pub tool_count: u32,
-    pub resource_count: u32,
-    pub prompt_count: u32,
-    pub capabilities_json: String,
-    pub categories_json: String,
-    pub tags_json: String,
-    pub security_profile_id: Option<String>,
-    pub status: i16,
-    pub visibility: i16,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub deleted_at: Option<String>,
-}
-
-impl AgentMcpServerRow {
-    pub fn from_record(record: &AgentMcpServerRecord) -> KernelResult<Self> {
-        validate_mcp_server_storage_contract(record)?;
-        Ok(Self {
-            id: record.id,
-            uuid: build_agent_mcp_server_uuid(record.tenant_id, &record.mcp_server_id),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            owner_user_id: record.owner_user_id,
-            mcp_server_id: record.mcp_server_id.clone(),
-            code: record.code.clone(),
-            display_name: record.display_name.clone(),
-            description: record.description.clone(),
-            protocol_version: record.protocol_version.clone(),
-            transport_kind: record.transport_kind.as_str().to_string(),
-            endpoint_ref: record.endpoint_ref.clone(),
-            command_ref: record.command_ref.clone(),
-            auth_kind: record.auth_kind.as_str().to_string(),
-            auth_profile_id: record.auth_profile_id.clone(),
-            capability_ids_json: string_list_to_json(&record.capability_ids, "capability_ids")?,
-            tool_count: record.tool_count,
-            resource_count: record.resource_count,
-            prompt_count: record.prompt_count,
-            capabilities_json: record.capabilities_json.clone(),
-            categories_json: string_list_to_json(&record.categories, "categories")?,
-            tags_json: string_list_to_json(&record.tags, "tags")?,
-            security_profile_id: record.security_profile_id.clone(),
-            status: record.status.as_db_code(),
-            visibility: record.visibility.as_db_code(),
-            version: record.version,
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-            deleted_at: record.deleted_at.clone(),
-        })
-    }
-
-    pub fn into_record(self) -> KernelResult<AgentMcpServerRecord> {
-        let record = AgentMcpServerRecord {
-            id: self.id,
-            tenant_id: self.tenant_id,
-            organization_id: self.organization_id,
-            owner_user_id: self.owner_user_id,
-            mcp_server_id: self.mcp_server_id,
-            code: self.code,
-            display_name: self.display_name,
-            description: self.description,
-            protocol_version: self.protocol_version,
-            transport_kind: parse_mcp_transport_kind(&self.transport_kind)?,
-            endpoint_ref: self.endpoint_ref,
-            command_ref: self.command_ref,
-            auth_kind: parse_mcp_auth_kind(&self.auth_kind)?,
-            auth_profile_id: self.auth_profile_id,
-            capability_ids: string_list_from_json(&self.capability_ids_json, "capability_ids")?,
-            tool_count: self.tool_count,
-            resource_count: self.resource_count,
-            prompt_count: self.prompt_count,
-            capabilities_json: self.capabilities_json,
-            categories: string_list_from_json(&self.categories_json, "categories")?,
-            tags: string_list_from_json(&self.tags_json, "tags")?,
-            security_profile_id: self.security_profile_id,
-            status: AgentBusinessStatus::from_db_code(self.status).ok_or_else(|| {
-                KernelError::validation(format!("invalid mcp server status code: {}", self.status))
-            })?,
-            visibility: AgentVisibility::from_db_code(self.visibility).ok_or_else(|| {
-                KernelError::validation(format!(
-                    "invalid mcp server visibility code: {}",
-                    self.visibility
-                ))
-            })?,
-            version: self.version,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            deleted_at: self.deleted_at,
-        };
-        validate_mcp_server_storage_contract(&record)?;
-        Ok(record)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCompositionSlotRow {
     pub id: u64,
     pub uuid: String,
@@ -480,168 +282,35 @@ fn build_composition_slot_uuid(tenant_id: u64, agent_id: &str, slot_id: &str) ->
     format!("composition_slot_{tenant_id}_{agent_id}_{slot_id}")
 }
 
-fn validate_deployment_storage_contract(record: &AgentDeploymentRecord) -> KernelResult<()> {
-    validate_standard_id(
-        record.deployment_id.as_str(),
-        "deploymentId",
-        Some("deployment."))?;
+fn parse_implementation_kind(input: &str) -> KernelResult<AgentImplementationKind> {
+    AgentImplementationKind::from_code(input)
+        .ok_or_else(|| KernelError::validation(format!("invalid implementation kind: {input}")))
+}
+
+fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationType> {
+    AgentImplementationType::from_code(input).ok_or_else(|| {
+        KernelError::validation(format!(
+            "implementationType must be one of sdkwork-native, rig-rust, openai-agents, langchain, langgraph, crewai, autogen, semantic-kernel, custom: {input}"
+        ))
+    })
+}
+
+fn validate_agent_business_storage_contract(record: &AgentBusinessRecord) -> KernelResult<()> {
+    if let Some(provider_id) = record.implementation_provider_id.as_deref() {
+        validate_standard_id(provider_id, "implementationProviderId", Some("provider."))?;
+    }
+    Ok(())
+}
+
+fn validate_provider_binding_storage_contract(
+    record: &AgentProviderBindingRecord) -> KernelResult<()> {
     validate_standard_id(record.binding_id.as_str(), "bindingId", Some("binding."))?;
+    validate_standard_id(record.provider_id.as_str(), "providerId", Some("provider."))?;
     validate_standard_id(
-        record.provider_id_snapshot.as_str(),
-        "providerId",
-        Some("provider."))?;
-    validate_standard_id(
-        record.configuration_profile_id_snapshot.as_str(),
+        record.configuration_profile_id.as_str(),
         "configurationProfileId",
         Some("profile."))?;
-    validate_capabilities(
-        record.capabilities_snapshot.as_slice(),
-        "capabilitiesSnapshot")?;
-    Ok(())
-}
-
-fn validate_mcp_server_storage_contract(record: &AgentMcpServerRecord) -> KernelResult<()> {
-    validate_standard_id(
-        record.mcp_server_id.as_str(),
-        "mcpServerId",
-        Some("mcp.server."))?;
-    if let Some(endpoint_ref) = record.endpoint_ref.as_deref() {
-        validate_standard_id(endpoint_ref, "endpointRef", Some("endpoint."))?;
-    }
-    if let Some(command_ref) = record.command_ref.as_deref() {
-        validate_standard_id(command_ref, "commandRef", Some("command."))?;
-    }
-    if let Some(auth_profile_id) = record.auth_profile_id.as_deref() {
-        validate_standard_id(auth_profile_id, "authProfileId", Some("profile."))?;
-    }
-    if let Some(security_profile_id) = record.security_profile_id.as_deref() {
-        validate_standard_id(security_profile_id, "securityProfileId", Some("profile."))?;
-    }
-    validate_capabilities(record.capability_ids.as_slice(), "capabilityIds")?;
-    validate_json_text(record.capabilities_json.as_str(), "capabilitiesJson")?;
-    validate_slug_list(record.categories.as_slice(), "categories")?;
-    validate_slug_list(record.tags.as_slice(), "tags")?;
-    Ok(())
-}
-
-
-
-
-
-
-fn validate_score_value(value: f32, field_name: &str) -> KernelResult<()> {
-    if !(0.0..=1.0).contains(&value) || !value.is_finite() {
-        return Err(KernelError::validation(format!(
-            "{field_name} must be between 0 and 1"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_non_empty_storage_text(value: &str, field_name: &str) -> KernelResult<()> {
-    crate::validation::require_trimmed_non_blank(value, field_name)
-}
-
-fn validate_optional_plain_storage_ref(value: Option<&str>, field_name: &str) -> KernelResult<()> {
-    let Some(value) = value else {
-        return Ok(());
-    };
-    validate_non_empty_storage_text(value, field_name)?;
-    reject_plaintext_secret_material(value, field_name)?;
-    if value.chars().count() > 128 {
-        return Err(KernelError::validation(format!(
-            "{field_name} must be at most 128 characters"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_safe_storage_text_field(
-    value: &str,
-    field_name: &str,
-    max_chars: usize) -> KernelResult<()> {
-    validate_non_empty_storage_text(value, field_name)?;
-    reject_plaintext_secret_material(value, field_name)?;
-    if value.chars().count() > max_chars {
-        return Err(KernelError::validation(format!(
-            "{field_name} must be at most {max_chars} characters"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_optional_storage_text(value: Option<&str>, field_name: &str) -> KernelResult<()> {
-    let Some(value) = value else {
-        return Ok(());
-    };
-    validate_non_empty_storage_text(value, field_name)?;
-    reject_plaintext_secret_material(value, field_name)
-}
-
-fn validate_slug_code(value: &str, field_name: &str) -> KernelResult<()> {
-    validate_non_empty_storage_text(value, field_name)?;
-    if value.chars().count() > 128 {
-        return Err(KernelError::validation(format!(
-            "{field_name} must be at most 128 characters"
-        )));
-    }
-    if !value
-        .chars()
-        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_'))
-    {
-        return Err(KernelError::validation(format!(
-            "{field_name} must use lowercase slug characters"
-        )));
-    }
-    Ok(())
-}
-
-fn reject_plaintext_secret_material(value: &str, field_name: &str) -> KernelResult<()> {
-    let normalized = value.to_lowercase();
-    for marker in [
-        "api_key=",
-        "apikey=",
-        "access_token=",
-        "refresh_token=",
-        "secret=",
-        "password=",
-        "bearer ",
-        "sk-",
-    ] {
-        if normalized.contains(marker) {
-            return Err(KernelError::validation(format!(
-                "{field_name} must not contain plaintext secret material"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_json_text(input: &str, field_name: &str) -> KernelResult<()> {
-    let _: serde_json::Value = serde_json::from_str(input)
-        .map_err(|error| KernelError::validation(format!("invalid {field_name} json: {error}")))?;
-    Ok(())
-}
-
-fn validate_slug_list(values: &[String], field_name: &str) -> KernelResult<()> {
-    let mut seen = std::collections::HashSet::new();
-    for value in values {
-        validate_non_empty_storage_text(value, field_name)?;
-        if !value
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_'))
-        {
-            return Err(KernelError::validation(format!(
-                "{field_name} values must use lowercase slug characters"
-            )));
-        }
-        if !seen.insert(value.as_str()) {
-            return Err(KernelError::validation(format!(
-                "{field_name} must not contain duplicate value: {value}"
-            )));
-        }
-    }
-    Ok(())
+    validate_capabilities(record.capabilities.as_slice(), "capabilities")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -662,17 +331,39 @@ pub struct AgentAuditEventRow {
 }
 
 impl AgentAuditEventRow {
-    pub fn from_kernel_event(
-        event: &KernelEvent,
-        id: u64,
-        tenant_id: u64,
-        organization_id: u64,
-        agent_internal_id: u64,
-        agent_id: &str) -> KernelResult<Self> {
+    /// Build an audit row from a KernelEvent, extracting agent/tenant metadata
+    /// from the event's structured context. The context is populated by
+    /// `AgentsService::emit_audit_event` (and the related `emit_*_audit_event`
+    /// helpers) via the `KernelEventExt::with_context` extension, which appends
+    /// `;key=value` segments to the event payload. The following keys are
+    /// consulted: `agent_id`, `tenant_id`, `organization_id`,
+    /// `agent_internal_id`, `subject_id`, `subject_tenant_id`.
+    ///
+    /// Missing context values fall back to safe defaults (`0` for numeric
+    /// fields, `"unknown"` for string fields) so that audit recording never
+    /// fails due to incomplete metadata.
+    pub fn from_kernel_event(event: &KernelEvent, id: u64) -> KernelResult<Self> {
         let occurred_at = event
             .occurred_at
             .clone()
             .ok_or_else(|| KernelError::validation("audit event occurred_at is required"))?;
+
+        let tenant_id = extract_payload_context(event.payload.as_str(), "tenant_id")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let organization_id = extract_payload_context(event.payload.as_str(), "organization_id")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let agent_internal_id = extract_payload_context(event.payload.as_str(), "agent_internal_id")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let agent_id = extract_payload_context(event.payload.as_str(), "agent_id")
+            .unwrap_or_else(|| "unknown".to_string());
+        let subject_id = extract_payload_context(event.payload.as_str(), "subject_id")
+            .or_else(|| event.correlation_id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        let subject_tenant_id = extract_payload_context(event.payload.as_str(), "subject_tenant_id")
+            .unwrap_or_else(|| "unknown".to_string());
 
         Ok(Self {
             id,
@@ -680,18 +371,15 @@ impl AgentAuditEventRow {
             tenant_id,
             organization_id,
             agent_internal_id,
-            agent_id: agent_id.to_string(),
+            agent_id,
             action: event
                 .event_type
                 .rsplit('.')
                 .next()
                 .unwrap_or("unknown")
                 .to_string(),
-            subject_id: event
-                .correlation_id
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string()),
-            subject_tenant_id: "unknown".to_string(),
+            subject_id,
+            subject_tenant_id,
             request_id: None,
             trace_id: event
                 .trace_context
@@ -770,55 +458,497 @@ pub trait PostgresAgentRepositoryAdapter {
         &self,
         tenant_id: u64,
         agent_id: &str) -> Vec<AgentProviderBindingRow>;
-    fn insert_deployment_row(&mut self, row: AgentDeploymentRow) -> KernelResult<()>;
-    fn list_deployment_rows(&self, tenant_id: u64, agent_id: &str) -> Vec<AgentDeploymentRow>;
-    fn insert_mcp_server_row(&mut self, row: AgentMcpServerRow) -> KernelResult<()>;
-    fn update_mcp_server_row(&mut self, row: AgentMcpServerRow) -> KernelResult<()>;
-    fn get_mcp_server_row(&self, tenant_id: u64, mcp_server_id: &str) -> Option<AgentMcpServerRow>;
+    fn insert_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()>;
+    fn update_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()>;
+    fn get_composition_slot_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str) -> Option<AgentCompositionSlotRow>;
+    fn list_composition_slot_rows(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentCompositionSlotRow>;
 
-    fn list_mcp_server_rows(&self, query: &AgentMarketplaceListQuery) -> Vec<AgentMcpServerRow> {
+}
+
+pub struct PostgresAgentRepository<A>
+where
+    A: PostgresAgentRepositoryAdapter,
+{
+    adapter: A,
+}
+
+impl<A> PostgresAgentRepository<A>
+where
+    A: PostgresAgentRepositoryAdapter,
+{
+    pub fn new(adapter: A) -> Self {
+        Self { adapter }
+    }
+}
+
+impl<A> AgentRepository for PostgresAgentRepository<A>
+where
+    A: PostgresAgentRepositoryAdapter,
+{
+    fn next_id(&mut self) -> KernelResult<u64> {
+        self.adapter.next_id()
+    }
+
+    fn insert(&mut self, record: AgentBusinessRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_row(AgentBusinessRow::from_record(&record)?)
+    }
+
+    fn update(&mut self, record: AgentBusinessRecord) -> KernelResult<()> {
+        self.adapter
+            .update_row(AgentBusinessRow::from_record(&record)?)
+    }
+
+    fn get(&self, tenant_id: u64, agent_id: &str) -> Option<AgentBusinessRecord> {
+        self.adapter
+            .get_row(tenant_id, agent_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn list(&self, query: &AgentListQuery) -> Vec<AgentBusinessRecord> {
+        self.adapter
+            .list_rows(query)
+            .into_iter()
+            .filter_map(|row| row.into_record().ok())
+            .collect()
+    }
+
+    fn insert_provider_binding(&mut self, record: AgentProviderBindingRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_provider_binding_row(AgentProviderBindingRow::from_record(&record)?)
+    }
+
+    fn update_provider_binding(&mut self, record: AgentProviderBindingRecord) -> KernelResult<()> {
+        self.adapter
+            .update_provider_binding_row(AgentProviderBindingRow::from_record(&record)?)
+    }
+
+    fn get_provider_binding(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str) -> Option<AgentProviderBindingRecord> {
+        self.adapter
+            .get_provider_binding_row(tenant_id, agent_id, binding_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn list_provider_bindings(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentProviderBindingRecord> {
+        self.adapter
+            .list_provider_binding_rows(tenant_id, agent_id)
+            .into_iter()
+            .filter_map(|row| row.into_record().ok())
+            .collect()
+    }
+
+    fn insert_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_composition_slot_row(AgentCompositionSlotRow::from_record(&record)?)
+    }
+
+    fn update_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
+        self.adapter
+            .update_composition_slot_row(AgentCompositionSlotRow::from_record(&record)?)
+    }
+
+    fn get_composition_slot(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str) -> Option<AgentCompositionSlotRecord> {
+        self.adapter
+            .get_composition_slot_row(tenant_id, agent_id, slot_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn list_composition_slots(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentCompositionSlotRecord> {
+        self.adapter
+            .list_composition_slot_rows(tenant_id, agent_id)
+            .into_iter()
+            .filter_map(|row| row.into_record().ok())
+            .collect()
+    }
+
+}
+
+pub trait PostgresAuditAdapter {
+    fn next_id(&mut self) -> KernelResult<u64>;
+    fn insert_audit_row(&mut self, row: AgentAuditEventRow) -> KernelResult<()>;
+    fn list_audit_rows(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> KernelResult<Vec<AgentAuditEventRow>> {
+        let _ = (tenant_id, agent_id);
+        Ok(Vec::new())
+    }
+}
+
+#[cfg(feature = "postgres-sync")]
+pub const AGENTS_MANAGED_STORE_DATABASE_SERVICE: &str = "AGENTS_STORE";
+
+#[cfg(feature = "postgres-sync")]
+pub struct SyncPostgresAdapter {
+    pool: BlockingPostgresPool,
+    id_generator: AgentBusinessIdGenerator,
+}
+
+#[cfg(feature = "postgres-sync")]
+impl SyncPostgresAdapter {
+    pub fn connect(connection_uri: &str) -> KernelResult<Self> {
+        Ok(Self {
+            pool: BlockingPostgresPool::connect(connection_uri)?,
+            id_generator: AgentBusinessIdGenerator::new_default()
+                .expect("default agents managed store snowflake node id is valid"),
+        })
+    }
+
+    /// Connects using `sdkwork-database-config` env resolution for the given service name.
+    ///
+    /// Honors the legacy `SDKWORK_{SERVICE}_POSTGRES_URI` variable when set, then falls back to
+    /// `DatabaseConfig::from_env` (`SDKWORK_{SERVICE}_DATABASE_URL` and unified claw profile keys).
+    pub fn connect_from_sdkwork_env(service_name: &str) -> KernelResult<Self> {
+        Ok(Self {
+            pool: BlockingPostgresPool::connect_from_sdkwork_env(service_name)?,
+            id_generator: AgentBusinessIdGenerator::new_default()
+                .expect("default agents managed store snowflake node id is valid"),
+        })
+    }
+
+    /// Connects using platform database config for agents managed store persistence.
+    pub fn connect_from_agents_managed_store_env() -> KernelResult<Self> {
+        Self::connect_from_sdkwork_env(AGENTS_MANAGED_STORE_DATABASE_SERVICE)
+    }
+
+    pub fn from_pool(pool: BlockingPostgresPool) -> Self {
+        Self {
+            pool,
+            id_generator: AgentBusinessIdGenerator::new_default()
+                .expect("default agents managed store snowflake node id is valid"),
+        }
+    }
+
+    pub fn with_pool_and_id_generator(
+        pool: BlockingPostgresPool,
+        id_generator: AgentBusinessIdGenerator) -> Self {
+        Self { pool, id_generator }
+    }
+
+    /// Borrow the underlying postgres pool. Allows callers (e.g. the
+    /// production bootstrap) to share a single physical pool across the
+    /// repository adapter and a separate audit-sink adapter that uses a
+    /// dedicated snowflake node id.
+    pub fn pool(&self) -> &BlockingPostgresPool {
+        &self.pool
+    }
+
+    pub fn apply_managed_store_schema(&self) -> KernelResult<()> {
+        let ddl = include_str!("../specs/sql/agents_managed_store_postgres.sql");
+        self.pool.execute_batch_sql(ddl)
+    }
+
+    fn with_pool<T>(
+        &self,
+        action: impl FnOnce(&BlockingPostgresPool) -> KernelResult<T>) -> KernelResult<T> {
+        action(&self.pool)
+    }
+}
+
+#[cfg(feature = "postgres-sync")]
+impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
+    fn next_id(&mut self) -> KernelResult<u64> {
+        self.id_generator.next_id()
+    }
+
+    fn insert_row(&mut self, row: AgentBusinessRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                row.agent_id,
+                row.code,
+                row.display_name,
+                row.description,
+                row.manifest_json,
+                row.default_code_task_intent_json,
+                row.implementation_provider_id,
+                row.implementation_kind,
+                row.implementation_type,
+                row.status,
+                row.visibility,
+                row.tags_json,
+                row.created_at,
+                row.updated_at,
+                row.deleted_at,
+                version
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_row(&mut self, row: AgentBusinessRow) -> KernelResult<()> {
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+
+        self.with_pool(|pool| {
+            let updated_rows = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT,
+                organization_id,
+                owner_user_id,
+                row.code,
+                row.display_name,
+                row.description,
+                row.manifest_json,
+                row.default_code_task_intent_json,
+                row.implementation_provider_id,
+                row.implementation_kind,
+                row.implementation_type,
+                row.status,
+                row.visibility,
+                row.tags_json,
+                row.updated_at,
+                row.deleted_at,
+                version,
+                tenant_id,
+                row.agent_id,
+                previous_version
+            )?;
+
+            if updated_rows == 0 {
+                let exists = pg_query_optional!(
+                    pool,
+                    SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
+                    tenant_id,
+                    row.agent_id
+                )?
+                .is_some();
+                if exists {
+                    return Err(KernelError::conflict("agent version mismatch"));
+                }
+                return Err(KernelError::validation("agent not found"));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_row(&self, tenant_id: u64, agent_id: &str) -> Option<AgentBusinessRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
+                tenant_id,
+                agent_id
+            )?;
+            row.map(pg_row_to_agent_business_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn list_rows(&self, query: &AgentListQuery) -> Vec<AgentBusinessRow> {
         let tenant_id = match u64_to_i64(query.tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
         };
-        let mut rows = self
-            .with_pool(|pool| {
-                let rows = pg_query!(pool, SQL_LIST_AGENT_MCP_SERVERS, tenant_id)?;
-                rows.into_iter()
-                    .map(pg_row_to_agent_mcp_server_row)
-                    .collect::<KernelResult<Vec<_>>>()
-            })
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|row| row.ok())
-            .filter(|row| {
-                marketplace_row_matches(
-                    query,
-                    row.organization_id,
-                    row.owner_user_id,
-                    row.status,
-                    row.visibility,
-                    row.deleted_at.as_deref(),
-                    row.mcp_server_id.as_str(),
-                    row.code.as_str(),
-                    row.display_name.as_str(),
-                    row.description.as_deref(),
-                    row.categories_json.as_str(),
-                    row.tags_json.as_str(),
-                )
-            })
-            .collect::<Vec<_>>();
-        rows.sort_by(|left, right| {
-            compare_marketplace_standard_order(
-                left.updated_at.as_str(),
-                left.code.as_str(),
-                right.updated_at.as_str(),
-                right.code.as_str(),
-            )
-        });
-        rows
+
+        self.with_pool(|pool| {
+            let rows = pg_query!(pool, SQL_LIST_AGENT, tenant_id)?;
+
+            let mut mapped_rows = Vec::with_capacity(rows.len());
+            for row in rows {
+                mapped_rows.push(pg_row_to_agent_business_row(row)?);
+            }
+            Ok(mapped_rows)
+        })
+        .map(|rows| {
+            rows.into_iter()
+                .filter(|row| {
+                    if let Some(organization_id) = query.organization_id {
+                        row.organization_id == organization_id
+                    } else {
+                        true
+                    }
+                })
+                .filter(|row| {
+                    if let Some(owner_user_id) = query.owner_user_id {
+                        row.owner_user_id == owner_user_id
+                    } else {
+                        true
+                    }
+                })
+                .filter(|row| {
+                    if query.include_deleted {
+                        true
+                    } else {
+                        row.status != AgentBusinessStatus::Deleted.as_db_code()
+                            && row.deleted_at.is_none()
+                    }
+                })
+                .filter(|row| {
+                    let Some(search_query) = query.search_query.as_ref() else {
+                        return true;
+                    };
+                    let normalized_query = search_query.trim().to_lowercase();
+                    if normalized_query.is_empty() {
+                        return true;
+                    }
+
+                    let description = row.description.as_deref().unwrap_or("");
+                    row.agent_id
+                        .to_lowercase()
+                        .contains(normalized_query.as_str())
+                        || row.code.to_lowercase().contains(normalized_query.as_str())
+                        || row
+                            .display_name
+                            .to_lowercase()
+                            .contains(normalized_query.as_str())
+                        || description
+                            .to_lowercase()
+                            .contains(normalized_query.as_str())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
     }
 
+    fn insert_provider_binding_row(&mut self, row: AgentProviderBindingRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_PROVIDER_BINDING,
+                id,
+                row.uuid,
+                tenant_id,
+                row.agent_id,
+                row.binding_id,
+                row.provider_id,
+                row.implementation_kind,
+                row.configuration_profile_id,
+                row.capabilities_json,
+                row.active,
+                version,
+                row.created_at,
+                row.updated_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_provider_binding_row(&mut self, row: AgentProviderBindingRow) -> KernelResult<()> {
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+
+        self.with_pool(|pool| {
+            let updated_rows = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_PROVIDER_BINDING,
+                row.provider_id,
+                row.implementation_kind,
+                row.configuration_profile_id,
+                row.capabilities_json,
+                row.active,
+                version,
+                row.updated_at,
+                tenant_id,
+                row.agent_id,
+                row.binding_id,
+                previous_version
+            )?;
+
+            if updated_rows == 0 {
+                let exists = pg_query_optional!(
+                    pool,
+                    SQL_SELECT_AGENT_PROVIDER_BINDING,
+                    tenant_id,
+                    row.agent_id,
+                    row.binding_id
+                )?
+                .is_some();
+                if exists {
+                    return Err(KernelError::conflict(
+                        "agent provider binding version mismatch"));
+                }
+                return Err(KernelError::validation("agent provider binding not found"));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_provider_binding_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str) -> Option<AgentProviderBindingRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_PROVIDER_BINDING,
+                tenant_id,
+                agent_id,
+                binding_id
+            )?;
+            row.map(pg_row_to_agent_provider_binding_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn list_provider_binding_rows(
+        &self,
+        tenant_id: u64,
+        agent_id: &str) -> Vec<AgentProviderBindingRow> {
+        let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        };
+
+        self.with_pool(|pool| {
+            let rows = pg_query!(pool, SQL_LIST_AGENT_PROVIDER_BINDINGS, tenant_id, agent_id)?;
+
+            let mut mapped_rows = Vec::with_capacity(rows.len());
+            for row in rows {
+                mapped_rows.push(pg_row_to_agent_provider_binding_row(row)?);
+            }
+            Ok(mapped_rows)
+        })
+        .unwrap_or_default()
+    }
 
     fn insert_composition_slot_row(&mut self, row: AgentCompositionSlotRow) -> KernelResult<()> {
         let id = u64_to_i64(row.id, "id")?;
@@ -886,8 +1016,7 @@ pub trait PostgresAgentRepositoryAdapter {
         &self,
         tenant_id: u64,
         agent_id: &str,
-        slot_id: &str,
-    ) -> Option<AgentCompositionSlotRow> {
+        slot_id: &str) -> Option<AgentCompositionSlotRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -906,8 +1035,7 @@ pub trait PostgresAgentRepositoryAdapter {
     fn list_composition_slot_rows(
         &self,
         tenant_id: u64,
-        agent_id: &str,
-    ) -> Vec<AgentCompositionSlotRow> {
+        agent_id: &str) -> Vec<AgentCompositionSlotRow> {
         let tenant_id = match u64_to_i64(tenant_id, "tenant_id") {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -930,8 +1058,7 @@ fn pg_row_to_agent_composition_slot_row(row: PgRow) -> KernelResult<AgentComposi
         tenant_id: int64_to_u64(row.try_get::<i64, _>("tenant_id").map_err(map_sqlx_error)?, "tenant_id")?,
         organization_id: int64_to_u64(
             row.try_get::<i64, _>("organization_id").map_err(map_sqlx_error)?,
-            "organization_id",
-        )?,
+            "organization_id")?,
         agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
         slot_id: row.try_get("slot_id").map_err(map_sqlx_error)?,
         slot_kind: row.try_get("slot_kind").map_err(map_sqlx_error)?,
@@ -948,7 +1075,6 @@ fn pg_row_to_agent_composition_slot_row(row: PgRow) -> KernelResult<AgentComposi
         deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
     })
 }
-
 
 #[cfg(feature = "postgres-sync")]
 impl PostgresAuditAdapter for SyncPostgresAdapter {
@@ -1006,29 +1132,20 @@ where
     A: PostgresAuditAdapter,
 {
     adapter: A,
-    tenant_id: u64,
-    organization_id: u64,
-    agent_internal_id: u64,
-    agent_id: String,
 }
 
 impl<A> PostgresAgentAuditSink<A>
 where
     A: PostgresAuditAdapter,
 {
-    pub fn new(
-        adapter: A,
-        tenant_id: u64,
-        organization_id: u64,
-        agent_internal_id: u64,
-        agent_id: impl Into<String>) -> Self {
-        Self {
-            adapter,
-            tenant_id,
-            organization_id,
-            agent_internal_id,
-            agent_id: agent_id.into(),
-        }
+    /// Create a global audit sink that persists audit events to PostgreSQL.
+    ///
+    /// The sink extracts tenant_id, organization_id, agent_id, and
+    /// agent_internal_id from each event's structured context (populated by
+    /// `AgentsService::emit_audit_event`), so a single sink can serve
+    /// audit events for any agent in the process.
+    pub fn new_global(adapter: A) -> Self {
+        Self { adapter }
     }
 }
 
@@ -1038,13 +1155,7 @@ where
 {
     fn record(&mut self, event: KernelEvent) -> KernelResult<()> {
         let id = self.adapter.next_id()?;
-        let row = AgentAuditEventRow::from_kernel_event(
-            &event,
-            id,
-            self.tenant_id,
-            self.organization_id,
-            self.agent_internal_id,
-            self.agent_id.as_str())?;
+        let row = AgentAuditEventRow::from_kernel_event(&event, id)?;
         self.adapter.insert_audit_row(row)
     }
 
@@ -1061,125 +1172,6 @@ fn build_agent_business_uuid(tenant_id: u64, agent_id: &str) -> String {
     format!("agent_business_{}_{}", tenant_id, agent_id)
 }
 
-
-struct MarketplaceRecordView<'a> {
-    tenant_id: u64,
-    organization_id: u64,
-    owner_user_id: u64,
-    status: AgentBusinessStatus,
-    visibility: AgentVisibility,
-    deleted: bool,
-    id: &'a str,
-    code: &'a str,
-    display_name: &'a str,
-    description: Option<&'a str>,
-    categories: &'a [String],
-    tags: &'a [String],
-}
-
-fn marketplace_record_matches(query: &AgentMarketplaceListQuery, record: MarketplaceRecordView<'_>) -> bool {
-    if record.tenant_id != query.tenant_id {
-        return false;
-    }
-    if let Some(organization_id) = query.organization_id {
-        if record.organization_id != organization_id {
-            return false;
-        }
-    }
-    if let Some(owner_user_id) = query.owner_user_id {
-        if record.owner_user_id != owner_user_id {
-            return false;
-        }
-    }
-    if let Some(status) = query.status {
-        if record.status != status {
-            return false;
-        }
-    }
-    if let Some(visibility) = query.visibility {
-        if record.visibility != visibility {
-            return false;
-        }
-    }
-    if !query.include_deleted && record.deleted {
-        return false;
-    }
-    if let Some(category) = query.category.as_deref() {
-        if !record.categories.iter().any(|value| value == category) {
-            return false;
-        }
-    }
-    if let Some(tag) = query.tag.as_deref() {
-        if !record.tags.iter().any(|value| value == tag) {
-            return false;
-        }
-    }
-    if let Some(search) = query.search_query.as_deref() {
-        let needle = search.to_ascii_lowercase();
-        let haystacks = [
-            record.id,
-            record.code,
-            record.display_name,
-            record.description.unwrap_or_default(),
-        ];
-        if !haystacks
-            .iter()
-            .any(|value| value.to_ascii_lowercase().contains(needle.as_str()))
-        {
-            return false;
-        }
-    }
-    true
-}
-
-fn compare_marketplace_standard_order(
-    left_updated_at: &str,
-    left_code: &str,
-    right_updated_at: &str,
-    right_code: &str,
-) -> std::cmp::Ordering {
-    right_updated_at
-        .cmp(left_updated_at)
-        .then_with(|| left_code.cmp(right_code))
-}
-
-fn marketplace_row_matches(
-    query: &AgentMarketplaceListQuery,
-    organization_id: u64,
-    owner_user_id: u64,
-    status: i16,
-    visibility: i16,
-    deleted_at: Option<&str>,
-    id: &str,
-    code: &str,
-    display_name: &str,
-    description: Option<&str>,
-    categories_json: &str,
-    tags_json: &str,
-) -> bool {
-    let categories = string_list_from_json(categories_json, "categories").unwrap_or_default();
-    let tags = string_list_from_json(tags_json, "tags").unwrap_or_default();
-    marketplace_record_matches(
-        query,
-        MarketplaceRecordView {
-            tenant_id: query.tenant_id,
-            organization_id,
-            owner_user_id,
-            status: AgentBusinessStatus::from_db_code(status)
-                .unwrap_or(AgentBusinessStatus::Draft),
-            visibility: AgentVisibility::from_db_code(visibility)
-                .unwrap_or(AgentVisibility::Private),
-            deleted: deleted_at.is_some(),
-            id,
-            code,
-            display_name,
-            description,
-            categories: categories.as_slice(),
-            tags: tags.as_slice(),
-        },
-    )
-}
-
 fn build_agent_provider_binding_uuid(tenant_id: u64, agent_id: &str, binding_id: &str) -> String {
     format!(
         "agent_provider_binding_{}_{}_{}",
@@ -1187,15 +1179,31 @@ fn build_agent_provider_binding_uuid(tenant_id: u64, agent_id: &str, binding_id:
     )
 }
 
-fn build_agent_deployment_uuid(tenant_id: u64, agent_id: &str, deployment_id: &str) -> String {
-    format!(
-        "agent_deployment_{}_{}_{}",
-        tenant_id, agent_id, deployment_id
-    )
-}
-
-fn build_agent_mcp_server_uuid(tenant_id: u64, mcp_server_id: &str) -> String {
-    format!("agent_mcp_server_{}_{}", tenant_id, mcp_server_id)
+/// Extract a `key=value` segment from a KernelEvent payload string.
+///
+/// `AgentsService::emit_audit_event` and the related `emit_*_audit_event`
+/// helpers format the payload as `k1=v1;k2=v2;...` and the
+/// `KernelEventExt::with_context` extension appends additional `;key=value`
+/// segments for structured context (agent_id, tenant_id, organization_id,
+/// agent_internal_id, subject_id, subject_tenant_id).
+///
+/// When a key appears more than once (e.g. `agent_id` is present both in the
+/// base payload and in the appended context), the LAST occurrence wins so the
+/// explicitly-attached context takes precedence over the formatted base.
+fn extract_payload_context(payload: &str, key: &str) -> Option<String> {
+    let needle = format!("{key}=");
+    payload
+        .split(';')
+        .rev()
+        .find_map(|segment| {
+            let segment = segment.trim();
+            if segment.is_empty() {
+                return None;
+            }
+            segment
+                .strip_prefix(needle.as_str())
+                .map(|value| value.to_string())
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1422,20 +1430,172 @@ fn expected_previous_version(next_version: u64) -> KernelResult<u64> {
 }
 
 #[cfg(feature = "postgres-sync")]
-fn parse_rfc3339_timestamp(value: &str) -> KernelResult<PrimitiveDateTime> {
-    let parsed = OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)
-        .map_err(|error| {
-            KernelError::validation(format!("invalid RFC3339 timestamp `{value}`: {error}"))
-        })?;
-    Ok(PrimitiveDateTime::new(parsed.date(), parsed.time()))
-}
-
-#[cfg(feature = "postgres-sync")]
-fn optional_rfc3339_timestamp(value: &Option<String>) -> KernelResult<Option<PrimitiveDateTime>> {
-    value.as_deref().map(parse_rfc3339_timestamp).transpose()
-}
-
-#[cfg(feature = "postgres-sync")]
 fn map_sqlx_error(error: sqlx::Error) -> KernelError {
     crate::postgres_sync_pool::map_sqlx_error(error)
+}
+
+#[cfg(feature = "postgres-sync")]
+fn u64_to_i64(value: u64, field: &str) -> KernelResult<i64> {
+    i64::try_from(value)
+        .map_err(|_| KernelError::validation(format!("{field} exceeds postgres int64 range")))
+}
+
+#[cfg(feature = "postgres-sync")]
+fn int64_to_u64(value: i64, field: &str) -> KernelResult<u64> {
+    u64::try_from(value).map_err(|_| {
+        KernelError::validation(format!("{field} must be a positive postgres int64 value"))
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_business_row(row: PgRow) -> KernelResult<AgentBusinessRow> {
+    Ok(AgentBusinessRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id")?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id")?,
+        owner_user_id: int64_to_u64(
+            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
+            "owner_user_id")?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        code: row.try_get("code").map_err(map_sqlx_error)?,
+        display_name: row.try_get("display_name").map_err(map_sqlx_error)?,
+        description: row.try_get("description").map_err(map_sqlx_error)?,
+        manifest_json: row.try_get("manifest_json").map_err(map_sqlx_error)?,
+        default_code_task_intent_json: row
+            .try_get("default_code_task_intent_json")
+            .map_err(map_sqlx_error)?,
+        implementation_provider_id: row
+            .try_get("implementation_provider_id")
+            .map_err(map_sqlx_error)?,
+        implementation_kind: row.try_get("implementation_kind").map_err(map_sqlx_error)?,
+        implementation_type: row.try_get("implementation_type").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        visibility: row.try_get("visibility").map_err(map_sqlx_error)?,
+        tags_json: row.try_get("tags_json").map_err(map_sqlx_error)?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_provider_binding_row(row: PgRow) -> KernelResult<AgentProviderBindingRow> {
+    Ok(AgentProviderBindingRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id")?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        binding_id: row.try_get("binding_id").map_err(map_sqlx_error)?,
+        provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
+        implementation_kind: row.try_get("implementation_kind").map_err(map_sqlx_error)?,
+        configuration_profile_id: row
+            .try_get("configuration_profile_id")
+            .map_err(map_sqlx_error)?,
+        capabilities_json: row.try_get("capabilities_json").map_err(map_sqlx_error)?,
+        active: row.try_get("active").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_payload_context;
+
+    #[test]
+    fn extract_returns_value_for_single_occurrence() {
+        let payload = "action=create;agent_id=agent.123;tenant_id=100";
+        assert_eq!(
+            extract_payload_context(payload, "agent_id"),
+            Some("agent.123".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "tenant_id"),
+            Some("100".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_returns_none_for_missing_key() {
+        let payload = "action=create;agent_id=agent.123";
+        assert_eq!(extract_payload_context(payload, "tenant_id"), None);
+        assert_eq!(extract_payload_context(payload, "missing_key"), None);
+    }
+
+    #[test]
+    fn extract_returns_none_for_empty_payload() {
+        assert_eq!(extract_payload_context("", "agent_id"), None);
+        assert_eq!(extract_payload_context("   ", "agent_id"), None);
+    }
+
+    #[test]
+    fn extract_last_occurrence_wins_for_duplicate_keys() {
+        // Mirrors the real audit event shape: the base payload has
+        // `agent_id=...;tenant_id=...` and `with_context` appends the same
+        // keys again. The appended (context) value must win.
+        let payload = "action=create;agent_id=base.value;tenant_id=1;agent_id=context.value";
+        assert_eq!(
+            extract_payload_context(payload, "agent_id"),
+            Some("context.value".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_does_not_match_prefixed_keys() {
+        // `agent_id=` must not match `agent_internal_id=` and
+        // `tenant_id=` must not match `subject_tenant_id=`.
+        let payload =
+            "agent_internal_id=42;subject_tenant_id=200;agent_id=agent.999;tenant_id=100";
+        assert_eq!(
+            extract_payload_context(payload, "agent_id"),
+            Some("agent.999".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "tenant_id"),
+            Some("100".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "agent_internal_id"),
+            Some("42".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "subject_tenant_id"),
+            Some("200".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_handles_real_audit_event_payload_shape() {
+        // Reproduces the exact payload produced by
+        // `AgentsService::emit_audit_event` plus the `with_context` appends.
+        let payload = "action=create;agent_id=agent.business.001;tenant_id=100001;\
+organization_id=1;owner_user_id=10;status=1;visibility=1;\
+subject_id=user.42;subject_tenant_id=100001;agent_id=agent.business.001;\
+tenant_id=100001;organization_id=1;agent_internal_id=99";
+        assert_eq!(
+            extract_payload_context(payload, "tenant_id"),
+            Some("100001".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "organization_id"),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "agent_internal_id"),
+            Some("99".to_string())
+        );
+        assert_eq!(
+            extract_payload_context(payload, "subject_id"),
+            Some("user.42".to_string())
+        );
+    }
 }

@@ -19,7 +19,7 @@ SDKWork Agents follows the same layering model as `sdkwork-memory` and `sdkwork-
 | `sdkwork-routes-agents-{open,app,backend}-api` | `sdkwork-routes-<capability>-<surface>` | Route boundaries per HTTP surface |
 | `sdkwork-routes-agents-http-shared` | shared route manifests + web-framework bootstrap | OpenAPI-derived manifests, `build_served_combined_router` |
 | `sdkwork-agents-kernel-bridge` | application composition | Merges kernel operational router + agents HTTP router |
-| `sdkwork-agents-api-server` | `sdkwork-<application-code>-api-server` | Runnable process |
+| `sdkwork-agents-standalone-gateway` | `sdkwork-<application-code>-standalone-gateway` | Runnable process |
 
 ## SDK families
 

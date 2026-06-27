@@ -202,19 +202,6 @@ if (mode === 'apply' && fs.existsSync(appGeneratedOutput)) {
   report.openSdkDerivedFromApp = true;
 }
 
-const appGeneratedOutput = path.join(
-  root,
-  'sdks',
-  'sdkwork-agents-app-sdk',
-  'sdkwork-agents-app-sdk-typescript',
-  'generated',
-  'server-openapi'
-);
-if (mode === 'apply' && fs.existsSync(appGeneratedOutput)) {
-  runNodeScript(path.join(root, 'sdks', 'materialize-agent-open-sdk-from-app.mjs'), []);
-  report.openSdkDerivedFromApp = true;
-}
-
 syncAgentSdkOwnershipWorkspace(root, AGENTS_SDK_FAMILIES);
 report.finishedAt = new Date().toISOString();
 writeJson(path.join(root, 'sdks', '.sdkgen-agent-workspace-report.json'), report);

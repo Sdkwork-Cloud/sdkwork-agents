@@ -307,19 +307,6 @@ function createAgentId(name: string): string {
   return `agent.pc.${normalizedName || 'managed'}.${suffix}`;
 }
 
-function createDeploymentId(agentId: string): string {
-  const normalizedAgentId = agentId
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/gu, '.')
-    .replace(/^\.+|\.+$/gu, '');
-  const suffix =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID().replace(/-/gu, '').slice(0, 12)
-      : Math.trunc(performance.now()).toString(36);
-  return `deployment.${normalizedAgentId || 'agent'}.${suffix}`;
-}
-
 function buildAgentRuntimeInputPayload(
   config: AgentConfig,
   extra: Record<string, unknown>,
@@ -798,15 +785,6 @@ class SdkworkAgentService implements AgentService {
         throw error;
       }
     }
-
-    await this.getAgentClient().ai.agents.deployments.create(
-      id,
-      {
-        deploymentId: createDeploymentId(id),
-        bindingId: DEFAULT_AGENT_BINDING_ID,
-        requestedAt: new Date().toISOString(),
-      },
-    );
   }
 
   async deleteAgent(id: string): Promise<void> {

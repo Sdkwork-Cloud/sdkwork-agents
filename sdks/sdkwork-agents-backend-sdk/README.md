@@ -61,7 +61,7 @@ Configuration keys and runtime entrypoints are declared in `specs/component.spec
 
 ### SaaS/Private/Local Behavior
 
-This module follows the canonical standards linked from `specs/component.spec.json`, including deployment and runtime configuration rules where applicable.
+This module follows the canonical standards linked from `specs/component.spec.json`, including runtime configuration rules where applicable.
 
 ### Security
 

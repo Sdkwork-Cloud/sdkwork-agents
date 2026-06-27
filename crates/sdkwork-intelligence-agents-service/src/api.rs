@@ -72,18 +72,6 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.compositionSlots.update",
     },
     ApiOperation {
-        method: "GET",
-        path: "/agent/v3/api/ai/agents/{agentId}/deployments",
-        tag: "ai",
-        operation_id: "agents.deployments.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/agent/v3/api/ai/agents/{agentId}/deployments",
-        tag: "ai",
-        operation_id: "agents.deployments.create",
-    },
-    ApiOperation {
         method: "POST",
         path: "/agent/v3/api/ai/agents/{agentId}/preview_responses",
         tag: "ai",
@@ -112,12 +100,6 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         path: "/agent/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
         tag: "ai",
         operation_id: "agents.providerBindings.activate",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/agent/v3/api/ai/agents/{agentId}/restore",
-        tag: "ai",
-        operation_id: "agents.restore",
     },
 ];
 
@@ -181,18 +163,6 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
         tag: "ai",
         operation_id: "agents.compositionSlots.update",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/deployments",
-        tag: "ai",
-        operation_id: "agents.deployments.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/deployments",
-        tag: "ai",
-        operation_id: "agents.deployments.create",
     },
     ApiOperation {
         method: "POST",
@@ -295,18 +265,6 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
-        path: "/backend/v3/api/ai/agents/{agentId}/deployments",
-        tag: "ai",
-        operation_id: "agents.deployments.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/backend/v3/api/ai/agents/{agentId}/deployments",
-        tag: "ai",
-        operation_id: "agents.deployments.create",
-    },
-    ApiOperation {
-        method: "GET",
         path: "/backend/v3/api/ai/agents/{agentId}/provider_bindings",
         tag: "ai",
         operation_id: "agents.providerBindings.list",
@@ -342,7 +300,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn provider_binding_and_deployment_operations_are_registered() {
+    fn provider_binding_operations_are_registered() {
         assert_operation(
             AGENT_OPEN_API_OPERATIONS,
             "GET",
@@ -360,18 +318,6 @@ mod tests {
             "POST",
             "/agent/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
             "agents.providerBindings.activate",
-        );
-        assert_operation(
-            AGENT_OPEN_API_OPERATIONS,
-            "GET",
-            "/agent/v3/api/ai/agents/{agentId}/deployments",
-            "agents.deployments.list",
-        );
-        assert_operation(
-            AGENT_OPEN_API_OPERATIONS,
-            "POST",
-            "/agent/v3/api/ai/agents/{agentId}/deployments",
-            "agents.deployments.create",
         );
         assert_operation(
             AGENT_OPEN_API_OPERATIONS,
@@ -406,18 +352,6 @@ mod tests {
         );
         assert_operation(
             AGENT_APP_API_OPERATIONS,
-            "GET",
-            "/app/v3/api/ai/agents/{agentId}/deployments",
-            "agents.deployments.list",
-        );
-        assert_operation(
-            AGENT_APP_API_OPERATIONS,
-            "POST",
-            "/app/v3/api/ai/agents/{agentId}/deployments",
-            "agents.deployments.create",
-        );
-        assert_operation(
-            AGENT_APP_API_OPERATIONS,
             "POST",
             "/app/v3/api/ai/agents/{agentId}/preview_responses",
             "agents.previewResponses.create",
@@ -446,18 +380,6 @@ mod tests {
             "POST",
             "/backend/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
             "agents.providerBindings.activate",
-        );
-        assert_operation(
-            AGENT_BACKEND_API_OPERATIONS,
-            "GET",
-            "/backend/v3/api/ai/agents/{agentId}/deployments",
-            "agents.deployments.list",
-        );
-        assert_operation(
-            AGENT_BACKEND_API_OPERATIONS,
-            "POST",
-            "/backend/v3/api/ai/agents/{agentId}/deployments",
-            "agents.deployments.create",
         );
     }
 
@@ -506,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn openapi_specs_expose_provider_binding_deployment_and_composition_contracts() {
+    fn openapi_specs_expose_provider_binding_and_composition_contracts() {
         let open_openapi = include_str!("../specs/openapi/agents-open-api.openapi.yaml");
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
         let backend_openapi =
@@ -519,11 +441,9 @@ mod tests {
         ] {
             for required in [
                 format!("{prefix}/ai/agents/{{agentId}}/provider_bindings:"),
-                format!("{prefix}/ai/agents/{{agentId}}/deployments:"),
                 format!("{prefix}/ai/agents/{{agentId}}/composition_slots:"),
                 format!("{prefix}/ai/agents/{{agentId}}/composition_slots/{{slotId}}:"),
                 "operationId: agents.providerBindings.list".to_string(),
-                "operationId: agents.deployments.list".to_string(),
                 "operationId: agents.compositionSlots.list".to_string(),
                 "operationId: agents.compositionSlots.create".to_string(),
                 "operationId: agents.compositionSlots.retrieve".to_string(),

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  AGENT_SDK_OWNER,
-  AGENT_SDK_OWNERSHIP_STANDARD_VERSION
+  AGENTS_SDK_OWNER,
+  AGENTS_SDK_OWNERSHIP_STANDARD_VERSION
 } from './agents-sdk-families.mjs';
 import { SDKWORK_SDKGEN_STANDARD } from './sdkgen-standard.mjs';
 
@@ -50,11 +50,11 @@ export function annotateAgentOpenApiOwnership(openapi, family) {
     .join('\n');
 
   const rootMetadata = [
-    `x-sdkwork-owner: ${AGENT_SDK_OWNER}`,
+    `x-sdkwork-owner: ${AGENTS_SDK_OWNER}`,
     `x-sdkwork-api-authority: ${family.authority}`,
     `x-sdkwork-sdk-family: ${family.familyDir}`,
     'x-sdkwork-owner-only-input: true',
-    `x-sdkwork-standard-version: '${AGENT_SDK_OWNERSHIP_STANDARD_VERSION}'`
+    `x-sdkwork-standard-version: '${AGENTS_SDK_OWNERSHIP_STANDARD_VERSION}'`
   ];
 
   const rootLines = withoutRootMetadata.split(/\r?\n/);
@@ -76,7 +76,7 @@ export function annotateAgentOpenApiOwnership(openapi, family) {
   for (const line of withoutOperationMetadata.split(/\r?\n/)) {
     outputLines.push(line);
     if (HTTP_METHOD_PATTERN.test(line)) {
-      outputLines.push(`      x-sdkwork-owner: ${AGENT_SDK_OWNER}`);
+      outputLines.push(`      x-sdkwork-owner: ${AGENTS_SDK_OWNER}`);
       outputLines.push(`      x-sdkwork-api-authority: ${family.authority}`);
     }
   }
@@ -129,11 +129,11 @@ export function buildAgentSdkAssembly(family, operationCount) {
         }
       }
     ],
-    sdkOwner: AGENT_SDK_OWNER,
+    sdkOwner: AGENTS_SDK_OWNER,
     sdkDependencies: cloneDependencies(family),
     metadata: {
       managedBy: 'sdks/_shared/agent-sdk-ownership.mjs',
-      standardVersion: AGENT_SDK_OWNERSHIP_STANDARD_VERSION,
+      standardVersion: AGENTS_SDK_OWNERSHIP_STANDARD_VERSION,
       ownerOnlyOperationCount: operationCount
     }
   };
@@ -162,7 +162,7 @@ export function buildAgentComponentSpec(family) {
     sdk: {
       family: family.familyDir,
       authority: family.authority,
-      sdkOwner: AGENT_SDK_OWNER,
+      sdkOwner: AGENTS_SDK_OWNER,
       apiPrefix: family.apiPrefix,
       packageName: family.packageName,
       sdkName: family.sdkName,
@@ -176,7 +176,7 @@ export function buildAgentComponentSpec(family) {
     contracts: {
       apiAuthority: {
         name: family.authority,
-        owner: AGENT_SDK_OWNER,
+        owner: AGENTS_SDK_OWNER,
         prefix: family.apiPrefix,
         authorityOpenApi: `openapi/${family.authority}.openapi.yaml`,
         derivedOpenApi: [`openapi/${family.authority}.sdkgen.yaml`],
@@ -204,7 +204,7 @@ export function buildAgentComponentSpec(family) {
     },
     metadata: {
       managedBy: 'sdks/_shared/agent-sdk-ownership.mjs',
-      standardVersion: AGENT_SDK_OWNERSHIP_STANDARD_VERSION
+      standardVersion: AGENTS_SDK_OWNERSHIP_STANDARD_VERSION
     }
   };
 }
@@ -216,7 +216,7 @@ export function decoratePackageMetadata(packageJson, family) {
       ...(packageJson.sdkwork ?? {}),
       sdkName: family.sdkName,
       authority: family.authority,
-      sdkOwner: AGENT_SDK_OWNER,
+      sdkOwner: AGENTS_SDK_OWNER,
       apiPrefix: family.apiPrefix,
       sdkType: family.sdkType,
       sdkSurface: family.sdkSurface,
@@ -232,7 +232,7 @@ export function buildAgentSdkManifest(family, operationCount) {
     schemaVersion: 1,
     sdkName: family.sdkName,
     packageName: family.packageName,
-    sdkOwner: AGENT_SDK_OWNER,
+    sdkOwner: AGENTS_SDK_OWNER,
     apiAuthority: family.authority,
     sdkFamily: family.familyDir,
     sdkType: family.sdkType,
@@ -244,7 +244,7 @@ export function buildAgentSdkManifest(family, operationCount) {
     standardProfile: SDKWORK_SDKGEN_STANDARD.standardProfile,
     sdkDependencies: cloneDependencies(family),
     ownerOnlyOperationCount: operationCount,
-    standardVersion: AGENT_SDK_OWNERSHIP_STANDARD_VERSION,
+    standardVersion: AGENTS_SDK_OWNERSHIP_STANDARD_VERSION,
     managedBy: 'sdks/_shared/agent-sdk-ownership.mjs'
   };
 }

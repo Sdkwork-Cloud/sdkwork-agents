@@ -10,7 +10,7 @@ process.env.SDKWORK_AGENT_SERVER_BIND = bind;
 
 const child = spawnSync(
   'cargo',
-  ['run', '-p', 'sdkwork-agents-api-server', '--quiet'],
+  ['run', '-p', 'sdkwork-agents-standalone-gateway', '--quiet'],
   { cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32' },
 );
 process.exit(child.status ?? 1);

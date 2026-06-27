@@ -9,7 +9,7 @@ export interface UpdateAgentCompositionSlotData {
   targetModule?: AgentCompositionTargetModule;
   targetRef?: string;
   targetVersionRef?: string | null;
-  priority?: number;
+  priority?: string;
   enabled?: boolean;
   policyJson?: string;
 }

@@ -1,19 +1,17 @@
 use crate::application::{
-    ActivateAgentProviderBindingCommand, AgentCompositionSlotCreateCommand,
-    AgentCompositionSlotDeleteCommand, AgentCompositionSlotGetCommand,
-    AgentCompositionSlotListCommand, AgentCompositionSlotUpdateCommand,
+    ActivateAgentProviderBindingCommand,
     AgentPreviewResponseCommand, AgentPromptOptimizationCommand, AgentProviderBindingCommand,
-    AgentProviderDeploymentCommand, ChangeAgentStatusCommand, CreateAgentCommand,
+    ChangeAgentStatusCommand, CreateAgentCommand,
     DeleteAgentCommand, GetAgentCommand, ListAgentsCommand, RestoreAgentCommand,
     UpdateAgentCommand,
 };
 use crate::domain::{
-    AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind,
-    AgentCompositionSlotRecord, AgentCompositionTargetModule, AgentDeploymentRecord,
+    AgentBusinessRecord, AgentBusinessStatus,
+    AgentCompositionSlotRecord,
     AgentImplementationKind, AgentImplementationType, AgentProviderBindingRecord,
     AgentRuntimeExecutionRecord, AgentVisibility,
 };
-use crate::ports::{AgentListQuery, AgentMarketplaceListQuery};
+use crate::ports::AgentListQuery;
 use crate::validation::{
     parse_expected_version, parse_organization_id, parse_owner_user_id, parse_tenant_id,
     validate_requested_at,
@@ -164,32 +162,6 @@ impl ActivateAgentProviderBindingRequestDto {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentProviderDeploymentRequestDto {
-    pub tenant_id: String,
-    pub agent_id: String,
-    pub deployment_id: String,
-    pub binding_id: String,
-    pub requested_at: String,
-}
-
-impl AgentProviderDeploymentRequestDto {
-    pub fn into_command(
-        self,
-        requested_by: PolicySubject,
-    ) -> KernelResult<AgentProviderDeploymentCommand> {
-        validate_requested_at(&self.requested_at)?;
-        Ok(AgentProviderDeploymentCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
-            agent_id: self.agent_id,
-            deployment_id: self.deployment_id,
-            binding_id: self.binding_id,
-            requested_by,
-            requested_at: self.requested_at,
-        })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentPreviewResponseRequestDto {
     pub tenant_id: String,
@@ -197,7 +169,6 @@ pub struct AgentPreviewResponseRequestDto {
     pub execution_id: String,
     pub content: String,
     pub debug_mode: bool,
-    pub memory_enabled: bool,
     pub model: Option<String>,
     pub temperature: Option<f32>,
     pub input_payload_json: String,
@@ -216,7 +187,6 @@ impl AgentPreviewResponseRequestDto {
             execution_id: self.execution_id,
             content: self.content,
             debug_mode: self.debug_mode,
-            memory_enabled: self.memory_enabled,
             model: self.model,
             temperature: self.temperature,
             input_payload_json: self.input_payload_json,
@@ -475,17 +445,12 @@ pub struct AgentManagementProfileDto {
     pub debug_mode: Option<bool>,
     pub icon_name: Option<String>,
     pub json_mode: Option<bool>,
-    pub knowledge_base_ids: Vec<String>,
-    pub memory_enabled: Option<bool>,
     pub model: Option<String>,
-    pub skill_ids: Vec<String>,
     pub suggested_prompts: Vec<String>,
     pub system_prompt: Option<String>,
     pub temperature: Option<f64>,
-    pub tool_ids: Vec<String>,
     pub agent_type: Option<String>,
     pub users: Option<String>,
-    pub voice_ids: Vec<String>,
     pub welcome_message: Option<String>,
 }
 
@@ -510,16 +475,6 @@ impl AgentManagementProfileDto {
         if let Some(system_prompt) = self.system_prompt.as_ref() {
             if intent.prompt.trim().is_empty() || intent.prompt == "Agent management profile" {
                 intent.prompt = system_prompt.clone();
-            }
-        }
-
-        for knowledge_base_id in self.knowledge_base_ids.iter() {
-            if !intent
-                .context_paths
-                .iter()
-                .any(|context_path| context_path == knowledge_base_id)
-            {
-                intent.context_paths.push(knowledge_base_id.clone());
             }
         }
 
@@ -573,17 +528,12 @@ impl AgentManagementProfileDto {
             debug_mode: optional_object_bool(object.get("debugMode")),
             icon_name: optional_object_string(object.get("iconName")),
             json_mode: optional_object_bool(object.get("jsonMode")),
-            knowledge_base_ids: object_string_array(object.get("knowledgeBaseIds")),
-            memory_enabled: optional_object_bool(object.get("memoryEnabled")),
             model: optional_object_string(object.get("model")),
-            skill_ids: object_string_array(object.get("skillIds")),
             suggested_prompts: object_string_array(object.get("suggestedPrompts")),
             system_prompt: optional_object_string(object.get("systemPrompt")),
             temperature: optional_object_f64(object.get("temperature")),
-            tool_ids: object_string_array(object.get("toolIds")),
             agent_type: optional_object_string(object.get("type")),
             users: optional_object_string(object.get("users")),
-            voice_ids: object_string_array(object.get("voiceIds")),
             welcome_message: optional_object_string(object.get("welcomeMessage")),
         };
 
@@ -603,17 +553,12 @@ impl AgentManagementProfileDto {
         insert_optional_bool(&mut object, "debugMode", self.debug_mode);
         insert_optional_string(&mut object, "iconName", self.icon_name.as_ref());
         insert_optional_bool(&mut object, "jsonMode", self.json_mode);
-        insert_string_array(&mut object, "knowledgeBaseIds", &self.knowledge_base_ids);
-        insert_optional_bool(&mut object, "memoryEnabled", self.memory_enabled);
         insert_optional_string(&mut object, "model", self.model.as_ref());
-        insert_string_array(&mut object, "skillIds", &self.skill_ids);
         insert_string_array(&mut object, "suggestedPrompts", &self.suggested_prompts);
         insert_optional_string(&mut object, "systemPrompt", self.system_prompt.as_ref());
         insert_optional_f64(&mut object, "temperature", self.temperature);
-        insert_string_array(&mut object, "toolIds", &self.tool_ids);
         insert_optional_string(&mut object, "type", self.agent_type.as_ref());
         insert_optional_string(&mut object, "users", self.users.as_ref());
-        insert_string_array(&mut object, "voiceIds", &self.voice_ids);
         insert_optional_string(&mut object, "welcomeMessage", self.welcome_message.as_ref());
         Value::Object(object)
     }
@@ -626,17 +571,12 @@ impl AgentManagementProfileDto {
             && self.debug_mode.is_none()
             && self.icon_name.is_none()
             && self.json_mode.is_none()
-            && self.knowledge_base_ids.is_empty()
-            && self.memory_enabled.is_none()
             && self.model.is_none()
-            && self.skill_ids.is_empty()
             && self.suggested_prompts.is_empty()
             && self.system_prompt.is_none()
             && self.temperature.is_none()
-            && self.tool_ids.is_empty()
             && self.agent_type.is_none()
             && self.users.is_none()
-            && self.voice_ids.is_empty()
             && self.welcome_message.is_none()
     }
 }
@@ -704,77 +644,6 @@ impl AgentProviderBindingListResponseDto {
                 items: records
                     .iter()
                     .map(AgentProviderBindingRecordDto::from_record)
-                    .collect(),
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDeploymentRecordDto {
-    pub tenant_id: String,
-    pub agent_id: String,
-    pub deployment_id: String,
-    pub binding_id: String,
-    pub provider_id_snapshot: String,
-    pub implementation_kind_snapshot: String,
-    pub configuration_profile_id_snapshot: String,
-    pub capabilities_snapshot: Vec<String>,
-    pub status: String,
-    pub version: String,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl AgentDeploymentRecordDto {
-    pub fn from_record(record: &AgentDeploymentRecord) -> Self {
-        Self {
-            tenant_id: record.tenant_id.to_string(),
-            agent_id: record.agent_id.clone(),
-            deployment_id: record.deployment_id.clone(),
-            binding_id: record.binding_id.clone(),
-            provider_id_snapshot: record.provider_id_snapshot.clone(),
-            implementation_kind_snapshot: record.implementation_kind_snapshot.as_str().to_string(),
-            configuration_profile_id_snapshot: record.configuration_profile_id_snapshot.clone(),
-            capabilities_snapshot: record.capabilities_snapshot.clone(),
-            status: record.status.as_str().to_string(),
-            version: record.version.to_string(),
-            created_at: record.created_at.clone(),
-            updated_at: record.updated_at.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDeploymentResponseDto {
-    pub data: AgentDeploymentRecordDto,
-}
-
-impl AgentDeploymentResponseDto {
-    pub fn from_record(record: &AgentDeploymentRecord) -> Self {
-        Self {
-            data: AgentDeploymentRecordDto::from_record(record),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDeploymentListDataDto {
-    pub items: Vec<AgentDeploymentRecordDto>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDeploymentListResponseDto {
-    pub data: AgentDeploymentListDataDto,
-}
-
-impl AgentDeploymentListResponseDto {
-    pub fn from_records(records: &[AgentDeploymentRecord]) -> Self {
-        Self {
-            data: AgentDeploymentListDataDto {
-                items: records
-                    .iter()
-                    .map(AgentDeploymentRecordDto::from_record)
                     .collect(),
             },
         }
@@ -856,51 +725,6 @@ impl AgentRuntimeExecutionResponseDto {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListAgentKnowledgeBasesRequestDto {
-    pub tenant_id: String,
-    pub organization_id: Option<String>,
-    pub owner_user_id: Option<String>,
-    pub include_deleted: bool,
-    pub search_query: Option<String>,
-    pub status: Option<String>,
-    pub visibility: Option<String>,
-    pub category: Option<String>,
-    pub tag: Option<String>,
-}
-
-impl ListAgentKnowledgeBasesRequestDto {
-    pub fn into_query(self) -> KernelResult<AgentMarketplaceListQuery> {
-        let mut query = AgentMarketplaceListQuery::for_tenant(parse_tenant_id(&self.tenant_id)?);
-        if let Some(organization_id) = self.organization_id {
-            query = query.for_organization(parse_organization_id(&organization_id)?);
-        }
-        if let Some(owner_user_id) = self.owner_user_id {
-            query = query.for_owner(parse_owner_user_id(&owner_user_id)?);
-        }
-        if let Some(status) = self.status {
-            query = query.with_status(parse_status(&status)?);
-        }
-        if let Some(visibility) = self.visibility {
-            query = query.with_visibility(parse_visibility(&visibility)?);
-        }
-        if self.include_deleted {
-            query = query.with_deleted();
-        }
-        if let Some(search_query) = self.search_query {
-            query = query.with_search(search_query);
-        }
-        if let Some(category) = self.category {
-            query = query.with_category(category);
-        }
-        if let Some(tag) = self.tag {
-            query = query.with_tag(tag);
-        }
-        Ok(query)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentCompositionSlotRecordDto {
@@ -913,7 +737,7 @@ pub struct AgentCompositionSlotRecordDto {
     pub target_module: String,
     pub target_ref: String,
     pub target_version_ref: Option<String>,
-    pub priority: i32,
+    pub priority: String,
     pub enabled: bool,
     pub policy_json: String,
     pub status: String,
@@ -935,7 +759,7 @@ impl AgentCompositionSlotRecordDto {
             target_module: record.target_module.as_str().to_string(),
             target_ref: record.target_ref.clone(),
             target_version_ref: record.target_version_ref.clone(),
-            priority: record.priority,
+            priority: record.priority.to_string(),
             enabled: record.enabled,
             policy_json: record.policy_json.clone(),
             status: record.status.as_str().to_string(),
@@ -957,7 +781,7 @@ pub struct AgentCompositionSlotCreateDataDto {
     pub target_module: String,
     pub target_ref: String,
     pub target_version_ref: Option<String>,
-    pub priority: Option<i32>,
+    pub priority: Option<String>,
     pub enabled: Option<bool>,
     pub policy_json: Option<String>,
 }
@@ -978,7 +802,7 @@ pub struct AgentCompositionSlotUpdateDataDto {
     pub target_module: Option<String>,
     pub target_ref: Option<String>,
     pub target_version_ref: Option<Option<String>>,
-    pub priority: Option<i32>,
+    pub priority: Option<String>,
     pub enabled: Option<bool>,
     pub policy_json: Option<String>,
 }
@@ -1018,10 +842,105 @@ pub struct AgentCompositionSlotListResponseDto {
     pub request_id: Option<String>,
 }
 
+fn parse_visibility(value: &str) -> KernelResult<AgentVisibility> {
+    AgentVisibility::from_code(value).ok_or_else(|| {
+        KernelError::validation(format!(
+            "visibility must be one of private, organization, tenant, public: {value}"
+        ))
+    })
+}
+
+fn parse_status(value: &str) -> KernelResult<AgentBusinessStatus> {
+    AgentBusinessStatus::from_code(value).ok_or_else(|| {
+        KernelError::validation(format!(
+            "target_status must be one of draft, active, disabled, archived, deleted: {value}"
+        ))
+    })
+}
+
+fn parse_implementation_kind(input: &str) -> KernelResult<AgentImplementationKind> {
+    AgentImplementationKind::from_code(input)
+        .ok_or_else(|| KernelError::validation(format!("invalid implementation kind: {input}")))
+}
+
+fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationType> {
+    AgentImplementationType::from_code(input).ok_or_else(|| {
+        KernelError::validation(format!(
+            "implementationType must be one of sdkwork-native, rig-rust, openai-agents, langchain, langgraph, crewai, autogen, semantic-kernel, custom: {input}"
+        ))
+    })
+}
+
+fn optional_object_string(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .and_then(normalize_optional_string)
+}
+
+fn optional_object_bool(value: Option<&Value>) -> Option<bool> {
+    value.and_then(Value::as_bool)
+}
+
+fn optional_object_f64(value: Option<&Value>) -> Option<f64> {
+    value
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+}
+
+fn object_string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(normalize_optional_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn insert_optional_string(object: &mut Map<String, Value>, key: &str, value: Option<&String>) {
+    if let Some(value) = value.and_then(|value| normalize_optional_string(value.as_str())) {
+        object.insert(key.to_string(), Value::String(value));
+    }
+}
+
+fn insert_optional_bool(object: &mut Map<String, Value>, key: &str, value: Option<bool>) {
+    if let Some(value) = value {
+        object.insert(key.to_string(), Value::Bool(value));
+    }
+}
+
+fn insert_optional_f64(object: &mut Map<String, Value>, key: &str, value: Option<f64>) {
+    if let Some(value) = value.filter(|value| value.is_finite()) {
+        object.insert(key.to_string(), json!(value));
+    }
+}
+
+fn insert_string_array(object: &mut Map<String, Value>, key: &str, value: &[String]) {
+    let values = value
+        .iter()
+        .filter_map(|item| normalize_optional_string(item.as_str()))
+        .map(Value::String)
+        .collect::<Vec<_>>();
+    if !values.is_empty() {
+        object.insert(key.to_string(), Value::Array(values));
+    }
+}
+
+fn normalize_optional_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{AgentDeploymentRecord, AgentDeploymentStatus, AgentProviderBindingRecord};
     use sdkwork_agent_kernel::PolicySubject;
 
     fn sample_manifest(agent_id: &str) -> AgentManifest {
@@ -1250,7 +1169,7 @@ mod tests {
 
     #[test]
     fn record_dto_exposes_pc_management_profile_from_existing_intent_constraints() {
-        let management_profile_json = r##"{"author":"SDKWork","avatar":"robot","categoryId":"assistant","color":"#3b82f6","iconName":"bot","knowledgeBaseIds":["knowledge.base.product","knowledge.base.runbook"],"systemPrompt":"Answer from approved knowledge only.","type":"independent","users":"12 users","welcomeMessage":"How can I help?"}"##;
+        let management_profile_json = r##"{"author":"SDKWork","avatar":"robot","categoryId":"assistant","color":"#3b82f6","iconName":"bot","systemPrompt":"Answer from approved knowledge only.","type":"independent","users":"12 users","welcomeMessage":"How can I help?"}"##;
         let record = AgentBusinessRecord {
             id: 7,
             agent_id: "agent.alpha".to_string(),
@@ -1290,13 +1209,6 @@ mod tests {
         assert_eq!(management_profile.color.as_deref(), Some("#3b82f6"));
         assert_eq!(management_profile.icon_name.as_deref(), Some("bot"));
         assert_eq!(
-            management_profile.knowledge_base_ids,
-            vec![
-                "knowledge.base.product".to_string(),
-                "knowledge.base.runbook".to_string()
-            ]
-        );
-        assert_eq!(
             management_profile.system_prompt.as_deref(),
             Some("Answer from approved knowledge only.")
         );
@@ -1335,111 +1247,4 @@ mod tests {
         assert!(command.make_default);
     }
 
-    #[test]
-    fn knowledge_document_dto_exposes_pc_document_profile_from_existing_metadata() {
-        let record = AgentKnowledgeDocumentRecord {
-            id: 17,
-            tenant_id: 100_001,
-            organization_id: 0,
-            knowledge_document_id: "knowledge.document.product.manual".to_string(),
-            knowledge_base_id: "knowledge.base.product".to_string(),
-            knowledge_source_id: None,
-            document_kind: AgentKnowledgeDocumentKind::WikiPage,
-            title: "Product Manual".to_string(),
-            content_ref: "knowledge://pc/documents/knowledge.document.product.manual".to_string(),
-            content_hash: "sha256-pc-12345678".to_string(),
-            summary: Some("Manual summary".to_string()),
-            metadata_json: r#"{"pcAuthor":"SDKWork Docs","pcContent":"Full manual content","pcParentId":"knowledge.document.product.root","pcType":"file","fileName":"manual.pdf","fileSize":"42 KB","mimeType":"application/pdf","driveUri":"drive://knowledge/manual.pdf"}"#.to_string(),
-            tags: vec!["product".to_string()],
-            categories: vec![],
-            trust_level: 4,
-            redaction_classification: "internal".to_string(),
-            chunk_count: 0,
-            status: AgentBusinessStatus::Draft,
-            visibility: AgentVisibility::Private,
-            version: 3,
-            created_at: "2026-06-01T00:00:00Z".to_string(),
-            updated_at: "2026-06-01T00:00:00Z".to_string(),
-            deleted_at: None,
-        };
-
-        let dto = AgentKnowledgeDocumentRecordDto::from_record(&record);
-        let document_profile = dto
-            .document_profile
-            .expect("document profile should parse from compatible metadata");
-
-        assert_eq!(document_profile.author.as_deref(), Some("SDKWork Docs"));
-        assert_eq!(
-            document_profile.content.as_deref(),
-            Some("Full manual content")
-        );
-        assert_eq!(
-            document_profile.parent_id.as_deref(),
-            Some("knowledge.document.product.root")
-        );
-        assert_eq!(document_profile.document_type.as_deref(), Some("file"));
-        assert_eq!(document_profile.file_name.as_deref(), Some("manual.pdf"));
-        assert_eq!(document_profile.file_size.as_deref(), Some("42 KB"));
-        assert_eq!(
-            document_profile.mime_type.as_deref(),
-            Some("application/pdf")
-        );
-        assert_eq!(
-            document_profile.drive_uri.as_deref(),
-            Some("drive://knowledge/manual.pdf")
-        );
-    }
-
-    #[test]
-    fn provider_binding_and_deployment_records_map_to_standard_dtos() {
-        let binding = AgentProviderBindingRecord {
-            id: 10,
-            tenant_id: 100_001,
-            agent_id: "agent.alpha".to_string(),
-            binding_id: "binding.rig.default".to_string(),
-            provider_id: "provider.model.rig-rust".to_string(),
-            implementation_kind: crate::domain::AgentImplementationKind::TypedLocalProvider,
-            configuration_profile_id: "profile.rig.local".to_string(),
-            capabilities: vec!["model.chat".to_string(), "tool.invoke".to_string()],
-            active: true,
-            version: 1,
-            created_at: "2026-06-01T00:00:00Z".to_string(),
-            updated_at: "2026-06-01T00:00:00Z".to_string(),
-        };
-        let binding_dto = AgentProviderBindingRecordDto::from_record(&binding);
-
-        assert_eq!(binding_dto.tenant_id, "100001");
-        assert_eq!(binding_dto.binding_id, "binding.rig.default");
-        assert_eq!(binding_dto.implementation_kind, "typed-local-provider");
-        assert!(binding_dto.active);
-
-        let deployment = AgentDeploymentRecord {
-            id: 11,
-            tenant_id: 100_001,
-            agent_id: "agent.alpha".to_string(),
-            deployment_id: "deployment.rig.1".to_string(),
-            binding_id: "binding.rig.default".to_string(),
-            provider_id_snapshot: "provider.model.rig-rust".to_string(),
-            implementation_kind_snapshot:
-                crate::domain::AgentImplementationKind::TypedLocalProvider,
-            configuration_profile_id_snapshot: "profile.rig.local".to_string(),
-            capabilities_snapshot: vec!["model.chat".to_string()],
-            status: AgentDeploymentStatus::Created,
-            version: 1,
-            created_at: "2026-06-01T00:01:00Z".to_string(),
-            updated_at: "2026-06-01T00:01:00Z".to_string(),
-        };
-        let deployment_dto = AgentDeploymentRecordDto::from_record(&deployment);
-
-        assert_eq!(deployment_dto.deployment_id, "deployment.rig.1");
-        assert_eq!(
-            deployment_dto.provider_id_snapshot,
-            "provider.model.rig-rust"
-        );
-        assert_eq!(
-            deployment_dto.implementation_kind_snapshot,
-            "typed-local-provider"
-        );
-        assert_eq!(deployment_dto.status, "created");
-    }
 }

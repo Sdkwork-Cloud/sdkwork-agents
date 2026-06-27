@@ -3,9 +3,20 @@
   "kind": "sdkwork.database.prefix-registry",
   "prefixes": [
     {
-      "prefix": "agents_",
+      "prefix": "ai_",
       "owner": "agents-platform",
-      "domain": "agents"
+      "domain": "intelligence",
+      "capability": "agents",
+      "sub_namespace": "agent",
+      "description": "Agent identity, runtime bindings, deployments, composition slots, audit, outbox, and app registry. Uses ai_agent_* sub-namespace within the shared ai_ AI domain prefix to avoid collisions with sibling modules (memory: ai_space/ai_record, skills: ai_skill_*, prompts: ai_prompt_*).",
+      "table_examples": [
+        "ai_agent",
+        "ai_agent_runtime_binding",
+        "ai_agent_composition_slot"
+      ],
+      "forbidden_aliases": ["app_", "sys_", "common_", "agents_"],
+      "status": "ACTIVE",
+      "valid_from": "2024-01-01"
     }
   ]
 }

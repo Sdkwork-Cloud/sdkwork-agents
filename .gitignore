@@ -19,3 +19,7 @@ config/*.local.toml
 dist/
 **/dist/
 coverage/
+
+# SDKWork local runtime state
+.runtime/
+**/.runtime/

@@ -3,12 +3,12 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-agents-sdk",
-    "displayName": "SDKWork Agent Open SDK",
+    "displayName": "SDKWork Agents Open SDK",
     "version": "0.1.0",
     "type": "sdk-family",
     "root": "sdks/sdkwork-agents-sdk",
     "domain": "agent",
-    "capability": "agent-open-sdk",
+    "capability": "agents-open-sdk",
     "surface": "open-api",
     "status": "standardized",
     "languages": [
@@ -57,7 +57,6 @@
     "sdkType": "custom",
     "sdkSurface": "open",
     "externalSdkgenProfileSupported": false,
-    "externalSdkgenProfileGap": "sdkwork-v3 standard profile currently supports app, backend, and im prefixes only.",
     "generatedOutput": "sdkwork-agents-sdk-typescript/generated/server-openapi",
     "standardProfile": "sdkwork-v3"
   },
@@ -98,6 +97,6 @@
   },
   "metadata": {
     "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
-    "standardVersion": "2026-06-06"
+    "standardVersion": "2026-06-26"
   }
 }

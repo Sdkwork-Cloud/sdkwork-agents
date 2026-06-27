@@ -3,12 +3,12 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-agents-backend-sdk",
-    "displayName": "SDKWork Agent Backend SDK",
+    "displayName": "SDKWork Agents Backend SDK",
     "version": "0.1.0",
     "type": "sdk-family",
     "root": "sdks/sdkwork-agents-backend-sdk",
     "domain": "agent",
-    "capability": "agent-backend-sdk",
+    "capability": "agents-backend-sdk",
     "surface": "backend-admin",
     "status": "standardized",
     "languages": [
@@ -110,6 +110,6 @@
   },
   "metadata": {
     "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
-    "standardVersion": "2026-06-06"
+    "standardVersion": "2026-06-26"
   }
 }

@@ -1,25 +1,11 @@
-//! Application gateway assembly for SDKWork Agents.
-//!
-//! Agent HTTP route crates live in `sdkwork-kernel`; this assembly composes the
-//! served router through `sdkwork-agents-kernel-bridge`.
+//! Gateway assembly scaffold for sdkwork-agents.
+//! Implement `bootstrap.rs` with application-specific service wiring until every route crate exports `gateway_mount`.
 
-use std::sync::Arc;
+mod bootstrap;
+mod generated;
 
-use anyhow::Context;
-use sdkwork_agent_server::config::ServerConfig;
+pub use bootstrap::{assemble_application_router, ApplicationAssembly};
 
-pub struct ApplicationAssembly {
-    pub router: axum::Router,
+pub fn assembly_route_count() -> usize {
+    generated::ROUTE_CRATE_COUNT
 }
-
-pub async fn assemble_application_router() -> anyhow::Result<ApplicationAssembly> {
-    let config = Arc::new(
-        ServerConfig::from_env().context("load kernel server config for agents gateway assembly")?,
-    );
-    let router = sdkwork_agents_kernel_bridge::build_agents_served_router(config)
-        .await
-        .context("compose agents served router from sdkwork-kernel")?;
-    Ok(ApplicationAssembly { router })
-}
-
-pub const ROUTE_CRATE_COUNT: usize = 3;

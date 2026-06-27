@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentDeploymentListResponse, AgentDeploymentResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AgentRuntimeExecutionResponse, CancelKnowledgeSyncJobRequest, CompleteKnowledgeSyncJobRequest, CreateAgentDeploymentRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateKnowledgeBaseRequest, CreateKnowledgeBindingRequest, CreateKnowledgeChunkRequest, CreateKnowledgeDocumentRequest, CreateKnowledgeSourceRequest, CreateKnowledgeSyncJobRequest, CreateMemoryBindingRequest, CreateMemoryNamespaceRequest, CreateMemoryProfileRequest, CreateMemoryRecordRequest, CreateMemoryRelationRequest, CreateMemorySourceRequest, CreateMemoryStoreRequest, FailKnowledgeSyncJobRequest, Int64String, KnowledgeBaseListResponse, KnowledgeBaseResponse, KnowledgeBindingListResponse, KnowledgeBindingResponse, KnowledgeChunkListResponse, KnowledgeChunkResponse, KnowledgeDocumentListResponse, KnowledgeDocumentResponse, KnowledgeIndexListResponse, KnowledgeIndexResponse, KnowledgeSearchResponse, KnowledgeSourceListResponse, KnowledgeSourceResponse, KnowledgeSyncJobListResponse, KnowledgeSyncJobResponse, MemoryBindingResponse, MemoryNamespaceResponse, MemoryProfileResponse, MemoryRecordListResponse, MemoryRecordResponse, MemoryRelationListResponse, MemoryRelationResponse, MemoryRetrievalIndexListResponse, MemoryRetrievalIndexResponse, MemorySourceListResponse, MemorySourceResponse, MemoryStoreResponse, RestoreAgentRequest, SearchKnowledgeRequest, StartKnowledgeSyncJobRequest, UpdateAgentRequest, UpdateKnowledgeBaseRequest, UpdateKnowledgeDocumentRequest, UpdateKnowledgeSourceRequest, UpdateMemoryStoreRequest, UpsertKnowledgeIndexRequest, UpsertMemoryRetrievalIndexRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AgentRuntimeExecutionResponse, CancelKnowledgeSyncJobRequest, CompleteKnowledgeSyncJobRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateKnowledgeBaseRequest, CreateKnowledgeBindingRequest, CreateKnowledgeChunkRequest, CreateKnowledgeDocumentRequest, CreateKnowledgeSourceRequest, CreateKnowledgeSyncJobRequest, CreateMemoryBindingRequest, CreateMemoryNamespaceRequest, CreateMemoryProfileRequest, CreateMemoryRecordRequest, CreateMemoryRelationRequest, CreateMemorySourceRequest, CreateMemoryStoreRequest, FailKnowledgeSyncJobRequest, Int64String, KnowledgeBaseListResponse, KnowledgeBaseResponse, KnowledgeBindingListResponse, KnowledgeBindingResponse, KnowledgeChunkListResponse, KnowledgeChunkResponse, KnowledgeDocumentListResponse, KnowledgeDocumentResponse, KnowledgeIndexListResponse, KnowledgeIndexResponse, KnowledgeSearchResponse, KnowledgeSourceListResponse, KnowledgeSourceResponse, KnowledgeSyncJobListResponse, KnowledgeSyncJobResponse, MemoryBindingResponse, MemoryNamespaceResponse, MemoryProfileResponse, MemoryRecordListResponse, MemoryRecordResponse, MemoryRelationListResponse, MemoryRelationResponse, MemoryRetrievalIndexListResponse, MemoryRetrievalIndexResponse, MemorySourceListResponse, MemorySourceResponse, MemoryStoreResponse, RestoreAgentRequest, SearchKnowledgeRequest, StartKnowledgeSyncJobRequest, UpdateAgentRequest, UpdateKnowledgeBaseRequest, UpdateKnowledgeDocumentRequest, UpdateKnowledgeSourceRequest, UpdateMemoryStoreRequest, UpsertKnowledgeIndexRequest, UpsertMemoryRetrievalIndexRequest } from '../types';
 
 
 export interface AiMemoryRetrievalIndexesListParams {
@@ -936,43 +936,6 @@ export class AiAgentsPreviewResponsesApi {
   }
 }
 
-export interface AiAgentsDeploymentsListParams {
-  tenantId: Int64String;
-  page?: number;
-  pageSize?: number;
-}
-
-export interface AiAgentsDeploymentsCreateParams {
-  tenantId: Int64String;
-}
-
-export class AiAgentsDeploymentsApi {
-  private client: HttpClient;
-
-  constructor(client: HttpClient) {
-    this.client = client;
-  }
-
-
-/** List deployments for one managed agent */
-  async list(agentId: string, params: AiAgentsDeploymentsListParams): Promise<AgentDeploymentListResponse> {
-    const query = buildQueryString([
-      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
-      { name: 'page', value: params.page, style: 'form', explode: true, allowReserved: false },
-      { name: 'page_size', value: params.pageSize, style: 'form', explode: true, allowReserved: false },
-    ]);
-    return this.client.get<AgentDeploymentListResponse>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/deployments`), query));
-  }
-
-/** Create a deployment snapshot for one managed agent provider binding */
-  async create(agentId: string, body: CreateAgentDeploymentRequest, params: AiAgentsDeploymentsCreateParams): Promise<AgentDeploymentResponse> {
-    const query = buildQueryString([
-      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
-    ]);
-    return this.client.post<AgentDeploymentResponse>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/deployments`), query), body, undefined, undefined, 'application/json');
-  }
-}
-
 export interface AiAgentsProviderBindingsListParams {
   tenantId: Int64String;
   page?: number;
@@ -1055,14 +1018,12 @@ export interface AiAgentsRestoreParams {
 export class AiAgentsApi {
   private client: HttpClient;
   public readonly providerBindings: AiAgentsProviderBindingsApi;
-  public readonly deployments: AiAgentsDeploymentsApi;
   public readonly previewResponses: AiAgentsPreviewResponsesApi;
   public readonly promptOptimizations: AiAgentsPromptOptimizationsApi;
 
   constructor(client: HttpClient) {
     this.client = client;
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
-    this.deployments = new AiAgentsDeploymentsApi(client);
     this.previewResponses = new AiAgentsPreviewResponsesApi(client);
     this.promptOptimizations = new AiAgentsPromptOptimizationsApi(client);
   }

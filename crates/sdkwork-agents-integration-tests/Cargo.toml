@@ -10,5 +10,5 @@ http.workspace = true
 tokio.workspace = true
 tower.workspace = true
 sdkwork-agents-contract.workspace = true
-sdkwork-agents-api-server = { path = "../sdkwork-agents-api-server" }
+sdkwork-agents-standalone-gateway = { path = "../sdkwork-agents-standalone-gateway" }
 sdkwork-agents-gateway-assembly = { path = "../sdkwork-agents-gateway-assembly" }

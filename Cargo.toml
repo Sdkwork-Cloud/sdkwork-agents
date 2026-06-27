@@ -7,10 +7,11 @@ members = [
     "crates/sdkwork-routes-agents-open-api",
     "crates/sdkwork-routes-agents-app-api",
     "crates/sdkwork-routes-agents-backend-api",
+    "crates/sdkwork-agents-runtime-facade",
     "crates/sdkwork-agents-kernel-bridge",
     "crates/sdkwork-agents-database-host",
     "crates/sdkwork-agents-gateway-assembly",
-    "crates/sdkwork-agents-api-server",
+    "crates/sdkwork-agents-standalone-gateway",
     "crates/sdkwork-agents-integration-tests",
 ]
 
@@ -52,7 +53,7 @@ sdkwork-database-lifecycle = { path = "../sdkwork-database/crates/sdkwork-databa
 sdkwork-database-spi = { path = "../sdkwork-database/crates/sdkwork-database-spi" }
 sdkwork-database-repository = { path = "../sdkwork-database/crates/sdkwork-database-repository" }
 sdkwork-utils-rust = { path = "../sdkwork-utils/packages/sdkwork-utils-rust" }
-sdkwork-id-core = { path = "../sdkwork-id/crates/sdkwork-id-core" }
+sdkwork-database-id = { path = "../sdkwork-database/crates/sdkwork-database-id", package = "sdkwork-database-id" }
 sdkwork-intelligence-prompts-ai-contract = { path = "../sdkwork-prompts/crates/sdkwork-intelligence-prompts-ai-contract" }
 
 # Local intelligence agents service + HTTP routes (application-owned)
@@ -62,8 +63,9 @@ sdkwork-routes-agents-open-api = { path = "crates/sdkwork-routes-agents-open-api
 sdkwork-routes-agents-app-api = { path = "crates/sdkwork-routes-agents-app-api" }
 sdkwork-routes-agents-backend-api = { path = "crates/sdkwork-routes-agents-backend-api" }
 sdkwork-agents-contract = { path = "crates/sdkwork-agents-contract" }
+sdkwork-agents-runtime-facade = { path = "crates/sdkwork-agents-runtime-facade" }
 sdkwork-agents-kernel-bridge = { path = "crates/sdkwork-agents-kernel-bridge" }
 sdkwork-agents-database-host = { path = "crates/sdkwork-agents-database-host" }
 sdkwork-agents-gateway-assembly = { path = "crates/sdkwork-agents-gateway-assembly" }
-sdkwork-agents-api-server = { path = "crates/sdkwork-agents-api-server" }
+sdkwork-agents-standalone-gateway = { path = "crates/sdkwork-agents-standalone-gateway" }
 sdkwork-agents-integration-tests = { path = "crates/sdkwork-agents-integration-tests" }

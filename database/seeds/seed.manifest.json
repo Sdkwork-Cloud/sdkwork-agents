@@ -12,7 +12,7 @@
       }
     },
     "standard": {
-      "common": ["0001_agents_app_registry.sql"],
+      "common": [],
       "locales": {
         "zh-CN": []
       }

@@ -3,12 +3,12 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-agents-app-sdk",
-    "displayName": "SDKWork Agent App SDK",
+    "displayName": "SDKWork Agents App SDK",
     "version": "0.1.0",
     "type": "sdk-family",
     "root": "sdks/sdkwork-agents-app-sdk",
     "domain": "agent",
-    "capability": "agent-app-sdk",
+    "capability": "agents-app-sdk",
     "surface": "app-api",
     "status": "standardized",
     "languages": [
@@ -110,6 +110,6 @@
   },
   "metadata": {
     "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
-    "standardVersion": "2026-06-06"
+    "standardVersion": "2026-06-26"
   }
 }

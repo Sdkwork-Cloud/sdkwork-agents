@@ -1,23 +1,20 @@
 use crate::domain::{
-    AgentBusinessRecord, AgentCompositionSlotRecord, AgentDeploymentRecord, AgentMcpServerRecord,
+    AgentBusinessRecord, AgentCompositionSlotRecord,
     AgentProviderBindingRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
-use crate::ports::{AgentAuditSink, AgentListQuery, AgentMarketplaceListQuery, AgentRepository};
+use crate::ports::{AgentAuditSink, AgentListQuery, AgentRepository};
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
+    ProviderHealth, ProviderManifest,
 };
 use std::cmp::Ordering;
-use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct InMemoryAgentRepository {
     id_generator: AgentBusinessIdGenerator,
     records: Vec<AgentBusinessRecord>,
     provider_bindings: Vec<AgentProviderBindingRecord>,
-    deployments: Vec<AgentDeploymentRecord>,
-    mcp_servers: Vec<AgentMcpServerRecord>,
     composition_slots: Vec<AgentCompositionSlotRecord>,
 }
 
@@ -28,8 +25,6 @@ impl InMemoryAgentRepository {
                 .expect("default agents managed store snowflake node id is valid"),
             records: Vec::new(),
             provider_bindings: Vec::new(),
-            deployments: Vec::new(),
-            mcp_servers: Vec::new(),
             composition_slots: Vec::new(),
         }
     }
@@ -233,118 +228,6 @@ impl AgentRepository for InMemoryAgentRepository {
         records
     }
 
-    fn insert_deployment(&mut self, record: AgentDeploymentRecord) -> KernelResult<()> {
-        if self.deployments.iter().any(|existing| {
-            existing.tenant_id == record.tenant_id
-                && existing.agent_id == record.agent_id
-                && existing.deployment_id == record.deployment_id
-        }) {
-            return Err(KernelError::conflict("agent deployment already exists"));
-        }
-        self.deployments.push(record);
-        Ok(())
-    }
-
-    fn list_deployments(&self, tenant_id: u64, agent_id: &str) -> Vec<AgentDeploymentRecord> {
-        let mut records: Vec<AgentDeploymentRecord> = self
-            .deployments
-            .iter()
-            .filter(|record| record.tenant_id == tenant_id && record.agent_id == agent_id)
-            .cloned()
-            .collect();
-        records.sort_by(compare_deployments_standard_order);
-        records
-    }
-
-    fn insert_mcp_server(&mut self, record: AgentMcpServerRecord) -> KernelResult<()> {
-        if self.mcp_servers.iter().any(|existing| {
-            existing.tenant_id == record.tenant_id && existing.mcp_server_id == record.mcp_server_id
-        }) {
-            return Err(KernelError::conflict("agent mcp server already exists"));
-        }
-        if self
-            .mcp_servers
-            .iter()
-            .any(|existing| existing.tenant_id == record.tenant_id && existing.code == record.code)
-        {
-            return Err(KernelError::conflict(
-                "agent mcp server code already exists"));
-        }
-        self.mcp_servers.push(record);
-        Ok(())
-    }
-
-    fn update_mcp_server(&mut self, record: AgentMcpServerRecord) -> KernelResult<()> {
-        let Some(index) = self.mcp_servers.iter().position(|existing| {
-            existing.tenant_id == record.tenant_id && existing.mcp_server_id == record.mcp_server_id
-        }) else {
-            return Err(KernelError::validation("agent mcp server not found"));
-        };
-        let expected_version = self.mcp_servers[index].version.saturating_add(1);
-        if record.version != expected_version {
-            return Err(KernelError::conflict(format!(
-                "agent mcp server version mismatch: expected={expected_version}, actual={}",
-                record.version
-            )));
-        }
-        if self
-            .mcp_servers
-            .iter()
-            .enumerate()
-            .any(|(current, existing)| {
-                current != index
-                    && existing.tenant_id == record.tenant_id
-                    && existing.code == record.code
-            })
-        {
-            return Err(KernelError::conflict(
-                "agent mcp server code already exists"));
-        }
-        self.mcp_servers[index] = record;
-        Ok(())
-    }
-
-    fn get_mcp_server(&self, tenant_id: u64, mcp_server_id: &str) -> Option<AgentMcpServerRecord> {
-        self.mcp_servers
-            .iter()
-            .find(|record| record.tenant_id == tenant_id && record.mcp_server_id == mcp_server_id)
-            .cloned()
-    }
-
-    fn list_mcp_servers(&self, query: &AgentMarketplaceListQuery) -> Vec<AgentMcpServerRecord> {
-        let mut records: Vec<AgentMcpServerRecord> = self
-            .mcp_servers
-            .iter()
-            .filter(|record| {
-                marketplace_record_matches(
-                    query,
-                    MarketplaceRecordView {
-                        tenant_id: record.tenant_id,
-                        organization_id: record.organization_id,
-                        owner_user_id: record.owner_user_id,
-                        status: record.status,
-                        visibility: record.visibility,
-                        deleted: record.is_deleted(),
-                        id: record.mcp_server_id.as_str(),
-                        code: record.code.as_str(),
-                        display_name: record.display_name.as_str(),
-                        description: record.description.as_deref(),
-                        categories: record.categories.as_slice(),
-                        tags: record.tags.as_slice(),
-                    })
-            })
-            .cloned()
-            .collect();
-        records.sort_by(|left, right| {
-            compare_marketplace_standard_order(
-                left.updated_at.as_str(),
-                left.code.as_str(),
-                right.updated_at.as_str(),
-                right.code.as_str())
-        });
-        records
-    }
-
 
     fn insert_composition_slot(&mut self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
         if self.composition_slots.iter().any(|existing| {
@@ -402,6 +285,347 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned()
             .collect()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Policy provider infrastructure
+// ---------------------------------------------------------------------------
+
+/// Policy mode that determines the outcome of every policy evaluation.
+/// `Allow` permits all requests with the given reason; `Deny` rejects all
+/// requests with the given reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyMode {
+    Allow(String),
+    Deny(String),
+}
+
+/// A simple static policy provider that returns the same decision for every
+/// request based on its configured [`PolicyMode`].
+///
+/// **Never use this provider in production.** It does not evaluate subject
+/// roles or resource attributes. Use [`IamGatedPolicyProvider`] for
+/// production deployments, or [`DenyAllPolicyProvider`] as a fail-closed
+/// placeholder when IAM integration is not yet wired. This type is retained
+/// only for local development and integration-test scenarios.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllowAllPolicyProvider {
+    pub provider_id: String,
+    pub mode: PolicyMode,
+}
+
+impl AllowAllPolicyProvider {
+    /// Create a provider that allows every request. The `provider_id` should
+    /// identify the policy source (e.g. `"policy.agents.dev"` for development).
+    pub fn allow(provider_id: impl Into<String>) -> Self {
+        Self {
+            provider_id: provider_id.into(),
+            mode: PolicyMode::Allow("static.allow".to_string()),
+        }
+    }
+}
+
+impl PolicyProvider for AllowAllPolicyProvider {
+    fn provider_manifest(&self) -> ProviderManifest {
+        ProviderManifest::new(
+            self.provider_id.clone(),
+            "policy",
+            "static-policy-provider",
+            "0.1.0",
+            vec!["policy.evaluate".to_string()],
+        )
+    }
+
+    fn evaluate(&self, request: PolicyRequest) -> KernelResult<PolicyDecision> {
+        let decision_id =
+            format!("decision_{}_{}", self.provider_id, request.policy_request_id);
+        match &self.mode {
+            PolicyMode::Allow(reason) => Ok(PolicyDecision::allow(
+                decision_id,
+                request.policy_request_id,
+                self.provider_id.clone(),
+            )
+            .with_safe_reason(reason.clone())),
+            PolicyMode::Deny(reason) => Ok(PolicyDecision::deny(
+                decision_id,
+                request.policy_request_id,
+                self.provider_id.clone(),
+                reason,
+            )),
+        }
+    }
+
+    fn health(&self) -> ProviderHealth {
+        ProviderHealth::available()
+    }
+}
+
+/// Fail-closed policy provider that denies every request. Use this as the
+/// default when no IAM integration is configured, so that misconfiguration
+/// can never accidentally allow unauthorized access.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DenyAllPolicyProvider {
+    pub provider_id: String,
+    pub reason: String,
+}
+
+impl DenyAllPolicyProvider {
+    pub fn new(provider_id: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            provider_id: provider_id.into(),
+            reason: reason.into(),
+        }
+    }
+}
+
+impl Default for DenyAllPolicyProvider {
+    fn default() -> Self {
+        Self::new(
+            "policy.agents.deny-all",
+            "no policy provider configured; access denied by default",
+        )
+    }
+}
+
+impl PolicyProvider for DenyAllPolicyProvider {
+    fn provider_manifest(&self) -> ProviderManifest {
+        ProviderManifest::new(
+            self.provider_id.clone(),
+            "policy",
+            "deny-all-policy-provider",
+            "0.1.0",
+            vec!["policy.evaluate".to_string()],
+        )
+    }
+
+    fn evaluate(&self, request: PolicyRequest) -> KernelResult<PolicyDecision> {
+        let decision_id =
+            format!("decision_{}_{}", self.provider_id, request.policy_request_id);
+        Ok(PolicyDecision::deny(
+            decision_id,
+            request.policy_request_id,
+            self.provider_id.clone(),
+            self.reason.clone(),
+        ))
+    }
+
+    fn health(&self) -> ProviderHealth {
+        ProviderHealth::available()
+    }
+}
+
+/// IAM permission codes that gate agent business operations. These align with
+/// the `ai` module manifest in `sdkwork-iam/iam/modules/ai/iam.module.manifest.json`.
+pub const IAM_PERMISSION_AGENTS_MANAGE: &str = "ai.agents.manage";
+pub const IAM_PERMISSION_AGENTS_READ: &str = "ai.agents.read";
+
+/// Role codes that grant wildcard AI permissions per the IAM module manifest
+/// `roleGrantExtensions` (org_admin and org_operations both map to `ai.*`).
+const IAM_ADMIN_ROLE_CODES: &[&str] = &["org_admin", "org_operations"];
+
+/// Policy actions (from `AgentsService::authorize`) that are read-only and
+/// therefore require only `ai.agents.read`. Any action not in this set is
+/// treated as a manage operation requiring `ai.agents.manage`.
+const READ_ONLY_POLICY_ACTIONS: &[&str] = &[
+    "retrieve",
+    "list",
+    "audit.read",
+    "provider_binding.list",
+    "composition_slot.list",
+    "composition_slot.retrieve",
+];
+
+/// IAM-gated policy provider that maps agent business actions to IAM permission
+/// scopes and evaluates the request subject's roles/scopes against the
+/// required permission.
+///
+/// This provider implements defense-in-depth at the application service layer.
+/// The web framework layer (`IamAuthorizationPolicy` from `sdkwork-iam-web-adapter`)
+/// performs HTTP route-level authorization first; this provider performs
+/// resource-action-level authorization as a second gate.
+///
+/// Subject roles are populated from gateway-injected headers
+/// (`x-subject-roles` or `x-sdkwork-permission-scope`) and may contain either
+/// IAM permission scopes (e.g. `ai.agents.read`) or role codes (e.g.
+/// `org_admin`). Both are honored:
+///
+/// - Permission scopes are matched directly, with `ai.*` and `*` wildcards.
+/// - Admin role codes (`org_admin`, `org_operations`) are granted `ai.*`.
+///
+/// Requests without a subject or with no matching permission are denied
+/// (fail-closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IamGatedPolicyProvider {
+    pub provider_id: String,
+}
+
+impl IamGatedPolicyProvider {
+    pub fn new(provider_id: impl Into<String>) -> Self {
+        Self {
+            provider_id: provider_id.into(),
+        }
+    }
+
+    /// Determine the required IAM permission for the given policy action.
+    fn required_permission_for_action(action: Option<&str>) -> &'static str {
+        match action {
+            Some(action) if READ_ONLY_POLICY_ACTIONS.contains(&action) => {
+                IAM_PERMISSION_AGENTS_READ
+            }
+            _ => IAM_PERMISSION_AGENTS_MANAGE,
+        }
+    }
+
+    /// Return `true` if the subject's role/scope entry satisfies the required
+    /// permission. Supports wildcards `ai.*` and `*`, and known admin role
+    /// codes that grant `ai.*`. Also honors the implication that
+    /// `ai.agents.manage` grants `ai.agents.read` (manage implies read).
+    fn entry_grants_permission(entry: &str, required_permission: &str) -> bool {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            return false;
+        }
+        if entry == "*" {
+            return true;
+        }
+        if entry == required_permission {
+            return true;
+        }
+        // Manage permission implies read permission within the same resource.
+        if entry == IAM_PERMISSION_AGENTS_MANAGE
+            && required_permission == IAM_PERMISSION_AGENTS_READ
+        {
+            return true;
+        }
+        // Wildcard within the ai domain (e.g. `ai.*` matches `ai.agents.read`).
+        if entry == "ai.*" && required_permission.starts_with("ai.") {
+            return true;
+        }
+        // Admin role codes that the IAM module grants `ai.*` to.
+        if IAM_ADMIN_ROLE_CODES.contains(&entry)
+            && required_permission.starts_with("ai.")
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Return `true` if the subject has any role/scope entry that satisfies
+    /// the required permission.
+    fn subject_has_permission(
+        subject: Option<&sdkwork_agent_kernel::PolicySubject>,
+        required_permission: &str,
+    ) -> bool {
+        let Some(subject) = subject else {
+            return false;
+        };
+        subject
+            .roles
+            .iter()
+            .any(|entry| Self::entry_grants_permission(entry.as_str(), required_permission))
+    }
+}
+
+impl Default for IamGatedPolicyProvider {
+    fn default() -> Self {
+        Self::new("policy.agents.production.iam-gated")
+    }
+}
+
+impl PolicyProvider for IamGatedPolicyProvider {
+    fn provider_manifest(&self) -> ProviderManifest {
+        ProviderManifest::new(
+            self.provider_id.clone(),
+            "policy",
+            "iam-gated-policy-provider",
+            "0.1.0",
+            vec!["policy.evaluate".to_string()],
+        )
+    }
+
+    fn evaluate(&self, request: PolicyRequest) -> KernelResult<PolicyDecision> {
+        let decision_id =
+            format!("decision_{}_{}", self.provider_id, request.policy_request_id);
+        let action = request.action.as_deref();
+        let required_permission = Self::required_permission_for_action(action);
+
+        if Self::subject_has_permission(request.subject.as_ref(), required_permission) {
+            Ok(PolicyDecision::allow(
+                decision_id,
+                request.policy_request_id,
+                self.provider_id.clone(),
+            )
+            .with_safe_reason(format!("iam.permission.satisfied:{required_permission}")))
+        } else {
+            Ok(PolicyDecision::deny(
+                decision_id,
+                request.policy_request_id,
+                self.provider_id.clone(),
+                "iam.permission.missing",
+            )
+            .with_safe_reason(format!("iam.permission.missing:{required_permission}")))
+        }
+    }
+
+    fn health(&self) -> ProviderHealth {
+        ProviderHealth::available()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// In-memory audit sink infrastructure
+// ---------------------------------------------------------------------------
+
+/// In-memory audit sink that stores events in a `Vec`. Events are lost when
+/// the process exits. Use [`crate::persistence::PostgresAgentAuditSink`] for
+/// production deployments that require persistent audit trails.
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryAgentAuditSink {
+    events: Vec<KernelEvent>,
+}
+
+impl InMemoryAgentAuditSink {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn events(&self) -> &[KernelEvent] {
+        &self.events
+    }
+}
+
+impl AgentAuditSink for InMemoryAgentAuditSink {
+    fn record(&mut self, event: KernelEvent) -> KernelResult<()> {
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn list_events(&self, _tenant_id: u64, agent_id: &str) -> KernelResult<Vec<KernelEvent>> {
+        let marker = format!("agent_id={agent_id};");
+        Ok(self
+            .events
+            .iter()
+            .filter(|event| event.payload.contains(marker.as_str()))
+            .cloned()
+            .collect())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared comparison helpers for in-memory repository sorting
+// ---------------------------------------------------------------------------
+
+/// Sort order for provider bindings: active first, then by updated_at desc,
+/// then by binding_id ascending.
+pub(crate) fn compare_provider_bindings_standard_order(
+    left: &AgentProviderBindingRecord,
+    right: &AgentProviderBindingRecord,
+) -> Ordering {
+    right
+        .active
+        .cmp(&left.active)
+        .then_with(|| right.updated_at.cmp(&left.updated_at))
+        .then_with(|| left.binding_id.cmp(&right.binding_id))
 }
 
 #[cfg(test)]
@@ -679,6 +903,149 @@ mod tests {
                 "binding.rig.beta".to_string()
             ]
         );
+    }
+
+    // --- IamGatedPolicyProvider tests ---
+
+    use sdkwork_agent_kernel::{PolicyDecisionValue, PolicySubject};
+
+    fn policy_request_with_action_and_roles(
+        action: &str,
+        roles: &[&str],
+    ) -> PolicyRequest {
+        let mut subject = PolicySubject::new("user.test", "100001");
+        for role in roles {
+            subject = subject.with_role(*role);
+        }
+        PolicyRequest::new("req.test", "agent.business.manage", "agent.business.tenant.100001")
+            .with_subject(subject)
+            .with_action(action)
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_read_action_with_read_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("list", &["ai.agents.read"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_read_action_with_manage_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("retrieve", &["ai.agents.manage"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_manage_action_with_only_read_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("create", &["ai.agents.read"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+        assert!(decision
+            .safe_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("iam.permission.missing:ai.agents.manage"));
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_manage_action_with_manage_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("update", &["ai.agents.manage"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_all_actions_with_ai_wildcard() {
+        let provider = IamGatedPolicyProvider::default();
+        for action in ["list", "retrieve", "create", "update", "delete", "change_status"] {
+            let request = policy_request_with_action_and_roles(action, &["ai.*"]);
+            let decision = provider.evaluate(request).expect("evaluate should succeed");
+            assert_eq!(
+                decision.decision,
+                PolicyDecisionValue::Allow,
+                "action {action} should be allowed with ai.* wildcard"
+            );
+        }
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_all_actions_with_global_wildcard() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("delete", &["*"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_all_actions_with_org_admin_role() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("delete", &["org_admin"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_all_actions_with_org_operations_role() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("create", &["org_operations"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_when_subject_has_no_permissions() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("list", &[]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_when_subject_is_missing() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = PolicyRequest::new("req.test", "agent.business.manage", "agent.business.tenant.100001")
+            .with_action("list");
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_unrecognized_permission_scope() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("list", &["iam.users.read"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+    }
+
+    #[test]
+    fn iam_gated_provider_treats_unknown_action_as_manage() {
+        let provider = IamGatedPolicyProvider::default();
+        // Unknown action defaults to requiring ai.agents.manage.
+        let request = policy_request_with_action_and_roles("unknown_action", &["ai.agents.read"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+    }
+
+    // --- DenyAllPolicyProvider tests ---
+
+    #[test]
+    fn deny_all_provider_denies_every_request() {
+        let provider = DenyAllPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("list", &["ai.agents.manage", "ai.*", "*"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+    }
+
+    #[test]
+    fn deny_all_provider_default_has_descriptive_reason() {
+        let provider = DenyAllPolicyProvider::default();
+        assert!(!provider.reason.is_empty());
+        assert!(!provider.provider_id.is_empty());
     }
 
 }

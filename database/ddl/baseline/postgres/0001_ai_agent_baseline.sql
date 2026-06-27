@@ -1,8 +1,16 @@
--- SDKWork Agents AI composition-plane PostgreSQL baseline
+-- SDKWork Agents — composition-plane PostgreSQL baseline (v3)
 -- Domain: intelligence / agents-platform
 -- Contract: database/contract/schema.yaml
--- Knowledge, memory, skills, prompts, and drive content are owned by sibling modules.
+-- All tables use the ai_ prefix per DATABASE_SPEC.md.
+-- MCP, knowledge, memory, skills, prompts, and drive content are owned by
+-- sibling modules. Agents reference them exclusively through
+-- ai_agent_composition_slot.
+-- 4 core tables: ai_agent, ai_agent_runtime_binding,
+-- ai_agent_composition_slot, ai_agent_audit_event.
 
+-- ─────────────────────────────────────────────────────────
+-- Helper: validate capabilities JSON is a standard array
+-- ─────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION sdkwork_intelligence_agents_service_capabilities_json_is_standard(input TEXT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -37,20 +45,9 @@ EXCEPTION WHEN others THEN
 END;
 $$;
 
-CREATE TABLE IF NOT EXISTS ai_app_registry (
-    id BIGINT NOT NULL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    application_key TEXT NOT NULL,
-    kernel_slot_id TEXT NOT NULL,
-    default_agent_id VARCHAR(128),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_ai_app_registry_tenant_app UNIQUE (tenant_id, application_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_app_registry_tenant_updated
-    ON ai_app_registry (tenant_id, updated_at DESC);
-
+-- ─────────────────────────────────────────────────────────
+-- ai_agent — agent identity, manifest snapshot, lifecycle
+-- ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_agent (
     id BIGINT NOT NULL PRIMARY KEY,
     uuid VARCHAR(64) NOT NULL,
@@ -112,10 +109,14 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_tenant_org_status_updated
 CREATE INDEX IF NOT EXISTS idx_ai_agent_tenant_owner_status
     ON ai_agent (tenant_id, owner_user_id, status);
 
+-- ─────────────────────────────────────────────────────────
+-- ai_agent_runtime_binding — provider / runtime binding
+-- ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_agent_runtime_binding (
     id BIGINT NOT NULL PRIMARY KEY,
     uuid VARCHAR(96) NOT NULL,
     tenant_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL DEFAULT 0,
     agent_id VARCHAR(128) NOT NULL,
     binding_id VARCHAR(128) NOT NULL,
     provider_id VARCHAR(128) NOT NULL,
@@ -164,59 +165,11 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_runtime_binding_tenant_agent_updated
 CREATE INDEX IF NOT EXISTS idx_ai_agent_runtime_binding_tenant_provider
     ON ai_agent_runtime_binding (tenant_id, provider_id);
 
-CREATE TABLE IF NOT EXISTS ai_agent_deployment (
-    id BIGINT NOT NULL PRIMARY KEY,
-    uuid VARCHAR(96) NOT NULL,
-    tenant_id BIGINT NOT NULL,
-    agent_id VARCHAR(128) NOT NULL,
-    deployment_id VARCHAR(128) NOT NULL,
-    binding_id VARCHAR(128) NOT NULL,
-    provider_id_snapshot VARCHAR(128) NOT NULL,
-    implementation_kind_snapshot VARCHAR(64) NOT NULL,
-    configuration_profile_id_snapshot VARCHAR(128) NOT NULL,
-    capabilities_snapshot_json TEXT NOT NULL DEFAULT '[]',
-    status SMALLINT NOT NULL,
-    version BIGINT NOT NULL DEFAULT 1,
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL,
-    CONSTRAINT uk_ai_agent_deployment_uuid UNIQUE (uuid),
-    CONSTRAINT uk_ai_agent_deployment_tenant_agent_deployment UNIQUE (
-        tenant_id,
-        agent_id,
-        deployment_id
-    ),
-    CONSTRAINT ck_ai_agent_deployment_implementation_kind CHECK (
-        implementation_kind_snapshot IN (
-            'manifest-only',
-            'typed-local-provider',
-            'process-adapter',
-            'protocol-adapter'
-        )
-    ),
-    CONSTRAINT ck_ai_agent_deployment_deployment_id_standard CHECK (
-        deployment_id ~ '^deployment\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-    ),
-    CONSTRAINT ck_ai_agent_deployment_binding_id_standard CHECK (
-        binding_id ~ '^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-    ),
-    CONSTRAINT ck_ai_agent_deployment_provider_id_snapshot_standard CHECK (
-        provider_id_snapshot ~ '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-    ),
-    CONSTRAINT ck_ai_agent_deployment_configuration_profile_id_snapshot_standard CHECK (
-        configuration_profile_id_snapshot ~ '^profile\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-    ),
-    CONSTRAINT ck_ai_agent_deployment_capabilities_snapshot_standard CHECK (
-        sdkwork_intelligence_agents_service_capabilities_json_is_standard(capabilities_snapshot_json)
-    ),
-    CONSTRAINT ck_ai_agent_deployment_status CHECK (status IN (0, 1, 2, 3))
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_agent_deployment_tenant_agent_created
-    ON ai_agent_deployment (tenant_id, agent_id, created_at DESC, deployment_id ASC);
-
-CREATE INDEX IF NOT EXISTS idx_ai_agent_deployment_tenant_provider_status
-    ON ai_agent_deployment (tenant_id, provider_id_snapshot, status);
-
+-- ─────────────────────────────────────────────────────────
+-- ai_agent_composition_slot — agent → sibling-module resource references
+-- slot_kind / target_module include 'mcp' so agents can bind
+-- MCP servers owned by sdkwork-mcp without owning MCP tables.
+-- ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_agent_composition_slot (
     id BIGINT NOT NULL PRIMARY KEY,
     uuid VARCHAR(96) NOT NULL,
@@ -239,10 +192,10 @@ CREATE TABLE IF NOT EXISTS ai_agent_composition_slot (
     CONSTRAINT uk_ai_agent_composition_slot_uuid UNIQUE (uuid),
     CONSTRAINT uk_ai_agent_composition_slot_tenant_agent_slot UNIQUE (tenant_id, agent_id, slot_id),
     CONSTRAINT ck_ai_agent_composition_slot_kind CHECK (
-        slot_kind IN ('memory', 'knowledge', 'skill', 'prompt', 'drive', 'tool')
+        slot_kind IN ('memory', 'knowledge', 'skill', 'prompt', 'drive', 'tool', 'mcp')
     ),
     CONSTRAINT ck_ai_agent_composition_slot_module CHECK (
-        target_module IN ('memory', 'knowledgebase', 'skills', 'prompts', 'drive')
+        target_module IN ('memory', 'knowledgebase', 'skills', 'prompts', 'drive', 'mcp')
     ),
     CONSTRAINT ck_ai_agent_composition_slot_id_standard CHECK (
         slot_id ~ '^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
@@ -253,6 +206,9 @@ CREATE TABLE IF NOT EXISTS ai_agent_composition_slot (
 CREATE INDEX IF NOT EXISTS idx_ai_agent_composition_slot_lookup
     ON ai_agent_composition_slot (tenant_id, agent_id, slot_kind, enabled, priority, slot_id);
 
+-- ─────────────────────────────────────────────────────────
+-- ai_agent_audit_event — immutable management audit log
+-- ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_agent_audit_event (
     id BIGINT NOT NULL PRIMARY KEY,
     uuid VARCHAR(64) NOT NULL,
@@ -280,14 +236,9 @@ CREATE TABLE IF NOT EXISTS ai_agent_audit_event (
             'failed',
             'cancelled',
             'provider_binding_changed',
-            'deployment_created',
             'composition_slot_created',
             'composition_slot_updated',
-            'composition_slot_deleted',
-            'mcp_created',
-            'mcp_updated',
-            'mcp_deleted',
-            'mcp_restored'
+            'composition_slot_deleted'
         )
     )
 );
@@ -297,21 +248,3 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_audit_tenant_agent_created
 
 CREATE INDEX IF NOT EXISTS idx_ai_agent_audit_tenant_action_created
     ON ai_agent_audit_event (tenant_id, action, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS ai_agent_outbox_event (
-    id BIGINT NOT NULL PRIMARY KEY,
-    uuid VARCHAR(64) NOT NULL,
-    tenant_id BIGINT NOT NULL,
-    aggregate_type VARCHAR(64) NOT NULL,
-    aggregate_id BIGINT NOT NULL,
-    event_type VARCHAR(128) NOT NULL,
-    payload_json JSONB NOT NULL,
-    status SMALLINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL,
-    published_at TIMESTAMPTZ,
-    version BIGINT NOT NULL DEFAULT 0,
-    CONSTRAINT uk_ai_agent_outbox_event_uuid UNIQUE (tenant_id, uuid)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_agent_outbox_event_status_created
-    ON ai_agent_outbox_event (tenant_id, status, created_at);

@@ -1,15 +1,10 @@
--- SDKWork Agents SQLite baseline (composition plane, L2 portable subset)
-
-CREATE TABLE IF NOT EXISTS ai_app_registry (
-    id INTEGER NOT NULL PRIMARY KEY,
-    tenant_id INTEGER NOT NULL,
-    application_key TEXT NOT NULL,
-    kernel_slot_id TEXT NOT NULL,
-    default_agent_id TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE (tenant_id, application_key)
-);
+-- SDKWork Agents — composition-plane SQLite baseline (v3)
+-- All tables use the ai_ prefix per DATABASE_SPEC.md.
+-- MCP, knowledge, memory, skills, prompts, and drive content are owned by
+-- sibling modules. Agents reference them exclusively through
+-- ai_agent_composition_slot.
+-- 4 core tables: ai_agent, ai_agent_runtime_binding,
+-- ai_agent_composition_slot, ai_agent_audit_event.
 
 CREATE TABLE IF NOT EXISTS ai_agent (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -42,6 +37,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_runtime_binding (
     id INTEGER NOT NULL PRIMARY KEY,
     uuid TEXT NOT NULL UNIQUE,
     tenant_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL DEFAULT 0,
     agent_id TEXT NOT NULL,
     binding_id TEXT NOT NULL,
     provider_id TEXT NOT NULL,
@@ -53,24 +49,6 @@ CREATE TABLE IF NOT EXISTS ai_agent_runtime_binding (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (tenant_id, agent_id, binding_id)
-);
-
-CREATE TABLE IF NOT EXISTS ai_agent_deployment (
-    id INTEGER NOT NULL PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
-    tenant_id INTEGER NOT NULL,
-    agent_id TEXT NOT NULL,
-    deployment_id TEXT NOT NULL,
-    binding_id TEXT NOT NULL,
-    provider_id_snapshot TEXT NOT NULL,
-    implementation_kind_snapshot TEXT NOT NULL,
-    configuration_profile_id_snapshot TEXT NOT NULL,
-    capabilities_snapshot_json TEXT NOT NULL DEFAULT '[]',
-    status INTEGER NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE (tenant_id, agent_id, deployment_id)
 );
 
 CREATE TABLE IF NOT EXISTS ai_agent_composition_slot (
@@ -109,19 +87,4 @@ CREATE TABLE IF NOT EXISTS ai_agent_audit_event (
     trace_id TEXT,
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS ai_agent_outbox_event (
-    id INTEGER NOT NULL PRIMARY KEY,
-    uuid TEXT NOT NULL,
-    tenant_id INTEGER NOT NULL,
-    aggregate_type TEXT NOT NULL,
-    aggregate_id INTEGER NOT NULL,
-    event_type TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    status INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    published_at TEXT,
-    version INTEGER NOT NULL DEFAULT 0,
-    UNIQUE (tenant_id, uuid)
 );

@@ -1,9 +1,9 @@
 [package]
 name = "sdkwork-agents-gateway-assembly"
-version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Gateway assembly for SDKWork Agents HTTP plane (kernel route composition)"
+version.workspace = true
+description = "Generated gateway assembly for sdkwork-agents application HTTP plane."
 
 [lib]
 name = "sdkwork_agents_gateway_assembly"
@@ -15,3 +15,7 @@ tokio.workspace = true
 anyhow.workspace = true
 sdkwork-agent-server.workspace = true
 sdkwork-agents-kernel-bridge.workspace = true
+sdkwork_routes_agents_app_api = { package = "sdkwork-routes-agents-app-api", path = "../sdkwork-routes-agents-app-api" }
+sdkwork_routes_agents_backend_api = { package = "sdkwork-routes-agents-backend-api", path = "../sdkwork-routes-agents-backend-api" }
+sdkwork_routes_agents_http_shared = { package = "sdkwork-routes-agents-http-shared", path = "../sdkwork-routes-agents-http-shared" }
+sdkwork_routes_agents_open_api = { package = "sdkwork-routes-agents-open-api", path = "../sdkwork-routes-agents-open-api" }

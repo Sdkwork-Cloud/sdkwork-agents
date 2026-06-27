@@ -230,8 +230,7 @@ COMPOSITION_SCHEMAS = '''
           type: [string, 'null']
           maxLength: 128
         priority:
-          type: integer
-          format: int32
+          $ref: '#/components/schemas/Int64String'
         enabled:
           type: boolean
         policyJson:
@@ -300,9 +299,7 @@ COMPOSITION_SCHEMAS = '''
           type: [string, 'null']
           maxLength: 128
         priority:
-          type: integer
-          format: int32
-          default: 0
+          $ref: '#/components/schemas/Int64String'
         enabled:
           type: boolean
           default: true
@@ -340,8 +337,7 @@ COMPOSITION_SCHEMAS = '''
           type: [string, 'null']
           maxLength: 128
         priority:
-          type: integer
-          format: int32
+          $ref: '#/components/schemas/Int64String'
         enabled:
           type: boolean
         policyJson:

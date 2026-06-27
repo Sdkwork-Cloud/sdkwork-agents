@@ -123,18 +123,6 @@
       "sha256": "9735119a17adccdaad9151a29d84c6fda1728c0417381082f5d8f649e0c8e641"
     },
     {
-      "path": "src/types/agent-deployment-list-response.ts",
-      "sha256": "a92e4976b32ab1bf6350a81914ef17a81cdd2c1a4dfebfc23f80d8a94f4b8ceb"
-    },
-    {
-      "path": "src/types/agent-deployment-record.ts",
-      "sha256": "c93f403a7e2e567741953c48bef47410f7d0c4e1b935f3c019c5cf070d98244c"
-    },
-    {
-      "path": "src/types/agent-deployment-response.ts",
-      "sha256": "61867e15baeabb9b05669cb7735de9769b5a5d31147591eef13f44a99b628026"
-    },
-    {
       "path": "src/types/agent-implementation-kind.ts",
       "sha256": "ce965a44bea5e00f5c9444a2c0db1268c0e726080a9c1bce760cac5381e0bae4"
     },
@@ -191,10 +179,6 @@
       "sha256": "c1187030a43acb0b6b84acbad9f9c2d60eafba5f555df27411ceb4b1189ae55c"
     },
     {
-      "path": "src/types/create-agent-deployment-request.ts",
-      "sha256": "b21ecccfdd7dff1ac92419278cf2b8854b4bc65366d2546698e8263575cc473f"
-    },
-    {
       "path": "src/types/create-agent-provider-binding-request.ts",
       "sha256": "43decad41400794bb04ef3c8b505beecb62375fd47100200ab39be065b416a26"
     },
@@ -205,10 +189,6 @@
     {
       "path": "src/types/delete-agent-request.ts",
       "sha256": "494633a181abcea62144b090c05071a8a3490e987f0c1196d3026ff9db69e59f"
-    },
-    {
-      "path": "src/types/deployment-status.ts",
-      "sha256": "8638a4ff6d55cfe090c5185ec5a92eaa86930099e2865f28ad8ea88614aa5046"
     },
     {
       "path": "src/types/field-error.ts",

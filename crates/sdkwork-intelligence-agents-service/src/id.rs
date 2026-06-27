@@ -1,5 +1,5 @@
 use sdkwork_agent_kernel::{KernelError, KernelErrorSource, KernelResult};
-use sdkwork_id_core::{
+use sdkwork_database_id::{
     default_snowflake_epoch_millis, max_snowflake_node_id, SnowflakeIdError, SnowflakeIdGenerator,
 };
 
@@ -8,6 +8,12 @@ const SEQUENCE_BITS: u8 = 12;
 const NODE_BITS: u8 = 10;
 const NODE_MASK: u64 = (1_u64 << NODE_BITS) - 1;
 const TIMESTAMP_SHIFT: u8 = NODE_BITS + SEQUENCE_BITS;
+
+/// Snowflake node id reserved for the production audit sink. Each adapter
+/// that generates IDs needs a dedicated node id so concurrent `next_id`
+/// calls from the repository adapter (node 1) and the audit sink adapter
+/// (node 2) can never collide on the same `timestamp|sequence` pair.
+pub const AUDIT_SINK_NODE_ID: u16 = 2;
 
 pub trait AgentIdGenerator {
     fn next_id(&self) -> KernelResult<u64>;

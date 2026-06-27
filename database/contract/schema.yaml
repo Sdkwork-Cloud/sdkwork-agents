@@ -1,36 +1,38 @@
 schema_version: 1
 kind: sdkwork.database.schema
 module_id: agents
-contract_version: 1.0.0
+contract_version: 3.0.0
 owner_team: agents-platform
 compliance_level: L2
 engines:
   - postgres
   - sqlite
 table_prefix: ai_
+# Composition-plane architecture:
+# - Core agent lifecycle tables owned by this module
+# - MCP, knowledge, memory, skills, prompts, drive content owned by sibling modules
+# - Cross-module references via ai_agent_composition_slot
 tables:
-  - name: ai_app_registry
-    lifecycle_status: active
-    owner: agents-platform
   - name: ai_agent
     lifecycle_status: active
     owner: agents-platform
+    description: 'Agent business entity with identity, manifest snapshot, and lifecycle state'
   - name: ai_agent_runtime_binding
     lifecycle_status: active
     owner: agents-platform
-  - name: ai_agent_deployment
-    lifecycle_status: active
-    owner: agents-platform
+    description: 'Maps agents to provider runtime configurations with capability declarations'
   - name: ai_agent_composition_slot
     lifecycle_status: active
     owner: agents-platform
+    description: 'Binds agents to sibling module resources (memory, knowledge, skills, prompts, drive, mcp)'
   - name: ai_agent_audit_event
     lifecycle_status: active
     owner: agents-platform
-  - name: ai_agent_outbox_event
-    lifecycle_status: active
-    owner: agents-platform
-  - name: a_agent_mcp_server
-    lifecycle_status: active
-    owner: agents-platform
-    notes: legacy until sdkwork-mcp lands
+    description: 'Immutable audit log for agent management operations'
+# Cross-module references (owned by other modules):
+# - ai_agent_composition_slot.slot_kind IN ('memory') → sdkwork-memory
+# - ai_agent_composition_slot.slot_kind IN ('knowledge') → sdkwork-knowledgebase
+# - ai_agent_composition_slot.slot_kind IN ('skill') → sdkwork-skills
+# - ai_agent_composition_slot.slot_kind IN ('prompt') → sdkwork-prompts
+# - ai_agent_composition_slot.slot_kind IN ('drive') → sdkwork-drive
+# - ai_agent_composition_slot.slot_kind IN ('mcp') → sdkwork-mcp

@@ -19,9 +19,9 @@ async fn api_server_bootstrap_health_and_metrics_contracts() {
     std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "development");
     std::env::set_var("SDKWORK_AGENTS_DEV_AUTH_BYPASS", "true");
 
-    let app = sdkwork_agents_api_server::build_router()
+    let app = sdkwork_agents_standalone_gateway::build_router()
         .await
-        .expect("agents api-server bootstrap should succeed with dev inline auth");
+        .expect("agents standalone-gateway bootstrap should succeed with dev inline auth");
 
     for path in ["/health", "/ready", "/live"] {
         let response = app
@@ -86,7 +86,7 @@ async fn app_database_migrate_only_succeeds_with_sqlite() {
     let _guard = env_test_lock();
     let previous_database_url = std::env::var("SDKWORK_AGENTS_DATABASE_URL").ok();
     std::env::set_var("SDKWORK_AGENTS_DATABASE_URL", "sqlite::memory:");
-    sdkwork_agents_api_server::run_agents_app_database_migrate_only()
+    sdkwork_agents_standalone_gateway::run_agents_app_database_migrate_only()
         .await
         .expect("agents app db-migrate must succeed with sqlite");
     restore_optional_env("SDKWORK_AGENTS_DATABASE_URL", previous_database_url);
