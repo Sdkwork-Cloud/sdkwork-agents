@@ -72,9 +72,10 @@ paths:
                 title: permission_required
                 status: 403
                 detail: agent management denied
-                code: permission_required
+                code: 40301
                 errorCategory: permission
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '409':
           description: Resource conflict (duplicate agent_id or code within tenant scope)
           content:
@@ -86,9 +87,10 @@ paths:
                 title: conflict
                 status: 409
                 detail: agent already exists
-                code: conflict
+                code: 40901
                 errorCategory: business
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}:
@@ -124,9 +126,10 @@ paths:
                 title: permission_required
                 status: 403
                 detail: agent management denied
-                code: permission_required
+                code: 40301
                 errorCategory: permission
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '404':
           description: Agent not found
           content:
@@ -138,9 +141,10 @@ paths:
                 title: not_found
                 status: 404
                 detail: agent not found
-                code: not_found
+                code: 40401
                 errorCategory: resource
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         default:
           $ref: '#/components/responses/Problem'
     patch:
@@ -181,9 +185,10 @@ paths:
                 title: permission_required
                 status: 403
                 detail: agent management denied
-                code: permission_required
+                code: 40301
                 errorCategory: permission
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '404':
           description: Agent not found
           content:
@@ -195,9 +200,10 @@ paths:
                 title: not_found
                 status: 404
                 detail: agent not found
-                code: not_found
+                code: 40401
                 errorCategory: resource
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '409':
           description: Optimistic concurrency conflict (stale expectedVersion)
           content:
@@ -209,9 +215,10 @@ paths:
                 title: version_conflict
                 status: 409
                 detail: "agent version mismatch: expected=2, actual=3"
-                code: version_conflict
+                code: 40901
                 errorCategory: concurrency
                 retryable: true
+                traceId: '00000000-0000-0000-0000-000000000000'
         default:
           $ref: '#/components/responses/Problem'
     delete:
@@ -252,9 +259,10 @@ paths:
                 title: permission_required
                 status: 403
                 detail: agent management denied
-                code: permission_required
+                code: 40301
                 errorCategory: permission
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '404':
           description: Agent not found
           content:
@@ -266,9 +274,10 @@ paths:
                 title: not_found
                 status: 404
                 detail: agent not found
-                code: not_found
+                code: 40401
                 errorCategory: resource
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '409':
           description: Optimistic concurrency conflict (stale expectedVersion)
           content:
@@ -280,9 +289,10 @@ paths:
                 title: version_conflict
                 status: 409
                 detail: "agent version mismatch: expected=2, actual=3"
-                code: version_conflict
+                code: 40901
                 errorCategory: concurrency
                 retryable: true
+                traceId: '00000000-0000-0000-0000-000000000000'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/restore:
@@ -324,9 +334,10 @@ paths:
                 title: permission_required
                 status: 403
                 detail: agent management denied
-                code: permission_required
+                code: 40301
                 errorCategory: permission
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '404':
           description: Agent not found
           content:
@@ -338,9 +349,10 @@ paths:
                 title: not_found
                 status: 404
                 detail: agent not found
-                code: not_found
+                code: 40401
                 errorCategory: resource
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
         '409':
           description: Optimistic concurrency conflict (stale expectedVersion)
           content:
@@ -352,9 +364,10 @@ paths:
                 title: version_conflict
                 status: 409
                 detail: "agent version mismatch: expected=2, actual=3"
-                code: version_conflict
+                code: 40901
                 errorCategory: concurrency
                 retryable: true
+                traceId: '00000000-0000-0000-0000-000000000000'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/provider_bindings:
@@ -535,6 +548,207 @@ paths:
         default:
           $ref: '#/components/responses/Problem'
 
+  /app/v3/api/ai/agents/{agentId}/sessions:
+    get:
+      tags: [ai]
+      summary: List chat sessions for one managed agent
+      operationId: agents.sessions.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: agent.business.session.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Managed agent session list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [ai]
+      summary: Create a chat session for one managed agent
+      operationId: agents.sessions.create
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: agent.business.session.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.session_created
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppCreateAgentSessionRequest'
+      responses:
+        '201':
+          description: Created managed agent session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}:
+    get:
+      tags: [ai]
+      summary: Retrieve one chat session
+      operationId: agents.sessions.retrieve
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: agent.business.session.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Managed agent session response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close:
+    post:
+      tags: [ai]
+      summary: Close one chat session
+      operationId: agents.sessions.close
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: agent.business.session.close
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.session_closed
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppCloseAgentSessionRequest'
+      responses:
+        '200':
+          description: Closed managed agent session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages:
+    get:
+      tags: [ai]
+      summary: List messages in one chat session
+      operationId: agents.messages.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.messages
+      x-sdkwork-permission: agent.business.message.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Managed agent message list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMessageListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [ai]
+      summary: Send a user chat message and receive an assistant reply
+      operationId: agents.messages.create
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.messages
+      x-sdkwork-permission: agent.business.message.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.message_created
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/StreamQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppSendAgentChatMessageRequest'
+      responses:
+        '201':
+          description: Chat completion response with user and assistant messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE payload with one completion event carrying AgentChatCompletionResponse JSON when stream=true
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}:
+    get:
+      tags: [ai]
+      summary: Retrieve one chat message
+      operationId: agents.messages.retrieve
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.messages
+      x-sdkwork-permission: agent.business.message.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/MessageIdPath'
+      responses:
+        '200':
+          description: Managed agent message response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMessageResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+
+
   /app/v3/api/ai/agents/{agentId}/composition_slots:
     get:
       tags: [ai]
@@ -699,6 +913,50 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/code_engines:
+    get:
+      tags: [ai]
+      summary: List canonical code-engine catalog
+      operationId: agents.codeEngines.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: codeEngines
+      x-sdkwork-permission: agent.business.code_engine.list
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.code_engine_listed
+      responses:
+        '200':
+          description: Canonical code-engine catalog from agents runtime facade
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeEngineCatalogListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/mcp_servers:
+    get:
+      tags: [ai]
+      summary: List MCP marketplace entries from agent composition slots
+      operationId: agents.mcpServers.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: mcpServers
+      x-sdkwork-permission: agent.business.mcp_server.list
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.mcp_server_listed
+      responses:
+        '200':
+          description: MCP composition-slot marketplace projection for the tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpServerMarketplaceListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     AuthToken:
@@ -734,6 +992,14 @@ components:
         minimum: 1
         maximum: 200
         default: 20
+    StreamQuery:
+      name: stream
+      in: query
+      required: false
+      description: When true, returns text/event-stream with one completion event instead of JSON.
+      schema:
+        type: boolean
+        default: false
     SearchQ:
       name: q
       in: query
@@ -776,6 +1042,24 @@ components:
         minLength: 1
         maxLength: 128
         pattern: '^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    SessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    MessageIdPath:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     BindingIdPath:
       name: bindingId
       in: path
@@ -799,9 +1083,10 @@ components:
                 title: validation_error
                 status: 400
                 detail: requestedAt must be RFC3339 date-time
-                code: validation_error
+                code: 40001
                 errorCategory: validation
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
             VersionConflict:
               summary: Optimistic concurrency conflict
               value:
@@ -809,9 +1094,10 @@ components:
                 title: version_conflict
                 status: 409
                 detail: "agent version mismatch: expected=2, actual=3"
-                code: version_conflict
+                code: 40901
                 errorCategory: concurrency
                 retryable: true
+                traceId: '00000000-0000-0000-0000-000000000000'
             PermissionRequired:
               summary: Permission denied
               value:
@@ -819,9 +1105,10 @@ components:
                 title: permission_required
                 status: 403
                 detail: agent management denied
-                code: permission_required
+                code: 40301
                 errorCategory: permission
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
             NotFound:
               summary: Resource not found
               value:
@@ -829,10 +1116,75 @@ components:
                 title: not_found
                 status: 404
                 detail: agent not found
-                code: not_found
+                code: 40401
                 errorCategory: resource
                 retryable: false
+                traceId: '00000000-0000-0000-0000-000000000000'
   schemas:
+    SdkWorkApiResponse:
+      type: object
+      additionalProperties: false
+      required: [code, data, traceId]
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: Numeric success result code. MUST be 0 on HTTP 2xx JSON bodies. See API_SPEC.md §15.3.
+          enum: [0]
+          default: 0
+          minimum: 0
+          maximum: 0
+        data:
+          description: Operation-specific payload. Typed per operation through allOf or explicit schema refs.
+        traceId:
+          type: string
+          format: uuid
+          description: Server-owned request correlation id. Clients MUST NOT supply this value.
+    SdkWorkResourceData:
+      type: object
+      additionalProperties: false
+      required: [item]
+      properties:
+        item:
+          description: Typed domain resource for the operation.
+    SdkWorkPageData:
+      type: object
+      additionalProperties: false
+      required: [items, pageInfo]
+      properties:
+        items:
+          type: array
+          items: {}
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+    SdkWorkCommandData:
+      type: object
+      additionalProperties: false
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+        resourceId:
+          type: string
+        status:
+          type: string
+    SdkWorkAsyncData:
+      type: object
+      additionalProperties: false
+      required: [accepted, operationId, status]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+        operationId:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, cancelled]
+        pollUrl:
+          type: string
+          format: uri-reference
     Int64String:
       type: string
       pattern: '^[0-9]+$'
@@ -851,20 +1203,33 @@ components:
     PageInfo:
       type: object
       additionalProperties: false
-      required: [page, pageSize, totalItems, totalPages]
+      required: [mode]
       properties:
+        mode:
+          type: string
+          enum: [offset, cursor]
+          description: Pagination mode used by the response.
         page:
           type: integer
           minimum: 1
+          description: Current page number when mode is offset.
         pageSize:
           type: integer
           minimum: 1
           maximum: 200
+          description: Page size used by the response.
         totalItems:
           $ref: '#/components/schemas/Int64String'
         totalPages:
           type: integer
           minimum: 0
+          description: Total pages when mode is offset.
+        nextCursor:
+          type: [string, 'null']
+          description: Opaque cursor for the next page when mode is cursor.
+        hasMore:
+          type: boolean
+          description: Whether more pages follow the current page.
     AgentRecord:
       type: object
       additionalProperties: false
@@ -1031,32 +1396,37 @@ components:
           minLength: 1
           maxLength: 4096
     AgentResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentRecord'
-        requestId:
-          type: string
-    AgentListResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required: [items, pageInfo]
+      description: Single managed agent response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
           properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/AgentRecord'
-            pageInfo:
-              $ref: '#/components/schemas/PageInfo'
-        requestId:
-          type: string
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentRecord'
+    AgentListResponse:
+      description: Paginated managed agent list response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentRecord'
     AgentProviderBindingRecord:
       type: object
       additionalProperties: false
@@ -1106,32 +1476,37 @@ components:
           type: string
           format: date-time
     AgentProviderBindingResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentProviderBindingRecord'
-        requestId:
-          type: string
-    AgentProviderBindingListResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required: [items, pageInfo]
+      description: Single agent provider binding response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
           properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/AgentProviderBindingRecord'
-            pageInfo:
-              $ref: '#/components/schemas/PageInfo'
-        requestId:
-          type: string
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentProviderBindingRecord'
+    AgentProviderBindingListResponse:
+      description: Paginated agent provider binding list response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentProviderBindingRecord'
     AgentRuntimeExecutionRecord:
       type: object
       additionalProperties: false
@@ -1168,14 +1543,20 @@ components:
           type: string
           format: date-time
     AgentRuntimeExecutionResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentRuntimeExecutionRecord'
-        requestId:
-          type: string
+      description: Single agent runtime execution response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentRuntimeExecutionRecord'
 
     AgentCompositionSlotKind:
       type: string
@@ -1250,30 +1631,37 @@ components:
           type: [string, 'null']
           format: date-time
     AgentCompositionSlotResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentCompositionSlotRecord'
-        requestId:
-          type: string
-    AgentCompositionSlotListResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required: [items]
+      description: Single agent composition slot response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
           properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/AgentCompositionSlotRecord'
-        requestId:
-          type: string
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentCompositionSlotRecord'
+    AgentCompositionSlotListResponse:
+      description: Paginated agent composition slot list response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentCompositionSlotRecord'
     AgentCompositionSlotCreateData:
       type: object
       additionalProperties: false
@@ -1573,19 +1961,413 @@ components:
         requestedAt:
           type: string
           format: date-time
+    AgentSessionRecord:
+      type: object
+      additionalProperties: false
+      required: [sessionId, agentId, tenantId, status, messageCount, version, createdAt, updatedAt]
+      properties:
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        agentId:
+          type: string
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        title:
+          type: string
+        status:
+          type: string
+          enum: [active, idle, closed, archived]
+        providerBindingId:
+          type: string
+        modelId:
+          type: string
+        messageCount:
+          $ref: '#/components/schemas/Int64String'
+        totalInputTokens:
+          $ref: '#/components/schemas/Int64String'
+        totalOutputTokens:
+          $ref: '#/components/schemas/Int64String'
+        metadataJson:
+          type: string
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastMessageAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+    AgentSessionResponse:
+      description: Single agent session response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentSessionRecord'
+    AgentSessionListResponse:
+      description: Paginated agent session list response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentSessionRecord'
+    CreateAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        title:
+          type: string
+        providerBindingId:
+          type: string
+        modelId:
+          type: string
+        metadataJson:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    CloseAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [tenantId, requestedAt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentMessageRecord:
+      type: object
+      additionalProperties: false
+      required: [messageId, sessionId, agentId, role, content, status, sequence, createdAt, updatedAt]
+      properties:
+        messageId:
+          type: string
+          pattern: '^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        sessionId:
+          type: string
+        agentId:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        content:
+          type: string
+        contentType:
+          type: string
+        status:
+          type: string
+          enum: [sent, delivered, read, failed, cancelled]
+        sequence:
+          $ref: '#/components/schemas/Int64String'
+        inputTokens:
+          $ref: '#/components/schemas/Int64String'
+        outputTokens:
+          $ref: '#/components/schemas/Int64String'
+        modelId:
+          type: string
+        providerId:
+          type: string
+        parentMessageId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AgentMessageResponse:
+      description: Single agent message response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentMessageRecord'
+    AgentMessageListResponse:
+      description: Paginated agent message list response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentMessageRecord'
+    SendAgentChatMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [tenantId, content, requestedAt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        content:
+          type: string
+          minLength: 1
+        contentType:
+          type: string
+        metadataJson:
+          type: string
+        modelId:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    AgentChatCompletionResponse:
+      description: Agent chat completion response following SdkWorkApiResponse envelope with composite item payload.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      type: object
+                      additionalProperties: false
+                      required: [session, userMessage, assistantMessage]
+                      properties:
+                        session:
+                          $ref: '#/components/schemas/AgentSessionRecord'
+                        userMessage:
+                          $ref: '#/components/schemas/AgentMessageRecord'
+                        assistantMessage:
+                          $ref: '#/components/schemas/AgentMessageRecord'
+    AppCreateAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        title:
+          type: string
+        providerBindingId:
+          type: string
+        modelId:
+          type: string
+        metadataJson:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    AppSendAgentChatMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [content, requestedAt]
+      properties:
+        content:
+          type: string
+          minLength: 1
+        contentType:
+          type: string
+        metadataJson:
+          type: string
+        modelId:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    AppCloseAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    ArchiveAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [tenantId, requestedAt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    CodeEngineCatalogListResponse:
+      description: Code engine catalog response following SdkWorkApiResponse envelope; the catalog is returned as a single composite resource under data.item.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/CodeEngineCatalog'
+    CodeEngineCatalog:
+      type: object
+      additionalProperties: false
+      required: [engines]
+      properties:
+        engines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeEngineCatalogEngine'
+    CodeEngineCatalogEngine:
+      type: object
+      additionalProperties: false
+      required: [engineKey, agentId, bindingId, models]
+      properties:
+        engineKey:
+          type: string
+        agentId:
+          type: string
+        bindingId:
+          type: string
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeEngineModelCatalogEntry'
+    CodeEngineModelCatalogEntry:
+      type: object
+      additionalProperties: false
+      required: [engineKey, modelId, label, description, providerId, bindingId, defaultForEngine]
+      properties:
+        engineKey:
+          type: string
+        modelId:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        providerId:
+          type: string
+        bindingId:
+          type: string
+        defaultForEngine:
+          type: boolean
+    McpServerMarketplaceListResponse:
+      description: MCP server marketplace list response following SdkWorkApiResponse envelope.
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/McpServerMarketplaceRecord'
+    McpServerMarketplaceRecord:
+      type: object
+      additionalProperties: false
+      required: [agentId, slotId, serverId, targetModule, targetRef, enabled, priority]
+      properties:
+        agentId:
+          type: string
+        slotId:
+          type: string
+        serverId:
+          type: string
+        targetModule:
+          type: string
+        targetRef:
+          type: string
+        targetVersionRef:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+          format: int32
     FieldError:
       type: object
       additionalProperties: false
-      required: [field, reason]
+      required: [field, message]
       properties:
         field:
           type: string
-        reason:
+          description: JSON Pointer or dot-path to the invalid field, for example `/agentId` or `data.item.code`.
+        message:
           type: string
+          description: Safe validation message for logs and optional UI display. MUST NOT reveal secrets or enumeration hints.
+        code:
+          type: integer
+          format: int32
+          minimum: 40011
+          maximum: 40099
+          description: Optional field-level validation subcode when ProblemDetail.code is 40001 VALIDATION_ERROR.
     ProblemDetail:
       type: object
       additionalProperties: true
-      required: [type, title, status]
+      required: [type, title, status, code, traceId]
       properties:
         type:
           type: string
@@ -1601,17 +2383,15 @@ components:
         instance:
           type: string
         code:
-          type: string
-          description: Error code, for example validation_error, permission_required, conflict, version_conflict, not_found, internal_error.
-        errorCategory:
-          type: string
-          description: Error category for client handling, for example validation, permission, business, concurrency, resource, internal.
-          enum: [validation, permission, business, concurrency, resource, internal]
-        retryable:
-          type: boolean
-          description: Whether the client may retry the same request without changing payload semantics.
+          type: integer
+          format: int32
+          description: Numeric error result code. MUST be non-zero. See API_SPEC.md §15.3.
+          minimum: 40001
+          maximum: 79999
         traceId:
           type: string
+          format: uuid
+          description: Server-owned request correlation id. Same semantics as SdkWorkApiResponse.traceId.
         errors:
           type: array
           items:

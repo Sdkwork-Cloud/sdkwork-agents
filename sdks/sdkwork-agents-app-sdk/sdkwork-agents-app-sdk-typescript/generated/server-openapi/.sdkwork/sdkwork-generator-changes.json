@@ -9,9 +9,22 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "cf5e9d9172fc5cc3b65e22ad79bc93be469159c3106fc6ab3bc76952465814a6",
+  "changeFingerprint": "f4451c1b45907c763e2f4476bf178a9e0f50f5235d0f0356ec127386440259cc",
   "changes": {
     "createdGeneratedFiles": [
+      "src/types/code-engine-catalog-engine.ts",
+      "src/types/code-engine-catalog-list-response.ts",
+      "src/types/code-engine-catalog.ts",
+      "src/types/code-engine-model-catalog-entry.ts",
+      "src/types/mcp-server-marketplace-list-response.ts",
+      "src/types/mcp-server-marketplace-record.ts"
+    ],
+    "updatedGeneratedFiles": [
+      "README.md",
+      "src/api/ai.ts",
+      "src/types/index.ts"
+    ],
+    "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
       "bin/publish.ps1",
       "bin/publish.sh",
@@ -20,9 +33,7 @@
       "CHANGELOG.md",
       "LICENSE",
       "package.json",
-      "README.md",
       "sdkwork-sdk.json",
-      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
@@ -32,6 +43,7 @@
       "src/index.ts",
       "src/sdk.ts",
       "src/types/activate-agent-provider-binding-request.ts",
+      "src/types/agent-chat-completion-response.ts",
       "src/types/agent-composition-slot-create-data.ts",
       "src/types/agent-composition-slot-kind.ts",
       "src/types/agent-composition-slot-list-response.ts",
@@ -42,6 +54,9 @@
       "src/types/agent-implementation-type.ts",
       "src/types/agent-list-response.ts",
       "src/types/agent-management-profile.ts",
+      "src/types/agent-message-list-response.ts",
+      "src/types/agent-message-record.ts",
+      "src/types/agent-message-response.ts",
       "src/types/agent-provider-binding-list-response.ts",
       "src/types/agent-provider-binding-record.ts",
       "src/types/agent-provider-binding-response.ts",
@@ -49,34 +64,41 @@
       "src/types/agent-response.ts",
       "src/types/agent-runtime-execution-record.ts",
       "src/types/agent-runtime-execution-response.ts",
+      "src/types/agent-session-list-response.ts",
+      "src/types/agent-session-record.ts",
+      "src/types/agent-session-response.ts",
       "src/types/agent-status.ts",
       "src/types/agent-visibility.ts",
+      "src/types/app-close-agent-session-request.ts",
+      "src/types/app-create-agent-session-request.ts",
+      "src/types/app-send-agent-chat-message-request.ts",
+      "src/types/archive-agent-session-request.ts",
+      "src/types/close-agent-session-request.ts",
       "src/types/common.ts",
       "src/types/create-agent-composition-slot-request.ts",
       "src/types/create-agent-preview-response-request.ts",
       "src/types/create-agent-prompt-optimization-request.ts",
       "src/types/create-agent-provider-binding-request.ts",
       "src/types/create-agent-request.ts",
+      "src/types/create-agent-session-request.ts",
       "src/types/delete-agent-request.ts",
       "src/types/field-error.ts",
-      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/page-info.ts",
       "src/types/problem-detail.ts",
       "src/types/restore-agent-request.ts",
+      "src/types/send-agent-chat-message-request.ts",
       "src/types/update-agent-composition-slot-data.ts",
       "src/types/update-agent-composition-slot-request.ts",
       "src/types/update-agent-request.ts",
       "tsconfig.json"
     ],
-    "updatedGeneratedFiles": [],
-    "unchangedGeneratedFiles": [],
     "deletedGeneratedFiles": [],
-    "scaffoldedFiles": [
+    "scaffoldedFiles": [],
+    "preservedScaffoldFiles": [
       "custom/build-runtime.mjs",
       "custom/README.md"
     ],
-    "preservedScaffoldFiles": [],
     "backedUpFiles": []
   },
   "impact": {
@@ -84,128 +106,47 @@
     "areas": [
       "api-surface",
       "models",
-      "runtime",
-      "build-metadata",
-      "publish-workflow",
-      "documentation",
-      "custom-scaffold",
-      "unknown"
+      "documentation"
     ],
     "details": [
       {
         "area": "api-surface",
         "paths": [
-          "src/api/ai.ts",
-          "src/api/base.ts",
-          "src/api/index.ts",
-          "src/api/paths.ts",
-          "src/http/client.ts",
-          "src/sdk.ts"
+          "src/api/ai.ts"
         ]
       },
       {
         "area": "models",
         "paths": [
-          "src/types/activate-agent-provider-binding-request.ts",
-          "src/types/agent-composition-slot-create-data.ts",
-          "src/types/agent-composition-slot-kind.ts",
-          "src/types/agent-composition-slot-list-response.ts",
-          "src/types/agent-composition-slot-record.ts",
-          "src/types/agent-composition-slot-response.ts",
-          "src/types/agent-composition-target-module.ts",
-          "src/types/agent-implementation-kind.ts",
-          "src/types/agent-implementation-type.ts",
-          "src/types/agent-list-response.ts",
-          "src/types/agent-management-profile.ts",
-          "src/types/agent-provider-binding-list-response.ts",
-          "src/types/agent-provider-binding-record.ts",
-          "src/types/agent-provider-binding-response.ts",
-          "src/types/agent-record.ts",
-          "src/types/agent-response.ts",
-          "src/types/agent-runtime-execution-record.ts",
-          "src/types/agent-runtime-execution-response.ts",
-          "src/types/agent-status.ts",
-          "src/types/agent-visibility.ts",
-          "src/types/common.ts",
-          "src/types/create-agent-composition-slot-request.ts",
-          "src/types/create-agent-preview-response-request.ts",
-          "src/types/create-agent-prompt-optimization-request.ts",
-          "src/types/create-agent-provider-binding-request.ts",
-          "src/types/create-agent-request.ts",
-          "src/types/delete-agent-request.ts",
-          "src/types/field-error.ts",
+          "src/types/code-engine-catalog-engine.ts",
+          "src/types/code-engine-catalog-list-response.ts",
+          "src/types/code-engine-catalog.ts",
+          "src/types/code-engine-model-catalog-entry.ts",
           "src/types/index.ts",
-          "src/types/int64-string.ts",
-          "src/types/page-info.ts",
-          "src/types/problem-detail.ts",
-          "src/types/restore-agent-request.ts",
-          "src/types/update-agent-composition-slot-data.ts",
-          "src/types/update-agent-composition-slot-request.ts",
-          "src/types/update-agent-request.ts"
-        ]
-      },
-      {
-        "area": "runtime",
-        "paths": [
-          "src/auth/index.ts",
-          "src/http/client.ts",
-          "src/http/index.ts"
-        ]
-      },
-      {
-        "area": "build-metadata",
-        "paths": [
-          "package.json",
-          "sdkwork-sdk.json",
-          "tsconfig.json"
-        ]
-      },
-      {
-        "area": "publish-workflow",
-        "paths": [
-          "bin/publish-core.mjs",
-          "bin/publish.ps1",
-          "bin/publish.sh",
-          "bin/sdk-gen.bat",
-          "bin/sdk-gen.sh"
+          "src/types/mcp-server-marketplace-list-response.ts",
+          "src/types/mcp-server-marketplace-record.ts"
         ]
       },
       {
         "area": "documentation",
         "paths": [
-          "CHANGELOG.md",
-          "custom/README.md",
           "README.md"
-        ]
-      },
-      {
-        "area": "custom-scaffold",
-        "paths": [
-          "custom/build-runtime.mjs",
-          "custom/README.md"
-        ]
-      },
-      {
-        "area": "unknown",
-        "paths": [
-          "LICENSE",
-          "src/index.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown. Verification is required."
+    "summary": "Detected impact areas: api-surface, models, documentation. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, models, documentation. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, documentation.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -223,7 +164,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime, build-metadata, publish-workflow, documentation, custom-scaffold, unknown.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, documentation.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -241,17 +182,14 @@
   },
   "executionDecision": {
     "schemaVersion": 1,
-    "riskLevel": "high",
+    "riskLevel": "medium",
     "nextAction": "verify",
     "requiresManualReview": false,
     "applyRequiresExpectedFingerprint": false,
     "summary": "Changes have been applied. Run the required verification plan now.",
     "reasons": [
-      "manual-review-required",
-      "preserved-legacy-files",
-      "unknown-impact",
       "verification-required"
     ]
   },
-  "preservedLegacyFiles": true
+  "preservedLegacyFiles": false
 }

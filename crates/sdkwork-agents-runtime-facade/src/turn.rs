@@ -2,6 +2,7 @@ use sdkwork_agent_kernel::ModelRequest;
 use sdkwork_utils_rust::string::is_blank;
 
 use crate::code_engines::CodeEngineSlot;
+use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 
 /// Product-neutral code-engine turn input consumed by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,16 +23,15 @@ pub struct CodeEngineTurnOutput {
 pub fn execute_code_engine_turn(
     slot: &CodeEngineSlot,
     input: &CodeEngineTurnInput,
-) -> Result<CodeEngineTurnOutput, String> {
+) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
     if slot.engine_key() != input.engine_key {
-        return Err(format!(
-            "engine mismatch: slot={} input={}",
-            slot.engine_key(),
-            input.engine_key
-        ));
+        return Err(RuntimeFacadeError::EngineMismatch {
+            slot_engine: slot.engine_key().to_string(),
+            input_engine: input.engine_key.clone(),
+        });
     }
     if is_blank(Some(input.prompt.as_str())) {
-        return Err("prompt must not be blank".to_string());
+        return Err(RuntimeFacadeError::BlankPrompt);
     }
 
     let model_request_id = format!("agents-turn-{}", uuid::Uuid::new_v4());
@@ -45,7 +45,7 @@ pub fn execute_code_engine_turn(
 
     let response = slot
         .invoke_model(model_request)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
 
     Ok(CodeEngineTurnOutput {
         assistant_content: response.messages.join("\n"),
@@ -92,5 +92,38 @@ mod tests {
             .unwrap_or_else(|error| panic!("turn failed for {engine}: {error}"));
             assert!(!output.assistant_content.trim().is_empty());
         }
+    }
+
+    #[test]
+    fn blank_prompt_returns_typed_error() {
+        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let result = execute_code_engine_turn(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                model_id: "model".to_string(),
+                native_session_id: None,
+                prompt: "   ".to_string(),
+            },
+        );
+        assert!(matches!(result, Err(RuntimeFacadeError::BlankPrompt)));
+    }
+
+    #[test]
+    fn engine_mismatch_returns_typed_error() {
+        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let result = execute_code_engine_turn(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "gemini".to_string(),
+                model_id: "model".to_string(),
+                native_session_id: None,
+                prompt: "hello".to_string(),
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(RuntimeFacadeError::EngineMismatch { .. })
+        ));
     }
 }

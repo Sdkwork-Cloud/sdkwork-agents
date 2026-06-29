@@ -45,9 +45,7 @@ pub(crate) fn parse_tenant_id(value: &str) -> KernelResult<u64> {
     // a request that loses its tenant header could read or write cross-tenant
     // data scoped to the synthetic tenant `0`. Reject it at the parsing boundary.
     if parsed == 0 {
-        return Err(KernelError::validation(
-            "tenant_id must be greater than 0",
-        ));
+        return Err(KernelError::validation("tenant_id must be greater than 0"));
     }
     Ok(parsed)
 }

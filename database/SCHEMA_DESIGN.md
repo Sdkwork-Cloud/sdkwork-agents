@@ -43,7 +43,7 @@ The agents database follows a **composition-plane architecture** that achieves h
 3. **Multi-Tenant Isolation**: All queries scoped by `tenant_id` with optional RLS
 4. **Soft-Delete Safety**: Unique constraints use partial indexes excluding soft-deleted records
 5. **Immutable Audit**: Append-only audit log with no UPDATE/DELETE capability
-6. **No Over-Design**: Only 4 tables — identity, binding, composition, audit
+6. **No Over-Design**: Only 6 tables — identity, binding, composition, audit, session, message
 
 ### Removed Tables (v3 simplification)
 
@@ -205,4 +205,4 @@ This schema design aligns with:
 - [x] Cross-module boundary enforcement (composition_slot only)
 - [x] Optimistic locking (version columns)
 - [x] Index optimization (tenant-scoped, composite)
-- [x] No dead code (all 4 tables have active business logic)
+- [x] No dead code (all 6 tables have active business logic)

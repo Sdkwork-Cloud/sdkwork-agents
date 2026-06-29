@@ -5,6 +5,7 @@
 
 mod code_engines;
 mod engine_catalog;
+mod error;
 mod live_interaction;
 mod runtime_host;
 mod turn;
@@ -19,6 +20,7 @@ pub use engine_catalog::{
     list_slot_catalog_entries, model_descriptor_to_catalog_entry, CodeEngineCatalog,
     CodeEngineCatalogEngine, CodeEngineModelCatalogEntry,
 };
+pub use error::{RuntimeFacadeError, RuntimeFacadeResult};
 pub use live_interaction::{
     ApprovalDecision, EngineLiveInteraction, LiveInteractionRegistry, UserQuestionAnswer,
 };

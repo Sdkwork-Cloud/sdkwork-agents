@@ -3,7 +3,7 @@ name = "sdkwork-agents-contract"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "SDKWork Agents runtime contract helpers"
+description = "SDKWork Agents runtime environment helpers shared by route and integration-test crates"
 
 [dependencies]
 sdkwork-utils-rust.workspace = true

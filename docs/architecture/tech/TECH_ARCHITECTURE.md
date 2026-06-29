@@ -2,7 +2,7 @@
 
 Status: active
 Owner: agents-platform
-Updated: 2026-06-26
+Updated: 2026-06-28
 
 ## 1. Architecture Overview
 
@@ -16,7 +16,7 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 ```text
 ┌──────────────────────────────────────────────────────────┐
 │                    API Surfaces                           │
-│  /open/v3/api   /app/v3/api   /backend/v3/api            │
+│  /agent/v3/api   /app/v3/api   /backend/v3/api           │
 ├──────────────────────────────────────────────────────────┤
 │              sdkwork-agents-kernel-bridge                  │
 │  HTTP wiring · router assembly · AgentHttpState bootstrap │
@@ -31,7 +31,7 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 │  opencode · openclaw · hermes)                           │
 ├──────────────────────────────────────────────────────────┤
 │                    sdkwork-kernel                         │
-│        (agent runtime SPI · session persistence)          │
+│        (agent runtime SPI · policy · event primitives)    │
 ├──────────────────────────────────────────────────────────┤
 │     Sibling Modules (referenced via composition slot)     │
 │  memory · knowledgebase · skills · prompts · drive · mcp  │
@@ -44,7 +44,7 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 
 本仓库严格遵循高内聚、低耦合原则。每个模块拥有自己的数据库表和业务逻辑。
 
-### 2.1 本仓库拥有的表 (4 tables, all `ai_` prefix)
+### 2.1 本仓库拥有的表 (6 tables, all `ai_` prefix)
 
 | Table | Responsibility | Compliance |
 | --- | --- | --- |
@@ -52,6 +52,8 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 | `ai_agent_runtime_binding` | 供应商/运行时绑定 | L2 |
 | `ai_agent_composition_slot` | Agent → 外部模块资源引用 | L2 |
 | `ai_agent_audit_event` | 不可变管理审计日志 | L3 |
+| `ai_agent_session` | 托管会话（tenant/agent/owner 作用域） | L2 |
+| `ai_agent_message` | 会话消息与 chat turn 持久化 | L2 |
 
 ### 2.2 Sibling 模块依赖 (通过 composition slot 引用)
 
@@ -68,7 +70,7 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 
 | Framework | Role |
 | --- | --- |
-| `sdkwork-kernel` | Agent runtime SPI, route crates, session persistence |
+| `sdkwork-kernel` | Agent runtime SPI, route crates, policy/event primitives |
 | `sdkwork-web-framework` | HTTP interceptor chain via kernel `build_served_combined_router` |
 | `sdkwork-utils` | Shared env parsing, ID generation, validation helpers |
 | `sdkwork-drive` | Required for all file upload features (Drive Uploader only) |
@@ -118,24 +120,31 @@ CREATE TABLE ai_agent_composition_slot (
 
 ```text
 crates/
-  sdkwork-agents-contract/                    # 运行时环境辅助 (utils)
+  sdkwork-agents-contract/                    # 运行时环境辅助 (env_test_lock + dev-auth bypass)
+    src/
+      lib.rs             # 环境检测函数 + env_test_lock 导出
+      runtime_env.rs     # 测试环境互斥锁
   sdkwork-agents-kernel-bridge/               # kernel 组合边界
-  sdkwork-agents-standalone-gateway/                  # 可运行 HTTP 服务器二进制
+  sdkwork-agents-standalone-gateway/          # 可运行 HTTP 服务器二进制
   sdkwork-agents-database-host/               # 数据库主机集成
   sdkwork-agents-gateway-assembly/            # 网关装配
   sdkwork-agents-runtime-facade/              # code-engine provider 门面 (bootstrap · catalog · turn)
-  sdkwork-intelligence-agents-service/        # 核心服务 (domain + ports + persistence)
+  sdkwork-intelligence-agents-service/        # 核心服务 (domain + ports + persistence + http + 契约)
     src/
-      domain.rs          # 领域模型 (Agent 身份、绑定、部署、组合槽)
+      domain.rs          # 领域模型 + 公共枚举 (status/visibility/role/kind...)
       ports.rs           # 端口定义 (Repository, AuditSink)
       persistence.rs     # PostgreSQL 持久化适配器
       infrastructure.rs  # 内存实现 (测试用)
-      application.rs     # 应用服务 (命令处理)
-      dto.rs             # 数据传输对象
-      http.rs            # HTTP 路由 (axum)
-      api.rs             # API 操作元数据
+      application.rs     # 应用服务 (命令处理 · send_chat_message)
+      chat_runtime.rs    # 托管 chat turn 完成 (contract mode → runtime-facade)
+      dto.rs             # API 请求/响应 DTO + 信封包装类型
+      response.rs        # ApiProblem (numeric code) + ResourceData/PageData 信封助手
+      http.rs            # HTTP 路由 (axum) + AgentRequestContext + WebRequestContext 桥接
+      api.rs             # API 操作元数据 + OpenAPI 校验
       validation.rs      # 输入验证
       id.rs              # Snowflake ID 生成
+      code_engine_catalog.rs  # Code engine catalog 投影 (ResourceData<CodeEngineCatalog>)
+      mcp_marketplace.rs      # MCP marketplace 投影 (PageData<McpServerMarketplaceRecord>)
   sdkwork-routes-agents-app-api/              # App API 路由
   sdkwork-routes-agents-backend-api/          # Backend API 路由
   sdkwork-routes-agents-open-api/             # Open API 路由
@@ -143,12 +152,31 @@ crates/
   sdkwork-agents-integration-tests/           # 集成测试
 ```
 
+### 4.1 契约与信封归属
+
+`sdkwork-intelligence-agents-service` 是 API 契约与信封的唯一真相源，
+遵循 `CODE_STYLE_SPEC.md` 的职责分离原则：
+
+| 模块 | 职责 | 依赖 |
+| --- | --- | --- |
+| `domain` | 领域模型 + 公共枚举 + DB 编码映射 | `serde` |
+| `dto` | API 请求/响应序列化类型 | `serde`, `domain` |
+| `response` | `ApiProblem` (numeric int32 code) + `ResourceData<T>`/`PageData<T>` 信封 + `finish_api_json`/`created_json` 助手 | `sdkwork-web-core`, `sdkwork-utils-rust` |
+| `http` | axum 路由 + `AgentRequestContext` + `WebRequestContext` 桥接 + 中间件 | `axum`, `sdkwork-web-core` |
+
+`sdkwork-agents-contract` 仅保留运行时环境辅助（`env_test_lock`、
+`agents_is_production_like_environment`、`agents_use_dev_inline_auth_resolver`），
+供路由 crate 和集成测试共享。所有 DTO、枚举、路径、错误模型均由 service crate
+单一持有，避免重复定义。
+
+完整 API 规范见 [API_SPECIFICATION.md](API_SPECIFICATION.md)。
+
 ## 5. Database Design
 
 ### 5.1 设计原则
 
 1. **所有表使用 `ai_` 前缀** — 遵循 DATABASE_SPEC.md 智能体域前缀标准
-2. **仅拥有 4 张表** — 不过度设计，Agent 组合平面的最小完备集
+2. **仅拥有 6 张表** — Agent 组合平面 + 托管会话/消息的最小完备集
 3. **组合槽引用** — 所有外部模块资源通过 `ai_agent_composition_slot` 引用，不复制域数据
 4. **Snowflake ID** — 应用层分配 ID，不依赖数据库自增
 5. **int64 内部 / string API** — 避免 JavaScript 精度问题
@@ -161,11 +189,14 @@ crates/
 ```text
                     ai_agent (身份、清单、生命周期)
                                 │
-                    ┌───────────┼───────────────┐
-                    │           │               │
-        ai_agent_runtime   ai_agent_composition   ai_agent_audit_event
-            _binding          _slot              (不可变)
-            (供应商)          (引用外部模块)
+        ┌───────────────────────┼───────────────────────────┐
+        │                       │                           │
+ai_agent_runtime      ai_agent_composition        ai_agent_audit_event
+    _binding               _slot                   (不可变)
+  (供应商)            (引用外部模块)
+        │
+        └── ai_agent_session ── ai_agent_message
+              (托管会话)          (chat turn 消息)
 ```
 
 ### 5.3 索引策略
@@ -176,6 +207,8 @@ crates/
 | `ai_agent_runtime_binding` | unique partial `(tenant_id, agent_id) WHERE active=TRUE`, `(tenant_id, agent_id, active, updated_at, binding_id)` |
 | `ai_agent_composition_slot` | `(tenant_id, agent_id, slot_kind, enabled, priority, slot_id)` |
 | `ai_agent_audit_event` | `(tenant_id, agent_id, created_at DESC)`, `(tenant_id, action, created_at DESC)` |
+| `ai_agent_session` | `(tenant_id, agent_id, owner_user_id, status, updated_at DESC)`, unique `(tenant_id, session_id)` |
+| `ai_agent_message` | `(tenant_id, session_id, sequence)`, unique `(tenant_id, message_id)` |
 
 ### 5.4 约束策略
 
@@ -188,9 +221,27 @@ crates/
 
 | Surface | Prefix | Audience |
 | --- | --- | --- |
-| Open API | `/open/v3/api` | 第三方集成方 |
+| Open API | `/agent/v3/api` | 第三方集成方 |
 | App API | `/app/v3/api` | 前端应用 (H5/PC/Mini Program/Flutter) |
 | Backend API | `/backend/v3/api` | 管理后台 |
+
+完整 API 列表（68 个 HTTP 操作，含 session/message chat completion）参见 [API 参考文档](TECH-API-REFERENCE.md)。
+
+### 6.1 Chat Completion
+
+`POST .../sessions/{sessionId}/messages` 是 canonical chat turn 入口：
+
+1. 校验 agent/session 归属与 active 状态
+2. 持久化 user message
+3. 调用 `AgentsService::send_chat_message` → 可注入 `ChatCompleter`（默认 `ContractChatCompleter`；生产由网关通过 `AgentHttpState::with_chat_completer(KernelModelChatCompleter::new(...))` 挂载 kernel `ModelProvider`）
+4. 持久化 assistant message 并更新 session counters
+5. 返回 `AgentChatCompletionResponse`（session + userMessage + assistantMessage）
+
+`?stream=true` 时返回 `text/event-stream`，包含一个 `completion` 事件（JSON 与上述响应体相同）。逐 token 流式输出待 kernel `ModelProvider::stream` 集成后扩展。
+
+PC 管理面 `managementProfile` 通过 `defaultCodeTaskIntent.constraints` 中的
+`sdkwork.agent.pc.config:{json}` 与 OpenAPI 对齐，包含 `knowledgeBaseIds`、`skillIds`、
+`toolIds`、`voiceIds`、`memoryEnabled` 等字段。
 
 所有 API 操作通过 `api.rs` 中定义的 `ApiOperation` 元数据驱动路由注册和 OpenAPI 生成。
 
@@ -233,21 +284,33 @@ pnpm topology:validate
 pnpm db:validate
 ```
 
-## 10. Pending Technical Debt
+## 10. Launch Readiness
 
-以下项目已在 PRD Phase 2/3 中规划，按优先级排列：
+Pre-launch P0/P1 alignment is complete. Remaining items are post-launch platform
+capabilities owned by sibling SDKWork layers, not agents-application blockers.
 
-| Priority | Item | Status |
+### Completed (pre-launch)
+
+| Area | Status |
+| --- | --- |
+| IAM-backed policy + Postgres audit sink | Done |
+| 70-operation HTTP surface (22/25/23) + OpenAPI/SDK sync | Done |
+| Session/message chat + SSE completion event | Done |
+| `code_engine_catalog` + `mcp_marketplace` + `runtime_facade_bridge` | Done |
+| HTTP-only DTOs colocated in `http.rs` (no feature-gate dead code) | Done |
+| Open API / Open SDK surface boundary (no restore/catalog drift) | Done |
+| HTTP route trees aligned to OpenAPI authority (22/25/23, no phantom routes) | Done |
+| Interaction domain in application/repository only (no public HTTP until OpenAPI) | Done |
+| Legacy MCP/Memory/Knowledge inline types removed | Done |
+| Structured audit payloads (agent, binding, runtime, marketplace) | Done |
+
+### Post-launch (platform-owned)
+
+| Priority | Item | Owner |
 | --- | --- | --- |
-| P0 | 移除生产环境 AllowAllPolicyProvider, 实现 IAM-backed PolicyProvider | Done |
-| P0 | 实现 PostgresAgentAuditSink 替换内存审计 | Done |
-| P0 | 确保 sdkwork-agents-runtime-facade 正确集成 | Done |
-| P1 | 修复 std::sync::Mutex 阻塞异步执行器 | Done |
-| P1 | 拆分超大文件 http.rs 和 persistence.rs | Pending (http-axum feature cannot be compiled on Windows toolchain; deferring to avoid unverifiable refactor) |
-| P1 | 添加限流 / CORS / 请求追踪中间件 | Partial (request tracing done; rate-limit/CORS deferred to web-framework layer) |
-| P1 | 修复 tenant_id 空默认值安全问题 | Done |
-| P1 | 清理 domain.rs 中 MCP/Memory/Knowledge 遗留类型 | Done |
-| P1 | 清理 application.rs/dto.rs/http.rs 中 MCP/Memory/Knowledge 遗留 | Done |
-| P2 | 补充集成测试覆盖 | Pending |
-| P2 | 添加 Prometheus metrics 和可观测性 | Pending |
-| P2 | 实现小程序 SDK 客户端 | Pending |
+| P1 | Token-level SSE streaming | kernel `ModelProvider::stream` |
+| P1 | Rate limit + CORS middleware | sdkwork-web-framework |
+| P2 | Prometheus metrics / dashboards | ops + web-framework |
+| P2 | MCP marketplace federation HTTP | sdkwork-mcp sibling mount |
+| P2 | Mini program SDK client surface | apps/sdkwork-agents-mini-program |
+| P2 | Direct open SDK sdkgen (`/agent/v3/api` profile) | sdkwork-sdk-generator |

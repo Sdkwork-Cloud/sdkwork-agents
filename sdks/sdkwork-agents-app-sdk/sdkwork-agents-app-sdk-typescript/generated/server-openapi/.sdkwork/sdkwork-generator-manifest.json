@@ -44,7 +44,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "ed1cbdcdab9c24cd8f22e7668faf431de474031f9efa9be8a6cdc0b29b8c506b"
+      "sha256": "cb9ba04b6856348612f2dc085e8356358265342009dde53d8a32be586c64b072"
     },
     {
       "path": "sdkwork-sdk.json",
@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "674e5d90efcba57d13769a9f0769c9160acc59f6c51ea9e580f98d963ab5d8e3"
+      "sha256": "0665cbcf55fc1461445a6a7a49d4ac8c3c88eec341ca42e297429cc05ce4d7b2"
     },
     {
       "path": "src/api/base.ts",
@@ -91,8 +91,12 @@
       "sha256": "26612666f67eff8fd2877195feacbe9f35b3c63d7ca5e3e747b7a62aa8f94854"
     },
     {
+      "path": "src/types/agent-chat-completion-response.ts",
+      "sha256": "d2b8c093202ab6cbab9f110419c16e17c640f6ddd0d1a7e90370956b18dabf59"
+    },
+    {
       "path": "src/types/agent-composition-slot-create-data.ts",
-      "sha256": "9db55ea13327331f7947621b4e8bf3bbce30f8fc523f35bc30848242fb709196"
+      "sha256": "1e0719a7b04eb50c7203a86488f69a59517a4966ec607e44b39050f0635080f4"
     },
     {
       "path": "src/types/agent-composition-slot-kind.ts",
@@ -104,7 +108,7 @@
     },
     {
       "path": "src/types/agent-composition-slot-record.ts",
-      "sha256": "36b6a9c87fa5128affd3e296310ce1e79e8cdd1b748384bb4f79eccb5095702e"
+      "sha256": "bcf51152dc9e643be660b4473f095ab11826a372331b58e792e311fac6e34c63"
     },
     {
       "path": "src/types/agent-composition-slot-response.ts",
@@ -129,6 +133,18 @@
     {
       "path": "src/types/agent-management-profile.ts",
       "sha256": "9cd403b8eeaa7fb06b0cbf907f27d6013f8861de5be45de0d27fcd0193207dd2"
+    },
+    {
+      "path": "src/types/agent-message-list-response.ts",
+      "sha256": "874b4e1d78d371b8369017965f80ac1e4826fc6eba162ad914f954f957d23287"
+    },
+    {
+      "path": "src/types/agent-message-record.ts",
+      "sha256": "50584b34a67b44a647bc6326a32b06a13512276435825ec13fb14ee884b5c962"
+    },
+    {
+      "path": "src/types/agent-message-response.ts",
+      "sha256": "aac73ba0d2472dd80555cc0766ed00a6c0df0700207401acea7f4cd32e381f2b"
     },
     {
       "path": "src/types/agent-provider-binding-list-response.ts",
@@ -159,12 +175,60 @@
       "sha256": "255a17c091dec87e2ca26f29bf2bc3ee3d6b6bb52f6b44970526159eae34a91a"
     },
     {
+      "path": "src/types/agent-session-list-response.ts",
+      "sha256": "369bc7f01a95813d1ddcf9cbdd032f69a502275d72d045a4aaf39c893a0eb13c"
+    },
+    {
+      "path": "src/types/agent-session-record.ts",
+      "sha256": "aa0eb1e9d6fac18699f6859c40b4b2b2e131ee2a0a273f8e39248f972abec76a"
+    },
+    {
+      "path": "src/types/agent-session-response.ts",
+      "sha256": "f97ec4104007a712209e6dfcfed7d0eccfaf538b50229e921191a69584ee5e18"
+    },
+    {
       "path": "src/types/agent-status.ts",
       "sha256": "39c6e764d4802c4567a07cd86c1f3fb4b65f18bf6907f03f51ae9790acf5e335"
     },
     {
       "path": "src/types/agent-visibility.ts",
       "sha256": "461cc6650996e7c5ee0e5a6dfe3cd02b5875c245ae4eda9d88bef3668c78182a"
+    },
+    {
+      "path": "src/types/app-close-agent-session-request.ts",
+      "sha256": "d157934842e04354cf184cb108795e9ec1bd68cb2d6a618a3ff6b625664b6c37"
+    },
+    {
+      "path": "src/types/app-create-agent-session-request.ts",
+      "sha256": "f4475da9ef341d88470cb71ea267946f4e151e75e86c0ca19a5147b7646b0dbd"
+    },
+    {
+      "path": "src/types/app-send-agent-chat-message-request.ts",
+      "sha256": "40fff0b38c439a47fc23a9c5c2aa3e08d60f3d5d374548e479b9685bdebd2534"
+    },
+    {
+      "path": "src/types/archive-agent-session-request.ts",
+      "sha256": "15fb0472f9dc7a9a3f1f647d6e224baa6be66e59727990967ec1199a2c63dc24"
+    },
+    {
+      "path": "src/types/close-agent-session-request.ts",
+      "sha256": "86a64ed816b467876af15c52331ba1208939b01c4aa4e9c0e23e54f2c4d9710c"
+    },
+    {
+      "path": "src/types/code-engine-catalog-engine.ts",
+      "sha256": "d5b98e575d78a6a1b40447900012b4362b6cad5161610080879a7c6d70af5d76"
+    },
+    {
+      "path": "src/types/code-engine-catalog-list-response.ts",
+      "sha256": "5751d2e515f0f5f406bf95f69784a2fadc815a5f783f889a3913b03e03b21a0d"
+    },
+    {
+      "path": "src/types/code-engine-catalog.ts",
+      "sha256": "851b43e6a3566be61bae204f2bdc981794227c1b0df21b1f43abe49ec40c8965"
+    },
+    {
+      "path": "src/types/code-engine-model-catalog-entry.ts",
+      "sha256": "1fb34262f589157b684216f15ec202b2f1545bcdcd4121f776b2c35ead736b7b"
     },
     {
       "path": "src/types/common.ts",
@@ -191,6 +255,10 @@
       "sha256": "890f78d550e09c94eb43e06014156c5e9c2e4c0e64c94d0bc464a0a233154425"
     },
     {
+      "path": "src/types/create-agent-session-request.ts",
+      "sha256": "ebc1aa15c9a90fcf758d39d7333545dec19690373e596480745ded5275735d75"
+    },
+    {
       "path": "src/types/delete-agent-request.ts",
       "sha256": "494633a181abcea62144b090c05071a8a3490e987f0c1196d3026ff9db69e59f"
     },
@@ -200,11 +268,19 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "b21fb771c80a5f60ec5f6409b5296e79cf15dda3d2fbb339ddde5979a647a97b"
+      "sha256": "698341c5e81ddde698b0e2f28a8fd0f076e17863aad935588a1dfda80de8502f"
     },
     {
       "path": "src/types/int64-string.ts",
       "sha256": "b5515c01c9562a7aa6276f377702e24f9ab58de44056ad3d0c31f3689821f029"
+    },
+    {
+      "path": "src/types/mcp-server-marketplace-list-response.ts",
+      "sha256": "5f4e7ada0cd49c308a0dc23e85f756d55cf93cba13e6ecef11d85dd9a82ef774"
+    },
+    {
+      "path": "src/types/mcp-server-marketplace-record.ts",
+      "sha256": "7e0e392e764f3971a8f0b2d60615590fad83c57e20d826cddfceca8ad4973f2e"
     },
     {
       "path": "src/types/page-info.ts",
@@ -219,8 +295,12 @@
       "sha256": "eb2b3273bc50cc8ad3e7608c0024d771d7c0a420c448d4972ea44efc28c56e26"
     },
     {
+      "path": "src/types/send-agent-chat-message-request.ts",
+      "sha256": "2e407f62135ab097f8bc7b0a07e84a62eb8ceb48a056344ff5a291a82ee134de"
+    },
+    {
       "path": "src/types/update-agent-composition-slot-data.ts",
-      "sha256": "77a8eb149c2081b4a0e505d43c9ff62e9de9b5de58380cb8616ff8fa1246a8f4"
+      "sha256": "a38e4890b7776d76d768500f7d447ee82d888b19aa551101bafcc39c763e45a0"
     },
     {
       "path": "src/types/update-agent-composition-slot-request.ts",

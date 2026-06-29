@@ -1,7 +1,6 @@
 use sdkwork_intelligence_agents_service::{
     AgentBusinessIdGenerator, AgentIdGenerator, SQL_INSERT_AGENT,
-    SQL_INSERT_AGENT_COMPOSITION_SLOT,
-    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AUDIT_EVENT,
+    SQL_INSERT_AGENT_COMPOSITION_SLOT, SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AUDIT_EVENT,
 };
 
 #[test]
@@ -27,9 +26,15 @@ fn agent_business_id_generator_uses_signed_safe_snowflake_ids() {
 fn postgres_runtime_insert_sql_binds_ids_explicitly_for_all_business_tables() {
     for (name, sql) in [
         ("ai_agent", SQL_INSERT_AGENT),
-        ("ai_agent_runtime_binding", SQL_INSERT_AGENT_PROVIDER_BINDING),
+        (
+            "ai_agent_runtime_binding",
+            SQL_INSERT_AGENT_PROVIDER_BINDING,
+        ),
         ("ai_agent_audit_event", SQL_INSERT_AUDIT_EVENT),
-        ("ai_agent_composition_slot", SQL_INSERT_AGENT_COMPOSITION_SLOT),
+        (
+            "ai_agent_composition_slot",
+            SQL_INSERT_AGENT_COMPOSITION_SLOT,
+        ),
     ] {
         let prefix = format!("INSERT INTO {name} (id, ");
         assert!(

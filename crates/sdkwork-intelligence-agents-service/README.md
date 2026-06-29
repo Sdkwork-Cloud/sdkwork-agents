@@ -26,6 +26,12 @@ integration. It defines:
 
 ## Architecture
 
+**Key Design Principles (2025 Update):**
+- **Stateless Service Layer**: `AgentsService` uses `&self` methods with no interior mutability, enabling true concurrent request processing without global locks.
+- **Thread-Safe Ports**: `AgentRepository` and `AgentAuditSink` traits use `&self` for all operations; adapters must provide interior mutability (e.g., `RwLock` for in-memory, connection pool for PostgreSQL).
+- **SQL-Level Filtering**: Search queries are pushed to PostgreSQL WHERE clause with trigram GIN indexes, eliminating in-memory filter chains.
+- **Connection Pool Monitoring**: `BlockingPostgresPool` exposes `PoolMetrics` (total, idle, active, utilization) for observability.
+
 ```text
 sdkwork-intelligence-agents-service/
 |-- src/
@@ -33,10 +39,11 @@ sdkwork-intelligence-agents-service/
 |   |-- api.rs               # app-api/backend-api operation contract declarations
 |   |-- domain.rs            # entities, status machine, business enums
 |   |-- dto.rs               # API DTO <-> command/entity mapping
-|   |-- application.rs       # command models + business service orchestration
-|   |-- ports.rs             # repository/audit interfaces
-|   |-- infrastructure.rs    # in-memory adapters + policy stub for tests
-|   |-- persistence.rs       # postgres row mapping, SQL constants, adapter wrappers
+|   |-- application.rs       # command models + stateless business service (&self)
+|   |-- ports.rs             # repository/audit interfaces (all &self methods)
+|   |-- infrastructure.rs    # in-memory adapters (RwLock-based) + policy stub
+|   |-- persistence.rs       # postgres row mapping, SQL with WHERE filtering, adapter wrappers
+|   |-- postgres_sync_pool.rs # blocking pool facade with PoolMetrics monitoring
 |   `-- http.rs              # optional axum app-api/backend-api route entrypoints
 |-- tests/
 |   |-- agent_business_service_contracts.rs
@@ -49,7 +56,7 @@ sdkwork-intelligence-agents-service/
     |-- component.spec.json
     |-- AGENTS_MANAGED_STORE_DATABASE_SPEC.md
     |-- sdkgen/commands.md
-    |-- sql/agents_managed_store_postgres.sql
+    |-- sql/agents_managed_store_postgres.sql  # includes trigram indexes for LIKE search
     `-- openapi/
         |-- agents-app-api.openapi.yaml
         `-- agents-backend-api.openapi.yaml

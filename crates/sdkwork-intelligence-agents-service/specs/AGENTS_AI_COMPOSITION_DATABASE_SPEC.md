@@ -37,7 +37,7 @@ No MCP, knowledge, memory, skills, prompts, or drive tables exist in this reposi
 5. `tenant_id` and `organization_id` are explicit columns on all tenant entities.
 6. Snowflake IDs are allocated in application code before insert (no `BIGSERIAL` / `RETURNING id`).
 7. Cross-module resources are referenced through `ai_agent_composition_slot`, not duplicated tables.
-8. No over-design: agents owns 4 tables only — identity, binding, composition, audit.
+8. No over-design: agents owns 6 tables — identity, binding, composition, audit, session, message.
 
 ## 3. Table Overview
 

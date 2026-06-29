@@ -2,7 +2,7 @@ use sdkwork_intelligence_agents_service::PromptAiRepository;
 use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateListQuery, AgentPromptTemplateRecord,
     CreatePromptBindingCommand, CreatePromptCommand, CreatePromptVersionCommand,
-    ListPromptBindingsQuery, ListPromptsQuery, ListPromptVersionsQuery, PromptAiBindingItem,
+    ListPromptBindingsQuery, ListPromptVersionsQuery, ListPromptsQuery, PromptAiBindingItem,
     PromptAiError, PromptAiItem, PromptAiResult, PromptAiVersionItem, PromptBindingRecord,
     PromptRecord, PromptVersionRecord, PublishPromptVersionCommand, RenderPromptVersionCommand,
     UpdatePromptBindingCommand, UpdatePromptCommand,

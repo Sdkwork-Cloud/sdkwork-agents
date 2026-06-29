@@ -3,7 +3,7 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-agents-backend-sdk",
-    "displayName": "SDKWork Agents Backend SDK",
+    "displayName": "SDKWork Agent Business Backend SDK",
     "version": "0.1.0",
     "type": "sdk-family",
     "root": "sdks/sdkwork-agents-backend-sdk",

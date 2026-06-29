@@ -4,39 +4,25 @@
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "../sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-06-26T04:16:01.014Z",
+  "startedAt": "2026-06-28T06:35:32.099Z",
   "families": [
     {
-      "key": "backend",
-      "familyDir": "sdkwork-agents-backend-sdk",
-      "authority": "sdkwork-agents-backend-api",
-      "input": "sdks/sdkwork-agents-backend-sdk/openapi/sdkwork-agents-backend-api.sdkgen.yaml",
-      "output": "sdks/sdkwork-agents-backend-sdk/sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
-      "sdkName": "sdkwork-agents-backend-sdk",
-      "sdkType": "backend",
-      "sdkOwner": "sdkwork-agents",
-      "packageName": "@sdkwork/agents-backend-sdk",
-      "apiPrefix": "/backend/v3/api",
-      "sdkDependencies": [
-        {
-          "workspace": "sdkwork-iam-backend-sdk",
-          "role": "appbase-backend-management-capability",
-          "required": true,
-          "dependencyMode": "consumer-sdk",
-          "apiPrefix": "/backend/v3/api",
-          "apiAuthority": "sdkwork-iam-backend-api",
-          "generatedTransportImportPolicy": "forbidden",
-          "packageByLanguage": {
-            "typescript": "@sdkwork/iam-backend-sdk"
-          }
-        }
-      ],
-      "version": "0.1.0",
-      "fingerprint": "49a532ab2a81e714adefc66c549020aedc6d702d836c0f896d973df81f17b0a5",
-      "hasChanges": true,
-      "riskLevel": "high",
-      "generated": true
+      "key": "open",
+      "familyDir": "sdkwork-agents-sdk",
+      "authority": "sdkwork-agents-open-api",
+      "input": "sdks/sdkwork-agents-sdk/openapi/sdkwork-agents-open-api.sdkgen.yaml",
+      "output": "sdks/sdkwork-agents-sdk/sdkwork-agents-sdk-typescript/generated/server-openapi",
+      "sdkName": "sdkwork-agents-sdk",
+      "sdkType": "custom",
+      "sdkSurface": "open",
+      "packageName": "@sdkwork/agents-sdk",
+      "apiPrefix": "/agent/v3/api",
+      "generated": false,
+      "skipped": true,
+      "skipReason": "Open SDK is derived from app SDK; regenerate app family first.",
+      "derivedFrom": "sdkwork-agents-app-sdk"
     }
   ],
-  "finishedAt": "2026-06-26T04:16:01.928Z"
+  "openSdkDerivedFromApp": true,
+  "finishedAt": "2026-06-28T06:35:32.203Z"
 }

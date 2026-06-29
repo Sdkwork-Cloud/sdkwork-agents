@@ -1,0 +1,368 @@
+//! Managed-agent chat completion for session message turns.
+//!
+//! Product HTTP APIs call this module to produce assistant replies after a user
+//! message is persisted. Inject a custom [`ChatCompleter`] at service bootstrap
+//! for live provider inference; the default [`ContractChatCompleter`] keeps HTTP
+//! contracts stable without a kernel provider registry in-process.
+
+use crate::domain::{AgentMessageRole, AgentSessionRecord};
+use sdkwork_agent_kernel::{
+    KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
+};
+use sdkwork_utils_rust::string::is_blank;
+use std::sync::Arc;
+
+/// Input for one chat completion turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatCompletionInput {
+    pub agent_display_name: String,
+    pub welcome_message: Option<String>,
+    pub session: AgentSessionRecord,
+    pub history: Vec<(AgentMessageRole, String)>,
+    pub user_content: String,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    /// When true, an active binding exposes `model.chat` and the gateway may
+    /// replace this completer with a kernel-backed implementation.
+    pub provider_has_model_chat: bool,
+}
+
+/// Output from one chat completion turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatCompletionOutput {
+    pub content: String,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub runtime_mode: &'static str,
+}
+
+/// Pluggable chat completion strategy (Open/Closed: swap at service bootstrap).
+pub trait ChatCompleter: Send + Sync {
+    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput;
+}
+
+/// Default managed-agent contract completer used in tests and local deployments.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ContractChatCompleter;
+
+impl ChatCompleter for ContractChatCompleter {
+    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
+        complete_chat_turn(input)
+    }
+}
+
+/// Kernel-backed chat completer for production gateway bootstrap.
+///
+/// Invokes a mounted [`ModelProvider`] when `provider_has_model_chat` is true;
+/// otherwise falls back to [`ContractChatCompleter`] semantics.
+pub struct KernelModelChatCompleter<P> {
+    provider: Arc<P>,
+    fallback: ContractChatCompleter,
+}
+
+impl<P> KernelModelChatCompleter<P>
+where
+    P: ModelProvider + Send + Sync + 'static,
+{
+    pub fn new(provider: Arc<P>) -> Self {
+        Self {
+            provider,
+            fallback: ContractChatCompleter,
+        }
+    }
+}
+
+impl<P> ChatCompleter for KernelModelChatCompleter<P>
+where
+    P: ModelProvider + Send + Sync + 'static,
+{
+    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
+        if !input.provider_has_model_chat {
+            return self.fallback.complete(input);
+        }
+        match invoke_kernel_model(self.provider.as_ref(), input) {
+            Ok(output) => output,
+            Err(error) => {
+                tracing::warn!(
+                    session_id = %input.session.session_id,
+                    error = %error,
+                    "kernel model invoke failed; falling back to contract completer"
+                );
+                self.fallback.complete(input)
+            }
+        }
+    }
+}
+
+fn build_model_messages(input: &ChatCompletionInput) -> Vec<String> {
+    let mut messages = Vec::new();
+    if let Some(welcome) = input
+        .welcome_message
+        .as_deref()
+        .filter(|value| !is_blank(Some(*value)))
+    {
+        messages.push(format!("system: {welcome}"));
+    }
+    for (role, content) in &input.history {
+        messages.push(format!("{}: {content}", role.as_str()));
+    }
+    messages.push(format!("user: {}", input.user_content));
+    messages
+}
+
+fn invoke_kernel_model(
+    provider: &dyn ModelProvider,
+    input: &ChatCompletionInput,
+) -> KernelResult<ChatCompletionOutput> {
+    let model_request_id = format!(
+        "managed-chat.{}.{}",
+        input.session.session_id,
+        input.history.len() + 1
+    );
+    let model_id = input
+        .model_id
+        .clone()
+        .or_else(|| input.session.model_id.clone());
+    let mut request =
+        ModelRequest::new(model_request_id.clone(), build_model_messages(input)).for_session(
+            input.session.session_id.clone(),
+        );
+    if let Some(model_id) = model_id.clone() {
+        request = request.with_model_id(model_id);
+    }
+
+    let response = provider.invoke(request)?;
+    map_model_response(input, model_id, response)
+}
+
+fn map_model_response(
+    input: &ChatCompletionInput,
+    model_id: Option<String>,
+    response: ModelResponse,
+) -> KernelResult<ChatCompletionOutput> {
+    if response.status != ModelStatus::Succeeded {
+        return Err(sdkwork_agent_kernel::KernelError::validation(format!(
+            "model invoke returned status {:?}",
+            response.status
+        )));
+    }
+    let content = response
+        .messages
+        .into_iter()
+        .next()
+        .filter(|message| !is_blank(Some(message.as_str())))
+        .unwrap_or_else(|| {
+            self_fallback_content(input)
+        });
+    let (input_tokens, output_tokens) = response
+        .usage
+        .map(|usage| (usage.input_tokens as u64, usage.output_tokens as u64))
+        .unwrap_or_else(|| {
+            (
+                estimate_tokens(input.user_content.as_str()),
+                estimate_tokens(content.as_str()),
+            )
+        });
+    Ok(ChatCompletionOutput {
+        content,
+        model_id,
+        provider_id: Some(response.provider_id),
+        input_tokens,
+        output_tokens,
+        runtime_mode: "managed-agent-kernel-model-v1",
+    })
+}
+
+fn self_fallback_content(input: &ChatCompletionInput) -> String {
+    format!(
+        "Hello! I'm {}. I received your message:\n\n> {}",
+        input.agent_display_name, input.user_content
+    )
+}
+
+fn estimate_tokens(text: &str) -> u64 {
+    (text.chars().count() as u64).div_ceil(4)
+}
+
+fn build_transcript(history: &[(AgentMessageRole, String)]) -> String {
+    let mut transcript = String::new();
+    for (role, message) in history {
+        transcript.push_str(role.as_str());
+        transcript.push_str(": ");
+        transcript.push_str(message);
+        transcript.push('\n');
+    }
+    transcript
+}
+
+fn runtime_mode_for(input: &ChatCompletionInput) -> &'static str {
+    if input.provider_has_model_chat {
+        "managed-agent-provider-bound-v1"
+    } else {
+        "managed-agent-contract-v1"
+    }
+}
+
+/// Complete one user turn using managed-agent contract semantics.
+pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
+    let input_tokens = estimate_tokens(input.user_content.as_str());
+    let model_id = input
+        .model_id
+        .clone()
+        .or_else(|| input.session.model_id.clone());
+    let provider_id = input.provider_id.clone();
+    let runtime_mode = runtime_mode_for(input);
+
+    let content = if input.history.is_empty() {
+        if let Some(welcome) = input.welcome_message.as_deref().filter(|value| !is_blank(Some(*value))) {
+            format!(
+                "{welcome}\n\nHow can I help you today?\n\n> {}",
+                input.user_content
+            )
+        } else if input.provider_has_model_chat {
+            format!(
+                "Hello! I'm {}. I received your message:\n\n> {}\n\nAn active provider binding with model.chat is configured. Mount a kernel-backed ChatCompleter at service bootstrap for live inference.",
+                input.agent_display_name, input.user_content
+            )
+        } else {
+            format!(
+                "Hello! I'm {}. I received your message:\n\n> {}\n\nActivate a provider binding with model.chat for live model inference.",
+                input.agent_display_name, input.user_content
+            )
+        }
+    } else {
+        let transcript = build_transcript(&input.history);
+        if input.provider_has_model_chat {
+            format!(
+                "{transcript}user: {}\n\nassistant: Thanks for the context. Based on our conversation, here is my response to your latest message:\n\n> {}",
+                input.user_content, input.user_content
+            )
+        } else {
+            format!(
+                "{transcript}user: {}\n\nassistant: Thanks for the context. Based on our conversation, here is my response to your latest message:\n\n> {}",
+                input.user_content, input.user_content
+            )
+        }
+    };
+
+    let output_tokens = estimate_tokens(content.as_str());
+    ChatCompletionOutput {
+        content,
+        model_id,
+        provider_id,
+        input_tokens,
+        output_tokens,
+        runtime_mode,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{AgentSessionStatus, AgentSessionRecord};
+
+    fn sample_session() -> AgentSessionRecord {
+        AgentSessionRecord {
+            id: 1,
+            session_id: "session.test".to_string(),
+            tenant_id: 100001,
+            organization_id: 0,
+            agent_id: "agent.test".to_string(),
+            owner_user_id: 42,
+            title: Some("Test".to_string()),
+            status: AgentSessionStatus::Active,
+            provider_binding_id: None,
+            model_id: Some("model.contract".to_string()),
+            message_count: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            metadata_json: "{}".to_string(),
+            version: 0,
+            created_at: "2026-06-28T00:00:00Z".to_string(),
+            updated_at: "2026-06-28T00:00:00Z".to_string(),
+            last_message_at: None,
+            closed_at: None,
+        }
+    }
+
+    #[test]
+    fn complete_chat_turn_returns_assistant_content() {
+        let output = complete_chat_turn(&ChatCompletionInput {
+            agent_display_name: "Demo Agent".to_string(),
+            welcome_message: Some("Welcome".to_string()),
+            session: sample_session(),
+            history: Vec::new(),
+            user_content: "Hello".to_string(),
+            model_id: None,
+            provider_id: None,
+            provider_has_model_chat: false,
+        });
+        assert!(output.content.contains("Hello"));
+        assert!(output.content.contains("Welcome"));
+        assert_eq!(output.runtime_mode, "managed-agent-contract-v1");
+        assert!(output.output_tokens > 0);
+    }
+
+    #[test]
+    fn complete_chat_turn_marks_provider_bound_runtime_mode() {
+        let output = complete_chat_turn(&ChatCompletionInput {
+            agent_display_name: "Demo Agent".to_string(),
+            welcome_message: None,
+            session: sample_session(),
+            history: Vec::new(),
+            user_content: "Hello".to_string(),
+            model_id: None,
+            provider_id: Some("provider.model.rig".to_string()),
+            provider_has_model_chat: true,
+        });
+        assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
+        assert!(output.content.contains("model.chat"));
+    }
+
+    struct FakeKernelModelProvider;
+
+    impl ModelProvider for FakeKernelModelProvider {
+        fn provider_manifest(&self) -> sdkwork_agent_kernel::ProviderManifest {
+            sdkwork_agent_kernel::ProviderManifest::new(
+                "provider.model.fake",
+                "model",
+                "sdkwork-fake-model",
+                "0.1.0",
+                vec!["model.chat".to_string()],
+            )
+        }
+
+        fn health(&self) -> sdkwork_agent_kernel::ProviderHealth {
+            sdkwork_agent_kernel::ProviderHealth::available()
+        }
+
+        fn invoke(&self, request: ModelRequest) -> KernelResult<ModelResponse> {
+            Ok(ModelResponse::text(
+                request.model_request_id,
+                "provider.model.fake",
+                "kernel reply",
+            )
+            .with_usage(sdkwork_agent_kernel::ModelUsage::new(3, 5)))
+        }
+    }
+
+    #[test]
+    fn kernel_model_chat_completer_invokes_provider() {
+        let completer = KernelModelChatCompleter::new(Arc::new(FakeKernelModelProvider));
+        let output = completer.complete(&ChatCompletionInput {
+            agent_display_name: "Demo Agent".to_string(),
+            welcome_message: None,
+            session: sample_session(),
+            history: Vec::new(),
+            user_content: "Hello".to_string(),
+            model_id: Some("model.fake".to_string()),
+            provider_id: Some("provider.model.fake".to_string()),
+            provider_has_model_chat: true,
+        });
+        assert_eq!(output.content, "kernel reply");
+        assert_eq!(output.runtime_mode, "managed-agent-kernel-model-v1");
+        assert_eq!(output.provider_id.as_deref(), Some("provider.model.fake"));
+    }
+}

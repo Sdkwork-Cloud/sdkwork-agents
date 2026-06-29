@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
+
 /// Live approval decision routed through the agents runtime facade.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,8 +32,8 @@ pub struct UserQuestionAnswer {
 
 /// Engine-specific live interaction handler registered by product bridges.
 pub trait EngineLiveInteraction: Send + Sync {
-    fn submit_approval(&self, decision: &ApprovalDecision) -> Result<(), String>;
-    fn submit_user_question(&self, answer: &UserQuestionAnswer) -> Result<(), String>;
+    fn submit_approval(&self, decision: &ApprovalDecision) -> RuntimeFacadeResult<()>;
+    fn submit_user_question(&self, answer: &UserQuestionAnswer) -> RuntimeFacadeResult<()>;
 }
 
 /// Registry of per-engine live interaction handlers.
@@ -57,11 +59,12 @@ impl LiveInteractionRegistry {
         &self,
         engine_key: &str,
         decision: &ApprovalDecision,
-    ) -> Result<(), String> {
+    ) -> RuntimeFacadeResult<()> {
         let handler = self.handlers.get(engine_key).ok_or_else(|| {
-            format!(
-                "engineId \"{engine_key}\" does not support live approval replies through agents runtime facade yet."
-            )
+            RuntimeFacadeError::UnsupportedLiveInteraction {
+                engine_key: engine_key.to_string(),
+                interaction_type: "approval",
+            }
         })?;
         handler.submit_approval(decision)
     }
@@ -70,11 +73,12 @@ impl LiveInteractionRegistry {
         &self,
         engine_key: &str,
         answer: &UserQuestionAnswer,
-    ) -> Result<(), String> {
+    ) -> RuntimeFacadeResult<()> {
         let handler = self.handlers.get(engine_key).ok_or_else(|| {
-            format!(
-                "engineId \"{engine_key}\" does not support live user-question replies through agents runtime facade yet."
-            )
+            RuntimeFacadeError::UnsupportedLiveInteraction {
+                engine_key: engine_key.to_string(),
+                interaction_type: "user-question",
+            }
         })?;
         handler.submit_user_question(answer)
     }
@@ -87,17 +91,17 @@ mod tests {
     struct StubHandler;
 
     impl EngineLiveInteraction for StubHandler {
-        fn submit_approval(&self, _decision: &ApprovalDecision) -> Result<(), String> {
+        fn submit_approval(&self, _decision: &ApprovalDecision) -> RuntimeFacadeResult<()> {
             Ok(())
         }
 
-        fn submit_user_question(&self, _answer: &UserQuestionAnswer) -> Result<(), String> {
+        fn submit_user_question(&self, _answer: &UserQuestionAnswer) -> RuntimeFacadeResult<()> {
             Ok(())
         }
     }
 
     #[test]
-    fn unsupported_engine_returns_clear_error() {
+    fn unsupported_engine_returns_typed_error() {
         let registry = LiveInteractionRegistry::new();
         let err = registry
             .submit_approval(
@@ -109,7 +113,11 @@ mod tests {
                 },
             )
             .expect_err("codex should not be registered");
-        assert!(err.contains("codex"));
+        assert!(matches!(
+            err,
+            RuntimeFacadeError::UnsupportedLiveInteraction { ref engine_key, .. }
+                if engine_key == "codex"
+        ));
     }
 
     #[test]

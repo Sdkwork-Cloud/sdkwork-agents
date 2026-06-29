@@ -101,6 +101,48 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         tag: "ai",
         operation_id: "agents.providerBindings.activate",
     },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions",
+        tag: "ai",
+        operation_id: "agents.sessions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions",
+        tag: "ai",
+        operation_id: "agents.sessions.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}",
+        tag: "ai",
+        operation_id: "agents.sessions.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close",
+        tag: "ai",
+        operation_id: "agents.sessions.close",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        tag: "ai",
+        operation_id: "agents.messages.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        tag: "ai",
+        operation_id: "agents.messages.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
+        tag: "ai",
+        operation_id: "agents.messages.retrieve",
+    },
 ];
 
 pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
@@ -195,10 +237,64 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.providerBindings.activate",
     },
     ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions",
+        tag: "ai",
+        operation_id: "agents.sessions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions",
+        tag: "ai",
+        operation_id: "agents.sessions.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}",
+        tag: "ai",
+        operation_id: "agents.sessions.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close",
+        tag: "ai",
+        operation_id: "agents.sessions.close",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        tag: "ai",
+        operation_id: "agents.messages.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        tag: "ai",
+        operation_id: "agents.messages.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
+        tag: "ai",
+        operation_id: "agents.messages.retrieve",
+    },
+    ApiOperation {
         method: "POST",
         path: "/app/v3/api/ai/agents/{agentId}/restore",
         tag: "ai",
         operation_id: "agents.restore",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/code_engines",
+        tag: "ai",
+        operation_id: "agents.codeEngines.list",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/mcp_servers",
+        tag: "ai",
+        operation_id: "agents.mcpServers.list",
     },
 ];
 
@@ -280,6 +376,54 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         path: "/backend/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
         tag: "ai",
         operation_id: "agents.providerBindings.activate",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions",
+        tag: "ai",
+        operation_id: "agents.sessions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions",
+        tag: "ai",
+        operation_id: "agents.sessions.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}",
+        tag: "ai",
+        operation_id: "agents.sessions.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close",
+        tag: "ai",
+        operation_id: "agents.sessions.close",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive",
+        tag: "ai",
+        operation_id: "agents.sessions.archive",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        tag: "ai",
+        operation_id: "agents.messages.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        tag: "ai",
+        operation_id: "agents.messages.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
+        tag: "ai",
+        operation_id: "agents.messages.retrieve",
     },
     ApiOperation {
         method: "POST",
@@ -431,8 +575,7 @@ mod tests {
     fn openapi_specs_expose_provider_binding_and_composition_contracts() {
         let open_openapi = include_str!("../specs/openapi/agents-open-api.openapi.yaml");
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
-        let backend_openapi =
-            include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
+        let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         for (label, openapi, prefix) in [
             ("open", open_openapi, "/agent/v3/api"),
@@ -466,6 +609,71 @@ mod tests {
                 );
             }
 
+            if label == "open" || label == "app" || label == "backend" {
+                for required in [
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions:"),
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}:"),
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/messages:"),
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/messages/{{messageId}}:"),
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/close:"),
+                    "operationId: agents.sessions.list".to_string(),
+                    "operationId: agents.sessions.create".to_string(),
+                    "operationId: agents.messages.create".to_string(),
+                    "operationId: agents.messages.list".to_string(),
+                    "AgentChatCompletionResponse:".to_string(),
+                ] {
+                    assert!(
+                        openapi.contains(required.as_str()),
+                        "{label} OpenAPI must contain {required}"
+                    );
+                }
+            }
+
+            if label == "app" {
+                for required in [
+                    "AppCreateAgentSessionRequest:".to_string(),
+                    "AppSendAgentChatMessageRequest:".to_string(),
+                    "AppCloseAgentSessionRequest:".to_string(),
+                    format!("{prefix}/ai/code_engines:"),
+                    format!("{prefix}/ai/mcp_servers:"),
+                    "operationId: agents.codeEngines.list".to_string(),
+                    "operationId: agents.mcpServers.list".to_string(),
+                    "CodeEngineCatalogListResponse:".to_string(),
+                    "McpServerMarketplaceListResponse:".to_string(),
+                ] {
+                    assert!(
+                        openapi.contains(required.as_str()),
+                        "{label} OpenAPI must contain {required}"
+                    );
+                }
+            }
+
+            if label == "open" || label == "backend" {
+                for required in [
+                    "SendAgentChatMessageRequest:".to_string(),
+                    "CreateAgentSessionRequest:".to_string(),
+                    "CloseAgentSessionRequest:".to_string(),
+                ] {
+                    assert!(
+                        openapi.contains(required.as_str()),
+                        "{label} OpenAPI must contain {required}"
+                    );
+                }
+            }
+
+            if label == "backend" {
+                for required in [
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/archive:"),
+                    "operationId: agents.sessions.archive".to_string(),
+                    "ArchiveAgentSessionRequest:".to_string(),
+                ] {
+                    assert!(
+                        openapi.contains(required.as_str()),
+                        "{label} OpenAPI must contain {required}"
+                    );
+                }
+            }
+
             for forbidden in [
                 "/ai/knowledge_bases",
                 "/ai/memory_stores",
@@ -475,6 +683,13 @@ mod tests {
                 assert!(
                     !openapi.contains(forbidden),
                     "{label} OpenAPI must not contain legacy inline knowledge/memory surface {forbidden}"
+                );
+            }
+
+            if label == "open" {
+                assert!(
+                    !openapi.contains("/agent/v3/api/ai/agents/{agentId}/restore:"),
+                    "open OpenAPI must not expose agents.restore (app/backend only)"
                 );
             }
 
@@ -514,5 +729,124 @@ mod tests {
             }),
             "{method} {path} must be registered as {operation_id}"
         );
+    }
+
+    fn count_openapi_operation_ids(openapi: &str) -> usize {
+        // Count only real OpenAPI operations (`operationId: <value>` on one line).
+        // Schema properties such as `SdkWorkAsyncData.operationId` use
+        // `operationId:` with the type on the next line, so they must be excluded
+        // to avoid false positives from the standard envelope schemas.
+        openapi
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                let rest = trimmed.strip_prefix("operationId:").unwrap_or("");
+                rest.trim().len() > 0
+            })
+            .count()
+    }
+
+    #[test]
+    fn surface_operation_counts_match_canonical_inventory() {
+        let open_openapi = include_str!("../specs/openapi/agents-open-api.openapi.yaml");
+        let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
+        let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
+
+        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 22);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 25);
+        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 23);
+
+        assert_eq!(
+            AGENT_OPEN_API_OPERATIONS.len(),
+            count_openapi_operation_ids(open_openapi),
+            "open operation registry must match OpenAPI authority"
+        );
+        assert_eq!(
+            AGENT_APP_API_OPERATIONS.len(),
+            count_openapi_operation_ids(app_openapi),
+            "app operation registry must match OpenAPI authority"
+        );
+        assert_eq!(
+            AGENT_BACKEND_API_OPERATIONS.len(),
+            count_openapi_operation_ids(backend_openapi),
+            "backend operation registry must match OpenAPI authority"
+        );
+    }
+
+    #[test]
+    fn open_operation_registry_must_not_include_unimplemented_surface_drift() {
+        for forbidden in [
+            "agents.providerBindings.retrieve",
+            "agents.providerBindings.deactivate",
+            "agents.providerBindings.delete",
+            "agents.sessions.update",
+            "agents.interactions.list",
+            "agents.codeEngines.health",
+            "agents.mcpServers.list",
+        ] {
+            assert!(
+                !AGENT_OPEN_API_OPERATIONS
+                    .iter()
+                    .any(|operation| operation.operation_id == forbidden),
+                "open registry must not include unimplemented {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn operation_registry_paths_must_not_include_post_launch_only_routes() {
+        let forbidden_path_markers = [
+            "/interactions",
+            "/provider_bindings/{bindingId}/deactivate",
+            "/code_engines/{engineKey}/health",
+        ];
+        for operations in [
+            AGENT_OPEN_API_OPERATIONS,
+            AGENT_BACKEND_API_OPERATIONS,
+        ] {
+            for operation in operations {
+                for marker in forbidden_path_markers {
+                    assert!(
+                        !operation.path.contains(marker),
+                        "{} path must not include {marker}",
+                        operation.operation_id
+                    );
+                }
+            }
+        }
+
+        for forbidden in [
+            "agents.providerBindings.retrieve",
+            "agents.providerBindings.deactivate",
+            "agents.providerBindings.delete",
+            "agents.sessions.update",
+            "agents.interactions.list",
+            "agents.codeEngines.health",
+        ] {
+            assert!(
+                !AGENT_APP_API_OPERATIONS
+                    .iter()
+                    .any(|operation| operation.operation_id == forbidden),
+                "app registry must not include post-launch-only {forbidden}"
+            );
+        }
+
+        for forbidden in [
+            "agents.providerBindings.retrieve",
+            "agents.providerBindings.deactivate",
+            "agents.providerBindings.delete",
+            "agents.sessions.update",
+            "agents.interactions.list",
+            "agents.codeEngines.list",
+            "agents.codeEngines.health",
+            "agents.mcpServers.list",
+        ] {
+            assert!(
+                !AGENT_BACKEND_API_OPERATIONS
+                    .iter()
+                    .any(|operation| operation.operation_id == forbidden),
+                "backend registry must not include post-launch-only {forbidden}"
+            );
+        }
     }
 }

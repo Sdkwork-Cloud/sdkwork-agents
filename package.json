@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node scripts/agents-dev.mjs",
     "build": "cargo build --workspace --release",
-    "test": "node scripts/cargo-test-workspace.mjs && node --test tests/contract/platform-integration.contract.test.mjs tests/contract/database-framework.contract.test.mjs",
+    "test": "node scripts/cargo-test-workspace.mjs && node --test tests/contract/platform-integration.contract.test.mjs tests/contract/database-framework.contract.test.mjs && node scripts/agents-open-sdk-surface-contract.test.mjs",
     "check": "pnpm check:architecture-alignment && pnpm check:identity-alignment && pnpm check:pnpm-script-standard && pnpm check:agent-workflow-standard && pnpm topology:validate && pnpm db:validate",
     "check:architecture-alignment": "node tools/check_sdkwork_agents_architecture_alignment.mjs",
     "check:identity-alignment": "node tools/check_agents_identity_alignment.mjs",

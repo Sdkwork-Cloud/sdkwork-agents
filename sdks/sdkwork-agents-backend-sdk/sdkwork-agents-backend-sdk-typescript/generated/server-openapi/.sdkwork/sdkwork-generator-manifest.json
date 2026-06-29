@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "4e0385a5fa4a61bbc1eb89b3acd45adebacecfd9637a69ee21bed9a394af8532"
+      "sha256": "7a1f750c1a3de2becff7402f40223b3dfb07aa57724292d4af4f2647c278e9fd"
     },
     {
       "path": "src/api/base.ts",
@@ -99,8 +99,12 @@
       "sha256": "91b34e9a9a0a968e7e1f3e4eb498f6c77d432be17e33e81c7911af0846242ce7"
     },
     {
+      "path": "src/types/agent-chat-completion-response.ts",
+      "sha256": "d2b8c093202ab6cbab9f110419c16e17c640f6ddd0d1a7e90370956b18dabf59"
+    },
+    {
       "path": "src/types/agent-composition-slot-create-data.ts",
-      "sha256": "9db55ea13327331f7947621b4e8bf3bbce30f8fc523f35bc30848242fb709196"
+      "sha256": "1e0719a7b04eb50c7203a86488f69a59517a4966ec607e44b39050f0635080f4"
     },
     {
       "path": "src/types/agent-composition-slot-kind.ts",
@@ -112,7 +116,7 @@
     },
     {
       "path": "src/types/agent-composition-slot-record.ts",
-      "sha256": "36b6a9c87fa5128affd3e296310ce1e79e8cdd1b748384bb4f79eccb5095702e"
+      "sha256": "bcf51152dc9e643be660b4473f095ab11826a372331b58e792e311fac6e34c63"
     },
     {
       "path": "src/types/agent-composition-slot-response.ts",
@@ -139,6 +143,18 @@
       "sha256": "9cd403b8eeaa7fb06b0cbf907f27d6013f8861de5be45de0d27fcd0193207dd2"
     },
     {
+      "path": "src/types/agent-message-list-response.ts",
+      "sha256": "874b4e1d78d371b8369017965f80ac1e4826fc6eba162ad914f954f957d23287"
+    },
+    {
+      "path": "src/types/agent-message-record.ts",
+      "sha256": "50584b34a67b44a647bc6326a32b06a13512276435825ec13fb14ee884b5c962"
+    },
+    {
+      "path": "src/types/agent-message-response.ts",
+      "sha256": "aac73ba0d2472dd80555cc0766ed00a6c0df0700207401acea7f4cd32e381f2b"
+    },
+    {
       "path": "src/types/agent-provider-binding-list-response.ts",
       "sha256": "99def326f495043cf9e4614c0beeb052005703cba4ffaa8ca8464a462a334004"
     },
@@ -159,6 +175,18 @@
       "sha256": "1cc7db0b252569d5ace8df79e6a7ad0b6dd9c831626728e7b3b7f25fab2efe22"
     },
     {
+      "path": "src/types/agent-session-list-response.ts",
+      "sha256": "369bc7f01a95813d1ddcf9cbdd032f69a502275d72d045a4aaf39c893a0eb13c"
+    },
+    {
+      "path": "src/types/agent-session-record.ts",
+      "sha256": "aa0eb1e9d6fac18699f6859c40b4b2b2e131ee2a0a273f8e39248f972abec76a"
+    },
+    {
+      "path": "src/types/agent-session-response.ts",
+      "sha256": "f97ec4104007a712209e6dfcfed7d0eccfaf538b50229e921191a69584ee5e18"
+    },
+    {
       "path": "src/types/agent-status.ts",
       "sha256": "39c6e764d4802c4567a07cd86c1f3fb4b65f18bf6907f03f51ae9790acf5e335"
     },
@@ -167,8 +195,28 @@
       "sha256": "461cc6650996e7c5ee0e5a6dfe3cd02b5875c245ae4eda9d88bef3668c78182a"
     },
     {
+      "path": "src/types/app-close-agent-session-request.ts",
+      "sha256": "d157934842e04354cf184cb108795e9ec1bd68cb2d6a618a3ff6b625664b6c37"
+    },
+    {
+      "path": "src/types/app-create-agent-session-request.ts",
+      "sha256": "f4475da9ef341d88470cb71ea267946f4e151e75e86c0ca19a5147b7646b0dbd"
+    },
+    {
+      "path": "src/types/app-send-agent-chat-message-request.ts",
+      "sha256": "40fff0b38c439a47fc23a9c5c2aa3e08d60f3d5d374548e479b9685bdebd2534"
+    },
+    {
+      "path": "src/types/archive-agent-session-request.ts",
+      "sha256": "15fb0472f9dc7a9a3f1f647d6e224baa6be66e59727990967ec1199a2c63dc24"
+    },
+    {
       "path": "src/types/audit-action.ts",
-      "sha256": "cb393d2973dc4b99602d4d4b082a46f766278a4bb249f2f6e991148afd5bf1ed"
+      "sha256": "b9a5b325388e9feca195f74b8df2ce7304deb5b4174d651610af5d67337fdc43"
+    },
+    {
+      "path": "src/types/close-agent-session-request.ts",
+      "sha256": "86a64ed816b467876af15c52331ba1208939b01c4aa4e9c0e23e54f2c4d9710c"
     },
     {
       "path": "src/types/common.ts",
@@ -187,6 +235,10 @@
       "sha256": "50c522575183e99c61de03afab956250f5491f5c54fae47cb4f769a0bed7e73b"
     },
     {
+      "path": "src/types/create-agent-session-request.ts",
+      "sha256": "ebc1aa15c9a90fcf758d39d7333545dec19690373e596480745ded5275735d75"
+    },
+    {
       "path": "src/types/delete-agent-request.ts",
       "sha256": "494633a181abcea62144b090c05071a8a3490e987f0c1196d3026ff9db69e59f"
     },
@@ -196,7 +248,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "cb4e6a3c121698daf2c903367a69b7a9c80e300270d45e3c9f259fbb63265d3b"
+      "sha256": "0f496122bc965aaa6880025c68d76762b1b1c6dce5b3ff8107537e73590d4ef5"
     },
     {
       "path": "src/types/int64-string.ts",
@@ -215,8 +267,12 @@
       "sha256": "eb2b3273bc50cc8ad3e7608c0024d771d7c0a420c448d4972ea44efc28c56e26"
     },
     {
+      "path": "src/types/send-agent-chat-message-request.ts",
+      "sha256": "2e407f62135ab097f8bc7b0a07e84a62eb8ceb48a056344ff5a291a82ee134de"
+    },
+    {
       "path": "src/types/update-agent-composition-slot-data.ts",
-      "sha256": "77a8eb149c2081b4a0e505d43c9ff62e9de9b5de58380cb8616ff8fa1246a8f4"
+      "sha256": "a38e4890b7776d76d768500f7d447ee82d888b19aa551101bafcc39c763e45a0"
     },
     {
       "path": "src/types/update-agent-composition-slot-request.ts",

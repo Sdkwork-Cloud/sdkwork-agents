@@ -1,17 +1,18 @@
 use crate::application::{
-    ActivateAgentProviderBindingCommand,
-    AgentPreviewResponseCommand, AgentPromptOptimizationCommand, AgentProviderBindingCommand,
-    ChangeAgentStatusCommand, CreateAgentCommand,
-    DeleteAgentCommand, GetAgentCommand, ListAgentsCommand, RestoreAgentCommand,
-    UpdateAgentCommand,
+    ActivateAgentProviderBindingCommand, AgentPreviewResponseCommand,
+    AgentPromptOptimizationCommand, AgentProviderBindingCommand, ArchiveSessionCommand,
+    ChangeAgentStatusCommand, CloseSessionCommand, CreateAgentCommand,
+    CreateMessageCommand, CreateSessionCommand, DeleteAgentCommand, GetAgentCommand,
+    ListAgentsCommand, ListMessagesCommand,
+    ListSessionsCommand, RestoreAgentCommand, UpdateAgentCommand,
 };
 use crate::domain::{
-    AgentBusinessRecord, AgentBusinessStatus,
-    AgentCompositionSlotRecord,
-    AgentImplementationKind, AgentImplementationType, AgentProviderBindingRecord,
-    AgentRuntimeExecutionRecord, AgentVisibility,
+    AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotRecord, AgentImplementationKind,
+    AgentImplementationType, AgentMessageRecord, AgentMessageRole,
+    AgentProviderBindingRecord, AgentRuntimeExecutionRecord, AgentSessionRecord,
+    AgentVisibility,
 };
-use crate::ports::AgentListQuery;
+use crate::ports::{AgentListQuery, MessageListQuery, SessionListQuery};
 use crate::validation::{
     parse_expected_version, parse_organization_id, parse_owner_user_id, parse_tenant_id,
     validate_requested_at,
@@ -445,12 +446,17 @@ pub struct AgentManagementProfileDto {
     pub debug_mode: Option<bool>,
     pub icon_name: Option<String>,
     pub json_mode: Option<bool>,
+    pub knowledge_base_ids: Vec<String>,
+    pub memory_enabled: Option<bool>,
     pub model: Option<String>,
+    pub skill_ids: Vec<String>,
     pub suggested_prompts: Vec<String>,
     pub system_prompt: Option<String>,
     pub temperature: Option<f64>,
+    pub tool_ids: Vec<String>,
     pub agent_type: Option<String>,
     pub users: Option<String>,
+    pub voice_ids: Vec<String>,
     pub welcome_message: Option<String>,
 }
 
@@ -487,6 +493,11 @@ impl AgentManagementProfileDto {
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         }) {
             intent.constraints.push(format!("agent.type={agent_type}"));
+        }
+        for knowledge_base_id in &self.knowledge_base_ids {
+            if !intent.context_paths.iter().any(|path| path == knowledge_base_id) {
+                intent.context_paths.push(knowledge_base_id.clone());
+            }
         }
         let encoded = serde_json::to_string(&self.to_pc_config_value()).map_err(|error| {
             KernelError::validation(format!("managementProfile json encode failed: {error}"))
@@ -528,12 +539,17 @@ impl AgentManagementProfileDto {
             debug_mode: optional_object_bool(object.get("debugMode")),
             icon_name: optional_object_string(object.get("iconName")),
             json_mode: optional_object_bool(object.get("jsonMode")),
+            knowledge_base_ids: object_string_array(object.get("knowledgeBaseIds")),
+            memory_enabled: optional_object_bool(object.get("memoryEnabled")),
             model: optional_object_string(object.get("model")),
+            skill_ids: object_string_array(object.get("skillIds")),
             suggested_prompts: object_string_array(object.get("suggestedPrompts")),
             system_prompt: optional_object_string(object.get("systemPrompt")),
             temperature: optional_object_f64(object.get("temperature")),
+            tool_ids: object_string_array(object.get("toolIds")),
             agent_type: optional_object_string(object.get("type")),
             users: optional_object_string(object.get("users")),
+            voice_ids: object_string_array(object.get("voiceIds")),
             welcome_message: optional_object_string(object.get("welcomeMessage")),
         };
 
@@ -553,12 +569,17 @@ impl AgentManagementProfileDto {
         insert_optional_bool(&mut object, "debugMode", self.debug_mode);
         insert_optional_string(&mut object, "iconName", self.icon_name.as_ref());
         insert_optional_bool(&mut object, "jsonMode", self.json_mode);
+        insert_string_array(&mut object, "knowledgeBaseIds", &self.knowledge_base_ids);
+        insert_optional_bool(&mut object, "memoryEnabled", self.memory_enabled);
         insert_optional_string(&mut object, "model", self.model.as_ref());
+        insert_string_array(&mut object, "skillIds", &self.skill_ids);
         insert_string_array(&mut object, "suggestedPrompts", &self.suggested_prompts);
         insert_optional_string(&mut object, "systemPrompt", self.system_prompt.as_ref());
         insert_optional_f64(&mut object, "temperature", self.temperature);
+        insert_string_array(&mut object, "toolIds", &self.tool_ids);
         insert_optional_string(&mut object, "type", self.agent_type.as_ref());
         insert_optional_string(&mut object, "users", self.users.as_ref());
+        insert_string_array(&mut object, "voiceIds", &self.voice_ids);
         insert_optional_string(&mut object, "welcomeMessage", self.welcome_message.as_ref());
         Value::Object(object)
     }
@@ -571,12 +592,17 @@ impl AgentManagementProfileDto {
             && self.debug_mode.is_none()
             && self.icon_name.is_none()
             && self.json_mode.is_none()
+            && self.knowledge_base_ids.is_empty()
+            && self.memory_enabled.is_none()
             && self.model.is_none()
+            && self.skill_ids.is_empty()
             && self.suggested_prompts.is_empty()
             && self.system_prompt.is_none()
             && self.temperature.is_none()
+            && self.tool_ids.is_empty()
             && self.agent_type.is_none()
             && self.users.is_none()
+            && self.voice_ids.is_empty()
             && self.welcome_message.is_none()
     }
 }
@@ -826,7 +852,6 @@ pub struct AgentCompositionSlotDeleteRequestDto {
 #[serde(rename_all = "camelCase")]
 pub struct AgentCompositionSlotResponseDto {
     pub data: AgentCompositionSlotRecordDto,
-    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -839,7 +864,415 @@ pub struct AgentCompositionSlotListDataDto {
 #[serde(rename_all = "camelCase")]
 pub struct AgentCompositionSlotListResponseDto {
     pub data: AgentCompositionSlotListDataDto,
-    pub request_id: Option<String>,
+}
+
+// ===========================================================================
+// Session DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSessionDataDto {
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub owner_user_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    pub title: Option<String>,
+    pub provider_binding_id: Option<String>,
+    pub model_id: Option<String>,
+    pub metadata_json: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSessionRequestDto {
+    pub data: CreateSessionDataDto,
+    pub requested_at: String,
+}
+
+impl CreateSessionRequestDto {
+    pub fn into_command(
+        self,
+        agent_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CreateSessionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(CreateSessionCommand {
+            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
+            organization_id: parse_organization_id(&self.data.organization_id)?,
+            agent_id,
+            owner_user_id: parse_owner_user_id(&self.data.owner_user_id)?,
+            session_id: self.data.session_id.unwrap_or_default(),
+            title: self.data.title,
+            provider_binding_id: self.data.provider_binding_id,
+            model_id: self.data.model_id,
+            metadata_json: self.data.metadata_json.unwrap_or_else(|| "{}".to_string()),
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseSessionRequestDto {
+    pub tenant_id: String,
+    pub expected_version: Option<String>,
+    pub requested_at: String,
+}
+
+impl CloseSessionRequestDto {
+    pub fn into_command(
+        self,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CloseSessionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let expected_version = self
+            .expected_version
+            .as_deref()
+            .map(parse_expected_version)
+            .transpose()?;
+        Ok(CloseSessionCommand {
+            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            session_id,
+            expected_version,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveSessionRequestDto {
+    pub tenant_id: String,
+    pub expected_version: Option<String>,
+    pub requested_at: String,
+}
+
+impl ArchiveSessionRequestDto {
+    pub fn into_command(
+        self,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ArchiveSessionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let expected_version = self
+            .expected_version
+            .as_deref()
+            .map(parse_expected_version)
+            .transpose()?;
+        Ok(ArchiveSessionCommand {
+            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            session_id,
+            expected_version,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListSessionsRequestDto {
+    pub tenant_id: String,
+    pub owner_user_id: Option<String>,
+    pub status: Option<String>,
+    pub include_archived: bool,
+}
+
+impl ListSessionsRequestDto {
+    pub fn into_command(self, requested_by: PolicySubject) -> KernelResult<ListSessionsCommand> {
+        let mut query = SessionListQuery::for_tenant(parse_tenant_id(&self.tenant_id)?);
+        if let Some(owner_user_id) = self.owner_user_id {
+            query = query.for_owner(parse_owner_user_id(&owner_user_id)?);
+        }
+        if let Some(status) = self.status {
+            query = query.with_status(status);
+        }
+        if self.include_archived {
+            query = query.include_archived();
+        }
+        Ok(ListSessionsCommand {
+            query,
+            requested_by,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionRecordDto {
+    pub id: String,
+    pub session_id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub agent_id: String,
+    pub owner_user_id: String,
+    pub title: Option<String>,
+    pub status: String,
+    pub provider_binding_id: Option<String>,
+    pub model_id: Option<String>,
+    pub message_count: String,
+    pub total_input_tokens: String,
+    pub total_output_tokens: String,
+    pub metadata_json: String,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_message_at: Option<String>,
+    pub closed_at: Option<String>,
+}
+
+impl AgentSessionRecordDto {
+    pub fn from_record(record: &AgentSessionRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            session_id: record.session_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            agent_id: record.agent_id.clone(),
+            owner_user_id: record.owner_user_id.to_string(),
+            title: record.title.clone(),
+            status: record.status.as_str().to_string(),
+            provider_binding_id: record.provider_binding_id.clone(),
+            model_id: record.model_id.clone(),
+            message_count: record.message_count.to_string(),
+            total_input_tokens: record.total_input_tokens.to_string(),
+            total_output_tokens: record.total_output_tokens.to_string(),
+            metadata_json: record.metadata_json.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            last_message_at: record.last_message_at.clone(),
+            closed_at: record.closed_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionResponseDto {
+    pub data: AgentSessionRecordDto,
+}
+
+impl AgentSessionResponseDto {
+    pub fn from_record(record: &AgentSessionRecord) -> Self {
+        Self {
+            data: AgentSessionRecordDto::from_record(record),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionListDataDto {
+    pub items: Vec<AgentSessionRecordDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionListResponseDto {
+    pub data: AgentSessionListDataDto,
+}
+
+impl AgentSessionListResponseDto {
+    pub fn from_records(records: &[AgentSessionRecord]) -> Self {
+        Self {
+            data: AgentSessionListDataDto {
+                items: records
+                    .iter()
+                    .map(AgentSessionRecordDto::from_record)
+                    .collect(),
+            },
+        }
+    }
+}
+
+// ===========================================================================
+// Message DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMessageDataDto {
+    pub tenant_id: String,
+    pub message_id: String,
+    pub role: String,
+    pub content: String,
+    pub content_type: Option<String>,
+    pub input_tokens: Option<String>,
+    pub output_tokens: Option<String>,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub artifacts_json: Option<String>,
+    pub metadata_json: Option<String>,
+    pub parent_message_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMessageRequestDto {
+    pub data: CreateMessageDataDto,
+    pub requested_at: String,
+}
+
+impl CreateMessageRequestDto {
+    pub fn into_command(
+        self,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CreateMessageCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let input_tokens = self
+            .data
+            .input_tokens
+            .as_deref()
+            .map(|v| parse_u64(v, "inputTokens"))
+            .transpose()?
+            .unwrap_or(0);
+        let output_tokens = self
+            .data
+            .output_tokens
+            .as_deref()
+            .map(|v| parse_u64(v, "outputTokens"))
+            .transpose()?
+            .unwrap_or(0);
+        Ok(CreateMessageCommand {
+            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
+            session_id,
+            message_id: self.data.message_id,
+            role: parse_message_role(&self.data.role)?,
+            content: self.data.content,
+            content_type: self.data.content_type.unwrap_or_else(|| "text/plain".to_string()),
+            input_tokens,
+            output_tokens,
+            model_id: self.data.model_id,
+            provider_id: self.data.provider_id,
+            artifacts_json: self.data.artifacts_json.unwrap_or_else(|| "[]".to_string()),
+            metadata_json: self.data.metadata_json.unwrap_or_else(|| "{}".to_string()),
+            parent_message_id: self.data.parent_message_id,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListMessagesRequestDto {
+    pub tenant_id: String,
+    pub role: Option<String>,
+    pub status: Option<String>,
+}
+
+impl ListMessagesRequestDto {
+    pub fn into_command(
+        self,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ListMessagesCommand> {
+        let mut query = MessageListQuery::for_session(parse_tenant_id(&self.tenant_id)?, session_id);
+        if let Some(role) = self.role {
+            query = query.with_role(role);
+        }
+        if let Some(status) = self.status {
+            query = query.with_status(status);
+        }
+        Ok(ListMessagesCommand {
+            query,
+            requested_by,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageRecordDto {
+    pub id: String,
+    pub message_id: String,
+    pub tenant_id: String,
+    pub session_id: String,
+    pub agent_id: String,
+    pub role: String,
+    pub content: String,
+    pub content_type: String,
+    pub status: String,
+    pub sequence: String,
+    pub input_tokens: String,
+    pub output_tokens: String,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub artifacts_json: String,
+    pub metadata_json: String,
+    pub parent_message_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl AgentMessageRecordDto {
+    pub fn from_record(record: &AgentMessageRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            message_id: record.message_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            session_id: record.session_id.clone(),
+            agent_id: record.agent_id.clone(),
+            role: record.role.as_str().to_string(),
+            content: record.content.clone(),
+            content_type: record.content_type.clone(),
+            status: record.status.as_str().to_string(),
+            sequence: record.sequence.to_string(),
+            input_tokens: record.input_tokens.to_string(),
+            output_tokens: record.output_tokens.to_string(),
+            model_id: record.model_id.clone(),
+            provider_id: record.provider_id.clone(),
+            artifacts_json: record.artifacts_json.clone(),
+            metadata_json: record.metadata_json.clone(),
+            parent_message_id: record.parent_message_id.clone(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageResponseDto {
+    pub data: AgentMessageRecordDto,
+}
+
+impl AgentMessageResponseDto {
+    pub fn from_record(record: &AgentMessageRecord) -> Self {
+        Self {
+            data: AgentMessageRecordDto::from_record(record),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageListDataDto {
+    pub items: Vec<AgentMessageRecordDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageListResponseDto {
+    pub data: AgentMessageListDataDto,
+}
+
+impl AgentMessageListResponseDto {
+    pub fn from_records(records: &[AgentMessageRecord]) -> Self {
+        Self {
+            data: AgentMessageListDataDto {
+                items: records
+                    .iter()
+                    .map(AgentMessageRecordDto::from_record)
+                    .collect(),
+            },
+        }
+    }
 }
 
 fn parse_visibility(value: &str) -> KernelResult<AgentVisibility> {
@@ -868,6 +1301,20 @@ fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationTyp
         KernelError::validation(format!(
             "implementationType must be one of sdkwork-native, rig-rust, openai-agents, langchain, langgraph, crewai, autogen, semantic-kernel, custom: {input}"
         ))
+    })
+}
+
+fn parse_message_role(value: &str) -> KernelResult<AgentMessageRole> {
+    AgentMessageRole::from_code(value).ok_or_else(|| {
+        KernelError::validation(format!(
+            "message role must be one of user, assistant, system, tool: {value}"
+        ))
+    })
+}
+
+fn parse_u64(value: &str, field_name: &str) -> KernelResult<u64> {
+    value.parse::<u64>().map_err(|_| {
+        KernelError::validation(format!("{field_name} must be a valid non-negative integer: {value}"))
     })
 }
 
@@ -1246,5 +1693,4 @@ mod tests {
         );
         assert!(command.make_default);
     }
-
 }

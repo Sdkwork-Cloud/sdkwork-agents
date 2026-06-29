@@ -80,11 +80,11 @@ pub fn build_code_engine_catalog(slots: &[&CodeEngineSlot]) -> CodeEngineCatalog
     CodeEngineCatalog { engines }
 }
 
-pub fn bootstrap_canonical_code_engine_catalog() -> Result<CodeEngineCatalog, String> {
+pub fn bootstrap_canonical_code_engine_catalog(
+) -> Result<CodeEngineCatalog, crate::code_engines::CodeEngineBootstrapError> {
     let mut slots = Vec::new();
     for engine_key in canonical_code_engine_keys() {
-        let slot = bootstrap_code_engine(engine_key)
-            .map_err(|error| format!("bootstrap failed for {engine_key}: {error}"))?;
+        let slot = bootstrap_code_engine(engine_key)?;
         slots.push(slot);
     }
     Ok(build_code_engine_catalog(

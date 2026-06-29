@@ -1,13 +1,18 @@
-//! SDKWork Agents runtime environment helpers.
+//! Runtime environment helpers for SDKWork Agents.
+//!
+//! This crate centralises process-environment detection used by route and
+//! integration-test crates: environment-name resolution, production-profile
+//! gating, and the dev inline-auth bypass switch. It intentionally owns no
+//! DTO, enum, path, or error contract — the service crate owns the live
+//! wire-level types under `sdkwork-intelligence-agents-service`.
 
 mod runtime_env;
-mod identity;
 
-pub use identity::{
-    AGENTS_APP_ID, AGENTS_DEFAULT_ORGANIZATION_ID, AGENTS_DEFAULT_ORGANIZATION_ID_I64,
-    AGENTS_DEFAULT_TENANT_ID, AGENTS_DEFAULT_TENANT_ID_I64,
-};
 pub use runtime_env::env_test_lock;
+
+// ── Runtime environment helpers ─────────────────────────────────────────────
+
+/// Returns the current agents environment name (development, production, etc.).
 pub fn agents_environment_name() -> String {
     std::env::var("SDKWORK_AGENTS_ENVIRONMENT")
         .or_else(|_| std::env::var("SDKWORK_AGENTS_CONFIG_PROFILE"))

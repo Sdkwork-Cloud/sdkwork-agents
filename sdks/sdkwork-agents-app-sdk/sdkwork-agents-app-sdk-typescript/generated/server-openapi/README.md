@@ -27,13 +27,7 @@ client.setAuthToken('your-auth-token');
 client.setAccessToken('your-access-token');
 
 // Use the SDK
-const params = {
-  include_deleted: true,
-  page: 2,
-  page_size: 3,
-  q: 'q',
-};
-const result = await client.ai.agents.list(params);
+const result = await client.ai.agents.codeEngines.list();
 ```
 
 ## Authentication
@@ -67,14 +61,8 @@ const client = new SdkworkAppClient({
 ### ai
 
 ```typescript
-// List managed agents
-const params = {
-  include_deleted: true,
-  page: 2,
-  page_size: 3,
-  q: 'q',
-};
-const result = await client.ai.agents.list(params);
+// List canonical code-engine catalog
+const result = await client.ai.agents.codeEngines.list();
 ```
 
 ## Error Handling
@@ -83,13 +71,7 @@ const result = await client.ai.agents.list(params);
 import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-app-sdk';
 
 try {
-  const params = {
-    include_deleted: true,
-    page: 2,
-    page_size: 3,
-    q: 'q',
-  };
-  const result = await client.ai.agents.list(params);
+  const result = await client.ai.agents.codeEngines.list();
 } catch (error) {
   if (error instanceof AuthenticationError) {
     console.error('Authentication failed:', error.message);

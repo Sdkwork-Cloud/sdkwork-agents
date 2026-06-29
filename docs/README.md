@@ -17,3 +17,5 @@
 | --- | --- |
 | Product PRD | [product/prd/PRD.md](product/prd/PRD.md) |
 | Technical architecture | [architecture/tech/TECH_ARCHITECTURE.md](architecture/tech/TECH_ARCHITECTURE.md) |
+| Complete API specification | [architecture/tech/API_SPECIFICATION.md](architecture/tech/API_SPECIFICATION.md) |
+| API reference | [architecture/tech/TECH-API-REFERENCE.md](architecture/tech/TECH-API-REFERENCE.md) |

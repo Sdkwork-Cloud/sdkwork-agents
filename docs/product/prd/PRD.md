@@ -3,7 +3,7 @@
 Status: active
 Owner: agents-platform
 Application: sdkwork-agents
-Updated: 2026-06-26
+Updated: 2026-06-28
 Specs: REQUIREMENTS_SPEC.md, DOCUMENTATION_SPEC.md
 
 ## Document Map
@@ -58,7 +58,7 @@ sdkwork-agents 解决的核心问题：
 
 ## 4. Scope
 
-### Core Owned Tables (4 tables, all ai_ prefix)
+### Core Owned Tables (6 tables, all `ai_` prefix)
 
 | Table | Responsibility |
 | --- | --- |
@@ -66,6 +66,17 @@ sdkwork-agents 解决的核心问题：
 | `ai_agent_runtime_binding` | 供应商/运行时绑定 |
 | `ai_agent_composition_slot` | Agent → 外部模块资源引用（记忆、知识、技能、提示词、文件、MCP） |
 | `ai_agent_audit_event` | 不可变管理审计日志 |
+| `ai_agent_session` | 托管 chat 会话（tenant/agent/owner 作用域） |
+| `ai_agent_message` | 会话消息与 chat turn 持久化 |
+
+### App-only Runtime Catalog APIs
+
+| Method | Path | operationId |
+| --- | --- | --- |
+| GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` |
+| GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` |
+
+完整 API 列表见 [API_SPECIFICATION.md](../../architecture/tech/API_SPECIFICATION.md)（70 HTTP 操作）。
 
 ### Sibling Module Dependencies (referenced via composition slot)
 

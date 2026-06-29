@@ -1,0 +1,253 @@
+# Horizontal Pod Autoscaler for SDKWork Intelligence Agents Service
+# Implements HA-05 requirement for production-ready autoscaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sdkwork-intelligence-agents-hpa
+  namespace: sdkwork
+  labels:
+    app: sdkwork-intelligence-agents
+    version: v1
+    managed-by: sdkwork-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sdkwork-intelligence-agents
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Pods
+      pods:
+        metric:
+          name: sdkwork_agents_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+---
+# Deployment for SDKWork Intelligence Agents Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdkwork-intelligence-agents
+  namespace: sdkwork
+  labels:
+    app: sdkwork-intelligence-agents
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sdkwork-intelligence-agents
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: sdkwork-intelligence-agents
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8095"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: sdkwork-intelligence-agents
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: agents-service
+          image: sdkwork/intelligence-agents-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8095
+              name: http
+              protocol: TCP
+          env:
+            - name: SDKWORK_DEPLOYMENT_ENV
+              value: "production"
+            - name: SDKWORK_AGENTS_DEV_AUTH_BYPASS
+              value: "false"
+            - name: SDKWORK_AGENTS_STORE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sdkwork-agents-db-credentials
+                  key: database-url
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8095
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8095
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /etc/sdkwork/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: sdkwork-intelligence-agents-config
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: sdkwork-intelligence-agents
+                topologyKey: kubernetes.io/hostname
+---
+# Service for SDKWork Intelligence Agents
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdkwork-intelligence-agents
+  namespace: sdkwork
+  labels:
+    app: sdkwork-intelligence-agents
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8095
+      targetPort: 8095
+      name: http
+      protocol: TCP
+  selector:
+    app: sdkwork-intelligence-agents
+---
+# Ingress for SDKWork Intelligence Agents Service
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sdkwork-intelligence-agents-ingress
+  namespace: sdkwork
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - agents.sdkwork.io
+      secretName: sdkwork-agents-tls
+  rules:
+    - host: agents.sdkwork.io
+      http:
+        paths:
+          - path: /app/v3/api/ai/agents
+            pathType: Prefix
+            backend:
+              service:
+                name: sdkwork-intelligence-agents
+                port:
+                  number: 8095
+          - path: /agent/v3/api/ai/agents
+            pathType: Prefix
+            backend:
+              service:
+                name: sdkwork-intelligence-agents
+                port:
+                  number: 8095
+          - path: /backend/v3/api/ai/agents
+            pathType: Prefix
+            backend:
+              service:
+                name: sdkwork-intelligence-agents
+                port:
+                  number: 8095
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: sdkwork-intelligence-agents
+                port:
+                  number: 8095
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdkwork-intelligence-agents-config
+  namespace: sdkwork
+data:
+  application.yaml: |
+    server:
+      port: 8095
+    database:
+      pool:
+        min_size: 5
+        max_size: 20
+        idle_timeout: 300
+    logging:
+      level: INFO
+      format: json
+    security:
+      auth_bypass: false
+      rate_limit: 100
+---
+# ServiceAccount for SDKWork Intelligence Agents
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sdkwork-intelligence-agents
+  namespace: sdkwork
+automountServiceAccountToken: true

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "generator": "materialize-agent-open-sdk-from-app",
+  "derivedFrom": {
+    "familyDir": "sdkwork-agents-app-sdk",
+    "authority": "sdkwork-agents-app-api",
+    "apiPrefix": "/app/v3/api",
+    "packageName": "@sdkwork/agents-app-sdk"
+  },
+  "target": {
+    "familyDir": "sdkwork-agents-sdk",
+    "authority": "sdkwork-agents-open-api",
+    "apiPrefix": "/agent/v3/api",
+    "packageName": "@sdkwork/agents-sdk"
+  },
+  "expectedOpenOperations": 22,
+  "strippedAppOnlyPaths": [
+    "/restore",
+    "/code_engines",
+    "/mcp_servers"
+  ],
+  "managedBy": "sdks/materialize-agent-open-sdk-from-app.mjs"
+}

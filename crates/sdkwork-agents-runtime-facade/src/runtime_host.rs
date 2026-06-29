@@ -4,6 +4,7 @@ use crate::code_engines::{
     bootstrap_code_engine, canonical_code_engine_keys, CodeEngineBootstrapError, CodeEngineSlot,
 };
 use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
+use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
 use crate::turn::{execute_code_engine_turn, CodeEngineTurnInput, CodeEngineTurnOutput};
 
@@ -50,11 +51,15 @@ impl AgentsCodeEngineHost {
         build_code_engine_catalog(&slots)
     }
 
-    pub fn execute_turn(&self, input: &CodeEngineTurnInput) -> Result<CodeEngineTurnOutput, String> {
-        let slot = self
-            .slots
-            .get(input.engine_key.as_str())
-            .ok_or_else(|| format!("unsupported engineId \"{}\".", input.engine_key))?;
+    pub fn execute_turn(
+        &self,
+        input: &CodeEngineTurnInput,
+    ) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+        let slot = self.slots.get(input.engine_key.as_str()).ok_or_else(|| {
+            RuntimeFacadeError::UnsupportedEngine {
+                engine_key: input.engine_key.clone(),
+            }
+        })?;
         execute_code_engine_turn(slot, input)
     }
 
@@ -62,7 +67,7 @@ impl AgentsCodeEngineHost {
         &self,
         engine_key: &str,
         decision: &ApprovalDecision,
-    ) -> Result<(), String> {
+    ) -> RuntimeFacadeResult<()> {
         self.validate_engine_key(engine_key)?;
         self.live.submit_approval(engine_key, decision)
     }
@@ -71,16 +76,18 @@ impl AgentsCodeEngineHost {
         &self,
         engine_key: &str,
         answer: &UserQuestionAnswer,
-    ) -> Result<(), String> {
+    ) -> RuntimeFacadeResult<()> {
         self.validate_engine_key(engine_key)?;
         self.live.submit_user_question(engine_key, answer)
     }
 
-    pub fn validate_engine_key(&self, engine_key: &str) -> Result<(), String> {
+    pub fn validate_engine_key(&self, engine_key: &str) -> RuntimeFacadeResult<()> {
         if self.slots.contains_key(engine_key) {
             return Ok(());
         }
-        Err(format!("unknown engineId \"{engine_key}\"."))
+        Err(RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        })
     }
 }
 
@@ -93,5 +100,16 @@ mod tests {
         let host = AgentsCodeEngineHost::bootstrap().expect("host bootstrap");
         assert_eq!(host.slots.len(), 4);
         assert_eq!(host.catalog().engines.len(), 4);
+    }
+
+    #[test]
+    fn validate_engine_key_returns_typed_error_for_unknown() {
+        let host = AgentsCodeEngineHost::bootstrap().expect("host bootstrap");
+        let result = host.validate_engine_key("nonexistent");
+        assert!(matches!(
+            result,
+            Err(RuntimeFacadeError::UnsupportedEngine { ref engine_key })
+                if engine_key == "nonexistent"
+        ));
     }
 }

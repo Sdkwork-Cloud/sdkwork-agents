@@ -1,7 +1,7 @@
 import { backendApiPath } from './paths';
 import type { HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentAuditEventListResponse, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AuditAction, CreateAgentCompositionSlotRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, RestoreAgentRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentStatusRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentAuditEventListResponse, AgentChatCompletionResponse, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentListResponse, AgentMessageListResponse, AgentMessageResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AgentSessionListResponse, AgentSessionResponse, ArchiveAgentSessionRequest, AuditAction, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionRequest, Int64String, RestoreAgentRequest, SendAgentChatMessageRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentStatusRequest } from '../types';
 
 
 export interface AiAgentsCompositionSlotsDeleteParams {
@@ -44,6 +44,92 @@ export class AiAgentsCompositionSlotsApi {
       { name: 'requested_at', value: params.requestedAt, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.delete<AgentCompositionSlotResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), query));
+  }
+}
+
+export interface AiAgentsMessagesListParams {
+  tenantId: Int64String;
+}
+
+export interface AiAgentsMessagesRetrieveParams {
+  tenantId: Int64String;
+}
+
+export class AiAgentsMessagesApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List messages in one chat session */
+  async list(agentId: string, sessionId: string, params: AiAgentsMessagesListParams): Promise<AgentMessageListResponse> {
+    const query = buildQueryString([
+      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<AgentMessageListResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages`), query));
+  }
+
+/** Send a user chat message and receive an assistant reply */
+  async create(agentId: string, sessionId: string, body: SendAgentChatMessageRequest): Promise<AgentChatCompletionResponse> {
+    return this.client.post<AgentChatCompletionResponse>(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages`), body, undefined, undefined, 'application/json');
+  }
+
+/** Retrieve one chat message */
+  async retrieve(agentId: string, sessionId: string, messageId: string, params: AiAgentsMessagesRetrieveParams): Promise<AgentMessageResponse> {
+    const query = buildQueryString([
+      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<AgentMessageResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages/${serializePathParameter(messageId, { name: 'messageId', style: 'simple', explode: false })}`), query));
+  }
+}
+
+export interface AiAgentsSessionsListParams {
+  tenantId: Int64String;
+}
+
+export interface AiAgentsSessionsRetrieveParams {
+  tenantId: Int64String;
+}
+
+export class AiAgentsSessionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List chat sessions for one managed agent */
+  async list(agentId: string, params: AiAgentsSessionsListParams): Promise<AgentSessionListResponse> {
+    const query = buildQueryString([
+      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<AgentSessionListResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), query));
+  }
+
+/** Create a chat session for one managed agent */
+  async create(agentId: string, body: CreateAgentSessionRequest): Promise<AgentSessionResponse> {
+    return this.client.post<AgentSessionResponse>(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), body, undefined, undefined, 'application/json');
+  }
+
+/** Retrieve one chat session */
+  async retrieve(agentId: string, sessionId: string, params: AiAgentsSessionsRetrieveParams): Promise<AgentSessionResponse> {
+    const query = buildQueryString([
+      { name: 'tenant_id', value: params.tenantId, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<AgentSessionResponse>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}`), query));
+  }
+
+/** Close one chat session */
+  async close(agentId: string, sessionId: string, body: CloseAgentSessionRequest): Promise<AgentSessionResponse> {
+    return this.client.post<AgentSessionResponse>(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/close`), body, undefined, undefined, 'application/json');
+  }
+
+/** Archive one chat session */
+  async archive(agentId: string, sessionId: string, body: ArchiveAgentSessionRequest): Promise<AgentSessionResponse> {
+    return this.client.post<AgentSessionResponse>(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/archive`), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -179,6 +265,8 @@ export class AiAgentsApi {
   public readonly status: AiAgentsStatusApi;
   public readonly auditEvents: AiAgentsAuditEventsApi;
   public readonly providerBindings: AiAgentsProviderBindingsApi;
+  public readonly sessions: AiAgentsSessionsApi;
+  public readonly messages: AiAgentsMessagesApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
 
   constructor(client: HttpClient) {
@@ -186,6 +274,8 @@ export class AiAgentsApi {
     this.status = new AiAgentsStatusApi(client);
     this.auditEvents = new AiAgentsAuditEventsApi(client);
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
+    this.sessions = new AiAgentsSessionsApi(client);
+    this.messages = new AiAgentsMessagesApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
   }
 

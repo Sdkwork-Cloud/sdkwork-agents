@@ -1,1 +1,0 @@
-{"version":3,"file":"knowledge-document-response.d.ts","sourceRoot":"","sources":["../../src/types/knowledge-document-response.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,uBAAuB,EAAE,MAAM,6BAA6B,CAAC;AAE3E,MAAM,WAAW,yBAAyB;IACxC,IAAI,EAAE,uBAAuB,CAAC;IAC9B,SAAS,CAAC,EAAE,MAAM,CAAC;CACpB"}

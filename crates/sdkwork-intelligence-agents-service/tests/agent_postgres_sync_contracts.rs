@@ -1,8 +1,14 @@
 #![cfg(feature = "postgres-sync")]
 
 use sdkwork_intelligence_agents_service::{
-    SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_SELECT_AGENT_COMPOSITION_SLOT,
-    SQL_UPDATE_AGENT_COMPOSITION_SLOT,
+    SQL_INSERT_AGENT, SQL_INSERT_AGENT_COMPOSITION_SLOT, SQL_INSERT_AGENT_MESSAGE,
+    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION, SQL_INSERT_AUDIT_EVENT,
+    SQL_LIST_AGENT, SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_MESSAGES,
+    SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS, SQL_NEXT_MESSAGE_SEQUENCE,
+    SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID, SQL_SELECT_AGENT_COMPOSITION_SLOT,
+    SQL_SELECT_AGENT_MESSAGE, SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_SELECT_AGENT_SESSION,
+    SQL_UPDATE_AGENT, SQL_UPDATE_AGENT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_MESSAGE,
+    SQL_UPDATE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT_SESSION,
 };
 
 fn tenant_scoped_select_sql(sql: &str, table: &str) {
@@ -36,7 +42,237 @@ fn tenant_scoped_update_sql(sql: &str, table: &str) {
 
 #[test]
 fn postgres_composition_slot_sql_is_tenant_scoped() {
-    tenant_scoped_select_sql(SQL_SELECT_AGENT_COMPOSITION_SLOT, "ai_agent_composition_slot");
-    tenant_scoped_list_sql(SQL_LIST_AGENT_COMPOSITION_SLOTS, "ai_agent_composition_slot");
-    tenant_scoped_update_sql(SQL_UPDATE_AGENT_COMPOSITION_SLOT, "ai_agent_composition_slot");
+    tenant_scoped_select_sql(
+        SQL_SELECT_AGENT_COMPOSITION_SLOT,
+        "ai_agent_composition_slot",
+    );
+    tenant_scoped_list_sql(
+        SQL_LIST_AGENT_COMPOSITION_SLOTS,
+        "ai_agent_composition_slot",
+    );
+    tenant_scoped_update_sql(
+        SQL_UPDATE_AGENT_COMPOSITION_SLOT,
+        "ai_agent_composition_slot",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// SQL Injection Security Tests (T-01)
+// ---------------------------------------------------------------------------
+
+/// Verifies that all SQL queries use parameterized queries ($1, $2, etc.)
+/// and do NOT use string concatenation or format strings for user input.
+/// This prevents SQL injection attacks per SECURITY_SPEC requirements.
+fn assert_parameterized_query(sql: &str, query_name: &str) {
+    // Check that query uses parameterized placeholders
+    let has_params = sql.contains("$1") || sql.contains("?");
+    assert!(
+        has_params,
+        "{query_name} must use parameterized queries ($1, $2, etc.) to prevent SQL injection"
+    );
+    
+    // Check for dangerous string concatenation patterns
+    let dangerous_patterns = [
+        "format!(", "concat(", "String::from(", ".to_owned() +",
+        "\" + ", "\" +", "+ \"", "f\"{", "println!(", "eprintln!(",
+    ];
+    
+    for pattern in dangerous_patterns {
+        assert!(
+            !sql.contains(pattern),
+            "{query_name} must not use string concatenation pattern '{pattern}' - use parameterized queries"
+        );
+    }
+    
+    // Verify LIKE clauses use parameterized input, not concatenated strings
+    if sql.contains("LIKE") {
+        assert!(
+            sql.contains("LIKE LOWER($") || sql.contains("LIKE $") || sql.contains("LIKE '%$"),
+            "{query_name} LIKE clause must use parameterized input, not string concatenation"
+        );
+    }
+}
+
+/// Verifies that INSERT statements use parameterized values.
+fn assert_safe_insert(sql: &str, query_name: &str) {
+    assert_parameterized_query(sql, query_name);
+    
+    // INSERT should use VALUES ($1, $2, ...) pattern
+    assert!(
+        sql.contains("VALUES") || sql.contains("values"),
+        "{query_name} must be a valid INSERT statement with VALUES clause"
+    );
+}
+
+/// Verifies that UPDATE statements use parameterized SET clauses.
+fn assert_safe_update(sql: &str, query_name: &str) {
+    assert_parameterized_query(sql, query_name);
+    
+    // UPDATE should have WHERE clause with tenant_id filter
+    assert!(
+        sql.contains("WHERE"),
+        "{query_name} must have WHERE clause for security filtering"
+    );
+}
+
+/// Verifies that SELECT statements have proper bounds (LIMIT).
+fn assert_safe_select(sql: &str, query_name: &str) {
+    assert_parameterized_query(sql, query_name);
+    
+    // SELECT should have LIMIT for pagination/safety
+    assert!(
+        sql.contains("LIMIT"),
+        "{query_name} must have LIMIT clause to prevent unbounded result sets"
+    );
+}
+
+#[test]
+fn sql_injection_prevention_all_queries() {
+    // Verify all SQL constants use parameterized queries
+    
+    // Agent queries
+    assert_safe_select(SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID, "SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID");
+    assert_parameterized_query(SQL_LIST_AGENT, "SQL_LIST_AGENT");
+    assert_safe_insert(SQL_INSERT_AGENT, "SQL_INSERT_AGENT");
+    assert_safe_update(SQL_UPDATE_AGENT, "SQL_UPDATE_AGENT");
+    
+    // Provider binding queries
+    assert_safe_select(SQL_SELECT_AGENT_PROVIDER_BINDING, "SQL_SELECT_AGENT_PROVIDER_BINDING");
+    assert_parameterized_query(SQL_LIST_AGENT_PROVIDER_BINDINGS, "SQL_LIST_AGENT_PROVIDER_BINDINGS");
+    assert_safe_insert(SQL_INSERT_AGENT_PROVIDER_BINDING, "SQL_INSERT_AGENT_PROVIDER_BINDING");
+    assert_safe_update(SQL_UPDATE_AGENT_PROVIDER_BINDING, "SQL_UPDATE_AGENT_PROVIDER_BINDING");
+    
+    // Composition slot queries
+    assert_safe_select(SQL_SELECT_AGENT_COMPOSITION_SLOT, "SQL_SELECT_AGENT_COMPOSITION_SLOT");
+    assert_parameterized_query(SQL_LIST_AGENT_COMPOSITION_SLOTS, "SQL_LIST_AGENT_COMPOSITION_SLOTS");
+    assert_safe_insert(SQL_INSERT_AGENT_COMPOSITION_SLOT, "SQL_INSERT_AGENT_COMPOSITION_SLOT");
+    assert_safe_update(SQL_UPDATE_AGENT_COMPOSITION_SLOT, "SQL_UPDATE_AGENT_COMPOSITION_SLOT");
+    
+    // Audit event queries
+    assert_safe_insert(SQL_INSERT_AUDIT_EVENT, "SQL_INSERT_AUDIT_EVENT");
+
+    // Session queries
+    assert_safe_select(SQL_SELECT_AGENT_SESSION, "SQL_SELECT_AGENT_SESSION");
+    assert_parameterized_query(SQL_LIST_AGENT_SESSIONS, "SQL_LIST_AGENT_SESSIONS");
+    assert_safe_insert(SQL_INSERT_AGENT_SESSION, "SQL_INSERT_AGENT_SESSION");
+    assert_safe_update(SQL_UPDATE_AGENT_SESSION, "SQL_UPDATE_AGENT_SESSION");
+
+    // Message queries
+    assert_safe_select(SQL_SELECT_AGENT_MESSAGE, "SQL_SELECT_AGENT_MESSAGE");
+    assert_parameterized_query(SQL_LIST_AGENT_MESSAGES, "SQL_LIST_AGENT_MESSAGES");
+    assert_safe_insert(SQL_INSERT_AGENT_MESSAGE, "SQL_INSERT_AGENT_MESSAGE");
+    assert_safe_update(SQL_UPDATE_AGENT_MESSAGE, "SQL_UPDATE_AGENT_MESSAGE");
+    assert_parameterized_query(SQL_NEXT_MESSAGE_SEQUENCE, "SQL_NEXT_MESSAGE_SEQUENCE");
+}
+
+#[test]
+fn postgres_session_sql_is_tenant_scoped() {
+    tenant_scoped_select_sql(SQL_SELECT_AGENT_SESSION, "ai_agent_session");
+    tenant_scoped_list_sql(SQL_LIST_AGENT_SESSIONS, "ai_agent_session");
+    tenant_scoped_update_sql(SQL_UPDATE_AGENT_SESSION, "ai_agent_session");
+}
+
+#[test]
+fn postgres_message_sql_is_tenant_scoped() {
+    tenant_scoped_select_sql(SQL_SELECT_AGENT_MESSAGE, "ai_agent_message");
+    tenant_scoped_list_sql(SQL_LIST_AGENT_MESSAGES, "ai_agent_message");
+    assert!(
+        SQL_UPDATE_AGENT_MESSAGE.contains("WHERE tenant_id ="),
+        "ai_agent_message update SQL must filter by tenant_id"
+    );
+}
+
+#[test]
+fn postgres_session_list_has_mandatory_pagination() {
+    assert!(
+        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $6"),
+        "SQL_LIST_AGENT_SESSIONS must have LIMIT parameter for mandatory pagination"
+    );
+    assert!(
+        SQL_LIST_AGENT_SESSIONS.contains("OFFSET $7"),
+        "SQL_LIST_AGENT_SESSIONS must have OFFSET parameter for page navigation"
+    );
+}
+
+#[test]
+fn postgres_message_list_has_mandatory_pagination() {
+    assert!(
+        SQL_LIST_AGENT_MESSAGES.contains("LIMIT $5"),
+        "SQL_LIST_AGENT_MESSAGES must have LIMIT parameter for mandatory pagination"
+    );
+    assert!(
+        SQL_LIST_AGENT_MESSAGES.contains("OFFSET $6"),
+        "SQL_LIST_AGENT_MESSAGES must have OFFSET parameter for page navigation"
+    );
+}
+
+#[test]
+fn sql_list_agent_has_mandatory_pagination() {
+    // DATABASE_SPEC §16: All list queries must have mandatory LIMIT
+    assert!(
+        SQL_LIST_AGENT.contains("LIMIT $6"),
+        "SQL_LIST_AGENT must have LIMIT parameter for mandatory pagination (DATABASE_SPEC §16)"
+    );
+}
+
+#[test]
+fn sql_search_query_is_parameterized() {
+    // Verify search query uses parameterized LIKE, not string concatenation
+    assert!(
+        SQL_LIST_AGENT.contains("LIKE LOWER($5::text)") || SQL_LIST_AGENT.contains("LIKE $5"),
+        "SQL_LIST_AGENT search query must use parameterized LIKE clause to prevent SQL injection"
+    );
+    
+    // Verify search query is wrapped in %...% for substring matching
+    // (This wrapping should happen in application code, not SQL)
+    assert!(
+        !SQL_LIST_AGENT.contains("'%{}%'") && !SQL_LIST_AGENT.contains("'%s%'"),
+        "SQL_LIST_AGENT must not have hardcoded search patterns - wrapping should be in application code"
+    );
+}
+
+#[test]
+fn all_queries_enforce_tenant_isolation() {
+    // SECURITY_SPEC: All queries must enforce tenant isolation
+    let queries = [
+        ("SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID", SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID),
+        ("SQL_LIST_AGENT", SQL_LIST_AGENT),
+        ("SQL_UPDATE_AGENT", SQL_UPDATE_AGENT),
+        ("SQL_SELECT_AGENT_PROVIDER_BINDING", SQL_SELECT_AGENT_PROVIDER_BINDING),
+        ("SQL_LIST_AGENT_PROVIDER_BINDINGS", SQL_LIST_AGENT_PROVIDER_BINDINGS),
+        ("SQL_UPDATE_AGENT_PROVIDER_BINDING", SQL_UPDATE_AGENT_PROVIDER_BINDING),
+        ("SQL_SELECT_AGENT_COMPOSITION_SLOT", SQL_SELECT_AGENT_COMPOSITION_SLOT),
+        ("SQL_LIST_AGENT_COMPOSITION_SLOTS", SQL_LIST_AGENT_COMPOSITION_SLOTS),
+        ("SQL_UPDATE_AGENT_COMPOSITION_SLOT", SQL_UPDATE_AGENT_COMPOSITION_SLOT),
+        ("SQL_SELECT_AGENT_SESSION", SQL_SELECT_AGENT_SESSION),
+        ("SQL_LIST_AGENT_SESSIONS", SQL_LIST_AGENT_SESSIONS),
+        ("SQL_UPDATE_AGENT_SESSION", SQL_UPDATE_AGENT_SESSION),
+        ("SQL_SELECT_AGENT_MESSAGE", SQL_SELECT_AGENT_MESSAGE),
+        ("SQL_LIST_AGENT_MESSAGES", SQL_LIST_AGENT_MESSAGES),
+        ("SQL_UPDATE_AGENT_MESSAGE", SQL_UPDATE_AGENT_MESSAGE),
+    ];
+    
+    for (name, sql) in queries {
+        assert!(
+            sql.contains("tenant_id = $") || sql.contains("tenant_id ="),
+            "{name} must enforce tenant isolation via tenant_id filter"
+        );
+    }
+}
+
+#[test]
+fn update_queries_enforce_optimistic_concurrency() {
+    // DATABASE_SPEC: All UPDATE queries must enforce optimistic concurrency via version check
+    let update_queries = [
+        ("SQL_UPDATE_AGENT", SQL_UPDATE_AGENT),
+        ("SQL_UPDATE_AGENT_PROVIDER_BINDING", SQL_UPDATE_AGENT_PROVIDER_BINDING),
+        ("SQL_UPDATE_AGENT_COMPOSITION_SLOT", SQL_UPDATE_AGENT_COMPOSITION_SLOT),
+    ];
+    
+    for (name, sql) in update_queries {
+        assert!(
+            sql.contains("version ="),
+            "{name} must enforce optimistic concurrency via version check"
+        );
+    }
 }

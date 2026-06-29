@@ -1,8 +1,8 @@
 //! Blocking facade over `sdkwork-database-sqlx` PostgreSQL pools for sync repositories.
 
 use sdkwork_database_config::{DatabaseConfig, DatabaseEngine};
-use sdkwork_utils_rust::is_blank;
 use sdkwork_database_sqlx::{create_pool_from_config, DatabasePool, PoolError};
+use sdkwork_utils_rust::is_blank;
 use sqlx::PgPool;
 use std::future::Future;
 use std::sync::Arc;
@@ -133,6 +133,51 @@ impl BlockingPostgresPool {
         let sql = sql.to_owned();
         self.run_kernel(async move { sqlx::raw_sql(&sql).execute(&pool).await.map(|_| ()) })
     }
+
+    /// Returns the number of connections currently in the pool (both idle and active).
+    pub fn pool_size(&self) -> u32 {
+        self.pool.size()
+    }
+
+    /// Returns the number of idle connections in the pool.
+    pub fn pool_idle_connections(&self) -> u32 {
+        self.pool.num_idle() as u32
+    }
+
+    /// Returns pool utilization as a ratio (0.0 to 1.0).
+    /// Calculated as (total - idle) / total when total > 0, else 0.0.
+    pub fn pool_utilization(&self) -> f64 {
+        let total = self.pool.size();
+        if total == 0 {
+            return 0.0;
+        }
+        let idle = self.pool.num_idle() as u32;
+        let active = total.saturating_sub(idle);
+        active as f64 / total as f64
+    }
+
+    /// Returns pool health metrics as a tuple: (total_connections, idle_connections, active_connections, utilization_ratio).
+    pub fn pool_metrics(&self) -> PoolMetrics {
+        let total = self.pool.size();
+        let idle = self.pool.num_idle() as u32;
+        let active = total.saturating_sub(idle);
+        let utilization = if total > 0 { active as f64 / total as f64 } else { 0.0 };
+        PoolMetrics {
+            total_connections: total,
+            idle_connections: idle,
+            active_connections: active,
+            utilization,
+        }
+    }
+}
+
+/// Connection pool health metrics for monitoring and observability.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PoolMetrics {
+    pub total_connections: u32,
+    pub idle_connections: u32,
+    pub active_connections: u32,
+    pub utilization: f64,
 }
 
 #[macro_export]

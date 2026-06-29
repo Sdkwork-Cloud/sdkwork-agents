@@ -10,6 +10,7 @@ sdkwork-agent-kernel = { workspace = true }
 sdkwork-utils-rust = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 sdkwork-agent-provider-codex = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-codex" }
 sdkwork-agent-provider-claude-code = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-claude-code" }

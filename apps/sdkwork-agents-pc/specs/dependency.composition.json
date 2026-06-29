@@ -7,31 +7,20 @@
     {
       "surface": "app",
       "corePackage": "sdkwork-agents-pc-core",
-      "sdkClients": [
-        "@sdkwork/agents-app-sdk"
-      ],
-      "reusableModules": [
-        "sdkwork-agents-pc-agents"
-      ],
+      "sdkClients": [],
+      "reusableModules": [],
       "hostAdapters": [],
-      "dependencyApiExports": [
-        "agentService",
-        "AgentView",
-        "CreateAgentView"
-      ],
-      "dependencyApiSurfaces": [
-        "agents.management"
-      ]
+      "dependencyApiExports": [],
+      "dependencyApiSurfaces": []
     }
   ],
   "buildToolEntries": {
     "pnpm": {
       "workspacePackages": [
         "sdkwork-agents-pc-core",
-        "sdkwork-agents-pc-agents",
+        "@sdkwork/agents-pc-agents",
         "@sdkwork/agents-pc-commons",
         "@sdkwork/agents-pc-core",
-        "@sdkwork/agents-pc-agents",
         "@sdkwork/agents-pc-shell"
       ]
     }

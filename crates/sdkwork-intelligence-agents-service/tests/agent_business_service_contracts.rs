@@ -1,15 +1,16 @@
 use std::sync::{Arc, Mutex};
 
-use sdkwork_intelligence_agents_service::{
-    ActivateAgentProviderBindingCommand, AgentAuditSink, AgentsService, AgentBusinessStatus,
-    AgentImplementationKind, AgentImplementationType, AgentListQuery, AgentPreviewResponseCommand,
-    AgentPromptOptimizationCommand, AgentProviderBindingCommand,
-    AgentVisibility, AllowAllPolicyProvider, ChangeAgentStatusCommand, CreateAgentCommand,
-    DeleteAgentCommand, GetAgentCommand, InMemoryAgentRepository, ListAgentsCommand, PolicyMode,
-    RestoreAgentCommand, UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
-};
 use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelEvent, KernelResult, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
+use sdkwork_intelligence_agents_service::{
+    ActivateAgentProviderBindingCommand, AgentAuditSink, AgentBusinessStatus,
+    AgentImplementationKind, AgentImplementationType, AgentListQuery, AgentPreviewResponseCommand,
+    AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentVisibility, AgentsService,
+    AllowAllPolicyProvider, ChangeAgentStatusCommand, CreateAgentCommand, CreateSessionCommand,
+    DeleteAgentCommand, extract_event_context, GetAgentCommand, InMemoryAgentRepository, ListAgentsCommand, PolicyMode,
+    RestoreAgentCommand, SendChatMessageCommand, UpdateAgentCommand,
+    DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, AgentMessageRole,
+};
 
 #[derive(Clone, Default)]
 struct RecordingAuditSink {
@@ -29,7 +30,7 @@ impl RecordingAuditSink {
 }
 
 impl AgentAuditSink for RecordingAuditSink {
-    fn record(&mut self, event: KernelEvent) -> KernelResult<()> {
+    fn record(&self, event: KernelEvent) -> KernelResult<()> {
         self.events
             .lock()
             .expect("recording audit mutex poisoned")
@@ -38,16 +39,17 @@ impl AgentAuditSink for RecordingAuditSink {
     }
 
     fn list_events(&self, tenant_id: u64, agent_id: &str) -> KernelResult<Vec<KernelEvent>> {
-        let tenant_pattern = format!("tenant_id={tenant_id};");
-        let agent_pattern = format!("agent_id={agent_id};");
         let mut events = self
             .events
             .lock()
             .expect("recording audit mutex poisoned")
             .iter()
             .filter(|event| {
-                event.payload.contains(tenant_pattern.as_str())
-                    && event.payload.contains(agent_pattern.as_str())
+                extract_event_context(event.payload.as_str(), "tenant_id")
+                    .and_then(|value| value.parse::<u64>().ok())
+                    == Some(tenant_id)
+                    && extract_event_context(event.payload.as_str(), "agent_id").as_deref()
+                        == Some(agent_id)
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -141,7 +143,7 @@ fn create_update_status_delete_restore_and_list_agents() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let create = service
         .create_agent(create_agent_cmd(
@@ -253,7 +255,7 @@ fn duplicate_agent_id_and_code_are_rejected() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
         .create_agent(create_agent_cmd(
@@ -299,7 +301,7 @@ fn create_agent_rejects_non_standard_agent_id() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let error = service
         .create_agent(create_agent_cmd(
@@ -329,7 +331,7 @@ fn agent_resource_entry_points_validate_standard_agent_id_before_authorization()
         provider_id: "policy.memory".to_string(),
         mode: PolicyMode::Deny("agent.business.denied".to_string()),
     };
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
     let invalid_agent_id = "pc.agent.invalid";
 
     assert_agent_id_validation(
@@ -470,7 +472,7 @@ fn create_agent_records_implementation_type() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let record = service
         .create_agent(CreateAgentCommand {
@@ -508,7 +510,7 @@ fn create_agent_defaults_implementation_type_to_sdkwork_native() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let record = service
         .create_agent(create_agent_cmd(
@@ -533,7 +535,7 @@ fn update_agent_changes_implementation_contract() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
         .create_agent(create_agent_cmd(
@@ -582,7 +584,7 @@ fn stale_expected_version_is_rejected_for_update() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
         .create_agent(create_agent_cmd(
@@ -643,7 +645,7 @@ fn deleted_agent_cannot_be_updated() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
         .create_agent(create_agent_cmd(
@@ -698,7 +700,7 @@ fn restore_requires_deleted_status() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
         .create_agent(create_agent_cmd(
@@ -734,7 +736,7 @@ fn list_filters_by_owner_organization_and_deleted_flag() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
         .create_agent(create_agent_cmd(
@@ -788,7 +790,9 @@ fn list_filters_by_owner_organization_and_deleted_flag() {
 
     let by_owner_with_deleted = service
         .list_agents(ListAgentsCommand {
-            query: AgentListQuery::for_tenant(100_001).for_owner(101).with_deleted(),
+            query: AgentListQuery::for_tenant(100_001)
+                .for_owner(101)
+                .with_deleted(),
             requested_by: sample_subject(),
         })
         .expect("list by owner with deleted should succeed");
@@ -804,7 +808,7 @@ fn list_filters_by_search_query_across_code_name_and_description() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
         .create_agent(create_agent_cmd(
@@ -864,9 +868,9 @@ fn list_filters_by_search_query_across_code_name_and_description() {
 #[test]
 fn audit_events_are_recorded_for_state_mutations() {
     let repository = InMemoryAgentRepository::new();
-    let (audit_sink, events) = RecordingAuditSink::new();
+    let (audit_sink, arc_events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
         .create_agent(create_agent_cmd(
@@ -933,9 +937,9 @@ fn audit_events_are_recorded_for_state_mutations() {
         })
         .expect("restore should succeed");
 
-    let captured = events.lock().expect("events mutex poisoned");
-    assert_eq!(captured.len(), 5);
-    let event_types: Vec<&str> = captured
+    let events_list = arc_events.lock().expect("events mutex poisoned");
+    assert_eq!(events_list.len(), 5);
+    let event_types: Vec<&str> = events_list
         .iter()
         .map(|event| event.event_type.as_str())
         .collect();
@@ -959,7 +963,7 @@ fn policy_deny_blocks_management_operations() {
         provider_id: "policy.memory".to_string(),
         mode: PolicyMode::Deny("agent.business.denied".to_string()),
     };
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let result = service.create_agent(create_agent_cmd(
         "agent.beta",
@@ -991,7 +995,7 @@ fn invalid_status_transition_is_rejected() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
         .create_agent(create_agent_cmd(
@@ -1035,7 +1039,7 @@ fn list_agent_audit_events_returns_events_for_agent() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
-    let mut service = AgentsService::new(repository, audit_sink, policy_provider);
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
         .create_agent(create_agent_cmd(
@@ -1066,4 +1070,70 @@ fn list_agent_audit_events_returns_events_for_agent() {
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].event_type, "agent.business.status_changed");
     assert_eq!(events[1].event_type, "agent.business.created");
+}
+
+#[test]
+fn send_chat_message_persists_user_and_assistant_turn() {
+    let repository = InMemoryAgentRepository::new();
+    let (audit_sink, _events) = RecordingAuditSink::new();
+    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+    let created = service
+        .create_agent(create_agent_cmd(
+            "agent.chat.turn",
+            100_001,
+            0,
+            100,
+            "chat-turn",
+            "Chat Turn",
+            "2026-06-01T05:00:00Z",
+        ))
+        .expect("create should succeed");
+    service
+        .change_status(ChangeAgentStatusCommand {
+            tenant_id: 100_001,
+            agent_id: created.agent_id.clone(),
+            expected_version: Some(created.version),
+            target_status: AgentBusinessStatus::Active,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:00:30Z".to_string(),
+        })
+        .expect("activate agent should succeed");
+
+    let session = service
+        .create_session(CreateSessionCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: created.agent_id.clone(),
+            owner_user_id: 100,
+            session_id: String::new(),
+            title: Some("Support chat".to_string()),
+            provider_binding_id: None,
+            model_id: None,
+            metadata_json: "{}".to_string(),
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:01:00Z".to_string(),
+        })
+        .expect("create session should succeed");
+
+    let result = service
+        .send_chat_message(SendChatMessageCommand {
+            tenant_id: 100_001,
+            agent_id: created.agent_id,
+            session_id: session.session_id,
+            content: "Hello, can you help?".to_string(),
+            content_type: "text/plain".to_string(),
+            metadata_json: "{}".to_string(),
+            model_id: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:01:30Z".to_string(),
+        })
+        .expect("send chat message should succeed");
+
+    assert_eq!(result.user_message.role, AgentMessageRole::User);
+    assert_eq!(result.user_message.content, "Hello, can you help?");
+    assert_eq!(result.assistant_message.role, AgentMessageRole::Assistant);
+    assert!(!result.assistant_message.content.is_empty());
+    assert_eq!(result.session.message_count, 2);
 }

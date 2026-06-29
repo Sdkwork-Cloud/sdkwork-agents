@@ -18,6 +18,7 @@
     "pnpm": {
       "workspacePackages": [
         "sdkwork-agents-h5-core",
+        "@sdkwork/agents-h5-agents",
         "@sdkwork/agents-h5-commons",
         "@sdkwork/agents-h5-core",
         "@sdkwork/agents-h5-shell"
