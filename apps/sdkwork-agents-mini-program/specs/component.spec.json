@@ -23,8 +23,7 @@
   "contracts": {
     "sdkDependencies": [
       "sdkwork-agents-app-sdk"
-    ],
-    "dependencyComposition": "specs/dependency.composition.json"
+    ]
   },
   "verification": {
     "commands": [

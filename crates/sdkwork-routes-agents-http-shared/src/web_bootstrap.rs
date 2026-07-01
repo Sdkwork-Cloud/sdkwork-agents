@@ -1,7 +1,10 @@
 use crate::generated::{APP_ROUTES, BACKEND_ROUTES, COMBINED_ROUTES, OPEN_ROUTES};
 use std::sync::Arc;
 
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::Router;
+use axum::http::Request;
 use sdkwork_intelligence_agents_service::AgentRequestContext;
 use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_web_axum::{with_web_request_context, WebFrameworkLayer};
@@ -83,8 +86,19 @@ pub async fn wrap_router_with_web_framework_from_env(
     wrap_router_with_web_framework(resolver, route_manifest, router)
 }
 
+async fn record_agents_request_metrics(
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    let response = next.run(request).await;
+    sdkwork_intelligence_agents_service::AgentMetricsRegistry::global()
+        .record_http_request(response.status().as_u16());
+    response
+}
+
 /// Builds a combined agents managed store router with mandatory sdkwork-web-framework middleware.
 pub async fn build_served_combined_router(state: sdkwork_intelligence_agents_service::AgentHttpState) -> Router {
     let router = sdkwork_intelligence_agents_service::build_combined_routes().with_state(state);
+    let router = router.layer(middleware::from_fn(record_agents_request_metrics));
     wrap_router_with_web_framework_from_env(combined_route_manifest(), router).await
 }

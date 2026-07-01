@@ -12,12 +12,12 @@ The repository root `sdkwork.app.config.json` governs the primary application ma
 
 ## Directory Index
 
-| Directory | Surface role | Runnable | Purpose | Entry |
-| --- | --- | --- | --- | --- |
-| sdkwork-agents-flutter-mobile | flutter-mobile | yes | SDKWork Agents Mobile flutter-mobile application root. | `sdkwork-agents-flutter-mobile/` |
-| sdkwork-agents-h5 | h5 | yes | SDKWork Agents H5 h5 application root. | `sdkwork-agents-h5/` |
-| sdkwork-agents-mini-program | mini-program | yes | SDKWork Agents Mini Program mini-program application root. | `sdkwork-agents-mini-program/` |
-| sdkwork-agents-pc | pc | yes | SDKWork Agents PC pc application root. | `sdkwork-agents-pc/` |
+| Directory | Surface role | Runnable | Commercial MVP | Purpose | Entry |
+| --- | --- | --- | --- | --- | --- |
+| sdkwork-agents-pc | pc | yes | yes | SDKWork Agents PC application root. | `sdkwork-agents-pc/` |
+| sdkwork-agents-h5 | h5 | yes | yes | SDKWork Agents H5 application root. | `sdkwork-agents-h5/` |
+| sdkwork-agents-mini-program | mini-program | yes | partial (WebView + runtime SDK) | SDKWork Agents Mini Program root. | `sdkwork-agents-mini-program/` |
+| sdkwork-agents-flutter-mobile | flutter-mobile | yes | no (`pending-dart-sdk`) | Flutter scaffold; Dart SDK not wired. | `sdkwork-agents-flutter-mobile/` |
 
 ## Allowed Content
 

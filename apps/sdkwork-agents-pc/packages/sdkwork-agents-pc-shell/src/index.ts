@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export { AGENTS_MODULE_ID, CREATE_AGENT_ROUTE, AGENTS_SHELL_MODULES } from "./moduleRegistry";
+export { AGENTS_MODULE_ID, CHAT_ROUTE, CREATE_AGENT_ROUTE, AGENTS_SHELL_MODULES } from "./moduleRegistry";
 
 export interface AgentsRouteDefinition {
   path: string;

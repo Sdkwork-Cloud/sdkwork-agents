@@ -41,6 +41,7 @@ Read `sdkwork.app.config.json` only when the task touches Agents application beh
 - [docs/README.md](docs/README.md)
 - [docs/product/prd/PRD.md](docs/product/prd/PRD.md)
 - [docs/architecture/tech/TECH_ARCHITECTURE.md](docs/architecture/tech/TECH_ARCHITECTURE.md)
+- [docs/architecture/tech/TECH-api-specification.md](docs/architecture/tech/TECH-api-specification.md)
 
 ## Spec Resolution Order
 

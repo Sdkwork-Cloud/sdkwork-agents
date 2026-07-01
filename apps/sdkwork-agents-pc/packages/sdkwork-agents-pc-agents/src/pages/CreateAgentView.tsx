@@ -9,8 +9,10 @@ import { EditBasicInfoModal } from '../components/EditBasicInfoModal';
 import { SelectVoiceModal } from '../components/SelectVoiceModal';
 import { SelectModelPopover } from '../components/SelectModelPopover';
 import { SelectKnowledgeModal } from '../components/SelectKnowledgeModal';
-import { SelectToolsModal, AVAILABLE_TOOLS } from '../components/SelectToolsModal';
-import { SelectSkillsModal, AVAILABLE_SKILLS } from '../components/SelectSkillsModal';
+import { SelectToolsModal, AVAILABLE_TOOLS, type ToolItem } from '../components/SelectToolsModal';
+import { loadRuntimeToolCatalog } from '../services/RuntimeCatalogService';
+import { SelectSkillsModal } from '../components/SelectSkillsModal';
+import { loadSkillCatalog, loadSkillPresetCatalog } from '../services/SkillPresetCatalogService';
 import { DEFAULT_AGENT_CONFIG } from '../components/AgentDefaults';
 import { createDefaultAvatar } from '../services/DefaultAvatarService';
 import { voiceService, VoiceConfig } from '../services/VoiceService';
@@ -193,17 +195,27 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
   
   const [availableVoices, setAvailableVoices] = useState<VoiceConfig[]>([]);
   const [availableKbs, setAvailableKbs] = useState<KnowledgeBase[]>([]);
+  const [availableTools, setAvailableTools] = useState<ToolItem[]>(AVAILABLE_TOOLS);
+  const [availableSkills, setAvailableSkills] = useState(() => loadSkillPresetCatalog());
 
   useEffect(() => {
     const fetchCapabilities = async () => {
       try {
-        const [market, my, kbs] = await Promise.all([
+        const [market, my, kbs, tools, skills] = await Promise.all([
           voiceService.getMarketVoices(),
           voiceService.getMyVoices(),
-          knowledgeSelectionService.getBases()
+          knowledgeSelectionService.getBases(),
+          loadRuntimeToolCatalog(),
+          loadSkillCatalog(),
         ]);
         setAvailableVoices([...market, ...my]);
         setAvailableKbs(kbs);
+        if (tools.length > 0) {
+          setAvailableTools(tools);
+        }
+        if (skills.length > 0) {
+          setAvailableSkills(skills);
+        }
       } catch (err) {
         console.error('Failed to load capabilities:', err);
       }
@@ -213,8 +225,8 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
 
   const selectedVoicesData = availableVoices.filter(v => selectedVoiceIds.includes(v.id));
   const selectedKbsData = availableKbs.filter(kb => selectedKnowledgeIds.includes(kb.id));
-  const selectedToolsData = AVAILABLE_TOOLS.filter(t => selectedToolIds.includes(t.id));
-  const selectedSkillsData = AVAILABLE_SKILLS.filter(s => selectedSkillIds.includes(s.id));
+  const selectedToolsData = availableTools.filter(t => selectedToolIds.includes(t.id));
+  const selectedSkillsData = availableSkills.filter(s => selectedSkillIds.includes(s.id));
   
   const [testMessages, setTestMessages] = useState<TestMessage[]>(() => [
     createAgentWelcomeTestMessage(DEFAULT_AGENT_WELCOME_MESSAGE),
@@ -1050,6 +1062,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         isOpen={isToolsModalOpen}
         onClose={() => setIsToolsModalOpen(false)}
         selectedToolIds={selectedToolIds}
+        tools={availableTools}
         onSave={(ids) => {
           setSelectedToolIds(ids);
           toast(`已启用 ${ids.length} 个环境与 MCP 能力`, 'success');
@@ -1059,6 +1072,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         isOpen={isSkillsModalOpen}
         onClose={() => setIsSkillsModalOpen(false)}
         selectedSkillIds={selectedSkillIds}
+        skills={availableSkills}
         onSave={(ids) => {
           setSelectedSkillIds(ids);
           toast(`已注入 ${ids.length} 项高级心智流`, 'success');

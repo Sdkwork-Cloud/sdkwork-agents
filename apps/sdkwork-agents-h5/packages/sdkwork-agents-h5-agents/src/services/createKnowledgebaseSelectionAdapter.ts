@@ -1,5 +1,4 @@
-import type { SdkworkKnowledgebaseAppClient } from "@sdkwork/agents-h5-core/sdk";
-import type { KnowledgeMarketCatalogItem } from "@sdkwork/knowledgebase-app-sdk";
+import type { KnowledgeMarketCatalogItem, SdkworkKnowledgebaseAppClient } from "@sdkwork/agents-h5-core/sdk";
 
 import type { KnowledgeSelectionAdapter } from "./knowledgeSelectionAdapter";
 import type { KnowledgeBase } from "./KnowledgeSelectionService";

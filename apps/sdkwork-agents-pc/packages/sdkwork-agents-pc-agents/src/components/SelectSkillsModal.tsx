@@ -17,6 +17,7 @@ export interface SelectSkillsModalProps {
   onClose: () => void;
   selectedSkillIds: string[];
   onSave: (skillIds: string[]) => void;
+  skills?: SkillItem[];
 }
 
 export const AVAILABLE_SKILLS: SkillItem[] = [
@@ -34,6 +35,7 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
   onClose,
   selectedSkillIds,
   onSave,
+  skills,
 }) => {
   const [activeTab, setActiveTab] = useState<'workflow' | 'preset'>('workflow');
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,7 +54,9 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
     );
   };
 
-  const filteredItems = AVAILABLE_SKILLS.filter(item => {
+  const catalog = skills && skills.length > 0 ? skills : AVAILABLE_SKILLS;
+
+  const filteredItems = catalog.filter(item => {
     const matchesSearch = !searchQuery.trim() || 
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       item.description.toLowerCase().includes(searchQuery.toLowerCase());

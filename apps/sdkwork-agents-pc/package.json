@@ -8,10 +8,9 @@
     "build": "tsc -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "test:agent-contracts": "tsx --tsconfig tsconfig.app.json scripts/agent-service-scope-consistency-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-service-management-profile-contract.test.ts"
+    "test:agent-contracts": "tsx --tsconfig tsconfig.app.json scripts/agent-service-scope-consistency-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-service-management-profile-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-chat-service-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-e2e-flow-contract.test.ts"
   },
   "dependencies": {
-    "@sdkwork/agents-app-sdk": "workspace:*",
     "@sdkwork/agents-pc-agents": "workspace:*",
     "@sdkwork/agents-pc-core": "workspace:*",
     "@sdkwork/agents-pc-commons": "workspace:*",
@@ -23,14 +22,14 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-router-dom": "^7.17.0",
-    "tailwind-merge": "catalog:"
+    "tailwind-merge": "catalog:",
+    "tailwindcss": "catalog:",
+    "@tailwindcss/vite": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
-    "tailwindcss": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"

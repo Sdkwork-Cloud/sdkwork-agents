@@ -32,5 +32,9 @@
     "generate:dry-run": "node ../../workspace-agent-sdkgen.mjs --family app --mode dry-run",
     "generate": "node ../../workspace-agent-sdkgen.mjs --family app --mode apply",
     "verify": "node ../bin/verify-sdk.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

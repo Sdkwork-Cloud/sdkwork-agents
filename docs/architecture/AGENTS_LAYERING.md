@@ -7,9 +7,9 @@ SDKWork Agents follows the same layering model as `sdkwork-memory` and `sdkwork-
 | Layer | Repository | Responsibility |
 | --- | --- | --- |
 | Runtime SPI | `sdkwork-kernel` | Agent lifecycle, providers, sessions, internal runtime API, operational HTTP (`/health`, `/metrics`, `/internal/v3/api/...`) |
-| Application domain | `sdkwork-agents` | Managed agents registry, marketplace, knowledge/memory metadata, open/app/backend HTTP surfaces, SDK families |
+| Application domain | `sdkwork-agents` | Managed agents composition plane, open/app/backend HTTP surfaces, SDK families |
 
-`sdkwork-kernel` is mechanism-only (Linux-kernel style). It must not own product policy or managed-agent CRUD.
+`sdkwork-kernel` is mechanism-only. It must not own product policy or managed-agent CRUD.
 
 ## Canonical crates (application-owned)
 
@@ -33,14 +33,10 @@ Internal runtime SDK (`sdkwork-agent-internal-sdk`) remains kernel-owned.
 
 ## Database env keys
 
-| Store | Service code | Env prefix |
+| Store | Table prefix | Env prefix |
 | --- | --- | --- |
-| Application registry (`agents_*` tables) | `AGENTS` | `SDKWORK_AGENTS_DATABASE_*` |
-| Managed agents store (`a_*` tables) | `AGENTS_STORE` | `SDKWORK_AGENTS_STORE_DATABASE_*` |
+| Application database host | app metadata | `SDKWORK_AGENTS_DATABASE_*` |
+| Managed agents store (composition plane) | `ai_*` | `SDKWORK_AGENTS_STORE_DATABASE_*` (`AGENTS_STORE` service in `sdkwork-database-config`) |
 | Kernel runtime sessions | kernel-owned | `SDKWORK_AGENT_SERVER_DATABASE_*` |
 
-## Capability ownership
-
-Application-owned: `agents-domain-service`, `agents-http-routes`, `agents-persistence`, `agents-sdks`, `agents-api-contracts`.
-
-Kernel-owned: `agent-runtime`, `agent-session`, `agent-runtime-persistence`, `agent-internal-api`, `agent-server-operational-http`.
+All agents-owned business tables use the `ai_` prefix per `DATABASE_SPEC.md`.

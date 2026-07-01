@@ -1,3 +1,10 @@
+import {
+  getVoiceAppSdkClient,
+  isVoiceAppSdkConfigured,
+} from "@sdkwork/agents-h5-core/sdk/voiceAppSdkClient";
+
+import { extractArray } from "./sdkEnvelope";
+
 export interface VoiceConfig {
   id: string;
   name: string;
@@ -10,7 +17,7 @@ export interface VoiceConfig {
   audioPreview?: string;
 }
 
-const MARKET_VOICES: VoiceConfig[] = [
+const FALLBACK_MARKET_VOICES: VoiceConfig[] = [
   {
     id: "voice-1",
     name: "甜美女生-小悠",
@@ -31,33 +38,13 @@ const MARKET_VOICES: VoiceConfig[] = [
     author: "Official",
     users: "8.5K",
   },
-  {
-    id: "voice-3",
-    name: "活泼元气-夏夏",
-    description: "极具感染力的声音，适合动漫、游戏解说。",
-    categoryId: "anime",
-    iconName: "Speaker",
-    color: "bg-orange-500",
-    author: "社区精选",
-    users: "5.2K",
-  },
-  {
-    id: "voice-4",
-    name: "专业客服-小丽",
-    description: "标准、亲切，适合智能客服或企业导览。",
-    categoryId: "business",
-    iconName: "Headphones",
-    color: "bg-blue-500",
-    author: "企业级",
-    users: "15K",
-  },
 ];
 
-const MY_VOICES: VoiceConfig[] = [
+const FALLBACK_MY_VOICES: VoiceConfig[] = [
   {
     id: "voice-my-1",
     name: "自定义克隆声",
-    description: "基于我上传的 5 分钟音频样本训练的声音。",
+    description: "基于上传样本训练的声音。",
     categoryId: "custom",
     iconName: "User",
     color: "bg-purple-500",
@@ -66,13 +53,70 @@ const MY_VOICES: VoiceConfig[] = [
   },
 ];
 
+function pickString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function mapVoiceRecord(record: Record<string, unknown>, index: number): VoiceConfig {
+  const id =
+    pickString(record, ["voiceId", "voice_id", "assetId", "asset_id", "id"]) ??
+    `voice.${index}`;
+  return {
+    id,
+    name: pickString(record, ["displayName", "display_name", "name", "title"]) ?? id,
+    description: pickString(record, ["description", "summary"]) ?? "Voice asset",
+    categoryId: pickString(record, ["categoryId", "category_id", "category"]) ?? "market",
+    author: pickString(record, ["author", "provider"]) ?? "sdkwork-voice",
+    users: pickString(record, ["users", "usageCount"]) ?? "—",
+    audioPreview: pickString(record, ["previewUrl", "preview_url", "audioPreview"]),
+    iconName: "Mic",
+    color: "bg-blue-500",
+  };
+}
+
+async function loadVoicesFromSdk(): Promise<VoiceConfig[] | null> {
+  if (!isVoiceAppSdkConfigured()) {
+    return null;
+  }
+  try {
+    const response = await getVoiceAppSdkClient().voice.audioAssets.list({
+      page: 1,
+      pageSize: 100,
+    });
+    const items = extractArray(response)
+      .map((item, index) =>
+        item && typeof item === "object"
+          ? mapVoiceRecord(item as Record<string, unknown>, index)
+          : undefined,
+      )
+      .filter((item): item is VoiceConfig => Boolean(item));
+    return items.length > 0 ? items : null;
+  } catch {
+    return null;
+  }
+}
+
 class VoiceService {
   async getMarketVoices(): Promise<VoiceConfig[]> {
-    return MARKET_VOICES;
+    const fromSdk = await loadVoicesFromSdk();
+    if (fromSdk) {
+      return fromSdk.filter((voice) => voice.categoryId !== "custom");
+    }
+    return FALLBACK_MARKET_VOICES;
   }
 
   async getMyVoices(): Promise<VoiceConfig[]> {
-    return MY_VOICES;
+    const fromSdk = await loadVoicesFromSdk();
+    if (fromSdk) {
+      return fromSdk.filter((voice) => voice.categoryId === "custom");
+    }
+    return FALLBACK_MY_VOICES;
   }
 }
 

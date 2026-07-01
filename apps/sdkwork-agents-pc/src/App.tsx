@@ -1,14 +1,41 @@
 import { useMemo, useState } from "react";
-import { HashRouter, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
+  AgentChatView,
   AgentView,
   CreateAgentModal,
   CreateAgentView,
   ToastContainer,
   type Agent,
 } from "@sdkwork/agents-pc-agents";
-import { CREATE_AGENT_ROUTE } from "@sdkwork/agents-pc-shell";
+import { CHAT_ROUTE, CREATE_AGENT_ROUTE } from "@sdkwork/agents-pc-shell";
+
+import { AuthGate } from "./components/AuthGate";
+
+interface ChatRouteState {
+  agent?: Agent;
+}
+
+function AgentChatRoutePage() {
+  const navigate = useNavigate();
+  const { agentId = "" } = useParams();
+  const location = useLocation();
+  const state = (location.state ?? {}) as ChatRouteState;
+
+  if (!agentId) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <AgentChatView
+      agentId={agentId}
+      agentName={state.agent?.name}
+      welcomeMessage={state.agent?.welcomeMessage}
+      onBack={() => navigate("/")}
+    />
+  );
+}
 
 function AgentsHomePage() {
   const navigate = useNavigate();
@@ -27,8 +54,7 @@ function AgentsHomePage() {
   );
 
   const handleStandaloneStartChat = (agent: Agent) => {
-    setEditAgentId(agent.id);
-    navigate(`/${CREATE_AGENT_ROUTE}`);
+    navigate(`/${CHAT_ROUTE}/${agent.id}`, { state: { agent } });
   };
 
   return (
@@ -64,6 +90,7 @@ function AgentsHomePage() {
               />
             }
           />
+          <Route path={`/${CHAT_ROUTE}/:agentId`} element={<AgentChatRoutePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -82,8 +109,10 @@ function AgentsHomePage() {
 
 export default function App() {
   return (
-    <HashRouter>
-      <AgentsHomePage />
-    </HashRouter>
+    <AuthGate>
+      <HashRouter>
+        <AgentsHomePage />
+      </HashRouter>
+    </AuthGate>
   );
 }

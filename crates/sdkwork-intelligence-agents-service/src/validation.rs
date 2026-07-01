@@ -31,6 +31,34 @@ pub(crate) fn optional_non_blank(value: String) -> Option<String> {
     }
 }
 
+pub(crate) fn is_trimmed_blank(value: &str) -> bool {
+    is_blank(Some(value))
+}
+
+pub(crate) fn default_json_object_if_blank(value: &str) -> String {
+    if is_trimmed_blank(value) {
+        "{}".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+pub(crate) fn default_json_array_if_blank(value: &str) -> String {
+    if is_trimmed_blank(value) {
+        "[]".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+pub(crate) fn default_plain_text_if_blank(value: &str) -> String {
+    if is_trimmed_blank(value) {
+        "text/plain".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 pub(crate) fn parse_int64_string_field(value: &str, field_name: &str) -> KernelResult<u64> {
     value
         .parse::<u64>()

@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@sdkwork/agents-app-sdk": path.resolve(
           repoRoot,
-          "sdks/sdkwork-agents-app-sdk/sdkwork-agent-app-sdk-typescript/generated/server-openapi/src/index.ts",
+          "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts",
         ),
         "@sdkwork/agents-h5-core": path.resolve(appRoot, "packages/sdkwork-agents-h5-core/src"),
         "@sdkwork/agents-h5-commons": path.resolve(appRoot, "packages/sdkwork-agents-h5-commons/src/index.ts"),

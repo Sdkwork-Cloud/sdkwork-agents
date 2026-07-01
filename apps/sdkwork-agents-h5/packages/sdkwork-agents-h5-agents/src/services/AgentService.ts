@@ -1,6 +1,6 @@
 import {
-  getAgentAppSdkClientWithSession,
-  type SdkworkAgentAppClient,
+  getAgentsAppSdkClientWithSession,
+  type SdkworkAgentsAppClient,
 } from '@sdkwork/agents-h5-core/sdk/agentsAppSdkClient';
 import type {
   AgentManagementProfile,
@@ -8,7 +8,9 @@ import type {
   CreateAgentProviderBindingRequest,
   CreateAgentRequest,
   UpdateAgentRequest,
-} from '@sdkwork/agents-app-sdk';
+} from '@sdkwork/agents-h5-core/sdk';
+import { syncAgentCompositionSlots } from './CompositionSlotSyncService';
+import { extractArray, extractResourceRecord, isRecord } from './sdkEnvelope';
 
 export interface AgentConfig {
   id?: string;
@@ -134,9 +136,6 @@ function createExecutionId(prefix: string): string {
   return `${prefix}.${Math.trunc(performance.now()).toString(36)}`;
 }
 
-function isRecord(value: unknown): value is RecordLike {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -437,8 +436,16 @@ function normalizeAgentFromAgentRecord(record: AgentRecord): AgentConfig {
 }
 
 function extractAgentRecordItems(value: unknown): AgentRecord[] {
-  const rawItems = isRecord(value) ? extractArray(value.data) : [];
+  const rawItems = extractArray(value);
   return rawItems.filter((item): item is AgentRecord => isRecord(item) && Boolean(asString(item.agentId)));
+}
+
+function extractAgentRecord(value: unknown): AgentRecord {
+  const record = extractResourceRecord(value);
+  if (!isRecord(record) || !asString(record.agentId)) {
+    throw new Error('Agent API response did not include agentId.');
+  }
+  return record as unknown as AgentRecord;
 }
 
 function buildAgentManifest(config: Partial<AgentConfig>, agentId: string): Record<string, unknown> {
@@ -630,20 +637,6 @@ function asCatalogScope(record: RecordLike): AgentCatalogScope | undefined {
   return undefined;
 }
 
-function extractArray(value: unknown): unknown[] {
-  if (Array.isArray(value)) {
-    return value;
-  }
-  if (isRecord(value)) {
-    for (const key of ['items', 'data', 'agents', 'records', 'list']) {
-      const nested = value[key];
-      if (Array.isArray(nested)) {
-        return nested;
-      }
-    }
-  }
-  return [];
-}
 
 function collectAgentRecords(snapshot: unknown, keys: string[]): RecordLike[] {
   if (!isRecord(snapshot)) {
@@ -731,7 +724,7 @@ export function parseAgentCatalogSnapshot(snapshot: unknown, scope: AgentCatalog
 
 class SdkworkAgentService implements AgentService {
   constructor(
-    private readonly getAgentClient: () => SdkworkAgentAppClient = getAgentAppSdkClientWithSession,
+    private readonly getAgentClient: () => SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession,
   ) {}
 
   async getAgents(): Promise<AgentConfig[]> {
@@ -757,13 +750,15 @@ class SdkworkAgentService implements AgentService {
     const response = await this.getAgentClient().ai.agents.create(
       buildCreateAgentRequest(config, agentId),
     );
-    return normalizeAgentFromAgentRecord(response.data);
+    const saved = normalizeAgentFromAgentRecord(extractAgentRecord(response));
+    await syncAgentCompositionSlots(this.getAgentClient(), saved.id ?? agentId, saved);
+    return saved;
   }
 
   async updateAgent(id: string, config: Partial<AgentConfig>): Promise<AgentConfig> {
     const currentResponse = await this.getAgentClient().ai.agents.retrieve(id);
     const mergedConfig = mergeAgentConfig(
-      normalizeAgentFromAgentRecord(currentResponse.data),
+      normalizeAgentFromAgentRecord(extractAgentRecord(currentResponse)),
       config,
       id,
     );
@@ -771,7 +766,9 @@ class SdkworkAgentService implements AgentService {
       id,
       buildUpdateAgentRequest(id, mergedConfig),
     );
-    return normalizeAgentFromAgentRecord(response.data);
+    const saved = normalizeAgentFromAgentRecord(extractAgentRecord(response));
+    await syncAgentCompositionSlots(this.getAgentClient(), id, saved);
+    return saved;
   }
 
   async publishAgent(id: string): Promise<void> {
@@ -814,7 +811,8 @@ class SdkworkAgentService implements AgentService {
         requestedAt: new Date().toISOString(),
       },
     );
-    const outputPayload = response.data.outputPayload;
+    const execution = extractResourceRecord(response);
+    const outputPayload = execution.outputPayload;
     const content = pickOutputString(outputPayload, [
       'reply',
       'content',
@@ -825,11 +823,11 @@ class SdkworkAgentService implements AgentService {
       'output',
     ]);
     if (!content) {
-      throw new AgentRuntimeExecutionUnavailableError('preview response', response.data.executionId);
+      throw new AgentRuntimeExecutionUnavailableError('preview response', String(execution.executionId ?? ''));
     }
     return {
       content,
-      executionId: response.data.executionId,
+      executionId: String(execution.executionId ?? ''),
       outputPayload,
     };
   }
@@ -853,7 +851,8 @@ class SdkworkAgentService implements AgentService {
         requestedAt: new Date().toISOString(),
       },
     );
-    const outputPayload = response.data.outputPayload;
+    const execution = extractResourceRecord(response);
+    const outputPayload = execution.outputPayload;
     const optimizedPrompt = pickOutputString(outputPayload, [
       'optimizedPrompt',
       'optimized_prompt',
@@ -863,10 +862,10 @@ class SdkworkAgentService implements AgentService {
       'output',
     ]);
     if (!optimizedPrompt) {
-      throw new AgentRuntimeExecutionUnavailableError('prompt optimization', response.data.executionId);
+      throw new AgentRuntimeExecutionUnavailableError('prompt optimization', String(execution.executionId ?? ''));
     }
     return {
-      executionId: response.data.executionId,
+      executionId: String(execution.executionId ?? ''),
       optimizedPrompt,
       outputPayload,
     };
@@ -874,14 +873,14 @@ class SdkworkAgentService implements AgentService {
 }
 
 export function createSdkworkAgentService(
-  getAgentClient?: () => SdkworkAgentAppClient,
+  getAgentClient?: () => SdkworkAgentsAppClient,
 ): AgentService {
   return new SdkworkAgentService(getAgentClient);
 }
 
 export let agentService = createSdkworkAgentService();
 
-export function configureAgentService(getAgentClient?: () => SdkworkAgentAppClient): AgentService {
+export function configureAgentService(getAgentClient?: () => SdkworkAgentsAppClient): AgentService {
   agentService = createSdkworkAgentService(getAgentClient);
   return agentService;
 }

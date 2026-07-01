@@ -48,6 +48,12 @@
       "tokenSecret": "SDKWORK_RELEASE_TOKEN"
     },
     {
+      "id": "sdkwork-knowledgebase",
+      "repository": "Sdkwork-Cloud/sdkwork-knowledgebase",
+      "refInput": "SDKWORK_KNOWLEDGEBASE_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
       "id": "sdkwork-app-topology",
       "repository": "Sdkwork-Cloud/sdkwork-app-topology",
       "refInput": "SDKWORK_APP_TOPOLOGY_REF",
@@ -88,9 +94,9 @@
     ],
     "validate": [
       {
-        "name": "Validate Agents architecture",
+        "name": "Validate Agents workspace (pnpm verify)",
         "shell": "pwsh",
-        "run": "cargo test --workspace && node tools/check_sdkwork_agents_architecture_alignment.mjs"
+        "run": "pnpm verify"
       }
     ]
   },
@@ -108,8 +114,8 @@
     }
   ],
   "security": {
-    "artifactAttestations": false,
-    "sbomRequired": false,
+    "artifactAttestations": true,
+    "sbomRequired": true,
     "signingRequired": false
   },
   "publish": {

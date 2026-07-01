@@ -1,8 +1,9 @@
 # SDKWork Agents Technical Architecture
 
-Status: active
-Owner: agents-platform
-Updated: 2026-06-28
+Status: active  
+Owner: agents-platform  
+Updated: 2026-06-29  
+Specs: [`ARCHITECTURE_DECISION_SPEC.md`](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [`WEB_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/WEB_FRAMEWORK_SPEC.md), [`DATABASE_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md)
 
 ## 1. Architecture Overview
 
@@ -169,7 +170,7 @@ crates/
 供路由 crate 和集成测试共享。所有 DTO、枚举、路径、错误模型均由 service crate
 单一持有，避免重复定义。
 
-完整 API 规范见 [API_SPECIFICATION.md](API_SPECIFICATION.md)。
+完整 API 规范见 [TECH-api-specification.md](TECH-api-specification.md)。
 
 ## 5. Database Design
 
@@ -225,7 +226,7 @@ ai_agent_runtime      ai_agent_composition        ai_agent_audit_event
 | App API | `/app/v3/api` | 前端应用 (H5/PC/Mini Program/Flutter) |
 | Backend API | `/backend/v3/api` | 管理后台 |
 
-完整 API 列表（68 个 HTTP 操作，含 session/message chat completion）参见 [API 参考文档](TECH-API-REFERENCE.md)。
+完整 API 列表（68 个 HTTP 操作，含 session/message chat completion）参见 [API 参考文档](TECH-api-reference.md)。
 
 ### 6.1 Chat Completion
 
@@ -303,6 +304,28 @@ capabilities owned by sibling SDKWork layers, not agents-application blockers.
 | Interaction domain in application/repository only (no public HTTP until OpenAPI) | Done |
 | Legacy MCP/Memory/Knowledge inline types removed | Done |
 | Structured audit payloads (agent, binding, runtime, marketplace) | Done |
+| PC/H5/MP core `sdkDependencies` + agents-app-sdk wiring | Done |
+| PC/H5 core knowledgebase-app-sdk via `*-core/sdk` (capability packages import core only) | Done |
+| `pnpm check` gates (deploy, docs, api-envelope, identity, architecture, composition) | Done |
+| `pnpm verify` includes SDK build, `--all-features` Rust tests, mini-program runtime build, client typecheck, PC agent + e2e flow contracts, Node platform contracts | Done |
+| CI packaging `validate` lifecycle mirrors `pnpm verify` | Done |
+| Archive docs trimmed to redirect stubs (no historical body) | Done |
+| Flutter core `sdk_inventory.dart` + `component.spec.json` pending-dart-sdk contract | Done |
+| Agents managed-store Prometheus metrics (`/metrics/agents`, RPS gauge) | Done |
+| Postgres interaction persistence + fail-closed HTTP state bootstrap | Done |
+| PC/H5 production chat UI (`AgentChatView` + sessions/messages API) | Done |
+| PC Auth Gate + knowledge bootstrap + runtime catalog + composition slot sync | Done |
+| Optional skills/voice catalog via sibling app SDKs | Done |
+| Mini-program runtime bundle rebuild in verify (`agents-mini-program build` + runtime contract) | Done |
+
+### Client surfaces (commercial MVP)
+
+| Surface | Auth + CRUD + Chat | Catalog / composition | Notes |
+| --- | --- | --- | --- |
+| PC | Done | Done | Production path |
+| H5 | Done | Done | Synced from PC via `workflow:sync-agent-h5-from-pc` |
+| Mini program | Runtime SDK bootstrap | WebView agents page | Native UI deferred |
+| Flutter | Scaffold only | `pending-dart-sdk` | No Dart agents-app-sdk yet |
 
 ### Post-launch (platform-owned)
 
@@ -310,7 +333,7 @@ capabilities owned by sibling SDKWork layers, not agents-application blockers.
 | --- | --- | --- |
 | P1 | Token-level SSE streaming | kernel `ModelProvider::stream` |
 | P1 | Rate limit + CORS middleware | sdkwork-web-framework |
-| P2 | Prometheus metrics / dashboards | ops + web-framework |
+| P2 | Split `http.rs` / `persistence.rs` for maintainability | sdkwork-agents |
+| P2 | Grafana dashboards wired to `/metrics` + `/metrics/agents` | ops |
 | P2 | MCP marketplace federation HTTP | sdkwork-mcp sibling mount |
-| P2 | Mini program SDK client surface | apps/sdkwork-agents-mini-program |
 | P2 | Direct open SDK sdkgen (`/agent/v3/api` profile) | sdkwork-sdk-generator |

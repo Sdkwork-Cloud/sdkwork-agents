@@ -7,6 +7,9 @@
     ".": "./src/index.ts",
     "./sdk": "./src/sdk/index.ts",
     "./sdk/agentsAppSdkClient": "./src/sdk/agentsAppSdkClient.ts",
+    "./sdk/knowledgebaseAppSdkClient": "./src/sdk/knowledgebaseAppSdkClient.ts",
+    "./sdk/skillsAppSdkClient": "./src/sdk/skillsAppSdkClient.ts",
+    "./sdk/voiceAppSdkClient": "./src/sdk/voiceAppSdkClient.ts",
     "./modules": "./src/modules/index.ts",
     "./host": "./src/host/index.ts",
     "./session": "./src/session/index.ts",
@@ -15,6 +18,9 @@
   "dependencies": {
     "@sdkwork/agents-app-sdk": "workspace:*",
     "@sdkwork/iam-contracts": "workspace:*",
+    "@sdkwork/knowledgebase-app-sdk": "workspace:*",
+    "@sdkwork/voice-app-sdk": "workspace:*",
+    "sdkwork-skills-app-sdk-generated-typescript": "workspace:*",
     "@sdkwork/sdk-common": "workspace:*"
   }
 }

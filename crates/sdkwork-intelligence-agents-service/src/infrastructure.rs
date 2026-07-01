@@ -11,8 +11,8 @@ use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
     ProviderHealth, ProviderManifest,
 };
-use std::cmp::Ordering;
-use std::sync::{Mutex, RwLock};
+use sdkwork_utils_rust::{is_blank, trim};
+use std::sync::{LazyLock, Mutex, RwLock};
 
 // ---------------------------------------------------------------------------
 // Production environment safety checks
@@ -101,10 +101,16 @@ pub fn is_production_environment() -> bool {
 // Metrics types for observability (O-01)
 // ---------------------------------------------------------------------------
 
-/// Service-level metrics for Prometheus scraping.
-/// Provides counters, gauges, and histograms for monitoring agent operations.
+use std::cmp::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::time::Instant;
+
+/// Prometheus snapshot for agents managed-store HTTP and business gauges.
 #[derive(Debug, Clone, Default)]
 pub struct AgentServiceMetrics {
+    pub http_requests_total: u64,
+    pub http_errors_total: u64,
+    pub http_requests_per_second: f64,
     /// Total number of agents across all tenants
     pub total_agents: u64,
     /// Number of active (non-deleted) agents
@@ -125,15 +131,93 @@ pub struct AgentServiceMetrics {
     pub error_counts: std::collections::HashMap<String, u64>,
 }
 
-impl AgentServiceMetrics {
-    /// Create empty metrics
-    pub fn new() -> Self {
-        Self::default()
+#[derive(Debug)]
+struct ScrapeState {
+    instant: Instant,
+    request_total: u64,
+}
+
+/// Process-wide agents metrics registry for Prometheus scraping.
+pub struct AgentMetricsRegistry {
+    http_requests_total: AtomicU64,
+    http_errors_total: AtomicU64,
+    scrape_state: Mutex<ScrapeState>,
+}
+
+impl AgentMetricsRegistry {
+    pub fn global() -> &'static Self {
+        static REGISTRY: LazyLock<AgentMetricsRegistry> = LazyLock::new(|| AgentMetricsRegistry {
+            http_requests_total: AtomicU64::new(0),
+            http_errors_total: AtomicU64::new(0),
+            scrape_state: Mutex::new(ScrapeState {
+                instant: Instant::now(),
+                request_total: 0,
+            }),
+        });
+        &REGISTRY
     }
 
+    pub fn record_http_request(&self, status: u16) {
+        self.http_requests_total.fetch_add(1, AtomicOrdering::Relaxed);
+        if status >= 400 {
+            self.http_errors_total.fetch_add(1, AtomicOrdering::Relaxed);
+        }
+    }
+
+    pub fn snapshot(&self) -> AgentServiceMetrics {
+        let http_requests_total = self.http_requests_total.load(AtomicOrdering::Relaxed);
+        let http_errors_total = self.http_errors_total.load(AtomicOrdering::Relaxed);
+        let http_requests_per_second = {
+            let mut state = self
+                .scrape_state
+                .lock()
+                .expect("agents metrics scrape state poisoned");
+            let now = Instant::now();
+            let elapsed = now.duration_since(state.instant).as_secs_f64();
+            let delta = http_requests_total.saturating_sub(state.request_total);
+            state.instant = now;
+            state.request_total = http_requests_total;
+            if elapsed > 0.0 {
+                delta as f64 / elapsed
+            } else {
+                0.0
+            }
+        };
+
+        AgentServiceMetrics {
+            http_requests_total,
+            http_errors_total,
+            http_requests_per_second,
+            ..AgentServiceMetrics::default()
+        }
+    }
+}
+
+impl AgentServiceMetrics {
     /// Export metrics in Prometheus text exposition format
     pub fn to_prometheus_text(&self) -> String {
         let mut output = String::with_capacity(1024);
+
+        output.push_str("# HELP sdkwork_agents_requests_total Total managed-store HTTP requests\n");
+        output.push_str("# TYPE sdkwork_agents_requests_total counter\n");
+        output.push_str(&format!(
+            "sdkwork_agents_requests_total {}\n",
+            self.http_requests_total
+        ));
+
+        output.push_str("# HELP sdkwork_agents_errors_total Total managed-store HTTP error responses\n");
+        output.push_str("# TYPE sdkwork_agents_errors_total counter\n");
+        output.push_str(&format!(
+            "sdkwork_agents_errors_total {}\n",
+            self.http_errors_total
+        ));
+
+        output.push_str("# HELP sdkwork_agents_requests_per_second Managed-store HTTP requests per second (scrape-window rate)\n");
+        output.push_str("# TYPE sdkwork_agents_requests_per_second gauge\n");
+        output.push_str(&format!(
+            "sdkwork_agents_requests_per_second {}\n",
+            self.http_requests_per_second
+        ));
         
         // Help and type declarations
         output.push_str("# HELP sdkwork_agents_total Total number of agents\n");
@@ -165,21 +249,21 @@ impl AgentServiceMetrics {
         output.push_str(&format!("sdkwork_agents_audit_events_total {}\n", self.audit_events_count));
         
         // Request counts by operation
-        output.push_str("# HELP sdkwork_agents_requests_total Total requests by operation\n");
-        output.push_str("# TYPE sdkwork_agents_requests_total counter\n");
+        output.push_str("# HELP sdkwork_agents_requests_by_operation_total Total requests by operation\n");
+        output.push_str("# TYPE sdkwork_agents_requests_by_operation_total counter\n");
         for (operation, count) in &self.request_counts {
             output.push_str(&format!(
-                "sdkwork_agents_requests_total{{operation=\"{}\"}} {}\n",
+                "sdkwork_agents_requests_by_operation_total{{operation=\"{}\"}} {}\n",
                 operation, count
             ));
         }
         
         // Error counts by operation
-        output.push_str("# HELP sdkwork_agents_errors_total Total errors by operation\n");
-        output.push_str("# TYPE sdkwork_agents_errors_total counter\n");
+        output.push_str("# HELP sdkwork_agents_errors_by_operation_total Total errors by operation\n");
+        output.push_str("# TYPE sdkwork_agents_errors_by_operation_total counter\n");
         for (operation, count) in &self.error_counts {
             output.push_str(&format!(
-                "sdkwork_agents_errors_total{{operation=\"{}\"}} {}\n",
+                "sdkwork_agents_errors_by_operation_total{{operation=\"{}\"}} {}\n",
                 operation, count
             ));
         }
@@ -325,10 +409,10 @@ impl AgentRepository for InMemoryAgentRepository {
                 let Some(search_query) = query.search_query.as_ref() else {
                     return true;
                 };
-                let normalized_query = search_query.trim().to_lowercase();
-                if normalized_query.is_empty() {
+                if is_blank(Some(search_query.as_str())) {
                     return true;
                 }
+                let normalized_query = trim(search_query).to_lowercase();
 
                 let description = record.description.as_deref().unwrap_or("");
                 record

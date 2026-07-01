@@ -21,9 +21,13 @@
   },
   "contracts": {
     "sdkDependencies": [
-      "sdkwork-agents-app-sdk"
-    ],
-    "dependencyComposition": "specs/dependency.composition.json"
+      {
+        "workspace": "sdkwork-agents-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api",
+        "status": "pending-dart-sdk"
+      }
+    ]
   },
   "verification": {
     "commands": [

@@ -3539,3 +3539,52 @@ async fn open_api_chat_message_should_accept_body_tenant_id() {
     .await;
     assert_eq!(completion["data"]["item"]["assistantMessage"]["role"], "assistant");
 }
+
+#[tokio::test]
+async fn backend_archive_session_should_transition_status() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        AllowAllPolicyProvider::allow("policy.memory"),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.archive.session";
+    create_agent(&app, agent_id, "Archive Session Agent").await;
+
+    let session_id = "session.archive.backend";
+    let session_response = post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
+        json!({
+            "data": {
+                "tenantId": "100001",
+                "organizationId": "0",
+                "ownerUserId": "1",
+                "sessionId": session_id,
+                "title": "Archive test session"
+            },
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let expected_version = session_response["data"]["item"]["version"]
+        .as_str()
+        .expect("session version");
+
+    let archived = post_json(
+        &app,
+        &format!(
+            "/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/archive?tenant_id=100001"
+        ),
+        json!({
+            "tenantId": "100001",
+            "expectedVersion": expected_version,
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(archived["data"]["item"]["sessionId"], session_id);
+    assert_eq!(archived["data"]["item"]["status"], "archived");
+}

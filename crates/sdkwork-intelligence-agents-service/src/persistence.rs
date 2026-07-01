@@ -1,13 +1,18 @@
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
-    AgentMessageRecord, AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord,
-    AgentSessionRecord, AgentSessionStatus, AgentVisibility,
+    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentMessageRecord,
+    AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord, AgentSessionRecord,
+    AgentSessionStatus, AgentVisibility,
 };
-use crate::ports::{AgentAuditSink, AgentListQuery, AgentRepository, MessageListQuery, SessionListQuery};
+use crate::ports::{
+    AgentAuditSink, AgentListQuery, AgentRepository, InteractionListQuery, MessageListQuery,
+    SessionListQuery,
+};
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
 use crate::validation::{validate_capabilities, validate_standard_id};
+use sdkwork_utils_rust::{is_blank, trim};
 #[cfg(feature = "postgres-sync")]
 use crate::{pg_execute, pg_query, pg_query_optional};
 use sdkwork_agent_kernel::{
@@ -504,12 +509,96 @@ impl AgentMessageRow {
     }
 }
 
+// ============================================================================
+// AgentInteractionRow — persistence row for ai_agent_interaction
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentInteractionRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub agent_id: String,
+    pub engine_key: String,
+    pub interaction_id: String,
+    pub kind: i16,
+    pub status: i16,
+    pub prompt: String,
+    pub options_json: String,
+    pub resolution_json: String,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub resolved_at: Option<String>,
+}
+
+impl AgentInteractionRow {
+    pub fn from_record(record: &AgentInteractionRecord) -> KernelResult<Self> {
+        Ok(Self {
+            id: record.id,
+            uuid: build_interaction_uuid(
+                record.tenant_id,
+                &record.session_id,
+                &record.interaction_id,
+            ),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            session_id: record.session_id.clone(),
+            agent_id: record.agent_id.clone(),
+            engine_key: record.engine_key.clone(),
+            interaction_id: record.interaction_id.clone(),
+            kind: record.kind.as_db_code(),
+            status: record.status.as_db_code(),
+            prompt: record.prompt.clone(),
+            options_json: record.options_json.clone(),
+            resolution_json: record.resolution_json.clone(),
+            version: record.version,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            resolved_at: record.resolved_at.clone(),
+        })
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentInteractionRecord> {
+        let kind = AgentInteractionKind::from_db_code(self.kind).ok_or_else(|| {
+            KernelError::validation(format!("invalid interaction kind db code: {}", self.kind))
+        })?;
+        let status = AgentInteractionStatus::from_db_code(self.status).ok_or_else(|| {
+            KernelError::validation(format!("invalid interaction status db code: {}", self.status))
+        })?;
+        Ok(AgentInteractionRecord {
+            id: self.id,
+            interaction_id: self.interaction_id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            session_id: self.session_id,
+            agent_id: self.agent_id,
+            engine_key: self.engine_key,
+            kind,
+            status,
+            prompt: self.prompt,
+            options_json: self.options_json,
+            resolution_json: self.resolution_json,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            resolved_at: self.resolved_at,
+        })
+    }
+}
+
 fn build_session_uuid(tenant_id: u64, session_id: &str) -> String {
     format!("agent_session_{tenant_id}_{session_id}")
 }
 
 fn build_message_uuid(tenant_id: u64, session_id: &str, message_id: &str) -> String {
     format!("agent_message_{tenant_id}_{session_id}_{message_id}")
+}
+
+fn build_interaction_uuid(tenant_id: u64, session_id: &str, interaction_id: &str) -> String {
+    format!("agent_interaction_{tenant_id}_{session_id}_{interaction_id}")
 }
 
 fn build_composition_slot_uuid(tenant_id: u64, agent_id: &str, slot_id: &str) -> String {
@@ -739,6 +828,17 @@ pub trait PostgresAgentRepositoryAdapter: Send + Sync {
     ) -> Option<AgentMessageRow>;
     fn list_message_rows(&self, query: &MessageListQuery) -> Vec<AgentMessageRow>;
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64>;
+
+    // Interaction operations
+    fn insert_interaction_row(&self, row: AgentInteractionRow) -> KernelResult<()>;
+    fn update_interaction_row(&self, row: AgentInteractionRow) -> KernelResult<()>;
+    fn get_interaction_row(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+        interaction_id: &str,
+    ) -> Option<AgentInteractionRow>;
+    fn list_interaction_rows(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRow>;
 }
 
 pub struct PostgresAgentRepository<A>
@@ -918,6 +1018,39 @@ where
 
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
         self.adapter.next_message_sequence(tenant_id, session_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Interaction persistence
+    // -----------------------------------------------------------------------
+
+    fn insert_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_interaction_row(AgentInteractionRow::from_record(&record)?)
+    }
+
+    fn update_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
+        self.adapter
+            .update_interaction_row(AgentInteractionRow::from_record(&record)?)
+    }
+
+    fn get_interaction(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+        interaction_id: &str,
+    ) -> Option<AgentInteractionRecord> {
+        self.adapter
+            .get_interaction_row(tenant_id, session_id, interaction_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn list_interactions(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRecord> {
+        self.adapter
+            .list_interaction_rows(query)
+            .into_iter()
+            .filter_map(|row| row.into_record().ok())
+            .collect()
     }
 }
 
@@ -1126,8 +1259,8 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         let search_query: Option<String> = query
             .search_query
             .as_ref()
-            .filter(|q| !q.trim().is_empty())
-            .map(|q| format!("%{}%", q.trim().to_lowercase()));
+            .filter(|q| !is_blank(Some(q.as_str())))
+            .map(|q| format!("%{}%", trim(q).to_lowercase()));
         
         // Mandatory pagination per DATABASE_SPEC §16
         let page_size = query.pagination.page_size as i64;
@@ -1656,6 +1789,121 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(1);
             int64_to_u64(next, "next_sequence")
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // Interaction persistence
+    // -----------------------------------------------------------------------
+
+    fn insert_interaction_row(&self, row: AgentInteractionRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_INTERACTION,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.session_id,
+                row.agent_id,
+                row.engine_key,
+                row.interaction_id,
+                row.kind,
+                row.status,
+                row.prompt,
+                row.options_json,
+                row.resolution_json,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.resolved_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_interaction_row(&self, row: AgentInteractionRow) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+
+        self.with_pool(|pool| {
+            let updated_rows = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_INTERACTION,
+                row.kind,
+                row.status,
+                row.prompt,
+                row.options_json,
+                row.resolution_json,
+                version,
+                row.updated_at,
+                row.resolved_at,
+                tenant_id,
+                row.session_id,
+                row.interaction_id
+            )?;
+
+            if updated_rows == 0 {
+                return Err(KernelError::validation("interaction not found"));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_interaction_row(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+        interaction_id: &str,
+    ) -> Option<AgentInteractionRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_INTERACTION,
+                tenant_id,
+                session_id,
+                interaction_id
+            )?;
+            row.map(pg_row_to_agent_interaction_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn list_interaction_rows(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRow> {
+        let tenant_id = match u64_to_i64(query.tenant_id, "tenant_id") {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        };
+        let status_code: Option<i16> = query
+            .status
+            .as_deref()
+            .and_then(AgentInteractionStatus::from_code)
+            .map(|s| s.as_db_code());
+        let page_size = query.pagination.page_size as i64;
+        let offset = query.pagination.offset as i64;
+
+        self.with_pool(|pool| {
+            let rows = pg_query!(
+                pool,
+                SQL_LIST_AGENT_INTERACTIONS,
+                tenant_id,
+                query.session_id,
+                status_code,
+                page_size,
+                offset
+            )?;
+            rows.into_iter()
+                .map(pg_row_to_agent_interaction_row)
+                .collect()
+        })
+        .unwrap_or_default()
     }
 }
 
@@ -2226,6 +2474,36 @@ fn pg_row_to_agent_message_row(row: PgRow) -> KernelResult<AgentMessageRow> {
         parent_message_id: row.try_get("parent_message_id").map_err(map_sqlx_error)?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionRow> {
+    Ok(AgentInteractionRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id")
+                .map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        engine_key: row.try_get("engine_key").map_err(map_sqlx_error)?,
+        interaction_id: row.try_get("interaction_id").map_err(map_sqlx_error)?,
+        kind: row.try_get("kind").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        prompt: row.try_get("prompt").map_err(map_sqlx_error)?,
+        options_json: row.try_get("options_json").map_err(map_sqlx_error)?,
+        resolution_json: row.try_get("resolution_json").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        resolved_at: row.try_get("resolved_at").map_err(map_sqlx_error)?,
     })
 }
 

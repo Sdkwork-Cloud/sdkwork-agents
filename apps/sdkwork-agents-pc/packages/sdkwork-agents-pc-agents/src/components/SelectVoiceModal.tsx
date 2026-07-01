@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Mic, Radio, Speaker, Headphones, User, Music, Search, Check, Play } from 'lucide-react';
 import { cn } from '@sdkwork/agents-pc-commons';
 import { voiceService, VoiceConfig } from '../services/VoiceService';
+import { toast } from './Toast';
 
 export interface SelectVoiceModalProps {
   isOpen: boolean;
@@ -208,7 +209,13 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                // Preview logic placeholder
+                                if (voice.audioPreview) {
+                                  void new Audio(voice.audioPreview).play().catch(() => {
+                                    toast('无法播放预览音频', 'error');
+                                  });
+                                  return;
+                                }
+                                toast('该音色暂无预览音频', 'info');
                               }}
                               className="w-7 h-7 rounded-full bg-[#181818] border border-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-purple-500 hover:border-purple-500 transition-all opacity-0 group-hover:opacity-100"
                             >

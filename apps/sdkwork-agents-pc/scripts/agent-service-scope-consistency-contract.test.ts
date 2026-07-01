@@ -108,4 +108,4 @@ for (const methodName of [
   );
 }
 
-console.log('sdkwork im pc agent service context-derived scope contract passed.');
+console.log('sdkwork agents pc agent service context-derived scope contract passed.');

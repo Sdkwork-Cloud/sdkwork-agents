@@ -246,7 +246,9 @@ function createTsPackage(appRoot, packageDirName, npmName, capability = 'core') 
     contracts: {
       publicExports: ['.'],
       sdkClients: capability === 'core' ? ['sdkwork-agents-app-sdk'] : [],
-      dependencyComposition: capability === 'core' ? '../../../specs/dependency.composition.json' : undefined,
+      sdkDependencies: capability === 'core'
+        ? [{ workspace: 'sdkwork-agents-app-sdk', surface: 'app-api', credentialMode: 'authenticated-app-api' }]
+        : [],
     },
   });
 }
@@ -329,7 +331,6 @@ function createReactSurface({
       sdkDependencies: ['sdkwork-agents-app-sdk'],
       dependencyApiExports: [],
       dependencyApiSurfaces: [],
-      dependencyComposition: 'specs/dependency.composition.json',
     },
     verification: {
       commands: ['pnpm run typecheck', 'pnpm run build'],
@@ -431,7 +432,7 @@ function createReactSurface({
         [`@sdkwork/${applicationCode}-${packageSegment}-core`]: [`./packages/sdkwork-${applicationCode}-${packageSegment}-core/src/index.ts`],
         [`@sdkwork/${applicationCode}-${packageSegment}-commons`]: [`./packages/sdkwork-${applicationCode}-${packageSegment}-commons/src/index.ts`],
         [`@sdkwork/${applicationCode}-${packageSegment}-shell`]: [`./packages/sdkwork-${applicationCode}-${packageSegment}-shell/src/index.ts`],
-        '@sdkwork/agents-app-sdk': ['../../../sdks/sdkwork-agents-app-sdk/sdkwork-agent-app-sdk-typescript/generated/server-openapi/src/index.ts'],
+        '@sdkwork/agents-app-sdk': ['../../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts'],
       },
     },
     include: ['src', `packages/sdkwork-${applicationCode}-${packageSegment}-core/src`, 'src/vite-env.d.ts'],
@@ -458,7 +459,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@sdkwork/agents-app-sdk": path.resolve(
           repoRoot,
-          "sdks/sdkwork-agents-app-sdk/sdkwork-agent-app-sdk-typescript/generated/server-openapi/src/index.ts",
+          "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts",
         ),
       },
     },
@@ -654,8 +655,9 @@ function createMiniProgramSurface() {
       manifests: ['package.json', 'sdkwork.app.config.json', 'project.config.json'],
     },
     contracts: {
-      sdkDependencies: ['sdkwork-agents-app-sdk'],
-      dependencyComposition: 'specs/dependency.composition.json',
+      sdkDependencies: [
+        { workspace: 'sdkwork-agents-app-sdk', surface: 'app-api', credentialMode: 'authenticated-app-api' },
+      ],
     },
     verification: {
       commands: ['pnpm run build', 'pnpm run typecheck'],
@@ -838,8 +840,9 @@ function createFlutterSurface() {
       manifests: ['pubspec.yaml', 'sdkwork.app.config.json'],
     },
     contracts: {
-      sdkDependencies: ['sdkwork-agents-app-sdk'],
-      dependencyComposition: 'specs/dependency.composition.json',
+      sdkDependencies: [
+        { workspace: 'sdkwork-agents-app-sdk', surface: 'app-api', credentialMode: 'authenticated-app-api' },
+      ],
     },
     verification: {
       commands: ['flutter analyze'],
@@ -969,9 +972,7 @@ dependencies:
       languages: ['dart'],
       generated: false,
     },
-    contracts: {
-      dependencyComposition: '../../../specs/dependency.composition.json',
-    },
+    contracts: {},
   });
 
   return appRootName;
@@ -982,7 +983,7 @@ function createRootWorkspace() {
   - "apps/*"
   - "apps/*/packages/*"
   - "../sdkwork-sdk-commons/sdkwork-sdk-common-typescript"
-  - "sdks/sdkwork-agents-app-sdk/sdkwork-agent-app-sdk-typescript/generated/server-openapi"
+  - "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi"
 
 catalog:
   "@tailwindcss/vite": ^4.1.14

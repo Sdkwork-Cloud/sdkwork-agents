@@ -1,34 +1,63 @@
 packages:
+  - "apps/sdkwork-agents-flutter-mobile"
+  - "apps/sdkwork-agents-flutter-mobile/packages/*"
+  - "apps/sdkwork-agents-h5"
+  - "apps/sdkwork-agents-h5/packages/*"
+  - "apps/sdkwork-agents-mini-program"
+  - "apps/sdkwork-agents-mini-program/packages/*"
+  - "apps/sdkwork-agents-pc"
+  - "apps/sdkwork-agents-pc/packages/*"
   - "apps/*"
   - "apps/*/packages/*"
-  - "../sdkwork-sdk-commons/sdkwork-sdk-common-typescript"
+  - "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi"
   - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-contracts"
-  - "sdks/sdkwork-agents-app-sdk/sdkwork-agent-app-sdk-typescript/generated/server-openapi"
+  - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-runtime"
+  - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-sdk-ports"
+  - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-sdk-adapter"
+  - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-service"
+  - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-application-bootstrap"
+  - "../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-auth-pc-react"
+  - "../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-auth-runtime-pc-react"
+  - "../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-iam-react"
+  - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-credential-entry"
+  - "../sdkwork-iam/sdks/sdkwork-iam-app-sdk/sdkwork-iam-app-sdk-typescript/generated/server-openapi"
+  - "../sdkwork-iam/sdks/sdkwork-iam-backend-sdk/sdkwork-iam-backend-sdk-typescript/generated/server-openapi"
+  - "../sdkwork-appbase/packages/common/foundation/sdkwork-runtime-bootstrap"
+  - "../sdkwork-appbase/packages/pc-react/foundation/sdkwork-appbase-pc-react"
+  - "../sdkwork-appbase/packages/pc-react/foundation/sdkwork-i18n-pc-react"
+  - "../sdkwork-core/sdkwork-core-pc-react"
+  - "../sdkwork-ui/sdkwork-ui-pc-react"
+  - "../sdkwork-sdk-commons/sdkwork-sdk-common-typescript"
+  - "../sdkwork-utils/packages/sdkwork-utils-typescript"
+  - "../sdkwork-app-topology"
+  - "../sdkwork-knowledgebase/sdks/sdkwork-knowledgebase-app-sdk/sdkwork-knowledgebase-app-sdk-typescript"
+  - "../sdkwork-skills/sdks/sdkwork-skills-app-sdk/sdkwork-skills-app-sdk-typescript/generated/server-openapi"
+  - "../sdkwork-voice/sdks/sdkwork-voice-app-sdk/sdkwork-voice-app-sdk-typescript/generated/server-openapi"
 
 catalog:
-  "@tailwindcss/vite": ^4.1.14
+  react: ^19.2.4
+  react-dom: ^19.2.4
+  typescript: ^6.0.2
+  vite: ^8.0.3
   "@types/react": ^19.2.14
   "@types/react-dom": ^19.2.3
+  "@tailwindcss/vite": ^4.1.14
   "@vitejs/plugin-react": ^6.0.1
-  "clsx": ^2.1.1
-  "i18next": ^26.1.0
-  "jsdom": ^29.1.1
-  "lucide-react": ^1.7.0
-  "motion": ^12.23.24
+  clsx: ^2.1.1
+  i18next: ^26.1.0
+  jsdom: ^29.1.1
+  lucide-react: ^1.7.0
+  motion: ^12.23.24
   "@tiptap/extension-placeholder": ^3.23.4
   "@tiptap/pm": ^3.23.4
   "@tiptap/react": ^3.23.4
   "@tiptap/starter-kit": ^3.23.4
-  "emoji-picker-react": ^4.18.0
-  "qrcode": ^1.5.4
-  "react": ^19.2.4
-  "react-dom": ^19.2.4
-  "react-hook-form": ^7.72.1
-  "react-i18next": ^17.0.7
-  "tailwind-merge": ^3.5.0
-  "typescript": ^6.0.2
-  "tailwindcss": ^4.1.14
-  "tsx": ^4.20.5
-  "vite": ^8.0.3
-  "vite-plugin-dts": ^4.5.4
-  "vitest": ^4.1.8
+  emoji-picker-react: ^4.18.0
+  qrcode: ^1.5.4
+  react-hook-form: ^7.72.1
+  react-i18next: ^17.0.7
+  tailwind-merge: ^3.5.0
+  tailwindcss: ^4.1.14
+  tsx: ^4.20.5
+  vite-plugin-dts: ^4.5.4
+  vitest: ^4.1.8

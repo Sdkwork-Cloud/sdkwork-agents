@@ -34,7 +34,7 @@ pub fn execute_code_engine_turn(
         return Err(RuntimeFacadeError::BlankPrompt);
     }
 
-    let model_request_id = format!("agents-turn-{}", uuid::Uuid::new_v4());
+    let model_request_id = format!("agents-turn-{}", sdkwork_utils_rust::uuid());
     let mut model_request = ModelRequest::new(model_request_id, vec![input.prompt.clone()]);
     if !is_blank(Some(input.model_id.as_str())) {
         model_request.model_id = Some(input.model_id.clone());

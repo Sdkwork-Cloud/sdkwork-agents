@@ -1,5 +1,9 @@
 import { bootstrap } from "./runtime";
 
-export function bootstrapAgentsMiniProgram() {
-  bootstrap();
+export interface AgentsMiniProgramRuntimeOptions {
+  appApiBaseUrl?: string;
+}
+
+export function bootstrapAgentsMiniProgram(options: AgentsMiniProgramRuntimeOptions = {}) {
+  return bootstrap(options);
 }

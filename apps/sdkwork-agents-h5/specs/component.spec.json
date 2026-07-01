@@ -43,8 +43,7 @@
       "sdkwork-agents-app-sdk"
     ],
     "dependencyApiExports": [],
-    "dependencyApiSurfaces": [],
-    "dependencyComposition": "specs/dependency.composition.json"
+    "dependencyApiSurfaces": []
   },
   "verification": {
     "commands": [

@@ -6,7 +6,7 @@ license.workspace = true
 description = "SDKWork intelligence agents domain service (managed agents, marketplace, knowledge registry)"
 
 [features]
-default = []
+default = ["http-axum", "postgres-sync"]
 postgres-sync = ["dep:sdkwork-database-config", "dep:sdkwork-database-sqlx", "dep:sqlx", "dep:tokio"]
 http-axum = ["dep:axum", "dep:tokio", "dep:tower", "dep:sdkwork-web-core"]
 

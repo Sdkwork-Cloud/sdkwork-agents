@@ -13,6 +13,7 @@ import {
   resolveAppSdkAuthToken,
   type SdkworkChatSession,
 } from "../session/session";
+import { readRuntimeEnv } from "./runtimeEnv";
 
 export type SdkworkAgentsAppClient = GeneratedSdkworkAgentsAppClient;
 export type SdkworkAgentsAppClientConfig = SdkworkAppConfig & {
@@ -22,11 +23,10 @@ export type SdkworkAgentsAppClientConfig = SdkworkAppConfig & {
 let agentsAppSdkClient: SdkworkAgentsAppClient | null = null;
 
 export function resolveAgentsAppSdkBaseUrl(): string {
-  const fromEnv = import.meta.env.VITE_SDKWORK_AGENTS_H5_APP_API_BASE_URL;
-  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
-    return fromEnv.trim();
-  }
-  const publicUrl = import.meta.env.VITE_SDKWORK_AGENTS_H5_APPLICATION_PUBLIC_HTTP_URL ?? "http://127.0.0.1:8095";
+  const fromEnv = readRuntimeEnv("VITE_SDKWORK_AGENTS_H5_APP_API_BASE_URL");
+  if (fromEnv) return fromEnv;
+  const publicUrl =
+    readRuntimeEnv("VITE_SDKWORK_AGENTS_H5_APPLICATION_PUBLIC_HTTP_URL") ?? "http://127.0.0.1:8095";
   return `${String(publicUrl).replace(/\/+$/u, "")}/app/v3/api`;
 }
 
@@ -34,10 +34,7 @@ export function createAgentsAppSdkClientConfig(
   session?: SdkworkChatSession | null,
 ): SdkworkAgentsAppClientConfig {
   const currentSession = session ?? readAppSdkSessionTokens();
-  const envAccessToken =
-    typeof import.meta.env.SDKWORK_ACCESS_TOKEN === "string"
-      ? import.meta.env.SDKWORK_ACCESS_TOKEN.trim()
-      : undefined;
+  const envAccessToken = readRuntimeEnv("SDKWORK_ACCESS_TOKEN");
 
   return {
     baseUrl: resolveAgentsAppSdkBaseUrl(),
@@ -76,8 +73,10 @@ export function useAgentsAppSdkClient(): SdkworkAgentsAppClient {
   return getAgentsAppSdkClientWithSession();
 }
 
-/** @deprecated Use SdkworkAgentsAppClient — kept for migrated AgentService source compatibility. */
-export type SdkworkAgentAppClient = SdkworkAgentsAppClient;
-
-/** @deprecated Use getAgentsAppSdkClientWithSession */
-export const getAgentAppSdkClientWithSession = getAgentsAppSdkClientWithSession;
+export type {
+  AgentManagementProfile,
+  AgentRecord,
+  CreateAgentProviderBindingRequest,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from "@sdkwork/agents-app-sdk";

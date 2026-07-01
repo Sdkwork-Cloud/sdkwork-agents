@@ -76,7 +76,7 @@ sdkwork-agents 解决的核心问题：
 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` |
 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` |
 
-完整 API 列表见 [API_SPECIFICATION.md](../../architecture/tech/API_SPECIFICATION.md)（70 HTTP 操作）。
+完整 API 列表见 [TECH-api-specification.md](../../architecture/tech/TECH-api-specification.md)（70 HTTP 操作）。
 
 ### Sibling Module Dependencies (referenced via composition slot)
 
@@ -126,7 +126,7 @@ sdkwork-agents 解决的核心问题：
 | Agent CRUD API P99 延迟 | < 200ms |
 | 组合槽查询 P99 延迟 | < 100ms |
 | 审计日志写入成功率 | 99.99% |
-| 数据库表数量 | 4 (不过度设计) |
+| 数据库表数量 | 6 (组合平面最小完备集) |
 | 跨模块耦合 | 0 (所有外部资源通过 composition slot 引用) |
 
 ## 7. Phases
@@ -138,22 +138,36 @@ sdkwork-agents 解决的核心问题：
 - 建立 composition slot 模式
 - 迁移脚本就位
 
-### Phase 2 — Production Hardening (进行中)
+### Phase 2 — Production Hardening (已完成)
 
 - [x] 移除生产环境 AllowAllPolicyProvider，实现 IAM-backed PolicyProvider
 - [x] 实现 PostgresAgentAuditSink 替换内存审计
 - [x] 确保 sdkwork-agents-runtime-facade 正确集成（workspace 注册 + 文档对齐 + 清理死代码）
 - [x] 修复 std::sync::Mutex 阻塞异步执行器
-- 拆分超大文件 http.rs 和 persistence.rs
 - [x] 添加请求追踪中间件（CORS/限流延迟到 web-framework 层统一配置）
 - [x] 修复 tenant_id 空默认值安全问题
+- [ ] 拆分超大文件 `http.rs` / `persistence.rs`（可维护性优化，非上线阻塞项）
 
-### Phase 3 — Observability & Scale
+### Phase 3 — Client & Observability (基本完成)
 
-- 添加 Prometheus metrics 和可观测性
-- 补充集成测试覆盖
-- [x] 清理代码中 MCP / Memory / Knowledge 遗留类型和 DTO
-- 实现小程序 SDK 客户端
+- [x] Prometheus metrics 采集（`/metrics/agents`，含 `sdkwork_agents_requests_per_second`）
+- [x] CI 运行 feature-gated HTTP/Postgres 契约测试（`default = ["http-axum", "postgres-sync"]`）
+- [x] Postgres interaction 持久化
+- [x] 生产环境禁用 Postgres 不可用时的内存静默降级
+- [x] PC/H5 生产聊天页（`AgentChatView`，sessions/messages API）
+- [x] PC/H5 客户端：Auth Gate、知识库 bootstrap、运行时 catalog、composition slot 同步
+- [x] 可选 sibling SDK：skills / voice catalog（`sdkwork-skills-app-sdk`、`sdkwork-voice-app-sdk`）
+- [x] 小程序 runtime bundle 与 TypeScript bootstrap 对齐（verify 门禁）
+- [x] 客户端 E2E 流程 contract（create agent → chat，`agent-e2e-flow-contract.test.ts`）
+- [ ] 小程序原生页面（当前 agents 页仍为 H5 WebView）
+- [ ] Flutter Dart SDK 与移动端屏幕（`pending-dart-sdk`）
+
+### Phase 4 — Commercial GA (未开始)
+
+- [ ] 应用商店/渠道发布元数据（截图、描述、`sdkwork.workflow.json` GA 渠道）
+- [x] 端到端自动化 contract（Auth 由 contract 覆盖 scope；create → chat 在 `test:agent-contracts`）
+- [ ] 端到端 live 冒烟（见 [smoke-test.md](../../runbooks/smoke-test.md)）
+- [ ] Grafana 仪表盘对接 `/metrics` + `/metrics/agents`（运维平台）
 
 ## 8. Linked Requirements
 

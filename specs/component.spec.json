@@ -124,7 +124,7 @@
   },
   "verification": {
     "commands": [
-      "pnpm check:architecture-alignment",
+      "pnpm check",
       "pnpm verify",
       "cargo test -p sdkwork-intelligence-agents-service",
       "cargo test -p sdkwork-routes-agents-http-shared"

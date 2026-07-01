@@ -13,6 +13,14 @@
     "generated": false
   },
   "contracts": {
-    "dependencyComposition": "../../../specs/dependency.composition.json"
+    "sdkDependencies": [
+      {
+        "workspace": "sdkwork-agents-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api",
+        "status": "pending-dart-sdk"
+      }
+    ],
+    "sdkClients": []
   }
 }

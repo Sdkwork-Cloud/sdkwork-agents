@@ -18,10 +18,24 @@ function copyAdapted(relativePath, replacements) {
   fs.writeFileSync(target, content, "utf8");
 }
 
+copyAdapted("sdk/runtimeEnv.ts", []);
 copyAdapted("sdk/agentsAppSdkClient.ts", [
   ["SDKWORK_AGENTS_PC_", "SDKWORK_AGENTS_H5_"],
   ['platform: "pc"', 'platform: "h5"'],
 ]);
+copyAdapted("sdk/knowledgebaseAppSdkClient.ts", [
+  ["SDKWORK_AGENTS_PC_", "SDKWORK_AGENTS_H5_"],
+  ['platform: "pc"', 'platform: "h5"'],
+]);
+copyAdapted("sdk/skillsAppSdkClient.ts", [
+  ["SDKWORK_AGENTS_PC_", "SDKWORK_AGENTS_H5_"],
+  ['platform: "pc"', 'platform: "h5"'],
+]);
+copyAdapted("sdk/voiceAppSdkClient.ts", [
+  ["SDKWORK_AGENTS_PC_", "SDKWORK_AGENTS_H5_"],
+  ['platform: "pc"', 'platform: "h5"'],
+]);
+copyAdapted("sdk/index.ts", []);
 copyAdapted("session/session.ts", [
   ["sdkwork-agents-pc", "sdkwork-agents-h5"],
   ["SDKWORK_AGENTS_PC_", "SDKWORK_AGENTS_H5_"],

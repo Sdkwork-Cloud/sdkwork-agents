@@ -1,1 +1,1 @@
-const sdkworkDependencyCompositionManifestPath = "../../../specs/dependency.composition.json";
+const sdkworkComponentSpecPath = '../../../specs/component.spec.json';

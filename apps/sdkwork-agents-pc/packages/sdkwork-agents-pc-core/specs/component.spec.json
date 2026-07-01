@@ -3,7 +3,7 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-agents-pc-core",
-    "displayName": "sdkwork-agents-pc-core",
+    "displayName": "SDKWork Agents PC Core",
     "version": "0.1.0",
     "type": "typescript-package",
     "root": "apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-core",
@@ -18,13 +18,81 @@
       "package.json"
     ]
   },
+  "canonicalSpecs": [
+    {
+      "file": "APP_PC_ARCHITECTURE_SPEC.md",
+      "path": "../../../../../../sdkwork-specs/APP_PC_ARCHITECTURE_SPEC.md",
+      "purpose": "PC application root architecture."
+    },
+    {
+      "file": "APP_COMPOSITION_SPEC.md",
+      "path": "../../../../../../sdkwork-specs/APP_COMPOSITION_SPEC.md",
+      "purpose": "Native-authority application composition."
+    },
+    {
+      "file": "APP_SDK_INTEGRATION_SPEC.md",
+      "path": "../../../../../../sdkwork-specs/APP_SDK_INTEGRATION_SPEC.md",
+      "purpose": "Generated app SDK integration."
+    }
+  ],
   "contracts": {
     "publicExports": [
       "."
     ],
-    "sdkClients": [
-      "sdkwork-agents-app-sdk"
+    "sdkDependencies": [
+      {
+        "workspace": "sdkwork-agents-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
+        "workspace": "sdkwork-database",
+        "surface": "open-api",
+        "credentialMode": "protected-open-api-flexible"
+      },
+      {
+        "workspace": "sdkwork-drive",
+        "surface": "open-api",
+        "credentialMode": "protected-open-api-flexible"
+      },
+      {
+        "workspace": "sdkwork-kernel",
+        "surface": "open-api",
+        "credentialMode": "protected-open-api-flexible"
+      },
+      {
+        "workspace": "sdkwork-knowledgebase-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
+        "workspace": "sdkwork-skills-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
+        "workspace": "sdkwork-voice-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
+        "workspace": "sdkwork-utils",
+        "surface": "open-api",
+        "credentialMode": "protected-open-api-flexible"
+      },
+      {
+        "workspace": "sdkwork-web-framework",
+        "surface": "open-api",
+        "credentialMode": "protected-open-api-flexible"
+      }
     ],
-    "dependencyComposition": "../../../specs/dependency.composition.json"
+    "sdkClients": [
+      "@sdkwork/agents-app-sdk",
+      "@sdkwork/knowledgebase-app-sdk",
+      "sdkwork-skills-app-sdk-generated-typescript",
+      "@sdkwork/voice-app-sdk"
+    ],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": []
   }
 }

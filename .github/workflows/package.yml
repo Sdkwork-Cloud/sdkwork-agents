@@ -59,6 +59,10 @@ on:
         description: sdkwork-drive commit/ref.
         required: false
         default: main
+      sdkwork_knowledgebase_ref:
+        description: sdkwork-knowledgebase commit/ref.
+        required: false
+        default: main
       sdkwork_app_topology_ref:
         description: sdkwork-app-topology commit/ref.
         required: false
@@ -94,6 +98,7 @@ jobs:
           "SDKWORK_DATABASE_REF": "${{ github.event.inputs.sdkwork_database_ref || vars.SDKWORK_DATABASE_REF }}",
           "SDKWORK_UTILS_REF": "${{ github.event.inputs.sdkwork_utils_ref || vars.SDKWORK_UTILS_REF }}",
           "SDKWORK_DRIVE_REF": "${{ github.event.inputs.sdkwork_drive_ref || vars.SDKWORK_DRIVE_REF }}",
+          "SDKWORK_KNOWLEDGEBASE_REF": "${{ github.event.inputs.sdkwork_knowledgebase_ref || vars.SDKWORK_KNOWLEDGEBASE_REF }}",
           "SDKWORK_APP_TOPOLOGY_REF": "${{ github.event.inputs.sdkwork_app_topology_ref || vars.SDKWORK_APP_TOPOLOGY_REF }}"
         }
     secrets: inherit

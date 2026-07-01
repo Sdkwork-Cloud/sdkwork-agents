@@ -18,7 +18,10 @@ use crate::domain::{
 };
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{AgentAuditSink, AgentRepository, MessageListQuery};
-use crate::validation::{require_non_blank, validate_capabilities, validate_standard_id};
+use crate::validation::{
+    default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
+    is_trimmed_blank, require_non_blank, validate_capabilities, validate_standard_id,
+};
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelEventRedaction, KernelEventSeverity,
     KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider,
@@ -977,7 +980,7 @@ where
         command: CreateSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.agent_id.as_str())?;
-        let session_id = if command.session_id.trim().is_empty() {
+        let session_id = if is_trimmed_blank(command.session_id.as_str()) {
             format!("session.{}", self.repository.next_id()?)
         } else {
             command.session_id.clone()
@@ -1005,17 +1008,13 @@ where
         }
 
         // Validate metadata_json if non-empty
-        if !command.metadata_json.trim().is_empty() {
+        if !is_trimmed_blank(command.metadata_json.as_str()) {
             validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
         } else {
             // default to empty object
         }
 
-        let metadata_json = if command.metadata_json.trim().is_empty() {
-            "{}".to_string()
-        } else {
-            command.metadata_json.clone()
-        };
+        let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
 
         let record = AgentSessionRecord {
             id: self.repository.next_id()?,
@@ -1198,15 +1197,15 @@ where
         }
 
         require_non_blank(command.content.as_str(), "content")?;
-        if !command.content_type.trim().is_empty() {
+        if !is_trimmed_blank(command.content_type.as_str()) {
             reject_secret_material(command.content.as_str(), "content")?;
         }
 
         // Validate JSON fields
-        if !command.artifacts_json.trim().is_empty() {
+        if !is_trimmed_blank(command.artifacts_json.as_str()) {
             validate_json_payload(command.artifacts_json.as_str(), "artifactsJson")?;
         }
-        if !command.metadata_json.trim().is_empty() {
+        if !is_trimmed_blank(command.metadata_json.as_str()) {
             validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
         }
 
@@ -1214,16 +1213,8 @@ where
             .repository
             .next_message_sequence(command.tenant_id, command.session_id.as_str())?;
 
-        let artifacts_json = if command.artifacts_json.trim().is_empty() {
-            "[]".to_string()
-        } else {
-            command.artifacts_json.clone()
-        };
-        let metadata_json = if command.metadata_json.trim().is_empty() {
-            "{}".to_string()
-        } else {
-            command.metadata_json.clone()
-        };
+        let artifacts_json = default_json_array_if_blank(command.artifacts_json.as_str());
+        let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
 
         let record = AgentMessageRecord {
             id: self.repository.next_id()?,
@@ -1233,11 +1224,7 @@ where
             agent_id: session.agent_id.clone(),
             role: command.role,
             content: command.content,
-            content_type: if command.content_type.trim().is_empty() {
-                "text/plain".to_string()
-            } else {
-                command.content_type
-            },
+            content_type: default_plain_text_if_blank(command.content_type.as_str()),
             status: AgentMessageStatus::Sent,
             sequence,
             input_tokens: command.input_tokens,
@@ -1345,10 +1332,10 @@ where
         }
 
         require_non_blank(command.content.as_str(), "content")?;
-        if !command.content_type.trim().is_empty() {
+        if !is_trimmed_blank(command.content_type.as_str()) {
             reject_secret_material(command.content.as_str(), "content")?;
         }
-        if !command.metadata_json.trim().is_empty() {
+        if !is_trimmed_blank(command.metadata_json.as_str()) {
             validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
         }
 
@@ -1361,11 +1348,7 @@ where
             .collect::<Vec<_>>();
 
         let user_message_id = format!("msg.{}", self.repository.next_id()?);
-        let user_metadata_json = if command.metadata_json.trim().is_empty() {
-            "{}".to_string()
-        } else {
-            command.metadata_json.clone()
-        };
+        let user_metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
         let user_sequence = self
             .repository
             .next_message_sequence(command.tenant_id, command.session_id.as_str())?;
@@ -1377,11 +1360,7 @@ where
             agent_id: command.agent_id.clone(),
             role: AgentMessageRole::User,
             content: command.content.clone(),
-            content_type: if command.content_type.trim().is_empty() {
-                "text/plain".to_string()
-            } else {
-                command.content_type.clone()
-            },
+            content_type: default_plain_text_if_blank(command.content_type.as_str()),
             status: AgentMessageStatus::Sent,
             sequence: user_sequence,
             input_tokens: 0,

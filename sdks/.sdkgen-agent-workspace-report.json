@@ -4,25 +4,40 @@
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "../sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-06-28T06:35:32.099Z",
+  "startedAt": "2026-06-30T06:13:06.247Z",
   "families": [
     {
-      "key": "open",
-      "familyDir": "sdkwork-agents-sdk",
-      "authority": "sdkwork-agents-open-api",
-      "input": "sdks/sdkwork-agents-sdk/openapi/sdkwork-agents-open-api.sdkgen.yaml",
-      "output": "sdks/sdkwork-agents-sdk/sdkwork-agents-sdk-typescript/generated/server-openapi",
-      "sdkName": "sdkwork-agents-sdk",
-      "sdkType": "custom",
-      "sdkSurface": "open",
-      "packageName": "@sdkwork/agents-sdk",
-      "apiPrefix": "/agent/v3/api",
-      "generated": false,
-      "skipped": true,
-      "skipReason": "Open SDK is derived from app SDK; regenerate app family first.",
-      "derivedFrom": "sdkwork-agents-app-sdk"
+      "key": "app",
+      "familyDir": "sdkwork-agents-app-sdk",
+      "authority": "sdkwork-agents-app-api",
+      "input": "sdks/sdkwork-agents-app-sdk/openapi/sdkwork-agents-app-api.sdkgen.yaml",
+      "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi",
+      "sdkName": "sdkwork-agents-app-sdk",
+      "sdkType": "app",
+      "sdkOwner": "sdkwork-agents",
+      "packageName": "@sdkwork/agents-app-sdk",
+      "apiPrefix": "/app/v3/api",
+      "sdkDependencies": [
+        {
+          "workspace": "sdkwork-iam-app-sdk",
+          "role": "appbase-identity-and-session-capability",
+          "required": true,
+          "dependencyMode": "consumer-sdk",
+          "apiPrefix": "/app/v3/api",
+          "apiAuthority": "sdkwork-iam-app-api",
+          "generatedTransportImportPolicy": "forbidden",
+          "packageByLanguage": {
+            "typescript": "@sdkwork/iam-app-sdk"
+          }
+        }
+      ],
+      "version": "0.1.0",
+      "fingerprint": "f9aab226a2bde1e22e3d0c81523fe750e0af1c27fda28021d9c96073e8d34c5e",
+      "hasChanges": true,
+      "riskLevel": "medium",
+      "generated": true
     }
   ],
   "openSdkDerivedFromApp": true,
-  "finishedAt": "2026-06-28T06:35:32.203Z"
+  "finishedAt": "2026-06-30T06:13:07.078Z"
 }

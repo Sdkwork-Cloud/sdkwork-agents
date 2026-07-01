@@ -6,7 +6,7 @@
     "displayName": "SDKWork Agent Business",
     "version": "0.1.0",
     "type": "rust-crate",
-    "root": "sdkwork-kernel/sdkwork-intelligence-agents-service",
+    "root": "crates/sdkwork-intelligence-agents-service",
     "domain": "intelligence",
     "declaredDomain": null,
     "capability": "agents",

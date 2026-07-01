@@ -4,7 +4,7 @@ Status: active
 Owner: agents-platform
 Updated: 2026-06-28
 Specs: API_SPEC.md, SDK_SPEC.md
-Canonical list: [API_SPECIFICATION.md](API_SPECIFICATION.md)
+Canonical list: [TECH-api-specification.md](TECH-api-specification.md)
 
 ## 1. Overview
 
@@ -19,7 +19,7 @@ per-surface OpenAPI specifications.
 | Backend API | `/backend/v3/api` | Admin backend | `sdkwork-agents-backend-api` | 23 |
 
 **Grand total: 70 HTTP operations** across all surfaces. The authoritative
-operation matrix lives in [API_SPECIFICATION.md](API_SPECIFICATION.md).
+operation matrix lives in [TECH-api-specification.md](TECH-api-specification.md).
 
 ### 1.1 App-only runtime catalog APIs
 

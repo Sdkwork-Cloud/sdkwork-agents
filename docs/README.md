@@ -17,5 +17,13 @@
 | --- | --- |
 | Product PRD | [product/prd/PRD.md](product/prd/PRD.md) |
 | Technical architecture | [architecture/tech/TECH_ARCHITECTURE.md](architecture/tech/TECH_ARCHITECTURE.md) |
-| Complete API specification | [architecture/tech/API_SPECIFICATION.md](architecture/tech/API_SPECIFICATION.md) |
-| API reference | [architecture/tech/TECH-API-REFERENCE.md](architecture/tech/TECH-API-REFERENCE.md) |
+| HTTP API specification | [architecture/tech/TECH-api-specification.md](architecture/tech/TECH-api-specification.md) |
+| API reference index | [architecture/tech/TECH-api-reference.md](architecture/tech/TECH-api-reference.md) |
+| Pre-launch checklist | [pre-launch-verification.md](runbooks/pre-launch-verification.md) |
+| Monitoring / alerting | [runbooks/monitoring.md](runbooks/monitoring.md) |
+| Live smoke test | [runbooks/smoke-test.md](runbooks/smoke-test.md) |
+| Incident / rollback | [runbooks/incident-rollback.md](runbooks/incident-rollback.md) |
+
+## Archived Reports
+
+Historical one-off reports live under [archive/](archive/README.md). Do not treat them as current Canon.

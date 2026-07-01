@@ -85,7 +85,7 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8095"
-        prometheus.io/path: "/metrics"
+        prometheus.io/path: "/metrics,/metrics/agents"
     spec:
       serviceAccountName: sdkwork-intelligence-agents
       securityContext:

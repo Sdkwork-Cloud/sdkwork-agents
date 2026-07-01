@@ -71,13 +71,13 @@ pub use dto::{
 pub use http::{
     build_app_router, build_app_routes, build_backend_router, build_backend_routes,
     build_combined_router, build_combined_routes, build_open_router, build_open_routes,
-    AgentHttpState, AgentRequestContext,
+    serve_agents_metrics, AgentHttpState, AgentRequestContext,
 };
 #[cfg(feature = "http-axum")]
 pub use http::testing;
 pub use id::{AgentBusinessIdGenerator, AgentIdGenerator, AUDIT_SINK_NODE_ID};
 pub use infrastructure::{
-    AllowAllPolicyProvider, AgentServiceMetrics, DenyAllPolicyProvider, IamGatedPolicyProvider,
+    AllowAllPolicyProvider, AgentMetricsRegistry, AgentServiceMetrics, DenyAllPolicyProvider, IamGatedPolicyProvider,
     InMemoryAgentAuditSink, InMemoryAgentRepository, PolicyMode, validate_production_security_config,
     is_production_environment, ENV_DEV_AUTH_BYPASS, ENV_DEPLOYMENT_ENV,
     IAM_PERMISSION_AGENTS_MANAGE, IAM_PERMISSION_AGENTS_READ,

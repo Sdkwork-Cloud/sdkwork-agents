@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
-import type { SdkworkAgentAppClient } from '@sdkwork/agents-pc-core/sdk/agentsAppSdkClient';
-import type { AgentManagementProfile } from '@sdkwork/agents-app-sdk';
+import type { SdkworkAgentsAppClient, AgentManagementProfile } from '@sdkwork/agents-pc-core/sdk/agentsAppSdkClient';
 import type * as AgentServiceModule from '../packages/sdkwork-agents-pc-agents/src/services/AgentService.ts';
 
 type AgentServiceExports = typeof AgentServiceModule;
@@ -34,7 +33,7 @@ function makeAgentRecord(overrides: RecordLike = {}): RecordLike {
     id: '1001',
     agentId,
     tenantId: '100001',
-    organizationId: '10',
+    organizationId: '0',
     ownerUserId: '100',
     code: agentId,
     displayName: String(overrides.displayName ?? 'Management Profile Agent'),
@@ -86,57 +85,72 @@ const requests: {
   update?: { id: string; body: AgentRequestBody; params: RecordLike };
 } = {};
 
+const compositionSlotsByAgent = new Map<string, Array<RecordLike>>();
+
 const fakeClient = {
   ai: {
     agents: {
+      compositionSlots: {
+        async list(agentId: string) {
+          return {
+            items: compositionSlotsByAgent.get(agentId) ?? [],
+            pageInfo: { page: 1, pageSize: 100, totalItems: '0', totalPages: 1 },
+          };
+        },
+        async create(agentId: string, body: RecordLike) {
+          const slot = {
+            slotId: body.data?.slotId ?? 'slot.test',
+            version: '1',
+            ...(body.data as RecordLike),
+          };
+          const current = compositionSlotsByAgent.get(agentId) ?? [];
+          compositionSlotsByAgent.set(agentId, [...current, slot]);
+          return slot;
+        },
+        async delete(_agentId: string, _slotId: string, _params: RecordLike) {
+          return { accepted: true };
+        },
+      },
       async list(params: RecordLike) {
         assert.equal(params.page, 1);
         assert.equal(params.pageSize, 100);
         return {
-          data: {
-            items: [makeAgentRecord()],
-            pageInfo: {
-              page: 1,
-              pageSize: 100,
-              totalItems: '1',
-              totalPages: 1,
-            },
+          items: [makeAgentRecord()],
+          pageInfo: {
+            page: 1,
+            pageSize: 100,
+            totalItems: '1',
+            totalPages: 1,
           },
         };
       },
       async create(body: AgentRequestBody, params: RecordLike) {
         requests.create = { body, params };
-        return {
-          data: makeAgentRecord({
-            agentId: body.agentId,
-            displayName: body.displayName,
-            description: body.description,
-            managementProfile: body.managementProfile,
-          }),
-        };
+        return makeAgentRecord({
+          agentId: body.agentId,
+          displayName: body.displayName,
+          description: body.description,
+          managementProfile: body.managementProfile,
+        });
       },
       async retrieve(id: string, params: RecordLike) {
         requests.retrieve = { id, params };
-        return {
-          data: makeAgentRecord({
-            agentId: id,
-          }),
-        };
+        return makeAgentRecord({
+          agentId: id,
+        });
       },
       async update(id: string, body: AgentRequestBody, params: RecordLike) {
         requests.update = { id, body, params };
-        return {
-          data: makeAgentRecord({
-            agentId: id,
-            displayName: body.displayName ?? 'Updated Management Profile Agent',
-            description: body.description ?? 'Updated profile contract',
-            managementProfile: body.managementProfile,
-          }),
-        };
+        return makeAgentRecord({
+          agentId: id,
+          displayName: body.displayName ?? 'Updated Management Profile Agent',
+          description: body.description ?? 'Updated profile contract',
+          managementProfile: body.managementProfile,
+        });
       },
     },
   },
-} as unknown as SdkworkAgentAppClient;
+} as unknown as SdkworkAgentsAppClient;
 
 const { createSdkworkAgentService } = await loadAgentServiceModule();
 const agentService = createSdkworkAgentService(() => fakeClient);
@@ -243,4 +257,4 @@ assert.equal(requests.update?.body.managementProfile?.jsonMode, true);
 assert.equal(requests.update?.body.managementProfile?.memoryEnabled, false);
 assert.equal(requests.update?.body.managementProfile?.temperature, 0.2);
 
-console.log('sdkwork im pc agent service management profile contract passed.');
+console.log('sdkwork agents pc agent service management profile contract passed.');

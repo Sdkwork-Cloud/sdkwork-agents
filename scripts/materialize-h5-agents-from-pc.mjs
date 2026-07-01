@@ -44,7 +44,6 @@ const h5PackageJson = {
     ".": "./src/index.ts",
   },
   dependencies: {
-    "@sdkwork/agents-app-sdk": "workspace:*",
     "@sdkwork/agents-h5-commons": "workspace:*",
     "@sdkwork/agents-h5-core": "workspace:*",
     "@tiptap/extension-placeholder": "catalog:",

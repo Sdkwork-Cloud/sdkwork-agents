@@ -14,7 +14,7 @@ use crate::domain::{
 };
 use crate::ports::{AgentListQuery, MessageListQuery, SessionListQuery};
 use crate::validation::{
-    parse_expected_version, parse_organization_id, parse_owner_user_id, parse_tenant_id,
+    is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id, parse_tenant_id,
     validate_requested_at,
 };
 use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelResult, PolicySubject};
@@ -479,7 +479,7 @@ impl AgentManagementProfileDto {
         });
 
         if let Some(system_prompt) = self.system_prompt.as_ref() {
-            if intent.prompt.trim().is_empty() || intent.prompt == "Agent management profile" {
+            if is_trimmed_blank(&intent.prompt) || intent.prompt == "Agent management profile" {
                 intent.prompt = system_prompt.clone();
             }
         }

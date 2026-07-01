@@ -13,6 +13,7 @@ import {
   resolveAppSdkAuthToken,
   type SdkworkChatSession,
 } from "../session/session";
+import { readRuntimeEnv } from "./runtimeEnv";
 
 export type SdkworkKnowledgebaseAppClient = GeneratedKnowledgebaseAppClient;
 export type SdkworkKnowledgebaseAppClientConfig = SdkworkAppConfig & {
@@ -32,10 +33,8 @@ function normalizeGeneratedSdkBaseUrl(baseUrl: string): string {
 }
 
 export function resolveKnowledgebaseAppSdkBaseUrl(): string | null {
-  const fromEnv = import.meta.env.VITE_SDKWORK_AGENTS_PC_KNOWLEDGEBASE_APP_API_BASE_URL;
-  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
-    return fromEnv.trim();
-  }
+  const fromEnv = readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_KNOWLEDGEBASE_APP_API_BASE_URL");
+  if (fromEnv) return fromEnv;
   return null;
 }
 
@@ -52,10 +51,7 @@ export function createKnowledgebaseAppSdkClientConfig(
   }
 
   const currentSession = session ?? readAppSdkSessionTokens();
-  const envAccessToken =
-    typeof import.meta.env.SDKWORK_ACCESS_TOKEN === "string"
-      ? import.meta.env.SDKWORK_ACCESS_TOKEN.trim()
-      : undefined;
+  const envAccessToken = readRuntimeEnv("SDKWORK_ACCESS_TOKEN");
 
   return {
     baseUrl: normalizeGeneratedSdkBaseUrl(baseUrl),
@@ -83,3 +79,5 @@ export function getKnowledgebaseAppSdkClient(): SdkworkKnowledgebaseAppClient {
 export function resetKnowledgebaseAppSdkClient(): void {
   knowledgebaseAppSdkClient = null;
 }
+
+export type { KnowledgeMarketCatalogItem } from "@sdkwork/knowledgebase-app-sdk";

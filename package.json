@@ -3,23 +3,33 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "packageManager": "pnpm@10.30.2",
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "overrides": {
+      "@types/react": "19.2.17",
+      "@types/react-dom": "19.2.3"
+    }
+  },
   "dependencies": {
-    "@sdkwork/app-topology": "file:../sdkwork-app-topology"
+    "@sdkwork/app-topology": "workspace:*"
   },
   "scripts": {
     "dev": "node scripts/agents-dev.mjs",
     "build": "cargo build --workspace --release",
-    "test": "node scripts/cargo-test-workspace.mjs && node --test tests/contract/platform-integration.contract.test.mjs tests/contract/database-framework.contract.test.mjs && node scripts/agents-open-sdk-surface-contract.test.mjs",
-    "check": "pnpm check:architecture-alignment && pnpm check:identity-alignment && pnpm check:pnpm-script-standard && pnpm check:agent-workflow-standard && pnpm topology:validate && pnpm db:validate",
+    "test": "node scripts/cargo-test-workspace.mjs && node --test tests/contract/platform-integration.contract.test.mjs tests/contract/database-framework.contract.test.mjs && node scripts/agents-open-sdk-surface-contract.test.mjs && node scripts/mini-program-runtime-contract.test.mjs && node scripts/client-surface-readiness-contract.test.mjs",
+    "check": "pnpm run check:app-composition && pnpm check:architecture-alignment && pnpm check:identity-alignment && pnpm check:api-envelope && pnpm check:deploy && pnpm check:docs && pnpm check:pnpm-script-standard && pnpm check:agent-workflow-standard && pnpm topology:validate && pnpm db:validate",
+    "check:api-envelope": "node ../sdkwork-specs/tools/check-api-response-envelope.mjs --workspace .",
+    "check:deploy": "node ../sdkwork-specs/tools/check-deploy-standard.mjs --root .",
+    "check:docs": "node ../sdkwork-specs/tools/check-repository-docs-standard.mjs --root .",
     "check:architecture-alignment": "node tools/check_sdkwork_agents_architecture_alignment.mjs",
     "check:identity-alignment": "node tools/check_agents_identity_alignment.mjs",
     "check:pnpm-script-standard": "node ../sdkwork-specs/tools/check-pnpm-script-standard.mjs --root . --product-prefix agents,agent",
     "check:agent-workflow-standard": "node ../sdkwork-specs/tools/check-agent-workflow-standard.mjs --root .",
-    "verify": "pnpm check && cargo build --workspace && node scripts/cargo-test-workspace.mjs",
+    "check:contracts": "node --test tests/contract/platform-integration.contract.test.mjs tests/contract/database-framework.contract.test.mjs && node scripts/agents-open-sdk-surface-contract.test.mjs && node scripts/mini-program-runtime-contract.test.mjs && node scripts/client-surface-readiness-contract.test.mjs",
+    "verify": "pnpm check && pnpm workflow:build-agents-app-sdk && cargo build --workspace && node scripts/cargo-test-workspace.mjs && pnpm --filter @sdkwork/agents-mini-program build && pnpm check:contracts && pnpm workflow:typecheck-client-surfaces && pnpm --filter @sdkwork/agents-pc test:agent-contracts",
     "clean": "cargo clean",
     "db:validate": "node ../sdkwork-specs/tools/check-database-framework-standard.mjs --root .",
-    "db:materialize:contract": "node ../sdkwork-specs/tools/materialize-database-contract-from-baseline.mjs --root . --baseline database/ddl/baseline/postgres/0001_ai_agent_baseline.sql --module-id agents --owner agents-platform --prefixes ai_ --engines postgres,sqlite",
+    "db:materialize:contract": "node ../sdkwork-specs/tools/materialize-database-contract-from-baseline.mjs --root . --baseline database/ddl/baseline/postgres/0001_agents_baseline.sql --module-id agents --owner agents-platform --prefixes ai_ --engines postgres,sqlite",
     "db:plan": "cargo run --manifest-path ../sdkwork-database/Cargo.toml -p sdkwork-database-cli -- --app-root . plan",
     "db:init": "cargo run --manifest-path ../sdkwork-database/Cargo.toml -p sdkwork-database-cli -- --app-root . init",
     "db:migrate": "cargo run --manifest-path ../sdkwork-database/Cargo.toml -p sdkwork-database-cli -- --app-root . migrate",
@@ -34,8 +44,8 @@
     "gateway:assembly:validate": "node scripts/gateway/assembly-validate.mjs",
     "gateway:package:cloud": "node scripts/package-cloud-gateway-config.mjs",
     "workflow:materialize-client-surfaces": "node scripts/materialize-client-app-surfaces.mjs",
-  "workflow:sync-agent-pc-sources": "node scripts/migrate-im-agent-pc-sources.mjs",
-  "workflow:sync-agent-h5-from-pc": "node scripts/materialize-h5-agents-from-pc.mjs && node scripts/sync-h5-core-from-pc.mjs",
+    "workflow:sync-agent-pc-sources": "node scripts/migrate-im-agent-pc-sources.mjs",
+    "workflow:sync-agent-h5-from-pc": "node scripts/materialize-h5-agents-from-pc.mjs && node scripts/sync-h5-core-from-pc.mjs",
     "workflow:build-agents-app-sdk": "pnpm --filter @sdkwork/agents-app-sdk build",
     "workflow:retarget-im-agent-contracts": "node scripts/retarget-im-pc-agent-contract-tests.mjs",
     "workflow:sync-im-agent-contracts": "node scripts/sync-im-pc-agent-contract-tests-from-agents-pc.mjs",
@@ -45,6 +55,7 @@
     "start:browser": "pnpm --filter @sdkwork/agents-h5 dev",
     "start:mini-program": "pnpm --filter @sdkwork/agents-mini-program dev",
     "workflow:build-client-surfaces": "pnpm --filter @sdkwork/agents-pc build && pnpm --filter @sdkwork/agents-h5 build && pnpm --filter @sdkwork/agents-mini-program build",
-    "workflow:typecheck-client-surfaces": "pnpm --filter @sdkwork/agents-pc typecheck && pnpm --filter @sdkwork/agents-h5 typecheck && pnpm --filter @sdkwork/agents-mini-program typecheck"
+    "workflow:typecheck-client-surfaces": "pnpm --filter @sdkwork/agents-pc typecheck && pnpm --filter @sdkwork/agents-h5 typecheck && pnpm --filter @sdkwork/agents-mini-program typecheck",
+    "check:app-composition": "node ../sdkwork-specs/tools/verify-repo.mjs --root ."
   }
 }

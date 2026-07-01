@@ -4,5 +4,54 @@ repository: sdkwork-agents
 canon:
   prd: docs/product/prd/PRD.md
   techArchitecture: docs/architecture/tech/TECH_ARCHITECTURE.md
-entries: []
-domains: []
+  apiSpecification: docs/architecture/tech/TECH-api-specification.md
+  preLaunchVerification: docs/runbooks/pre-launch-verification.md
+  monitoring: docs/runbooks/monitoring.md
+  smokeTest: docs/runbooks/smoke-test.md
+  incidentRollback: docs/runbooks/incident-rollback.md
+domains:
+  - id: product
+    path: docs/product
+    audience: product
+  - id: architecture
+    path: docs/architecture
+    audience: architect
+  - id: guides
+    path: docs/guides
+    audience: developer
+  - id: runbooks
+    path: docs/runbooks
+    audience: operator
+entries:
+  - id: prd
+    title: Product requirements
+    path: docs/product/prd/PRD.md
+    domain: product
+  - id: tech-architecture
+    title: Technical architecture
+    path: docs/architecture/tech/TECH_ARCHITECTURE.md
+    domain: architecture
+  - id: api-specification
+    title: HTTP API specification
+    path: docs/architecture/tech/TECH-api-specification.md
+    domain: architecture
+  - id: pre-launch-verification
+    title: Pre-launch verification
+    path: docs/runbooks/pre-launch-verification.md
+    domain: runbooks
+  - id: monitoring
+    title: Monitoring and alerting
+    path: docs/runbooks/monitoring.md
+    domain: runbooks
+  - id: smoke-test
+    title: Live smoke test
+    path: docs/runbooks/smoke-test.md
+    domain: runbooks
+  - id: incident-rollback
+    title: Incident and rollback
+    path: docs/runbooks/incident-rollback.md
+    domain: runbooks
+  - id: developer-guide
+    title: Developer guide
+    path: docs/guides/developer/README.md
+    domain: guides

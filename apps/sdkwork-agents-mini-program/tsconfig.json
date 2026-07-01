@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
-    "target": "ES2019",
+    "target": "ES2021",
+    "lib": ["ES2021", "DOM"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -8,7 +9,21 @@
     "types": [
       "miniprogram-api-typings"
     ],
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@sdkwork/agents-mp-core": [
+        "./packages/sdkwork-agents-mp-core/src/index.ts"
+      ],
+      "@sdkwork/agents-mp-core/*": [
+        "./packages/sdkwork-agents-mp-core/src/*"
+      ],
+      "@sdkwork/agents-mp-host": [
+        "./packages/sdkwork-agents-mp-host/src/index.ts"
+      ],
+      "@sdkwork/agents-app-sdk": [
+        "../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts"
+      ]
+    }
   },
   "include": [
     "src",

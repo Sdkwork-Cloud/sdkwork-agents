@@ -17,6 +17,7 @@ export interface SelectToolsModalProps {
   onClose: () => void;
   selectedToolIds: string[];
   onSave: (toolIds: string[]) => void;
+  tools?: ToolItem[];
 }
 
 export const AVAILABLE_TOOLS: ToolItem[] = [
@@ -35,7 +36,9 @@ export const SelectToolsModal: React.FC<SelectToolsModalProps> = ({
   onClose,
   selectedToolIds,
   onSave,
+  tools,
 }) => {
+  const catalog = tools && tools.length > 0 ? tools : AVAILABLE_TOOLS;
   const [activeTab, setActiveTab] = useState<'official' | 'custom' | 'mcp'>('official');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSelection, setCurrentSelection] = useState<string[]>([]);
@@ -53,7 +56,7 @@ export const SelectToolsModal: React.FC<SelectToolsModalProps> = ({
     );
   };
 
-  const filteredItems = AVAILABLE_TOOLS.filter(item => {
+  const filteredItems = catalog.filter(item => {
     const matchesSearch = !searchQuery.trim() || 
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       item.description.toLowerCase().includes(searchQuery.toLowerCase());

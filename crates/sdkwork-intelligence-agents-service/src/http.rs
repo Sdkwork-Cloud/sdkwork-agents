@@ -28,7 +28,7 @@ use crate::response::{
     created_json, finish_api_json, ApiProblem, ApiResult, PageData, PageInfo, PageMode, ResourceData,
 };
 use crate::validation::{
-    parse_expected_version, parse_optional_rfc3339_datetime, parse_organization_id,
+    is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime, parse_organization_id,
     parse_rfc3339_datetime, parse_tenant_id, validate_requested_at, validate_standard_id,
 };
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
@@ -587,6 +587,8 @@ async fn trace_request(request: Request<axum::body::Body>, next: Next) -> Respon
     let started = std::time::Instant::now();
     let response = next.run(request).await;
     let elapsed = started.elapsed();
+    let status = response.status().as_u16();
+    crate::infrastructure::AgentMetricsRegistry::global().record_http_request(status);
     tracing::info!(
         method = %method,
         path = %path,
@@ -836,8 +838,8 @@ pub fn build_combined_router(state: AgentHttpState) -> Router {
 
 /// Prometheus metrics endpoint handler (O-01).
 /// Exposes service-level metrics in Prometheus text exposition format.
-async fn serve_metrics() -> impl IntoResponse {
-    let metrics = crate::infrastructure::AgentServiceMetrics::new();
+pub async fn serve_agents_metrics() -> impl IntoResponse {
+    let metrics = crate::infrastructure::AgentMetricsRegistry::global().snapshot();
     let prometheus_text = metrics.to_prometheus_text();
     
     let mut response = prometheus_text.into_response();
@@ -848,11 +850,16 @@ async fn serve_metrics() -> impl IntoResponse {
     response
 }
 
+async fn serve_metrics() -> impl IntoResponse {
+    serve_agents_metrics().await
+}
+
 /// Raw combined route tree for served production mounts.
 pub fn build_combined_routes() -> Router<AgentHttpState> {
     build_open_routes()
         .merge(build_app_routes())
         .merge(build_backend_routes())
+        .route("/metrics/agents", get(serve_agents_metrics))
 }
 
 /// Testing helpers for integrating with `WebRequestContext` in contract tests.
@@ -1435,7 +1442,7 @@ fn validate_profile_standard_id_array(
         )));
     }
     for value in values {
-        if value.trim().is_empty() {
+        if is_trimmed_blank(value) {
             return Err(ApiProblem::validation(format!("{field_name} items is required")));
         }
         if !value.starts_with(prefix) {

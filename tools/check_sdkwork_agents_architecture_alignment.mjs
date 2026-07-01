@@ -64,7 +64,9 @@ for (const script of ['dev', 'build', 'test', 'check', 'verify', 'clean']) {
 }
 assert(packageJson.scripts?.['check:architecture-alignment'], 'package.json must expose check:architecture-alignment');
 assert(packageJson.scripts?.['topology:validate'], 'package.json must expose topology:validate');
-assert(packageJson.scripts?.['db:validate'], 'package.json must expose db:validate');
+assert(packageJson.scripts?.['check:api-envelope'], 'package.json must expose check:api-envelope');
+assert(packageJson.scripts?.['check:deploy'], 'package.json must expose check:deploy');
+assert(packageJson.scripts?.['check:docs'], 'package.json must expose check:docs');
 assert(packageJson.dependencies?.['@sdkwork/app-topology'], 'package.json must declare @sdkwork/app-topology');
 
 const cargoToml = readText('Cargo.toml');
@@ -79,6 +81,24 @@ assert(cargoToml.includes('sdkwork-intelligence-agents-service'), 'Cargo.toml mu
 assert(cargoToml.includes('sdkwork-routes-agents-http-shared'), 'Cargo.toml must declare sdkwork-routes-agents-http-shared');
 assert(!cargoToml.includes('sdkwork-agent-business'), 'Cargo.toml must not reference retired sdkwork-agent-business');
 assert(!cargoToml.includes('sdkwork-discovery'), 'sdkwork-discovery is deferred until RPC services exist');
+
+function assertNoForbiddenCompositionManifests(dir, relativePrefix = '') {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'target' || entry.name === '.git') continue;
+    const absolute = path.join(dir, entry.name);
+    const relative = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      assertNoForbiddenCompositionManifests(absolute, relative);
+      continue;
+    }
+    assert(
+      entry.name !== 'dependency.composition.json',
+      `${relative} is forbidden; use core component.spec.json#contracts.sdkDependencies per APP_COMPOSITION_SPEC.md`,
+    );
+  }
+}
+assertNoForbiddenCompositionManifests(repoRoot);
 
 const contractSource = readText('crates/sdkwork-agents-contract/src/lib.rs');
 assert(
@@ -112,6 +132,7 @@ assert(
 assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-database-host/src/lib.rs')), 'sdkwork-agents-database-host crate must exist');
 assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-gateway-assembly/src/lib.rs')), 'sdkwork-agents-gateway-assembly crate must exist');
 assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-integration-tests/Cargo.toml')), 'integration-tests crate must exist');
+assert(fs.existsSync(path.join(repoRoot, 'deployments/deploy.yaml')), 'deployments/deploy.yaml must exist per SDKWORK_DEPLOY_SPEC.md');
 assert(fs.existsSync(path.join(repoRoot, 'deployments/docker/Dockerfile')), 'deployments/docker/Dockerfile must exist');
 assert(fs.existsSync(path.join(repoRoot, '.env.example')), '.env.example must exist');
 
@@ -195,6 +216,88 @@ assert(
   appManifest.app?.appType === 'APP_API',
   'sdkwork.app.config.json appType must be APP_API for rust HTTP service',
 );
+
+const workspaceYaml = readText('pnpm-workspace.yaml');
+assert(
+  workspaceYaml.includes('knowledgebase-app-sdk'),
+  'pnpm-workspace.yaml must declare sdkwork-knowledgebase-app-sdk for PC/H5 composition',
+);
+assert(
+  workspaceYaml.includes('sdkwork-utils-typescript'),
+  'pnpm-workspace.yaml must declare @sdkwork/utils for iam-contracts transitive workspace resolution',
+);
+
+const forbiddenCapabilitySdkImports = ['@sdkwork/agents-app-sdk', '@sdkwork/knowledgebase-app-sdk'];
+function listTypeScriptSources(dir, files = []) {
+  if (!fs.existsSync(dir)) return files;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      listTypeScriptSources(absolute, files);
+      continue;
+    }
+    if (/\.(?:ts|tsx)$/u.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
+for (const capabilityRoot of [
+  'apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-agents',
+  'apps/sdkwork-agents-h5/packages/sdkwork-agents-h5-agents',
+]) {
+  const capabilityPackageJsonPath = path.join(repoRoot, capabilityRoot, 'package.json');
+  if (fs.existsSync(capabilityPackageJsonPath)) {
+    const capabilityPackageJson = JSON.parse(fs.readFileSync(capabilityPackageJsonPath, 'utf8'));
+    for (const specifier of forbiddenCapabilitySdkImports) {
+      if (capabilityPackageJson.dependencies?.[specifier]) {
+        failures.push(
+          `${path.relative(repoRoot, capabilityPackageJsonPath).replaceAll('\\', '/')}: remove direct ${specifier} dependency; consume through *-core/sdk`,
+        );
+      }
+    }
+  }
+
+  for (const filePath of listTypeScriptSources(path.join(repoRoot, capabilityRoot))) {
+    const source = fs.readFileSync(filePath, 'utf8');
+    for (const specifier of forbiddenCapabilitySdkImports) {
+      if (source.includes(`from "${specifier}"`) || source.includes(`from '${specifier}'`)) {
+        failures.push(
+          `${path.relative(repoRoot, filePath).replaceAll('\\', '/')}: capability package must import ${specifier} through *-core/sdk only`,
+        );
+      }
+    }
+  }
+}
+
+for (const appShellRoot of ['apps/sdkwork-agents-pc', 'apps/sdkwork-agents-h5']) {
+  const appShellPackageJsonPath = path.join(repoRoot, appShellRoot, 'package.json');
+  if (fs.existsSync(appShellPackageJsonPath)) {
+    const appShellPackageJson = JSON.parse(fs.readFileSync(appShellPackageJsonPath, 'utf8'));
+    for (const specifier of forbiddenCapabilitySdkImports) {
+      if (appShellPackageJson.dependencies?.[specifier]) {
+        failures.push(
+          `${path.relative(repoRoot, appShellPackageJsonPath).replaceAll('\\', '/')}: app shell must not declare ${specifier}; consume through *-core/sdk`,
+        );
+      }
+    }
+  }
+
+  for (const scanRoot of ['src', 'scripts']) {
+    for (const filePath of listTypeScriptSources(path.join(repoRoot, appShellRoot, scanRoot))) {
+      const source = fs.readFileSync(filePath, 'utf8');
+      for (const specifier of forbiddenCapabilitySdkImports) {
+        if (source.includes(`from "${specifier}"`) || source.includes(`from '${specifier}'`)) {
+          failures.push(
+            `${path.relative(repoRoot, filePath).replaceAll('\\', '/')}: app shell must import ${specifier} through *-core/sdk only`,
+          );
+        }
+      }
+    }
+  }
+}
 
 if (failures.length > 0) {
   console.error('sdkwork-agents architecture alignment failures:');
