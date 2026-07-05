@@ -11,8 +11,8 @@ import { SelectModelPopover } from '../components/SelectModelPopover';
 import { SelectKnowledgeModal } from '../components/SelectKnowledgeModal';
 import { SelectToolsModal, AVAILABLE_TOOLS, type ToolItem } from '../components/SelectToolsModal';
 import { loadRuntimeToolCatalog } from '../services/RuntimeCatalogService';
-import { SelectSkillsModal } from '../components/SelectSkillsModal';
-import { loadSkillCatalog, loadSkillPresetCatalog } from '../services/SkillPresetCatalogService';
+import { SelectSkillsModal, type SkillItem } from '../components/SelectSkillsModal';
+import { loadSkillCatalog } from '../services/SkillPresetCatalogService';
 import { DEFAULT_AGENT_CONFIG } from '../components/AgentDefaults';
 import { createDefaultAvatar } from '../services/DefaultAvatarService';
 import { voiceService, VoiceConfig } from '../services/VoiceService';
@@ -196,19 +196,19 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
   const [availableVoices, setAvailableVoices] = useState<VoiceConfig[]>([]);
   const [availableKbs, setAvailableKbs] = useState<KnowledgeBase[]>([]);
   const [availableTools, setAvailableTools] = useState<ToolItem[]>(AVAILABLE_TOOLS);
-  const [availableSkills, setAvailableSkills] = useState(() => loadSkillPresetCatalog());
+  const [availableSkills, setAvailableSkills] = useState<SkillItem[]>([]);
 
   useEffect(() => {
     const fetchCapabilities = async () => {
       try {
-        const [market, my, kbs, tools, skills] = await Promise.all([
+        const [marketPage, myPage, kbs, tools, skills] = await Promise.all([
           voiceService.getMarketVoices(),
           voiceService.getMyVoices(),
           knowledgeSelectionService.getBases(),
           loadRuntimeToolCatalog(),
           loadSkillCatalog(),
         ]);
-        setAvailableVoices([...market, ...my]);
+        setAvailableVoices([...marketPage.items, ...myPage.items]);
         setAvailableKbs(kbs);
         if (tools.length > 0) {
           setAvailableTools(tools);
@@ -240,30 +240,29 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
   useEffect(() => {
     if (initialAgentId) {
       setDraftId(null);
-      // Load agent data if editing
-      agentService.getAgents().then((myAgents) => {
-        const agent = myAgents.find(a => a.id === initialAgentId);
-        if (agent?.id) {
-          setDraftId(agent.id);
-          setName(agent.name);
-          setDesc(agent.description || '');
-          setPrompt(agent.systemPrompt ?? '');
-          setAvatar(agent.avatar || '');
-          setAgentType(agent.type);
-          setModel(agent.model || DEFAULT_AGENT_CONFIG.model);
-          setTemperature(agent.temperature ?? DEFAULT_AGENT_CONFIG.temperature);
-          setMemoryEnabled(agent.memoryEnabled ?? DEFAULT_AGENT_CONFIG.memoryEnabled);
-          setJsonMode(agent.jsonMode ?? DEFAULT_AGENT_CONFIG.jsonMode);
-          setDebugMode(agent.debugMode ?? DEFAULT_AGENT_CONFIG.debugMode);
-          setSuggestedPrompts(agent.suggestedPrompts ?? DEFAULT_AGENT_SUGGESTED_PROMPTS);
-          setSelectedVoiceIds(agent.voiceIds ?? DEFAULT_AGENT_CONFIG.voiceIds);
-          setSelectedKnowledgeIds(agent.knowledgeBaseIds ?? DEFAULT_AGENT_CONFIG.knowledgeBaseIds);
-          setSelectedToolIds(agent.toolIds ?? DEFAULT_AGENT_CONFIG.toolIds);
-          setSelectedSkillIds(agent.skillIds ?? DEFAULT_AGENT_CONFIG.skillIds);
-          const nextWelcomeMessage = agent.welcomeMessage ?? DEFAULT_AGENT_WELCOME_MESSAGE;
-          setWelcomeMessage(nextWelcomeMessage);
-          setTestMessages([createAgentWelcomeTestMessage(nextWelcomeMessage)]);
+      agentService.getAgent(initialAgentId).then((agent) => {
+        if (!agent?.id) {
+          return;
         }
+        setDraftId(agent.id);
+        setName(agent.name);
+        setDesc(agent.description || '');
+        setPrompt(agent.systemPrompt ?? '');
+        setAvatar(agent.avatar || '');
+        setAgentType(agent.type);
+        setModel(agent.model || DEFAULT_AGENT_CONFIG.model);
+        setTemperature(agent.temperature ?? DEFAULT_AGENT_CONFIG.temperature);
+        setMemoryEnabled(agent.memoryEnabled ?? DEFAULT_AGENT_CONFIG.memoryEnabled);
+        setJsonMode(agent.jsonMode ?? DEFAULT_AGENT_CONFIG.jsonMode);
+        setDebugMode(agent.debugMode ?? DEFAULT_AGENT_CONFIG.debugMode);
+        setSuggestedPrompts(agent.suggestedPrompts ?? DEFAULT_AGENT_SUGGESTED_PROMPTS);
+        setSelectedVoiceIds(agent.voiceIds ?? DEFAULT_AGENT_CONFIG.voiceIds);
+        setSelectedKnowledgeIds(agent.knowledgeBaseIds ?? DEFAULT_AGENT_CONFIG.knowledgeBaseIds);
+        setSelectedToolIds(agent.toolIds ?? DEFAULT_AGENT_CONFIG.toolIds);
+        setSelectedSkillIds(agent.skillIds ?? DEFAULT_AGENT_CONFIG.skillIds);
+        const nextWelcomeMessage = agent.welcomeMessage ?? DEFAULT_AGENT_WELCOME_MESSAGE;
+        setWelcomeMessage(nextWelcomeMessage);
+        setTestMessages([createAgentWelcomeTestMessage(nextWelcomeMessage)]);
       });
     } else {
       // Reset form if no initialAgentId

@@ -24,6 +24,7 @@ paths:
       x-sdkwork-audit-event: agent.business.listed
       parameters:
         - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/ListScope'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/SearchQ'
@@ -763,6 +764,8 @@ paths:
       x-sdkwork-tenant-scope: tenant
       parameters:
         - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: Managed agent composition slot list response
@@ -1008,6 +1011,16 @@ components:
         type: string
         minLength: 1
         maxLength: 128
+    ListScope:
+      name: scope
+      in: query
+      required: false
+      description: >-
+        List scope. Use `market`, `public`, or `published` for tenant-visible catalog agents;
+        omit for agents owned by the authenticated user.
+      schema:
+        type: string
+        enum: [market, public, published, mine, workspace]
     ExpectedVersion:
       name: expected_version
       in: query

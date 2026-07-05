@@ -91,8 +91,8 @@ for (const forbidden of [
 }
 
 for (const methodName of [
-  'getAgents',
-  'getMarketAgents',
+  'listAgentsPage',
+  'getAgent',
   'createAgent',
   'updateAgent',
   'publishAgent',

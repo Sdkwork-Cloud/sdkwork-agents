@@ -2016,7 +2016,7 @@ async fn missing_subject_header_should_return_problem_detail() {
         .expect("response body should be readable");
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["title"], "Bad Request");
+    assert_eq!(body_json["title"], "Validation failed");
     assert_eq!(body_json["status"], 400);
     assert_eq!(body_json["code"], 40001);
     assert!(body_json["detail"]
@@ -3405,7 +3405,7 @@ async fn backend_route_should_reject_subject_tenant_mismatch() {
         .expect("response body should be readable");
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["title"], "Forbidden");
+    assert_eq!(body_json["title"], "Permission required");
 }
 
 #[tokio::test]
@@ -3446,7 +3446,7 @@ async fn backend_route_should_reject_missing_subject_headers() {
         .expect("response body should be readable");
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["title"], "Bad Request");
+    assert_eq!(body_json["title"], "Validation failed");
 }
 
 #[tokio::test]

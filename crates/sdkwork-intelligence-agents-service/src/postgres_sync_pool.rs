@@ -5,6 +5,7 @@ use sdkwork_database_sqlx::{create_pool_from_config, DatabasePool, PoolError};
 use sdkwork_utils_rust::is_blank;
 use sqlx::PgPool;
 use std::future::Future;
+use std::mem::ManuallyDrop;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -27,7 +28,7 @@ pub fn map_database_config_error(
 #[derive(Debug, Clone)]
 pub struct BlockingPostgresPool {
     pool: PgPool,
-    runtime: Arc<Runtime>,
+    runtime: ManuallyDrop<Arc<Runtime>>,
     database_pool: DatabasePool,
 }
 
@@ -41,7 +42,7 @@ impl BlockingPostgresPool {
         })?;
         Ok(Self {
             pool,
-            runtime,
+            runtime: ManuallyDrop::new(runtime),
             database_pool,
         })
     }
@@ -168,6 +169,25 @@ impl BlockingPostgresPool {
             active_connections: active,
             utilization,
         }
+    }
+}
+
+impl Drop for BlockingPostgresPool {
+    fn drop(&mut self) {
+        // `Runtime` must not be dropped from inside another Tokio runtime (for example
+        // when standalone gateway tears down embedded agents routes after bind/serve failure).
+        let runtime = unsafe { ManuallyDrop::take(&mut self.runtime) };
+        if Arc::strong_count(&runtime) == 1 && tokio::runtime::Handle::try_current().is_ok() {
+            if std::thread::spawn(move || drop(runtime)).join().is_err() {
+                tracing::warn!(
+                    target: "sdkwork.agents.postgres_sync_pool",
+                    "failed to join runtime shutdown thread"
+                );
+            }
+            return;
+        }
+
+        drop(runtime);
     }
 }
 

@@ -50,6 +50,7 @@ pnpm --filter @sdkwork/agents-pc test:agent-contracts
 pnpm start:desktop          # PC Vite dev
 pnpm start:browser          # H5 Vite dev
 pnpm start:mini-program     # WeChat mini program build/watch
+pnpm smoke:live             # gateway health + metrics (requires pnpm dev)
 pnpm workflow:build-client-surfaces
 ```
 

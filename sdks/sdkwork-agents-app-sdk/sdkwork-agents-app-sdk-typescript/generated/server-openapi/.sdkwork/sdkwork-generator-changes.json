@@ -9,36 +9,11 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "f9aab226a2bde1e22e3d0c81523fe750e0af1c27fda28021d9c96073e8d34c5e",
+  "changeFingerprint": "563d8cedd83b26ae75efe9a890ae73777bed7b0afc694821569bcfb1559fbdb3",
   "changes": {
-    "createdGeneratedFiles": [
-      "src/types/sdk-work-api-response.ts",
-      "src/types/sdk-work-async-data.ts",
-      "src/types/sdk-work-command-data.ts",
-      "src/types/sdk-work-page-data.ts",
-      "src/types/sdk-work-resource-data.ts"
-    ],
+    "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts",
-      "src/http/client.ts",
-      "src/types/agent-chat-completion-response.ts",
-      "src/types/agent-composition-slot-list-response.ts",
-      "src/types/agent-composition-slot-response.ts",
-      "src/types/agent-list-response.ts",
-      "src/types/agent-message-list-response.ts",
-      "src/types/agent-message-response.ts",
-      "src/types/agent-provider-binding-list-response.ts",
-      "src/types/agent-provider-binding-response.ts",
-      "src/types/agent-response.ts",
-      "src/types/agent-runtime-execution-response.ts",
-      "src/types/agent-session-list-response.ts",
-      "src/types/agent-session-response.ts",
-      "src/types/code-engine-catalog-list-response.ts",
-      "src/types/field-error.ts",
-      "src/types/index.ts",
-      "src/types/mcp-server-marketplace-list-response.ts",
-      "src/types/page-info.ts",
-      "src/types/problem-detail.ts"
+      "src/api/ai.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -55,22 +30,35 @@
       "src/api/index.ts",
       "src/api/paths.ts",
       "src/auth/index.ts",
+      "src/http/client.ts",
       "src/http/index.ts",
       "src/index.ts",
       "src/sdk.ts",
       "src/types/activate-agent-provider-binding-request.ts",
+      "src/types/agent-chat-completion-response.ts",
       "src/types/agent-composition-slot-create-data.ts",
       "src/types/agent-composition-slot-kind.ts",
+      "src/types/agent-composition-slot-list-response.ts",
       "src/types/agent-composition-slot-record.ts",
+      "src/types/agent-composition-slot-response.ts",
       "src/types/agent-composition-target-module.ts",
       "src/types/agent-implementation-kind.ts",
       "src/types/agent-implementation-type.ts",
+      "src/types/agent-list-response.ts",
       "src/types/agent-management-profile.ts",
+      "src/types/agent-message-list-response.ts",
       "src/types/agent-message-record.ts",
+      "src/types/agent-message-response.ts",
+      "src/types/agent-provider-binding-list-response.ts",
       "src/types/agent-provider-binding-record.ts",
+      "src/types/agent-provider-binding-response.ts",
       "src/types/agent-record.ts",
+      "src/types/agent-response.ts",
       "src/types/agent-runtime-execution-record.ts",
+      "src/types/agent-runtime-execution-response.ts",
+      "src/types/agent-session-list-response.ts",
       "src/types/agent-session-record.ts",
+      "src/types/agent-session-response.ts",
       "src/types/agent-status.ts",
       "src/types/agent-visibility.ts",
       "src/types/app-close-agent-session-request.ts",
@@ -79,6 +67,7 @@
       "src/types/archive-agent-session-request.ts",
       "src/types/close-agent-session-request.ts",
       "src/types/code-engine-catalog-engine.ts",
+      "src/types/code-engine-catalog-list-response.ts",
       "src/types/code-engine-catalog.ts",
       "src/types/code-engine-model-catalog-entry.ts",
       "src/types/common.ts",
@@ -89,9 +78,19 @@
       "src/types/create-agent-request.ts",
       "src/types/create-agent-session-request.ts",
       "src/types/delete-agent-request.ts",
+      "src/types/field-error.ts",
+      "src/types/index.ts",
       "src/types/int64-string.ts",
+      "src/types/mcp-server-marketplace-list-response.ts",
       "src/types/mcp-server-marketplace-record.ts",
+      "src/types/page-info.ts",
+      "src/types/problem-detail.ts",
       "src/types/restore-agent-request.ts",
+      "src/types/sdk-work-api-response.ts",
+      "src/types/sdk-work-async-data.ts",
+      "src/types/sdk-work-command-data.ts",
+      "src/types/sdk-work-page-data.ts",
+      "src/types/sdk-work-resource-data.ts",
       "src/types/send-agent-chat-message-request.ts",
       "src/types/update-agent-composition-slot-data.ts",
       "src/types/update-agent-composition-slot-request.ts",
@@ -109,66 +108,29 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface",
-      "models",
-      "runtime"
+      "api-surface"
     ],
     "details": [
       {
         "area": "api-surface",
         "paths": [
-          "src/api/ai.ts",
-          "src/http/client.ts"
-        ]
-      },
-      {
-        "area": "models",
-        "paths": [
-          "src/types/agent-chat-completion-response.ts",
-          "src/types/agent-composition-slot-list-response.ts",
-          "src/types/agent-composition-slot-response.ts",
-          "src/types/agent-list-response.ts",
-          "src/types/agent-message-list-response.ts",
-          "src/types/agent-message-response.ts",
-          "src/types/agent-provider-binding-list-response.ts",
-          "src/types/agent-provider-binding-response.ts",
-          "src/types/agent-response.ts",
-          "src/types/agent-runtime-execution-response.ts",
-          "src/types/agent-session-list-response.ts",
-          "src/types/agent-session-response.ts",
-          "src/types/code-engine-catalog-list-response.ts",
-          "src/types/field-error.ts",
-          "src/types/index.ts",
-          "src/types/mcp-server-marketplace-list-response.ts",
-          "src/types/page-info.ts",
-          "src/types/problem-detail.ts",
-          "src/types/sdk-work-api-response.ts",
-          "src/types/sdk-work-async-data.ts",
-          "src/types/sdk-work-command-data.ts",
-          "src/types/sdk-work-page-data.ts",
-          "src/types/sdk-work-resource-data.ts"
-        ]
-      },
-      {
-        "area": "runtime",
-        "paths": [
-          "src/http/client.ts"
+          "src/api/ai.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models, runtime. Verification is required."
+    "summary": "Detected impact areas: api-surface. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models, runtime. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -186,7 +148,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

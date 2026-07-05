@@ -241,8 +241,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
     if (initialAgentId) {
       setDraftId(null);
       // Load agent data if editing
-      agentService.getAgents().then((myAgents) => {
-        const agent = myAgents.find(a => a.id === initialAgentId);
+      agentService.getAgent(initialAgentId).then((agent) => {
         if (agent?.id) {
           setDraftId(agent.id);
           setName(agent.name);

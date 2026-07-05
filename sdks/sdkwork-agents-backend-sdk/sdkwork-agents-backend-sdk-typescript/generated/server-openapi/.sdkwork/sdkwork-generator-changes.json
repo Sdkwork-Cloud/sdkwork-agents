@@ -9,30 +9,36 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-backend-sdk"
   },
-  "changeFingerprint": "96d7d084f7f01db0fcd0f6ba0c04a21bc768ced5697899529d19141ac1356d10",
+  "changeFingerprint": "e4b59bc1f56a0e345ecc87aa120e1149a8b8b223228f80975e8b78a61e47cbbd",
   "changes": {
     "createdGeneratedFiles": [
-      "src/types/agent-chat-completion-response.ts",
-      "src/types/agent-message-list-response.ts",
-      "src/types/agent-message-record.ts",
-      "src/types/agent-message-response.ts",
-      "src/types/agent-session-list-response.ts",
-      "src/types/agent-session-record.ts",
-      "src/types/agent-session-response.ts",
-      "src/types/app-close-agent-session-request.ts",
-      "src/types/app-create-agent-session-request.ts",
-      "src/types/app-send-agent-chat-message-request.ts",
-      "src/types/archive-agent-session-request.ts",
-      "src/types/close-agent-session-request.ts",
-      "src/types/create-agent-session-request.ts",
-      "src/types/send-agent-chat-message-request.ts"
+      "src/types/sdk-work-api-response.ts",
+      "src/types/sdk-work-async-data.ts",
+      "src/types/sdk-work-command-data.ts",
+      "src/types/sdk-work-page-data.ts",
+      "src/types/sdk-work-resource-data.ts"
     ],
     "updatedGeneratedFiles": [
+      "package.json",
+      "sdkwork-sdk.json",
       "src/api/ai.ts",
-      "src/types/agent-composition-slot-create-data.ts",
-      "src/types/agent-composition-slot-record.ts",
+      "src/http/client.ts",
+      "src/types/agent-audit-event-list-response.ts",
+      "src/types/agent-chat-completion-response.ts",
+      "src/types/agent-composition-slot-list-response.ts",
+      "src/types/agent-composition-slot-response.ts",
+      "src/types/agent-list-response.ts",
+      "src/types/agent-message-list-response.ts",
+      "src/types/agent-message-response.ts",
+      "src/types/agent-provider-binding-list-response.ts",
+      "src/types/agent-provider-binding-response.ts",
+      "src/types/agent-response.ts",
+      "src/types/agent-session-list-response.ts",
+      "src/types/agent-session-response.ts",
+      "src/types/field-error.ts",
       "src/types/index.ts",
-      "src/types/update-agent-composition-slot-data.ts"
+      "src/types/page-info.ts",
+      "src/types/problem-detail.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -42,46 +48,45 @@
       "bin/sdk-gen.sh",
       "CHANGELOG.md",
       "LICENSE",
-      "package.json",
       "README.md",
-      "sdkwork-sdk.json",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
       "src/auth/index.ts",
-      "src/http/client.ts",
       "src/http/index.ts",
       "src/index.ts",
       "src/sdk.ts",
       "src/types/activate-agent-provider-binding-request.ts",
-      "src/types/agent-audit-event-list-response.ts",
       "src/types/agent-audit-event.ts",
+      "src/types/agent-composition-slot-create-data.ts",
       "src/types/agent-composition-slot-kind.ts",
-      "src/types/agent-composition-slot-list-response.ts",
-      "src/types/agent-composition-slot-response.ts",
+      "src/types/agent-composition-slot-record.ts",
       "src/types/agent-composition-target-module.ts",
       "src/types/agent-implementation-kind.ts",
       "src/types/agent-implementation-type.ts",
-      "src/types/agent-list-response.ts",
       "src/types/agent-management-profile.ts",
-      "src/types/agent-provider-binding-list-response.ts",
+      "src/types/agent-message-record.ts",
       "src/types/agent-provider-binding-record.ts",
-      "src/types/agent-provider-binding-response.ts",
       "src/types/agent-record.ts",
-      "src/types/agent-response.ts",
+      "src/types/agent-session-record.ts",
       "src/types/agent-status.ts",
       "src/types/agent-visibility.ts",
+      "src/types/app-close-agent-session-request.ts",
+      "src/types/app-create-agent-session-request.ts",
+      "src/types/app-send-agent-chat-message-request.ts",
+      "src/types/archive-agent-session-request.ts",
       "src/types/audit-action.ts",
+      "src/types/close-agent-session-request.ts",
       "src/types/common.ts",
       "src/types/create-agent-composition-slot-request.ts",
       "src/types/create-agent-provider-binding-request.ts",
       "src/types/create-agent-request.ts",
+      "src/types/create-agent-session-request.ts",
       "src/types/delete-agent-request.ts",
-      "src/types/field-error.ts",
       "src/types/int64-string.ts",
-      "src/types/page-info.ts",
-      "src/types/problem-detail.ts",
       "src/types/restore-agent-request.ts",
+      "src/types/send-agent-chat-message-request.ts",
+      "src/types/update-agent-composition-slot-data.ts",
       "src/types/update-agent-composition-slot-request.ts",
       "src/types/update-agent-request.ts",
       "src/types/update-agent-status-request.ts",
@@ -94,63 +99,79 @@
       "custom/README.md"
     ],
     "backedUpFiles": [
-      "src/api/ai.ts",
-      "src/types/agent-composition-slot-create-data.ts",
-      "src/types/agent-composition-slot-record.ts",
-      "src/types/index.ts",
-      "src/types/update-agent-composition-slot-data.ts"
+      "package.json",
+      "sdkwork-sdk.json"
     ]
   },
   "impact": {
     "schemaVersion": 1,
     "areas": [
       "api-surface",
-      "models"
+      "models",
+      "runtime",
+      "build-metadata"
     ],
     "details": [
       {
         "area": "api-surface",
         "paths": [
-          "src/api/ai.ts"
+          "src/api/ai.ts",
+          "src/http/client.ts"
         ]
       },
       {
         "area": "models",
         "paths": [
+          "src/types/agent-audit-event-list-response.ts",
           "src/types/agent-chat-completion-response.ts",
-          "src/types/agent-composition-slot-create-data.ts",
-          "src/types/agent-composition-slot-record.ts",
+          "src/types/agent-composition-slot-list-response.ts",
+          "src/types/agent-composition-slot-response.ts",
+          "src/types/agent-list-response.ts",
           "src/types/agent-message-list-response.ts",
-          "src/types/agent-message-record.ts",
           "src/types/agent-message-response.ts",
+          "src/types/agent-provider-binding-list-response.ts",
+          "src/types/agent-provider-binding-response.ts",
+          "src/types/agent-response.ts",
           "src/types/agent-session-list-response.ts",
-          "src/types/agent-session-record.ts",
           "src/types/agent-session-response.ts",
-          "src/types/app-close-agent-session-request.ts",
-          "src/types/app-create-agent-session-request.ts",
-          "src/types/app-send-agent-chat-message-request.ts",
-          "src/types/archive-agent-session-request.ts",
-          "src/types/close-agent-session-request.ts",
-          "src/types/create-agent-session-request.ts",
+          "src/types/field-error.ts",
           "src/types/index.ts",
-          "src/types/send-agent-chat-message-request.ts",
-          "src/types/update-agent-composition-slot-data.ts"
+          "src/types/page-info.ts",
+          "src/types/problem-detail.ts",
+          "src/types/sdk-work-api-response.ts",
+          "src/types/sdk-work-async-data.ts",
+          "src/types/sdk-work-command-data.ts",
+          "src/types/sdk-work-page-data.ts",
+          "src/types/sdk-work-resource-data.ts"
+        ]
+      },
+      {
+        "area": "runtime",
+        "paths": [
+          "src/http/client.ts"
+        ]
+      },
+      {
+        "area": "build-metadata",
+        "paths": [
+          "package.json",
+          "sdkwork-sdk.json"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models. Verification is required."
+    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime, build-metadata.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -168,7 +189,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime, build-metadata.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

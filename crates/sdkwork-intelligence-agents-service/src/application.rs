@@ -4,7 +4,7 @@ mod commands;
 pub use commands::*;
 
 use crate::chat_runtime::{
-    ChatCompleter, ChatCompletionInput, ContractChatCompleter,
+    ChatCompleter, ChatCompletionInput, ContractChatCompleter, is_inference_error,
 };
 use crate::runtime_facade_bridge::{execute_preview_response, execute_prompt_optimization};
 use crate::domain::{
@@ -17,7 +17,11 @@ use crate::domain::{
     RuntimeExecutionAuditPayload, SessionAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
-use crate::ports::{AgentAuditSink, AgentRepository, MessageListQuery};
+use crate::ports::{
+    AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
+    MessageListQuery, McpMarketplaceListQuery, PaginatedResult, PaginationParams,
+    ProviderBindingListQuery, CHAT_CONTEXT_MESSAGE_LIMIT, MAX_PAGE_SIZE, offset_paginated_result,
+};
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
     is_trimmed_blank, require_non_blank, validate_capabilities, validate_standard_id,
@@ -66,6 +70,18 @@ where
     pub fn with_chat_completer(mut self, chat_completer: Arc<dyn ChatCompleter>) -> Self {
         self.chat_completer = chat_completer;
         self
+    }
+
+    fn ensure_session_owner_scope(
+        session: &AgentSessionRecord,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<()> {
+        if let Some(required_owner) = owner_scope {
+            if session.owner_user_id != required_owner {
+                return Err(KernelError::validation("session not found"));
+            }
+        }
+        Ok(())
     }
 
     pub fn create_agent(&self, command: CreateAgentCommand) -> KernelResult<AgentBusinessRecord> {
@@ -251,23 +267,55 @@ where
         Ok(record)
     }
 
-    pub fn list_provider_bindings(
+    fn all_provider_bindings_for_agent(
         &self,
         tenant_id: u64,
         agent_id: &str,
-        requested_by: PolicySubject,
-    ) -> KernelResult<Vec<AgentProviderBindingRecord>> {
-        validate_agent_id(agent_id)?;
+    ) -> Vec<AgentProviderBindingRecord> {
+        let mut all = Vec::new();
+        let mut page = 1usize;
+        loop {
+            let batch = self.repository.list_provider_bindings(
+                &ProviderBindingListQuery::for_agent(tenant_id, agent_id).with_pagination(
+                    PaginationParams::default()
+                        .with_page_size(MAX_PAGE_SIZE)
+                        .with_page(page),
+                ),
+            );
+            if batch.is_empty() {
+                break;
+            }
+            let batch_len = batch.len();
+            all.extend(batch);
+            if batch_len < MAX_PAGE_SIZE {
+                break;
+            }
+            page = page.saturating_add(1);
+        }
+        all
+    }
+
+    pub fn list_provider_bindings(
+        &self,
+        command: ProviderBindingListCommand,
+    ) -> KernelResult<PaginatedResult<AgentProviderBindingRecord>> {
+        validate_agent_id(command.query.agent_id.as_str())?;
         self.authorize(
             "agent.business.provider_binding.list",
-            requested_by,
-            format!("agent.business.{}", agent_id),
+            command.requested_by,
+            format!("agent.business.{}", command.query.agent_id),
             "provider_binding.list",
         )?;
         self.repository
-            .get(tenant_id, agent_id)
+            .get(command.query.tenant_id, command.query.agent_id.as_str())
             .ok_or_else(|| KernelError::validation("agent not found"))?;
-        Ok(self.repository.list_provider_bindings(tenant_id, agent_id))
+        let total_count = self.repository.count_provider_bindings(&command.query);
+        let items = self.repository.list_provider_bindings(&command.query);
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
     }
 
     pub fn get_provider_binding(
@@ -373,18 +421,28 @@ where
 
     pub fn list_mcp_marketplace(
         &self,
-        tenant_id: u64,
-        requested_by: PolicySubject,
-    ) -> KernelResult<Vec<crate::mcp_marketplace::McpServerMarketplaceRecord>> {
+        command: ListMcpMarketplaceCommand,
+    ) -> KernelResult<PaginatedResult<crate::mcp_marketplace::McpServerMarketplaceRecord>> {
         self.authorize(
             "agent.business.mcp_server.list",
-            requested_by,
+            command.requested_by,
             "agent.business".to_string(),
             "mcp_server.list",
         )?;
-        Ok(crate::mcp_marketplace::list_mcp_marketplace_records(
-            &self.repository,
-            tenant_id,
+        let total_count = self
+            .repository
+            .count_mcp_marketplace_slots(&command.query);
+        let slots = self
+            .repository
+            .list_mcp_marketplace_slots(&command.query);
+        let items = slots
+            .iter()
+            .map(crate::mcp_marketplace::project_mcp_slot)
+            .collect();
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
         ))
     }
 
@@ -422,8 +480,7 @@ where
         }
 
         let active_binding = self
-            .repository
-            .list_provider_bindings(command.tenant_id, command.agent_id.as_str())
+            .all_provider_bindings_for_agent(command.tenant_id, command.agent_id.as_str())
             .into_iter()
             .find(|binding| binding.active);
 
@@ -487,8 +544,7 @@ where
         validate_json_payload(command.input_payload_json.as_str(), "inputPayload")?;
 
         let active_binding = self
-            .repository
-            .list_provider_bindings(command.tenant_id, command.agent_id.as_str())
+            .all_provider_bindings_for_agent(command.tenant_id, command.agent_id.as_str())
             .into_iter()
             .find(|binding| binding.active);
 
@@ -592,20 +648,24 @@ where
     pub fn list_composition_slots(
         &self,
         command: AgentCompositionSlotListCommand,
-    ) -> KernelResult<Vec<AgentCompositionSlotRecord>> {
+    ) -> KernelResult<PaginatedResult<AgentCompositionSlotRecord>> {
         self.authorize(
             "agent.business.composition_slot.list",
             command.requested_by,
-            format!("agent.business.{}", command.agent_id),
+            format!("agent.business.{}", command.query.agent_id),
             "composition_slot.list",
         )?;
-        validate_agent_id(command.agent_id.as_str())?;
+        validate_agent_id(command.query.agent_id.as_str())?;
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.query.tenant_id, command.query.agent_id.as_str())
             .ok_or_else(|| KernelError::validation("agent not found"))?;
-        Ok(self
-            .repository
-            .list_composition_slots(command.tenant_id, command.agent_id.as_str()))
+        let total_count = self.repository.count_composition_slots(&command.query);
+        let items = self.repository.list_composition_slots(&command.query);
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
     }
 
     pub fn get_composition_slot(
@@ -945,30 +1005,28 @@ where
     pub fn list_agents(
         &self,
         command: ListAgentsCommand,
-    ) -> KernelResult<Vec<AgentBusinessRecord>> {
+    ) -> KernelResult<PaginatedResult<AgentBusinessRecord>> {
         self.authorize(
             "agent.business.list",
             command.requested_by,
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "list",
         )?;
-        Ok(self.repository.list(&command.query))
+        Ok(self.repository.list_paginated(&command.query))
     }
 
     pub fn list_agent_audit_events(
         &self,
-        tenant_id: u64,
-        agent_id: &str,
-        requested_by: PolicySubject,
-    ) -> KernelResult<Vec<KernelEvent>> {
-        validate_agent_id(agent_id)?;
+        command: ListAgentAuditEventsCommand,
+    ) -> KernelResult<PaginatedResult<KernelEvent>> {
+        validate_agent_id(command.query.agent_id.as_str())?;
         self.authorize(
             "agent.business.audit.read",
-            requested_by,
-            format!("agent.business.{}", agent_id),
+            command.requested_by,
+            format!("agent.business.{}", command.query.agent_id),
             "audit.read",
         )?;
-        self.audit_sink.list_events(tenant_id, agent_id)
+        self.audit_sink.list_events(&command.query)
     }
 
     // -----------------------------------------------------------------------
@@ -1069,6 +1127,8 @@ where
             .get_session(command.tenant_id, command.session_id.as_str())
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
+        Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+
         if !record.status.is_active() {
             return Err(KernelError::validation("session is not active"));
         }
@@ -1107,6 +1167,8 @@ where
             .get_session(command.tenant_id, command.session_id.as_str())
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
+        Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+
         ensure_expected_version(record.version, command.expected_version, "session")?;
 
         record.status = AgentSessionStatus::Archived;
@@ -1136,19 +1198,29 @@ where
         self.repository
             .get_session(command.tenant_id, command.session_id.as_str())
             .ok_or_else(|| KernelError::validation("session not found"))
+            .and_then(|record| {
+                Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+                Ok(record)
+            })
     }
 
     pub fn list_sessions(
         &self,
         command: ListSessionsCommand,
-    ) -> KernelResult<Vec<AgentSessionRecord>> {
+    ) -> KernelResult<PaginatedResult<AgentSessionRecord>> {
         self.authorize(
             "agent.business.session.list",
             command.requested_by,
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "session.list",
         )?;
-        Ok(self.repository.list_sessions(&command.query))
+        let total_count = self.repository.count_sessions(&command.query);
+        let items = self.repository.list_sessions(&command.query);
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
     }
 
     // -----------------------------------------------------------------------
@@ -1269,6 +1341,11 @@ where
             "messageId",
             Some("message."),
         )?;
+        let session = self
+            .repository
+            .get_session(command.tenant_id, command.session_id.as_str())
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&session, command.owner_scope)?;
         self.repository
             .get_message(
                 command.tenant_id,
@@ -1281,14 +1358,25 @@ where
     pub fn list_messages(
         &self,
         command: ListMessagesCommand,
-    ) -> KernelResult<Vec<AgentMessageRecord>> {
+    ) -> KernelResult<PaginatedResult<AgentMessageRecord>> {
         self.authorize(
             "agent.business.message.list",
             command.requested_by,
             format!("agent.business.session.{}", command.query.session_id),
             "message.list",
         )?;
-        Ok(self.repository.list_messages(&command.query))
+        let session = self
+            .repository
+            .get_session(command.query.tenant_id, command.query.session_id.as_str())
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&session, command.owner_scope)?;
+        let total_count = self.repository.count_messages(&command.query);
+        let items = self.repository.list_messages(&command.query);
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
     }
 
     /// Send one user message, persist it, run managed chat completion, and persist
@@ -1320,6 +1408,8 @@ where
             .get_session(command.tenant_id, command.session_id.as_str())
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
+        Self::ensure_session_owner_scope(&session, command.owner_scope)?;
+
         if session.agent_id != command.agent_id {
             return Err(KernelError::validation(
                 "session does not belong to the requested agent",
@@ -1340,46 +1430,19 @@ where
         }
 
         let history_messages = self.repository.list_messages(
-            &MessageListQuery::for_session(command.tenant_id, command.session_id.clone()),
+            &MessageListQuery::for_recent_chat_context(
+                command.tenant_id,
+                command.session_id.clone(),
+                CHAT_CONTEXT_MESSAGE_LIMIT,
+            ),
         );
         let history = history_messages
             .iter()
             .map(|record| (record.role, record.content.clone()))
             .collect::<Vec<_>>();
 
-        let user_message_id = format!("msg.{}", self.repository.next_id()?);
-        let user_metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
-        let user_sequence = self
-            .repository
-            .next_message_sequence(command.tenant_id, command.session_id.as_str())?;
-        let user_message = AgentMessageRecord {
-            id: self.repository.next_id()?,
-            message_id: user_message_id,
-            tenant_id: command.tenant_id,
-            session_id: command.session_id.clone(),
-            agent_id: command.agent_id.clone(),
-            role: AgentMessageRole::User,
-            content: command.content.clone(),
-            content_type: default_plain_text_if_blank(command.content_type.as_str()),
-            status: AgentMessageStatus::Sent,
-            sequence: user_sequence,
-            input_tokens: 0,
-            output_tokens: 0,
-            model_id: command.model_id.clone(),
-            provider_id: None,
-            artifacts_json: "[]".to_string(),
-            metadata_json: user_metadata_json,
-            parent_message_id: None,
-            created_at: command.requested_at.clone(),
-            updated_at: command.requested_at.clone(),
-        };
-        self.repository.insert_message(user_message.clone())?;
-        session.record_message(0, 0, command.requested_at.clone());
-        self.repository.update_session(session.clone())?;
-
         let active_binding = self
-            .repository
-            .list_provider_bindings(command.tenant_id, command.agent_id.as_str())
+            .all_provider_bindings_for_agent(command.tenant_id, command.agent_id.as_str())
             .into_iter()
             .find(|binding| binding.active);
 
@@ -1392,21 +1455,50 @@ where
             .map(|binding| binding.capabilities.iter().any(|cap| cap == "model.chat"))
             .unwrap_or(false);
 
+        let user_content = command.content.clone();
         let completion = self.chat_completer.complete(&ChatCompletionInput {
             agent_display_name: agent.display_name.clone(),
             welcome_message,
             session: session.clone(),
             history,
-            user_content: command.content,
-            model_id: command.model_id,
+            user_content: user_content.clone(),
+            model_id: command.model_id.clone(),
             provider_id: active_binding.as_ref().map(|binding| binding.provider_id.clone()),
+            binding_id: active_binding.as_ref().map(|binding| binding.binding_id.clone()),
             provider_has_model_chat,
         });
+        if is_inference_error(completion.runtime_mode) {
+            return Err(KernelError::provider_error(
+                "chat_inference_failed",
+                completion.content,
+            ));
+        }
+
+        let user_message_id = format!("msg.{}", self.repository.next_id()?);
+        let user_metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
+        let user_message = AgentMessageRecord {
+            id: self.repository.next_id()?,
+            message_id: user_message_id,
+            tenant_id: command.tenant_id,
+            session_id: command.session_id.clone(),
+            agent_id: command.agent_id.clone(),
+            role: AgentMessageRole::User,
+            content: user_content,
+            content_type: default_plain_text_if_blank(command.content_type.as_str()),
+            status: AgentMessageStatus::Sent,
+            sequence: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            model_id: command.model_id.clone(),
+            provider_id: None,
+            artifacts_json: "[]".to_string(),
+            metadata_json: user_metadata_json,
+            parent_message_id: None,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+        };
 
         let assistant_message_id = format!("msg.{}", self.repository.next_id()?);
-        let assistant_sequence = self
-            .repository
-            .next_message_sequence(command.tenant_id, command.session_id.as_str())?;
         let assistant_metadata_json = serde_json::json!({
             "runtimeMode": completion.runtime_mode,
         })
@@ -1421,7 +1513,7 @@ where
             content: completion.content,
             content_type: "text/plain".to_string(),
             status: AgentMessageStatus::Delivered,
-            sequence: assistant_sequence,
+            sequence: 0,
             input_tokens: completion.input_tokens,
             output_tokens: completion.output_tokens,
             model_id: completion.model_id,
@@ -1432,13 +1524,18 @@ where
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
         };
-        self.repository.insert_message(assistant_message.clone())?;
-        session.record_message(
+
+        session.record_chat_turn(
             completion.input_tokens,
             completion.output_tokens,
             command.requested_at.clone(),
         );
-        self.repository.update_session(session.clone())?;
+
+        let (session, user_message, assistant_message) = self.repository.insert_chat_turn(
+            session,
+            user_message,
+            assistant_message,
+        )?;
 
         self.emit_message_audit_event(
             AgentAuditAction::MessageCreated,
@@ -1536,7 +1633,7 @@ where
         agent_id: &str,
         updated_at: String,
     ) -> KernelResult<()> {
-        for mut binding in self.repository.list_provider_bindings(tenant_id, agent_id) {
+        for mut binding in self.all_provider_bindings_for_agent(tenant_id, agent_id) {
             if binding.active {
                 binding.active = false;
                 binding.mark_updated(updated_at.clone());
@@ -1731,14 +1828,20 @@ where
     pub fn list_interactions(
         &self,
         command: ListInteractionsCommand,
-    ) -> KernelResult<Vec<AgentInteractionRecord>> {
+    ) -> KernelResult<PaginatedResult<AgentInteractionRecord>> {
         self.authorize(
             "agent.business.interaction.list",
             command.requested_by,
             format!("agent.business.session.{}", command.query.session_id),
             "interaction.list",
         )?;
-        Ok(self.repository.list_interactions(&command.query))
+        let total_count = self.repository.count_interactions(&command.query);
+        let items = self.repository.list_interactions(&command.query);
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
     }
 
     pub fn get_interaction(

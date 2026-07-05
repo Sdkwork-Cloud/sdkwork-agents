@@ -1,12 +1,45 @@
 import { appApiPath } from './paths';
 import type { HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotListResponse, AgentCompositionSlotResponse, AgentListResponse, AgentProviderBindingListResponse, AgentProviderBindingResponse, AgentResponse, AgentRuntimeExecutionResponse, CreateAgentCompositionSlotRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, RestoreAgentRequest, UpdateAgentCompositionSlotRequest, UpdateAgentRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotRecord, AgentMessageRecord, AgentProviderBindingRecord, AgentRecord, AgentRuntimeExecutionRecord, AgentSessionRecord, AppCloseAgentSessionRequest, AppCreateAgentSessionRequest, AppSendAgentChatMessageRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, Int64String, McpServerMarketplaceRecord, RestoreAgentRequest, SdkWorkPageData, SdkWorkResourceData, UpdateAgentCompositionSlotRequest, UpdateAgentRequest } from '../types';
 
+
+export class AiAgentsMcpServersApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List MCP marketplace entries from agent composition slots */
+  async list(): Promise<SdkWorkPageData & Record<string, unknown>> {
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appApiPath(`/ai/mcp_servers`));
+  }
+}
+
+export class AiAgentsCodeEnginesApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List canonical code-engine catalog */
+  async list(): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/code_engines`));
+  }
+}
 
 export interface AiAgentsCompositionSlotsDeleteParams {
   expectedVersion?: Int64String;
   requestedAt: string;
+}
+
+export interface AiAgentsCompositionSlotsListParams {
+  page?: number;
+  pageSize?: number;
 }
 
 export class AiAgentsCompositionSlotsApi {
@@ -18,32 +51,114 @@ export class AiAgentsCompositionSlotsApi {
 
 
 /** List composition slots for one managed agent */
-  async list(agentId: string): Promise<AgentCompositionSlotListResponse> {
-    return this.client.get<AgentCompositionSlotListResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots`));
+  async list(agentId: string, params?: AiAgentsCompositionSlotsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots`), query));
   }
 
 /** Create a composition slot for one managed agent */
-  async create(agentId: string, body: CreateAgentCompositionSlotRequest): Promise<AgentCompositionSlotResponse> {
-    return this.client.post<AgentCompositionSlotResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots`), body, undefined, undefined, 'application/json');
+  async create(agentId: string, body: CreateAgentCompositionSlotRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots`), body, undefined, undefined, 'application/json');
   }
 
 /** Retrieve one managed agent composition slot */
-  async retrieve(agentId: string, slotId: string): Promise<AgentCompositionSlotResponse> {
-    return this.client.get<AgentCompositionSlotResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`));
+  async retrieve(agentId: string, slotId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`));
   }
 
 /** Update one managed agent composition slot */
-  async update(agentId: string, slotId: string, body: UpdateAgentCompositionSlotRequest): Promise<AgentCompositionSlotResponse> {
-    return this.client.patch<AgentCompositionSlotResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
+  async update(agentId: string, slotId: string, body: UpdateAgentCompositionSlotRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
   }
 
 /** Delete one managed agent composition slot */
-  async delete(agentId: string, slotId: string, params: AiAgentsCompositionSlotsDeleteParams): Promise<AgentCompositionSlotResponse> {
+  async delete(agentId: string, slotId: string, params: AiAgentsCompositionSlotsDeleteParams): Promise<SdkWorkResourceData & Record<string, unknown>> {
     const query = buildQueryString([
       { name: 'expected_version', value: params.expectedVersion, style: 'form', explode: true, allowReserved: false },
       { name: 'requested_at', value: params.requestedAt, style: 'form', explode: true, allowReserved: false },
     ]);
-    return this.client.delete<AgentCompositionSlotResponse>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), query));
+    return this.client.delete<SdkWorkResourceData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), query));
+  }
+}
+
+export interface AiAgentsMessagesListParams {
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AiAgentsMessagesCreateParams {
+  stream?: boolean;
+}
+
+export class AiAgentsMessagesApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List messages in one chat session */
+  async list(agentId: string, sessionId: string, params?: AiAgentsMessagesListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages`), query));
+  }
+
+/** Send a user chat message and receive an assistant reply */
+  async create(agentId: string, sessionId: string, body: AppSendAgentChatMessageRequest, params?: AiAgentsMessagesCreateParams): Promise<AsyncIterable<string>> {
+    const query = buildQueryString([
+      { name: 'stream', value: params?.stream, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.streamJson<string>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages`), query), { method: 'POST' as any, body, contentType: 'application/json' });
+  }
+
+/** Retrieve one chat message */
+  async retrieve(agentId: string, sessionId: string, messageId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages/${serializePathParameter(messageId, { name: 'messageId', style: 'simple', explode: false })}`));
+  }
+}
+
+export interface AiAgentsSessionsListParams {
+  page?: number;
+  pageSize?: number;
+}
+
+export class AiAgentsSessionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List chat sessions for one managed agent */
+  async list(agentId: string, params?: AiAgentsSessionsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), query));
+  }
+
+/** Create a chat session for one managed agent */
+  async create(agentId: string, body: AppCreateAgentSessionRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), body, undefined, undefined, 'application/json');
+  }
+
+/** Retrieve one chat session */
+  async retrieve(agentId: string, sessionId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}`));
+  }
+
+/** Close one chat session */
+  async close(agentId: string, sessionId: string, body: AppCloseAgentSessionRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/close`), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -56,8 +171,8 @@ export class AiAgentsPromptOptimizationsApi {
 
 
 /** Create a prompt optimization for one managed agent */
-  async create(agentId: string, body: CreateAgentPromptOptimizationRequest): Promise<AgentRuntimeExecutionResponse> {
-    return this.client.post<AgentRuntimeExecutionResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/prompt_optimizations`), body, undefined, undefined, 'application/json');
+  async create(agentId: string, body: CreateAgentPromptOptimizationRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/prompt_optimizations`), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -70,8 +185,8 @@ export class AiAgentsPreviewResponsesApi {
 
 
 /** Create a preview response for one managed agent */
-  async create(agentId: string, body: CreateAgentPreviewResponseRequest): Promise<AgentRuntimeExecutionResponse> {
-    return this.client.post<AgentRuntimeExecutionResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/preview_responses`), body, undefined, undefined, 'application/json');
+  async create(agentId: string, body: CreateAgentPreviewResponseRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/preview_responses`), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -89,22 +204,22 @@ export class AiAgentsProviderBindingsApi {
 
 
 /** List provider bindings for one managed agent */
-  async list(agentId: string, params?: AiAgentsProviderBindingsListParams): Promise<AgentProviderBindingListResponse> {
+  async list(agentId: string, params?: AiAgentsProviderBindingsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
     const query = buildQueryString([
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
     ]);
-    return this.client.get<AgentProviderBindingListResponse>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/provider_bindings`), query));
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/provider_bindings`), query));
   }
 
 /** Create a provider binding for one managed agent */
-  async create(agentId: string, body: CreateAgentProviderBindingRequest): Promise<AgentProviderBindingResponse> {
-    return this.client.post<AgentProviderBindingResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/provider_bindings`), body, undefined, undefined, 'application/json');
+  async create(agentId: string, body: CreateAgentProviderBindingRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/provider_bindings`), body, undefined, undefined, 'application/json');
   }
 
 /** Activate one managed agent provider binding */
-  async activate(agentId: string, bindingId: string, body: ActivateAgentProviderBindingRequest): Promise<AgentProviderBindingResponse> {
-    return this.client.post<AgentProviderBindingResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/provider_bindings/${serializePathParameter(bindingId, { name: 'bindingId', style: 'simple', explode: false })}/activate`), body, undefined, undefined, 'application/json');
+  async activate(agentId: string, bindingId: string, body: ActivateAgentProviderBindingRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/provider_bindings/${serializePathParameter(bindingId, { name: 'bindingId', style: 'simple', explode: false })}/activate`), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -113,6 +228,7 @@ export interface AiAgentsListParams {
   page?: number;
   pageSize?: number;
   q?: string;
+  scope?: 'market' | 'public' | 'published' | 'mine' | 'workspace';
 }
 
 export class AiAgentsApi {
@@ -120,51 +236,60 @@ export class AiAgentsApi {
   public readonly providerBindings: AiAgentsProviderBindingsApi;
   public readonly previewResponses: AiAgentsPreviewResponsesApi;
   public readonly promptOptimizations: AiAgentsPromptOptimizationsApi;
+  public readonly sessions: AiAgentsSessionsApi;
+  public readonly messages: AiAgentsMessagesApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
+  public readonly codeEngines: AiAgentsCodeEnginesApi;
+  public readonly mcpServers: AiAgentsMcpServersApi;
 
   constructor(client: HttpClient) {
     this.client = client;
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
     this.previewResponses = new AiAgentsPreviewResponsesApi(client);
     this.promptOptimizations = new AiAgentsPromptOptimizationsApi(client);
+    this.sessions = new AiAgentsSessionsApi(client);
+    this.messages = new AiAgentsMessagesApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
+    this.codeEngines = new AiAgentsCodeEnginesApi(client);
+    this.mcpServers = new AiAgentsMcpServersApi(client);
   }
 
 
 /** List managed agents */
-  async list(params?: AiAgentsListParams): Promise<AgentListResponse> {
+  async list(params?: AiAgentsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
     const query = buildQueryString([
       { name: 'include_deleted', value: params?.includeDeleted, style: 'form', explode: true, allowReserved: false },
+      { name: 'scope', value: params?.scope, style: 'form', explode: true, allowReserved: false },
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
     ]);
-    return this.client.get<AgentListResponse>(appendQueryString(appApiPath(`/ai/agents`), query));
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents`), query));
   }
 
 /** Create a managed agent */
-  async create(body: CreateAgentRequest): Promise<AgentResponse> {
-    return this.client.post<AgentResponse>(appApiPath(`/ai/agents`), body, undefined, undefined, 'application/json');
+  async create(body: CreateAgentRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents`), body, undefined, undefined, 'application/json');
   }
 
 /** Retrieve one managed agent */
-  async retrieve(agentId: string): Promise<AgentResponse> {
-    return this.client.get<AgentResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}`));
+  async retrieve(agentId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}`));
   }
 
 /** Update one managed agent */
-  async update(agentId: string, body: UpdateAgentRequest): Promise<AgentResponse> {
-    return this.client.patch<AgentResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
+  async update(agentId: string, body: UpdateAgentRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
   }
 
 /** Soft-delete one managed agent */
-  async delete(agentId: string): Promise<AgentResponse> {
-    return this.client.delete<AgentResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}`));
+  async delete(agentId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.delete<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}`));
   }
 
 /** Restore one soft-deleted managed agent */
-  async restore(agentId: string, body: RestoreAgentRequest): Promise<AgentResponse> {
-    return this.client.post<AgentResponse>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/restore`), body, undefined, undefined, 'application/json');
+  async restore(agentId: string, body: RestoreAgentRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/restore`), body, undefined, undefined, 'application/json');
   }
 }
 

@@ -2,7 +2,8 @@ use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
     AgentCompositionSlotUpdateCommand, AgentsService, ChatCompletionResult, GetMessageCommand,
-    GetSessionCommand, SendChatMessageCommand,
+    GetSessionCommand, ListAgentAuditEventsCommand, ListMcpMarketplaceCommand,
+    ProviderBindingListCommand, SendChatMessageCommand,
 };
 use crate::mcp_marketplace::McpServerMarketplaceRecord;
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
@@ -23,13 +24,17 @@ use crate::dto::{
     ListMessagesRequestDto, ListSessionsRequestDto, RestoreAgentRequestDto,
     UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
 };
-use crate::ports::{AgentAuditSink, AgentRepository, PaginationParams};
+use crate::ports::{
+    AgentAuditSink, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
+    McpMarketplaceListQuery, PaginationParams, ProviderBindingListQuery,
+};
 use crate::response::{
     created_json, finish_api_json, ApiProblem, ApiResult, PageData, PageInfo, PageMode, ResourceData,
 };
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime, parse_organization_id,
-    parse_rfc3339_datetime, parse_tenant_id, validate_requested_at, validate_standard_id,
+    parse_owner_user_id, parse_rfc3339_datetime, parse_tenant_id, validate_requested_at,
+    validate_standard_id,
 };
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
 use axum::extract::{Extension, Path, Query, State};
@@ -277,6 +282,12 @@ impl RequestScope {
         }
     }
 
+    fn owner_scope(&self) -> Result<Option<u64>, ApiProblem> {
+        parse_owner_user_id(&self.owner_user_id)
+            .map(Some)
+            .map_err(ApiProblem::from_kernel_error)
+    }
+
     pub(crate) fn from_trusted_extension(
         mut context: AgentRequestContext,
         resource_tenant_id: String,
@@ -366,6 +377,10 @@ impl AgentRepository for DynAgentRepository {
         self.0.list(query)
     }
 
+    fn count_agents(&self, query: &crate::ports::AgentListQuery) -> u64 {
+        self.0.count_agents(query)
+    }
+
     fn insert_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()> {
         self.0.insert_provider_binding(record)
     }
@@ -385,10 +400,13 @@ impl AgentRepository for DynAgentRepository {
 
     fn list_provider_bindings(
         &self,
-        tenant_id: u64,
-        agent_id: &str,
+        query: &crate::ports::ProviderBindingListQuery,
     ) -> Vec<AgentProviderBindingRecord> {
-        self.0.list_provider_bindings(tenant_id, agent_id)
+        self.0.list_provider_bindings(query)
+    }
+
+    fn count_provider_bindings(&self, query: &crate::ports::ProviderBindingListQuery) -> u64 {
+        self.0.count_provider_bindings(query)
     }
 
     fn insert_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
@@ -410,10 +428,24 @@ impl AgentRepository for DynAgentRepository {
 
     fn list_composition_slots(
         &self,
-        tenant_id: u64,
-        agent_id: &str,
+        query: &crate::ports::CompositionSlotListQuery,
     ) -> Vec<AgentCompositionSlotRecord> {
-        self.0.list_composition_slots(tenant_id, agent_id)
+        self.0.list_composition_slots(query)
+    }
+
+    fn count_composition_slots(&self, query: &crate::ports::CompositionSlotListQuery) -> u64 {
+        self.0.count_composition_slots(query)
+    }
+
+    fn list_mcp_marketplace_slots(
+        &self,
+        query: &crate::ports::McpMarketplaceListQuery,
+    ) -> Vec<AgentCompositionSlotRecord> {
+        self.0.list_mcp_marketplace_slots(query)
+    }
+
+    fn count_mcp_marketplace_slots(&self, query: &crate::ports::McpMarketplaceListQuery) -> u64 {
+        self.0.count_mcp_marketplace_slots(query)
     }
 
     fn insert_session(&self, record: crate::domain::AgentSessionRecord) -> KernelResult<()> {
@@ -437,6 +469,10 @@ impl AgentRepository for DynAgentRepository {
         query: &crate::ports::SessionListQuery,
     ) -> Vec<crate::domain::AgentSessionRecord> {
         self.0.list_sessions(query)
+    }
+
+    fn count_sessions(&self, query: &crate::ports::SessionListQuery) -> u64 {
+        self.0.count_sessions(query)
     }
 
     fn insert_message(&self, record: crate::domain::AgentMessageRecord) -> KernelResult<()> {
@@ -463,8 +499,26 @@ impl AgentRepository for DynAgentRepository {
         self.0.list_messages(query)
     }
 
+    fn count_messages(&self, query: &crate::ports::MessageListQuery) -> u64 {
+        self.0.count_messages(query)
+    }
+
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
         self.0.next_message_sequence(tenant_id, session_id)
+    }
+
+    fn insert_chat_turn(
+        &self,
+        session: crate::domain::AgentSessionRecord,
+        user_message: crate::domain::AgentMessageRecord,
+        assistant_message: crate::domain::AgentMessageRecord,
+    ) -> KernelResult<(
+        crate::domain::AgentSessionRecord,
+        crate::domain::AgentMessageRecord,
+        crate::domain::AgentMessageRecord,
+    )> {
+        self.0
+            .insert_chat_turn(session, user_message, assistant_message)
     }
 }
 
@@ -475,10 +529,9 @@ impl AgentAuditSink for DynAgentAuditSink {
 
     fn list_events(
         &self,
-        tenant_id: u64,
-        agent_id: &str,
-    ) -> KernelResult<Vec<sdkwork_agent_kernel::KernelEvent>> {
-        self.0.list_events(tenant_id, agent_id)
+        query: &crate::ports::AuditEventListQuery,
+    ) -> KernelResult<crate::ports::PaginatedResult<sdkwork_agent_kernel::KernelEvent>> {
+        self.0.list_events(query)
     }
 }
 
@@ -892,6 +945,18 @@ pub mod testing {
             trace_id: Some("trace-test-fixed".to_owned()),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ListCompositionSlotsQueryParams {
+    page: Option<usize>,
+    page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ListMcpServersQueryParams {
+    page: Option<usize>,
+    page_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1825,21 +1890,43 @@ async fn backend_list_agent_audit_events(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope =
             RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-        let subject = scope.subject.clone();
         let tenant_id = scope.tenant_id_u64()?;
-        let events = with_service(&state, move |service| {
-            service.list_agent_audit_events(tenant_id, path.agent_id.as_str(), subject)
+        let subject = scope.subject.clone();
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        validate_audit_action_filter(query.action.as_deref())?;
+        validate_audit_range(query.from.as_deref(), query.to.as_deref())?;
+        let audit_query = AuditEventListQuery::for_agent(tenant_id, path.agent_id.clone())
+            .with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            );
+        let audit_query = if let Some(action) = query.action.clone() {
+            audit_query.with_action(action)
+        } else {
+            audit_query
+        };
+        let audit_query = if let Some(from) = query.from.clone() {
+            audit_query.with_from(from)
+        } else {
+            audit_query
+        };
+        let audit_query = if let Some(to) = query.to.clone() {
+            audit_query.with_to(to)
+        } else {
+            audit_query
+        };
+        let result = with_service(&state, move |service| {
+            service.list_agent_audit_events(ListAgentAuditEventsCommand {
+                query: audit_query,
+                requested_by: subject,
+            })
         })
         .await?;
-        let mut events = filter_audit_events(events, &query)?;
-        sort_audit_events_by_occurred_at_desc(&mut events)?;
-
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-        let total_items = events.len();
+        let total_items = result.total_count.unwrap_or(0) as usize;
         let total_pages = total_pages(total_items, page_size);
-        let paged = paginate(events, page, page_size);
-
-        let items: Vec<AgentAuditEventResponse> = paged
+        let items: Vec<AgentAuditEventResponse> = result
+            .items
             .into_iter()
             .map(|event| AgentAuditEventResponse {
                 event_id: event.event_id,
@@ -1859,7 +1946,7 @@ async fn backend_list_agent_audit_events(
                 total_items: Some(total_items.to_string()),
                 total_pages: Some(total_pages as i32),
                 next_cursor: None,
-                has_more: None,
+                has_more: Some(result.has_more),
             },
         })
     }
@@ -2085,11 +2172,19 @@ async fn app_list_composition_slots(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
+    query: Result<Query<ListCompositionSlotsQueryParams>, QueryRejection>,
 ) -> Response {
     let result: ApiResult<PageData<AgentCompositionSlotRecordResponse>> = async {
         let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-        execute_list_composition_slots(state, RequestScope::from_context(context), path.agent_id)
-            .await
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        execute_list_composition_slots(
+            state,
+            RequestScope::from_context(context),
+            path.agent_id,
+            query.page,
+            query.page_size,
+        )
+        .await
     }
     .await;
     finish_api_json(&web_ctx, result)
@@ -2115,24 +2210,36 @@ async fn app_list_mcp_servers(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    query: Result<Query<ListMcpServersQueryParams>, QueryRejection>,
 ) -> Response {
     let result: ApiResult<PageData<McpServerMarketplaceRecord>> = async {
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let tenant_id = scope.tenant_id_u64()?;
         let subject = scope.subject().clone();
-        let items =
-            with_service(&state, |service| service.list_mcp_marketplace(tenant_id, subject)).await?;
-        let total_items = items.len();
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let result = with_service(&state, move |service| {
+            service.list_mcp_marketplace(ListMcpMarketplaceCommand {
+                query: McpMarketplaceListQuery::for_tenant(tenant_id).with_pagination(
+                    PaginationParams::default()
+                        .with_page_size(page_size)
+                        .with_page(page),
+                ),
+                requested_by: subject,
+            })
+        })
+        .await?;
+        let total_items = result.total_count.unwrap_or(0) as usize;
         Ok(PageData {
-            items,
+            items: result.items,
             page_info: PageInfo {
                 mode: PageMode::Offset,
-                page: Some(1),
-                page_size: Some(total_items as i32),
+                page: Some(page as i32),
+                page_size: Some(page_size as i32),
                 total_items: Some(total_items.to_string()),
-                total_pages: Some(if total_items == 0 { 0 } else { 1 }),
+                total_pages: Some(total_pages(total_items, page_size) as i32),
                 next_cursor: None,
-                has_more: None,
+                has_more: Some(result.has_more),
             },
         })
     }
@@ -2236,7 +2343,7 @@ async fn backend_list_composition_slots(
     State(state): State<AgentHttpState>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<TenantAgentPathParams>, PathRejection>,
-    query: Result<Query<TenantQueryParams>, QueryRejection>,
+    query: Result<Query<TenantListQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
 ) -> Response {
     let result: ApiResult<PageData<AgentCompositionSlotRecordResponse>> = async {
@@ -2244,7 +2351,14 @@ async fn backend_list_composition_slots(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope =
             RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-        execute_list_composition_slots(state, scope, path.agent_id).await
+        execute_list_composition_slots(
+            state,
+            scope,
+            path.agent_id,
+            query.page,
+            query.page_size,
+        )
+        .await
     }
     .await;
     finish_api_json(&web_ctx, result)
@@ -2343,34 +2457,41 @@ async fn execute_list_composition_slots(
     state: AgentHttpState,
     scope: RequestScope,
     agent_id: String,
+    page: Option<usize>,
+    page_size: Option<usize>,
 ) -> ApiResult<PageData<AgentCompositionSlotRecordResponse>> {
+    let (page, page_size) = normalized_pagination(page, page_size)?;
     let tenant_id = scope.tenant_id_u64()?;
-    let command = AgentCompositionSlotListCommand {
-        tenant_id,
-        agent_id,
-        requested_by: scope.subject,
-    };
-    let records = with_service(&state, move |service| {
-        service.list_composition_slots(command)
+    let subject = scope.subject.clone();
+    let result = with_service(&state, move |service| {
+        service.list_composition_slots(AgentCompositionSlotListCommand {
+            query: CompositionSlotListQuery::for_agent(tenant_id, agent_id).with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            ),
+            requested_by: subject,
+        })
     })
     .await?;
-    let items: Vec<AgentCompositionSlotRecordResponse> = records
+    let items: Vec<AgentCompositionSlotRecordResponse> = result
+        .items
         .iter()
         .map(|record| {
             map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(record))
         })
         .collect();
-    let total_items = items.len();
+    let total_items = result.total_count.unwrap_or(0) as usize;
     Ok(PageData {
         items,
         page_info: PageInfo {
             mode: PageMode::Offset,
-            page: Some(1),
-            page_size: Some(total_items as i32),
+            page: Some(page as i32),
+            page_size: Some(page_size as i32),
             total_items: Some(total_items.to_string()),
-            total_pages: Some(if total_items == 0 { 0 } else { 1 }),
+            total_pages: Some(total_pages(total_items, page_size) as i32),
             next_cursor: None,
-            has_more: None,
+            has_more: Some(result.has_more),
         },
     })
 }
@@ -2608,16 +2729,17 @@ async fn app_list_sessions(
             );
         let records = with_service(&state, move |service| service.list_sessions(command)).await?;
         Ok(PageData {
-            items: records.iter().map(AgentSessionRecordDto::from_record).collect(),
-            page_info: PageInfo {
-                mode: PageMode::Offset,
-                page: Some(page as i32),
-                page_size: Some(page_size as i32),
-                total_items: None,
-                total_pages: None,
-                next_cursor: None,
-                has_more: None,
-            },
+            items: records
+                .items
+                .iter()
+                .map(AgentSessionRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
         })
     }
     .await;
@@ -2662,9 +2784,11 @@ async fn app_get_session(
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
         let command = GetSessionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
             session_id,
+            owner_scope,
             requested_by: scope.subject,
         };
         let record = with_service(&state, move |service| service.get_session(command)).await?;
@@ -2687,9 +2811,11 @@ async fn app_close_session(
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
-        let command = body
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
             .into_command(session_id, scope.subject)
             .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
         let record = with_service(&state, move |service| service.close_session(command)).await?;
         Ok(ResourceData {
             item: AgentSessionRecordDto::from_record(&record),
@@ -2714,6 +2840,7 @@ async fn app_list_messages(
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListMessagesRequestDto {
             tenant_id: scope.tenant_id,
@@ -2722,6 +2849,7 @@ async fn app_list_messages(
         }
         .into_command(session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
         command.query = command.query.with_pagination(
             PaginationParams::default()
                 .with_page_size(page_size)
@@ -2729,16 +2857,17 @@ async fn app_list_messages(
         );
         let records = with_service(&state, move |service| service.list_messages(command)).await?;
         Ok(PageData {
-            items: records.iter().map(AgentMessageRecordDto::from_record).collect(),
-            page_info: PageInfo {
-                mode: PageMode::Offset,
-                page: Some(page as i32),
-                page_size: Some(page_size as i32),
-                total_items: None,
-                total_pages: None,
-                next_cursor: None,
-                has_more: None,
-            },
+            items: records
+                .items
+                .iter()
+                .map(AgentMessageRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
         })
     }
     .await;
@@ -2758,6 +2887,7 @@ async fn app_create_message(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
         let command = SendChatMessageCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
@@ -2769,6 +2899,7 @@ async fn app_create_message(
                 .unwrap_or_else(|| "text/plain".to_string()),
             metadata_json: body.metadata_json.unwrap_or_else(|| "{}".to_string()),
             model_id: body.model_id,
+            owner_scope,
             requested_by: scope.subject,
             requested_at: body.requested_at,
         };
@@ -2790,10 +2921,12 @@ async fn app_get_message(
         let Path((_agent_id, session_id, message_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
         let command = GetMessageCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
             session_id,
             message_id,
+            owner_scope,
             requested_by: scope.subject,
         };
         let record = with_service(&state, move |service| service.get_message(command)).await?;
@@ -2844,16 +2977,17 @@ async fn backend_list_sessions(
             );
         let records = with_service(&state, move |service| service.list_sessions(command)).await?;
         Ok(PageData {
-            items: records.iter().map(AgentSessionRecordDto::from_record).collect(),
-            page_info: PageInfo {
-                mode: PageMode::Offset,
-                page: Some(page as i32),
-                page_size: Some(page_size as i32),
-                total_items: None,
-                total_pages: None,
-                next_cursor: None,
-                has_more: None,
-            },
+            items: records
+                .items
+                .iter()
+                .map(AgentSessionRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
         })
     }
     .await;
@@ -2909,6 +3043,7 @@ async fn backend_get_session(
         let command = GetSessionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
             session_id,
+            owner_scope: None,
             requested_by: scope.subject,
         };
         let record = with_service(&state, move |service| service.get_session(command)).await?;
@@ -2998,6 +3133,7 @@ async fn backend_list_messages(
         }
         .into_command(session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = None;
         command.query = command.query.with_pagination(
             PaginationParams::default()
                 .with_page_size(page_size)
@@ -3005,16 +3141,17 @@ async fn backend_list_messages(
         );
         let records = with_service(&state, move |service| service.list_messages(command)).await?;
         Ok(PageData {
-            items: records.iter().map(AgentMessageRecordDto::from_record).collect(),
-            page_info: PageInfo {
-                mode: PageMode::Offset,
-                page: Some(page as i32),
-                page_size: Some(page_size as i32),
-                total_items: None,
-                total_pages: None,
-                next_cursor: None,
-                has_more: None,
-            },
+            items: records
+                .items
+                .iter()
+                .map(AgentMessageRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
         })
     }
     .await;
@@ -3049,6 +3186,7 @@ async fn backend_create_message(
                 .unwrap_or_else(|| "text/plain".to_string()),
             metadata_json: body.metadata_json.unwrap_or_else(|| "{}".to_string()),
             model_id: body.model_id,
+            owner_scope: None,
             requested_by: scope.subject,
             requested_at: body.requested_at,
         };
@@ -3075,6 +3213,7 @@ async fn backend_get_message(
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
             session_id,
             message_id,
+            owner_scope: None,
             requested_by: scope.subject,
         };
         let record = with_service(&state, move |service| service.get_message(command)).await?;
@@ -3104,34 +3243,39 @@ async fn execute_list(
     scope: RequestScope,
 ) -> ApiResult<PageData<AgentRecordResponse>> {
     let include_deleted = query.include_deleted.unwrap_or(false);
+    let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+    let visibility = if matches!(
+        query.scope.as_deref(),
+        Some("market" | "public" | "published")
+    ) {
+        Some("public".to_string())
+    } else {
+        None
+    };
     let request_dto = ListAgentsRequestDto {
         tenant_id: scope.tenant_id,
         organization_id: query.organization_id,
         owner_user_id: query.owner_user_id,
         include_deleted,
         search_query: query.q,
+        visibility,
+        pagination: PaginationParams::default()
+            .with_page_size(page_size)
+            .with_page(page),
     };
     let command = request_dto
         .into_command(scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
 
-    let mut records = with_service(&state, move |service| service.list_agents(command)).await?;
-    if matches!(
-        query.scope.as_deref(),
-        Some("market" | "public" | "published")
-    ) {
-        records.retain(|record| record.visibility.as_str() == "public");
-    }
-    let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
+    let result = with_service(&state, move |service| service.list_agents(command)).await?;
+    let total_items = result.total_count.unwrap_or(0) as usize;
+    let total_pages = total_pages(total_items, page_size);
 
-    let items: Vec<AgentRecordResponse> = paged
+    let items: Vec<AgentRecordResponse> = result
+        .items
         .iter()
         .map(|record| map_agent_record(&AgentRecordDto::from_record(record)))
         .collect::<Result<Vec<_>, _>>()?;
-
-    let total_pages = total_pages(total_items, page_size);
 
     Ok(PageData {
         items,
@@ -3142,7 +3286,7 @@ async fn execute_list(
             total_items: Some(total_items.to_string()),
             total_pages: Some(total_pages as i32),
             next_cursor: None,
-            has_more: None,
+            has_more: Some(result.has_more),
         },
     })
 }
@@ -3305,17 +3449,23 @@ async fn execute_list_provider_bindings(
     page_size: Option<usize>,
     agent_id: String,
 ) -> ApiResult<PageData<AgentProviderBindingRecordResponse>> {
+    let (page, page_size) = normalized_pagination(page, page_size)?;
     let tenant_id = scope.tenant_id_u64()?;
-
-    let records = with_service(&state, move |service| {
-        service.list_provider_bindings(tenant_id, agent_id.as_str(), scope.subject)
+    let subject = scope.subject.clone();
+    let result = with_service(&state, move |service| {
+        service.list_provider_bindings(ProviderBindingListCommand {
+            query: ProviderBindingListQuery::for_agent(tenant_id, agent_id).with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            ),
+            requested_by: subject,
+        })
     })
     .await?;
-    let (page, page_size) = normalized_pagination(page, page_size)?;
-    let total_items = records.len();
-    let paged = paginate(records, page, page_size);
-
-    let items = paged
+    let total_items = result.total_count.unwrap_or(0) as usize;
+    let items = result
+        .items
         .iter()
         .map(|record| {
             map_provider_binding_record(&AgentProviderBindingRecordDto::from_record(record))
@@ -3332,7 +3482,7 @@ async fn execute_list_provider_bindings(
             total_items: Some(total_items.to_string()),
             total_pages: Some(total_pages as i32),
             next_cursor: None,
-            has_more: None,
+            has_more: Some(result.has_more),
         },
     })
 }
@@ -3603,21 +3753,22 @@ fn kernel_event_severity(severity: sdkwork_agent_kernel::KernelEventSeverity) ->
     }
 }
 
-fn filter_audit_events(
-    events: Vec<sdkwork_agent_kernel::KernelEvent>,
-    query: &AuditEventsQueryParams,
-) -> Result<Vec<sdkwork_agent_kernel::KernelEvent>, ApiProblem> {
-    if let Some(action) = query.action.as_ref() {
-        if !ALLOWED_AUDIT_ACTIONS.contains(&action.as_str()) {
-            return Err(ApiProblem::validation(format!(
-                "action must be one of {}",
-                ALLOWED_AUDIT_ACTIONS.join(", ")
-            )));
-        }
+fn validate_audit_action_filter(action: Option<&str>) -> Result<(), ApiProblem> {
+    let Some(action) = action else {
+        return Ok(());
+    };
+    if !ALLOWED_AUDIT_ACTIONS.contains(&action) {
+        return Err(ApiProblem::validation(format!(
+            "action must be one of {}",
+            ALLOWED_AUDIT_ACTIONS.join(", ")
+        )));
     }
+    Ok(())
+}
 
-    let from = parse_optional_query_datetime("from", query.from.as_deref())?;
-    let to = parse_optional_query_datetime("to", query.to.as_deref())?;
+fn validate_audit_range(from: Option<&str>, to: Option<&str>) -> Result<(), ApiProblem> {
+    let from = parse_optional_query_datetime("from", from)?;
+    let to = parse_optional_query_datetime("to", to)?;
     if let (Some(from_value), Some(to_value)) = (from.as_ref(), to.as_ref()) {
         if from_value > to_value {
             return Err(ApiProblem::validation(
@@ -3625,70 +3776,7 @@ fn filter_audit_events(
             ));
         }
     }
-
-    let mut filtered = Vec::new();
-    for event in events {
-        let action_ok = query
-            .action
-            .as_ref()
-            .map(|action| action == audit_event_action(event.event_type.as_str()))
-            .unwrap_or(true);
-        if !action_ok {
-            continue;
-        }
-
-        let occurred_at_raw = event
-            .occurred_at
-            .as_deref()
-            .ok_or_else(|| ApiProblem::internal("audit event occurred_at is missing"))?;
-        let occurred_at = parse_rfc3339_datetime(occurred_at_raw, "audit event occurred_at")
-            .map_err(|error| ApiProblem::internal(error.safe_message()))?;
-
-        let from_ok = from
-            .as_ref()
-            .map(|from_value| occurred_at >= *from_value)
-            .unwrap_or(true);
-        let to_ok = to
-            .as_ref()
-            .map(|to_value| occurred_at <= *to_value)
-            .unwrap_or(true);
-        if from_ok && to_ok {
-            filtered.push(event);
-        }
-    }
-    Ok(filtered)
-}
-
-fn sort_audit_events_by_occurred_at_desc(
-    events: &mut [sdkwork_agent_kernel::KernelEvent],
-) -> Result<(), ApiProblem> {
-    use std::cmp::Ordering;
-
-    events.sort_by(|left, right| {
-        let left_at = audit_event_occurred_at(left);
-        let right_at = audit_event_occurred_at(right);
-        match right_at.cmp(&left_at) {
-            Ordering::Equal => match right.event_type.cmp(&left.event_type) {
-                Ordering::Equal => right.event_id.cmp(&left.event_id),
-                other => other,
-            },
-            other => other,
-        }
-    });
     Ok(())
-}
-
-fn audit_event_occurred_at(event: &sdkwork_agent_kernel::KernelEvent) -> OffsetDateTime {
-    let occurred_at_raw = event
-        .occurred_at
-        .as_deref()
-        .unwrap_or("1970-01-01T00:00:00Z");
-    parse_rfc3339_datetime(occurred_at_raw, "audit event occurred_at")
-        .unwrap_or(OffsetDateTime::UNIX_EPOCH)
-}
-
-fn audit_event_action(event_type: &str) -> &str {
-    event_type.rsplit('.').next().unwrap_or(event_type)
 }
 
 fn parse_optional_query_datetime(
@@ -3745,26 +3833,29 @@ pub(crate) fn normalized_pagination(
     page: Option<usize>,
     page_size: Option<usize>,
 ) -> Result<(usize, usize), ApiProblem> {
-    let page = page.unwrap_or(1);
-    if page == 0 {
+    if page == Some(0) {
         return Err(ApiProblem::validation(
             "page must be greater than or equal to 1",
         ));
     }
-
-    let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE);
-    if page_size == 0 {
+    if page_size == Some(0) {
         return Err(ApiProblem::validation(
             "page_size must be greater than or equal to 1",
         ));
     }
-    if page_size > MAX_PAGE_SIZE {
-        return Err(ApiProblem::validation(format!(
-            "page_size must be less than or equal to {MAX_PAGE_SIZE}"
-        )));
+    if let Some(size) = page_size {
+        if size > MAX_PAGE_SIZE {
+            return Err(ApiProblem::validation(format!(
+                "page_size must be less than or equal to {MAX_PAGE_SIZE}"
+            )));
+        }
     }
 
-    Ok((page, page_size))
+    let params = sdkwork_utils_rust::http_api::OffsetListPageParams::parse(
+        page.map(|value| value as i64),
+        page_size.map(|value| value as i64),
+    );
+    Ok((params.page as usize, params.page_size as usize))
 }
 
 fn resolve_tenant_from_query_or_body(
@@ -3856,9 +3947,16 @@ fn total_pages(total_items: usize, page_size: usize) -> usize {
     }
 }
 
-pub(crate) fn paginate<T: Clone>(items: Vec<T>, page: usize, page_size: usize) -> Vec<T> {
-    let start = (page - 1).saturating_mul(page_size);
-    items.into_iter().skip(start).take(page_size).collect()
+fn offset_page_info(page: usize, page_size: usize, total_count: u64, has_more: bool) -> PageInfo {
+    let params = sdkwork_utils_rust::http_api::OffsetListPageParams {
+        page: page as i64,
+        page_size: page_size as i64,
+        offset: ((page as i64) - 1) * (page_size as i64),
+    };
+    let mut info =
+        sdkwork_utils_rust::http_api::offset_list_page_info(total_count as i64, params);
+    info.has_more = Some(has_more);
+    info
 }
 
 #[cfg(test)]

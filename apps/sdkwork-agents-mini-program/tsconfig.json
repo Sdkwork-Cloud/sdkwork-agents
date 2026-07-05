@@ -21,7 +21,7 @@
         "./packages/sdkwork-agents-mp-host/src/index.ts"
       ],
       "@sdkwork/agents-app-sdk": [
-        "../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts"
+        "../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/src/index.ts"
       ]
     }
   },

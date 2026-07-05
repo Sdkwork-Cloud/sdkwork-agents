@@ -2,7 +2,7 @@
 
 Status: active  
 Owner: agents-platform  
-Updated: 2026-06-29  
+Updated: 2026-07-05  
 Specs: [`ARCHITECTURE_DECISION_SPEC.md`](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [`WEB_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/WEB_FRAMEWORK_SPEC.md), [`DATABASE_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md)
 
 ## 1. Architecture Overview
@@ -45,7 +45,7 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 
 本仓库严格遵循高内聚、低耦合原则。每个模块拥有自己的数据库表和业务逻辑。
 
-### 2.1 本仓库拥有的表 (6 tables, all `ai_` prefix)
+### 2.1 本仓库拥有的表 (7 tables, all `ai_` prefix)
 
 | Table | Responsibility | Compliance |
 | --- | --- | --- |
@@ -55,6 +55,7 @@ SDKWork Agents 是一个智能体组合编排平台应用，遵循"积木式"模
 | `ai_agent_audit_event` | 不可变管理审计日志 | L3 |
 | `ai_agent_session` | 托管会话（tenant/agent/owner 作用域） | L2 |
 | `ai_agent_message` | 会话消息与 chat turn 持久化 | L2 |
+| `ai_agent_interaction` | 实时交互（code-engine 审批流） | L2 |
 
 ### 2.2 Sibling 模块依赖 (通过 composition slot 引用)
 
@@ -315,8 +316,22 @@ capabilities owned by sibling SDKWork layers, not agents-application blockers.
 | Postgres interaction persistence + fail-closed HTTP state bootstrap | Done |
 | PC/H5 production chat UI (`AgentChatView` + sessions/messages API) | Done |
 | PC Auth Gate + knowledge bootstrap + runtime catalog + composition slot sync | Done |
-| Optional skills/voice catalog via sibling app SDKs | Done |
+| Optional skills/voice catalog via sibling app SDKs | Done (`syncAllOffsetPages` for export/sync catalogs) |
 | Mini-program runtime bundle rebuild in verify (`agents-mini-program build` + runtime contract) | Done |
+
+### List pagination alignment (`PAGINATION_SPEC.md`)
+
+| Layer | Status | Notes |
+| --- | --- | --- |
+| SQL list authorities | Done | `LIMIT/OFFSET` + `COUNT(*)` per `AGENTS_AI_COMPOSITION_DATABASE_SPEC.md` §8 |
+| In-memory test repository | Done | `BTreeMap` indexes + `offset_limit_page_from_iter` (`in_memory_pagination.rs`) |
+| HTTP `PageInfo` | Done | `mode=offset`, `totalItems`, `totalPages`, `hasMore` via `sdkwork-utils-rust::http_api` |
+| App API `scope` + `q` | Done | OpenAPI `ListScope` + `SearchQ` on `agents.list`; market vs owned lists |
+| PC/H5 interactive UI | Done | `listAgentsPage()` one page at a time; chat uses single message page (`pageSize=50`) |
+| PC/H5 export/sync | Done | `syncAllOffsetPages()` in `*-core/sdk/pagination` (not for UI tables) |
+| Mini program native list | Done | `pageSize=20`, follows `pageInfo.hasMore`, load-more button |
+
+Messages remain **offset mode** today; cursor/keyset migration is a post-launch optimization for very long sessions.
 
 ### Client surfaces (commercial MVP)
 
@@ -324,7 +339,7 @@ capabilities owned by sibling SDKWork layers, not agents-application blockers.
 | --- | --- | --- | --- |
 | PC | Done | Done | Production path |
 | H5 | Done | Done | Synced from PC via `workflow:sync-agent-h5-from-pc` |
-| Mini program | Runtime SDK bootstrap | WebView agents page | Native UI deferred |
+| Mini program | Runtime SDK bootstrap | Native agents list + H5 editor fallback | Native list via App API; full editor in WebView |
 | Flutter | Scaffold only | `pending-dart-sdk` | No Dart agents-app-sdk yet |
 
 ### Post-launch (platform-owned)

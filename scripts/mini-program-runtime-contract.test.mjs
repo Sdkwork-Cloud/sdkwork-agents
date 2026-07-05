@@ -15,8 +15,8 @@ const bundle = fs.readFileSync(bundlePath, "utf8");
 assert.ok(bundle.length > 10_000, "runtime bundle looks truncated");
 
 for (const marker of [
-  "bootstrapSdkClients",
   "bootstrapAgentsMiniProgram",
+  "getAgentsMpSdkClient",
   "createAgentsAppSdkClientConfig",
 ]) {
   assert.match(bundle, new RegExp(marker), `runtime bundle must export ${marker}`);

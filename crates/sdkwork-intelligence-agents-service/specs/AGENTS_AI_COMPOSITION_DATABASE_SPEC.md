@@ -113,3 +113,22 @@ Migration scripts:
 Canonical DDL: `database/ddl/baseline/postgres/0001_ai_agent_baseline.sql`
 Contract registry: `database/contract/table-registry.json`
 Schema contract: `database/contract/schema.yaml`
+
+## 8. List Query Pagination (DATABASE_SPEC §16)
+
+All agents list/search endpoints **must** push filtering, sorting, `LIMIT`, and `OFFSET` to SQL.
+Application and frontend layers must not load full result sets and slice in memory.
+
+| List surface | SQL authority | Notes |
+| --- | --- | --- |
+| `ai_agent` | `SQL_LIST_AGENT` + `SQL_COUNT_AGENT` | Filters: tenant, org, owner, deleted, `q`, `visibility`. Stable sort: `updated_at DESC, id DESC`. |
+| `ai_agent_runtime_binding` | `SQL_LIST_AGENT_PROVIDER_BINDINGS` + `SQL_COUNT_AGENT_PROVIDER_BINDINGS` | Per-agent bindings; sort: active desc, updated_at desc. |
+| `ai_agent_composition_slot` | `SQL_LIST_AGENT_COMPOSITION_SLOTS` + `SQL_COUNT_AGENT_COMPOSITION_SLOTS` | Excludes soft-deleted slots. |
+| MCP marketplace projection | `SQL_LIST_MCP_MARKETPLACE_SLOTS` + `SQL_COUNT_MCP_MARKETPLACE_SLOTS` | Join `ai_agent` + `slot_kind = mcp`; no N+1 agent scan. |
+| `ai_agent_audit_event` | `SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID` + `SQL_COUNT_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID` | Filters: `action`, `from`, `to`; sort: `created_at DESC, id DESC`. |
+| `ai_agent_session` | `SQL_LIST_AGENT_SESSIONS` + `SQL_COUNT_AGENT_SESSIONS` | Offset-paginated; `PageInfo.totalItems` from count query. |
+| `ai_agent_message` | `SQL_LIST_AGENT_MESSAGES` / `SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT` + `SQL_COUNT_AGENT_MESSAGES` | API lists use ASC + offset; chat context uses recent DESC window. |
+| `ai_agent_interaction` | `SQL_LIST_AGENT_INTERACTIONS` + `SQL_COUNT_AGENT_INTERACTIONS` | Offset-paginated; domain-only until OpenAPI exposes HTTP. |
+
+HTTP handlers pass `page` / `page_size` into repository `PaginationParams` and return `PageInfo.totalItems` from `COUNT(*)` queries.
+Marketplace scope (`scope=market|public|published`) maps to `visibility = public` in SQL, not client-side filtering.

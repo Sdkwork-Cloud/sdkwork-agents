@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, Code, PenTool, Sparkles, Image as ImageIcon, Plus, Bot, Zap, Globe, Compass, Edit2, Trash2 } from 'lucide-react';
 import { cn } from '@sdkwork/agents-h5-commons';
 import { agentService } from '../services/AgentService';
@@ -27,7 +27,13 @@ export const AgentView: React.FC<AgentViewProps> = ({ onStartChat, onCreateAgent
   const [activeCategory, setActiveCategory] = useState<string>('market');
   const [marketAgents, setMarketAgents] = useState<AgentConfig[]>([]);
   const [myAgents, setMyAgents] = useState<AgentConfig[]>([]);
+  const [marketHasMore, setMarketHasMore] = useState(false);
+  const [myHasMore, setMyHasMore] = useState(false);
+  const [marketPage, setMarketPage] = useState(1);
+  const [myPage, setMyPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadingMoreMarket, setLoadingMoreMarket] = useState(false);
+  const [loadingMoreMy, setLoadingMoreMy] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const categories = [
@@ -40,24 +46,69 @@ export const AgentView: React.FC<AgentViewProps> = ({ onStartChat, onCreateAgent
   ];
   const [selectedMarketCategory, setSelectedMarketCategory] = useState<string>('all');
 
-  useEffect(() => {
-    const loadData = async () => {
+  const loadMarketPage = async (page: number, append: boolean, q?: string) => {
+    if (page === 1 && !append) {
       setLoading(true);
-      try {
-        const [market, my] = await Promise.all([
-          agentService.getMarketAgents(),
-          agentService.getAgents()
-        ]);
-        setMarketAgents(market);
-        setMyAgents(my);
-      } catch (error) {
-        toast('加载智能体失败', 'error');
-      } finally {
+    } else {
+      setLoadingMoreMarket(true);
+    }
+    try {
+      const result = await agentService.listAgentsPage({
+        page,
+        scope: 'market',
+        ...(q?.trim() ? { q: q.trim() } : {}),
+      });
+      setMarketAgents((prev) => (append ? [...prev, ...result.items] : result.items));
+      setMarketHasMore(result.pageInfo.hasMore);
+      setMarketPage(page);
+    } catch {
+      toast('加载智能体失败', 'error');
+    } finally {
+      if (page === 1) {
         setLoading(false);
+      } else {
+        setLoadingMoreMarket(false);
       }
-    };
-    loadData();
+    }
+  };
+
+  const loadMyPage = async (page: number, append: boolean) => {
+    if (page === 1) {
+      setLoading(true);
+    } else {
+      setLoadingMoreMy(true);
+    }
+    try {
+      const result = await agentService.listAgentsPage({ page });
+      setMyAgents((prev) => (append ? [...prev, ...result.items] : result.items));
+      setMyHasMore(result.pageInfo.hasMore);
+      setMyPage(page);
+    } catch {
+      toast('加载智能体失败', 'error');
+    } finally {
+      if (page === 1) {
+        setLoading(false);
+      } else {
+        setLoadingMoreMy(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    void Promise.all([loadMarketPage(1, false), loadMyPage(1, false)]);
   }, []);
+
+  const skipInitialSearchReload = useRef(true);
+  useEffect(() => {
+    if (skipInitialSearchReload.current) {
+      skipInitialSearchReload.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadMarketPage(1, false, searchQuery);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   const getIcon = (iconName?: string) => {
     switch (iconName) {
@@ -83,11 +134,9 @@ export const AgentView: React.FC<AgentViewProps> = ({ onStartChat, onCreateAgent
     welcomeMessage: config.welcomeMessage,
   });
 
-  const filteredMarketAgents = marketAgents.filter(a => {
-    const matchesSearch = !searchQuery.trim() || a.name.toLowerCase().includes(searchQuery.toLowerCase()) || (a.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedMarketCategory === 'all' || a.categoryId === selectedMarketCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredMarketAgents = marketAgents.filter((agent) =>
+    selectedMarketCategory === 'all' || agent.categoryId === selectedMarketCategory,
+  );
 
   const handleDeleteAgent = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -157,6 +206,16 @@ export const AgentView: React.FC<AgentViewProps> = ({ onStartChat, onCreateAgent
               </div>
             );
           })}
+          {myHasMore && !loading && (
+            <button
+              type="button"
+              className="mx-4 my-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-400 hover:text-white hover:bg-white/5"
+              disabled={loadingMoreMy}
+              onClick={() => void loadMyPage(myPage + 1, true)}
+            >
+              {loadingMoreMy ? '加载中...' : '加载更多'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -243,6 +302,18 @@ export const AgentView: React.FC<AgentViewProps> = ({ onStartChat, onCreateAgent
               );
             })}
           </div>
+          {marketHasMore && !loading && (
+            <div className="flex justify-center pb-8">
+              <button
+                type="button"
+                className="rounded-xl border border-white/10 px-5 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5"
+                disabled={loadingMoreMarket}
+                onClick={() => void loadMarketPage(marketPage + 1, true)}
+              >
+                {loadingMoreMarket ? '加载中...' : '加载更多智能体'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

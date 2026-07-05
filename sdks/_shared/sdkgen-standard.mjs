@@ -1,17 +1,29 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 export const SDKWORK_SDKGEN_STANDARD = Object.freeze({
   standardProfile: 'sdkwork-v3',
   canonicalRootWin: String.raw`..\sdkwork-sdk-generator`,
   canonicalEntrypointWin: String.raw`..\sdkwork-sdk-generator\bin\sdkgen.js`,
-  canonicalEntrypointPosix:
-    '../sdkwork-sdk-generator/bin/sdkgen.js',
+  canonicalEntrypointPosix: '../sdkwork-sdk-generator/bin/sdkgen.js',
   envOverride: 'SDKWORK_SDKGEN_PATH',
-  deprecatedEntrypointFragment:
-    ['java', 'source'].join(''),
-  generatedOutput: 'generated/server-openapi'
+  deprecatedEntrypointFragment: ['java', 'source'].join(''),
+  generatedOutput: 'generated/server-openapi',
 });
 
-export function resolveSdkgenEntrypoint(env = process.env) {
-  return env[SDKWORK_SDKGEN_STANDARD.envOverride] ??
-    SDKWORK_SDKGEN_STANDARD.canonicalEntrypointPosix;
-}
+const defaultSdkgenPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../sdkwork-sdk-generator/bin/sdkgen.js',
+);
 
+export function resolveSdkgenEntrypoint(env = process.env) {
+  const override = env[SDKWORK_SDKGEN_STANDARD.envOverride];
+  if (override) {
+    return path.resolve(override);
+  }
+  if (fs.existsSync(defaultSdkgenPath)) {
+    return defaultSdkgenPath;
+  }
+  return SDKWORK_SDKGEN_STANDARD.canonicalEntrypointPosix;
+}

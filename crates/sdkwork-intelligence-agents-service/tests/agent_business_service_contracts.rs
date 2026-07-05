@@ -2,14 +2,17 @@ use std::sync::{Arc, Mutex};
 
 use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelEvent, KernelResult, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
+use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 use sdkwork_intelligence_agents_service::{
     ActivateAgentProviderBindingCommand, AgentAuditSink, AgentBusinessStatus,
     AgentImplementationKind, AgentImplementationType, AgentListQuery, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentVisibility, AgentsService,
-    AllowAllPolicyProvider, ChangeAgentStatusCommand, CreateAgentCommand, CreateSessionCommand,
-    DeleteAgentCommand, extract_event_context, GetAgentCommand, InMemoryAgentRepository, ListAgentsCommand, PolicyMode,
-    RestoreAgentCommand, SendChatMessageCommand, UpdateAgentCommand,
-    DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, AgentMessageRole,
+    AllowAllPolicyProvider, AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand,
+    CreateSessionCommand, DeleteAgentCommand, extract_event_context, GetAgentCommand,
+    InMemoryAgentRepository, ListAgentAuditEventsCommand, ListAgentsCommand, PolicyMode,
+    ProviderBindingListCommand, ProviderBindingListQuery, PaginationParams, PaginatedResult,
+    RestoreAgentCommand, SendChatMessageCommand, UpdateAgentCommand, GetSessionCommand, MAX_PAGE_SIZE,
+    offset_paginated_result, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, AgentMessageRole,
 };
 
 #[derive(Clone, Default)]
@@ -38,8 +41,11 @@ impl AgentAuditSink for RecordingAuditSink {
         Ok(())
     }
 
-    fn list_events(&self, tenant_id: u64, agent_id: &str) -> KernelResult<Vec<KernelEvent>> {
-        let mut events = self
+    fn list_events(
+        &self,
+        query: &AuditEventListQuery,
+    ) -> KernelResult<PaginatedResult<KernelEvent>> {
+        let mut matched: Vec<KernelEvent> = self
             .events
             .lock()
             .expect("recording audit mutex poisoned")
@@ -47,14 +53,21 @@ impl AgentAuditSink for RecordingAuditSink {
             .filter(|event| {
                 extract_event_context(event.payload.as_str(), "tenant_id")
                     .and_then(|value| value.parse::<u64>().ok())
-                    == Some(tenant_id)
+                    == Some(query.tenant_id)
                     && extract_event_context(event.payload.as_str(), "agent_id").as_deref()
-                        == Some(agent_id)
+                        == Some(query.agent_id.as_str())
             })
             .cloned()
-            .collect::<Vec<_>>();
-        events.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
-        Ok(events)
+            .collect();
+        matched.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
+        let total_count = matched.len() as u64;
+        let page = offset_limit_page_from_iter(
+            matched.into_iter(),
+            query.pagination.page_size,
+            query.pagination.offset,
+        )
+        .items;
+        Ok(offset_paginated_result(page, &query.pagination, total_count))
     }
 }
 
@@ -246,8 +259,8 @@ fn create_update_status_delete_restore_and_list_agents() {
             requested_by: sample_subject(),
         })
         .expect("list should succeed");
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].status, AgentBusinessStatus::Active);
+    assert_eq!(listed.items.len(), 1);
+    assert_eq!(listed.items[0].status, AgentBusinessStatus::Active);
 }
 
 #[test]
@@ -428,7 +441,10 @@ fn agent_resource_entry_points_validate_standard_agent_id_before_authorization()
     );
     assert_agent_id_validation(
         service
-            .list_provider_bindings(100_001, invalid_agent_id, sample_subject())
+            .list_provider_bindings(ProviderBindingListCommand {
+                query: ProviderBindingListQuery::for_agent(100_001, invalid_agent_id),
+                requested_by: sample_subject(),
+            })
             .expect_err("invalid agent_id must be rejected before binding list authorization"),
     );
     assert_agent_id_validation(
@@ -462,7 +478,10 @@ fn agent_resource_entry_points_validate_standard_agent_id_before_authorization()
     );
     assert_agent_id_validation(
         service
-            .list_agent_audit_events(100_001, invalid_agent_id, sample_subject())
+            .list_agent_audit_events(ListAgentAuditEventsCommand {
+                query: AuditEventListQuery::for_agent(100_001, invalid_agent_id),
+                requested_by: sample_subject(),
+            })
             .expect_err("invalid agent_id must be rejected before audit authorization"),
     );
 }
@@ -777,8 +796,8 @@ fn list_filters_by_owner_organization_and_deleted_flag() {
             requested_by: sample_subject(),
         })
         .expect("list by org should succeed");
-    assert_eq!(by_org.len(), 1);
-    assert_eq!(by_org[0].agent_id, "agent.owner.a");
+    assert_eq!(by_org.items.len(), 1);
+    assert_eq!(by_org.items[0].agent_id, "agent.owner.a");
 
     let by_owner_without_deleted = service
         .list_agents(ListAgentsCommand {
@@ -786,7 +805,7 @@ fn list_filters_by_owner_organization_and_deleted_flag() {
             requested_by: sample_subject(),
         })
         .expect("list by owner should succeed");
-    assert!(by_owner_without_deleted.is_empty());
+    assert!(by_owner_without_deleted.items.is_empty());
 
     let by_owner_with_deleted = service
         .list_agents(ListAgentsCommand {
@@ -796,9 +815,9 @@ fn list_filters_by_owner_organization_and_deleted_flag() {
             requested_by: sample_subject(),
         })
         .expect("list by owner with deleted should succeed");
-    assert_eq!(by_owner_with_deleted.len(), 1);
+    assert_eq!(by_owner_with_deleted.items.len(), 1);
     assert_eq!(
-        by_owner_with_deleted[0].status,
+        by_owner_with_deleted.items[0].status,
         AgentBusinessStatus::Deleted
     );
 }
@@ -843,8 +862,8 @@ fn list_filters_by_search_query_across_code_name_and_description() {
             requested_by: sample_subject(),
         })
         .expect("list by code search should succeed");
-    assert_eq!(by_code.len(), 1);
-    assert_eq!(by_code[0].agent_id, "agent.search.alpha");
+    assert_eq!(by_code.items.len(), 1);
+    assert_eq!(by_code.items[0].agent_id, "agent.search.alpha");
 
     let by_name = service
         .list_agents(ListAgentsCommand {
@@ -852,8 +871,8 @@ fn list_filters_by_search_query_across_code_name_and_description() {
             requested_by: sample_subject(),
         })
         .expect("list by display name search should succeed");
-    assert_eq!(by_name.len(), 1);
-    assert_eq!(by_name[0].agent_id, "agent.search.beta");
+    assert_eq!(by_name.items.len(), 1);
+    assert_eq!(by_name.items[0].agent_id, "agent.search.beta");
 
     let by_description = service
         .list_agents(ListAgentsCommand {
@@ -861,8 +880,8 @@ fn list_filters_by_search_query_across_code_name_and_description() {
             requested_by: sample_subject(),
         })
         .expect("list by description search should succeed");
-    assert_eq!(by_description.len(), 1);
-    assert_eq!(by_description[0].agent_id, "agent.search.beta");
+    assert_eq!(by_description.items.len(), 1);
+    assert_eq!(by_description.items[0].agent_id, "agent.search.beta");
 }
 
 #[test]
@@ -1065,11 +1084,15 @@ fn list_agent_audit_events_returns_events_for_agent() {
         .expect("status transition should succeed");
 
     let events = service
-        .list_agent_audit_events(100_001, "agent.audit.list", sample_subject())
+        .list_agent_audit_events(ListAgentAuditEventsCommand {
+            query: AuditEventListQuery::for_agent(100_001, "agent.audit.list")
+                .with_pagination(PaginationParams::default().with_page_size(MAX_PAGE_SIZE)),
+            requested_by: sample_subject(),
+        })
         .expect("list audit events should succeed");
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].event_type, "agent.business.status_changed");
-    assert_eq!(events[1].event_type, "agent.business.created");
+    assert_eq!(events.items.len(), 2);
+    assert_eq!(events.items[0].event_type, "agent.business.status_changed");
+    assert_eq!(events.items[1].event_type, "agent.business.created");
 }
 
 #[test]
@@ -1126,6 +1149,7 @@ fn send_chat_message_persists_user_and_assistant_turn() {
             content_type: "text/plain".to_string(),
             metadata_json: "{}".to_string(),
             model_id: None,
+            owner_scope: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:30Z".to_string(),
         })
@@ -1136,4 +1160,50 @@ fn send_chat_message_persists_user_and_assistant_turn() {
     assert_eq!(result.assistant_message.role, AgentMessageRole::Assistant);
     assert!(!result.assistant_message.content.is_empty());
     assert_eq!(result.session.message_count, 2);
+}
+
+#[test]
+fn get_session_rejects_foreign_owner_scope() {
+    let repository = InMemoryAgentRepository::new();
+    let (audit_sink, _events) = RecordingAuditSink::new();
+    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+    let created = service
+        .create_agent(create_agent_cmd(
+            "agent.owner.scope",
+            100_001,
+            0,
+            100,
+            "owner-scope",
+            "Owner Scope",
+            "2026-06-01T05:00:00Z",
+        ))
+        .expect("create should succeed");
+
+    let session = service
+        .create_session(CreateSessionCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: created.agent_id.clone(),
+            owner_user_id: 100,
+            session_id: String::new(),
+            title: Some("Private chat".to_string()),
+            provider_binding_id: None,
+            model_id: None,
+            metadata_json: "{}".to_string(),
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:01:00Z".to_string(),
+        })
+        .expect("create session should succeed");
+
+    let error = service
+        .get_session(GetSessionCommand {
+            tenant_id: 100_001,
+            session_id: session.session_id.clone(),
+            owner_scope: Some(999),
+            requested_by: sample_subject(),
+        })
+        .expect_err("foreign owner must not read session");
+    assert!(error.to_string().contains("session not found"));
 }

@@ -71,6 +71,7 @@ export const SelectModelPopover: React.FC<SelectModelPopoverProps> = ({
         window.removeEventListener('scroll', updatePosition, true);
       };
     }
+    return undefined;
   }, [isOpen, triggerElement, selectedModelId]);
 
   const filteredModels = models.filter(m => {

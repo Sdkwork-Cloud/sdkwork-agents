@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "智能体",
   "navigationBarBackgroundColor": "#141414",
-  "navigationBarTextStyle": "white"
+  "navigationBarTextStyle": "white",
+  "enablePullDownRefresh": true
 }

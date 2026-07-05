@@ -865,6 +865,21 @@ impl AgentSessionRecord {
         self.version = self.version.saturating_add(1);
     }
 
+    /// Record one persisted user + assistant chat turn (single optimistic version bump).
+    pub fn record_chat_turn(
+        &mut self,
+        input_tokens: u64,
+        output_tokens: u64,
+        occurred_at: impl Into<String>,
+    ) {
+        self.message_count = self.message_count.saturating_add(2);
+        self.total_input_tokens = self.total_input_tokens.saturating_add(input_tokens);
+        self.total_output_tokens = self.total_output_tokens.saturating_add(output_tokens);
+        self.last_message_at = Some(occurred_at.into());
+        self.updated_at = self.last_message_at.clone().unwrap_or_else(|| self.updated_at.clone());
+        self.version = self.version.saturating_add(1);
+    }
+
     pub fn close(&mut self, closed_at: impl Into<String>) {
         let ts = closed_at.into();
         self.status = AgentSessionStatus::Closed;

@@ -16,7 +16,7 @@ The repository root `sdkwork.app.config.json` governs the primary application ma
 | --- | --- | --- | --- | --- | --- |
 | sdkwork-agents-pc | pc | yes | yes | SDKWork Agents PC application root. | `sdkwork-agents-pc/` |
 | sdkwork-agents-h5 | h5 | yes | yes | SDKWork Agents H5 application root. | `sdkwork-agents-h5/` |
-| sdkwork-agents-mini-program | mini-program | yes | partial (WebView + runtime SDK) | SDKWork Agents Mini Program root. | `sdkwork-agents-mini-program/` |
+| sdkwork-agents-mini-program | mini-program | yes | partial (native list + H5 editor) | Native agents list + H5 fallback page. | `sdkwork-agents-mini-program/` |
 | sdkwork-agents-flutter-mobile | flutter-mobile | yes | no (`pending-dart-sdk`) | Flutter scaffold; Dart SDK not wired. | `sdkwork-agents-flutter-mobile/` |
 
 ## Allowed Content

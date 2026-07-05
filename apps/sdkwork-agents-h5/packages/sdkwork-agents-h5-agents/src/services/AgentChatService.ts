@@ -1,3 +1,4 @@
+import { sendAgentChatMessageSync } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
 import {
   getAgentsAppSdkClientWithSession,
   type SdkworkAgentsAppClient,
@@ -11,6 +12,9 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
 }
+
+/** Matches backend `CHAT_CONTEXT_MESSAGE_LIMIT` for one interactive chat page. */
+const CHAT_MESSAGE_PAGE_SIZE = 50;
 
 function pickString(record: Record<string, unknown> | undefined, keys: string[]): string | undefined {
   if (!record) {
@@ -38,11 +42,17 @@ function toSessionId(record: Record<string, unknown>): string {
   return pickString(record, ["sessionId", "session_id", "id"]) ?? "";
 }
 
+function readSessionStatus(record: Record<string, unknown>): string | undefined {
+  return pickString(record, ["status"]);
+}
+
 export class AgentChatService {
-  constructor(private readonly client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession()) {}
+  constructor(
+    private readonly getClient: () => SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession,
+  ) {}
 
   async createSession(agentId: string, title?: string): Promise<string> {
-    const response = await this.client.ai.agents.sessions.create(agentId, {
+    const response = await this.getClient().ai.agents.sessions.create(agentId, {
       title: title?.trim() || "Chat",
       requestedAt: new Date().toISOString(),
     });
@@ -54,10 +64,38 @@ export class AgentChatService {
     return sessionId;
   }
 
-  async listMessages(agentId: string, sessionId: string): Promise<ChatMessage[]> {
-    const response = await this.client.ai.agents.messages.list(agentId, sessionId, {
+  async listSessions(agentId: string, page = 1, pageSize = 10): Promise<string[]> {
+    const response = await this.getClient().ai.agents.sessions.list(agentId, { page, pageSize });
+    return extractArray(response)
+      .map((item) => (isRecord(item) ? toSessionId(item) : ""))
+      .filter((sessionId) => sessionId.length > 0);
+  }
+
+  /** Reuse the latest active session when present; otherwise create one. */
+  async resolveOrCreateSession(agentId: string, title?: string): Promise<string> {
+    const response = await this.getClient().ai.agents.sessions.list(agentId, {
       page: 1,
-      pageSize: 100,
+      pageSize: 10,
+    });
+    const sessions = extractArray(response).filter(isRecord);
+    const reusable = sessions.find((session) => {
+      const status = readSessionStatus(session);
+      return !status || status === "active";
+    });
+    if (reusable) {
+      const sessionId = toSessionId(reusable);
+      if (sessionId) {
+        return sessionId;
+      }
+    }
+    return this.createSession(agentId, title);
+  }
+
+  /** Load one server page for interactive chat history (`PAGINATION_SPEC.md` §8). */
+  async listMessages(agentId: string, sessionId: string): Promise<ChatMessage[]> {
+    const response = await this.getClient().ai.agents.messages.list(agentId, sessionId, {
+      page: 1,
+      pageSize: CHAT_MESSAGE_PAGE_SIZE,
     });
     return extractArray(response)
       .map((item) => (isRecord(item) ? toChatMessage(item) : undefined))
@@ -77,13 +115,11 @@ export class AgentChatService {
       requestedAt: new Date().toISOString(),
       ...(modelId ? { modelId } : {}),
     };
-    const path = `/ai/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionId)}/messages?stream=false`;
-    const response = await this.client.http.post<unknown>(
-      path,
+    const response = await sendAgentChatMessageSync(
+      this.getClient(),
+      agentId,
+      sessionId,
       body,
-      undefined,
-      undefined,
-      "application/json",
     );
     const completion = extractResourceRecord(response);
     const assistantRecord = isRecord(completion.assistantMessage)

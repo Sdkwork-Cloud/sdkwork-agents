@@ -17,6 +17,16 @@ export interface AgentChatViewProps {
   onBack: () => void;
 }
 
+/** Maximum in-memory chat bubbles for one interactive session view. */
+const MAX_CHAT_MESSAGES = 200;
+
+function trimMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= MAX_CHAT_MESSAGES) {
+    return messages;
+  }
+  return messages.slice(messages.length - MAX_CHAT_MESSAGES);
+}
+
 function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
@@ -50,8 +60,7 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
       try {
         let sessionTitle = initialAgentName ?? "Chat";
         if (!initialAgentName || !initialWelcomeMessage) {
-          const agents = await agentService.getAgents();
-          const agent = agents.find((item) => item.id === agentId);
+          const agent = await agentService.getAgent(agentId);
           if (agent && !cancelled) {
             sessionTitle = agent.name;
             setAgentName(agent.name);
@@ -61,15 +70,15 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
           }
         }
 
-        const createdSessionId = await agentChatService.createSession(agentId, sessionTitle);
+        const resolvedSessionId = await agentChatService.resolveOrCreateSession(agentId, sessionTitle);
         if (cancelled) {
           return;
         }
-        setSessionId(createdSessionId);
+        setSessionId(resolvedSessionId);
 
-        const history = await agentChatService.listMessages(agentId, createdSessionId);
+        const history = await agentChatService.listMessages(agentId, resolvedSessionId);
         if (!cancelled) {
-          setMessages(history);
+          setMessages(trimMessages(history));
         }
       } catch {
         if (!cancelled) {
@@ -103,13 +112,14 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
       content: content.trim(),
       createdAt: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => trimMessages([...prev, userMessage]));
     setIsTyping(true);
 
     try {
       const assistant = await agentChatService.sendMessage(agentId, sessionId, content.trim());
-      setMessages((prev) => [...prev, assistant]);
+      setMessages((prev) => trimMessages([...prev, assistant]));
     } catch {
+      setMessages((prev) => prev.filter((message) => message.id !== userMessage.id));
       toast("发送失败：后端未返回有效回复", "error");
     } finally {
       setIsTyping(false);

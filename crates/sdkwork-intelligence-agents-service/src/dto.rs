@@ -12,7 +12,7 @@ use crate::domain::{
     AgentProviderBindingRecord, AgentRuntimeExecutionRecord, AgentSessionRecord,
     AgentVisibility,
 };
-use crate::ports::{AgentListQuery, MessageListQuery, SessionListQuery};
+use crate::ports::{AgentListQuery, MessageListQuery, PaginationParams, SessionListQuery};
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id, parse_tenant_id,
     validate_requested_at,
@@ -30,6 +30,8 @@ pub struct ListAgentsRequestDto {
     pub owner_user_id: Option<String>,
     pub include_deleted: bool,
     pub search_query: Option<String>,
+    pub visibility: Option<String>,
+    pub pagination: PaginationParams,
 }
 
 impl ListAgentsRequestDto {
@@ -47,6 +49,10 @@ impl ListAgentsRequestDto {
         if let Some(search_query) = self.search_query {
             query = query.with_search(search_query);
         }
+        if let Some(visibility) = self.visibility {
+            query = query.with_visibility(parse_visibility(&visibility)?);
+        }
+        query = query.with_pagination(self.pagination);
         Ok(ListAgentsCommand {
             query,
             requested_by,
@@ -938,6 +944,7 @@ impl CloseSessionRequestDto {
             tenant_id: parse_tenant_id(&self.tenant_id)?,
             session_id,
             expected_version,
+            owner_scope: None,
             requested_by,
             requested_at: self.requested_at,
         })
@@ -968,6 +975,7 @@ impl ArchiveSessionRequestDto {
             tenant_id: parse_tenant_id(&self.tenant_id)?,
             session_id,
             expected_version,
+            owner_scope: None,
             requested_by,
             requested_at: self.requested_at,
         })
@@ -1181,6 +1189,7 @@ impl ListMessagesRequestDto {
         }
         Ok(ListMessagesCommand {
             query,
+            owner_scope: None,
             requested_by,
         })
     }
@@ -1450,6 +1459,8 @@ mod tests {
             owner_user_id: None,
             include_deleted: false,
             search_query: Some("beta".to_string()),
+            visibility: None,
+            pagination: PaginationParams::default(),
         }
         .into_command(sample_subject())
         .expect("mapping should succeed");

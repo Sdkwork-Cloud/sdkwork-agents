@@ -5,7 +5,7 @@ import {
 import type { SdkworkAgentsAppClient } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 
 import type { AgentConfig } from "./AgentService";
-import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";
+import { extractArray, extractResourceRecord, isRecord, syncAllOffsetPages } from "./sdkEnvelope";
 
 type CompositionSlotKind = "memory" | "knowledge" | "skill" | "prompt" | "drive" | "tool";
 type CompositionTargetModule = "memory" | "knowledgebase" | "skills" | "prompts" | "drive";
@@ -72,12 +72,20 @@ export async function syncAgentCompositionSlots(
   const desired = buildDesiredCompositionSlots(config);
   const desiredIds = new Set(desired.map((slot) => slot.slotId));
 
-  const existing = await client.ai.agents.compositionSlots.list(agentId);
-  const existingItems = extractArray(existing)
-    .map((item) => extractResourceRecord(item))
-    .filter((item): item is Record<string, unknown> & { slotId: string; version?: string } =>
-      isRecord(item) && typeof item.slotId === "string",
-    );
+  const existingItems = await syncAllOffsetPages<
+    Record<string, unknown> & { slotId: string; version?: string }
+  >(
+      (params) => client.ai.agents.compositionSlots.list(agentId, params),
+      {
+        mapItems: (response) =>
+          extractArray(response)
+            .map((item) => extractResourceRecord(item))
+            .filter(
+              (item): item is Record<string, unknown> & { slotId: string; version?: string } =>
+                isRecord(item) && typeof item.slotId === "string",
+            ),
+      },
+  );
 
   for (const item of existingItems) {
     if (!desiredIds.has(item.slotId)) {

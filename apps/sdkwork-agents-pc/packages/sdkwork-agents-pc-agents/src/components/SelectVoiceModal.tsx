@@ -39,12 +39,16 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
     setLoading(true);
     try {
       const [market, my] = await Promise.all([
-        voiceService.getMarketVoices(),
-        voiceService.getMyVoices(),
+        voiceService.getMarketVoices(1),
+        voiceService.getMyVoices(1),
       ]);
-      setVoices([...market, ...my]);
+      setVoices([...market.items, ...my.items]);
     } catch (error) {
       console.error('Failed to load voices:', error);
+      toast(
+        error instanceof Error ? error.message : '无法加载声音目录，请检查 Voice SDK 配置',
+        'error',
+      );
     } finally {
       setLoading(false);
     }

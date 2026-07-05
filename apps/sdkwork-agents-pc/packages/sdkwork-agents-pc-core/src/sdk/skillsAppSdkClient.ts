@@ -2,7 +2,7 @@ import {
   createClient,
   type SdkworkAppClient as GeneratedSkillsAppClient,
   type SdkworkAppConfig,
-} from "sdkwork-skills-app-sdk-generated-typescript";
+} from "@sdkwork/skills-app-sdk";
 import type { Interceptors } from "@sdkwork/sdk-common";
 
 import {

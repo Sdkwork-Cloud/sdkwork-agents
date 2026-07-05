@@ -326,7 +326,7 @@ mod tests {
         assert_eq!(404, payload["status"].as_u64().unwrap());
         assert_eq!(40401, payload["code"].as_i64().unwrap());
         assert_eq!(
-            "https://sdkwork.dev/problems/not-found",
+            "https://docs.sdkwork.com/problems/40401",
             payload["type"].as_str().unwrap()
         );
     }

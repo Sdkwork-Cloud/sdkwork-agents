@@ -14,6 +14,12 @@ const fakeClient = {
   ai: {
     agents: {
       sessions: {
+        async list() {
+          return {
+            items: [{ sessionId: "session.test.1", status: "active" }],
+            pageInfo: { page: 1, pageSize: 10, hasMore: false },
+          };
+        },
         async create(_agentId: string, body: { title?: string }) {
           return {
             sessionId: "session.test.1",
@@ -32,7 +38,7 @@ const fakeClient = {
                 createdAt: "2026-06-01T00:00:00Z",
               },
             ],
-            pageInfo: { page: 1, pageSize: 100, totalItems: "1", totalPages: 1 },
+            pageInfo: { page: 1, pageSize: 20, totalItems: "1", totalPages: 1 },
           };
         },
       },
@@ -56,7 +62,7 @@ const fakeClient = {
 const { AgentChatService } = await loadAgentChatService();
 const chat = new AgentChatService(() => fakeClient);
 
-const sessionId = await chat.createSession("agent.test", "Contract chat");
+const sessionId = await chat.resolveOrCreateSession("agent.test", "Contract chat");
 assert.equal(sessionId, "session.test.1");
 
 const messages = await chat.listMessages("agent.test", sessionId);

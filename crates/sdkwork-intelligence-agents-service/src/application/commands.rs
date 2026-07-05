@@ -10,7 +10,10 @@ use crate::domain::{
     AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
     AgentMessageRole, AgentSessionRecord, AgentMessageRecord, AgentVisibility,
 };
-use crate::ports::{AgentListQuery, InteractionListQuery, MessageListQuery, SessionListQuery};
+use crate::ports::{
+    AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
+    McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery, SessionListQuery,
+};
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
 
@@ -223,9 +226,26 @@ pub struct AgentCompositionSlotDeleteCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderBindingListCommand {
+    pub query: ProviderBindingListQuery,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListAgentAuditEventsCommand {
+    pub query: AuditEventListQuery,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListMcpMarketplaceCommand {
+    pub query: McpMarketplaceListQuery,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCompositionSlotListCommand {
-    pub tenant_id: u64,
-    pub agent_id: String,
+    pub query: CompositionSlotListQuery,
     pub requested_by: PolicySubject,
 }
 
@@ -261,6 +281,8 @@ pub struct CloseSessionCommand {
     pub tenant_id: u64,
     pub session_id: String,
     pub expected_version: Option<u64>,
+    /// When set, the session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
@@ -270,6 +292,8 @@ pub struct ArchiveSessionCommand {
     pub tenant_id: u64,
     pub session_id: String,
     pub expected_version: Option<u64>,
+    /// When set, the session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
@@ -278,6 +302,8 @@ pub struct ArchiveSessionCommand {
 pub struct GetSessionCommand {
     pub tenant_id: u64,
     pub session_id: String,
+    /// When set, the session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
@@ -315,12 +341,16 @@ pub struct GetMessageCommand {
     pub tenant_id: u64,
     pub session_id: String,
     pub message_id: String,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListMessagesCommand {
     pub query: MessageListQuery,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
@@ -334,6 +364,8 @@ pub struct SendChatMessageCommand {
     pub content_type: String,
     pub metadata_json: String,
     pub model_id: Option<String>,
+    /// When set, the session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }

@@ -43,7 +43,7 @@ The agents database follows a **composition-plane architecture** that achieves h
 3. **Multi-Tenant Isolation**: All queries scoped by `tenant_id` with optional RLS
 4. **Soft-Delete Safety**: Unique constraints use partial indexes excluding soft-deleted records
 5. **Immutable Audit**: Append-only audit log with no UPDATE/DELETE capability
-6. **No Over-Design**: Only 6 tables — identity, binding, composition, audit, session, message
+6. **No Over-Design**: Seven persisted tables — identity, binding, composition, audit, session, message, interaction
 
 ### Removed Tables (v3 simplification)
 
@@ -205,4 +205,10 @@ This schema design aligns with:
 - [x] Cross-module boundary enforcement (composition_slot only)
 - [x] Optimistic locking (version columns)
 - [x] Index optimization (tenant-scoped, composite)
-- [x] No dead code (all 6 tables have active business logic)
+- [x] No dead code (all persisted tables have active business logic)
+
+## List Query Pagination (`PAGINATION_SPEC.md`)
+
+All agents managed-store list authorities push `WHERE` filters, stable `ORDER BY`, `LIMIT`, `OFFSET`, and matching `COUNT(*)` to SQL. HTTP handlers use `sdkwork-utils-rust` `OffsetListPageParams` / `offset_list_page_info` and return `SdkWorkPageData` with `pageInfo.mode=offset`, `totalItems`, and `hasMore`. In-memory repositories used in tests/dev maintain incrementally updated `BTreeMap` indexes and page through `offset_limit_page_from_iter`. Interactive client surfaces call `listAgentsPage()` (default `page_size=20`); export/sync-only flows use `syncAllOffsetPages()` to follow server pages — never a single oversized `page_size` substitute or client-side slice pagination.
+
+Authority: `crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md` §8.

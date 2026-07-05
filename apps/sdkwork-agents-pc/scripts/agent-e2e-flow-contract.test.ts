@@ -32,7 +32,7 @@ const fakeClient = {
         async list() {
           return {
             items: compositionSlots,
-            pageInfo: { page: 1, pageSize: 100, totalItems: String(compositionSlots.length), totalPages: 1 },
+            pageInfo: { page: 1, pageSize: 20, totalItems: String(compositionSlots.length), totalPages: 1 },
           };
         },
         async create(_agentId: string, body: { data?: Record<string, unknown> }) {
@@ -78,7 +78,7 @@ const fakeClient = {
         async list() {
           return {
             items: [],
-            pageInfo: { page: 1, pageSize: 100, totalItems: "0", totalPages: 1 },
+            pageInfo: { page: 1, pageSize: 20, totalItems: "0", totalPages: 1 },
           };
         },
       },

@@ -22,11 +22,13 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 // src/bootstrap/runtimeBundle.ts
 var runtimeBundle_exports = {};
 __export(runtimeBundle_exports, {
-  bootstrapAgentsMiniProgram: () => bootstrapAgentsMiniProgram
+  bootstrapAgentsMiniProgram: () => bootstrapAgentsMiniProgram,
+  configureAgentsAppSdkBaseUrl: () => configureAgentsAppSdkBaseUrl,
+  getAgentsMpSdkClient: () => getAgentsMpSdkClient
 });
 module.exports = __toCommonJS(runtimeBundle_exports);
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/core/types.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/core/types.js
 var DEFAULT_RETRY_CONFIG = {
   maxRetries: 3,
   retryDelay: 1e3,
@@ -72,7 +74,7 @@ var MIME_TYPES = {
   TEXT_HTML: "text/html"
 };
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/auth/token-manager.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/auth/token-manager.js
 var DefaultAuthTokenManager = class {
   constructor(initialTokens, events) {
     __publicField(this, "tokens", {});
@@ -164,7 +166,7 @@ function buildAuthHeaders(authMode, apiKey, tokenManager) {
   return headers;
 }
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/logger.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/logger.js
 var LOG_LEVELS = {
   debug: 0,
   info: 1,
@@ -259,7 +261,7 @@ function createLogger(config) {
   return new ConsoleLogger(config);
 }
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/cache.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/cache.js
 var MemoryCacheStore = class {
   constructor(config = {}) {
     __publicField(this, "cache", /* @__PURE__ */ new Map());
@@ -318,7 +320,7 @@ function createCacheStore(config) {
   return new MemoryCacheStore(config);
 }
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/errors.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/errors.js
 var SdkError = class extends Error {
   constructor(message, code = "UNKNOWN", httpStatus, options) {
     super(message, { cause: options == null ? void 0 : options.cause });
@@ -534,7 +536,7 @@ function isRetryableError(error) {
   return error instanceof NetworkError || error instanceof TimeoutError || error instanceof ServerError || error instanceof RateLimitError || error instanceof BadGatewayError || error instanceof ServiceUnavailableError || error instanceof GatewayTimeoutError;
 }
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/retry.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/retry.js
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -578,7 +580,7 @@ async function withRetry(fn, config = {}) {
   throw lastError;
 }
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/string.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/string.js
 var StringUtils;
 (function(_StringUtils) {
   function isEmpty(value) {
@@ -1408,7 +1410,7 @@ var StringUtils;
   _StringUtils.includesAny = includesAny;
 })(StringUtils || (StringUtils = {}));
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/encoding.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/encoding.js
 var Encoding;
 (function(_Encoding) {
   function base64Encode(input) {
@@ -2030,7 +2032,7 @@ Encoding.queryStringDecode;
 Encoding.slugify;
 Encoding.unslugify;
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/date.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/utils/date.js
 var MILLISECONDS_IN_SECOND = 1e3;
 var MILLISECONDS_IN_MINUTE = 60 * MILLISECONDS_IN_SECOND;
 var MILLISECONDS_IN_HOUR = 60 * MILLISECONDS_IN_MINUTE;
@@ -2048,7 +2050,7 @@ var TIME_UNITS_IN_MS = {
   year: 365 * MILLISECONDS_IN_DAY
 };
 
-// ../../../sdkwork-im/node_modules/.pnpm-codex-new/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/http/base-client.js
+// ../../../sdkwork-im/node_modules/.pnpm/@sdkwork+sdk-common@1.0.3/node_modules/@sdkwork/sdk-common/dist/http/base-client.js
 var BaseHttpClient = class {
   constructor(config) {
     __publicField(this, "config");
@@ -2778,8 +2780,12 @@ var AiAgentsCompositionSlotsApi = class {
     this.client = client;
   }
   /** List composition slots for one managed agent */
-  async list(agentId) {
-    return this.client.get(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/composition_slots`));
+  async list(agentId, params) {
+    const query = buildQueryString([
+      { name: "page", value: params == null ? void 0 : params.page, style: "form", explode: true, allowReserved: false },
+      { name: "page_size", value: params == null ? void 0 : params.pageSize, style: "form", explode: true, allowReserved: false }
+    ]);
+    return this.client.get(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/composition_slots`), query));
   }
   /** Create a composition slot for one managed agent */
   async create(agentId, body) {
@@ -2906,6 +2912,7 @@ var AiAgentsApi = class {
   async list(params) {
     const query = buildQueryString([
       { name: "include_deleted", value: params == null ? void 0 : params.includeDeleted, style: "form", explode: true, allowReserved: false },
+      { name: "scope", value: params == null ? void 0 : params.scope, style: "form", explode: true, allowReserved: false },
       { name: "page", value: params == null ? void 0 : params.page, style: "form", explode: true, allowReserved: false },
       { name: "page_size", value: params == null ? void 0 : params.pageSize, style: "form", explode: true, allowReserved: false },
       { name: "q", value: params == null ? void 0 : params.q, style: "form", explode: true, allowReserved: false }
@@ -3115,6 +3122,11 @@ function createClient(config) {
   return new SdkworkAppClient(config);
 }
 
+// ../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/src/index.ts
+function createClient2(config) {
+  return createClient(config);
+}
+
 // packages/sdkwork-agents-mp-core/src/session/session.ts
 var SDKWORK_AGENTS_MP_SESSION_KEY = "sdkwork-agents-mp:session:v1";
 function readWxStorage(key) {
@@ -3180,8 +3192,11 @@ function createAgentsAppSdkClientConfig(session) {
   };
 }
 function initAgentsAppSdkClient(config = createAgentsAppSdkClientConfig()) {
-  agentsAppSdkClient = createClient(config);
+  agentsAppSdkClient = createClient2(config);
   return agentsAppSdkClient;
+}
+function getAgentsAppSdkClient() {
+  return agentsAppSdkClient != null ? agentsAppSdkClient : initAgentsAppSdkClient();
 }
 
 // src/bootstrap/sdkClients.ts
@@ -3202,4 +3217,7 @@ function bootstrap(options = {}) {
 // src/bootstrap/runtimeBundle.ts
 function bootstrapAgentsMiniProgram(options = {}) {
   return bootstrap(options);
+}
+function getAgentsMpSdkClient() {
+  return getAgentsAppSdkClient();
 }

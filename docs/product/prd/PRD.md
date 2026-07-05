@@ -58,7 +58,7 @@ sdkwork-agents 解决的核心问题：
 
 ## 4. Scope
 
-### Core Owned Tables (6 tables, all `ai_` prefix)
+### Core Owned Tables (7 tables, all `ai_` prefix)
 
 | Table | Responsibility |
 | --- | --- |
@@ -68,6 +68,7 @@ sdkwork-agents 解决的核心问题：
 | `ai_agent_audit_event` | 不可变管理审计日志 |
 | `ai_agent_session` | 托管 chat 会话（tenant/agent/owner 作用域） |
 | `ai_agent_message` | 会话消息与 chat turn 持久化 |
+| `ai_agent_interaction` | 实时交互（code-engine 审批流） |
 
 ### App-only Runtime Catalog APIs
 
@@ -148,26 +149,32 @@ sdkwork-agents 解决的核心问题：
 - [x] 修复 tenant_id 空默认值安全问题
 - [ ] 拆分超大文件 `http.rs` / `persistence.rs`（可维护性优化，非上线阻塞项）
 
-### Phase 3 — Client & Observability (基本完成)
+### Phase 3 — Client & Observability (已完成)
 
 - [x] Prometheus metrics 采集（`/metrics/agents`，含 `sdkwork_agents_requests_per_second`）
 - [x] CI 运行 feature-gated HTTP/Postgres 契约测试（`default = ["http-axum", "postgres-sync"]`）
 - [x] Postgres interaction 持久化
 - [x] 生产环境禁用 Postgres 不可用时的内存静默降级
-- [x] PC/H5 生产聊天页（`AgentChatView`，sessions/messages API）
+- [x] PC/H5 生产聊天页（`AgentChatView`，sessions/messages API，会话恢复 + 消息上限）
 - [x] PC/H5 客户端：Auth Gate、知识库 bootstrap、运行时 catalog、composition slot 同步
-- [x] 可选 sibling SDK：skills / voice catalog（`sdkwork-skills-app-sdk`、`sdkwork-voice-app-sdk`）
+- [x] 可选 sibling SDK：skills / voice catalog（无 silent fallback，分页加载）
 - [x] 小程序 runtime bundle 与 TypeScript bootstrap 对齐（verify 门禁）
 - [x] 客户端 E2E 流程 contract（create agent → chat，`agent-e2e-flow-contract.test.ts`）
-- [ ] 小程序原生页面（当前 agents 页仍为 H5 WebView）
+- [x] 小程序原生 agents 列表页（App API + runtime SDK；完整编辑器仍走 `pages/agents-h5` WebView）
+- [x] 生产聊天接入 `RuntimeFacadeChatCompleter`（code-engine facade，无 contract stub）
+- [x] App API 会话 owner 隔离（`owner_scope`）
+- [x] 聊天 turn 原子持久化（Postgres 事务 + `insert_chat_turn`）
 - [ ] Flutter Dart SDK 与移动端屏幕（`pending-dart-sdk`）
 
-### Phase 4 — Commercial GA (未开始)
+### Phase 4 — Commercial GA (进行中)
 
 - [ ] 应用商店/渠道发布元数据（截图、描述、`sdkwork.workflow.json` GA 渠道）
-- [x] 端到端自动化 contract（Auth 由 contract 覆盖 scope；create → chat 在 `test:agent-contracts`）
-- [ ] 端到端 live 冒烟（见 [smoke-test.md](../../runbooks/smoke-test.md)）
+- [x] 端到端自动化 contract（create → chat，纳入 `test:agent-contracts`）
+- [x] Live gateway 冒烟脚本（`pnpm smoke:live`，需运行中的 gateway）
+- [ ] 端到端 live 全链路（Auth + CRUD + Chat + 真实 code-engine 推理，见 [smoke-test.md](../../runbooks/smoke-test.md)）
 - [ ] Grafana 仪表盘对接 `/metrics` + `/metrics/agents`（运维平台）
+- [x] 移除客户端虚假 catalog fallback（Voice / Skills）
+- [x] SDK `sendAgentChatMessageSync` 封装非流式 chat send
 
 ## 8. Linked Requirements
 

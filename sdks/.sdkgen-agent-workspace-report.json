@@ -3,8 +3,8 @@
   "app": "agents",
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
-  "sdkgenPath": "../sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-06-30T06:13:06.247Z",
+  "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
+  "startedAt": "2026-07-05T05:47:39.169Z",
   "families": [
     {
       "key": "app",
@@ -32,12 +32,12 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "f9aab226a2bde1e22e3d0c81523fe750e0af1c27fda28021d9c96073e8d34c5e",
+      "fingerprint": "563d8cedd83b26ae75efe9a890ae73777bed7b0afc694821569bcfb1559fbdb3",
       "hasChanges": true,
       "riskLevel": "medium",
       "generated": true
     }
   ],
   "openSdkDerivedFromApp": true,
-  "finishedAt": "2026-06-30T06:13:07.078Z"
+  "finishedAt": "2026-07-05T05:47:39.765Z"
 }

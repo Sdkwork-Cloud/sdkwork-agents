@@ -94,7 +94,7 @@ const fakeClient = {
         async list(agentId: string) {
           return {
             items: compositionSlotsByAgent.get(agentId) ?? [],
-            pageInfo: { page: 1, pageSize: 100, totalItems: '0', totalPages: 1 },
+            pageInfo: { page: 1, pageSize: 20, totalItems: '0', totalPages: 1 },
           };
         },
         async create(agentId: string, body: RecordLike) {
@@ -113,12 +113,12 @@ const fakeClient = {
       },
       async list(params: RecordLike) {
         assert.equal(params.page, 1);
-        assert.equal(params.pageSize, 100);
+        assert.equal(params.pageSize, 20);
         return {
           items: [makeAgentRecord()],
           pageInfo: {
             page: 1,
-            pageSize: 100,
+            pageSize: 20,
             totalItems: '1',
             totalPages: 1,
           },
@@ -155,7 +155,8 @@ const fakeClient = {
 const { createSdkworkAgentService } = await loadAgentServiceModule();
 const agentService = createSdkworkAgentService(() => fakeClient);
 
-const [listedAgent] = await agentService.getAgents();
+const listedPage = await agentService.listAgentsPage();
+const listedAgent = listedPage.items[0];
 assert.ok(listedAgent, 'expected one listed agent');
 assert.equal(listedAgent?.id, 'agent.pc.management.profile');
 assert.equal(listedAgent?.systemPrompt, 'Act as a precise product agent.');

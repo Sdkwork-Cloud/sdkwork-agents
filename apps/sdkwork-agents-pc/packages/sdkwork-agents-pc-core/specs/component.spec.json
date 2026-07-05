@@ -89,7 +89,7 @@
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
       "@sdkwork/knowledgebase-app-sdk",
-      "sdkwork-skills-app-sdk-generated-typescript",
+      "@sdkwork/skills-app-sdk",
       "@sdkwork/voice-app-sdk"
     ],
     "dependencyApiExports": [],

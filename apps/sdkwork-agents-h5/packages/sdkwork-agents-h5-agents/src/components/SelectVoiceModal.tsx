@@ -39,12 +39,16 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
     setLoading(true);
     try {
       const [market, my] = await Promise.all([
-        voiceService.getMarketVoices(),
-        voiceService.getMyVoices(),
+        voiceService.getMarketVoices(1),
+        voiceService.getMyVoices(1),
       ]);
-      setVoices([...market, ...my]);
+      setVoices([...market.items, ...my.items]);
     } catch (error) {
       console.error('Failed to load voices:', error);
+      toast(
+        error instanceof Error ? error.message : '无法加载声音目录，请检�?Voice SDK 配置',
+        'error',
+      );
     } finally {
       setLoading(false);
     }
@@ -108,8 +112,8 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#202020] shrink-0">
               <div>
-                <h2 className="text-xl font-bold text-gray-100 mb-1">选择发音人</h2>
-                <p className="text-xs text-gray-400">为你的智能体挑选合适的声音模型，支持多维度分类与专业克隆音色。</p>
+                <h2 className="text-xl font-bold text-gray-100 mb-1">选择发音�?/h2>
+                <p className="text-xs text-gray-400">为你的智能体挑选合适的声音模型，支持多维度分类与专业克隆音色�?/p>
               </div>
               <button
                 onClick={onClose}
@@ -204,7 +208,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                           <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
                             <div className="flex items-center gap-1.5 text-xs text-gray-500">
                               <User size={12} />
-                              <span>{voice.author || '我'}</span>
+                              <span>{voice.author || '�?}</span>
                             </div>
                             <button 
                               onClick={(e) => {
@@ -215,7 +219,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                                   });
                                   return;
                                 }
-                                toast('该音色暂无预览音频', 'info');
+                                toast('该音色暂无预览音�?, 'info');
                               }}
                               className="w-7 h-7 rounded-full bg-[#181818] border border-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-purple-500 hover:border-purple-500 transition-all opacity-0 group-hover:opacity-100"
                             >
@@ -233,8 +237,8 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
             {/* Footer */}
             <div className="p-4 border-t border-white/5 bg-[#202020] flex items-center justify-between shrink-0">
               <div className="text-sm text-gray-400">
-                已选择 <span className="text-purple-400 font-semibold">{currentSelection.length}</span> 个声音 
-                {isMulti && <span className="ml-2 text-xs text-gray-500">(支持多选)</span>}
+                已选择 <span className="text-purple-400 font-semibold">{currentSelection.length}</span> 个声�?
+                {isMulti && <span className="ml-2 text-xs text-gray-500">(支持多�?</span>}
               </div>
               <div className="flex items-center gap-3">
                 <button

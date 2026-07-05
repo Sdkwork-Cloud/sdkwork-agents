@@ -3,6 +3,8 @@ import {
   isVoiceAppSdkConfigured,
 } from "@sdkwork/agents-pc-core/sdk/voiceAppSdkClient";
 
+import { DEFAULT_LIST_PAGE_SIZE } from "@sdkwork/agents-pc-core/sdk/pagination";
+
 import { extractArray } from "./sdkEnvelope";
 
 export interface VoiceConfig {
@@ -17,41 +19,11 @@ export interface VoiceConfig {
   audioPreview?: string;
 }
 
-const FALLBACK_MARKET_VOICES: VoiceConfig[] = [
-  {
-    id: "voice-1",
-    name: "甜美女生-小悠",
-    description: "适合有声书、电台、温馨风格阅读。",
-    categoryId: "reading",
-    iconName: "Mic",
-    color: "bg-pink-500",
-    author: "Sdkwork Voice",
-    users: "12K",
-  },
-  {
-    id: "voice-2",
-    name: "沉稳男声-老赵",
-    description: "适合新闻播报、商业解说或历史纪实。",
-    categoryId: "news",
-    iconName: "Radio",
-    color: "bg-indigo-500",
-    author: "Official",
-    users: "8.5K",
-  },
-];
-
-const FALLBACK_MY_VOICES: VoiceConfig[] = [
-  {
-    id: "voice-my-1",
-    name: "自定义克隆声",
-    description: "基于上传样本训练的声音。",
-    categoryId: "custom",
-    iconName: "User",
-    color: "bg-purple-500",
-    author: "我",
-    users: "1",
-  },
-];
+export interface VoiceCatalogPage {
+  items: VoiceConfig[];
+  page: number;
+  hasMore: boolean;
+}
 
 function pickString(record: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
@@ -80,15 +52,27 @@ function mapVoiceRecord(record: Record<string, unknown>, index: number): VoiceCo
   };
 }
 
-async function loadVoicesFromSdk(): Promise<VoiceConfig[] | null> {
-  if (!isVoiceAppSdkConfigured()) {
-    return null;
+function readHasMore(response: Record<string, unknown>): boolean {
+  const pageInfo = response.pageInfo;
+  if (pageInfo && typeof pageInfo === "object" && !Array.isArray(pageInfo)) {
+    return Boolean((pageInfo as Record<string, unknown>).hasMore);
   }
-  try {
-    const response = await getVoiceAppSdkClient().voice.audioAssets.list({
-      page: 1,
-      pageSize: 100,
-    });
+  return false;
+}
+
+class VoiceService {
+  private ensureVoiceSdk(): void {
+    if (!isVoiceAppSdkConfigured()) {
+      throw new Error("Voice catalog SDK is not configured for this deployment.");
+    }
+  }
+
+  async listVoiceCatalogPage(page = 1, pageSize = DEFAULT_LIST_PAGE_SIZE): Promise<VoiceCatalogPage> {
+    this.ensureVoiceSdk();
+    const response = (await getVoiceAppSdkClient().voice.audioAssets.list({
+      page,
+      pageSize,
+    })) as unknown as Record<string, unknown>;
     const items = extractArray(response)
       .map((item, index) =>
         item && typeof item === "object"
@@ -96,27 +80,27 @@ async function loadVoicesFromSdk(): Promise<VoiceConfig[] | null> {
           : undefined,
       )
       .filter((item): item is VoiceConfig => Boolean(item));
-    return items.length > 0 ? items : null;
-  } catch {
-    return null;
-  }
-}
-
-class VoiceService {
-  async getMarketVoices(): Promise<VoiceConfig[]> {
-    const fromSdk = await loadVoicesFromSdk();
-    if (fromSdk) {
-      return fromSdk.filter((voice) => voice.categoryId !== "custom");
-    }
-    return FALLBACK_MARKET_VOICES;
+    return {
+      items,
+      page,
+      hasMore: readHasMore(response),
+    };
   }
 
-  async getMyVoices(): Promise<VoiceConfig[]> {
-    const fromSdk = await loadVoicesFromSdk();
-    if (fromSdk) {
-      return fromSdk.filter((voice) => voice.categoryId === "custom");
-    }
-    return FALLBACK_MY_VOICES;
+  async getMarketVoices(page = 1): Promise<VoiceCatalogPage> {
+    const catalog = await this.listVoiceCatalogPage(page);
+    return {
+      ...catalog,
+      items: catalog.items.filter((voice) => voice.categoryId !== "custom"),
+    };
+  }
+
+  async getMyVoices(page = 1): Promise<VoiceCatalogPage> {
+    const catalog = await this.listVoiceCatalogPage(page);
+    return {
+      ...catalog,
+      items: catalog.items.filter((voice) => voice.categoryId === "custom"),
+    };
   }
 }
 

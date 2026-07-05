@@ -1,5 +1,6 @@
 import {
   createClient,
+  sendAgentChatMessageSync,
   type SdkworkAppClient as GeneratedSdkworkAgentsAppClient,
   type SdkworkAppConfig,
 } from "@sdkwork/agents-app-sdk";
@@ -80,3 +81,5 @@ export type {
   CreateAgentRequest,
   UpdateAgentRequest,
 } from "@sdkwork/agents-app-sdk";
+
+export { sendAgentChatMessageSync };

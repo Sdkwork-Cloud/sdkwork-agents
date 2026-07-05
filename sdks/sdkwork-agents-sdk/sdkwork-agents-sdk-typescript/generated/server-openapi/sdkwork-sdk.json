@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "language": "typescript",
   "sdkType": "app",
-  "packageName": "@sdkwork/agents-sdk",
+  "packageName": "sdkwork-agents-sdk-generated-typescript",
+  "transportPackageName": "sdkwork-agents-sdk-generated-typescript",
+  "consumerPackageName": "@sdkwork/agents-sdk",
   "generator": "@sdkwork/sdk-generator",
   "capabilities": {
     "supportsGeneratedTests": true,

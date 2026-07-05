@@ -37,7 +37,7 @@ function verify(candidate) {
     candidate.title,
     'operationId: agents.list',
     'operationId: agents.providerBindings.create',
-    'operationId: agents.deployments.create',
+    'operationId: agents.compositionSlots.list',
     'Access-Token'
   ]) {
     if (!authorityText.includes(required) || !sdkgenText.includes(required)) {

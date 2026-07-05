@@ -18,7 +18,7 @@
         "./packages/sdkwork-agents-h5-shell/src/index.ts"
       ],
       "@sdkwork/agents-app-sdk": [
-        "../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts"
+        "../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/src/index.ts"
       ],
       "@sdkwork/sdk-common": [
         "../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript/src/index.ts"
@@ -26,11 +26,11 @@
       "@sdkwork/iam-contracts": [
         "../../../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-contracts/src/index.ts"
       ],
-      "sdkwork-skills-app-sdk-generated-typescript": [
-        "../../../sdkwork-skills/sdks/sdkwork-skills-app-sdk/sdkwork-skills-app-sdk-typescript/generated/server-openapi/src/index.ts"
+      "@sdkwork/skills-app-sdk": [
+        "../../../sdkwork-skills/sdks/sdkwork-skills-app-sdk/sdkwork-skills-app-sdk-typescript/src/index.ts"
       ],
       "@sdkwork/voice-app-sdk": [
-        "../../../sdkwork-voice/sdks/sdkwork-voice-app-sdk/sdkwork-voice-app-sdk-typescript/generated/server-openapi/src/index.ts"
+        "../../../sdkwork-voice/sdks/sdkwork-voice-app-sdk/sdkwork-voice-app-sdk-typescript/src/index.ts"
       ],
       "@sdkwork/knowledgebase-app-sdk": [
         "../../../sdkwork-knowledgebase/sdks/sdkwork-knowledgebase-app-sdk/sdkwork-knowledgebase-app-sdk-typescript/src/index.ts"

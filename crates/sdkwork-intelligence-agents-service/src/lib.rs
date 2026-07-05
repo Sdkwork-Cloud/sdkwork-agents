@@ -11,6 +11,7 @@ mod http;
 #[cfg(feature = "http-axum")]
 pub mod response;
 mod id;
+mod in_memory_pagination;
 mod infrastructure;
 mod persistence;
 mod ports;
@@ -31,12 +32,14 @@ pub use application::{
     ChangeAgentStatusCommand, ChatCompletionResult, CloseSessionCommand, CreateAgentCommand,
     CreateMessageCommand, CreateSessionCommand, DeleteAgentCommand, GetAgentCommand,
     GetInteractionCommand, GetMessageCommand, GetSessionCommand, ListAgentsCommand,
-    ListInteractionsCommand, ListMessagesCommand, ListSessionsCommand, RestoreAgentCommand,
+    ListAgentAuditEventsCommand, ListInteractionsCommand, ListMcpMarketplaceCommand,
+    ListMessagesCommand, ListSessionsCommand, ProviderBindingListCommand, RestoreAgentCommand,
     SendChatMessageCommand, UpdateAgentCommand,
 };
 pub use chat_runtime::{
     ChatCompleter, ChatCompletionInput, ChatCompletionOutput, ContractChatCompleter,
-    KernelModelChatCompleter, complete_chat_turn,
+    KernelModelChatCompleter, RuntimeFacadeChatCompleter, complete_chat_turn, is_inference_error,
+    RUNTIME_MODE_FACADE, RUNTIME_MODE_INFERENCE_ERROR,
 };
 pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
@@ -85,8 +88,11 @@ pub use infrastructure::{
 pub use persistence::{
     extract_event_context, PostgresAgentAuditSink, PostgresAgentRepository,
     PostgresAgentRepositoryAdapter, SQL_INSERT_AGENT, SQL_INSERT_AGENT_COMPOSITION_SLOT,
-    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT,
-    SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_PROVIDER_BINDINGS,
+    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT, SQL_COUNT_AGENT,
+    SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_COMPOSITION_SLOTS,
+    SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_COUNT_AGENT_PROVIDER_BINDINGS,
+    SQL_LIST_MCP_MARKETPLACE_SLOTS, SQL_COUNT_MCP_MARKETPLACE_SLOTS,
+    SQL_COUNT_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
     SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID, SQL_SELECT_AGENT_COMPOSITION_SLOT,
     SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT, SQL_UPDATE_AGENT_COMPOSITION_SLOT,
     SQL_UPDATE_AGENT_PROVIDER_BINDING,
@@ -94,7 +100,8 @@ pub use persistence::{
 #[cfg(feature = "postgres-sync")]
 pub use persistence::{
     SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_MESSAGE, SQL_INSERT_AGENT_SESSION,
-    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_MESSAGES, SQL_LIST_AGENT_SESSIONS,
+    SQL_LIST_AGENT_INTERACTIONS, SQL_COUNT_AGENT_INTERACTIONS, SQL_LIST_AGENT_MESSAGES, SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT,
+    SQL_LIST_AGENT_SESSIONS, SQL_COUNT_AGENT_MESSAGES, SQL_COUNT_AGENT_SESSIONS,
     SQL_NEXT_MESSAGE_SEQUENCE, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_MESSAGE,
     SQL_SELECT_AGENT_SESSION, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_MESSAGE,
     SQL_UPDATE_AGENT_SESSION,
@@ -102,6 +109,8 @@ pub use persistence::{
 #[cfg(feature = "postgres-sync")]
 pub use persistence::{SyncPostgresAdapter, AGENTS_MANAGED_STORE_DATABASE_SERVICE};
 pub use ports::{
-    AgentAuditSink, AgentListQuery, AgentRepository, InteractionListQuery, MessageListQuery,
-    PaginationParams, PaginatedResult, SessionListQuery, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE,
+    AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
+    InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, MessageListSort,
+    ProviderBindingListQuery, PaginationParams, PaginatedResult, SessionListQuery,
+    CHAT_CONTEXT_MESSAGE_LIMIT, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, offset_paginated_result,
 };

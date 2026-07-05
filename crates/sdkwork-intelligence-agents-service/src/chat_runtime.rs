@@ -6,11 +6,24 @@
 //! contracts stable without a kernel provider registry in-process.
 
 use crate::domain::{AgentMessageRole, AgentSessionRecord};
+use crate::runtime_facade_bridge::engine_key_for_binding_id;
 use sdkwork_agent_kernel::{
     KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
 };
+use sdkwork_agents_runtime_facade::{
+    bootstrap_code_engine, execute_code_engine_turn, CodeEngineTurnInput,
+};
 use sdkwork_utils_rust::string::is_blank;
 use std::sync::Arc;
+
+/// Runtime mode when managed chat inference succeeds through the code-engine facade.
+pub const RUNTIME_MODE_FACADE: &str = "agents-runtime-facade";
+/// Runtime mode when inference was attempted but failed (no silent contract fallback).
+pub const RUNTIME_MODE_INFERENCE_ERROR: &str = "managed-agent-inference-error";
+
+pub fn is_inference_error(runtime_mode: &str) -> bool {
+    runtime_mode == RUNTIME_MODE_INFERENCE_ERROR
+}
 
 /// Input for one chat completion turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +35,8 @@ pub struct ChatCompletionInput {
     pub user_content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
+    /// Active provider binding id (used to resolve canonical code-engine keys).
+    pub binding_id: Option<String>,
     /// When true, an active binding exposes `model.chat` and the gateway may
     /// replace this completer with a kernel-backed implementation.
     pub provider_has_model_chat: bool,
@@ -88,11 +103,121 @@ where
                 tracing::warn!(
                     session_id = %input.session.session_id,
                     error = %error,
-                    "kernel model invoke failed; falling back to contract completer"
+                    "kernel model invoke failed"
                 );
-                self.fallback.complete(input)
+                inference_error(format!("model inference failed: {error}"))
             }
         }
+    }
+}
+
+/// Production chat completer: routes active provider bindings through the
+/// agents runtime facade (canonical code engines). Never silently echoes user
+/// input when `model.chat` is configured.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RuntimeFacadeChatCompleter;
+
+impl ChatCompleter for RuntimeFacadeChatCompleter {
+    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
+        if !input.provider_has_model_chat {
+            return complete_chat_turn(input);
+        }
+
+        let binding_id = input
+            .binding_id
+            .as_deref()
+            .filter(|value| !is_blank(Some(*value)))
+            .unwrap_or("");
+        let Some(engine_key) = engine_key_for_binding_id(binding_id) else {
+            return inference_error(
+                "active provider binding is not mapped to a canonical code engine",
+            );
+        };
+
+        let Ok(slot) = bootstrap_code_engine(engine_key) else {
+            return inference_error(format!("code engine bootstrap failed for {engine_key}"));
+        };
+
+        let model_id = resolve_turn_model_id(input, &slot);
+        let prompt = build_managed_chat_prompt(input);
+
+        match execute_code_engine_turn(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: engine_key.to_string(),
+                model_id: model_id.clone(),
+                native_session_id: Some(input.session.session_id.clone()),
+                prompt,
+            },
+        ) {
+            Ok(output) => {
+                let content = output.assistant_content.trim().to_string();
+                if content.is_empty() {
+                    return inference_error("code engine returned empty assistant content");
+                }
+                ChatCompletionOutput {
+                    content,
+                    model_id: Some(model_id),
+                    provider_id: input.provider_id.clone(),
+                    input_tokens: estimate_tokens(input.user_content.as_str()),
+                    output_tokens: estimate_tokens(output.assistant_content.as_str()),
+                    runtime_mode: RUNTIME_MODE_FACADE,
+                }
+            }
+            Err(error) => inference_error(format!("code engine turn failed: {error}")),
+        }
+    }
+}
+
+fn resolve_turn_model_id(
+    input: &ChatCompletionInput,
+    slot: &sdkwork_agents_runtime_facade::CodeEngineSlot,
+) -> String {
+    if let Some(model_id) = input
+        .model_id
+        .as_deref()
+        .filter(|value| !is_blank(Some(*value)))
+    {
+        return model_id.to_string();
+    }
+    if let Some(model_id) = input
+        .session
+        .model_id
+        .as_deref()
+        .filter(|value| !is_blank(Some(*value)))
+    {
+        return model_id.to_string();
+    }
+    slot.list_model_ids()
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "default".to_string())
+}
+
+fn build_managed_chat_prompt(input: &ChatCompletionInput) -> String {
+    let mut lines = Vec::new();
+    if let Some(welcome) = input
+        .welcome_message
+        .as_deref()
+        .filter(|value| !is_blank(Some(*value)))
+    {
+        lines.push(format!("system: {welcome}"));
+    }
+    for (role, content) in &input.history {
+        lines.push(format!("{}: {content}", role.as_str()));
+    }
+    lines.push(format!("user: {}", input.user_content));
+    lines.join("\n")
+}
+
+fn inference_error(message: impl Into<String>) -> ChatCompletionOutput {
+    ChatCompletionOutput {
+        content: message.into(),
+        model_id: None,
+        provider_id: None,
+        input_tokens: 0,
+        output_tokens: 0,
+        runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
     }
 }
 
@@ -223,7 +348,7 @@ pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
             )
         } else if input.provider_has_model_chat {
             format!(
-                "Hello! I'm {}. I received your message:\n\n> {}\n\nAn active provider binding with model.chat is configured. Mount a kernel-backed ChatCompleter at service bootstrap for live inference.",
+                "Hello! I'm {}. I received your message:\n\n> {}\n\nLive model inference requires a canonical code-engine provider binding.",
                 input.agent_display_name, input.user_content
             )
         } else {
@@ -297,6 +422,7 @@ mod tests {
             user_content: "Hello".to_string(),
             model_id: None,
             provider_id: None,
+            binding_id: None,
             provider_has_model_chat: false,
         });
         assert!(output.content.contains("Hello"));
@@ -315,10 +441,11 @@ mod tests {
             user_content: "Hello".to_string(),
             model_id: None,
             provider_id: Some("provider.model.rig".to_string()),
+            binding_id: None,
             provider_has_model_chat: true,
         });
         assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
-        assert!(output.content.contains("model.chat"));
+        assert!(output.content.contains("canonical code-engine"));
     }
 
     struct FakeKernelModelProvider;
@@ -359,6 +486,7 @@ mod tests {
             user_content: "Hello".to_string(),
             model_id: Some("model.fake".to_string()),
             provider_id: Some("provider.model.fake".to_string()),
+            binding_id: None,
             provider_has_model_chat: true,
         });
         assert_eq!(output.content, "kernel reply");

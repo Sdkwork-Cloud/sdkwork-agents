@@ -6,6 +6,11 @@ import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotRecord, A
 
 
 
+export interface AiAgentsCompositionSlotsListParams {
+  page?: number;
+  pageSize?: number;
+}
+
 export interface AiAgentsCompositionSlotsDeleteParams {
   expectedVersion?: Int64String;
   requestedAt: string;
@@ -20,8 +25,12 @@ export class AiAgentsCompositionSlotsApi {
 
 
 /** List composition slots for one managed agent */
-  async list(agentId: string): Promise<SdkWorkPageData & Record<string, unknown>> {
-    return this.client.get<SdkWorkPageData & Record<string, unknown>>(agentApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots`));
+  async list(agentId: string, params?: AiAgentsCompositionSlotsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(agentApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/composition_slots`), query));
   }
 
 /** Create a composition slot for one managed agent */
@@ -190,6 +199,7 @@ export class AiAgentsProviderBindingsApi {
 
 export interface AiAgentsListParams {
   includeDeleted?: boolean;
+  scope?: 'market' | 'public' | 'published' | 'mine' | 'workspace';
   page?: number;
   pageSize?: number;
   q?: string;
@@ -219,6 +229,7 @@ export class AiAgentsApi {
   async list(params?: AiAgentsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
     const query = buildQueryString([
       { name: 'include_deleted', value: params?.includeDeleted, style: 'form', explode: true, allowReserved: false },
+      { name: 'scope', value: params?.scope, style: 'form', explode: true, allowReserved: false },
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },

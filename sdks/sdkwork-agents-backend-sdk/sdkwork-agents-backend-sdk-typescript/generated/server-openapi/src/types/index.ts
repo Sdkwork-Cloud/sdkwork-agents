@@ -1,4 +1,9 @@
 export * from './common';
+export type { SdkWorkApiResponse } from './sdk-work-api-response';
+export type { SdkWorkResourceData } from './sdk-work-resource-data';
+export type { SdkWorkPageData } from './sdk-work-page-data';
+export type { SdkWorkCommandData } from './sdk-work-command-data';
+export type { SdkWorkAsyncData } from './sdk-work-async-data';
 export type { Int64String } from './int64-string';
 export type { AgentStatus } from './agent-status';
 export type { AgentVisibility } from './agent-visibility';

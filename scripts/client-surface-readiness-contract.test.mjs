@@ -45,8 +45,18 @@ assert.equal(
   "H5 agents capability package must not depend on @sdkwork/agents-app-sdk directly",
 );
 
-const mpBootstrap = mustExist("apps/sdkwork-agents-mini-program/src/bootstrap/runtimeBundle.ts");
-assert.match(mpBootstrap, /bootstrapAgentsMiniProgram/, "mini-program runtime bundle entry must export bootstrapAgentsMiniProgram");
+const mpAgentsPage = mustExist("apps/sdkwork-agents-mini-program/src/pages/agents/index.js");
+assert.doesNotMatch(
+  mustExist("apps/sdkwork-agents-mini-program/src/pages/agents/index.wxml"),
+  /<web-view/u,
+  "agents index page must be native (WebView moved to agents-h5)",
+);
+assert.match(mpAgentsPage, /getAgentsMpSdkClient/u, "agents index must load agents via runtime SDK");
+assert.match(
+  mustExist("apps/sdkwork-agents-mini-program/src/pages/agents/index.wxml"),
+  /agents-h5/u,
+  "agents index wxml must link to H5 fallback page",
+);
 
 for (const [label, relativePath] of [
   ["PC", `${pcApp}/App.tsx`],

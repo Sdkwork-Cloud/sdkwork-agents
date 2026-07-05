@@ -3,10 +3,12 @@
 use anyhow::{Context, Result};
 use sdkwork_intelligence_agents_service::{
     AgentBusinessIdGenerator, AgentHttpState, AllowAllPolicyProvider, AUDIT_SINK_NODE_ID,
-    IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
-    PostgresAgentAuditSink, PostgresAgentRepository, SyncPostgresAdapter,
+    ContractChatCompleter, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
+    PostgresAgentAuditSink, PostgresAgentRepository, RuntimeFacadeChatCompleter, SyncPostgresAdapter,
 };
 use sdkwork_agents_contract::agents_use_dev_inline_auth_resolver;
+use std::sync::Arc;
+
 
 /// Build agents managed store HTTP state using postgres in production-like profiles and
 /// in-memory fixtures only when dev inline auth is explicitly enabled.
@@ -59,9 +61,10 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     let repository = PostgresAgentRepository::new(repository_adapter);
     let audit_sink = PostgresAgentAuditSink::new_global(audit_adapter);
 
-    Ok(AgentHttpState::new(
+    Ok(AgentHttpState::with_chat_completer(
         repository,
         audit_sink,
         IamGatedPolicyProvider::default(),
+        Arc::new(RuntimeFacadeChatCompleter),
     ))
 }

@@ -11,7 +11,8 @@
     }
   },
   "dependencies": {
-    "@sdkwork/app-topology": "workspace:*"
+    "@sdkwork/app-topology": "workspace:*",
+    "yaml": "^2.8.0"
   },
   "scripts": {
     "dev": "node scripts/agents-dev.mjs",
@@ -54,8 +55,16 @@
     "start:desktop": "pnpm --filter @sdkwork/agents-pc dev",
     "start:browser": "pnpm --filter @sdkwork/agents-h5 dev",
     "start:mini-program": "pnpm --filter @sdkwork/agents-mini-program dev",
+    "smoke:live": "node scripts/agents-live-smoke.mjs",
     "workflow:build-client-surfaces": "pnpm --filter @sdkwork/agents-pc build && pnpm --filter @sdkwork/agents-h5 build && pnpm --filter @sdkwork/agents-mini-program build",
     "workflow:typecheck-client-surfaces": "pnpm --filter @sdkwork/agents-pc typecheck && pnpm --filter @sdkwork/agents-h5 typecheck && pnpm --filter @sdkwork/agents-mini-program typecheck",
     "check:app-composition": "node ../sdkwork-specs/tools/verify-repo.mjs --root ."
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
   }
 }

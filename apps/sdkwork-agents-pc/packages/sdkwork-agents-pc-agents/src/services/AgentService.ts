@@ -10,7 +10,14 @@ import type {
   UpdateAgentRequest,
 } from '@sdkwork/agents-pc-core/sdk';
 import { syncAgentCompositionSlots } from './CompositionSlotSyncService';
-import { extractArray, extractResourceRecord, isRecord } from './sdkEnvelope';
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  extractArray,
+  extractOffsetPageInfo,
+  extractResourceRecord,
+  isRecord,
+  type OffsetPageInfo,
+} from './sdkEnvelope';
 
 export interface AgentConfig {
   id?: string;
@@ -63,12 +70,23 @@ export interface AgentPromptOptimizeResult {
   outputPayload?: unknown;
 }
 
+export interface AgentListPage {
+  items: AgentConfig[];
+  pageInfo: OffsetPageInfo;
+}
+
 export interface AgentService {
   createAgent(config: AgentConfig): Promise<AgentConfig>;
   updateAgent(id: string, config: Partial<AgentConfig>): Promise<AgentConfig>;
   publishAgent(id: string): Promise<void>;
-  getAgents(): Promise<AgentConfig[]>;
-  getMarketAgents(): Promise<AgentConfig[]>;
+  /** Interactive list page — one server page at a time (`PAGINATION_SPEC.md` §8). */
+  listAgentsPage(params?: {
+    page?: number;
+    pageSize?: number;
+    scope?: 'market' | 'mine';
+    q?: string;
+  }): Promise<AgentListPage>;
+  getAgent(id: string): Promise<AgentConfig | null>;
   deleteAgent(id: string): Promise<void>;
   requestPreviewResponse(request: AgentPreviewResponseRequest): Promise<AgentPreviewResponse>;
   optimizePrompt(request: AgentPromptOptimizeRequest): Promise<AgentPromptOptimizeResult>;
@@ -727,22 +745,34 @@ class SdkworkAgentService implements AgentService {
     private readonly getAgentClient: () => SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession,
   ) {}
 
-  async getAgents(): Promise<AgentConfig[]> {
+  async listAgentsPage(params: {
+    page?: number;
+    pageSize?: number;
+    scope?: 'market' | 'mine';
+    q?: string;
+  } = {}): Promise<AgentListPage> {
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? DEFAULT_LIST_PAGE_SIZE;
+    const trimmedQuery = params.q?.trim();
     const response = await this.getAgentClient().ai.agents.list({
-      page: 1,
-      pageSize: 100,
+      page,
+      pageSize,
+      ...(trimmedQuery ? { q: trimmedQuery } : {}),
+      ...(params.scope === 'market' ? { scope: 'market' as const } : {}),
     });
-    return extractAgentRecordItems(response).map(normalizeAgentFromAgentRecord);
+    return {
+      items: extractAgentRecordItems(response).map(normalizeAgentFromAgentRecord),
+      pageInfo: extractOffsetPageInfo(response),
+    };
   }
 
-  async getMarketAgents(): Promise<AgentConfig[]> {
-    const response = await this.getAgentClient().ai.agents.list({
-      page: 1,
-      pageSize: 100,
-    });
-    return extractAgentRecordItems(response)
-      .filter((record) => record.visibility === 'public')
-      .map(normalizeAgentFromAgentRecord);
+  async getAgent(id: string): Promise<AgentConfig | null> {
+    try {
+      const response = await this.getAgentClient().ai.agents.retrieve(id);
+      return normalizeAgentFromAgentRecord(extractAgentRecord(response));
+    } catch {
+      return null;
+    }
   }
 
   async createAgent(config: AgentConfig): Promise<AgentConfig> {

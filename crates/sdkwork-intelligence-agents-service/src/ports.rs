@@ -1,6 +1,6 @@
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotRecord, AgentInteractionRecord, AgentMessageRecord,
-    AgentProviderBindingRecord, AgentSessionRecord,
+    AgentProviderBindingRecord, AgentSessionRecord, AgentVisibility,
 };
 use crate::validation::optional_non_blank;
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
@@ -15,6 +15,24 @@ pub const MAX_PAGE_SIZE: usize = 200;
 
 /// Default page size for list operations when not specified.
 pub const DEFAULT_PAGE_SIZE: usize = 20;
+
+/// Maximum number of prior session messages loaded into LLM chat context.
+pub const CHAT_CONTEXT_MESSAGE_LIMIT: usize = 50;
+
+/// Build offset-mode pagination metadata from a repository page and total count.
+pub fn offset_paginated_result<T>(
+    items: Vec<T>,
+    pagination: &PaginationParams,
+    total_count: u64,
+) -> PaginatedResult<T> {
+    let has_more = (pagination.offset + items.len()) < total_count as usize;
+    PaginatedResult {
+        items,
+        next_page_token: None,
+        total_count: Some(total_count),
+        has_more,
+    }
+}
 
 /// Pagination parameters for list queries.
 /// Implements DATABASE_SPEC §16 requirements for mandatory pagination.
@@ -134,6 +152,8 @@ pub struct AgentListQuery {
     pub owner_user_id: Option<u64>,
     pub include_deleted: bool,
     pub search_query: Option<String>,
+    /// When set, restricts results to a single visibility level (for example public marketplace).
+    pub visibility: Option<AgentVisibility>,
     pub pagination: PaginationParams,
 }
 
@@ -145,6 +165,7 @@ impl AgentListQuery {
             owner_user_id: None,
             include_deleted: false,
             search_query: None,
+            visibility: None,
             pagination: PaginationParams::default(),
         }
     }
@@ -187,6 +208,138 @@ impl AgentListQuery {
         self.pagination = self.pagination.with_page_token(token);
         self
     }
+
+    /// Restrict list results to one visibility level.
+    pub fn with_visibility(mut self, visibility: AgentVisibility) -> Self {
+        self.visibility = Some(visibility);
+        self
+    }
+
+    /// Restrict list results to publicly visible agents (marketplace scope).
+    pub fn with_public_visibility_only(mut self) -> Self {
+        self.visibility = Some(AgentVisibility::Public);
+        self
+    }
+}
+
+/// Query parameters for listing provider bindings under one agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderBindingListQuery {
+    pub tenant_id: u64,
+    pub agent_id: String,
+    pub pagination: PaginationParams,
+}
+
+impl ProviderBindingListQuery {
+    pub fn for_agent(tenant_id: u64, agent_id: impl Into<String>) -> Self {
+        Self {
+            tenant_id,
+            agent_id: agent_id.into(),
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+/// Query parameters for listing composition slots under one agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompositionSlotListQuery {
+    pub tenant_id: u64,
+    pub agent_id: String,
+    pub pagination: PaginationParams,
+}
+
+impl CompositionSlotListQuery {
+    pub fn for_agent(tenant_id: u64, agent_id: impl Into<String>) -> Self {
+        Self {
+            tenant_id,
+            agent_id: agent_id.into(),
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+/// Query parameters for listing persisted audit events for one agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditEventListQuery {
+    pub tenant_id: u64,
+    pub agent_id: String,
+    pub action: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub pagination: PaginationParams,
+}
+
+impl AuditEventListQuery {
+    pub fn for_agent(tenant_id: u64, agent_id: impl Into<String>) -> Self {
+        Self {
+            tenant_id,
+            agent_id: agent_id.into(),
+            action: None,
+            from: None,
+            to: None,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_action(mut self, action: impl Into<String>) -> Self {
+        self.action = optional_non_blank(action.into());
+        self
+    }
+
+    pub fn with_from(mut self, from: impl Into<String>) -> Self {
+        self.from = optional_non_blank(from.into());
+        self
+    }
+
+    pub fn with_to(mut self, to: impl Into<String>) -> Self {
+        self.to = optional_non_blank(to.into());
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+/// Query parameters for listing MCP marketplace projection rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpMarketplaceListQuery {
+    pub tenant_id: u64,
+    pub pagination: PaginationParams,
+}
+
+impl McpMarketplaceListQuery {
+    pub fn for_tenant(tenant_id: u64) -> Self {
+        Self {
+            tenant_id,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+/// Message list sort order. Default API lists use ascending sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MessageListSort {
+    #[default]
+    SequenceAsc,
+    /// Recent context window for chat completion (descending sequence, bounded limit).
+    RecentContextDesc,
 }
 
 /// Query parameters for listing agent sessions.
@@ -245,6 +398,7 @@ pub struct MessageListQuery {
     pub session_id: String,
     pub role: Option<String>,
     pub status: Option<String>,
+    pub sort: MessageListSort,
     pub pagination: PaginationParams,
 }
 
@@ -255,6 +409,7 @@ impl MessageListQuery {
             session_id: session_id.into(),
             role: None,
             status: None,
+            sort: MessageListSort::default(),
             pagination: PaginationParams::default(),
         }
     }
@@ -272,6 +427,22 @@ impl MessageListQuery {
     pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
         self.pagination = pagination;
         self
+    }
+
+    /// Load the most recent messages for chat completion context.
+    pub fn for_recent_chat_context(
+        tenant_id: u64,
+        session_id: impl Into<String>,
+        limit: usize,
+    ) -> Self {
+        Self {
+            tenant_id,
+            session_id: session_id.into(),
+            role: None,
+            status: None,
+            sort: MessageListSort::RecentContextDesc,
+            pagination: PaginationParams::default().with_page_size(limit),
+        }
     }
 }
 
@@ -320,36 +491,17 @@ pub trait AgentRepository: Send + Sync {
 
     fn get(&self, tenant_id: u64, agent_id: &str) -> Option<AgentBusinessRecord>;
 
-    /// List agents without pagination (backward compatibility).
-    /// For production use, prefer `list_paginated`.
+    /// List one page of agents. Pagination is enforced at the repository layer.
     fn list(&self, query: &AgentListQuery) -> Vec<AgentBusinessRecord>;
 
-    /// List agents with pagination support.
-    /// Implements DATABASE_SPEC §16 mandatory pagination requirements.
-    /// Default implementation delegates to `list` and applies in-memory pagination.
+    /// Count agents matching list filters (excluding pagination bounds).
+    fn count_agents(&self, query: &AgentListQuery) -> u64;
+
+    /// List agents with pagination metadata.
     fn list_paginated(&self, query: &AgentListQuery) -> PaginatedResult<AgentBusinessRecord> {
-        let all_items = self.list(query);
-        let page_size = query.pagination.page_size;
-        
-        // In-memory pagination for default implementation
-        // Production implementations should override this with database-level pagination
-        let total_count = all_items.len() as u64;
-        let items: Vec<AgentBusinessRecord> = all_items
-            .into_iter()
-            .take(page_size)
-            .collect();
-        
-        let has_more = (items.len() as u64) < total_count;
-        let next_page_token = if has_more {
-            // Generate cursor based on last item's updated_at and id
-            items.last().map(|last| {
-                format!("{}_{}", last.updated_at, last.id)
-            })
-        } else {
-            None
-        };
-        
-        PaginatedResult::new(items, next_page_token, Some(total_count))
+        let total_count = self.count_agents(query);
+        let items = self.list(query);
+        offset_paginated_result(items, &query.pagination, total_count)
     }
 
     fn insert_provider_binding(&self, _record: AgentProviderBindingRecord) -> KernelResult<()> {
@@ -373,13 +525,9 @@ pub trait AgentRepository: Send + Sync {
         None
     }
 
-    fn list_provider_bindings(
-        &self,
-        _tenant_id: u64,
-        _agent_id: &str,
-    ) -> Vec<AgentProviderBindingRecord> {
-        Vec::new()
-    }
+    fn list_provider_bindings(&self, query: &ProviderBindingListQuery) -> Vec<AgentProviderBindingRecord>;
+
+    fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> u64;
 
     fn insert_composition_slot(&self, _record: AgentCompositionSlotRecord) -> KernelResult<()> {
         Err(KernelError::CapabilityMissing {
@@ -402,13 +550,16 @@ pub trait AgentRepository: Send + Sync {
         None
     }
 
-    fn list_composition_slots(
+    fn list_composition_slots(&self, query: &CompositionSlotListQuery) -> Vec<AgentCompositionSlotRecord>;
+
+    fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> u64;
+
+    fn list_mcp_marketplace_slots(
         &self,
-        _tenant_id: u64,
-        _agent_id: &str,
-    ) -> Vec<AgentCompositionSlotRecord> {
-        Vec::new()
-    }
+        query: &McpMarketplaceListQuery,
+    ) -> Vec<AgentCompositionSlotRecord>;
+
+    fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> u64;
 
     // -----------------------------------------------------------------------
     // Session persistence — default stubs return empty/error for backward
@@ -437,6 +588,10 @@ pub trait AgentRepository: Send + Sync {
 
     fn list_sessions(&self, _query: &SessionListQuery) -> Vec<AgentSessionRecord> {
         Vec::new()
+    }
+
+    fn count_sessions(&self, _query: &SessionListQuery) -> u64 {
+        0
     }
 
     // -----------------------------------------------------------------------
@@ -469,10 +624,35 @@ pub trait AgentRepository: Send + Sync {
         Vec::new()
     }
 
+    fn count_messages(&self, _query: &MessageListQuery) -> u64 {
+        0
+    }
+
     /// Next message sequence number for a session. Implementations should
     /// return `message_count + 1` for the session, or `1` if no messages exist.
     fn next_message_sequence(&self, _tenant_id: u64, _session_id: &str) -> KernelResult<u64> {
         Ok(1)
+    }
+
+    /// Atomically persist one user + assistant chat turn and update session counters.
+    fn insert_chat_turn(
+        &self,
+        session: AgentSessionRecord,
+        mut user_message: AgentMessageRecord,
+        mut assistant_message: AgentMessageRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        let user_sequence =
+            self.next_message_sequence(user_message.tenant_id, user_message.session_id.as_str())?;
+        user_message.sequence = user_sequence;
+        self.insert_message(user_message.clone())?;
+
+        let assistant_sequence =
+            self.next_message_sequence(assistant_message.tenant_id, assistant_message.session_id.as_str())?;
+        assistant_message.sequence = assistant_sequence;
+        self.insert_message(assistant_message.clone())?;
+
+        self.update_session(session.clone())?;
+        Ok((session, user_message, assistant_message))
     }
 
     // -----------------------------------------------------------------------
@@ -504,6 +684,10 @@ pub trait AgentRepository: Send + Sync {
     fn list_interactions(&self, _query: &InteractionListQuery) -> Vec<AgentInteractionRecord> {
         Vec::new()
     }
+
+    fn count_interactions(&self, _query: &InteractionListQuery) -> u64 {
+        0
+    }
 }
 
 /// Thread-safe audit event sink port.
@@ -512,7 +696,5 @@ pub trait AgentRepository: Send + Sync {
 pub trait AgentAuditSink: Send + Sync {
     fn record(&self, event: KernelEvent) -> KernelResult<()>;
 
-    fn list_events(&self, _tenant_id: u64, _agent_id: &str) -> KernelResult<Vec<KernelEvent>> {
-        Ok(Vec::new())
-    }
+    fn list_events(&self, query: &AuditEventListQuery) -> KernelResult<PaginatedResult<KernelEvent>>;
 }

@@ -41,3 +41,13 @@ export function extractResourceRecord(value: unknown): RecordLike {
   }
   return value;
 }
+
+export {
+  DEFAULT_LIST_PAGE_SIZE,
+  MAX_LIST_PAGE_SIZE,
+  extractOffsetPageInfo,
+  extractListItems,
+  syncAllOffsetPages,
+  type OffsetPageInfo,
+  type SyncAllOffsetPagesOptions,
+} from '@sdkwork/agents-pc-core/sdk/pagination';

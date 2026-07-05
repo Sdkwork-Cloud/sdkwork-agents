@@ -4,6 +4,13 @@ Use after deployment or local `pnpm dev` when you need runtime evidence beyond `
 
 Automated flow contract (mocked SDK, no live server): `pnpm --filter @sdkwork/agents-pc test:agent-contracts` includes `agent-e2e-flow-contract.test.ts` (create agent → session → chat).
 
+Gateway-only live smoke (server must be running):
+
+```powershell
+pnpm dev          # separate terminal
+pnpm smoke:live   # GET /health + /metrics/agents
+```
+
 ## Prerequisites
 
 1. Standalone gateway or split API running with Postgres managed store.
@@ -19,7 +26,7 @@ Automated flow contract (mocked SDK, no live server): `pnpm --filter @sdkwork/ag
 | 3 | Sign in via client Auth Gate | Session tokens stored; no 401 on app API |
 | 4 | Create agent | `code: 0`, `data.item.agentId` present |
 | 5 | Open chat route | Session created; messages list loads |
-| 6 | Send message | Assistant reply in UI; `traceId` in network response |
+| 6 | Send message | Assistant reply from code-engine facade (`RuntimeFacadeChatCompleter`); `runtimeMode` ≠ contract stub; `traceId` in network response |
 
 ## Commands
 
