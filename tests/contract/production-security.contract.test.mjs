@@ -147,7 +147,13 @@ test("managed-store constructors propagate snowflake initialization errors", () 
   );
   assert.doesNotMatch(
     infrastructure,
-    /SECURITY VIOLATION|panic to prevent security|will panic to prevent/,
+    new RegExp(
+      [
+        "SECURITY " + "VIOLATION",
+        "panic to " + "prevent " + "security",
+        "will " + "panic to " + "prevent",
+      ].join("|"),
+    ),
     "production security validation must return explicit errors or fail closed instead of panicking",
   );
   assert.match(

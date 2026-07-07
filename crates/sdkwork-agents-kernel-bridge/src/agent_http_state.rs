@@ -43,6 +43,7 @@ fn dev_agent_http_state() -> Result<AgentHttpState> {
         InMemoryAgentRepository::try_new().context("build agents dev in-memory repository")?,
         InMemoryAgentAuditSink::default(),
         AllowAllPolicyProvider::try_allow("policy.agents.dev")
+            .map_err(anyhow::Error::msg)
             .context("build agents dev-only policy provider")?,
     ))
 }

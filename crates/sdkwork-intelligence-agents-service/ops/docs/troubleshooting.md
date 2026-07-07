@@ -83,7 +83,7 @@ kubectl logs <pod-name> -n sdkwork --previous
 #### A. DEV_AUTH_BYPASS in Production
 
 ```
-SECURITY VIOLATION: SDKWORK_AGENTS_DEV_AUTH_BYPASS is enabled in production environment
+agents security bootstrap rejected SDKWORK_AGENTS_DEV_AUTH_BYPASS in a production-like environment
 ```
 
 **Resolution**:
@@ -344,7 +344,7 @@ database:
 
 | Level | Description | Response Time | Examples |
 |-------|-------------|---------------|----------|
-| P1 | Critical - Service down | 15 minutes | Database unreachable, auth bypass panic |
+| P1 | Critical - Service down | 15 minutes | Database unreachable, auth bypass rejected |
 | P2 | High - Degraded service | 30 minutes | High error rate, slow responses |
 | P3 | Medium - Limited impact | 2 hours | Non-critical feature broken |
 | P4 | Low - Minor issue | 1 business day | Documentation error, minor UI bug |

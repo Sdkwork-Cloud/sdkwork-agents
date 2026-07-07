@@ -173,9 +173,10 @@ psql -d agents_store -f specs/sql/agents_managed_store_postgres.sql
 
 The service enforces fail-closed security:
 
-1. **DEV_AUTH_BYPASS Check**: Service will panic if `SDKWORK_AGENTS_DEV_AUTH_BYPASS=true` 
-   in production environment. This prevents accidental deployment of development-only 
-   authentication bypass.
+1. **DEV_AUTH_BYPASS Check**: Production bootstrap rejects
+   `SDKWORK_AGENTS_DEV_AUTH_BYPASS=true` in production-like environments, and
+   dev-only static policy construction falls back to deny-all if misconfigured.
+   This prevents accidental deployment of development-only authentication bypass.
 
 2. **Tenant Isolation**: All queries enforce `tenant_id` filtering via parameterized SQL.
 
@@ -218,7 +219,7 @@ kubectl describe hpa sdkwork-intelligence-agents-hpa -n sdkwork
 
 | Issue | Symptom | Resolution |
 |-------|---------|------------|
-| Auth Bypass Panic | Pod crashes on startup | Set `SDKWORK_AGENTS_DEV_AUTH_BYPASS=false` |
+| Auth Bypass Rejected | Pod fails readiness or dev-only policy denies requests | Set `SDKWORK_AGENTS_DEV_AUTH_BYPASS=false` |
 | Database Connection Error | 5xx errors on all requests | Verify database URL and network connectivity |
 | HPA Not Scaling | Pods stay at min replicas | Check custom metrics are being collected |
 | High Error Rate | Dashboard shows >5% errors | Check downstream provider status |

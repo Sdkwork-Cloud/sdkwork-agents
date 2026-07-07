@@ -1825,9 +1825,8 @@ mod tests {
         restore_optional_env("SDKWORK_AGENTS_ENVIRONMENT", previous_agents_env);
         restore_optional_env("SDKWORK_AGENTS_CONFIG_PROFILE", previous_profile);
 
-        let provider = provider_result.expect(
-            "AllowAllPolicyProvider::allow must fail closed instead of panicking",
-        );
+        let provider = provider_result
+            .expect("AllowAllPolicyProvider::allow must fail closed instead of panicking");
         assert!(
             matches!(provider.mode, PolicyMode::Deny(_)),
             "misconfigured AllowAllPolicyProvider must deny instead of allowing"

@@ -301,7 +301,7 @@ these modules with `dependencyMode=independent-capability-module` and
 | Autonomous engines | T2 opt-in | Conformance + health + policy gate before default catalog |
 | Observability | Metrics exposed | Grafana dashboard and operator runbook |
 | Release metadata | Beta manifest | GA channel metadata, screenshots, SBOM/checksum evidence |
-| Production gates | Root `pnpm check` covers API, SDK, pagination, route, composition, apps index, production security, shutdown signal resilience, in-memory lock poison recovery, managed-store ID initialization error propagation, strict repository ports, deployment, docs, topology, and database standards | `pnpm verify`, `pnpm check:production-security`, live smoke, and BirdCoder integration evidence before GA |
+| Production gates | Root `pnpm check` covers API, SDK, pagination, route, composition, apps index, production security, shutdown signal resilience, dev-only policy fail-closed behavior, in-memory lock poison recovery, managed-store ID initialization error propagation, strict repository ports, deployment, docs, topology, and database standards | `pnpm verify`, `pnpm check:production-security`, live smoke, and BirdCoder integration evidence before GA |
 
 ## 8. Linked Requirements
 
