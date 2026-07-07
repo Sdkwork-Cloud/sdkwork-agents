@@ -13,6 +13,7 @@
   "dependencies": {
     "@sdkwork/agents-h5-commons": "workspace:*",
     "@sdkwork/agents-h5-core": "workspace:*",
+    "@sdkwork/utils": "workspace:*",
     "@tiptap/extension-placeholder": "catalog:",
     "@tiptap/pm": "catalog:",
     "@tiptap/react": "catalog:",

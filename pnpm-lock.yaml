@@ -672,6 +672,9 @@ importers:
       '@sdkwork/agents-h5-core':
         specifier: workspace:*
         version: link:../sdkwork-agents-h5-core
+      '@sdkwork/utils':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-utils/packages/sdkwork-utils-typescript
       '@tiptap/extension-placeholder':
         specifier: 'catalog:'
         version: 3.27.1(@tiptap/extensions@3.27.1(@tiptap/core@3.27.1(@tiptap/pm@3.27.1))(@tiptap/pm@3.27.1))
@@ -837,6 +840,9 @@ importers:
       '@sdkwork/agents-pc-core':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-core
+      '@sdkwork/utils':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-utils/packages/sdkwork-utils-typescript
       '@tiptap/extension-placeholder':
         specifier: 'catalog:'
         version: 3.27.1(@tiptap/extensions@3.27.1(@tiptap/core@3.27.1(@tiptap/pm@3.27.1))(@tiptap/pm@3.27.1))

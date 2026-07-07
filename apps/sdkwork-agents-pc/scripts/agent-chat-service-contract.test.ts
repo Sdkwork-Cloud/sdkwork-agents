@@ -73,4 +73,25 @@ const reply = await chat.sendMessage("agent.test", sessionId, "ping");
 assert.equal(reply.role, "assistant");
 assert.equal(reply.content, "echo:ping");
 
+const malformedChatClient = {
+  ai: fakeClient.ai,
+  http: {
+    async post() {
+      return {
+        assistantMessage: {
+          role: "assistant",
+          content: "missing server id",
+          createdAt: "2026-06-01T00:00:02Z",
+        },
+      };
+    },
+  },
+} as unknown as SdkworkAgentsAppClient;
+
+const malformedChat = new AgentChatService(() => malformedChatClient);
+await assert.rejects(
+  () => malformedChat.sendMessage("agent.test", sessionId, "ping"),
+  /Chat message did not include messageId/u,
+);
+
 console.log("sdkwork agents pc agent chat service contract passed.");
