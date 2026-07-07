@@ -915,10 +915,9 @@ impl AgentRepository for InMemoryAgentRepository {
     fn update_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
         let primary_key = message_primary_key(&record);
         let mut messages = self.messages.recovering_write();
-        if !messages.contains_key(&primary_key) {
+        let Some(existing) = messages.get(&primary_key) else {
             return Err(KernelError::validation("message not found"));
-        }
-        let existing = messages.get(&primary_key).expect("message exists");
+        };
         let previous_index_key = message_index_key(existing);
         let next_index_key = message_index_key(&record);
         messages.insert(primary_key.clone(), record);

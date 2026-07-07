@@ -156,6 +156,11 @@ test("managed-store constructors propagate snowflake initialization errors", () 
     ),
     "production security validation must return explicit errors or fail closed instead of panicking",
   );
+  assert.doesNotMatch(
+    infrastructure,
+    /expect\("message exists"\)/,
+    "in-memory message updates must preserve not-found errors without panic-only assertions",
+  );
   assert.match(
     infrastructure,
     /pub fn validate_production_security_config\(\) -> Result<\(\), String>/,
