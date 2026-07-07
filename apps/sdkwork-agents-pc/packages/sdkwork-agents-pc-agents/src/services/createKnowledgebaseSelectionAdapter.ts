@@ -1,6 +1,11 @@
 import type { KnowledgeMarketCatalogItem, SdkworkKnowledgebaseAppClient } from "@sdkwork/agents-pc-core/sdk";
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  extractCursorPageInfo,
+  extractListItems,
+} from "@sdkwork/agents-pc-core/sdk/pagination";
 
-import type { KnowledgeSelectionAdapter } from "./knowledgeSelectionAdapter";
+import type { KnowledgeBasesPage, KnowledgeSelectionAdapter } from "./knowledgeSelectionAdapter";
 import type { KnowledgeBase } from "./KnowledgeSelectionService";
 
 function mapMarketListingToKnowledgeBase(item: KnowledgeMarketCatalogItem): KnowledgeBase {
@@ -19,9 +24,19 @@ export function createKnowledgebaseSelectionAdapter(
   client: SdkworkKnowledgebaseAppClient,
 ): KnowledgeSelectionAdapter {
   return {
-    async getBases(): Promise<KnowledgeBase[]> {
-      const catalog = await client.knowledge.market.listings.list();
-      return catalog.items.map(mapMarketListingToKnowledgeBase);
+    async getBasesPage(params?: { cursor?: string; pageSize?: number }): Promise<KnowledgeBasesPage> {
+      const response = await client.knowledge.market.listings.list({
+        cursor: params?.cursor,
+        pageSize: params?.pageSize ?? DEFAULT_LIST_PAGE_SIZE,
+      });
+      const pageInfo = extractCursorPageInfo(response);
+      const items = extractListItems(response)
+        .map((item) => mapMarketListingToKnowledgeBase(item as KnowledgeMarketCatalogItem));
+      return {
+        items,
+        hasMore: pageInfo.hasMore,
+        nextCursor: pageInfo.nextPageToken,
+      };
     },
   };
 }

@@ -6,7 +6,7 @@
 //! The projection is exposed as a list payload under
 //! `SdkWorkPageData<McpServerMarketplaceRecord>` per `API_SPEC.md` §16.
 
-use crate::domain::{AgentCompositionSlotKind, AgentCompositionSlotRecord};
+use crate::domain::AgentCompositionSlotRecord;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -35,10 +35,29 @@ pub fn project_mcp_slot(slot: &AgentCompositionSlotRecord) -> McpServerMarketpla
     }
 }
 
+/// Store-level MCP marketplace free-text filter (`API_SPEC.md` §14.1 `q`).
+pub fn composition_slot_matches_mcp_search(slot: &AgentCompositionSlotRecord, q: &str) -> bool {
+    let needle = q.trim().to_ascii_lowercase();
+    if needle.is_empty() {
+        return true;
+    }
+    slot.target_ref.to_ascii_lowercase().contains(&needle)
+        || slot.slot_id.to_ascii_lowercase().contains(&needle)
+        || slot.agent_id.to_ascii_lowercase().contains(&needle)
+}
+
+pub fn mcp_marketplace_search_pattern(q: Option<&str>) -> Option<String> {
+    q.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{AgentBusinessStatus, AgentCompositionTargetModule};
+    use crate::domain::{
+        AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionTargetModule,
+    };
 
     #[test]
     fn projects_mcp_slot_to_marketplace_record() {

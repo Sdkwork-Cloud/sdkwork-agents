@@ -28,7 +28,10 @@ pub struct PromptOptimizationOutput {
 }
 
 pub fn engine_key_for_binding_id(binding_id: &str) -> Option<&'static str> {
-    canonical_code_engine_keys().iter().find(|&engine_key| code_engine_binding_id(engine_key) == Some(binding_id)).map(|v| v as _)
+    canonical_code_engine_keys()
+        .iter()
+        .find(|&engine_key| code_engine_binding_id(engine_key) == Some(binding_id))
+        .map(|v| v as _)
 }
 
 fn resolve_engine_and_model(
@@ -54,8 +57,7 @@ pub fn execute_preview_response(
     content: &str,
     requested_model: Option<&str>,
 ) -> PreviewExecutionOutput {
-    if let Some((engine_key, model_id)) =
-        resolve_engine_and_model(active_binding, requested_model)
+    if let Some((engine_key, model_id)) = resolve_engine_and_model(active_binding, requested_model)
     {
         if let Ok(slot) = bootstrap_code_engine(engine_key.as_str()) {
             if let Ok(output) = execute_code_engine_turn(

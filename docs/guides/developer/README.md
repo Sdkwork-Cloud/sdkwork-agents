@@ -23,12 +23,12 @@ pnpm verify
 
 `pnpm verify` runs:
 
-1. `pnpm check` — composition, architecture, identity, API envelope, deploy, docs, workflow standards, topology, database
+1. `pnpm check` - composition, component ports, frontend, permissions, Rust backend, API envelope, operation patterns, route collisions, pagination, SDK imports, apps index, deploy, docs, workflow standards, topology, database
 2. `pnpm workflow:build-agents-app-sdk` — generated TypeScript dist matches OpenAPI
 3. `cargo build --workspace`
 4. Rust workspace tests (`cargo test --workspace --all-features`, HTTP + Postgres contract suites)
 5. `pnpm --filter @sdkwork/agents-mini-program build` — mini-program runtime bundle
-6. `pnpm check:contracts` — platform integration, database framework, Open SDK surface, mini-program runtime
+6. `pnpm check:contracts` - platform integration, database framework, root quality gates, Open SDK surface, mini-program runtime
 7. PC / H5 / mini-program TypeScript typecheck
 8. PC agent contracts — scope, management profile, chat service, e2e flow (create → chat)
 
@@ -38,6 +38,10 @@ Narrow checks:
 
 ```powershell
 pnpm check
+pnpm check:api-operation-patterns
+pnpm check:route-path-collisions
+pnpm check:pagination
+pnpm check:app-sdk-consumer-imports
 pnpm topology:validate
 pnpm db:validate
 pnpm workflow:typecheck-client-surfaces

@@ -1,4 +1,4 @@
-import { Blocks, Briefcase, Network, Activity, GitBranch, KeySquare } from "lucide-react";
+import { Blocks } from "lucide-react";
 import { createElement } from "react";
 
 import {
@@ -7,9 +7,9 @@ import {
 } from "@sdkwork/agents-pc-core/sdk/skillsAppSdkClient";
 
 import type { SkillItem } from "../components/SelectSkillsModal";
-import { DEFAULT_LIST_PAGE_SIZE } from "@sdkwork/agents-pc-core/sdk/pagination";
+import { DEFAULT_LIST_PAGE_SIZE, extractOffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
 
-import { extractArray, isRecord } from "./sdkEnvelope";
+import { extractArray } from "./sdkEnvelope";
 
 export interface SkillCatalogPage {
   items: SkillItem[];
@@ -27,16 +27,17 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | u
   return undefined;
 }
 
-function mapSkillRecord(record: Record<string, unknown>, index: number): SkillItem | undefined {
+function mapSkillRecord(
+  record: Record<string, unknown>,
+  index: number,
+  category: SkillItem["category"],
+): SkillItem | undefined {
   const id =
     pickString(record, ["skillKey", "skill_key", "skillId", "skill_id", "id"]) ??
-    `skill.preset.${index}`;
+    `skill.${category}.${index}`;
   const name = pickString(record, ["displayName", "display_name", "name", "title"]) ?? id;
   const description =
     pickString(record, ["description", "summary"]) ?? "Skill package from sdkwork-skills";
-  const categoryRaw = pickString(record, ["category", "categoryId", "category_id"]);
-  const category: SkillItem["category"] =
-    categoryRaw === "preset" || categoryRaw === "workflow" ? categoryRaw : "workflow";
   return {
     id: id.startsWith("skill.") ? id : `skill.${id}`,
     name,
@@ -47,57 +48,35 @@ function mapSkillRecord(record: Record<string, unknown>, index: number): SkillIt
   };
 }
 
-function readHasMore(response: unknown): boolean {
-  if (!isRecord(response)) {
-    return false;
-  }
-  const pageInfo = response.pageInfo;
-  if (isRecord(pageInfo)) {
-    return pageInfo.hasMore === true;
-  }
-  return false;
-}
-
-/** Load one interactive picker page from sdkwork-skills (`PAGINATION_SPEC.md` §8). */
-export async function loadSkillCatalogPage(page = 1): Promise<SkillCatalogPage> {
+/** Load one picker page for a single skills tab (`PAGINATION_SPEC.md` §8). */
+export async function loadSkillCatalogPageByCategory(
+  category: SkillItem["category"],
+  page = 1,
+  pageSize = DEFAULT_LIST_PAGE_SIZE,
+  q?: string,
+): Promise<SkillCatalogPage> {
   if (!isSkillsAppSdkConfigured()) {
     throw new Error("Skills catalog SDK is not configured for this deployment.");
   }
 
   const client = getSkillsAppSdkClient();
-  const [skillsResponse, packagesResponse] = await Promise.all([
-    client.skills.list({ page, pageSize: DEFAULT_LIST_PAGE_SIZE }),
-    client.skills.skillPackages.list({ page, pageSize: DEFAULT_LIST_PAGE_SIZE }),
-  ]);
-
-  const skills = extractArray(skillsResponse)
+  const listParams = {
+    page,
+    pageSize,
+    ...(q?.trim() ? { q: q.trim() } : {}),
+  };
+  const response =
+    category === "preset"
+      ? await client.skills.list(listParams)
+      : await client.skills.skillPackages.list(listParams);
+  const pageInfo = extractOffsetPageInfo(response);
+  const items = extractArray(response)
     .map((item, index) =>
       item && typeof item === "object"
-        ? mapSkillRecord(item as Record<string, unknown>, index)
+        ? mapSkillRecord(item as Record<string, unknown>, index, category)
         : undefined,
     )
     .filter((item): item is SkillItem => Boolean(item));
-  const packages = extractArray(packagesResponse)
-    .map((item, index) =>
-      item && typeof item === "object"
-        ? mapSkillRecord(item as Record<string, unknown>, skills.length + index)
-        : undefined,
-    )
-    .filter((item): item is SkillItem => Boolean(item));
 
-  const items = [...skills, ...packages];
-  const hasMore =
-    readHasMore(skillsResponse) ||
-    readHasMore(packagesResponse);
-
-  return { items, page, hasMore };
+  return { items, page: pageInfo.page, hasMore: pageInfo.hasMore };
 }
-
-/** @deprecated Use `loadSkillCatalogPage` for paginated pickers. */
-export async function loadSkillCatalog(): Promise<SkillItem[]> {
-  const page = await loadSkillCatalogPage(1);
-  return page.items;
-}
-
-/** @deprecated Alias for `loadSkillCatalog`. */
-export const loadSkillPresetCatalog = loadSkillCatalog;

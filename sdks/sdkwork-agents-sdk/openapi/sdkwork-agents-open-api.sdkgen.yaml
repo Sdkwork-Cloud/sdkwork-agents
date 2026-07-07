@@ -266,19 +266,9 @@ paths:
       x-sdkwork-audit-event: agent.business.deleted
       parameters:
         - $ref: '#/components/parameters/AgentIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DeleteAgentRequest'
       responses:
-        '200':
-          description: Soft-deleted managed agent response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentResponse'
+        '204':
+          description: Soft-deleted managed agent
         '403':
           description: Permission denied
           content:
@@ -517,8 +507,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateAgentPreviewResponseRequest'
       responses:
-        '200':
-          description: Managed agent preview runtime execution response
+        '201':
+          description: Managed agent preview runtime execution created
           content:
             application/json:
               schema:
@@ -571,8 +561,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateAgentPromptOptimizationRequest'
       responses:
-        '200':
-          description: Managed agent prompt optimization runtime execution response
+        '201':
+          description: Managed agent prompt optimization runtime execution created
           content:
             application/json:
               schema:
@@ -848,6 +838,183 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
 
+  /agent/v3/api/ai/agents/{agentId}/tasks:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-open-api
+      tags: [ai]
+      summary: List scheduled tasks for one managed agent
+      operationId: agents.tasks.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TenantIdQuery'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Managed agent task list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-open-api
+      tags: [ai]
+      summary: Create a scheduled task for one managed agent
+      operationId: agents.tasks.create
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_created
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TenantIdQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentTaskRequest'
+      responses:
+        '201':
+          description: Managed agent task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /agent/v3/api/ai/agents/{agentId}/tasks/{taskId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-open-api
+      tags: [ai]
+      summary: Retrieve one scheduled task
+      operationId: agents.tasks.retrieve
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+        - $ref: '#/components/parameters/TenantIdQuery'
+      responses:
+        '200':
+          description: Managed agent task response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-open-api
+      tags: [ai]
+      summary: Cancel one scheduled task
+      operationId: agents.tasks.cancel
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.cancel
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_cancelled
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+        - $ref: '#/components/parameters/TenantIdQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAgentTaskRequest'
+      responses:
+        '200':
+          description: Managed agent task cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-open-api
+      tags: [ai]
+      summary: Execute one deferred scheduled task
+      operationId: agents.tasks.execute
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.execute
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_executed
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+        - $ref: '#/components/parameters/TenantIdQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAgentTaskRequest'
+      responses:
+        '200':
+          description: Managed agent task executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
   /agent/v3/api/ai/agents/{agentId}/composition_slots:
     get:
       x-sdkwork-owner: sdkwork-agents
@@ -1073,15 +1240,9 @@ paths:
       parameters:
         - $ref: '#/components/parameters/AgentIdPath'
         - $ref: '#/components/parameters/SlotIdPath'
-        - $ref: '#/components/parameters/ExpectedVersion'
-        - $ref: '#/components/parameters/RequestedAt'
       responses:
-        '200':
-          description: Deleted managed agent composition slot response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentCompositionSlotResponse'
+        '204':
+          description: Deleted managed agent composition slot
         '400':
           description: RFC 9457 problem detail response
           content:
@@ -1225,6 +1386,15 @@ components:
         minLength: 1
         maxLength: 128
         pattern: '^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    TaskIdPath:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     Problem:
       description: RFC 9457 problem detail response
       content:
@@ -2097,16 +2267,6 @@ components:
         requestedAt:
           type: string
           format: date-time
-    DeleteAgentRequest:
-      type: object
-      additionalProperties: false
-      required: [requestedAt]
-      properties:
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
     RestoreAgentRequest:
       type: object
       additionalProperties: false
@@ -2196,6 +2356,98 @@ components:
                       type: array
                       items:
                         $ref: '#/components/schemas/AgentSessionRecord'
+    AgentTaskRecord:
+      type: object
+      additionalProperties: false
+      required: [taskId, agentId, title, prompt, status, version, createdAt, updatedAt]
+      properties:
+        taskId:
+          type: string
+        agentId:
+          type: string
+        title:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+        externalRef:
+          type: string
+        metadataJson:
+          type: string
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+    AgentTaskResponse:
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentTaskRecord'
+    AgentTaskListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentTaskRecord'
+    CreateAgentTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [title, prompt, requestedAt]
+      properties:
+        title:
+          type: string
+        prompt:
+          type: string
+        externalRef:
+          type: string
+        metadataJson:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    CancelAgentTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
     CreateAgentSessionRequest:
       type: object
       additionalProperties: false

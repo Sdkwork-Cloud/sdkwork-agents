@@ -1,21 +1,26 @@
 use crate::application::{
     ActivateAgentProviderBindingCommand, AgentPreviewResponseCommand,
-    AgentPromptOptimizationCommand, AgentProviderBindingCommand, ArchiveSessionCommand,
-    ChangeAgentStatusCommand, CloseSessionCommand, CreateAgentCommand,
-    CreateMessageCommand, CreateSessionCommand, DeleteAgentCommand, GetAgentCommand,
-    ListAgentsCommand, ListMessagesCommand,
-    ListSessionsCommand, RestoreAgentCommand, UpdateAgentCommand,
+    AgentPromptOptimizationCommand, AgentProviderBindingCommand, AnswerInteractionCommand,
+    ApproveInteractionCommand, ArchiveSessionCommand, CancelTaskCommand, ChangeAgentStatusCommand,
+    CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand, CreateMessageCommand,
+    CreateSessionCommand, CreateTaskCommand, DeleteAgentCommand, ExecuteTaskCommand,
+    GetAgentCommand, ListAgentsCommand, ListInteractionsCommand, ListMessagesCommand,
+    ListSessionsCommand, ListTasksCommand, RestoreAgentCommand, UpdateAgentCommand,
 };
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotRecord, AgentImplementationKind,
-    AgentImplementationType, AgentMessageRecord, AgentMessageRole,
-    AgentProviderBindingRecord, AgentRuntimeExecutionRecord, AgentSessionRecord,
-    AgentVisibility,
+    AgentImplementationType, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
+    AgentMessageRecord, AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord,
+    AgentRuntimeExecutionRecord, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord,
+    AgentTaskStatus, AgentVisibility,
 };
-use crate::ports::{AgentListQuery, MessageListQuery, PaginationParams, SessionListQuery};
+use crate::ports::{
+    AgentListQuery, InteractionListQuery, MessageListQuery, PaginationParams, SessionListQuery,
+    TaskListQuery,
+};
 use crate::validation::{
-    is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id, parse_tenant_id,
-    validate_requested_at,
+    is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id,
+    parse_tenant_id, validate_requested_at,
 };
 use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelResult, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -501,7 +506,11 @@ impl AgentManagementProfileDto {
             intent.constraints.push(format!("agent.type={agent_type}"));
         }
         for knowledge_base_id in &self.knowledge_base_ids {
-            if !intent.context_paths.iter().any(|path| path == knowledge_base_id) {
+            if !intent
+                .context_paths
+                .iter()
+                .any(|path| path == knowledge_base_id)
+            {
                 intent.context_paths.push(knowledge_base_id.clone());
             }
         }
@@ -997,7 +1006,7 @@ impl ListSessionsRequestDto {
             query = query.for_owner(parse_owner_user_id(&owner_user_id)?);
         }
         if let Some(status) = self.status {
-            query = query.with_status(status);
+            query = query.with_status(parse_session_status(&status)?);
         }
         if self.include_archived {
             query = query.include_archived();
@@ -1099,6 +1108,367 @@ impl AgentSessionListResponseDto {
 }
 
 // ===========================================================================
+// Task DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTaskDataDto {
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub owner_user_id: String,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    pub title: Option<String>,
+    pub prompt: String,
+    pub external_ref: Option<String>,
+    pub metadata_json: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTaskRequestDto {
+    pub data: CreateTaskDataDto,
+    pub requested_at: String,
+}
+
+impl CreateTaskRequestDto {
+    pub fn into_command(
+        self,
+        agent_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CreateTaskCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(CreateTaskCommand {
+            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
+            organization_id: parse_organization_id(&self.data.organization_id)?,
+            agent_id,
+            owner_user_id: parse_owner_user_id(&self.data.owner_user_id)?,
+            task_id: self.data.task_id.unwrap_or_default(),
+            title: self.data.title,
+            prompt: self.data.prompt,
+            external_ref: self.data.external_ref,
+            metadata_json: self.data.metadata_json.unwrap_or_else(|| "{}".to_string()),
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelTaskRequestDto {
+    pub tenant_id: String,
+    pub expected_version: Option<String>,
+    pub requested_at: String,
+}
+
+impl CancelTaskRequestDto {
+    pub fn into_command(
+        self,
+        path_agent_id: String,
+        task_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CancelTaskCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let expected_version = self
+            .expected_version
+            .as_deref()
+            .map(parse_expected_version)
+            .transpose()?;
+        Ok(CancelTaskCommand {
+            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            path_agent_id,
+            task_id,
+            expected_version,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+
+    pub fn into_execute_command(
+        self,
+        path_agent_id: String,
+        task_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ExecuteTaskCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let expected_version = self
+            .expected_version
+            .as_deref()
+            .map(parse_expected_version)
+            .transpose()?;
+        Ok(ExecuteTaskCommand {
+            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            path_agent_id,
+            task_id,
+            expected_version,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTasksRequestDto {
+    pub tenant_id: String,
+    pub owner_user_id: Option<String>,
+    pub status: Option<String>,
+}
+
+impl ListTasksRequestDto {
+    pub fn into_command(self, requested_by: PolicySubject) -> KernelResult<ListTasksCommand> {
+        let mut query = TaskListQuery::for_tenant(parse_tenant_id(&self.tenant_id)?);
+        if let Some(owner_user_id) = self.owner_user_id {
+            query = query.for_owner(parse_owner_user_id(&owner_user_id)?);
+        }
+        if let Some(status) = self.status {
+            query = query.with_status(parse_task_status(&status)?);
+        }
+        Ok(ListTasksCommand {
+            query,
+            requested_by,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskRecordDto {
+    pub task_id: String,
+    pub agent_id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub owner_user_id: String,
+    pub title: Option<String>,
+    pub prompt: String,
+    pub status: String,
+    pub external_ref: Option<String>,
+    pub metadata_json: String,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub cancelled_at: Option<String>,
+}
+
+impl AgentTaskRecordDto {
+    pub fn from_record(record: &AgentTaskRecord) -> Self {
+        Self {
+            task_id: record.task_id.clone(),
+            agent_id: record.agent_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            owner_user_id: record.owner_user_id.to_string(),
+            title: record.title.clone(),
+            prompt: record.prompt.clone(),
+            status: record.status.as_str().to_string(),
+            external_ref: record.external_ref.clone(),
+            metadata_json: record.metadata_json.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            started_at: record.started_at.clone(),
+            completed_at: record.completed_at.clone(),
+            cancelled_at: record.cancelled_at.clone(),
+        }
+    }
+}
+
+// ===========================================================================
+// Interaction DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInteractionRecordDto {
+    pub interaction_id: String,
+    pub session_id: String,
+    pub agent_id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub engine_key: String,
+    pub kind: String,
+    pub status: String,
+    pub prompt: String,
+    pub options_json: String,
+    pub resolution_json: String,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub resolved_at: Option<String>,
+}
+
+impl AgentInteractionRecordDto {
+    pub fn from_record(record: &AgentInteractionRecord) -> Self {
+        Self {
+            interaction_id: record.interaction_id.clone(),
+            session_id: record.session_id.clone(),
+            agent_id: record.agent_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            engine_key: record.engine_key.clone(),
+            kind: record.kind.as_str().to_string(),
+            status: record.status.as_str().to_string(),
+            prompt: record.prompt.clone(),
+            options_json: record.options_json.clone(),
+            resolution_json: record.resolution_json.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            resolved_at: record.resolved_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInteractionDataDto {
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub interaction_id: Option<String>,
+    pub engine_key: String,
+    pub kind: String,
+    pub prompt: String,
+    pub options_json: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInteractionRequestDto {
+    pub data: CreateInteractionDataDto,
+    pub requested_at: String,
+}
+
+impl CreateInteractionRequestDto {
+    pub fn into_command(
+        self,
+        agent_id: String,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CreateInteractionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let kind = AgentInteractionKind::from_code(self.data.kind.as_str())
+            .ok_or_else(|| KernelError::validation("invalid interaction kind"))?;
+        Ok(CreateInteractionCommand {
+            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
+            organization_id: parse_organization_id(&self.data.organization_id)?,
+            session_id,
+            agent_id,
+            interaction_id: self.data.interaction_id.unwrap_or_default(),
+            engine_key: self.data.engine_key,
+            kind,
+            prompt: self.data.prompt,
+            options_json: self.data.options_json.unwrap_or_else(|| "[]".to_string()),
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListInteractionsRequestDto {
+    pub tenant_id: String,
+    pub status: Option<String>,
+}
+
+impl ListInteractionsRequestDto {
+    pub fn into_command(
+        self,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ListInteractionsCommand> {
+        let mut query =
+            InteractionListQuery::for_session(parse_tenant_id(&self.tenant_id)?, session_id);
+        if let Some(status) = self.status {
+            query = query.with_status(parse_interaction_status(&status)?);
+        }
+        Ok(ListInteractionsCommand {
+            query,
+            path_agent_id: String::new(),
+            owner_scope: None,
+            requested_by,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApproveInteractionRequestDto {
+    #[serde(default)]
+    pub tenant_id: String,
+    pub approved: bool,
+    pub reason: Option<String>,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ApproveInteractionRequestDto {
+    pub fn into_command(
+        self,
+        path_agent_id: String,
+        session_id: String,
+        interaction_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ApproveInteractionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(ApproveInteractionCommand {
+            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            path_agent_id,
+            session_id,
+            interaction_id,
+            approved: self.approved,
+            reason: self.reason,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerInteractionRequestDto {
+    #[serde(default)]
+    pub tenant_id: String,
+    pub answer: String,
+    pub option_label: Option<String>,
+    pub rejected: bool,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl AnswerInteractionRequestDto {
+    pub fn into_command(
+        self,
+        path_agent_id: String,
+        session_id: String,
+        interaction_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<AnswerInteractionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(AnswerInteractionCommand {
+            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            path_agent_id,
+            session_id,
+            interaction_id,
+            answer: self.answer,
+            option_label: self.option_label,
+            rejected: self.rejected,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+// ===========================================================================
 // Message DTOs
 // ===========================================================================
 
@@ -1153,7 +1523,10 @@ impl CreateMessageRequestDto {
             message_id: self.data.message_id,
             role: parse_message_role(&self.data.role)?,
             content: self.data.content,
-            content_type: self.data.content_type.unwrap_or_else(|| "text/plain".to_string()),
+            content_type: self
+                .data
+                .content_type
+                .unwrap_or_else(|| "text/plain".to_string()),
             input_tokens,
             output_tokens,
             model_id: self.data.model_id,
@@ -1180,12 +1553,13 @@ impl ListMessagesRequestDto {
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<ListMessagesCommand> {
-        let mut query = MessageListQuery::for_session(parse_tenant_id(&self.tenant_id)?, session_id);
+        let mut query =
+            MessageListQuery::for_session(parse_tenant_id(&self.tenant_id)?, session_id);
         if let Some(role) = self.role {
-            query = query.with_role(role);
+            query = query.with_role(parse_message_role(&role)?.as_str());
         }
         if let Some(status) = self.status {
-            query = query.with_status(status);
+            query = query.with_status(parse_message_status(&status)?);
         }
         Ok(ListMessagesCommand {
             query,
@@ -1300,6 +1674,46 @@ fn parse_status(value: &str) -> KernelResult<AgentBusinessStatus> {
     })
 }
 
+fn parse_session_status(value: &str) -> KernelResult<String> {
+    AgentSessionStatus::from_code(value)
+        .map(|status| status.as_str().to_string())
+        .ok_or_else(|| {
+            KernelError::validation(format!(
+                "status must be one of active, idle, closed, archived: {value}"
+            ))
+        })
+}
+
+fn parse_task_status(value: &str) -> KernelResult<String> {
+    AgentTaskStatus::from_code(value)
+        .map(|status| status.as_str().to_string())
+        .ok_or_else(|| {
+            KernelError::validation(format!(
+                "status must be one of pending, running, completed, failed, cancelled: {value}"
+            ))
+        })
+}
+
+fn parse_interaction_status(value: &str) -> KernelResult<String> {
+    AgentInteractionStatus::from_code(value)
+        .map(|status| status.as_str().to_string())
+        .ok_or_else(|| {
+            KernelError::validation(format!(
+                "status must be one of pending, resolved, rejected, expired, cancelled: {value}"
+            ))
+        })
+}
+
+fn parse_message_status(value: &str) -> KernelResult<String> {
+    AgentMessageStatus::from_code(value)
+        .map(|status| status.as_str().to_string())
+        .ok_or_else(|| {
+            KernelError::validation(format!(
+                "status must be one of sent, delivered, read, failed, cancelled: {value}"
+            ))
+        })
+}
+
 fn parse_implementation_kind(input: &str) -> KernelResult<AgentImplementationKind> {
     AgentImplementationKind::from_code(input)
         .ok_or_else(|| KernelError::validation(format!("invalid implementation kind: {input}")))
@@ -1323,7 +1737,9 @@ fn parse_message_role(value: &str) -> KernelResult<AgentMessageRole> {
 
 fn parse_u64(value: &str, field_name: &str) -> KernelResult<u64> {
     value.parse::<u64>().map_err(|_| {
-        KernelError::validation(format!("{field_name} must be a valid non-negative integer: {value}"))
+        KernelError::validation(format!(
+            "{field_name} must be a valid non-negative integer: {value}"
+        ))
     })
 }
 

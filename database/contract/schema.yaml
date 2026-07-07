@@ -6,7 +6,6 @@ owner_team: agents-platform
 compliance_level: L2
 engines:
   - postgres
-  - sqlite
 table_prefix: ai_
 # Composition-plane architecture:
 # - Core agent lifecycle tables owned by this module
@@ -29,6 +28,22 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: 'Immutable audit log for agent management operations'
+  - name: ai_agent_session
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Hosted chat sessions scoped by tenant, agent, and owner'
+  - name: ai_agent_message
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Session messages and chat turn persistence'
+  - name: ai_agent_interaction
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Live interaction state for code-engine approval and user-question flows'
+  - name: ai_agent_task
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Scheduled agent tasks projected from kernel AgentTask'
 # Cross-module references (owned by other modules):
 # - ai_agent_composition_slot.slot_kind IN ('memory') → sdkwork-memory
 # - ai_agent_composition_slot.slot_kind IN ('knowledge') → sdkwork-knowledgebase

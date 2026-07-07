@@ -12,7 +12,7 @@ pnpm topology:validate
 pnpm db:validate
 ```
 
-These gates cover API envelope compliance, deploy manifest (`deployments/deploy.yaml`), topology spec, and database framework alignment.
+These gates cover API and SDK standards, operation semantics, route collision checks, pagination, SDK import boundaries, composition boundaries, deploy manifest (`deployments/deploy.yaml`), topology spec, and database framework alignment.
 
 **Staging/production cutover:** [runbooks/pre-launch-verification.md](../../runbooks/pre-launch-verification.md)
 
@@ -44,9 +44,9 @@ GitHub workflow: `.github/workflows/package.yml` → reusable `sdkwork-package.y
 
 Manual dispatch inputs include sibling dependency refs (`SDKWORK_KERNEL_REF`, `SDKWORK_KNOWLEDGEBASE_REF`, etc.).
 
-## Post-launch platform items
+## Non-GA Platform Scope
 
-Rate limiting, CORS, and Prometheus metrics are owned by `sdkwork-web-framework` and ops — not Agents-application blockers. See [TECH_ARCHITECTURE.md](../../architecture/tech/TECH_ARCHITECTURE.md) §10.
+Rate limiting, CORS, and dashboard wiring are owned by `sdkwork-web-framework` and ops. `sdkwork-agents` must consume those platform capabilities instead of reimplementing them locally. See [TECH_ARCHITECTURE.md](../../architecture/tech/TECH_ARCHITECTURE.md) section 10.
 
 ## Canon
 

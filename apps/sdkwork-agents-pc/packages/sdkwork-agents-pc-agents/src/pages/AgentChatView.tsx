@@ -47,10 +47,14 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [oldestLoadedPage, setOldestLoadedPage] = useState(1);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,9 +80,11 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
         }
         setSessionId(resolvedSessionId);
 
-        const history = await agentChatService.listMessages(agentId, resolvedSessionId);
+        const historyPage = await agentChatService.loadRecentMessages(agentId, resolvedSessionId);
         if (!cancelled) {
-          setMessages(trimMessages(history));
+          setMessages(trimMessages(historyPage.items));
+          setOldestLoadedPage(historyPage.pageInfo.page);
+          setHasOlderMessages(historyPage.pageInfo.page > 1);
         }
       } catch {
         if (!cancelled) {
@@ -100,6 +106,41 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  const loadOlderMessages = async () => {
+    if (!sessionId || loadingOlder || !hasOlderMessages || oldestLoadedPage <= 1) {
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    const previousScrollHeight = container?.scrollHeight ?? 0;
+    const previousScrollTop = container?.scrollTop ?? 0;
+    const nextPage = oldestLoadedPage - 1;
+
+    setLoadingOlder(true);
+    try {
+      const olderPage = await agentChatService.listMessagesPage(agentId, sessionId, nextPage);
+      setMessages((prev) => trimMessages([...olderPage.items, ...prev]));
+      setOldestLoadedPage(nextPage);
+      setHasOlderMessages(nextPage > 1);
+      requestAnimationFrame(() => {
+        if (!container) {
+          return;
+        }
+        container.scrollTop = container.scrollHeight - previousScrollHeight + previousScrollTop;
+      });
+    } catch {
+      toast("无法加载更早的消息", "error");
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (event.currentTarget.scrollTop <= 48) {
+      void loadOlderMessages();
+    }
+  };
 
   const handleSend = async (content: string) => {
     if (!content.trim() || isTyping || !sessionId) {
@@ -168,11 +209,20 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
         </div>
       </div>
 
-      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
         {bootstrapping ? (
           <div className="py-8 text-center text-sm text-gray-500">正在创建会话...</div>
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
+            {hasOlderMessages ? (
+              <div className="py-2 text-center text-xs text-gray-500">
+                {loadingOlder ? "正在加载更早的消息..." : "向上滚动加载更早的消息"}
+              </div>
+            ) : null}
             {visibleMessages.map((message) => {
               const isUser = message.role === "user";
               return (

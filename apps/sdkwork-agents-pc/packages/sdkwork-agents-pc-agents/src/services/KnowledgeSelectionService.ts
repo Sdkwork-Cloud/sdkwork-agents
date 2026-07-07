@@ -1,4 +1,12 @@
-import { resolveKnowledgeSelectionAdapter } from "./knowledgeSelectionAdapter";
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  type CursorPageInfo,
+} from "@sdkwork/agents-pc-core/sdk/pagination";
+
+import {
+  resolveKnowledgeSelectionAdapter,
+  type KnowledgeBasesPage,
+} from "./knowledgeSelectionAdapter";
 
 export interface KnowledgeBase {
   id: string;
@@ -11,13 +19,18 @@ export interface KnowledgeBase {
   count?: number;
 }
 
+export type { KnowledgeBasesPage, CursorPageInfo };
+
 class KnowledgeSelectionService {
-  async getBases(): Promise<KnowledgeBase[]> {
+  async getBasesPage(
+    cursor?: string,
+    pageSize = DEFAULT_LIST_PAGE_SIZE,
+  ): Promise<KnowledgeBasesPage> {
     const adapter = resolveKnowledgeSelectionAdapter();
     if (!adapter) {
-      return [];
+      return { items: [], hasMore: false };
     }
-    return adapter.getBases();
+    return adapter.getBasesPage({ cursor, pageSize });
   }
 }
 

@@ -11,10 +11,10 @@ sdkwork-utils-rust = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-sdkwork-agent-provider-codex = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-codex" }
-sdkwork-agent-provider-claude-code = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-claude-code" }
-sdkwork-agent-provider-gemini-cli = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-gemini-cli" }
-sdkwork-agent-provider-opencode = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-opencode" }
-sdkwork-agent-provider-openclaw = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-openclaw" }
-sdkwork-agent-provider-hermes = { path = "../../../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-hermes" }
-sdkwork-agent-provider-spi = { path = "../../../sdkwork-kernel/sdkwork-agent-provider-spi" }
+sdkwork-agent-provider-codex = { workspace = true }
+sdkwork-agent-provider-claude-code = { workspace = true }
+sdkwork-agent-provider-gemini-cli = { workspace = true }
+sdkwork-agent-provider-opencode = { workspace = true }
+sdkwork-agent-provider-openclaw = { workspace = true }
+sdkwork-agent-provider-hermes = { workspace = true }
+sdkwork-agent-provider-spi = { workspace = true }

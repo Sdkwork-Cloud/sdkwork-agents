@@ -1,27 +1,43 @@
 use tokio::signal;
 
 pub async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
     #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
+    let terminate = wait_for_sigterm();
 
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        () = ctrl_c => {},
+        () = wait_for_ctrl_c() => {},
         () = terminate => {},
     }
 
     tracing::info!("sdkwork-agents-standalone-gateway shutdown signal received");
+}
+
+async fn wait_for_ctrl_c() {
+    if let Err(error) = signal::ctrl_c().await {
+        tracing::warn!(
+            error = %error,
+            "sdkwork-agents-standalone-gateway failed to install Ctrl+C shutdown handler"
+        );
+        std::future::pending::<()>().await;
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_sigterm() {
+    let mut terminate = match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+        Ok(terminate) => terminate,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "sdkwork-agents-standalone-gateway failed to install SIGTERM shutdown handler"
+            );
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+
+    terminate.recv().await;
 }

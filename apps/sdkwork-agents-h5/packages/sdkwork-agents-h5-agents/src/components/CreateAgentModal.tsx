@@ -4,9 +4,6 @@ import { toast } from './Toast';
 import { agentService } from '../services/AgentService';
 import { ModalWrapper } from './ModalWrapper';
 import { DEFAULT_AGENT_CONFIG } from './AgentDefaults';
-import { createDefaultAvatar } from '../services/DefaultAvatarService';
-
-const DEFAULT_AGENT_AVATAR = createDefaultAvatar('agent');
 
 export const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; onSuccess: (agentId?: string) => void }> = ({ isOpen, onClose, onSuccess }) => {
   const [name, setName] = useState('');
@@ -43,7 +40,6 @@ export const CreateAgentModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   name,
                   description: desc,
                   type,
-                  avatar: DEFAULT_AGENT_AVATAR
                 });
                 toast(`智能体 "${name}" 创建成功`, 'success');
                 onSuccess(createdAgent.id);

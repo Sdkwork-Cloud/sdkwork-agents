@@ -6,7 +6,7 @@ export { ToastContainer, toast } from "./components/Toast";
 export { agentService, configureAgentService, createSdkworkAgentService } from "./services/AgentService";
 export { agentChatService, AgentChatService } from "./services/AgentChatService";
 export type { ChatMessage } from "./services/AgentChatService";
-export { loadSkillCatalog, loadSkillPresetCatalog } from "./services/SkillPresetCatalogService";
+export { loadSkillCatalogPageByCategory } from "./services/SkillPresetCatalogService";
 export { configureKnowledgeSelectionAdapter } from "./services/knowledgeSelectionAdapter";
 export { createKnowledgebaseSelectionAdapter } from "./services/createKnowledgebaseSelectionAdapter";
 export type {

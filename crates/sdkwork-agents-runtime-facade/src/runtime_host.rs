@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::code_engines::{
-    bootstrap_code_engine, canonical_code_engine_keys, CodeEngineBootstrapError, CodeEngineSlot,
+    bootstrap_code_engine, bootstrappable_engine_keys, CodeEngineBootstrapError, CodeEngineSlot,
 };
 use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
@@ -23,7 +23,7 @@ impl AgentsCodeEngineHost {
         live: LiveInteractionRegistry,
     ) -> Result<Self, CodeEngineBootstrapError> {
         let mut slots = HashMap::new();
-        for engine_key in canonical_code_engine_keys() {
+        for engine_key in bootstrappable_engine_keys() {
             let slot = bootstrap_code_engine(engine_key)?;
             slots.insert(engine_key.to_string(), slot);
         }
@@ -98,8 +98,8 @@ mod tests {
     #[test]
     fn host_bootstraps_all_canonical_engines() {
         let host = AgentsCodeEngineHost::bootstrap().expect("host bootstrap");
-        assert_eq!(host.slots.len(), 4);
-        assert_eq!(host.catalog().engines.len(), 4);
+        assert_eq!(host.slots.len(), 6);
+        assert_eq!(host.catalog().engines.len(), 6);
     }
 
     #[test]

@@ -1,21 +1,44 @@
-use sdkwork_agent_kernel::{KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse};
+use sdkwork_agent_kernel::{
+    KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
+};
 use sdkwork_agent_provider_claude_code::ClaudeCodeSdkIntegration;
 use sdkwork_agent_provider_codex::CodexSdkIntegration;
 use sdkwork_agent_provider_gemini_cli::GeminiCliSdkIntegration;
 use sdkwork_agent_provider_hermes::HermesSdkIntegration;
-use sdkwork_agent_provider_opencode::OpenCodeSdkIntegration;
 use sdkwork_agent_provider_openclaw::OpenClawSdkIntegration;
+use sdkwork_agent_provider_opencode::OpenCodeSdkIntegration;
 use sdkwork_agent_provider_spi::{
     CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID, HERMES_BINDING_ID,
     OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
 };
 
-/// Canonical code-engine keys exposed through the agents runtime facade.
-pub const CANONICAL_CODE_ENGINE_KEYS: [&str; 4] =
-    ["codex", "claude-code", "gemini", "opencode"];
+/// Canonical T1 code-engine keys bootstrapped by default in production hosts.
+pub const CANONICAL_CODE_ENGINE_KEYS: [&str; 4] = ["codex", "claude-code", "gemini", "opencode"];
+
+/// T2 autonomous agent engines (bootstrap on demand; included in full catalog).
+pub const EXTENDED_AUTONOMOUS_ENGINE_KEYS: [&str; 2] = ["openclaw", "hermes"];
 
 pub fn canonical_code_engine_keys() -> &'static [&'static str] {
     &CANONICAL_CODE_ENGINE_KEYS
+}
+
+pub fn bootstrappable_engine_keys() -> [&'static str; 6] {
+    [
+        CANONICAL_CODE_ENGINE_KEYS[0],
+        CANONICAL_CODE_ENGINE_KEYS[1],
+        CANONICAL_CODE_ENGINE_KEYS[2],
+        CANONICAL_CODE_ENGINE_KEYS[3],
+        EXTENDED_AUTONOMOUS_ENGINE_KEYS[0],
+        EXTENDED_AUTONOMOUS_ENGINE_KEYS[1],
+    ]
+}
+
+pub fn engine_catalog_tier(engine_key: &str) -> Option<&'static str> {
+    match engine_key {
+        "codex" | "claude-code" | "gemini" | "opencode" => Some("t1-code"),
+        "openclaw" | "hermes" => Some("t2-autonomous"),
+        _ => None,
+    }
 }
 
 pub fn is_canonical_code_engine(engine_key: &str) -> bool {
@@ -113,6 +136,10 @@ impl CodeEngineSlot {
         self.model_provider().invoke(request)
     }
 
+    pub fn stream_model(&self, request: ModelRequest) -> KernelResult<Vec<ModelStreamChunk>> {
+        self.model_provider().stream(request)
+    }
+
     pub(crate) fn model_provider(&self) -> &dyn ModelProvider {
         match self {
             Self::Codex(integration) => &integration.model,
@@ -145,7 +172,9 @@ pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEng
         "hermes" => HermesSdkIntegration::bootstrap()
             .map(CodeEngineSlot::Hermes)
             .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
-        other => Err(CodeEngineBootstrapError::UnsupportedEngine(other.to_string())),
+        other => Err(CodeEngineBootstrapError::UnsupportedEngine(
+            other.to_string(),
+        )),
     }
 }
 

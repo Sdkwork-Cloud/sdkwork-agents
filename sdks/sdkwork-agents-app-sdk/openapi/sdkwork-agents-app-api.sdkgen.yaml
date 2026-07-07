@@ -267,19 +267,9 @@ paths:
       x-sdkwork-audit-event: agent.business.deleted
       parameters:
         - $ref: '#/components/parameters/AgentIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DeleteAgentRequest'
       responses:
-        '200':
-          description: Soft-deleted managed agent response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentResponse'
+        '204':
+          description: Soft-deleted managed agent
         '403':
           description: Permission denied
           content:
@@ -599,8 +589,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateAgentPreviewResponseRequest'
       responses:
-        '200':
-          description: Managed agent preview runtime execution response
+        '201':
+          description: Managed agent preview runtime execution created
           content:
             application/json:
               schema:
@@ -653,8 +643,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateAgentPromptOptimizationRequest'
       responses:
-        '200':
-          description: Managed agent prompt optimization runtime execution response
+        '201':
+          description: Managed agent prompt optimization runtime execution created
           content:
             application/json:
               schema:
@@ -926,6 +916,358 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
 
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: List live interactions for one chat session
+      operationId: agents.interactions.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: agent.business.interaction.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Managed agent interaction list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Create a live interaction pause point for one chat session
+      operationId: agents.interactions.create
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: agent.business.interaction.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.interaction.created
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentInteractionRequest'
+      responses:
+        '201':
+          description: Managed agent interaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Retrieve one live interaction
+      operationId: agents.interactions.retrieve
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: agent.business.interaction.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/InteractionIdPath'
+      responses:
+        '200':
+          description: Managed agent interaction response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Approve or reject an approval interaction
+      operationId: agents.interactions.approve
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: agent.business.interaction.approve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/InteractionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveAgentInteractionRequest'
+      responses:
+        '200':
+          description: Managed agent interaction resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Answer or reject a user-question interaction
+      operationId: agents.interactions.answer
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: agent.business.interaction.answer
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/InteractionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerAgentInteractionRequest'
+      responses:
+        '200':
+          description: Managed agent interaction resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /app/v3/api/ai/agents/{agentId}/tasks:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: List scheduled tasks for one managed agent
+      operationId: agents.tasks.list
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Managed agent task list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Create a scheduled task for one managed agent
+      operationId: agents.tasks.create
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_created
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentTaskRequest'
+      responses:
+        '201':
+          description: Managed agent task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Retrieve one scheduled task
+      operationId: agents.tasks.retrieve
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Managed agent task response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Cancel one scheduled task
+      operationId: agents.tasks.cancel
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.cancel
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_cancelled
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAgentTaskRequest'
+      responses:
+        '200':
+          description: Managed agent task cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Execute one deferred scheduled task
+      operationId: agents.tasks.execute
+      security:
+        - AuthToken: []
+          AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: agent.business.task.execute
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_executed
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAgentTaskRequest'
+      responses:
+        '200':
+          description: Managed agent task executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
 
   /app/v3/api/ai/agents/{agentId}/composition_slots:
     get:
@@ -1154,15 +1496,9 @@ paths:
       parameters:
         - $ref: '#/components/parameters/AgentIdPath'
         - $ref: '#/components/parameters/SlotIdPath'
-        - $ref: '#/components/parameters/ExpectedVersion'
-        - $ref: '#/components/parameters/RequestedAt'
       responses:
-        '200':
-          description: Deleted managed agent composition slot response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentCompositionSlotResponse'
+        '204':
+          description: Deleted managed agent composition slot
         '400':
           description: RFC 9457 problem detail response
           content:
@@ -1230,6 +1566,10 @@ paths:
       x-sdkwork-permission: agent.business.mcp_server.list
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.mcp_server_listed
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/SearchQ'
       responses:
         '200':
           description: MCP composition-slot marketplace projection for the tenant
@@ -1356,6 +1696,24 @@ components:
         minLength: 1
         maxLength: 128
         pattern: '^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    TaskIdPath:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    InteractionIdPath:
+      name: interactionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     BindingIdPath:
       name: bindingId
       in: path
@@ -2237,16 +2595,6 @@ components:
         requestedAt:
           type: string
           format: date-time
-    DeleteAgentRequest:
-      type: object
-      additionalProperties: false
-      required: [requestedAt]
-      properties:
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
     RestoreAgentRequest:
       type: object
       additionalProperties: false
@@ -2336,6 +2684,246 @@ components:
                       type: array
                       items:
                         $ref: '#/components/schemas/AgentSessionRecord'
+    AgentTaskRecord:
+      type: object
+      additionalProperties: false
+      required: [taskId, agentId, title, prompt, status, version, createdAt, updatedAt]
+      properties:
+        taskId:
+          type: string
+        agentId:
+          type: string
+        title:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+        externalRef:
+          type: string
+        metadataJson:
+          type: string
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+    AgentInteractionRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - interactionId
+        - sessionId
+        - agentId
+        - tenantId
+        - organizationId
+        - engineKey
+        - kind
+        - status
+        - prompt
+        - optionsJson
+        - resolutionJson
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        interactionId:
+          type: string
+        sessionId:
+          type: string
+        agentId:
+          type: string
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        engineKey:
+          type: string
+        kind:
+          type: string
+          enum: [approval, user_question]
+        status:
+          type: string
+        prompt:
+          type: string
+        optionsJson:
+          type: string
+        resolutionJson:
+          type: string
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+    AgentInteractionResponse:
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentInteractionRecord'
+    AgentInteractionListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentInteractionRecord'
+    CreateAgentInteractionData:
+      type: object
+      additionalProperties: false
+      required: [organizationId, engineKey, kind, prompt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        interactionId:
+          type: string
+          pattern: '^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        engineKey:
+          type: string
+        kind:
+          type: string
+          enum: [approval, user_question]
+        prompt:
+          type: string
+        optionsJson:
+          type: string
+    CreateAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [data, requestedAt]
+      properties:
+        data:
+          $ref: '#/components/schemas/CreateAgentInteractionData'
+        requestedAt:
+          type: string
+          format: date-time
+    ApproveAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [approved, expectedVersion, requestedAt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        approved:
+          type: boolean
+        reason:
+          type: string
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AnswerAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [answer, rejected, expectedVersion, requestedAt]
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        answer:
+          type: string
+        optionLabel:
+          type: string
+        rejected:
+          type: boolean
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentTaskResponse:
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkResourceData'
+                - type: object
+                  required: [item]
+                  properties:
+                    item:
+                      $ref: '#/components/schemas/AgentTaskRecord'
+    AgentTaskListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SdkWorkApiResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/SdkWorkPageData'
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentTaskRecord'
+    CreateAgentTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [title, prompt, requestedAt]
+      properties:
+        title:
+          type: string
+        prompt:
+          type: string
+        externalRef:
+          type: string
+        metadataJson:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    CancelAgentTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
     CreateAgentSessionRequest:
       type: object
       additionalProperties: false

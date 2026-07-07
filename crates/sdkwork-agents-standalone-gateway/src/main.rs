@@ -1,7 +1,7 @@
 use anyhow::Context;
 use sdkwork_agents_standalone_gateway::{
-    build_router, init_tracing, run_agents_app_database_migrate_only, run_kernel_database_migrate_only,
-    shutdown_signal,
+    build_router, init_tracing, run_agents_app_database_migrate_only,
+    run_kernel_database_migrate_only, shutdown_signal,
 };
 
 #[tokio::main]

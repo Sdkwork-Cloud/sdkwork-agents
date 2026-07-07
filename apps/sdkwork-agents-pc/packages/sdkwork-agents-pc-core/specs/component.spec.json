@@ -46,21 +46,6 @@
         "credentialMode": "authenticated-app-api"
       },
       {
-        "workspace": "sdkwork-database",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-drive",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-kernel",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
         "workspace": "sdkwork-knowledgebase-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api"
@@ -74,16 +59,6 @@
         "workspace": "sdkwork-voice-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api"
-      },
-      {
-        "workspace": "sdkwork-utils",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-web-framework",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
       }
     ],
     "sdkClients": [
@@ -92,6 +67,50 @@
       "@sdkwork/skills-app-sdk",
       "@sdkwork/voice-app-sdk"
     ],
+    "permissionComposition": {
+      "inheritanceMode": "module-catalog-with-overrides",
+      "moduleCatalogRefs": [
+        {
+          "moduleId": "agents",
+          "manifestRef": "../../../../../../sdkwork-iam/iam/modules/ai/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        },
+        {
+          "moduleId": "knowledgebase",
+          "manifestRef": "../../../../../../sdkwork-knowledgebase/specs/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        },
+        {
+          "moduleId": "skills",
+          "manifestRef": "../../../../../../sdkwork-skills/specs/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        },
+        {
+          "moduleId": "voice",
+          "manifestRef": "../../../../../../sdkwork-iam/iam/modules/ai/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        }
+      ],
+      "bootstrapAccessTokenScope": {
+        "inheritFrom": "sdkwork.app.config.json#backend.accessTokenPermissionScope",
+        "supplement": [],
+        "overrideReplace": false
+      },
+      "routePermissionHints": {
+        "inheritFromOpenApi": true,
+        "inheritFromModuleManifests": true,
+        "overrides": []
+      },
+      "consumerPolicy": {
+        "forbidLocalPermissionCatalogForDependencyDomains": true,
+        "allowExplicitOverridesOnly": true,
+        "allowFrontendHintsWithoutServerDuplication": true
+      }
+    },
     "dependencyApiExports": [],
     "dependencyApiSurfaces": []
   }

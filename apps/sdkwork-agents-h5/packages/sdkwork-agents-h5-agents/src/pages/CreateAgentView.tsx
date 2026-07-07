@@ -9,14 +9,27 @@ import { EditBasicInfoModal } from '../components/EditBasicInfoModal';
 import { SelectVoiceModal } from '../components/SelectVoiceModal';
 import { SelectModelPopover } from '../components/SelectModelPopover';
 import { SelectKnowledgeModal } from '../components/SelectKnowledgeModal';
-import { SelectToolsModal, AVAILABLE_TOOLS, type ToolItem } from '../components/SelectToolsModal';
-import { loadRuntimeToolCatalog } from '../services/RuntimeCatalogService';
-import { SelectSkillsModal } from '../components/SelectSkillsModal';
-import { loadSkillCatalog, loadSkillPresetCatalog } from '../services/SkillPresetCatalogService';
+import { SelectToolsModal, type ToolItem } from '../components/SelectToolsModal';
+import { loadRuntimeModelCatalog, type ModelCatalogItem } from '../services/RuntimeCatalogService';
+import { SelectSkillsModal, type SkillItem } from '../components/SelectSkillsModal';
 import { DEFAULT_AGENT_CONFIG } from '../components/AgentDefaults';
 import { createDefaultAvatar } from '../services/DefaultAvatarService';
-import { voiceService, VoiceConfig } from '../services/VoiceService';
-import { knowledgeSelectionService, type KnowledgeBase } from '../services/KnowledgeSelectionService';
+import { VoiceConfig } from '../services/VoiceService';
+import type { KnowledgeBase } from '../services/KnowledgeSelectionService';
+
+function mergeCapabilitySnapshots<T extends { id: string }>(
+  previous: T[],
+  selectedIds: string[],
+  snapshots: T[],
+): T[] {
+  const byId = new Map(previous.map((item) => [item.id, item]));
+  for (const item of snapshots) {
+    byId.set(item.id, item);
+  }
+  return selectedIds
+    .map((id) => byId.get(id))
+    .filter((item): item is T => Boolean(item));
+}
 
 interface CreateAgentViewProps {
   onBack: () => void;
@@ -193,40 +206,47 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(DEFAULT_AGENT_CONFIG.skillIds);
   const [draftId, setDraftId] = useState<string | null>(initialAgentId || null);
   
-  const [availableVoices, setAvailableVoices] = useState<VoiceConfig[]>([]);
-  const [availableKbs, setAvailableKbs] = useState<KnowledgeBase[]>([]);
-  const [availableTools, setAvailableTools] = useState<ToolItem[]>(AVAILABLE_TOOLS);
-  const [availableSkills, setAvailableSkills] = useState(() => loadSkillPresetCatalog());
+  const [voiceSnapshots, setVoiceSnapshots] = useState<VoiceConfig[]>([]);
+  const [kbSnapshots, setKbSnapshots] = useState<KnowledgeBase[]>([]);
+  const [toolSnapshots, setToolSnapshots] = useState<ToolItem[]>([]);
+  const [skillSnapshots, setSkillSnapshots] = useState<SkillItem[]>([]);
+  const [availableModels, setAvailableModels] = useState<ModelCatalogItem[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   useEffect(() => {
-    const fetchCapabilities = async () => {
+    let cancelled = false;
+    const fetchModels = async () => {
+      setModelsLoading(true);
       try {
-        const [market, my, kbs, tools, skills] = await Promise.all([
-          voiceService.getMarketVoices(),
-          voiceService.getMyVoices(),
-          knowledgeSelectionService.getBases(),
-          loadRuntimeToolCatalog(),
-          loadSkillCatalog(),
-        ]);
-        setAvailableVoices([...market, ...my]);
-        setAvailableKbs(kbs);
-        if (tools.length > 0) {
-          setAvailableTools(tools);
+        const models = await loadRuntimeModelCatalog();
+        if (cancelled) {
+          return;
         }
-        if (skills.length > 0) {
-          setAvailableSkills(skills);
+        setAvailableModels(models);
+        if (models.length > 0 && model === DEFAULT_AGENT_CONFIG.model) {
+          setModel(models[0].id);
         }
       } catch (err) {
-        console.error('Failed to load capabilities:', err);
+        if (!cancelled) {
+          console.error('Failed to load model catalog:', err);
+          toast('无法加载模型目录，请稍后重试', 'error');
+        }
+      } finally {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
       }
     };
-    fetchCapabilities();
+    void fetchModels();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const selectedVoicesData = availableVoices.filter(v => selectedVoiceIds.includes(v.id));
-  const selectedKbsData = availableKbs.filter(kb => selectedKnowledgeIds.includes(kb.id));
-  const selectedToolsData = availableTools.filter(t => selectedToolIds.includes(t.id));
-  const selectedSkillsData = availableSkills.filter(s => selectedSkillIds.includes(s.id));
+  const selectedVoicesData = voiceSnapshots.filter(v => selectedVoiceIds.includes(v.id));
+  const selectedKbsData = kbSnapshots.filter(kb => selectedKnowledgeIds.includes(kb.id));
+  const selectedToolsData = toolSnapshots.filter(t => selectedToolIds.includes(t.id));
+  const selectedSkillsData = skillSnapshots.filter(s => selectedSkillIds.includes(s.id));
   
   const [testMessages, setTestMessages] = useState<TestMessage[]>(() => [
     createAgentWelcomeTestMessage(DEFAULT_AGENT_WELCOME_MESSAGE),
@@ -238,34 +258,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (initialAgentId) {
-      setDraftId(null);
-      // Load agent data if editing
-      agentService.getAgent(initialAgentId).then((agent) => {
-        if (agent?.id) {
-          setDraftId(agent.id);
-          setName(agent.name);
-          setDesc(agent.description || '');
-          setPrompt(agent.systemPrompt ?? '');
-          setAvatar(agent.avatar || '');
-          setAgentType(agent.type);
-          setModel(agent.model || DEFAULT_AGENT_CONFIG.model);
-          setTemperature(agent.temperature ?? DEFAULT_AGENT_CONFIG.temperature);
-          setMemoryEnabled(agent.memoryEnabled ?? DEFAULT_AGENT_CONFIG.memoryEnabled);
-          setJsonMode(agent.jsonMode ?? DEFAULT_AGENT_CONFIG.jsonMode);
-          setDebugMode(agent.debugMode ?? DEFAULT_AGENT_CONFIG.debugMode);
-          setSuggestedPrompts(agent.suggestedPrompts ?? DEFAULT_AGENT_SUGGESTED_PROMPTS);
-          setSelectedVoiceIds(agent.voiceIds ?? DEFAULT_AGENT_CONFIG.voiceIds);
-          setSelectedKnowledgeIds(agent.knowledgeBaseIds ?? DEFAULT_AGENT_CONFIG.knowledgeBaseIds);
-          setSelectedToolIds(agent.toolIds ?? DEFAULT_AGENT_CONFIG.toolIds);
-          setSelectedSkillIds(agent.skillIds ?? DEFAULT_AGENT_CONFIG.skillIds);
-          const nextWelcomeMessage = agent.welcomeMessage ?? DEFAULT_AGENT_WELCOME_MESSAGE;
-          setWelcomeMessage(nextWelcomeMessage);
-          setTestMessages([createAgentWelcomeTestMessage(nextWelcomeMessage)]);
-        }
-      });
-    } else {
-      // Reset form if no initialAgentId
+    if (!initialAgentId) {
       setName('新智能体');
       setDesc('这是一个新创建的智能体');
       setPrompt('');
@@ -284,16 +277,63 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
       setSelectedToolIds(DEFAULT_AGENT_CONFIG.toolIds);
       setSelectedSkillIds(DEFAULT_AGENT_CONFIG.skillIds);
       setDraftId(null);
+      return;
     }
-  }, [initialAgentId]);
 
-  const resolveAgentAvatar = () => avatar || DEFAULT_AGENT_AVATAR;
+    let cancelled = false;
+    setDraftId(null);
+
+    void (async () => {
+      try {
+        const agent = await agentService.getAgent(initialAgentId);
+        if (cancelled) {
+          return;
+        }
+        if (!agent?.id) {
+          toast('智能体不存在或无权访问', 'error');
+          onBack();
+          return;
+        }
+        setDraftId(agent.id);
+        setName(agent.name);
+        setDesc(agent.description || '');
+        setPrompt(agent.systemPrompt ?? '');
+        setAvatar(agent.avatar || '');
+        setAgentType(agent.type);
+        setModel(agent.model || DEFAULT_AGENT_CONFIG.model);
+        setTemperature(agent.temperature ?? DEFAULT_AGENT_CONFIG.temperature);
+        setMemoryEnabled(agent.memoryEnabled ?? DEFAULT_AGENT_CONFIG.memoryEnabled);
+        setJsonMode(agent.jsonMode ?? DEFAULT_AGENT_CONFIG.jsonMode);
+        setDebugMode(agent.debugMode ?? DEFAULT_AGENT_CONFIG.debugMode);
+        setSuggestedPrompts(agent.suggestedPrompts ?? DEFAULT_AGENT_SUGGESTED_PROMPTS);
+        setSelectedVoiceIds(agent.voiceIds ?? DEFAULT_AGENT_CONFIG.voiceIds);
+        setSelectedKnowledgeIds(agent.knowledgeBaseIds ?? DEFAULT_AGENT_CONFIG.knowledgeBaseIds);
+        setSelectedToolIds(agent.toolIds ?? DEFAULT_AGENT_CONFIG.toolIds);
+        setSelectedSkillIds(agent.skillIds ?? DEFAULT_AGENT_CONFIG.skillIds);
+        const nextWelcomeMessage = agent.welcomeMessage ?? DEFAULT_AGENT_WELCOME_MESSAGE;
+        setWelcomeMessage(nextWelcomeMessage);
+        setTestMessages([createAgentWelcomeTestMessage(nextWelcomeMessage)]);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        toast('加载智能体失败，请稍后重试', 'error');
+        onBack();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialAgentId, onBack]);
+
+  const resolveAgentDisplayAvatar = () => avatar || DEFAULT_AGENT_AVATAR;
 
   const buildCurrentAgentConfig = (agentId?: string): AgentConfig => ({
     ...(agentId ? { id: agentId } : {}),
     name,
     description: desc,
-    avatar: resolveAgentAvatar(),
+    ...(avatar ? { avatar } : {}),
     type: agentType,
     systemPrompt: prompt,
     knowledgeBaseIds: selectedKnowledgeIds,
@@ -538,7 +578,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
             
             {/* Basic Info */}
             <div className="bg-transparent border-b border-white/5 p-4 flex gap-3 items-center cursor-pointer hover:bg-white/5 transition-colors shadow-sm" onClick={() => setIsEditModalOpen(true)}>
-              <Avatar src={resolveAgentAvatar()} alt={name} className="w-12 h-12 rounded-lg bg-[#2b2b2d] shadow-sm shrink-0" />
+              <Avatar src={resolveAgentDisplayAvatar()} alt={name} className="w-12 h-12 rounded-lg bg-[#2b2b2d] shadow-sm shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-[15px] font-semibold text-gray-200 truncate pr-4">{name}</div>
@@ -917,7 +957,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
                     className={`flex gap-3 group ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                   >
                     <Avatar 
-                      src={msg.role === 'user' ? DEFAULT_TEST_USER_AVATAR : resolveAgentAvatar()}
+                      src={msg.role === 'user' ? DEFAULT_TEST_USER_AVATAR : resolveAgentDisplayAvatar()}
                       alt={msg.role} 
                       className="w-9 h-9 rounded-lg shrink-0 mt-1 bg-[#2b2b2d]" 
                     />
@@ -965,7 +1005,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
                 className="flex gap-3"
               >
                 <Avatar 
-                  src={resolveAgentAvatar()}
+                  src={resolveAgentDisplayAvatar()}
                   alt="assistant" 
                   className="w-9 h-9 rounded-lg shrink-0 mt-1 bg-[#2b2b2d]" 
                 />
@@ -1019,7 +1059,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         onClose={() => setIsEditModalOpen(false)} 
         initialName={name}
         initialDesc={desc}
-        initialAvatar={resolveAgentAvatar()}
+        initialAvatar={avatar}
         onSave={(newName, newDesc, newAvatar) => {
            setName(newName);
            setDesc(newDesc);
@@ -1033,8 +1073,9 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         onClose={() => setIsVoiceModalOpen(false)}
         selectedVoices={selectedVoiceIds}
         isMulti={false}
-        onSave={(ids) => {
+        onSave={(ids, items) => {
           setSelectedVoiceIds(ids);
+          setVoiceSnapshots((prev) => mergeCapabilitySnapshots(prev, ids, items));
           toast(`配置成功：已关联 ${ids.length} 个发音人`, 'success');
         }}
       />
@@ -1043,6 +1084,8 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         onClose={() => setIsModelPopoverOpen(false)}
         triggerElement={modelTriggerRef.current}
         selectedModelId={model}
+        models={availableModels}
+        loading={modelsLoading}
         onSave={(modelId) => {
           setModel(modelId);
           toast(`已切换模型引擎`, 'success');
@@ -1052,8 +1095,9 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         isOpen={isKnowledgeModalOpen}
         onClose={() => setIsKnowledgeModalOpen(false)}
         selectedKbIds={selectedKnowledgeIds}
-        onSave={(ids) => {
+        onSave={(ids, items) => {
           setSelectedKnowledgeIds(ids);
+          setKbSnapshots((prev) => mergeCapabilitySnapshots(prev, ids, items));
           toast(`已挂载 ${ids.length} 个知识库`, 'success');
         }}
       />
@@ -1061,9 +1105,9 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         isOpen={isToolsModalOpen}
         onClose={() => setIsToolsModalOpen(false)}
         selectedToolIds={selectedToolIds}
-        tools={availableTools}
-        onSave={(ids) => {
+        onSave={(ids, items) => {
           setSelectedToolIds(ids);
+          setToolSnapshots((prev) => mergeCapabilitySnapshots(prev, ids, items));
           toast(`已启用 ${ids.length} 个环境与 MCP 能力`, 'success');
         }}
       />
@@ -1071,9 +1115,9 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         isOpen={isSkillsModalOpen}
         onClose={() => setIsSkillsModalOpen(false)}
         selectedSkillIds={selectedSkillIds}
-        skills={availableSkills}
-        onSave={(ids) => {
+        onSave={(ids, items) => {
           setSelectedSkillIds(ids);
+          setSkillSnapshots((prev) => mergeCapabilitySnapshots(prev, ids, items));
           toast(`已注入 ${ids.length} 项高级心智流`, 'success');
         }}
       />

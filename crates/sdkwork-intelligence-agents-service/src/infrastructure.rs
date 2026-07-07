@@ -1,23 +1,24 @@
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentInteractionRecord, AgentMessageRecord, AgentProviderBindingRecord, AgentSessionRecord,
+    AgentTaskRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
+use crate::in_memory_pagination::{count_iterator, paginate_iterator, paginate_messages};
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, MessageListSort,
-    ProviderBindingListQuery, SessionListQuery,
+    InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery,
+    SessionListQuery, TaskListQuery,
 };
+use crate::validation::parse_rfc3339_datetime;
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
     ProviderHealth, ProviderManifest,
 };
-use crate::in_memory_pagination::{count_iterator, paginate_iterator, paginate_messages};
-use crate::validation::parse_rfc3339_datetime;
 use sdkwork_utils_rust::{is_blank, trim};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{LazyLock, Mutex, RwLock};
+use std::sync::{LazyLock, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use time::OffsetDateTime;
 
 // ---------------------------------------------------------------------------
@@ -30,77 +31,37 @@ use time::OffsetDateTime;
 pub const ENV_DEV_AUTH_BYPASS: &str = "SDKWORK_AGENTS_DEV_AUTH_BYPASS";
 
 /// Environment variable name indicating production deployment.
-/// When set to "production", "prod", or "live", security bypasses are forbidden.
+/// Prefer `sdkwork_agents_contract::agents_deployment_environment_name()` for gating.
 pub const ENV_DEPLOYMENT_ENV: &str = "SDKWORK_DEPLOYMENT_ENV";
-
-/// Production environment identifiers that forbid security bypasses.
-const PRODUCTION_ENV_IDENTIFIERS: &[&str] = &["production", "prod", "live", "staging"];
 
 /// Validates that development authentication bypass is not enabled in production.
 ///
-/// # Panics
-/// Panics if `SDKWORK_AGENTS_DEV_AUTH_BYPASS=true` and the deployment environment
-/// is identified as production. This is a fail-closed safety check that must run
-/// during application bootstrap before any policy provider is instantiated.
-///
-/// # Security Standard Compliance
-/// This check implements SECURITY_SPEC §5.1 requirement that rate limiting and
-/// authentication must be enforced in production, preventing accidental deployment
-/// of development-only security bypasses.
+/// Delegates to `sdkwork-agents-contract::ensure_dev_auth_bypass_allowed` and panics
+/// on violation so legacy call sites fail closed during bootstrap.
 pub fn validate_production_security_config() {
-    let dev_bypass = std::env::var(ENV_DEV_AUTH_BYPASS)
-        .unwrap_or_default()
-        .to_lowercase();
-    
-    if dev_bypass != "true" {
-        return; // No bypass enabled, safe to proceed
+    if let Err(message) = sdkwork_agents_contract::ensure_dev_auth_bypass_allowed() {
+        panic!("SECURITY VIOLATION: {message}");
     }
-    
-    // Check deployment environment
-    let deployment_env = std::env::var(ENV_DEPLOYMENT_ENV)
-        .unwrap_or_default()
-        .to_lowercase();
-    
-    // Also check common alternative environment variable names
-    let alt_env = std::env::var("ENVIRONMENT")
-        .unwrap_or_default()
-        .to_lowercase();
-    
-    let is_production = PRODUCTION_ENV_IDENTIFIERS
-        .iter()
-        .any(|id| deployment_env == *id || alt_env == *id);
-    
-    if is_production {
-        panic!(
-            "SECURITY VIOLATION: {} is enabled in production environment '{}'. \
-            This configuration bypasses IAM authentication and is forbidden in production. \
-            Remove this environment variable immediately or set it to 'false'. \
-            See SECURITY_SPEC §5.1 for authentication requirements.",
-            ENV_DEV_AUTH_BYPASS,
-            if deployment_env.is_empty() { &alt_env } else { &deployment_env }
+
+    if agents_dev_auth_bypass_enabled_from_env() {
+        tracing::warn!(
+            env_var = ENV_DEV_AUTH_BYPASS,
+            deployment = %sdkwork_agents_contract::agents_deployment_environment_name(),
+            "Development authentication bypass is enabled. This MUST NOT be used in production."
         );
     }
-    
-    // Log warning for development environments
-    tracing::warn!(
-        env_var = ENV_DEV_AUTH_BYPASS,
-        value = %dev_bypass,
-        "Development authentication bypass is enabled. This MUST NOT be used in production."
-    );
+}
+
+fn agents_dev_auth_bypass_enabled_from_env() -> bool {
+    std::env::var(ENV_DEV_AUTH_BYPASS)
+        .ok()
+        .and_then(|value| sdkwork_utils_rust::parse_bool(value.trim()))
+        .unwrap_or(false)
 }
 
 /// Returns true if the current deployment is a production environment.
 pub fn is_production_environment() -> bool {
-    let deployment_env = std::env::var(ENV_DEPLOYMENT_ENV)
-        .unwrap_or_default()
-        .to_lowercase();
-    let alt_env = std::env::var("ENVIRONMENT")
-        .unwrap_or_default()
-        .to_lowercase();
-    
-    PRODUCTION_ENV_IDENTIFIERS
-        .iter()
-        .any(|id| deployment_env == *id || alt_env == *id)
+    sdkwork_agents_contract::agents_is_production_like_environment()
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +124,8 @@ impl AgentMetricsRegistry {
     }
 
     pub fn record_http_request(&self, status: u16) {
-        self.http_requests_total.fetch_add(1, AtomicOrdering::Relaxed);
+        self.http_requests_total
+            .fetch_add(1, AtomicOrdering::Relaxed);
         if status >= 400 {
             self.http_errors_total.fetch_add(1, AtomicOrdering::Relaxed);
         }
@@ -173,10 +135,7 @@ impl AgentMetricsRegistry {
         let http_requests_total = self.http_requests_total.load(AtomicOrdering::Relaxed);
         let http_errors_total = self.http_errors_total.load(AtomicOrdering::Relaxed);
         let http_requests_per_second = {
-            let mut state = self
-                .scrape_state
-                .lock()
-                .expect("agents metrics scrape state poisoned");
+            let mut state = self.scrape_state.recovering_lock();
             let now = Instant::now();
             let elapsed = now.duration_since(state.instant).as_secs_f64();
             let delta = http_requests_total.saturating_sub(state.request_total);
@@ -210,7 +169,9 @@ impl AgentServiceMetrics {
             self.http_requests_total
         ));
 
-        output.push_str("# HELP sdkwork_agents_errors_total Total managed-store HTTP error responses\n");
+        output.push_str(
+            "# HELP sdkwork_agents_errors_total Total managed-store HTTP error responses\n",
+        );
         output.push_str("# TYPE sdkwork_agents_errors_total counter\n");
         output.push_str(&format!(
             "sdkwork_agents_errors_total {}\n",
@@ -223,38 +184,58 @@ impl AgentServiceMetrics {
             "sdkwork_agents_requests_per_second {}\n",
             self.http_requests_per_second
         ));
-        
+
         // Help and type declarations
         output.push_str("# HELP sdkwork_agents_total Total number of agents\n");
         output.push_str("# TYPE sdkwork_agents_total gauge\n");
         output.push_str(&format!("sdkwork_agents_total {}\n", self.total_agents));
-        
+
         output.push_str("# HELP sdkwork_agents_active Number of active (non-deleted) agents\n");
         output.push_str("# TYPE sdkwork_agents_active gauge\n");
         output.push_str(&format!("sdkwork_agents_active {}\n", self.active_agents));
-        
+
         output.push_str("# HELP sdkwork_agents_deleted Number of soft-deleted agents\n");
         output.push_str("# TYPE sdkwork_agents_deleted gauge\n");
         output.push_str(&format!("sdkwork_agents_deleted {}\n", self.deleted_agents));
-        
-        output.push_str("# HELP sdkwork_agents_provider_bindings_total Total number of provider bindings\n");
+
+        output.push_str(
+            "# HELP sdkwork_agents_provider_bindings_total Total number of provider bindings\n",
+        );
         output.push_str("# TYPE sdkwork_agents_provider_bindings_total gauge\n");
-        output.push_str(&format!("sdkwork_agents_provider_bindings_total {}\n", self.total_provider_bindings));
-        
-        output.push_str("# HELP sdkwork_agents_provider_bindings_active Number of active provider bindings\n");
+        output.push_str(&format!(
+            "sdkwork_agents_provider_bindings_total {}\n",
+            self.total_provider_bindings
+        ));
+
+        output.push_str(
+            "# HELP sdkwork_agents_provider_bindings_active Number of active provider bindings\n",
+        );
         output.push_str("# TYPE sdkwork_agents_provider_bindings_active gauge\n");
-        output.push_str(&format!("sdkwork_agents_provider_bindings_active {}\n", self.active_provider_bindings));
-        
-        output.push_str("# HELP sdkwork_agents_composition_slots_total Total number of composition slots\n");
+        output.push_str(&format!(
+            "sdkwork_agents_provider_bindings_active {}\n",
+            self.active_provider_bindings
+        ));
+
+        output.push_str(
+            "# HELP sdkwork_agents_composition_slots_total Total number of composition slots\n",
+        );
         output.push_str("# TYPE sdkwork_agents_composition_slots_total gauge\n");
-        output.push_str(&format!("sdkwork_agents_composition_slots_total {}\n", self.total_composition_slots));
-        
+        output.push_str(&format!(
+            "sdkwork_agents_composition_slots_total {}\n",
+            self.total_composition_slots
+        ));
+
         output.push_str("# HELP sdkwork_agents_audit_events_total Total number of audit events\n");
         output.push_str("# TYPE sdkwork_agents_audit_events_total counter\n");
-        output.push_str(&format!("sdkwork_agents_audit_events_total {}\n", self.audit_events_count));
-        
+        output.push_str(&format!(
+            "sdkwork_agents_audit_events_total {}\n",
+            self.audit_events_count
+        ));
+
         // Request counts by operation
-        output.push_str("# HELP sdkwork_agents_requests_by_operation_total Total requests by operation\n");
+        output.push_str(
+            "# HELP sdkwork_agents_requests_by_operation_total Total requests by operation\n",
+        );
         output.push_str("# TYPE sdkwork_agents_requests_by_operation_total counter\n");
         for (operation, count) in &self.request_counts {
             output.push_str(&format!(
@@ -262,9 +243,11 @@ impl AgentServiceMetrics {
                 operation, count
             ));
         }
-        
+
         // Error counts by operation
-        output.push_str("# HELP sdkwork_agents_errors_by_operation_total Total errors by operation\n");
+        output.push_str(
+            "# HELP sdkwork_agents_errors_by_operation_total Total errors by operation\n",
+        );
         output.push_str("# TYPE sdkwork_agents_errors_by_operation_total counter\n");
         for (operation, count) in &self.error_counts {
             output.push_str(&format!(
@@ -272,14 +255,14 @@ impl AgentServiceMetrics {
                 operation, count
             ));
         }
-        
+
         output
     }
 }
 
 /// In-memory agent repository with interior mutability via `RwLock`.
 ///
-/// All trait methods use `&self` — the `RwLock` handles concurrent access.
+/// All trait methods use `&self`; the `RwLock` handles concurrent access.
 /// This makes the repository compatible with the stateless `AgentsService`
 /// and eliminates the global `Mutex<AgentsService>` bottleneck.
 type AgentPrimaryKey = (u64, String);
@@ -294,6 +277,56 @@ type MessagePrimaryKey = (u64, String, String);
 type MessageIndexKey = (u64, String, u64, String);
 type InteractionPrimaryKey = (u64, String, String);
 type InteractionIndexKey = (u64, String, Reverse<String>, String);
+type TaskPrimaryKey = (u64, String);
+type TaskIndexKey = (u64, Reverse<String>, String);
+
+trait RecoveringRwLock<T> {
+    fn recovering_read(&self) -> RwLockReadGuard<'_, T>;
+
+    fn recovering_write(&self) -> RwLockWriteGuard<'_, T>;
+}
+
+impl<T> RecoveringRwLock<T> for RwLock<T> {
+    fn recovering_read(&self) -> RwLockReadGuard<'_, T> {
+        match self.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::error!(
+                    "in-memory agents repository RwLock was poisoned; recovering guard"
+                );
+                poisoned.into_inner()
+            }
+        }
+    }
+
+    fn recovering_write(&self) -> RwLockWriteGuard<'_, T> {
+        match self.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::error!(
+                    "in-memory agents repository RwLock was poisoned; recovering mutable guard"
+                );
+                poisoned.into_inner()
+            }
+        }
+    }
+}
+
+trait RecoveringMutex<T> {
+    fn recovering_lock(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> RecoveringMutex<T> for Mutex<T> {
+    fn recovering_lock(&self) -> MutexGuard<'_, T> {
+        match self.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::error!("in-memory agents mutex was poisoned; recovering guard");
+                poisoned.into_inner()
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct InMemoryAgentRepository {
@@ -310,6 +343,8 @@ pub struct InMemoryAgentRepository {
     message_index: RwLock<BTreeMap<MessageIndexKey, MessagePrimaryKey>>,
     interactions: RwLock<HashMap<InteractionPrimaryKey, AgentInteractionRecord>>,
     interaction_index: RwLock<BTreeMap<InteractionIndexKey, InteractionPrimaryKey>>,
+    tasks: RwLock<HashMap<TaskPrimaryKey, AgentTaskRecord>>,
+    task_index: RwLock<BTreeMap<TaskIndexKey, TaskPrimaryKey>>,
 }
 
 impl InMemoryAgentRepository {
@@ -329,16 +364,13 @@ impl InMemoryAgentRepository {
             message_index: RwLock::new(BTreeMap::new()),
             interactions: RwLock::new(HashMap::new()),
             interaction_index: RwLock::new(BTreeMap::new()),
+            tasks: RwLock::new(HashMap::new()),
+            task_index: RwLock::new(BTreeMap::new()),
         }
     }
 
     pub fn records(&self) -> Vec<AgentBusinessRecord> {
-        self.agents
-            .read()
-            .expect("in-memory repository rwlock poisoned")
-            .values()
-            .cloned()
-            .collect()
+        self.agents.recovering_read().values().cloned().collect()
     }
 }
 
@@ -436,6 +468,18 @@ fn interaction_index_key(record: &AgentInteractionRecord) -> InteractionIndexKey
     )
 }
 
+fn task_primary_key(record: &AgentTaskRecord) -> TaskPrimaryKey {
+    (record.tenant_id, record.task_id.clone())
+}
+
+fn task_index_key(record: &AgentTaskRecord) -> TaskIndexKey {
+    (
+        record.tenant_id,
+        Reverse(record.updated_at.clone()),
+        record.task_id.clone(),
+    )
+}
+
 fn active_agent_ids_for_tenant(
     agents: &HashMap<AgentPrimaryKey, AgentBusinessRecord>,
     agent_list_index: &BTreeMap<AgentIndexKey, AgentPrimaryKey>,
@@ -463,13 +507,11 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn insert(&self, record: AgentBusinessRecord) -> KernelResult<()> {
         let primary_key = agent_primary_key(&record);
-        let mut agents = self
-            .agents
-            .write()
-            .expect("in-memory repository rwlock poisoned");
-        if agents.values().any(|existing| {
-            existing.tenant_id == record.tenant_id && existing.code == record.code
-        }) {
+        let mut agents = self.agents.recovering_write();
+        if agents
+            .values()
+            .any(|existing| existing.tenant_id == record.tenant_id && existing.code == record.code)
+        {
             return Err(KernelError::conflict("agent code already exists"));
         }
         if agents.contains_key(&primary_key) {
@@ -478,18 +520,14 @@ impl AgentRepository for InMemoryAgentRepository {
         let index_key = agent_index_key(&record);
         agents.insert(primary_key.clone(), record);
         self.agent_list_index
-            .write()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
     fn update(&self, record: AgentBusinessRecord) -> KernelResult<()> {
         let primary_key = agent_primary_key(&record);
-        let mut agents = self
-            .agents
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut agents = self.agents.recovering_write();
         let existing = agents
             .get(&primary_key)
             .ok_or_else(|| KernelError::validation("agent not found"))?;
@@ -510,10 +548,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let previous_index_key = agent_index_key(existing);
         let next_index_key = agent_index_key(&record);
         agents.insert(primary_key.clone(), record);
-        let mut index = self
-            .agent_list_index
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut index = self.agent_list_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
@@ -521,21 +556,14 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn get(&self, tenant_id: u64, agent_id: &str) -> Option<AgentBusinessRecord> {
         self.agents
-            .read()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_read()
             .get(&(tenant_id, agent_id.to_string()))
             .cloned()
     }
 
     fn list(&self, query: &AgentListQuery) -> Vec<AgentBusinessRecord> {
-        let agents = self
-            .agents
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .agent_list_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let agents = self.agents.recovering_read();
+        let index = self.agent_list_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
@@ -546,14 +574,8 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn count_agents(&self, query: &AgentListQuery) -> u64 {
-        let agents = self
-            .agents
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .agent_list_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let agents = self.agents.recovering_read();
+        let index = self.agent_list_index.recovering_read();
         count_iterator(
             index
                 .iter()
@@ -565,10 +587,7 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn insert_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()> {
         let primary_key = provider_binding_primary_key(&record);
-        let mut bindings = self
-            .provider_bindings
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut bindings = self.provider_bindings.recovering_write();
         if bindings.contains_key(&primary_key) {
             return Err(KernelError::conflict(
                 "agent provider binding already exists",
@@ -588,18 +607,14 @@ impl AgentRepository for InMemoryAgentRepository {
         let index_key = provider_binding_index_key(&record);
         bindings.insert(primary_key.clone(), record);
         self.provider_binding_index
-            .write()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
     fn update_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()> {
         let primary_key = provider_binding_primary_key(&record);
-        let mut bindings = self
-            .provider_bindings
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut bindings = self.provider_bindings.recovering_write();
         let existing = bindings
             .get(&primary_key)
             .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
@@ -625,10 +640,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let previous_index_key = provider_binding_index_key(existing);
         let next_index_key = provider_binding_index_key(&record);
         bindings.insert(primary_key.clone(), record);
-        let mut index = self
-            .provider_binding_index
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut index = self.provider_binding_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
@@ -641,8 +653,7 @@ impl AgentRepository for InMemoryAgentRepository {
         binding_id: &str,
     ) -> Option<AgentProviderBindingRecord> {
         self.provider_bindings
-            .read()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_read()
             .get(&(tenant_id, agent_id.to_string(), binding_id.to_string()))
             .cloned()
     }
@@ -651,14 +662,8 @@ impl AgentRepository for InMemoryAgentRepository {
         &self,
         query: &ProviderBindingListQuery,
     ) -> Vec<AgentProviderBindingRecord> {
-        let bindings = self
-            .provider_bindings
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .provider_binding_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let bindings = self.provider_bindings.recovering_read();
+        let index = self.provider_binding_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, agent_id, _, _, _), _)| {
@@ -670,43 +675,35 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> u64 {
-        let bindings = self
-            .provider_bindings
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .provider_binding_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        count_iterator(index.iter().filter(|((tenant_id, agent_id, _, _, _), _)| {
-            *tenant_id == query.tenant_id && agent_id == &query.agent_id
-        }).filter_map(|(_, primary_key)| bindings.get(primary_key)))
+        let bindings = self.provider_bindings.recovering_read();
+        let index = self.provider_binding_index.recovering_read();
+        count_iterator(
+            index
+                .iter()
+                .filter(|((tenant_id, agent_id, _, _, _), _)| {
+                    *tenant_id == query.tenant_id && agent_id == &query.agent_id
+                })
+                .filter_map(|(_, primary_key)| bindings.get(primary_key)),
+        )
     }
 
     fn insert_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
         let primary_key = composition_slot_primary_key(&record);
-        let mut slots = self
-            .composition_slots
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut slots = self.composition_slots.recovering_write();
         if slots.contains_key(&primary_key) {
             return Err(KernelError::conflict("composition slot already exists"));
         }
         let index_key = composition_slot_index_key(&record);
         slots.insert(primary_key.clone(), record);
         self.composition_slot_index
-            .write()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
     fn update_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
         let primary_key = composition_slot_primary_key(&record);
-        let mut slots = self
-            .composition_slots
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut slots = self.composition_slots.recovering_write();
         let existing = slots
             .get(&primary_key)
             .ok_or_else(|| KernelError::validation("composition slot not found"))?;
@@ -720,10 +717,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let previous_index_key = composition_slot_index_key(existing);
         let next_index_key = composition_slot_index_key(&record);
         slots.insert(primary_key.clone(), record);
-        let mut index = self
-            .composition_slot_index
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut index = self.composition_slot_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
@@ -736,8 +730,7 @@ impl AgentRepository for InMemoryAgentRepository {
         slot_id: &str,
     ) -> Option<AgentCompositionSlotRecord> {
         self.composition_slots
-            .read()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_read()
             .get(&(tenant_id, agent_id.to_string(), slot_id.to_string()))
             .cloned()
     }
@@ -746,14 +739,8 @@ impl AgentRepository for InMemoryAgentRepository {
         &self,
         query: &CompositionSlotListQuery,
     ) -> Vec<AgentCompositionSlotRecord> {
-        let slots = self
-            .composition_slots
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .composition_slot_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let slots = self.composition_slots.recovering_read();
+        let index = self.composition_slot_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, agent_id, _, _), _)| {
@@ -766,14 +753,8 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> u64 {
-        let slots = self
-            .composition_slots
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .composition_slot_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let slots = self.composition_slots.recovering_read();
+        let index = self.composition_slot_index.recovering_read();
         count_iterator(
             index
                 .iter()
@@ -789,24 +770,11 @@ impl AgentRepository for InMemoryAgentRepository {
         &self,
         query: &McpMarketplaceListQuery,
     ) -> Vec<AgentCompositionSlotRecord> {
-        let agents = self
-            .agents
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let agent_index = self
-            .agent_list_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let active_agent_ids =
-            active_agent_ids_for_tenant(&agents, &agent_index, query.tenant_id);
-        let slots = self
-            .composition_slots
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .composition_slot_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let agents = self.agents.recovering_read();
+        let agent_index = self.agent_list_index.recovering_read();
+        let active_agent_ids = active_agent_ids_for_tenant(&agents, &agent_index, query.tenant_id);
+        let slots = self.composition_slots.recovering_read();
+        let index = self.composition_slot_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
@@ -815,30 +783,24 @@ impl AgentRepository for InMemoryAgentRepository {
                 record.slot_kind == AgentCompositionSlotKind::Mcp
                     && !record.is_deleted()
                     && active_agent_ids.contains(&record.agent_id)
+                    && query
+                        .q
+                        .as_deref()
+                        .map(|q| {
+                            crate::mcp_marketplace::composition_slot_matches_mcp_search(record, q)
+                        })
+                        .unwrap_or(true)
             })
             .cloned();
         paginate_iterator(iter, &query.pagination)
     }
 
     fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> u64 {
-        let agents = self
-            .agents
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let agent_index = self
-            .agent_list_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let active_agent_ids =
-            active_agent_ids_for_tenant(&agents, &agent_index, query.tenant_id);
-        let slots = self
-            .composition_slots
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .composition_slot_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let agents = self.agents.recovering_read();
+        let agent_index = self.agent_list_index.recovering_read();
+        let active_agent_ids = active_agent_ids_for_tenant(&agents, &agent_index, query.tenant_id);
+        let slots = self.composition_slots.recovering_read();
+        let index = self.composition_slot_index.recovering_read();
         count_iterator(
             index
                 .iter()
@@ -848,44 +810,50 @@ impl AgentRepository for InMemoryAgentRepository {
                     record.slot_kind == AgentCompositionSlotKind::Mcp
                         && !record.is_deleted()
                         && active_agent_ids.contains(&record.agent_id)
+                        && query
+                            .q
+                            .as_deref()
+                            .map(|q| {
+                                crate::mcp_marketplace::composition_slot_matches_mcp_search(
+                                    record, q,
+                                )
+                            })
+                            .unwrap_or(true)
                 }),
         )
     }
 
     fn insert_session(&self, record: AgentSessionRecord) -> KernelResult<()> {
         let primary_key = session_primary_key(&record);
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut sessions = self.sessions.recovering_write();
         if sessions.contains_key(&primary_key) {
             return Err(KernelError::conflict("session already exists"));
         }
         let index_key = session_index_key(&record);
         sessions.insert(primary_key.clone(), record);
         self.session_index
-            .write()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
     fn update_session(&self, record: AgentSessionRecord) -> KernelResult<()> {
         let primary_key = session_primary_key(&record);
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut sessions = self.sessions.recovering_write();
         let existing = sessions
             .get(&primary_key)
             .ok_or_else(|| KernelError::validation("session not found"))?;
+        let expected_version = existing.version.saturating_add(1);
+        if record.version != expected_version {
+            return Err(KernelError::conflict(format!(
+                "session version mismatch: expected={expected_version}, actual={}",
+                record.version
+            )));
+        }
         let previous_index_key = session_index_key(existing);
         let next_index_key = session_index_key(&record);
         sessions.insert(primary_key.clone(), record);
-        let mut index = self
-            .session_index
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut index = self.session_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
@@ -893,21 +861,14 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn get_session(&self, tenant_id: u64, session_id: &str) -> Option<AgentSessionRecord> {
         self.sessions
-            .read()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_read()
             .get(&(tenant_id, session_id.to_string()))
             .cloned()
     }
 
     fn list_sessions(&self, query: &SessionListQuery) -> Vec<AgentSessionRecord> {
-        let sessions = self
-            .sessions
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .session_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let sessions = self.sessions.recovering_read();
+        let index = self.session_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
@@ -918,14 +879,8 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn count_sessions(&self, query: &SessionListQuery) -> u64 {
-        let sessions = self
-            .sessions
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .session_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let sessions = self.sessions.recovering_read();
+        let index = self.session_index.recovering_read();
         count_iterator(
             index
                 .iter()
@@ -937,28 +892,21 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
         let primary_key = message_primary_key(&record);
-        let mut messages = self
-            .messages
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut messages = self.messages.recovering_write();
         if messages.contains_key(&primary_key) {
             return Err(KernelError::conflict("message already exists"));
         }
         let index_key = message_index_key(&record);
         messages.insert(primary_key.clone(), record);
         self.message_index
-            .write()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
     fn update_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
         let primary_key = message_primary_key(&record);
-        let mut messages = self
-            .messages
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut messages = self.messages.recovering_write();
         if !messages.contains_key(&primary_key) {
             return Err(KernelError::validation("message not found"));
         }
@@ -966,10 +914,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let previous_index_key = message_index_key(existing);
         let next_index_key = message_index_key(&record);
         messages.insert(primary_key.clone(), record);
-        let mut index = self
-            .message_index
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut index = self.message_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
@@ -982,21 +927,14 @@ impl AgentRepository for InMemoryAgentRepository {
         message_id: &str,
     ) -> Option<AgentMessageRecord> {
         self.messages
-            .read()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_read()
             .get(&(tenant_id, session_id.to_string(), message_id.to_string()))
             .cloned()
     }
 
     fn list_messages(&self, query: &MessageListQuery) -> Vec<AgentMessageRecord> {
-        let messages = self
-            .messages
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .message_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let messages = self.messages.recovering_read();
+        let index = self.message_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, session_id, _, _), _)| {
@@ -1009,14 +947,8 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn count_messages(&self, query: &MessageListQuery) -> u64 {
-        let messages = self
-            .messages
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .message_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let messages = self.messages.recovering_read();
+        let index = self.message_index.recovering_read();
         count_iterator(
             index
                 .iter()
@@ -1029,10 +961,7 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
-        let index = self
-            .message_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let index = self.message_index.recovering_read();
         let max_sequence = index
             .iter()
             .filter(|((indexed_tenant_id, indexed_session_id, _, _), _)| {
@@ -1063,10 +992,7 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn insert_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
         let primary_key = interaction_primary_key(&record);
-        let mut interactions = self
-            .interactions
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut interactions = self.interactions.recovering_write();
         if interactions.contains_key(&primary_key) {
             return Err(KernelError::conflict(format!(
                 "interaction {} already exists for session {}",
@@ -1076,33 +1002,31 @@ impl AgentRepository for InMemoryAgentRepository {
         let index_key = interaction_index_key(&record);
         interactions.insert(primary_key.clone(), record);
         self.interaction_index
-            .write()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
     fn update_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
         let primary_key = interaction_primary_key(&record);
-        let mut interactions = self
-            .interactions
-            .write()
-            .expect("in-memory repository rwlock poisoned");
-        let existing = interactions
-            .get(&primary_key)
-            .ok_or_else(|| {
-                KernelError::validation(format!(
-                    "interaction {} not found for session {}",
-                    record.interaction_id, record.session_id
-                ))
-            })?;
+        let mut interactions = self.interactions.recovering_write();
+        let existing = interactions.get(&primary_key).ok_or_else(|| {
+            KernelError::validation(format!(
+                "interaction {} not found for session {}",
+                record.interaction_id, record.session_id
+            ))
+        })?;
+        let expected_version = existing.version.saturating_add(1);
+        if record.version != expected_version {
+            return Err(KernelError::conflict(format!(
+                "interaction version mismatch: expected={expected_version}, actual={}",
+                record.version
+            )));
+        }
         let previous_index_key = interaction_index_key(existing);
         let next_index_key = interaction_index_key(&record);
         interactions.insert(primary_key.clone(), record);
-        let mut index = self
-            .interaction_index
-            .write()
-            .expect("in-memory repository rwlock poisoned");
+        let mut index = self.interaction_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
@@ -1115,8 +1039,7 @@ impl AgentRepository for InMemoryAgentRepository {
         interaction_id: &str,
     ) -> Option<AgentInteractionRecord> {
         self.interactions
-            .read()
-            .expect("in-memory repository rwlock poisoned")
+            .recovering_read()
             .get(&(
                 tenant_id,
                 session_id.to_string(),
@@ -1126,14 +1049,8 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn list_interactions(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRecord> {
-        let interactions = self
-            .interactions
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .interaction_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let interactions = self.interactions.recovering_read();
+        let index = self.interaction_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, session_id, _, _), _)| {
@@ -1146,14 +1063,8 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn count_interactions(&self, query: &InteractionListQuery) -> u64 {
-        let interactions = self
-            .interactions
-            .read()
-            .expect("in-memory repository rwlock poisoned");
-        let index = self
-            .interaction_index
-            .read()
-            .expect("in-memory repository rwlock poisoned");
+        let interactions = self.interactions.recovering_read();
+        let index = self.interaction_index.recovering_read();
         count_iterator(
             index
                 .iter()
@@ -1162,6 +1073,73 @@ impl AgentRepository for InMemoryAgentRepository {
                 })
                 .filter_map(|(_, primary_key)| interactions.get(primary_key))
                 .filter(|record| interaction_matches_list_query(record, query)),
+        )
+    }
+
+    fn insert_task(&self, record: AgentTaskRecord) -> KernelResult<()> {
+        let primary_key = task_primary_key(&record);
+        let mut tasks = self.tasks.recovering_write();
+        if tasks.contains_key(&primary_key) {
+            return Err(KernelError::conflict("task already exists"));
+        }
+        let index_key = task_index_key(&record);
+        tasks.insert(primary_key.clone(), record);
+        self.task_index
+            .recovering_write()
+            .insert(index_key, primary_key);
+        Ok(())
+    }
+
+    fn update_task(&self, record: AgentTaskRecord) -> KernelResult<()> {
+        let primary_key = task_primary_key(&record);
+        let mut tasks = self.tasks.recovering_write();
+        let existing = tasks
+            .get(&primary_key)
+            .ok_or_else(|| KernelError::validation("task not found"))?;
+        let expected_version = existing.version.saturating_add(1);
+        if record.version != expected_version {
+            return Err(KernelError::conflict(format!(
+                "task version mismatch: expected={expected_version}, actual={}",
+                record.version
+            )));
+        }
+        let previous_index_key = task_index_key(existing);
+        let next_index_key = task_index_key(&record);
+        tasks.insert(primary_key.clone(), record);
+        let mut index = self.task_index.recovering_write();
+        index.remove(&previous_index_key);
+        index.insert(next_index_key, primary_key);
+        Ok(())
+    }
+
+    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRecord> {
+        self.tasks
+            .recovering_read()
+            .get(&(tenant_id, task_id.to_string()))
+            .cloned()
+    }
+
+    fn list_tasks(&self, query: &TaskListQuery) -> Vec<AgentTaskRecord> {
+        let tasks = self.tasks.recovering_read();
+        let index = self.task_index.recovering_read();
+        let iter = index
+            .iter()
+            .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
+            .filter_map(|(_, primary_key)| tasks.get(primary_key))
+            .filter(|record| task_matches_list_query(record, query))
+            .cloned();
+        paginate_iterator(iter, &query.pagination)
+    }
+
+    fn count_tasks(&self, query: &TaskListQuery) -> u64 {
+        let tasks = self.tasks.recovering_read();
+        let index = self.task_index.recovering_read();
+        count_iterator(
+            index
+                .iter()
+                .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
+                .filter_map(|(_, primary_key)| tasks.get(primary_key))
+                .filter(|record| task_matches_list_query(record, query)),
         )
     }
 }
@@ -1323,6 +1301,10 @@ const READ_ONLY_POLICY_ACTIONS: &[&str] = &[
     "provider_binding.list",
     "composition_slot.list",
     "composition_slot.retrieve",
+    "task.list",
+    "task.retrieve",
+    "interaction.list",
+    "interaction.retrieve",
 ];
 
 /// IAM-gated policy provider that maps agent business actions to IAM permission
@@ -1482,19 +1464,13 @@ impl InMemoryAgentAuditSink {
     }
 
     pub fn events(&self) -> Vec<KernelEvent> {
-        self.events
-            .lock()
-            .expect("in-memory audit sink mutex poisoned")
-            .clone()
+        self.events.recovering_lock().clone()
     }
 }
 
 impl AgentAuditSink for InMemoryAgentAuditSink {
     fn record(&self, event: KernelEvent) -> KernelResult<()> {
-        self.events
-            .lock()
-            .expect("in-memory audit sink mutex poisoned")
-            .push(event);
+        self.events.recovering_lock().push(event);
         Ok(())
     }
 
@@ -1503,10 +1479,7 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
         query: &AuditEventListQuery,
     ) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
         use crate::ports::offset_paginated_result;
-        let events = self
-            .events
-            .lock()
-            .expect("in-memory audit sink mutex poisoned");
+        let events = self.events.recovering_lock();
         let mut matched: Vec<KernelEvent> = events
             .iter()
             .filter(|event| {
@@ -1553,7 +1526,11 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
         });
         let total_count = matched.len() as u64;
         let page = paginate_iterator(matched.into_iter(), &query.pagination);
-        Ok(offset_paginated_result(page, &query.pagination, total_count))
+        Ok(offset_paginated_result(
+            page,
+            &query.pagination,
+            total_count,
+        ))
     }
 }
 
@@ -1619,6 +1596,28 @@ fn interaction_matches_list_query(
     true
 }
 
+fn task_matches_list_query(record: &AgentTaskRecord, query: &TaskListQuery) -> bool {
+    if record.tenant_id != query.tenant_id {
+        return false;
+    }
+    if let Some(agent_id) = query.agent_id.as_ref() {
+        if record.agent_id != *agent_id {
+            return false;
+        }
+    }
+    if let Some(owner_user_id) = query.owner_user_id {
+        if record.owner_user_id != owner_user_id {
+            return false;
+        }
+    }
+    if let Some(status) = query.status.as_ref() {
+        if record.status.as_str() != status {
+            return false;
+        }
+    }
+    true
+}
+
 fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery) -> bool {
     if record.tenant_id != query.tenant_id {
         return false;
@@ -1645,8 +1644,14 @@ fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery
         if !is_blank(Some(search_query.as_str())) {
             let normalized_query = trim(search_query).to_lowercase();
             let description = record.description.as_deref().unwrap_or("");
-            let matches = record.agent_id.to_lowercase().contains(normalized_query.as_str())
-                || record.code.to_lowercase().contains(normalized_query.as_str())
+            let matches = record
+                .agent_id
+                .to_lowercase()
+                .contains(normalized_query.as_str())
+                || record
+                    .code
+                    .to_lowercase()
+                    .contains(normalized_query.as_str())
                 || record
                     .display_name
                     .to_lowercase()
@@ -1741,6 +1746,27 @@ mod tests {
             .expect_err("stale version should fail");
         assert_eq!(error.kind(), KernelErrorKind::Conflict);
         assert!(error.message().contains("version mismatch"));
+    }
+
+    #[test]
+    fn in_memory_repository_records_do_not_panic_after_poisoned_lock() {
+        let repository = InMemoryAgentRepository::new();
+        let poison_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = repository
+                .agents
+                .write()
+                .expect("test lock should be available");
+            panic!("poison in-memory repository lock");
+        }));
+        assert!(poison_result.is_err());
+
+        let read_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| repository.records()));
+
+        assert!(
+            read_result.is_ok(),
+            "in-memory repository must not panic after RwLock poisoning"
+        );
     }
 
     #[test]

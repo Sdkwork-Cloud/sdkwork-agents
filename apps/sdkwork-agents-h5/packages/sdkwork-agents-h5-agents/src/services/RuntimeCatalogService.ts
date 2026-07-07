@@ -1,12 +1,35 @@
-import { Code2, Globe, Wrench } from "lucide-react";
-import { createElement } from "react";
+import { Code2, Cpu, Globe } from "lucide-react";
+import { createElement, type ReactNode } from "react";
 
 import {
   getAgentsAppSdkClientWithSession,
+  type CodeEngineCatalog,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  extractOffsetPageInfo,
+} from "@sdkwork/agents-h5-core/sdk/pagination";
 
 import type { ToolItem } from "../components/SelectToolsModal";
+
+import { extractArray, extractResourceRecord } from "./sdkEnvelope";
+
+export interface ModelCatalogItem {
+  id: string;
+  label: string;
+  description: string;
+  providerId: string;
+  engineKey: string;
+  bindingId: string;
+  defaultForEngine: boolean;
+}
+
+export interface McpCatalogPage {
+  items: ToolItem[];
+  page: number;
+  hasMore: boolean;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
@@ -58,6 +81,22 @@ function mapCodeEngineRecord(record: Record<string, unknown>, index: number): To
   };
 }
 
+function mapModelRecord(record: Record<string, unknown>): ModelCatalogItem | undefined {
+  const modelId = pickString(record, ["modelId", "model_id", "id"]);
+  if (!modelId) {
+    return undefined;
+  }
+  return {
+    id: modelId,
+    label: pickString(record, ["label", "name", "displayName", "display_name"]) ?? modelId,
+    description: pickString(record, ["description", "summary"]) ?? "",
+    providerId: pickString(record, ["providerId", "provider_id"]) ?? "",
+    engineKey: pickString(record, ["engineKey", "engine_key"]) ?? "",
+    bindingId: pickString(record, ["bindingId", "binding_id"]) ?? "",
+    defaultForEngine: Boolean(record.defaultForEngine ?? record.default_for_engine),
+  };
+}
+
 function extractItems(snapshot: unknown): Record<string, unknown>[] {
   const root = asRecord(snapshot);
   if (!root) {
@@ -73,35 +112,71 @@ function extractItems(snapshot: unknown): Record<string, unknown>[] {
   return [];
 }
 
-export async function loadRuntimeToolCatalog(
+export async function loadRuntimeModelCatalog(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
-): Promise<ToolItem[]> {
-  const [codeEngines, mcpServers] = await Promise.all([
-    client.ai.agents.codeEngines.list(),
-    client.ai.agents.mcpServers.list(),
-  ]);
-
-  const engineItems = extractItems(codeEngines)
-    .map(mapCodeEngineRecord)
-    .filter((item): item is ToolItem => Boolean(item));
-  const mcpItems = extractItems(mcpServers)
-    .map(mapMcpRecord)
-    .filter((item): item is ToolItem => Boolean(item));
-
-  if (engineItems.length === 0 && mcpItems.length === 0) {
+): Promise<ModelCatalogItem[]> {
+  const response = await client.ai.agents.codeEngines.list();
+  const catalog = extractResourceRecord(response) as unknown as CodeEngineCatalog | undefined;
+  if (!catalog?.engines?.length) {
     return [];
   }
+  return catalog.engines.flatMap((engine) =>
+    (engine.models ?? [])
+      .map((model) =>
+        mapModelRecord({
+          ...model,
+          engineKey: engine.engineKey,
+          bindingId: engine.bindingId,
+        } as unknown as Record<string, unknown>),
+      )
+      .filter((item): item is ModelCatalogItem => Boolean(item)),
+  );
+}
 
-  return [
-    ...engineItems,
-    ...mcpItems,
-    {
-      id: "custom.api",
-      name: "自建 API",
-      description: "通过 composition slot 引用企业内部 API。",
-      provider: "Custom",
-      category: "custom",
-      icon: createElement(Wrench, { size: 20, className: "text-emerald-400" }),
-    },
-  ];
+export async function loadMcpCatalogPage(
+  page = 1,
+  pageSize = DEFAULT_LIST_PAGE_SIZE,
+  q?: string,
+  client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
+): Promise<McpCatalogPage> {
+  const response = await client.ai.agents.mcpServers.list({
+    page,
+    pageSize,
+    ...(q?.trim() ? { q: q.trim() } : {}),
+  });
+  const pageInfo = extractOffsetPageInfo(response);
+  const items = extractArray(response)
+    .map((record, index) =>
+      record && typeof record === "object"
+        ? mapMcpRecord(record as Record<string, unknown>, index)
+        : undefined,
+    )
+    .filter((item): item is ToolItem => Boolean(item));
+  return { items, page: pageInfo.page, hasMore: pageInfo.hasMore };
+}
+
+/** Official code-engine tools (small catalog; not paginated at HTTP layer). */
+export async function loadCodeEngineToolItems(
+  client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
+): Promise<ToolItem[]> {
+  const codeEngines = await client.ai.agents.codeEngines.list();
+  return extractItems(codeEngines)
+    .map(mapCodeEngineRecord)
+    .filter((item): item is ToolItem => Boolean(item));
+}
+
+export function engineKeyToVendorLabel(engineKey: string): string {
+  const labels: Record<string, string> = {
+    codex: "OpenAI Codex",
+    "claude-code": "Anthropic",
+    gemini: "Google",
+    opencode: "OpenCode",
+    openclaw: "OpenClaw",
+    hermes: "Hermes",
+  };
+  return labels[engineKey] ?? engineKey;
+}
+
+export function modelCatalogVendorIcon(engineKey: string): ReactNode {
+  return createElement(Cpu, { size: 14 });
 }

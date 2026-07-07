@@ -1,10 +1,10 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use sdkwork_agents_contract::env_test_lock;
+use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_intelligence_agents_service::{
     AgentHttpState, AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
-use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_routes_agents_backend_api::{
     backend_route_manifest, build_router, wrap_router_with_web_framework,
 };
@@ -35,7 +35,12 @@ fn test_app() -> axum::Router {
 fn agents_auth_token_bearer(user_id: &str) -> String {
     format!(
         "Bearer {}",
-        auth_token_jwt(DEFAULT_TENANT_ID, user_id, DEFAULT_SESSION_ID, AGENTS_APP_ID)
+        auth_token_jwt(
+            DEFAULT_TENANT_ID,
+            user_id,
+            DEFAULT_SESSION_ID,
+            AGENTS_APP_ID
+        )
     )
 }
 

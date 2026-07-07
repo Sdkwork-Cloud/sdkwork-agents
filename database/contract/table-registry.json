@@ -25,6 +25,30 @@
       "owner": "agents-platform",
       "compliance_level": "L3",
       "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_session",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_message",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_interaction",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_task",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
     }
   ]
 }

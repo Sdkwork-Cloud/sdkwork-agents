@@ -1,7 +1,7 @@
 use sdkwork_agent_kernel::ModelDescriptor;
 use serde::{Deserialize, Serialize};
 
-use crate::code_engines::{canonical_code_engine_keys, bootstrap_code_engine, CodeEngineSlot};
+use crate::code_engines::{bootstrap_code_engine, bootstrappable_engine_keys, CodeEngineSlot};
 
 /// Engine model catalog entry exposed by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +27,7 @@ pub struct CodeEngineCatalog {
 #[serde(rename_all = "camelCase")]
 pub struct CodeEngineCatalogEngine {
     pub engine_key: String,
+    pub tier: String,
     pub agent_id: String,
     pub binding_id: String,
     pub models: Vec<CodeEngineModelCatalogEntry>,
@@ -69,8 +70,12 @@ pub fn build_code_engine_catalog(slots: &[&CodeEngineSlot]) -> CodeEngineCatalog
         .iter()
         .filter_map(|slot| {
             let agent_id = super::code_engines::code_engine_agent_id(slot.engine_key())?;
+            let tier = super::code_engines::engine_catalog_tier(slot.engine_key())
+                .unwrap_or("unknown")
+                .to_string();
             Some(CodeEngineCatalogEngine {
                 engine_key: slot.engine_key().to_string(),
+                tier,
                 agent_id: agent_id.to_string(),
                 binding_id: slot.binding_id().to_string(),
                 models: list_slot_catalog_entries(slot),
@@ -82,14 +87,17 @@ pub fn build_code_engine_catalog(slots: &[&CodeEngineSlot]) -> CodeEngineCatalog
 
 pub fn bootstrap_canonical_code_engine_catalog(
 ) -> Result<CodeEngineCatalog, crate::code_engines::CodeEngineBootstrapError> {
+    bootstrap_bootstrappable_code_engine_catalog()
+}
+
+pub fn bootstrap_bootstrappable_code_engine_catalog(
+) -> Result<CodeEngineCatalog, crate::code_engines::CodeEngineBootstrapError> {
     let mut slots = Vec::new();
-    for engine_key in canonical_code_engine_keys() {
+    for engine_key in bootstrappable_engine_keys() {
         let slot = bootstrap_code_engine(engine_key)?;
         slots.push(slot);
     }
-    Ok(build_code_engine_catalog(
-        &slots.iter().collect::<Vec<_>>(),
-    ))
+    Ok(build_code_engine_catalog(&slots.iter().collect::<Vec<_>>()))
 }
 
 #[cfg(test)]
@@ -99,13 +107,9 @@ mod tests {
 
     #[test]
     fn projects_model_descriptor_to_catalog_entry() {
-        let descriptor = ModelDescriptor::new(
-            "codex-1",
-            "provider.model.codex",
-            "Codex 1",
-            "codex",
-        )
-        .with_response_format(ModelResponseFormat::Text);
+        let descriptor =
+            ModelDescriptor::new("codex-1", "provider.model.codex", "Codex 1", "codex")
+                .with_response_format(ModelResponseFormat::Text);
 
         let entry = model_descriptor_to_catalog_entry("codex", "binding.codex", &descriptor, true);
         assert_eq!(entry.engine_key, "codex");
@@ -116,9 +120,10 @@ mod tests {
     #[test]
     fn canonical_catalog_bootstraps_all_engines() {
         let catalog = bootstrap_canonical_code_engine_catalog().expect("catalog bootstrap");
-        assert_eq!(catalog.engines.len(), 4);
+        assert_eq!(catalog.engines.len(), 6);
         for engine in &catalog.engines {
             assert!(!engine.models.is_empty());
+            assert!(!engine.tier.is_empty());
         }
     }
 }

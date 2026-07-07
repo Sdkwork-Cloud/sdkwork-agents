@@ -2,18 +2,21 @@ use std::sync::{Arc, Mutex};
 
 use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelEvent, KernelResult, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
-use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 use sdkwork_intelligence_agents_service::{
-    ActivateAgentProviderBindingCommand, AgentAuditSink, AgentBusinessStatus,
-    AgentImplementationKind, AgentImplementationType, AgentListQuery, AgentPreviewResponseCommand,
+    extract_event_context, offset_paginated_result, ActivateAgentProviderBindingCommand,
+    AgentAuditSink, AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
+    AgentInteractionKind, AgentListQuery, AgentMessageRole, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentVisibility, AgentsService,
-    AllowAllPolicyProvider, AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand,
-    CreateSessionCommand, DeleteAgentCommand, extract_event_context, GetAgentCommand,
-    InMemoryAgentRepository, ListAgentAuditEventsCommand, ListAgentsCommand, PolicyMode,
-    ProviderBindingListCommand, ProviderBindingListQuery, PaginationParams, PaginatedResult,
-    RestoreAgentCommand, SendChatMessageCommand, UpdateAgentCommand, GetSessionCommand, MAX_PAGE_SIZE,
-    offset_paginated_result, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, AgentMessageRole,
+    AllowAllPolicyProvider, ApproveInteractionCommand, AuditEventListQuery,
+    ChangeAgentStatusCommand, CreateAgentCommand, CreateInteractionCommand, CreateSessionCommand,
+    DeleteAgentCommand, GetAgentCommand, GetInteractionCommand, GetSessionCommand,
+    InMemoryAgentRepository, InteractionListQuery, ListAgentAuditEventsCommand, ListAgentsCommand,
+    ListInteractionsCommand, PaginatedResult, PaginationParams, PolicyMode,
+    ProviderBindingListCommand, ProviderBindingListQuery, RestoreAgentCommand,
+    SendChatMessageCommand, UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
+    MAX_PAGE_SIZE,
 };
+use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
 #[derive(Clone, Default)]
 struct RecordingAuditSink {
@@ -67,7 +70,11 @@ impl AgentAuditSink for RecordingAuditSink {
             query.pagination.offset,
         )
         .items;
-        Ok(offset_paginated_result(page, &query.pagination, total_count))
+        Ok(offset_paginated_result(
+            page,
+            &query.pagination,
+            total_count,
+        ))
     }
 }
 
@@ -1152,6 +1159,7 @@ fn send_chat_message_persists_user_and_assistant_turn() {
             owner_scope: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:30Z".to_string(),
+            prefer_stream: false,
         })
         .expect("send chat message should succeed");
 
@@ -1200,10 +1208,106 @@ fn get_session_rejects_foreign_owner_scope() {
     let error = service
         .get_session(GetSessionCommand {
             tenant_id: 100_001,
+            path_agent_id: created.agent_id.clone(),
             session_id: session.session_id.clone(),
             owner_scope: Some(999),
             requested_by: sample_subject(),
         })
         .expect_err("foreign owner must not read session");
     assert!(error.to_string().contains("session not found"));
+}
+
+#[test]
+fn interaction_approval_lifecycle_persists_and_resolves() {
+    let repository = InMemoryAgentRepository::new();
+    let (audit_sink, _events) = RecordingAuditSink::new();
+    let service = AgentsService::new(
+        repository,
+        audit_sink,
+        AllowAllPolicyProvider::allow("policy.memory"),
+    );
+
+    let agent = service
+        .create_agent(create_agent_cmd(
+            "agent.interaction",
+            100_001,
+            0,
+            100,
+            "interaction",
+            "Interaction Agent",
+            "2026-06-01T05:00:00Z",
+        ))
+        .expect("create agent should succeed");
+
+    let session = service
+        .create_session(CreateSessionCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: agent.agent_id.clone(),
+            owner_user_id: 100,
+            session_id: String::new(),
+            title: Some("Interaction session".to_string()),
+            provider_binding_id: None,
+            model_id: None,
+            metadata_json: "{}".to_string(),
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:01:00Z".to_string(),
+        })
+        .expect("create session should succeed");
+
+    let interaction = service
+        .create_interaction(CreateInteractionCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: agent.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            interaction_id: String::new(),
+            engine_key: "codex".to_string(),
+            kind: AgentInteractionKind::Approval,
+            prompt: "Approve write?".to_string(),
+            options_json: "[]".to_string(),
+            owner_scope: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:02:00Z".to_string(),
+        })
+        .expect("create interaction should succeed");
+    assert_eq!(interaction.status.as_str(), "pending");
+
+    let listed = service
+        .list_interactions(ListInteractionsCommand {
+            query: InteractionListQuery::for_session(100_001, session.session_id.clone()),
+            path_agent_id: agent.agent_id.clone(),
+            owner_scope: None,
+            requested_by: sample_subject(),
+        })
+        .expect("list interactions should succeed");
+    assert_eq!(listed.items.len(), 1);
+
+    let resolved = service
+        .approve_interaction(ApproveInteractionCommand {
+            tenant_id: 100_001,
+            path_agent_id: agent.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            interaction_id: interaction.interaction_id.clone(),
+            approved: true,
+            reason: Some("ok".to_string()),
+            expected_version: interaction.version,
+            owner_scope: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:03:00Z".to_string(),
+        })
+        .expect("approve interaction should succeed");
+    assert_eq!(resolved.status.as_str(), "resolved");
+
+    let retrieved = service
+        .get_interaction(GetInteractionCommand {
+            tenant_id: 100_001,
+            path_agent_id: agent.agent_id,
+            session_id: session.session_id,
+            interaction_id: interaction.interaction_id,
+            owner_scope: None,
+            requested_by: sample_subject(),
+        })
+        .expect("get interaction should succeed");
+    assert_eq!(retrieved.status.as_str(), "resolved");
 }

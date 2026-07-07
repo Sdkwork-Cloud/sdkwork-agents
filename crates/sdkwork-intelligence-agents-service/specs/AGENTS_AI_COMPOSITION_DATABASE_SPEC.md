@@ -23,7 +23,15 @@ Content and domain persistence are owned by sibling modules:
 | Files | `sdkwork-drive` | `dr_` |
 | MCP | `sdkwork-mcp` | `ai_mcp_*` |
 
-Agent runtime session/task state remains in `sdkwork-kernel` (`sdkwork-agent-database`).
+**Hosted chat persistence** (`ai_agent_session`, `ai_agent_message`, `ai_agent_interaction`)
+is owned by `sdkwork-agents` and is the canonical product read model for session/message
+query APIs. Kernel may maintain optional in-process runtime state in
+`sdkwork-agent-database` for provider execution; that store is not the product authority.
+
+**Task scheduling persistence** (`ai_agent_task`) is owned by `sdkwork-agents` for
+product-managed tasks. Kernel `AgentRun` / `AgentStep` projection (`ai_agent_task_run`,
+`agents.taskRuns.*`) remains non-GA scope until the kernel run projection is stable;
+see `specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md`.
 
 Agents reference all sibling-module resources exclusively through `ai_agent_composition_slot`.
 No MCP, knowledge, memory, skills, prompts, or drive tables exist in this repository.
@@ -37,7 +45,7 @@ No MCP, knowledge, memory, skills, prompts, or drive tables exist in this reposi
 5. `tenant_id` and `organization_id` are explicit columns on all tenant entities.
 6. Snowflake IDs are allocated in application code before insert (no `BIGSERIAL` / `RETURNING id`).
 7. Cross-module resources are referenced through `ai_agent_composition_slot`, not duplicated tables.
-8. No over-design: agents owns 6 tables — identity, binding, composition, audit, session, message.
+8. No over-design: agents owns 8 tables — identity, binding, composition, audit, session, message, interaction, and task.
 
 ## 3. Table Overview
 
@@ -47,6 +55,10 @@ No MCP, knowledge, memory, skills, prompts, or drive tables exist in this reposi
 | `ai_agent_runtime_binding` | `tenant_entity` | L2 | Provider/runtime binding for an agent. |
 | `ai_agent_composition_slot` | `tenant_entity` | L2 | Agent → sibling-module resource references. |
 | `ai_agent_audit_event` | `audit_log` | L3 | Immutable management audit facts. |
+| `ai_agent_session` | `tenant_entity` | L2 | Hosted chat sessions (tenant/agent/owner scope). |
+| `ai_agent_message` | `tenant_entity` | L2 | Session messages and chat turn persistence. |
+| `ai_agent_interaction` | `tenant_entity` | L2 | Live interaction state (approval / user-question flows). |
+| `ai_agent_task` | `tenant_entity` | L2 | Product-managed task scheduling and external task correlation. |
 
 ## 4. `ai_agent_composition_slot`
 
@@ -128,7 +140,8 @@ Application and frontend layers must not load full result sets and slice in memo
 | `ai_agent_audit_event` | `SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID` + `SQL_COUNT_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID` | Filters: `action`, `from`, `to`; sort: `created_at DESC, id DESC`. |
 | `ai_agent_session` | `SQL_LIST_AGENT_SESSIONS` + `SQL_COUNT_AGENT_SESSIONS` | Offset-paginated; `PageInfo.totalItems` from count query. |
 | `ai_agent_message` | `SQL_LIST_AGENT_MESSAGES` / `SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT` + `SQL_COUNT_AGENT_MESSAGES` | API lists use ASC + offset; chat context uses recent DESC window. |
-| `ai_agent_interaction` | `SQL_LIST_AGENT_INTERACTIONS` + `SQL_COUNT_AGENT_INTERACTIONS` | Offset-paginated; domain-only until OpenAPI exposes HTTP. |
+| `ai_agent_interaction` | `SQL_LIST_AGENT_INTERACTIONS` + `SQL_COUNT_AGENT_INTERACTIONS` | Offset-paginated; App/Backend HTTP surfaces expose `agents.interactions.*`. |
+| `ai_agent_task` | `SQL_LIST_AGENT_TASKS` + `SQL_COUNT_AGENT_TASKS` | Offset-paginated; Open/App/Backend HTTP surfaces expose `agents.tasks.*`. |
 
 HTTP handlers pass `page` / `page_size` into repository `PaginationParams` and return `PageInfo.totalItems` from `COUNT(*)` queries.
 Marketplace scope (`scope=market|public|published`) maps to `visibility = public` in SQL, not client-side filtering.

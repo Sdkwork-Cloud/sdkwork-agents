@@ -1,6 +1,6 @@
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotRecord, AgentInteractionRecord, AgentMessageRecord,
-    AgentProviderBindingRecord, AgentSessionRecord, AgentVisibility,
+    AgentProviderBindingRecord, AgentSessionRecord, AgentTaskRecord, AgentVisibility,
 };
 use crate::validation::optional_non_blank;
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
@@ -18,6 +18,8 @@ pub const DEFAULT_PAGE_SIZE: usize = 20;
 
 /// Maximum number of prior session messages loaded into LLM chat context.
 pub const CHAT_CONTEXT_MESSAGE_LIMIT: usize = 50;
+/// Maximum user message payload accepted on chat and task prompt surfaces.
+pub const MAX_CHAT_USER_CONTENT_BYTES: usize = 256 * 1024;
 
 /// Build offset-mode pagination metadata from a repository page and total count.
 pub fn offset_paginated_result<T>(
@@ -80,17 +82,10 @@ impl PaginationParams {
     /// Create pagination from optional limit and offset.
     /// This provides backward compatibility with legacy limit/offset APIs.
     pub fn from_limit_offset(limit: Option<usize>, offset: Option<usize>) -> Self {
-        let mut params = Self::default();
-        if let Some(size) = limit {
-            params = params.with_page_size(size);
-        }
-        // Note: offset is not directly supported; cursor-based pagination is preferred
-        if offset.is_some() {
-            tracing::warn!(
-                "Offset-based pagination is deprecated. Use cursor-based pagination with page_token."
-            );
-        }
-        params
+        let page_size = limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
+        let offset = offset.unwrap_or(0);
+        let page = offset / page_size + 1;
+        Self::default().with_page_size(page_size).with_page(page)
     }
 }
 
@@ -316,6 +311,7 @@ impl AuditEventListQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpMarketplaceListQuery {
     pub tenant_id: u64,
+    pub q: Option<String>,
     pub pagination: PaginationParams,
 }
 
@@ -323,8 +319,15 @@ impl McpMarketplaceListQuery {
     pub fn for_tenant(tenant_id: u64) -> Self {
         Self {
             tenant_id,
+            q: None,
             pagination: PaginationParams::default(),
         }
+    }
+
+    pub fn with_q(mut self, q: impl Into<String>) -> Self {
+        let value = q.into().trim().to_string();
+        self.q = if value.is_empty() { None } else { Some(value) };
+        self
     }
 
     pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
@@ -476,6 +479,48 @@ impl InteractionListQuery {
     }
 }
 
+/// Query parameters for listing agent tasks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskListQuery {
+    pub tenant_id: u64,
+    pub agent_id: Option<String>,
+    pub owner_user_id: Option<u64>,
+    pub status: Option<String>,
+    pub pagination: PaginationParams,
+}
+
+impl TaskListQuery {
+    pub fn for_tenant(tenant_id: u64) -> Self {
+        Self {
+            tenant_id,
+            agent_id: None,
+            owner_user_id: None,
+            status: None,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn for_agent(mut self, agent_id: impl Into<String>) -> Self {
+        self.agent_id = Some(agent_id.into());
+        self
+    }
+
+    pub fn for_owner(mut self, owner_user_id: u64) -> Self {
+        self.owner_user_id = Some(owner_user_id);
+        self
+    }
+
+    pub fn with_status(mut self, status: impl Into<String>) -> Self {
+        self.status = Some(status.into());
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
 /// Thread-safe agent repository port.
 ///
 /// All methods use `&self` — implementations MUST provide interior mutability
@@ -504,53 +549,87 @@ pub trait AgentRepository: Send + Sync {
         offset_paginated_result(items, &query.pagination, total_count)
     }
 
-    fn insert_provider_binding(&self, _record: AgentProviderBindingRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.provider_binding".to_string(),
-        })
-    }
+    fn insert_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()>;
 
-    fn update_provider_binding(&self, _record: AgentProviderBindingRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.provider_binding".to_string(),
-        })
-    }
+    fn update_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()>;
 
     fn get_provider_binding(
         &self,
-        _tenant_id: u64,
-        _agent_id: &str,
-        _binding_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
-        None
-    }
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str,
+    ) -> Option<AgentProviderBindingRecord>;
 
-    fn list_provider_bindings(&self, query: &ProviderBindingListQuery) -> Vec<AgentProviderBindingRecord>;
+    fn list_provider_bindings(
+        &self,
+        query: &ProviderBindingListQuery,
+    ) -> Vec<AgentProviderBindingRecord>;
 
     fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> u64;
 
-    fn insert_composition_slot(&self, _record: AgentCompositionSlotRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.composition_slot".to_string(),
-        })
+    /// Atomically deactivate all active bindings for an agent and activate one target binding.
+    fn activate_provider_binding_atomic(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str,
+        updated_at: String,
+    ) -> KernelResult<AgentProviderBindingRecord> {
+        let mut record = self
+            .get_provider_binding(tenant_id, agent_id, binding_id)
+            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+        if record.active {
+            return Ok(record);
+        }
+        let mut page = 1usize;
+        loop {
+            let batch = self.list_provider_bindings(
+                &ProviderBindingListQuery::for_agent(tenant_id, agent_id).with_pagination(
+                    PaginationParams::default()
+                        .with_page_size(MAX_PAGE_SIZE)
+                        .with_page(page),
+                ),
+            );
+            if batch.is_empty() {
+                break;
+            }
+            let batch_len = batch.len();
+            for mut binding in batch {
+                if binding.active {
+                    binding.active = false;
+                    binding.mark_updated(updated_at.clone());
+                    self.update_provider_binding(binding)?;
+                }
+            }
+            if batch_len < MAX_PAGE_SIZE {
+                break;
+            }
+            page = page.saturating_add(1);
+        }
+        record = self
+            .get_provider_binding(tenant_id, agent_id, binding_id)
+            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+        record.active = true;
+        record.mark_updated(updated_at);
+        self.update_provider_binding(record.clone())?;
+        Ok(record)
     }
 
-    fn update_composition_slot(&self, _record: AgentCompositionSlotRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.composition_slot".to_string(),
-        })
-    }
+    fn insert_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()>;
+
+    fn update_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()>;
 
     fn get_composition_slot(
         &self,
-        _tenant_id: u64,
-        _agent_id: &str,
-        _slot_id: &str,
-    ) -> Option<AgentCompositionSlotRecord> {
-        None
-    }
+        tenant_id: u64,
+        agent_id: &str,
+        slot_id: &str,
+    ) -> Option<AgentCompositionSlotRecord>;
 
-    fn list_composition_slots(&self, query: &CompositionSlotListQuery) -> Vec<AgentCompositionSlotRecord>;
+    fn list_composition_slots(
+        &self,
+        query: &CompositionSlotListQuery,
+    ) -> Vec<AgentCompositionSlotRecord>;
 
     fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> u64;
 
@@ -562,77 +641,41 @@ pub trait AgentRepository: Send + Sync {
     fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> u64;
 
     // -----------------------------------------------------------------------
-    // Session persistence — default stubs return empty/error for backward
-    // compatibility with adapters that have not yet implemented sessions.
+    // Session persistence
     // -----------------------------------------------------------------------
 
-    fn insert_session(&self, _record: AgentSessionRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.session".to_string(),
-        })
-    }
+    fn insert_session(&self, record: AgentSessionRecord) -> KernelResult<()>;
 
-    fn update_session(&self, _record: AgentSessionRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.session".to_string(),
-        })
-    }
+    fn update_session(&self, record: AgentSessionRecord) -> KernelResult<()>;
 
-    fn get_session(
-        &self,
-        _tenant_id: u64,
-        _session_id: &str,
-    ) -> Option<AgentSessionRecord> {
-        None
-    }
+    fn get_session(&self, tenant_id: u64, session_id: &str) -> Option<AgentSessionRecord>;
 
-    fn list_sessions(&self, _query: &SessionListQuery) -> Vec<AgentSessionRecord> {
-        Vec::new()
-    }
+    fn list_sessions(&self, query: &SessionListQuery) -> Vec<AgentSessionRecord>;
 
-    fn count_sessions(&self, _query: &SessionListQuery) -> u64 {
-        0
-    }
+    fn count_sessions(&self, query: &SessionListQuery) -> u64;
 
     // -----------------------------------------------------------------------
-    // Message persistence — default stubs return empty/error for backward
-    // compatibility with adapters that have not yet implemented messages.
+    // Message persistence
     // -----------------------------------------------------------------------
 
-    fn insert_message(&self, _record: AgentMessageRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.message".to_string(),
-        })
-    }
+    fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()>;
 
-    fn update_message(&self, _record: AgentMessageRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.message".to_string(),
-        })
-    }
+    fn update_message(&self, record: AgentMessageRecord) -> KernelResult<()>;
 
     fn get_message(
         &self,
-        _tenant_id: u64,
-        _session_id: &str,
-        _message_id: &str,
-    ) -> Option<AgentMessageRecord> {
-        None
-    }
+        tenant_id: u64,
+        session_id: &str,
+        message_id: &str,
+    ) -> Option<AgentMessageRecord>;
 
-    fn list_messages(&self, _query: &MessageListQuery) -> Vec<AgentMessageRecord> {
-        Vec::new()
-    }
+    fn list_messages(&self, query: &MessageListQuery) -> Vec<AgentMessageRecord>;
 
-    fn count_messages(&self, _query: &MessageListQuery) -> u64 {
-        0
-    }
+    fn count_messages(&self, query: &MessageListQuery) -> u64;
 
     /// Next message sequence number for a session. Implementations should
     /// return `message_count + 1` for the session, or `1` if no messages exist.
-    fn next_message_sequence(&self, _tenant_id: u64, _session_id: &str) -> KernelResult<u64> {
-        Ok(1)
-    }
+    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64>;
 
     /// Atomically persist one user + assistant chat turn and update session counters.
     fn insert_chat_turn(
@@ -646,8 +689,10 @@ pub trait AgentRepository: Send + Sync {
         user_message.sequence = user_sequence;
         self.insert_message(user_message.clone())?;
 
-        let assistant_sequence =
-            self.next_message_sequence(assistant_message.tenant_id, assistant_message.session_id.as_str())?;
+        let assistant_sequence = self.next_message_sequence(
+            assistant_message.tenant_id,
+            assistant_message.session_id.as_str(),
+        )?;
         assistant_message.sequence = assistant_sequence;
         self.insert_message(assistant_message.clone())?;
 
@@ -656,38 +701,37 @@ pub trait AgentRepository: Send + Sync {
     }
 
     // -----------------------------------------------------------------------
-    // Interaction persistence — default stubs return empty/error for backward
-    // compatibility with adapters that have not yet implemented interactions.
+    // Interaction persistence
     // -----------------------------------------------------------------------
 
-    fn insert_interaction(&self, _record: AgentInteractionRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.interaction".to_string(),
-        })
-    }
+    fn insert_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()>;
 
-    fn update_interaction(&self, _record: AgentInteractionRecord) -> KernelResult<()> {
-        Err(KernelError::CapabilityMissing {
-            capability_id: "agent.business.interaction".to_string(),
-        })
-    }
+    fn update_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()>;
 
     fn get_interaction(
         &self,
-        _tenant_id: u64,
-        _session_id: &str,
-        _interaction_id: &str,
-    ) -> Option<AgentInteractionRecord> {
-        None
-    }
+        tenant_id: u64,
+        session_id: &str,
+        interaction_id: &str,
+    ) -> Option<AgentInteractionRecord>;
 
-    fn list_interactions(&self, _query: &InteractionListQuery) -> Vec<AgentInteractionRecord> {
-        Vec::new()
-    }
+    fn list_interactions(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRecord>;
 
-    fn count_interactions(&self, _query: &InteractionListQuery) -> u64 {
-        0
-    }
+    fn count_interactions(&self, query: &InteractionListQuery) -> u64;
+
+    // -----------------------------------------------------------------------
+    // Task persistence
+    // -----------------------------------------------------------------------
+
+    fn insert_task(&self, record: AgentTaskRecord) -> KernelResult<()>;
+
+    fn update_task(&self, record: AgentTaskRecord) -> KernelResult<()>;
+
+    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRecord>;
+
+    fn list_tasks(&self, query: &TaskListQuery) -> Vec<AgentTaskRecord>;
+
+    fn count_tasks(&self, query: &TaskListQuery) -> u64;
 }
 
 /// Thread-safe audit event sink port.
@@ -696,5 +740,8 @@ pub trait AgentRepository: Send + Sync {
 pub trait AgentAuditSink: Send + Sync {
     fn record(&self, event: KernelEvent) -> KernelResult<()>;
 
-    fn list_events(&self, query: &AuditEventListQuery) -> KernelResult<PaginatedResult<KernelEvent>>;
+    fn list_events(
+        &self,
+        query: &AuditEventListQuery,
+    ) -> KernelResult<PaginatedResult<KernelEvent>>;
 }

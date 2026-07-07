@@ -218,7 +218,9 @@ impl ApiProblem {
 /// 收尾 `ApiResult<T>`：成功走 `success_json`，失败走 `problem_response`。
 pub fn finish_api_json<T: Serialize>(ctx: &WebRequestContext, result: ApiResult<T>) -> Response {
     match result {
-        Ok(data) => success_json(ctx, data).unwrap_or_else(|problem| problem.into_response_for(ctx)),
+        Ok(data) => {
+            success_json(ctx, data).unwrap_or_else(|problem| problem.into_response_for(ctx))
+        }
         Err(problem) => problem.into_response_for(ctx),
     }
 }
@@ -264,14 +266,17 @@ mod tests {
 
     #[tokio::test]
     async fn success_json_uses_sdkwork_api_response_envelope() {
-        let response = success_json(&test_context(), serde_json::json!({ "item": 1 }))
-            .expect("response");
+        let response =
+            success_json(&test_context(), serde_json::json!({ "item": 1 })).expect("response");
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(0, payload["code"].as_i64().unwrap());
-        assert_eq!("trace-from-context-abc", payload["traceId"].as_str().unwrap());
+        assert_eq!(
+            "trace-from-context-abc",
+            payload["traceId"].as_str().unwrap()
+        );
         assert_eq!(1, payload["data"]["item"].as_i64().unwrap());
     }
 
@@ -317,8 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn api_problem_not_found_returns_404_problem_json() {
-        let response =
-            ApiProblem::not_found("agent missing").into_response_for(&test_context());
+        let response = ApiProblem::not_found("agent missing").into_response_for(&test_context());
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -356,9 +360,8 @@ mod tests {
 
     #[tokio::test]
     async fn api_problem_dependency_unavailable_returns_503_problem_json() {
-        let response =
-            ApiProblem::dependency_unavailable("database operation failed")
-                .into_response_for(&test_context());
+        let response = ApiProblem::dependency_unavailable("database operation failed")
+            .into_response_for(&test_context());
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");

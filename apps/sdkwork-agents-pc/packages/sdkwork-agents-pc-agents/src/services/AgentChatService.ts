@@ -3,6 +3,7 @@ import {
   getAgentsAppSdkClientWithSession,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
+import { extractOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
 
 import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";
 
@@ -11,6 +12,11 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   createdAt: string;
+}
+
+export interface ChatMessageListPage {
+  items: ChatMessage[];
+  pageInfo: OffsetPageInfo;
 }
 
 /** Matches backend `CHAT_CONTEXT_MESSAGE_LIMIT` for one interactive chat page. */
@@ -92,15 +98,34 @@ export class AgentChatService {
   }
 
   /** Load one server page for interactive chat history (`PAGINATION_SPEC.md` §8). */
-  async listMessages(agentId: string, sessionId: string): Promise<ChatMessage[]> {
+  async listMessagesPage(
+    agentId: string,
+    sessionId: string,
+    page = 1,
+  ): Promise<ChatMessageListPage> {
     const response = await this.getClient().ai.agents.messages.list(agentId, sessionId, {
-      page: 1,
+      page,
       pageSize: CHAT_MESSAGE_PAGE_SIZE,
     });
-    return extractArray(response)
-      .map((item) => (isRecord(item) ? toChatMessage(item) : undefined))
-      .filter((item): item is ChatMessage => Boolean(item))
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return {
+      items: this.normalizeMessages(response),
+      pageInfo: extractOffsetPageInfo(response),
+    };
+  }
+
+  /** Load the newest transcript window (last offset page when history spans multiple pages). */
+  async loadRecentMessages(agentId: string, sessionId: string): Promise<ChatMessageListPage> {
+    const probe = await this.listMessagesPage(agentId, sessionId, 1);
+    const targetPage = probe.pageInfo.totalPages > 0 ? probe.pageInfo.totalPages : 1;
+    if (targetPage === 1) {
+      return probe;
+    }
+    return this.listMessagesPage(agentId, sessionId, targetPage);
+  }
+
+  async listMessages(agentId: string, sessionId: string): Promise<ChatMessage[]> {
+    const page = await this.loadRecentMessages(agentId, sessionId);
+    return page.items;
   }
 
   async sendMessage(
@@ -131,6 +156,13 @@ export class AgentChatService {
       throw new Error("Chat completion did not return assistantMessage.");
     }
     return toChatMessage(assistantRecord);
+  }
+
+  private normalizeMessages(response: unknown): ChatMessage[] {
+    return extractArray(response)
+      .map((item) => (isRecord(item) ? toChatMessage(item) : undefined))
+      .filter((item): item is ChatMessage => Boolean(item))
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 }
 

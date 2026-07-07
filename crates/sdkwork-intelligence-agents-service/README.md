@@ -80,7 +80,7 @@ sdkwork-intelligence-agents-service/
 - All mutation requests validate `requestedAt` strictly as RFC3339
   date-time (`create/update/delete/status/restore`).
 - Operation IDs follow dotted resource style, for example `agents.create`,
-  `agents.status.update`, and `agents.auditEvents.list`.
+  `agents.status.create`, and `agents.auditEvents.list`.
 
 ## SDK Generation Contract
 

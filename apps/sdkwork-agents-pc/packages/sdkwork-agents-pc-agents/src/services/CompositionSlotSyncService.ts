@@ -72,8 +72,9 @@ export async function syncAgentCompositionSlots(
   const desired = buildDesiredCompositionSlots(config);
   const desiredIds = new Set(desired.map((slot) => slot.slotId));
 
+  // Batch diff sync on agent save — `syncAllOffsetPages` is allowed per `PAGINATION_SPEC.md` §7.
   const existingItems = await syncAllOffsetPages<
-    Record<string, unknown> & { slotId: string; version?: string }
+    Record<string, unknown> & { slotId: string }
   >(
       (params) => client.ai.agents.compositionSlots.list(agentId, params),
       {
@@ -81,7 +82,7 @@ export async function syncAgentCompositionSlots(
           extractArray(response)
             .map((item) => extractResourceRecord(item))
             .filter(
-              (item): item is Record<string, unknown> & { slotId: string; version?: string } =>
+              (item): item is Record<string, unknown> & { slotId: string } =>
                 isRecord(item) && typeof item.slotId === "string",
             ),
       },
@@ -89,10 +90,7 @@ export async function syncAgentCompositionSlots(
 
   for (const item of existingItems) {
     if (!desiredIds.has(item.slotId)) {
-      await client.ai.agents.compositionSlots.delete(agentId, item.slotId, {
-        expectedVersion: item.version,
-        requestedAt: new Date().toISOString(),
-      });
+      await client.ai.agents.compositionSlots.delete(agentId, item.slotId);
     }
   }
 

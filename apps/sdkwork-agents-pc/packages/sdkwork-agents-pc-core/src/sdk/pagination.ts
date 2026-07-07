@@ -107,3 +107,34 @@ export async function syncAllOffsetPages<T, TQuery extends Record<string, unknow
 export function extractListItems(value: unknown): unknown[] {
   return extractArray(value);
 }
+
+export interface CursorPageInfo {
+  hasMore: boolean;
+  nextPageToken?: string;
+}
+
+/** Parse SdkWork cursor-mode `pageInfo` from an SDK list response envelope. */
+export function extractCursorPageInfo(value: unknown): CursorPageInfo {
+  const root = isRecord(value) ? value : {};
+  const data = isRecord(root.data) ? root.data : root;
+  const pageInfo = isRecord(data.pageInfo)
+    ? data.pageInfo
+    : isRecord(root.pageInfo)
+      ? root.pageInfo
+      : {};
+  const nextPageToken =
+    typeof pageInfo.nextCursor === 'string' && pageInfo.nextCursor.trim()
+      ? pageInfo.nextCursor.trim()
+      : typeof pageInfo.next_cursor === 'string' && pageInfo.next_cursor.trim()
+        ? pageInfo.next_cursor.trim()
+        : undefined;
+  const legacyNextPageToken =
+    typeof pageInfo.nextPageToken === 'string' && pageInfo.nextPageToken.trim()
+      ? pageInfo.nextPageToken.trim()
+      : typeof pageInfo.next_page_token === 'string' && pageInfo.next_page_token.trim()
+        ? pageInfo.next_page_token.trim()
+        : undefined;
+  const cursor = nextPageToken ?? legacyNextPageToken;
+  const hasMore = pageInfo.hasMore === true || Boolean(cursor);
+  return { hasMore, nextPageToken: cursor };
+}

@@ -25,7 +25,7 @@
         "workspace": "sdkwork-agents-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api",
-        "status": "pending-dart-sdk"
+        "status": "out-of-ga-scope"
       }
     ]
   },

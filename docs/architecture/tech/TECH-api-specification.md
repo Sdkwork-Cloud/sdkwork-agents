@@ -2,7 +2,7 @@
 
 Status: active
 Owner: agents-platform
-Updated: 2026-06-28
+Updated: 2026-07-06
 Specs: API_SPEC.md, SDK_SPEC.md, NAMING_SPEC.md
 
 ## Overview
@@ -18,6 +18,16 @@ canonical prefix lock. Each surface has a distinct audience and security model.
 
 All operations are metadata-driven via `ApiOperation` constants and materialized
 into OpenAPI 3.1.2 documents for SDK generation.
+
+### Non-GA operations (kernel run projection)
+
+`agents.taskRuns.*` and table `ai_agent_task_run` remain outside the current GA scope until kernel
+`AgentRun` projection is implemented. Scheduled task CRUD (`agents.tasks.*`) is
+live on Open, App, and Backend surfaces.
+
+| Surface | Planned operationId | Purpose |
+| --- | --- | --- |
+| App / Backend / Open | `agents.taskRuns.list` | List execution runs for a task |
 
 ---
 
@@ -77,7 +87,17 @@ Public integration surface for external API consumers.
 | 21 | GET | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/{message_id}` | `agents.messages.retrieve` | Retrieve a single message |
 | 22 | POST | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/close` | `agents.sessions.close` | Close a chat session |
 
-**Open API total: 22 operations**
+### 1.7 Tasks
+
+| # | Method | Path | operationId | Description |
+| --- | --- | --- | --- | --- |
+| 23 | GET | `/agent/v3/api/ai/agents/{agent_id}/tasks` | `agents.tasks.list` | List scheduled tasks (paginated) |
+| 24 | POST | `/agent/v3/api/ai/agents/{agent_id}/tasks` | `agents.tasks.create` | Create a scheduled task |
+| 25 | GET | `/agent/v3/api/ai/agents/{agent_id}/tasks/{task_id}` | `agents.tasks.retrieve` | Retrieve one task |
+| 26 | POST | `/agent/v3/api/ai/agents/{agent_id}/tasks/{task_id}/cancel` | `agents.tasks.cancel` | Cancel a pending task |
+| 27 | POST | `/agent/v3/api/ai/agents/{agent_id}/tasks/{task_id}/execute` | `agents.tasks.execute` | Execute one deferred task |
+
+**Open API total: 27 operations**
 
 ---
 
@@ -138,16 +158,36 @@ Application client surface for PC, H5, Flutter, and Mini Program apps.
 | 22 | POST | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.create` | Send a message to an agent |
 | 23 | GET | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/{message_id}` | `agents.messages.retrieve` | Retrieve a single message |
 
-**App API total: 25 operations**
-
-### 2.7 Code Engine Catalog (App-only)
+### 2.7 Live interactions (App + Backend only)
 
 | # | Method | Path | operationId | Description |
 | --- | --- | --- | --- | --- |
-| 24 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog (runtime facade projection) |
-| 25 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
+| 24 | GET | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions` | `agents.interactions.list` | List live interactions (paginated) |
+| 25 | POST | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions` | `agents.interactions.create` | Create approval or user-question pause point |
+| 26 | GET | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}` | `agents.interactions.retrieve` | Retrieve one interaction |
+| 27 | POST | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/approve` | `agents.interactions.approve` | Resolve approval interaction |
+| 28 | POST | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/answer` | `agents.interactions.answer` | Resolve user-question interaction |
 
----
+### 2.8 Tasks
+
+| # | Method | Path | operationId | Description |
+| --- | --- | --- | --- | --- |
+| 29 | GET | `/app/v3/api/ai/agents/{agent_id}/tasks` | `agents.tasks.list` | List scheduled tasks (paginated) |
+| 30 | POST | `/app/v3/api/ai/agents/{agent_id}/tasks` | `agents.tasks.create` | Create a scheduled task |
+| 31 | GET | `/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}` | `agents.tasks.retrieve` | Retrieve one task |
+| 32 | POST | `/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}/cancel` | `agents.tasks.cancel` | Cancel a pending task |
+| 33 | POST | `/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}/execute` | `agents.tasks.execute` | Execute one deferred task |
+
+**App API core total: 33 operations**
+
+### 2.9 Runtime catalog (App-only)
+
+| # | Method | Path | operationId | Description |
+| --- | --- | --- | --- | --- |
+| 34 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog (runtime facade projection) |
+| 35 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries (paginated composition-slot projection; supports `q`) |
+
+**App API total: 35 operations**
 
 ## 3. Backend API (`/backend/v3/api`)
 
@@ -162,7 +202,7 @@ Admin/operations surface for management, auditing, and control-plane operations.
 | 3 | GET | `/backend/v3/api/ai/agents/{agent_id}` | `agents.retrieve` | Retrieve an agent (admin) |
 | 4 | PATCH | `/backend/v3/api/ai/agents/{agent_id}` | `agents.update` | Update an agent (admin) |
 | 5 | POST | `/backend/v3/api/ai/agents/{agent_id}/restore` | `agents.restore` | Restore a deleted agent |
-| 6 | POST | `/backend/v3/api/ai/agents/{agent_id}/status` | `agents.status.update` | Change agent status (admin) |
+| 6 | POST | `/backend/v3/api/ai/agents/{agent_id}/status` | `agents.status.create` | Change agent status (admin) |
 
 ### 3.2 Audit Events
 
@@ -206,7 +246,36 @@ Admin/operations surface for management, auditing, and control-plane operations.
 | 22 | POST | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.create` | Create a message (admin) |
 | 23 | GET | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/{message_id}` | `agents.messages.retrieve` | Retrieve a message (admin) |
 
-**Backend API total: 23 operations**
+### 3.7 Live interactions
+
+| # | Method | Path | operationId | Description |
+| --- | --- | --- | --- | --- |
+| 24 | GET | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions` | `agents.interactions.list` | List live interactions (admin, paginated) |
+| 25 | POST | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions` | `agents.interactions.create` | Create interaction (admin) |
+| 26 | GET | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}` | `agents.interactions.retrieve` | Retrieve interaction (admin) |
+| 27 | POST | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/approve` | `agents.interactions.approve` | Approve/reject approval interaction |
+| 28 | POST | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/answer` | `agents.interactions.answer` | Answer user-question interaction |
+
+### 3.8 Tasks
+
+| # | Method | Path | operationId | Description |
+| --- | --- | --- | --- | --- |
+| 29 | GET | `/backend/v3/api/ai/agents/{agent_id}/tasks` | `agents.tasks.list` | List scheduled tasks (admin, paginated) |
+| 30 | POST | `/backend/v3/api/ai/agents/{agent_id}/tasks` | `agents.tasks.create` | Create a scheduled task (admin) |
+| 31 | GET | `/backend/v3/api/ai/agents/{agent_id}/tasks/{task_id}` | `agents.tasks.retrieve` | Retrieve one task (admin) |
+| 32 | POST | `/backend/v3/api/ai/agents/{agent_id}/tasks/{task_id}/cancel` | `agents.tasks.cancel` | Cancel a pending task (admin) |
+
+**Task execution metadata (`metadataJson`):** HTTP `agents.tasks.create` returns `201` with
+`status: pending` unless callers opt into inline LLM execution. Defer is the production
+default (no worker timeout risk). Set `autoExecute: true` for synchronous completion in
+trusted environments; legacy `deferExecution: true` also defers; `deferExecution: false`
+opts into inline execution. After create, call `agents.tasks.execute` to run deferred tasks.
+
+| # | Method | Path | operationId | Description |
+| --- | --- | --- | --- | --- |
+| 33 | POST | `/backend/v3/api/ai/agents/{agent_id}/tasks/{task_id}/execute` | `agents.tasks.execute` | Execute one deferred task (admin) |
+
+**Backend API total: 33 operations**
 
 ---
 
@@ -214,10 +283,10 @@ Admin/operations surface for management, auditing, and control-plane operations.
 
 | Surface | Operations | Unique to Surface |
 | --- | --- | --- |
-| Open API | 22 | `previewResponses`, `promptOptimizations` |
-| App API | 25 | `restore`, `previewResponses`, `promptOptimizations`, `codeEngines.list`, `mcpServers.list` |
-| Backend API | 23 | `restore`, `status.update`, `auditEvents.list`, `sessions.archive` |
-| **Grand Total** | **70** | |
+| Open API | 27 | `previewResponses`, `promptOptimizations` |
+| App API | 35 | `restore`, `previewResponses`, `promptOptimizations`, `codeEngines.list`, `mcpServers.list`, `agents.interactions.*` |
+| Backend API | 33 | `restore`, `status.create`, `auditEvents.list`, `sessions.archive`, `agents.interactions.*` |
+| **Grand Total** | **95** | |
 
 ### 4.1 Cross-Surface Operation Availability
 
@@ -229,7 +298,7 @@ Admin/operations surface for management, auditing, and control-plane operations.
 | agents.update | ✓ | ✓ | ✓ |
 | agents.delete | ✓ | ✓ | — |
 | agents.restore | — | ✓ | ✓ |
-| agents.status.update | — | — | ✓ |
+| agents.status.create | — | — | ✓ |
 | agents.auditEvents.list | — | — | ✓ |
 | agents.compositionSlots.* | ✓ | ✓ | ✓ |
 | agents.providerBindings.* | ✓ | ✓ | ✓ |
@@ -243,8 +312,32 @@ Admin/operations surface for management, auditing, and control-plane operations.
 | agents.messages.list | ✓ | ✓ | ✓ |
 | agents.messages.create | ✓ | ✓ | ✓ |
 | agents.messages.retrieve | ✓ | ✓ | ✓ |
+| agents.interactions.* | — | ✓ | ✓ |
+| agents.tasks.* | ✓ | ✓ | ✓ |
 | agents.codeEngines.list | — | ✓ | — |
 | agents.mcpServers.list | — | ✓ | — |
+
+### 4.2 App API authorization and nested route guards
+
+App API handlers for sessions, tasks, messages, and interactions resolve
+`owner_scope` from the authenticated IAM session and reject cross-owner access.
+Nested `GET`/`POST` handlers validate that the path `{agent_id}` matches the
+persisted resource `agent_id` (404 when mismatched).
+
+### 4.3 List filter validation
+
+Invalid `status` or `role` query values on list endpoints return HTTP `400` with
+`application/problem+json` (`code` `40001`) instead of silently ignoring the filter.
+
+### 4.4 Session archive lifecycle
+
+`agents.sessions.archive` (Backend only) requires the session to be `closed` first
+(400 when still active). Re-archive is idempotent when the session is already archived.
+
+### 4.5 Message list pagination
+
+`agents.messages.list` uses ascending sequence sort by default. Interactive clients load
+the last offset page for the newest transcript window and page backward for history.
 
 ---
 

@@ -54,6 +54,26 @@
       "file": "AGENTS_HTTP_TRUST_BOUNDARY.md",
       "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_HTTP_TRUST_BOUNDARY.md",
       "purpose": "Agents-owned HTTP trust boundary for open/app/backend surfaces."
+    },
+    {
+      "file": "AGENTS_KERNEL_BOUNDARY_SPEC.md",
+      "path": "specs/AGENTS_KERNEL_BOUNDARY_SPEC.md",
+      "purpose": "Kernel vs agents vs product application responsibility boundary."
+    },
+    {
+      "file": "AGENTS_PROVIDER_TAXONOMY_SPEC.md",
+      "path": "specs/AGENTS_PROVIDER_TAXONOMY_SPEC.md",
+      "purpose": "Code, autonomous, and framework agent provider taxonomy."
+    },
+    {
+      "file": "AGENTS_KERNEL_SPI_GAP_ANALYSIS.md",
+      "path": "specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md",
+      "purpose": "Kernel SPI gap analysis, commercial readiness, and improvement roadmap."
+    },
+    {
+      "file": "agents-birdcoder-alignment.spec.json",
+      "path": "specs/agents-birdcoder-alignment.spec.json",
+      "purpose": "Machine-readable agents/kernel/BirdCoder alignment tracker."
     }
   ],
   "contracts": {
@@ -100,10 +120,78 @@
         "generatedTransportImportPolicy": "forbidden"
       },
       {
+        "workspace": "sdkwork-memory",
+        "role": "memory-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "memory",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-knowledgebase",
+        "role": "knowledgebase-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "knowledge",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/knowledgebase-app-sdk"
+        }
+      },
+      {
+        "workspace": "sdkwork-skills",
+        "role": "skills-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "skill",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/skills-app-sdk"
+        }
+      },
+      {
+        "workspace": "sdkwork-prompts",
+        "role": "prompts-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "prompt",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-mcp",
+        "role": "mcp-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "mcp",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
+        "workspace": "sdkwork-llm",
+        "role": "llm-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "runtime-binding-provider-profile",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden"
+      },
+      {
         "workspace": "sdkwork-drive",
         "role": "drive-uploader-file-storage",
         "required": true,
-        "dependencyMode": "consumer-sdk",
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "drive",
+        "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden",
         "packageByLanguage": {
           "typescript": "@sdkwork/drive-app-sdk",
@@ -120,12 +208,22 @@
     "authority": "Application domain logic, HTTP routes, SDKs, and managed-store persistence live in sdkwork-agents. sdkwork-kernel provides runtime SPI only.",
     "kernelPolicy": "Compose sdkwork-agent-server and sdkwork-agent-database for runtime; never embed application domain rules in kernel.",
     "uploadPolicy": "All file uploads must use sdkwork-drive Drive Uploader; no app-local upload APIs.",
-    "discoveryPolicy": "sdkwork-discovery is deferred until RPC services ship."
+    "discoveryPolicy": "sdkwork-discovery remains inactive until RPC services ship."
   },
   "verification": {
     "commands": [
       "pnpm check",
       "pnpm verify",
+      "pnpm check:api-operation-patterns",
+      "pnpm check:route-path-collisions",
+      "pnpm check:pagination",
+      "pnpm check:app-sdk-consumer-imports",
+      "pnpm check:component-port-bindings",
+      "pnpm check:frontend-composition",
+      "pnpm check:permission-composition",
+      "pnpm check:composition-resolver",
+      "pnpm check:rust-backend-composition",
+      "pnpm check:production-security",
       "cargo test -p sdkwork-intelligence-agents-service",
       "cargo test -p sdkwork-routes-agents-http-shared"
     ]

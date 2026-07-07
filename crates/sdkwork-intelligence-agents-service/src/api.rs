@@ -143,6 +143,36 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         tag: "ai",
         operation_id: "agents.messages.retrieve",
     },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks",
+        tag: "ai",
+        operation_id: "agents.tasks.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks",
+        tag: "ai",
+        operation_id: "agents.tasks.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+        tag: "ai",
+        operation_id: "agents.tasks.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
+        tag: "ai",
+        operation_id: "agents.tasks.cancel",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
+        tag: "ai",
+        operation_id: "agents.tasks.execute",
+    },
 ];
 
 pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
@@ -277,6 +307,66 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
         tag: "ai",
         operation_id: "agents.messages.retrieve",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+        tag: "ai",
+        operation_id: "agents.interactions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+        tag: "ai",
+        operation_id: "agents.interactions.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}",
+        tag: "ai",
+        operation_id: "agents.interactions.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
+        tag: "ai",
+        operation_id: "agents.interactions.approve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
+        tag: "ai",
+        operation_id: "agents.interactions.answer",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks",
+        tag: "ai",
+        operation_id: "agents.tasks.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks",
+        tag: "ai",
+        operation_id: "agents.tasks.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+        tag: "ai",
+        operation_id: "agents.tasks.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
+        tag: "ai",
+        operation_id: "agents.tasks.cancel",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
+        tag: "ai",
+        operation_id: "agents.tasks.execute",
     },
     ApiOperation {
         method: "POST",
@@ -426,6 +516,66 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.messages.retrieve",
     },
     ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+        tag: "ai",
+        operation_id: "agents.interactions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+        tag: "ai",
+        operation_id: "agents.interactions.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}",
+        tag: "ai",
+        operation_id: "agents.interactions.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
+        tag: "ai",
+        operation_id: "agents.interactions.approve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
+        tag: "ai",
+        operation_id: "agents.interactions.answer",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks",
+        tag: "ai",
+        operation_id: "agents.tasks.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks",
+        tag: "ai",
+        operation_id: "agents.tasks.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+        tag: "ai",
+        operation_id: "agents.tasks.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
+        tag: "ai",
+        operation_id: "agents.tasks.cancel",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
+        tag: "ai",
+        operation_id: "agents.tasks.execute",
+    },
+    ApiOperation {
         method: "POST",
         path: "/backend/v3/api/ai/agents/{agentId}/restore",
         tag: "ai",
@@ -435,7 +585,7 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         method: "POST",
         path: "/backend/v3/api/ai/agents/{agentId}/status",
         tag: "ai",
-        operation_id: "agents.status.update",
+        operation_id: "agents.status.create",
     },
 ];
 
@@ -752,9 +902,9 @@ mod tests {
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
-        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 22);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 25);
-        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 23);
+        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 27);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 35);
+        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 33);
 
         assert_eq!(
             AGENT_OPEN_API_OPERATIONS.len(),
@@ -780,7 +930,6 @@ mod tests {
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
             "agents.sessions.update",
-            "agents.interactions.list",
             "agents.codeEngines.health",
             "agents.mcpServers.list",
         ] {
@@ -794,16 +943,12 @@ mod tests {
     }
 
     #[test]
-    fn operation_registry_paths_must_not_include_post_launch_only_routes() {
+    fn operation_registry_paths_must_not_include_non_ga_scope_routes() {
         let forbidden_path_markers = [
-            "/interactions",
             "/provider_bindings/{bindingId}/deactivate",
             "/code_engines/{engineKey}/health",
         ];
-        for operations in [
-            AGENT_OPEN_API_OPERATIONS,
-            AGENT_BACKEND_API_OPERATIONS,
-        ] {
+        for operations in [AGENT_OPEN_API_OPERATIONS] {
             for operation in operations {
                 for marker in forbidden_path_markers {
                     assert!(
@@ -820,14 +965,13 @@ mod tests {
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
             "agents.sessions.update",
-            "agents.interactions.list",
             "agents.codeEngines.health",
         ] {
             assert!(
                 !AGENT_APP_API_OPERATIONS
                     .iter()
                     .any(|operation| operation.operation_id == forbidden),
-                "app registry must not include post-launch-only {forbidden}"
+                "app registry must not include non-GA scope operation {forbidden}"
             );
         }
 
@@ -836,7 +980,6 @@ mod tests {
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
             "agents.sessions.update",
-            "agents.interactions.list",
             "agents.codeEngines.list",
             "agents.codeEngines.health",
             "agents.mcpServers.list",
@@ -845,7 +988,7 @@ mod tests {
                 !AGENT_BACKEND_API_OPERATIONS
                     .iter()
                     .any(|operation| operation.operation_id == forbidden),
-                "backend registry must not include post-launch-only {forbidden}"
+                "backend registry must not include non-GA scope operation {forbidden}"
             );
         }
     }

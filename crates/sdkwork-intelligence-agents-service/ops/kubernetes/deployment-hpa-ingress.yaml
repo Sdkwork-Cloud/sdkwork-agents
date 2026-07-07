@@ -105,7 +105,7 @@ spec:
               value: "production"
             - name: SDKWORK_AGENTS_DEV_AUTH_BYPASS
               value: "false"
-            - name: SDKWORK_AGENTS_STORE_DATABASE_URL
+            - name: SDKWORK_AGENTS_STORE_POSTGRES_URI
               valueFrom:
                 secretKeyRef:
                   name: sdkwork-agents-db-credentials
@@ -127,7 +127,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: 8095
             initialDelaySeconds: 5
             periodSeconds: 10

@@ -9,10 +9,12 @@ const repoRoot = path.resolve(appRoot, "../..");
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, appRoot, "");
+  const define: Record<string, string> = {};
+  if (mode === "development" && env.SDKWORK_ACCESS_TOKEN) {
+    define["process.env.SDKWORK_ACCESS_TOKEN"] = JSON.stringify(env.SDKWORK_ACCESS_TOKEN);
+  }
   return {
-    define: {
-      "process.env.SDKWORK_ACCESS_TOKEN": JSON.stringify(env.SDKWORK_ACCESS_TOKEN ?? ""),
-    },
+    define,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

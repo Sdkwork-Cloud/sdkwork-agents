@@ -14,7 +14,9 @@ pub fn list_code_engine_catalog() -> CodeEngineCatalog {
 }
 
 fn empty_catalog() -> CodeEngineCatalog {
-    CodeEngineCatalog { engines: Vec::new() }
+    CodeEngineCatalog {
+        engines: Vec::new(),
+    }
 }
 
 trait AgentsCodeEngineHostExt {

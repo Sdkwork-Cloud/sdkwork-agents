@@ -2,8 +2,10 @@ import {
   getVoiceAppSdkClient,
   isVoiceAppSdkConfigured,
 } from "@sdkwork/agents-pc-core/sdk/voiceAppSdkClient";
-
-import { DEFAULT_LIST_PAGE_SIZE } from "@sdkwork/agents-pc-core/sdk/pagination";
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  extractOffsetPageInfo,
+} from "@sdkwork/agents-pc-core/sdk/pagination";
 
 import { extractArray } from "./sdkEnvelope";
 
@@ -52,14 +54,6 @@ function mapVoiceRecord(record: Record<string, unknown>, index: number): VoiceCo
   };
 }
 
-function readHasMore(response: Record<string, unknown>): boolean {
-  const pageInfo = response.pageInfo;
-  if (pageInfo && typeof pageInfo === "object" && !Array.isArray(pageInfo)) {
-    return Boolean((pageInfo as Record<string, unknown>).hasMore);
-  }
-  return false;
-}
-
 class VoiceService {
   private ensureVoiceSdk(): void {
     if (!isVoiceAppSdkConfigured()) {
@@ -67,12 +61,19 @@ class VoiceService {
     }
   }
 
-  async listVoiceCatalogPage(page = 1, pageSize = DEFAULT_LIST_PAGE_SIZE): Promise<VoiceCatalogPage> {
+  /** One interactive picker page (`PAGINATION_SPEC.md` §8). */
+  async listVoiceCatalogPage(
+    page = 1,
+    pageSize = DEFAULT_LIST_PAGE_SIZE,
+    categoryId?: string,
+  ): Promise<VoiceCatalogPage> {
     this.ensureVoiceSdk();
-    const response = (await getVoiceAppSdkClient().voice.audioAssets.list({
+    const response = await getVoiceAppSdkClient().voice.audioAssets.list({
       page,
       pageSize,
-    })) as unknown as Record<string, unknown>;
+      ...(categoryId ? { categoryId } : {}),
+    });
+    const pageInfo = extractOffsetPageInfo(response);
     const items = extractArray(response)
       .map((item, index) =>
         item && typeof item === "object"
@@ -82,25 +83,21 @@ class VoiceService {
       .filter((item): item is VoiceConfig => Boolean(item));
     return {
       items,
-      page,
-      hasMore: readHasMore(response),
+      page: pageInfo.page,
+      hasMore: pageInfo.hasMore,
     };
   }
 
-  async getMarketVoices(page = 1): Promise<VoiceCatalogPage> {
-    const catalog = await this.listVoiceCatalogPage(page);
+  async getMarketVoices(page = 1, pageSize = DEFAULT_LIST_PAGE_SIZE): Promise<VoiceCatalogPage> {
+    const catalog = await this.listVoiceCatalogPage(page, pageSize, "market");
     return {
       ...catalog,
       items: catalog.items.filter((voice) => voice.categoryId !== "custom"),
     };
   }
 
-  async getMyVoices(page = 1): Promise<VoiceCatalogPage> {
-    const catalog = await this.listVoiceCatalogPage(page);
-    return {
-      ...catalog,
-      items: catalog.items.filter((voice) => voice.categoryId === "custom"),
-    };
+  async getMyVoices(page = 1, pageSize = DEFAULT_LIST_PAGE_SIZE): Promise<VoiceCatalogPage> {
+    return this.listVoiceCatalogPage(page, pageSize, "custom");
   }
 }
 

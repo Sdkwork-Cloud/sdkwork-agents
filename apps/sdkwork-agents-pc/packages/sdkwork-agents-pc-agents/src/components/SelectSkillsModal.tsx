@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Search, Check, Layers, Network, Activity, GitBranch, KeySquare, Blocks, Briefcase } from 'lucide-react';
+import { X, Search, Check, Layers } from 'lucide-react';
 import { cn } from '@sdkwork/agents-pc-commons';
+import { loadSkillCatalogPageByCategory } from '../services/SkillPresetCatalogService';
 
 export interface SkillItem {
   id: string;
@@ -16,53 +17,93 @@ export interface SelectSkillsModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedSkillIds: string[];
-  onSave: (skillIds: string[]) => void;
-  skills?: SkillItem[];
+  onSave: (skillIds: string[], selectedItems: SkillItem[]) => void;
 }
-
-export const AVAILABLE_SKILLS: SkillItem[] = [
-  { id: 'planning', name: '步骤规划 (ReAct)', description: '对复杂任务进行自动拆解并分步执行，提高推理准确性。', provider: '高级心智', category: 'workflow', icon: <Blocks size={20} className="text-cyan-500" /> },
-  { id: 'reflection', name: '自我反思 (Reflection)', description: '在得出最终答案前，生成多个草案并选取最优解。', provider: '高级心智', category: 'workflow', icon: <Activity size={20} className="text-pink-500" /> },
-  { id: 'multi-route', name: '多模型路由 (Routing)', description: '根据问题难度自动切换 GPT-4o / Claude 3.5 以降低成本。', provider: '成本优化', category: 'workflow', icon: <GitBranch size={20} className="text-violet-500" /> },
-  { id: 'multi-agent', name: '多智能体协作 (Swarm)', description: '主模型可创建子 Agent (如分析师、程序员) 并行解决问题。', provider: '高级心智', category: 'workflow', icon: <Network size={20} className="text-blue-500" /> },
-  { id: 'cot', name: '思维链 (CoT)', description: '强制要求模型输出完整的内部思考过程后再作答。', provider: '基础心智', category: 'workflow', icon: <KeySquare size={20} className="text-amber-500" /> },
-  
-  { id: 'domain-expert', name: '行业专家预设', description: '自动加载法律、医疗、金融等行业的默认系统级术语限制。', provider: '特定场景', category: 'preset', icon: <Briefcase size={20} className="text-rose-500" /> }
-];
 
 export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
   isOpen,
   onClose,
   selectedSkillIds,
   onSave,
-  skills,
 }) => {
   const [activeTab, setActiveTab] = useState<'workflow' | 'preset'>('workflow');
+  const [skills, setSkills] = useState<SkillItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [currentSelection, setCurrentSelection] = useState<string[]>([]);
+  const [selectionSnapshots, setSelectionSnapshots] = useState<Map<string, SkillItem>>(new Map());
 
   useEffect(() => {
-    if (isOpen) {
-      setCurrentSelection(selectedSkillIds);
-      setSearchQuery('');
+    const timer = window.setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const loadSkills = useCallback(async (
+    category: SkillItem['category'],
+    nextPage = 1,
+    append = false,
+    q = '',
+  ) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
     }
+    setError(null);
+    try {
+      const catalog = await loadSkillCatalogPageByCategory(category, nextPage, undefined, q || undefined);
+      setSkills((prev) => (append ? [...prev, ...catalog.items] : catalog.items));
+      setPage(catalog.page);
+      setHasMore(catalog.hasMore);
+    } catch (loadError) {
+      console.error('Failed to load skills catalog:', loadError);
+      setError(
+        loadError instanceof Error ? loadError.message : '无法加载技能目录，请检查 Skills SDK 配置',
+      );
+      if (!append) {
+        setSkills([]);
+        setHasMore(false);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    setCurrentSelection(selectedSkillIds);
+    setSearchQuery('');
+    setDebouncedQuery('');
+    setActiveTab('workflow');
   }, [isOpen, selectedSkillIds]);
 
-  const handleSelect = (id: string) => {
-    setCurrentSelection(prev => 
-      prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    void loadSkills(activeTab, 1, false, debouncedQuery);
+  }, [activeTab, debouncedQuery, isOpen, loadSkills]);
+
+  const handleSelect = (item: SkillItem) => {
+    setSelectionSnapshots((prev) => {
+      const next = new Map(prev);
+      next.set(item.id, item);
+      return next;
+    });
+    setCurrentSelection(prev =>
+      prev.includes(item.id) ? prev.filter(v => v !== item.id) : [...prev, item.id]
     );
   };
 
-  const catalog = skills && skills.length > 0 ? skills : AVAILABLE_SKILLS;
-
-  const filteredItems = catalog.filter(item => {
-    const matchesSearch = !searchQuery.trim() || 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      item.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTab = item.category === activeTab;
-    return matchesSearch && matchesTab;
-  });
+  const visibleItems = skills.filter((item) => item.category === activeTab);
 
   return (
     <AnimatePresence>
@@ -81,7 +122,6 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[1024px] h-[720px] bg-[#1e1e1e] rounded-2xl shadow-2xl flex flex-col z-[101] overflow-hidden border border-white/10"
           >
-            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#202020] shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-gray-100 mb-1">选择 Agent Skills</h2>
@@ -96,13 +136,12 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
             </div>
 
             <div className="flex flex-1 min-h-0">
-              {/* Sidebar */}
               <div className="w-[200px] bg-[#151515] border-r border-white/5 py-5 flex flex-col shrink-0">
                 <div className="px-5 pb-5">
                   <div className="relative">
-                    <input 
-                      type="text" 
-                      placeholder="搜索心智..." 
+                    <input
+                      type="text"
+                      placeholder="搜索心智..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full bg-[#202020] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-gray-200 outline-none focus:border-cyan-500/50 transition-colors shadow-inner"
@@ -110,22 +149,22 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                   </div>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto custom-scrollbar px-4 space-y-6">
                   <div>
                     <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 px-4">技能类型</h3>
                     <div className="space-y-1.5">
                       {[
-                        { id: 'workflow', name: '心智与工作流' },
-                        { id: 'preset', name: '角色预设' },
+                        { id: 'workflow' as const, name: '心智与工作流' },
+                        { id: 'preset' as const, name: '角色预设' },
                       ].map(tab => (
                         <button
                           key={tab.id}
-                          onClick={() => setActiveTab(tab.id as any)}
+                          onClick={() => setActiveTab(tab.id)}
                           className={cn(
                             "w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-[14px] font-medium transition-all text-left group",
-                            activeTab === tab.id 
-                              ? "bg-cyan-500/10 text-cyan-400" 
+                            activeTab === tab.id
+                              ? "bg-cyan-500/10 text-cyan-400"
                               : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
                           )}
                         >
@@ -137,25 +176,40 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
                 </div>
               </div>
 
-              {/* Grid Content */}
               <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-[#1a1a1a]">
-                {filteredItems.length === 0 ? (
+                {loading ? (
+                  <div className="text-gray-500 text-sm text-center py-32 flex flex-col items-center justify-center gap-3">
+                    <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                    正在加载技能目录...
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-32 flex flex-col items-center justify-center gap-4">
+                    <p className="text-sm text-red-400 max-w-md">{error}</p>
+                    <button
+                      type="button"
+                      onClick={() => void loadSkills(activeTab, 1, false, debouncedQuery)}
+                      className="px-4 py-2 rounded-xl text-sm bg-white/5 hover:bg-white/10 text-gray-200"
+                    >
+                      重试
+                    </button>
+                  </div>
+                ) : visibleItems.length === 0 ? (
                   <div className="text-gray-500 text-sm text-center py-32 flex flex-col items-center justify-center">
                     <Layers size={32} className="mb-4 text-gray-600 opacity-50" />
                     没有找到匹配的项
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pb-20">
-                    {filteredItems.map(item => {
+                    {visibleItems.map(item => {
                       const isSelected = currentSelection.includes(item.id);
                       return (
                         <div
                           key={item.id}
-                          onClick={() => handleSelect(item.id)}
+                          onClick={() => handleSelect(item)}
                           className={cn(
                             "relative group bg-[#252528] rounded-xl border p-5 cursor-pointer transition-all hover:-translate-y-1 flex flex-col",
-                            isSelected 
-                              ? "border-cyan-500 shadow-md shadow-cyan-500/10 bg-cyan-500/5" 
+                            isSelected
+                              ? "border-cyan-500 shadow-md shadow-cyan-500/10 bg-cyan-500/5"
                               : "border-white/5 hover:border-white/20 hover:bg-[#2a2a2d]"
                           )}
                         >
@@ -164,7 +218,7 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
                               <Check size={18} strokeWidth={3} />
                             </div>
                           )}
-                          
+
                           <div className="flex items-center gap-3 mb-3">
                             <div className="w-10 h-10 rounded-lg bg-[#1e1e1e] border border-white/5 flex items-center justify-center shadow-inner shrink-0 group-hover:scale-105 transition-transform">
                               {item.icon}
@@ -178,7 +232,7 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
                               </span>
                             </div>
                           </div>
-                          
+
                           <p className="text-[13px] text-gray-400 leading-relaxed">
                             {item.description}
                           </p>
@@ -187,10 +241,21 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
                     })}
                   </div>
                 )}
+                {!loading && !error && hasMore && (
+                  <div className="flex justify-center pb-6">
+                    <button
+                      type="button"
+                      disabled={loadingMore}
+                      onClick={() => void loadSkills(activeTab, page + 1, true, debouncedQuery)}
+                      className="px-5 py-2.5 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors disabled:opacity-50"
+                    >
+                      {loadingMore ? '加载中...' : '加载更多'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Footer */}
             <div className="p-5 border-t border-white/5 bg-[#202020] flex items-center justify-between shrink-0">
               <div className="text-sm text-gray-400">
                 已启用 <span className="text-cyan-400 font-semibold">{currentSelection.length}</span> 项技能
@@ -204,7 +269,10 @@ export const SelectSkillsModal: React.FC<SelectSkillsModalProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    onSave(currentSelection);
+                    const selectedItems = currentSelection
+                      .map((id) => selectionSnapshots.get(id))
+                      .filter((item): item is SkillItem => Boolean(item));
+                    onSave(currentSelection, selectedItems);
                     onClose();
                   }}
                   className="px-6 py-2.5 rounded-xl text-sm font-medium bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-500/20 transition-all"

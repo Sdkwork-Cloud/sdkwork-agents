@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, Check, Database, FileText, Clock } from 'lucide-react';
 import { cn } from '@sdkwork/agents-h5-commons';
@@ -8,7 +8,7 @@ export interface SelectKnowledgeModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedKbIds: string[];
-  onSave: (kbIds: string[]) => void;
+  onSave: (kbIds: string[], selectedItems: KnowledgeBase[]) => void;
 }
 
 export const SelectKnowledgeModal: React.FC<SelectKnowledgeModalProps> = ({
@@ -20,29 +20,48 @@ export const SelectKnowledgeModal: React.FC<SelectKnowledgeModalProps> = ({
   const [activeTab, setActiveTab] = useState<'all' | 'personal' | 'team'>('all');
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSelection, setCurrentSelection] = useState<string[]>([]);
+
+  const loadKbs = useCallback(async (cursor?: string, append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+    try {
+      const page = await knowledgeSelectionService.getBasesPage(cursor);
+      setKbs((prev) => (append ? [...prev, ...page.items] : page.items));
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } catch (loadError) {
+      console.error('Failed to load knowledge bases:', loadError);
+      setError(
+        loadError instanceof Error ? loadError.message : '无法加载知识库列表，请检查 Knowledgebase SDK 配置',
+      );
+      if (!append) {
+        setKbs([]);
+        setHasMore(false);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
       setCurrentSelection(selectedKbIds);
       setSearchQuery('');
       setActiveTab('all');
-      loadKbs();
+      void loadKbs(undefined, false);
     }
-  }, [isOpen, selectedKbIds]);
-
-  const loadKbs = async () => {
-    setLoading(true);
-    try {
-      const data = await knowledgeSelectionService.getBases();
-      setKbs(data);
-    } catch (error) {
-      console.error('Failed to load knowledge bases:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isOpen, selectedKbIds, loadKbs]);
 
   const handleSelect = (id: string) => {
     setCurrentSelection(prev => 
@@ -137,6 +156,17 @@ export const SelectKnowledgeModal: React.FC<SelectKnowledgeModalProps> = ({
                       <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                       正在加载知识库列表...
                     </div>
+                  ) : error ? (
+                    <div className="text-gray-400 text-sm text-center py-20 flex flex-col items-center justify-center gap-4">
+                      <p>{error}</p>
+                      <button
+                        type="button"
+                        onClick={() => void loadKbs(undefined, false)}
+                        className="px-4 py-2 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-colors"
+                      >
+                        重试
+                      </button>
+                    </div>
                   ) : filteredKbs.length === 0 ? (
                     <div className="text-gray-500 text-sm text-center py-32 flex flex-col items-center justify-center">
                       <Database size={32} className="mb-4 text-gray-600 opacity-50" />
@@ -196,6 +226,18 @@ export const SelectKnowledgeModal: React.FC<SelectKnowledgeModalProps> = ({
                       })}
                     </div>
                   )}
+                  {!loading && hasMore && (
+                    <div className="flex justify-center pb-6">
+                      <button
+                        type="button"
+                        disabled={loadingMore}
+                        onClick={() => void loadKbs(nextCursor, true)}
+                        className="px-5 py-2.5 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors disabled:opacity-50"
+                      >
+                        {loadingMore ? '加载中...' : '加载更多'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -214,7 +256,8 @@ export const SelectKnowledgeModal: React.FC<SelectKnowledgeModalProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    onSave(currentSelection);
+                    const selectedItems = kbs.filter((kb) => currentSelection.includes(kb.id));
+                    onSave(currentSelection, selectedItems);
                     onClose();
                   }}
                   className="px-6 py-2.5 rounded-xl text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 transition-all font-semibold"

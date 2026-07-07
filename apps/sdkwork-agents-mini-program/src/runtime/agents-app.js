@@ -2762,8 +2762,13 @@ var AiAgentsMcpServersApi = class {
     this.client = client;
   }
   /** List MCP marketplace entries from agent composition slots */
-  async list() {
-    return this.client.get(appApiPath(`/ai/mcp_servers`));
+  async list(params) {
+    const query = buildQueryString([
+      { name: "page", value: params == null ? void 0 : params.page, style: "form", explode: true, allowReserved: false },
+      { name: "page_size", value: params == null ? void 0 : params.pageSize, style: "form", explode: true, allowReserved: false },
+      { name: "q", value: params == null ? void 0 : params.q, style: "form", explode: true, allowReserved: false }
+    ]);
+    return this.client.get(appendQueryString(appApiPath(`/ai/mcp_servers`), query));
   }
 };
 var AiAgentsCodeEnginesApi = class {
@@ -2800,12 +2805,67 @@ var AiAgentsCompositionSlotsApi = class {
     return this.client.patch(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/composition_slots/${serializePathParameter(slotId, { name: "slotId", style: "simple", explode: false })}`), body, void 0, void 0, "application/json");
   }
   /** Delete one managed agent composition slot */
-  async delete(agentId, slotId, params) {
+  async delete(agentId, slotId) {
+    return this.client.delete(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/composition_slots/${serializePathParameter(slotId, { name: "slotId", style: "simple", explode: false })}`));
+  }
+};
+var AiAgentsTasksApi = class {
+  constructor(client) {
+    this.client = client;
+  }
+  /** List scheduled tasks for one managed agent */
+  async list(agentId, params) {
     const query = buildQueryString([
-      { name: "expected_version", value: params.expectedVersion, style: "form", explode: true, allowReserved: false },
-      { name: "requested_at", value: params.requestedAt, style: "form", explode: true, allowReserved: false }
+      { name: "page", value: params == null ? void 0 : params.page, style: "form", explode: true, allowReserved: false },
+      { name: "page_size", value: params == null ? void 0 : params.pageSize, style: "form", explode: true, allowReserved: false }
     ]);
-    return this.client.delete(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/composition_slots/${serializePathParameter(slotId, { name: "slotId", style: "simple", explode: false })}`), query));
+    return this.client.get(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/tasks`), query));
+  }
+  /** Create a scheduled task for one managed agent */
+  async create(agentId, body) {
+    return this.client.post(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/tasks`), body, void 0, void 0, "application/json");
+  }
+  /** Retrieve one scheduled task */
+  async retrieve(agentId, taskId) {
+    return this.client.get(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/tasks/${serializePathParameter(taskId, { name: "taskId", style: "simple", explode: false })}`));
+  }
+  /** Cancel one scheduled task */
+  async cancel(agentId, taskId, body) {
+    return this.client.post(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/tasks/${serializePathParameter(taskId, { name: "taskId", style: "simple", explode: false })}/cancel`), body, void 0, void 0, "application/json");
+  }
+  /** Execute one deferred scheduled task */
+  async execute(agentId, taskId, body) {
+    return this.client.post(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/tasks/${serializePathParameter(taskId, { name: "taskId", style: "simple", explode: false })}/execute`), body, void 0, void 0, "application/json");
+  }
+};
+var AiAgentsInteractionsApi = class {
+  constructor(client) {
+    this.client = client;
+  }
+  /** List live interactions for one chat session */
+  async list(agentId, sessionId, params) {
+    const query = buildQueryString([
+      { name: "page", value: params == null ? void 0 : params.page, style: "form", explode: true, allowReserved: false },
+      { name: "page_size", value: params == null ? void 0 : params.pageSize, style: "form", explode: true, allowReserved: false },
+      { name: "status", value: params == null ? void 0 : params.status, style: "form", explode: true, allowReserved: false }
+    ]);
+    return this.client.get(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/sessions/${serializePathParameter(sessionId, { name: "sessionId", style: "simple", explode: false })}/interactions`), query));
+  }
+  /** Create a live interaction pause point for one chat session */
+  async create(agentId, sessionId, body) {
+    return this.client.post(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/sessions/${serializePathParameter(sessionId, { name: "sessionId", style: "simple", explode: false })}/interactions`), body, void 0, void 0, "application/json");
+  }
+  /** Retrieve one live interaction */
+  async retrieve(agentId, sessionId, interactionId) {
+    return this.client.get(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/sessions/${serializePathParameter(sessionId, { name: "sessionId", style: "simple", explode: false })}/interactions/${serializePathParameter(interactionId, { name: "interactionId", style: "simple", explode: false })}`));
+  }
+  /** Approve or reject an approval interaction */
+  async approve(agentId, sessionId, interactionId, body) {
+    return this.client.post(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/sessions/${serializePathParameter(sessionId, { name: "sessionId", style: "simple", explode: false })}/interactions/${serializePathParameter(interactionId, { name: "interactionId", style: "simple", explode: false })}/approve`), body, void 0, void 0, "application/json");
+  }
+  /** Answer or reject a user-question interaction */
+  async answer(agentId, sessionId, interactionId, body) {
+    return this.client.post(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: "agentId", style: "simple", explode: false })}/sessions/${serializePathParameter(sessionId, { name: "sessionId", style: "simple", explode: false })}/interactions/${serializePathParameter(interactionId, { name: "interactionId", style: "simple", explode: false })}/answer`), body, void 0, void 0, "application/json");
   }
 };
 var AiAgentsMessagesApi = class {
@@ -2904,6 +2964,8 @@ var AiAgentsApi = class {
     this.promptOptimizations = new AiAgentsPromptOptimizationsApi(client);
     this.sessions = new AiAgentsSessionsApi(client);
     this.messages = new AiAgentsMessagesApi(client);
+    this.interactions = new AiAgentsInteractionsApi(client);
+    this.tasks = new AiAgentsTasksApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
     this.codeEngines = new AiAgentsCodeEnginesApi(client);
     this.mcpServers = new AiAgentsMcpServersApi(client);

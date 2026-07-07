@@ -5,6 +5,10 @@ canon:
   prd: docs/product/prd/PRD.md
   techArchitecture: docs/architecture/tech/TECH_ARCHITECTURE.md
   apiSpecification: docs/architecture/tech/TECH-api-specification.md
+  kernelBoundary: specs/AGENTS_KERNEL_BOUNDARY_SPEC.md
+  providerTaxonomy: specs/AGENTS_PROVIDER_TAXONOMY_SPEC.md
+  kernelSpiGapAnalysis: specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md
+  birdcoderAlignment: specs/agents-birdcoder-alignment.spec.json
   preLaunchVerification: docs/runbooks/pre-launch-verification.md
   monitoring: docs/runbooks/monitoring.md
   smokeTest: docs/runbooks/smoke-test.md
@@ -34,6 +38,18 @@ entries:
   - id: api-specification
     title: HTTP API specification
     path: docs/architecture/tech/TECH-api-specification.md
+    domain: architecture
+  - id: kernel-boundary-spec
+    title: Kernel vs agents boundary
+    path: specs/AGENTS_KERNEL_BOUNDARY_SPEC.md
+    domain: architecture
+  - id: provider-taxonomy-spec
+    title: Agent provider taxonomy
+    path: specs/AGENTS_PROVIDER_TAXONOMY_SPEC.md
+    domain: architecture
+  - id: kernel-spi-gap-analysis
+    title: Kernel SPI gap analysis
+    path: specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md
     domain: architecture
   - id: pre-launch-verification
     title: Pre-launch verification

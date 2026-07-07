@@ -1,10 +1,10 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use sdkwork_agents_contract::env_test_lock;
+use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_intelligence_agents_service::{
     AgentHttpState, AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
-use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_routes_agents_app_api::{
     app_route_manifest, build_router, wrap_router_with_web_framework, APP_ROUTES,
 };
@@ -46,7 +46,12 @@ fn test_app() -> axum::Router {
 fn agents_auth_token_bearer(user_id: &str) -> String {
     format!(
         "Bearer {}",
-        auth_token_jwt(DEFAULT_TENANT_ID, user_id, DEFAULT_SESSION_ID, AGENTS_APP_ID)
+        auth_token_jwt(
+            DEFAULT_TENANT_ID,
+            user_id,
+            DEFAULT_SESSION_ID,
+            AGENTS_APP_ID
+        )
     )
 }
 
@@ -122,4 +127,29 @@ async fn app_router_web_framework_accepts_dev_jwt_dual_tokens() {
         .unwrap();
 
     assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn app_router_web_framework_accepts_browser_origin_in_development() {
+    let _guard = env_test_lock();
+    std::env::set_var("SDKWORK_ENV", "dev");
+    std::env::set_var("SDKWORK_IAM_ALLOW_DEV_AUTH_FALLBACK", "true");
+    std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "development");
+    let app = test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/app/v3/api/ai/agents")
+                .header("origin", "http://localhost:4176")
+                .header("Authorization", agents_auth_token_bearer("30001"))
+                .header("Access-Token", agents_access_token("30001"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_ne!(response.status(), StatusCode::FORBIDDEN);
 }

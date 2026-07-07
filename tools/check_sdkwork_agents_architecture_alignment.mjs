@@ -203,6 +203,32 @@ const driveDep = sdkDeps.find((entry) => entry.workspace === 'sdkwork-drive');
 assert(driveDep, 'component.spec.json must declare sdkwork-drive for upload integration');
 assert(!depIds.includes('sdkwork-discovery'), 'component.spec.json must not require sdkwork-discovery yet');
 
+const independentCapabilityModules = [
+  ['sdkwork-memory', 'composition-slot'],
+  ['sdkwork-knowledgebase', 'composition-slot'],
+  ['sdkwork-skills', 'composition-slot'],
+  ['sdkwork-prompts', 'composition-slot'],
+  ['sdkwork-mcp', 'composition-slot'],
+  ['sdkwork-llm', 'runtime-binding-provider-profile'],
+  ['sdkwork-drive', 'composition-slot'],
+];
+for (const [workspace, integrationMode] of independentCapabilityModules) {
+  const dep = sdkDeps.find((entry) => entry.workspace === workspace);
+  assert(dep, `component.spec.json must declare ${workspace} as an independent capability module`);
+  assert(
+    dep?.dependencyMode === 'independent-capability-module',
+    `component.spec.json ${workspace} dependencyMode must be independent-capability-module`,
+  );
+  assert(
+    dep?.integrationMode === integrationMode,
+    `component.spec.json ${workspace} integrationMode must be ${integrationMode}`,
+  );
+  assert(
+    dep?.reverseDependencyPolicy === 'forbidden',
+    `component.spec.json ${workspace} reverseDependencyPolicy must be forbidden`,
+  );
+}
+
 const appManifest = readJson('sdkwork.app.config.json');
 assert(
   appManifest.metadata?.topologySpec === 'specs/topology.spec.json',

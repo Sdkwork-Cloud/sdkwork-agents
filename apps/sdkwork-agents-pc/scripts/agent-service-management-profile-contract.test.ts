@@ -161,7 +161,7 @@ assert.ok(listedAgent, 'expected one listed agent');
 assert.equal(listedAgent?.id, 'agent.pc.management.profile');
 assert.equal(listedAgent?.systemPrompt, 'Act as a precise product agent.');
 assert.deepEqual(listedAgent?.knowledgeBaseIds, ['knowledge.base.product.manual']);
-assert.equal(listedAgent.model, 'GPT-4o');
+assert.equal(listedAgent.model, 'openai.gpt-4o');
 assert.equal(listedAgent.temperature, 0.4);
 assert.equal(listedAgent.debugMode, true);
 assert.equal(listedAgent.jsonMode, true);
@@ -185,7 +185,7 @@ await agentService.createAgent({
   jsonMode: true,
   knowledgeBaseIds: ['knowledge.base.product.manual'],
   memoryEnabled: true,
-  model: 'GPT-4o',
+  model: 'openai.gpt-4o',
   name: 'Created Management Profile Agent',
   skillIds: ['planning'],
   suggestedPrompts: ['Summarize the knowledge base', 'Draft an execution plan'],
@@ -224,7 +224,7 @@ await agentService.updateAgent('agent.pc.management.profile', {
   debugMode: false,
   jsonMode: true,
   memoryEnabled: false,
-  model: 'Claude 3.5 Sonnet',
+  model: 'anthropic.claude-3.5-sonnet',
   skillIds: ['multi-agent'],
   temperature: 0.2,
   toolIds: ['mcp-github'],

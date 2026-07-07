@@ -1,6 +1,6 @@
 import {
   createClient,
-  type SdkworkAppClient as GeneratedKnowledgebaseAppClient,
+  type SdkworkKnowledgebaseAppClient as GeneratedKnowledgebaseAppClient,
   type SdkworkAppConfig,
 } from "@sdkwork/knowledgebase-app-sdk";
 import type { Interceptors } from "@sdkwork/sdk-common";

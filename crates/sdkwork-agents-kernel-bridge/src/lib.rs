@@ -11,11 +11,7 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use axum::Router;
 use sdkwork_agent_server::{
-    api::internal_runtime,
-    app,
-    config::ServerConfig,
-    health,
-    persistence::PersistenceState,
+    api::internal_runtime, app, config::ServerConfig, health, persistence::PersistenceState,
     preflight,
 };
 use sdkwork_routes_agents_http_shared::build_served_combined_router;
@@ -37,14 +33,11 @@ pub async fn build_agents_served_router(config: Arc<ServerConfig>) -> Result<Rou
             .map_err(|error| anyhow::anyhow!("agent runtime bootstrap failed: {error}"))?,
     );
 
-    let operational_router = app::build_app(
-        config.clone(),
-        health_state,
-        persistence,
-        runtime_state,
-    );
+    let operational_router =
+        app::build_app(config.clone(), health_state, persistence, runtime_state);
 
-    let agent_http_state = build_agent_http_state().context("agents managed store HTTP state bootstrap")?;
+    let agent_http_state =
+        build_agent_http_state().context("agents managed store HTTP state bootstrap")?;
     let business_router = build_served_combined_router(agent_http_state).await;
 
     Ok(operational_router.merge(business_router))

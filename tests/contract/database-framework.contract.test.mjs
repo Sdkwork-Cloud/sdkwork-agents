@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-test("agents database manifest declares postgres and sqlite engines", () => {
+test("agents database manifest declares postgres-only production engine", () => {
   const manifest = JSON.parse(
     readFileSync(path.join(repoRoot, "database/database.manifest.json"), "utf8"),
   );
   assert.equal(manifest.moduleId, "agents");
-  assert.deepEqual(manifest.engines, ["postgres", "sqlite"]);
+  assert.deepEqual(manifest.engines, ["postgres"]);
   assert.equal(manifest.tablePrefix, "ai_");
 });
 

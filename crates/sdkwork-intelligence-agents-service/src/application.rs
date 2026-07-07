@@ -4,33 +4,38 @@ mod commands;
 pub use commands::*;
 
 use crate::chat_runtime::{
-    ChatCompleter, ChatCompletionInput, ContractChatCompleter, is_inference_error,
+    complete_with_timeout, is_inference_error, ChatCompleter, ChatCompletionInput,
+    ContractChatCompleter, CHAT_COMPLETION_TIMEOUT,
 };
-use crate::runtime_facade_bridge::{execute_preview_response, execute_prompt_optimization};
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
     AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord,
     AgentInteractionStatus, AgentMessageRecord, AgentMessageRole, AgentMessageStatus,
     AgentProviderBindingRecord, AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
-    AgentRuntimeExecutionStatus, AgentSessionRecord, AgentSessionStatus, AgentVisibility,
-    MarketplaceAuditPayload, MessageAuditPayload, ProviderBindingAuditPayload,
-    RuntimeExecutionAuditPayload, SessionAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
+    AgentRuntimeExecutionStatus, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord,
+    AgentTaskStatus, AgentVisibility, MarketplaceAuditPayload, MessageAuditPayload,
+    ProviderBindingAuditPayload, RuntimeExecutionAuditPayload, SessionAuditPayload,
+    TaskAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{
-    AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    MessageListQuery, McpMarketplaceListQuery, PaginatedResult, PaginationParams,
-    ProviderBindingListQuery, CHAT_CONTEXT_MESSAGE_LIMIT, MAX_PAGE_SIZE, offset_paginated_result,
+    offset_paginated_result, AgentAuditSink, AgentRepository, MessageListQuery, PaginatedResult,
+    PaginationParams, ProviderBindingListQuery, CHAT_CONTEXT_MESSAGE_LIMIT,
+    MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,
+};
+use crate::runtime_facade_bridge::{
+    execute_preview_response, execute_prompt_optimization, RUNTIME_MODE_CONTRACT_FALLBACK,
 };
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
     is_trimmed_blank, require_non_blank, validate_capabilities, validate_standard_id,
 };
 use sdkwork_agent_kernel::{
-    KernelError, KernelEvent, KernelEventRedaction, KernelEventSeverity,
-    KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider,
-    PolicyRequest, PolicySubject,
+    KernelError, KernelEvent, KernelEventRedaction, KernelEventSeverity, KernelEventSource,
+    KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider, PolicyRequest,
+    PolicySubject,
 };
+use sdkwork_agents_contract::agents_allow_contract_runtime_fallback;
 
 /// Stateless agent business service.
 ///
@@ -82,6 +87,47 @@ where
             }
         }
         Ok(())
+    }
+
+    fn ensure_task_owner_scope(
+        task: &AgentTaskRecord,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<()> {
+        if let Some(required_owner) = owner_scope {
+            if task.owner_user_id != required_owner {
+                return Err(KernelError::validation("task not found"));
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_nested_agent_id(
+        record_agent_id: &str,
+        path_agent_id: &str,
+        resource_label: &str,
+    ) -> KernelResult<()> {
+        if record_agent_id != path_agent_id {
+            return Err(KernelError::validation(format!(
+                "{resource_label} not found"
+            )));
+        }
+        Ok(())
+    }
+
+    fn load_session_for_nested_route(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+        path_agent_id: &str,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<AgentSessionRecord> {
+        let session = self
+            .repository
+            .get_session(tenant_id, session_id)
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&session, owner_scope)?;
+        Self::ensure_nested_agent_id(&session.agent_id, path_agent_id, "session")?;
+        Ok(session)
     }
 
     pub fn create_agent(&self, command: CreateAgentCommand) -> KernelResult<AgentBusinessRecord> {
@@ -237,27 +283,12 @@ where
             .ok_or_else(|| KernelError::validation("agent not found"))?;
         validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
 
-        let mut record = self
-            .repository
-            .get_provider_binding(
-                command.tenant_id,
-                command.agent_id.as_str(),
-                command.binding_id.as_str(),
-            )
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
-
-        if record.active {
-            return Ok(record);
-        }
-
-        self.deactivate_provider_bindings(
+        let record = self.repository.activate_provider_binding_atomic(
             command.tenant_id,
             command.agent_id.as_str(),
+            command.binding_id.as_str(),
             command.requested_at.clone(),
         )?;
-        record.active = true;
-        record.mark_updated(command.requested_at.clone());
-        self.repository.update_provider_binding(record.clone())?;
         self.emit_binding_audit_event(
             AgentAuditAction::ProviderBindingChanged,
             &record,
@@ -367,12 +398,12 @@ where
         record.active = false;
         record.mark_updated(requested_at.as_str());
         self.repository.update_provider_binding(record.clone())?;
-        let _ = self.emit_binding_audit_event(
+        self.emit_binding_audit_event(
             AgentAuditAction::ProviderBindingChanged,
             &record,
             requested_by,
             record.updated_at.clone(),
-        );
+        )?;
         Ok(record)
     }
 
@@ -429,12 +460,8 @@ where
             "agent.business".to_string(),
             "mcp_server.list",
         )?;
-        let total_count = self
-            .repository
-            .count_mcp_marketplace_slots(&command.query);
-        let slots = self
-            .repository
-            .list_mcp_marketplace_slots(&command.query);
+        let total_count = self.repository.count_mcp_marketplace_slots(&command.query);
+        let slots = self.repository.list_mcp_marketplace_slots(&command.query);
         let items = slots
             .iter()
             .map(crate::mcp_marketplace::project_mcp_slot)
@@ -489,6 +516,13 @@ where
             command.content.as_str(),
             command.model.as_deref(),
         );
+        if preview.runtime_mode == RUNTIME_MODE_CONTRACT_FALLBACK
+            && !agents_allow_contract_runtime_fallback()
+        {
+            return Err(KernelError::validation(
+                "preview response requires an active code-engine provider binding",
+            ));
+        }
 
         let output_payload_json = serde_json::json!({
             "content": preview.content,
@@ -548,10 +582,15 @@ where
             .into_iter()
             .find(|binding| binding.active);
 
-        let optimization = execute_prompt_optimization(
-            active_binding.as_ref(),
-            command.prompt.as_str(),
-        );
+        let optimization =
+            execute_prompt_optimization(active_binding.as_ref(), command.prompt.as_str());
+        if optimization.runtime_mode == RUNTIME_MODE_CONTRACT_FALLBACK
+            && !agents_allow_contract_runtime_fallback()
+        {
+            return Err(KernelError::validation(
+                "prompt optimization requires an active code-engine provider binding",
+            ));
+        }
 
         let output_payload_json = serde_json::json!({
             "optimizedPrompt": optimization.optimized_prompt,
@@ -941,7 +980,14 @@ where
         if record.is_deleted() {
             return Err(KernelError::validation("agent already deleted"));
         }
-        ensure_expected_version(record.version, command.expected_version, "agent")?;
+        if let Some(expected_version) = command.expected_version {
+            if record.version != expected_version {
+                return Err(KernelError::conflict(format!(
+                    "agent version mismatch: expected={expected_version}, actual={}",
+                    record.version
+                )));
+            }
+        }
 
         record.mark_deleted(command.requested_at.clone());
         self.repository.update(record.clone())?;
@@ -1000,6 +1046,12 @@ where
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())
             .ok_or_else(|| KernelError::validation("agent not found"))
+            .and_then(|record| {
+                if record.is_deleted() {
+                    return Err(KernelError::validation("agent not found"));
+                }
+                Ok(record)
+            })
     }
 
     pub fn list_agents(
@@ -1047,7 +1099,7 @@ where
         self.authorize(
             "agent.business.session.create",
             command.requested_by.clone(),
-            format!("agent.business.session.{}", command.session_id),
+            format!("agent.business.session.{}", session_id),
             "session.create",
         )?;
 
@@ -1106,21 +1158,14 @@ where
         Ok(record)
     }
 
-    pub fn close_session(
-        &self,
-        command: CloseSessionCommand,
-    ) -> KernelResult<AgentSessionRecord> {
+    pub fn close_session(&self, command: CloseSessionCommand) -> KernelResult<AgentSessionRecord> {
         self.authorize(
             "agent.business.session.close",
             command.requested_by.clone(),
             format!("agent.business.session.{}", command.session_id),
             "session.close",
         )?;
-        validate_standard_id(
-            command.session_id.as_str(),
-            "sessionId",
-            Some("session."),
-        )?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
 
         let mut record = self
             .repository
@@ -1156,11 +1201,7 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.archive",
         )?;
-        validate_standard_id(
-            command.session_id.as_str(),
-            "sessionId",
-            Some("session."),
-        )?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
 
         let mut record = self
             .repository
@@ -1168,6 +1209,15 @@ where
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+
+        if record.status == AgentSessionStatus::Archived {
+            return Err(KernelError::validation("session is already archived"));
+        }
+        if record.status.is_active() {
+            return Err(KernelError::validation(
+                "session must be closed before archiving",
+            ));
+        }
 
         ensure_expected_version(record.version, command.expected_version, "session")?;
 
@@ -1190,16 +1240,17 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.retrieve",
         )?;
-        validate_standard_id(
-            command.session_id.as_str(),
-            "sessionId",
-            Some("session."),
-        )?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.repository
             .get_session(command.tenant_id, command.session_id.as_str())
             .ok_or_else(|| KernelError::validation("session not found"))
             .and_then(|record| {
                 Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+                Self::ensure_nested_agent_id(
+                    &record.agent_id,
+                    command.path_agent_id.as_str(),
+                    "session",
+                )?;
                 Ok(record)
             })
     }
@@ -1224,18 +1275,331 @@ where
     }
 
     // -----------------------------------------------------------------------
+    // Task management
+    // -----------------------------------------------------------------------
+
+    pub fn create_task(&self, command: CreateTaskCommand) -> KernelResult<AgentTaskRecord> {
+        validate_agent_id(command.agent_id.as_str())?;
+        let task_id = if is_trimmed_blank(command.task_id.as_str()) {
+            format!("task.{}", self.repository.next_id()?)
+        } else {
+            command.task_id.clone()
+        };
+        validate_standard_id(task_id.as_str(), "taskId", Some("task."))?;
+        self.authorize(
+            "agent.business.task.create",
+            command.requested_by.clone(),
+            format!("agent.business.task.{}", task_id),
+            "task.create",
+        )?;
+
+        require_non_blank(command.prompt.as_str(), "prompt")?;
+        reject_secret_material(command.prompt.as_str(), "prompt")?;
+        if command.prompt.len() > MAX_CHAT_USER_CONTENT_BYTES {
+            return Err(KernelError::validation(format!(
+                "prompt exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+            )));
+        }
+
+        self.repository
+            .get(command.tenant_id, command.agent_id.as_str())
+            .ok_or_else(|| KernelError::validation("agent not found"))?;
+
+        if self
+            .repository
+            .get_task(command.tenant_id, task_id.as_str())
+            .is_some()
+        {
+            return Err(KernelError::conflict("task already exists"));
+        }
+
+        if !is_trimmed_blank(command.metadata_json.as_str()) {
+            validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
+        }
+        let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
+
+        let record = AgentTaskRecord {
+            id: self.repository.next_id()?,
+            task_id,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            agent_id: command.agent_id,
+            owner_user_id: command.owner_user_id,
+            title: command.title,
+            prompt: command.prompt,
+            status: AgentTaskStatus::Pending,
+            external_ref: command.external_ref,
+            metadata_json,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            started_at: None,
+            completed_at: None,
+            cancelled_at: None,
+        };
+
+        self.repository.insert_task(record.clone())?;
+        self.emit_task_audit_event(
+            AgentAuditAction::TaskCreated,
+            &record,
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
+
+        let record = self.dispatch_task_execution(
+            record,
+            command.requested_by,
+            command.requested_at,
+            false,
+        )?;
+        Ok(record)
+    }
+
+    /// HTTP and worker callers defer LLM execution unless `metadataJson.autoExecute` is
+    /// `true`. Legacy `deferExecution: true` also defers; `deferExecution: false` opts
+    /// into inline execution for backward compatibility.
+    fn should_auto_execute_task(metadata_json: &str) -> bool {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(metadata_json) else {
+            return false;
+        };
+        if value
+            .get("deferExecution")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            return false;
+        }
+        if value
+            .get("autoExecute")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            return true;
+        }
+        value
+            .get("deferExecution")
+            .and_then(serde_json::Value::as_bool)
+            == Some(false)
+    }
+
+    fn dispatch_task_execution(
+        &self,
+        mut record: AgentTaskRecord,
+        requested_by: PolicySubject,
+        requested_at: String,
+        force: bool,
+    ) -> KernelResult<AgentTaskRecord> {
+        if record.status != AgentTaskStatus::Pending {
+            return Ok(record);
+        }
+        if !force && !Self::should_auto_execute_task(record.metadata_json.as_str()) {
+            return Ok(record);
+        }
+
+        let agent = self
+            .repository
+            .get(record.tenant_id, record.agent_id.as_str())
+            .ok_or_else(|| KernelError::validation("agent not found"))?;
+
+        record.mark_running(requested_at.clone());
+        self.repository.update_task(record.clone())?;
+
+        let active_binding = self
+            .all_provider_bindings_for_agent(record.tenant_id, record.agent_id.as_str())
+            .into_iter()
+            .find(|binding| binding.active);
+
+        let provider_has_model_chat = active_binding
+            .as_ref()
+            .map(|binding| binding.capabilities.iter().any(|cap| cap == "model.chat"))
+            .unwrap_or(false);
+
+        let session_stub = AgentSessionRecord {
+            id: record.id,
+            session_id: format!("task.session.{}", record.task_id),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            agent_id: record.agent_id.clone(),
+            owner_user_id: record.owner_user_id,
+            title: record.title.clone(),
+            status: AgentSessionStatus::Active,
+            provider_binding_id: active_binding
+                .as_ref()
+                .map(|binding| binding.binding_id.clone()),
+            model_id: None,
+            message_count: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            metadata_json: "{}".to_string(),
+            version: 0,
+            created_at: requested_at.clone(),
+            updated_at: requested_at.clone(),
+            last_message_at: None,
+            closed_at: None,
+        };
+
+        let prompt = record.prompt.clone();
+        let completion = complete_with_timeout(
+            Arc::clone(&self.chat_completer),
+            &ChatCompletionInput {
+                agent_display_name: agent.display_name.clone(),
+                welcome_message: None,
+                session: session_stub,
+                history: Vec::new(),
+                user_content: prompt,
+                model_id: None,
+                provider_id: active_binding
+                    .as_ref()
+                    .map(|binding| binding.provider_id.clone()),
+                binding_id: active_binding
+                    .as_ref()
+                    .map(|binding| binding.binding_id.clone()),
+                provider_has_model_chat,
+            },
+            false,
+            CHAT_COMPLETION_TIMEOUT,
+        );
+
+        if is_inference_error(completion.runtime_mode) {
+            record.mark_failed(requested_at.clone(), completion.content.as_str());
+            self.repository.update_task(record.clone())?;
+            self.emit_task_audit_event(
+                AgentAuditAction::TaskFailed,
+                &record,
+                requested_by,
+                requested_at,
+            )?;
+            return Ok(record);
+        }
+
+        record.mark_completed(requested_at.clone(), completion.content.as_str());
+        self.repository.update_task(record.clone())?;
+        self.emit_task_audit_event(
+            AgentAuditAction::TaskCompleted,
+            &record,
+            requested_by,
+            requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn cancel_task(&self, command: CancelTaskCommand) -> KernelResult<AgentTaskRecord> {
+        self.authorize(
+            "agent.business.task.cancel",
+            command.requested_by.clone(),
+            format!("agent.business.task.{}", command.task_id),
+            "task.cancel",
+        )?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_agent_id(command.path_agent_id.as_str())?;
+
+        let mut record = self
+            .repository
+            .get_task(command.tenant_id, command.task_id.as_str())
+            .ok_or_else(|| KernelError::validation("task not found"))?;
+
+        Self::ensure_task_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "task")?;
+
+        if !record.status.is_cancellable() {
+            return Err(KernelError::validation("task cannot be cancelled"));
+        }
+
+        ensure_expected_version(record.version, command.expected_version, "task")?;
+
+        record.cancel(command.requested_at.clone());
+        self.repository.update_task(record.clone())?;
+        self.emit_task_audit_event(
+            AgentAuditAction::TaskCancelled,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    /// Run LLM execution for a deferred (`pending`) task created without `autoExecute`.
+    pub fn execute_task(&self, command: ExecuteTaskCommand) -> KernelResult<AgentTaskRecord> {
+        self.authorize(
+            "agent.business.task.execute",
+            command.requested_by.clone(),
+            format!("agent.business.task.{}", command.task_id),
+            "task.execute",
+        )?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_agent_id(command.path_agent_id.as_str())?;
+
+        let record = self
+            .repository
+            .get_task(command.tenant_id, command.task_id.as_str())
+            .ok_or_else(|| KernelError::validation("task not found"))?;
+
+        Self::ensure_task_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "task")?;
+
+        if record.status != AgentTaskStatus::Pending {
+            return Err(KernelError::validation(
+                "task is not pending, cannot execute",
+            ));
+        }
+
+        ensure_expected_version(record.version, command.expected_version, "task")?;
+
+        self.dispatch_task_execution(record, command.requested_by, command.requested_at, true)
+    }
+
+    pub fn get_task(&self, command: GetTaskCommand) -> KernelResult<AgentTaskRecord> {
+        self.authorize(
+            "agent.business.task.retrieve",
+            command.requested_by,
+            format!("agent.business.task.{}", command.task_id),
+            "task.retrieve",
+        )?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        self.repository
+            .get_task(command.tenant_id, command.task_id.as_str())
+            .ok_or_else(|| KernelError::validation("task not found"))
+            .and_then(|record| {
+                Self::ensure_task_owner_scope(&record, command.owner_scope)?;
+                Self::ensure_nested_agent_id(
+                    &record.agent_id,
+                    command.path_agent_id.as_str(),
+                    "task",
+                )?;
+                Ok(record)
+            })
+    }
+
+    pub fn list_tasks(
+        &self,
+        command: ListTasksCommand,
+    ) -> KernelResult<PaginatedResult<AgentTaskRecord>> {
+        self.authorize(
+            "agent.business.task.list",
+            command.requested_by,
+            format!("agent.business.tenant.{}", command.query.tenant_id),
+            "task.list",
+        )?;
+        let total_count = self.repository.count_tasks(&command.query);
+        let items = self.repository.list_tasks(&command.query);
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    // -----------------------------------------------------------------------
     // Message management
     // -----------------------------------------------------------------------
 
+    /// Low-level message insert for tests and internal tooling. HTTP surfaces use
+    /// [`Self::send_chat_message`] which persists user + assistant messages atomically.
     pub fn create_message(
         &self,
         command: CreateMessageCommand,
     ) -> KernelResult<AgentMessageRecord> {
-        validate_standard_id(
-            command.message_id.as_str(),
-            "messageId",
-            Some("message."),
-        )?;
+        validate_standard_id(command.message_id.as_str(), "messageId", Some("message."))?;
         self.authorize(
             "agent.business.message.create",
             command.requested_by.clone(),
@@ -1269,9 +1633,12 @@ where
         }
 
         require_non_blank(command.content.as_str(), "content")?;
-        if !is_trimmed_blank(command.content_type.as_str()) {
-            reject_secret_material(command.content.as_str(), "content")?;
+        if command.content.len() > MAX_CHAT_USER_CONTENT_BYTES {
+            return Err(KernelError::validation(format!(
+                "content exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+            )));
         }
+        reject_secret_material(command.content.as_str(), "content")?;
 
         // Validate JSON fields
         if !is_trimmed_blank(command.artifacts_json.as_str()) {
@@ -1336,16 +1703,13 @@ where
             format!("agent.business.session.{}", command.session_id),
             "message.retrieve",
         )?;
-        validate_standard_id(
-            command.message_id.as_str(),
-            "messageId",
-            Some("message."),
-        )?;
+        validate_standard_id(command.message_id.as_str(), "messageId", Some("message."))?;
         let session = self
             .repository
             .get_session(command.tenant_id, command.session_id.as_str())
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&session.agent_id, command.path_agent_id.as_str(), "session")?;
         self.repository
             .get_message(
                 command.tenant_id,
@@ -1353,6 +1717,14 @@ where
                 command.message_id.as_str(),
             )
             .ok_or_else(|| KernelError::validation("message not found"))
+            .and_then(|record| {
+                Self::ensure_nested_agent_id(
+                    &record.agent_id,
+                    command.path_agent_id.as_str(),
+                    "message",
+                )?;
+                Ok(record)
+            })
     }
 
     pub fn list_messages(
@@ -1386,11 +1758,7 @@ where
         command: SendChatMessageCommand,
     ) -> KernelResult<ChatCompletionResult> {
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(
-            command.session_id.as_str(),
-            "sessionId",
-            Some("session."),
-        )?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.authorize(
             "agent.business.message.create",
             command.requested_by.clone(),
@@ -1422,20 +1790,23 @@ where
         }
 
         require_non_blank(command.content.as_str(), "content")?;
-        if !is_trimmed_blank(command.content_type.as_str()) {
-            reject_secret_material(command.content.as_str(), "content")?;
+        if command.content.len() > MAX_CHAT_USER_CONTENT_BYTES {
+            return Err(KernelError::validation(format!(
+                "content exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+            )));
         }
+        reject_secret_material(command.content.as_str(), "content")?;
         if !is_trimmed_blank(command.metadata_json.as_str()) {
             validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
         }
 
-        let history_messages = self.repository.list_messages(
-            &MessageListQuery::for_recent_chat_context(
-                command.tenant_id,
-                command.session_id.clone(),
-                CHAT_CONTEXT_MESSAGE_LIMIT,
-            ),
-        );
+        let history_messages =
+            self.repository
+                .list_messages(&MessageListQuery::for_recent_chat_context(
+                    command.tenant_id,
+                    command.session_id.clone(),
+                    CHAT_CONTEXT_MESSAGE_LIMIT,
+                ));
         let history = history_messages
             .iter()
             .map(|record| (record.role, record.content.clone()))
@@ -1456,17 +1827,26 @@ where
             .unwrap_or(false);
 
         let user_content = command.content.clone();
-        let completion = self.chat_completer.complete(&ChatCompletionInput {
-            agent_display_name: agent.display_name.clone(),
-            welcome_message,
-            session: session.clone(),
-            history,
-            user_content: user_content.clone(),
-            model_id: command.model_id.clone(),
-            provider_id: active_binding.as_ref().map(|binding| binding.provider_id.clone()),
-            binding_id: active_binding.as_ref().map(|binding| binding.binding_id.clone()),
-            provider_has_model_chat,
-        });
+        let completion = complete_with_timeout(
+            Arc::clone(&self.chat_completer),
+            &ChatCompletionInput {
+                agent_display_name: agent.display_name.clone(),
+                welcome_message,
+                session: session.clone(),
+                history,
+                user_content: user_content.clone(),
+                model_id: command.model_id.clone(),
+                provider_id: active_binding
+                    .as_ref()
+                    .map(|binding| binding.provider_id.clone()),
+                binding_id: active_binding
+                    .as_ref()
+                    .map(|binding| binding.binding_id.clone()),
+                provider_has_model_chat,
+            },
+            command.prefer_stream,
+            CHAT_COMPLETION_TIMEOUT,
+        );
         if is_inference_error(completion.runtime_mode) {
             return Err(KernelError::provider_error(
                 "chat_inference_failed",
@@ -1531,11 +1911,9 @@ where
             command.requested_at.clone(),
         );
 
-        let (session, user_message, assistant_message) = self.repository.insert_chat_turn(
-            session,
-            user_message,
-            assistant_message,
-        )?;
+        let (session, user_message, assistant_message) =
+            self.repository
+                .insert_chat_turn(session, user_message, assistant_message)?;
 
         self.emit_message_audit_event(
             AgentAuditAction::MessageCreated,
@@ -1554,6 +1932,7 @@ where
             session,
             user_message,
             assistant_message,
+            stream_deltas: completion.stream_deltas,
         })
     }
 
@@ -1599,9 +1978,9 @@ where
         if let Some(previous_status) = previous_status {
             audit_payload = audit_payload.with_previous_status(previous_status);
         }
-        let payload_json = audit_payload
-            .to_json()
-            .map_err(|error| KernelError::validation(format!("audit payload serialization: {error}")))?;
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!("audit payload serialization: {error}"))
+        })?;
 
         let event = KernelEvent::new(
             format!("agent_audit_{}_{}", record.agent_id, record.version),
@@ -1652,9 +2031,9 @@ where
     ) -> KernelResult<()> {
         // Use structured JSON payload for provider binding events
         let audit_payload = ProviderBindingAuditPayload::new(action, record);
-        let payload_json = audit_payload
-            .to_json()
-            .map_err(|error| KernelError::validation(format!("binding audit payload serialization: {error}")))?;
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!("binding audit payload serialization: {error}"))
+        })?;
 
         let event = KernelEvent::new(
             format!("agent_binding_{}_{}", record.binding_id, record.version),
@@ -1664,7 +2043,10 @@ where
         )
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
-        .with_context("schema_version", ProviderBindingAuditPayload::SCHEMA_VERSION)
+        .with_context(
+            "schema_version",
+            ProviderBindingAuditPayload::SCHEMA_VERSION,
+        )
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -1685,9 +2067,11 @@ where
     ) -> KernelResult<()> {
         // Use structured JSON payload for runtime execution events
         let audit_payload = RuntimeExecutionAuditPayload::new(action, record);
-        let payload_json = audit_payload
-            .to_json()
-            .map_err(|error| KernelError::validation(format!("runtime execution audit payload serialization: {error}")))?;
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!(
+                "runtime execution audit payload serialization: {error}"
+            ))
+        })?;
 
         let event = KernelEvent::new(
             format!("agent_runtime_execution_{}", record.execution_id),
@@ -1697,7 +2081,10 @@ where
         )
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
-        .with_context("schema_version", RuntimeExecutionAuditPayload::SCHEMA_VERSION)
+        .with_context(
+            "schema_version",
+            RuntimeExecutionAuditPayload::SCHEMA_VERSION,
+        )
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -1723,9 +2110,9 @@ where
             input.visibility,
             input.version,
         );
-        let payload_json = audit_payload
-            .to_json()
-            .map_err(|error| KernelError::validation(format!("marketplace audit payload serialization: {error}")))?;
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!("marketplace audit payload serialization: {error}"))
+        })?;
 
         let event = KernelEvent::new(
             format!(
@@ -1760,9 +2147,9 @@ where
         occurred_at: String,
     ) -> KernelResult<()> {
         let audit_payload = SessionAuditPayload::new(action, record);
-        let payload_json = audit_payload
-            .to_json()
-            .map_err(|error| KernelError::validation(format!("session audit payload serialization: {error}")))?;
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!("session audit payload serialization: {error}"))
+        })?;
 
         let event = KernelEvent::new(
             format!("agent_session_{}_{}", record.session_id, record.version),
@@ -1796,9 +2183,9 @@ where
         occurred_at: String,
     ) -> KernelResult<()> {
         let audit_payload = MessageAuditPayload::new(action, record);
-        let payload_json = audit_payload
-            .to_json()
-            .map_err(|error| KernelError::validation(format!("message audit payload serialization: {error}")))?;
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!("message audit payload serialization: {error}"))
+        })?;
 
         let event = KernelEvent::new(
             format!("agent_message_{}_{}", record.message_id, record.sequence),
@@ -1821,9 +2208,139 @@ where
         self.audit_sink.record(event)
     }
 
+    fn emit_task_audit_event(
+        &self,
+        action: AgentAuditAction,
+        record: &AgentTaskRecord,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let audit_payload = TaskAuditPayload::new(action, record);
+        let payload_json = audit_payload.to_json().map_err(|error| {
+            KernelError::validation(format!("task audit payload serialization: {error}"))
+        })?;
+
+        let event = KernelEvent::new(
+            format!("agent_task_{}_{}", record.task_id, record.version),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", TaskAuditPayload::SCHEMA_VERSION)
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("task_id", record.task_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.task.v1");
+
+        self.audit_sink.record(event)
+    }
+
     // -----------------------------------------------------------------------
     // Live interaction operations
     // -----------------------------------------------------------------------
+
+    pub fn create_interaction(
+        &self,
+        command: CreateInteractionCommand,
+    ) -> KernelResult<AgentInteractionRecord> {
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_agent_id(command.agent_id.as_str())?;
+        let interaction_id = if is_trimmed_blank(command.interaction_id.as_str()) {
+            format!("interaction.{}", self.repository.next_id()?)
+        } else {
+            command.interaction_id.clone()
+        };
+        validate_standard_id(
+            interaction_id.as_str(),
+            "interactionId",
+            Some("interaction."),
+        )?;
+        self.authorize(
+            "agent.business.interaction.create",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}", command.session_id),
+            "interaction.create",
+        )?;
+
+        require_non_blank(command.prompt.as_str(), "prompt")?;
+        reject_secret_material(command.prompt.as_str(), "prompt")?;
+        if command.prompt.len() > MAX_CHAT_USER_CONTENT_BYTES {
+            return Err(KernelError::validation(format!(
+                "prompt exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+            )));
+        }
+        require_non_blank(command.engine_key.as_str(), "engineKey")?;
+        if !is_trimmed_blank(command.options_json.as_str()) {
+            validate_json_payload(command.options_json.as_str(), "optionsJson")?;
+        }
+
+        self.repository
+            .get_session(command.tenant_id, command.session_id.as_str())
+            .ok_or_else(|| KernelError::validation("session not found"))
+            .and_then(|session| {
+                Self::ensure_session_owner_scope(&session, command.owner_scope)?;
+                Self::ensure_nested_agent_id(
+                    &session.agent_id,
+                    command.agent_id.as_str(),
+                    "session",
+                )?;
+                if !session.status.is_active() {
+                    return Err(KernelError::validation(
+                        "session is not active, cannot create interaction",
+                    ));
+                }
+                Ok(session)
+            })?;
+
+        if self
+            .repository
+            .get_interaction(
+                command.tenant_id,
+                command.session_id.as_str(),
+                interaction_id.as_str(),
+            )
+            .is_some()
+        {
+            return Err(KernelError::conflict("interaction already exists"));
+        }
+
+        let record = AgentInteractionRecord {
+            id: self.repository.next_id()?,
+            interaction_id,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            session_id: command.session_id,
+            agent_id: command.agent_id,
+            engine_key: command.engine_key,
+            kind: command.kind,
+            status: AgentInteractionStatus::Pending,
+            prompt: command.prompt,
+            options_json: default_json_array_if_blank(command.options_json.as_str()),
+            resolution_json: "{}".to_string(),
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            resolved_at: None,
+        };
+
+        self.repository.insert_interaction(record.clone())?;
+        self.emit_interaction_audit_event(
+            AgentAuditAction::InteractionCreated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
 
     pub fn list_interactions(
         &self,
@@ -1834,6 +2351,12 @@ where
             command.requested_by,
             format!("agent.business.session.{}", command.query.session_id),
             "interaction.list",
+        )?;
+        self.load_session_for_nested_route(
+            command.query.tenant_id,
+            command.query.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            command.owner_scope,
         )?;
         let total_count = self.repository.count_interactions(&command.query);
         let items = self.repository.list_interactions(&command.query);
@@ -1854,16 +2377,38 @@ where
             format!("agent.business.session.{}", command.session_id),
             "interaction.retrieve",
         )?;
+        self.load_session_for_nested_route(
+            command.tenant_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            command.owner_scope,
+        )?;
         self.repository
-            .get_interaction(command.tenant_id, command.session_id.as_str(), command.interaction_id.as_str())
+            .get_interaction(
+                command.tenant_id,
+                command.session_id.as_str(),
+                command.interaction_id.as_str(),
+            )
             .ok_or_else(|| KernelError::validation("interaction not found"))
+            .and_then(|record| {
+                Self::ensure_nested_agent_id(
+                    &record.agent_id,
+                    command.path_agent_id.as_str(),
+                    "interaction",
+                )?;
+                Ok(record)
+            })
     }
 
     pub fn approve_interaction(
         &self,
         command: ApproveInteractionCommand,
     ) -> KernelResult<AgentInteractionRecord> {
-        validate_standard_id(command.interaction_id.as_str(), "interactionId", Some("interaction."))?;
+        validate_standard_id(
+            command.interaction_id.as_str(),
+            "interactionId",
+            Some("interaction."),
+        )?;
         self.authorize(
             "agent.business.interaction.approve",
             command.requested_by.clone(),
@@ -1871,9 +2416,19 @@ where
             "interaction.approve",
         )?;
 
+        self.load_session_for_nested_route(
+            command.tenant_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            command.owner_scope,
+        )?;
         let mut record = self
             .repository
-            .get_interaction(command.tenant_id, command.session_id.as_str(), command.interaction_id.as_str())
+            .get_interaction(
+                command.tenant_id,
+                command.session_id.as_str(),
+                command.interaction_id.as_str(),
+            )
             .ok_or_else(|| KernelError::validation("interaction not found"))?;
 
         if !record.is_pending() {
@@ -1918,12 +2473,12 @@ where
         } else {
             AgentAuditAction::InteractionRejected
         };
-        let _ = self.emit_interaction_audit_event(
+        self.emit_interaction_audit_event(
             audit_action,
             &record,
             command.requested_by,
             command.requested_at,
-        );
+        )?;
 
         Ok(record)
     }
@@ -1932,8 +2487,14 @@ where
         &self,
         command: AnswerInteractionCommand,
     ) -> KernelResult<AgentInteractionRecord> {
-        validate_standard_id(command.interaction_id.as_str(), "interactionId", Some("interaction."))?;
-        require_non_blank(command.answer.as_str(), "answer")?;
+        validate_standard_id(
+            command.interaction_id.as_str(),
+            "interactionId",
+            Some("interaction."),
+        )?;
+        if !command.rejected {
+            require_non_blank(command.answer.as_str(), "answer")?;
+        }
         self.authorize(
             "agent.business.interaction.answer",
             command.requested_by.clone(),
@@ -1941,9 +2502,19 @@ where
             "interaction.answer",
         )?;
 
+        self.load_session_for_nested_route(
+            command.tenant_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            command.owner_scope,
+        )?;
         let mut record = self
             .repository
-            .get_interaction(command.tenant_id, command.session_id.as_str(), command.interaction_id.as_str())
+            .get_interaction(
+                command.tenant_id,
+                command.session_id.as_str(),
+                command.interaction_id.as_str(),
+            )
             .ok_or_else(|| KernelError::validation("interaction not found"))?;
 
         if !record.is_pending() {
@@ -1989,12 +2560,12 @@ where
         } else {
             AgentAuditAction::InteractionResolved
         };
-        let _ = self.emit_interaction_audit_event(
+        self.emit_interaction_audit_event(
             audit_action,
             &record,
             command.requested_by,
             command.requested_at,
-        );
+        )?;
 
         Ok(record)
     }
@@ -2020,7 +2591,10 @@ where
         .to_string();
 
         let event = KernelEvent::new(
-            format!("agent_interaction_{}_{}", record.interaction_id, record.version),
+            format!(
+                "agent_interaction_{}_{}",
+                record.interaction_id, record.version
+            ),
             action.event_type(),
             KernelEventSeverity::Info,
             payload_json,
@@ -2173,4 +2747,296 @@ fn reject_secret_material(value: &str, field_name: &str) -> KernelResult<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod task_tests {
+    use super::*;
+    use crate::application::{
+        CancelTaskCommand, CreateAgentCommand, CreateTaskCommand, ExecuteTaskCommand,
+        GetTaskCommand, ListTasksCommand,
+    };
+    use crate::domain::AgentBusinessStatus;
+    use crate::infrastructure::{
+        AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
+    };
+    use crate::ports::TaskListQuery;
+    use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
+
+    fn sample_subject() -> PolicySubject {
+        PolicySubject {
+            subject_id: "user.100".to_string(),
+            tenant_id: "100001".to_string(),
+            roles: vec!["agent.business.manage".to_string()],
+        }
+    }
+
+    fn sample_manifest(agent_id: &str) -> AgentManifest {
+        AgentManifest {
+            schema_version: "1.0.0".to_string(),
+            manifest_type: "agent".to_string(),
+            agent_id: agent_id.to_string(),
+            name: "tasks-demo".to_string(),
+            display_name: "Tasks Demo".to_string(),
+            description: "sample".to_string(),
+            version: "0.1.0".to_string(),
+            domain: "intelligence".to_string(),
+            required_capabilities: vec!["model.chat".to_string()],
+            optional_capabilities: vec![],
+            required_capability_requirements: vec![],
+            optional_capability_requirements: vec![],
+            event_families: vec!["agent.lifecycle".to_string()],
+            owner_name: "sdkwork".to_string(),
+            status: "active".to_string(),
+        }
+    }
+
+    fn create_agent_cmd(
+        agent_id: &str,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        code: &str,
+        display_name: &str,
+        requested_at: &str,
+    ) -> CreateAgentCommand {
+        CreateAgentCommand {
+            agent_id: agent_id.to_string(),
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            code: code.to_string(),
+            display_name: display_name.to_string(),
+            description: None,
+            manifest: sample_manifest(agent_id),
+            visibility: AgentVisibility::Private,
+            tags: Vec::new(),
+            default_code_task_intent: None,
+            implementation_provider_id: None,
+            implementation_kind: None,
+            implementation_type: None,
+            requested_by: sample_subject(),
+            requested_at: requested_at.to_string(),
+        }
+    }
+
+    #[test]
+    fn create_and_list_tasks_roundtrip() {
+        let repository = InMemoryAgentRepository::new();
+        let audit_sink = InMemoryAgentAuditSink::default();
+        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+        let created = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.demo",
+                100_001,
+                0,
+                100,
+                "tasks-demo",
+                "Tasks Demo",
+                "2026-06-01T05:00:00Z",
+            ))
+            .expect("create agent");
+
+        service
+            .change_status(ChangeAgentStatusCommand {
+                tenant_id: 100_001,
+                agent_id: created.agent_id.clone(),
+                expected_version: Some(created.version),
+                target_status: AgentBusinessStatus::Active,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:00:30Z".to_string(),
+            })
+            .expect("activate agent");
+
+        let task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: created.agent_id.clone(),
+                owner_user_id: 100,
+                task_id: String::new(),
+                title: Some("Nightly sync".to_string()),
+                prompt: "Run nightly data sync".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"autoExecute":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:01:00Z".to_string(),
+            })
+            .expect("create task");
+
+        assert!(task.task_id.starts_with("task."));
+        assert_eq!(task.status, AgentTaskStatus::Completed);
+        assert!(task.completed_at.is_some());
+
+        let listed = service
+            .list_tasks(ListTasksCommand {
+                query: TaskListQuery::for_tenant(100_001).for_agent(created.agent_id),
+                requested_by: sample_subject(),
+            })
+            .expect("list tasks");
+        assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.items[0].task_id, task.task_id);
+    }
+
+    #[test]
+    fn cancel_task_rejects_terminal_status() {
+        let repository = InMemoryAgentRepository::new();
+        let audit_sink = InMemoryAgentAuditSink::default();
+        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+        let created = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.cancel",
+                100_001,
+                0,
+                100,
+                "tasks-cancel",
+                "Tasks Cancel",
+                "2026-06-01T05:00:00Z",
+            ))
+            .expect("create agent");
+
+        let task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: created.agent_id,
+                owner_user_id: 100,
+                task_id: String::new(),
+                title: None,
+                prompt: "Do work".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"deferExecution":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:01:00Z".to_string(),
+            })
+            .expect("create task");
+
+        let cancelled = service
+            .cancel_task(CancelTaskCommand {
+                tenant_id: 100_001,
+                path_agent_id: task.agent_id.clone(),
+                task_id: task.task_id.clone(),
+                expected_version: Some(task.version),
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:02:00Z".to_string(),
+            })
+            .expect("cancel task");
+        assert_eq!(cancelled.status, AgentTaskStatus::Cancelled);
+
+        let error = service
+            .cancel_task(CancelTaskCommand {
+                tenant_id: 100_001,
+                path_agent_id: cancelled.agent_id.clone(),
+                task_id: task.task_id,
+                expected_version: Some(cancelled.version),
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:03:00Z".to_string(),
+            })
+            .expect_err("second cancel must fail");
+        assert!(error.to_string().contains("cannot be cancelled"));
+    }
+
+    #[test]
+    fn execute_task_completes_deferred_pending_task() {
+        let repository = InMemoryAgentRepository::new();
+        let audit_sink = InMemoryAgentAuditSink::default();
+        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+        let created = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.execute",
+                100_001,
+                0,
+                100,
+                "tasks-execute",
+                "Tasks Execute",
+                "2026-06-01T05:00:00Z",
+            ))
+            .expect("create agent");
+
+        let task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: created.agent_id.clone(),
+                owner_user_id: 100,
+                task_id: String::new(),
+                title: None,
+                prompt: "Run deferred work".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"deferExecution":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:01:00Z".to_string(),
+            })
+            .expect("create task");
+        assert_eq!(task.status, AgentTaskStatus::Pending);
+
+        let executed = service
+            .execute_task(ExecuteTaskCommand {
+                tenant_id: 100_001,
+                path_agent_id: created.agent_id.clone(),
+                task_id: task.task_id.clone(),
+                expected_version: Some(task.version),
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:02:00Z".to_string(),
+            })
+            .expect("execute task");
+        assert_eq!(executed.status, AgentTaskStatus::Completed);
+    }
+
+    #[test]
+    fn get_task_rejects_foreign_owner_scope() {
+        let repository = InMemoryAgentRepository::new();
+        let audit_sink = InMemoryAgentAuditSink::default();
+        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+        let created = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.owner",
+                100_001,
+                0,
+                100,
+                "tasks-owner",
+                "Tasks Owner",
+                "2026-06-01T05:00:00Z",
+            ))
+            .expect("create agent");
+
+        let path_agent_id = created.agent_id.clone();
+        let task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: path_agent_id.clone(),
+                owner_user_id: 100,
+                task_id: String::new(),
+                title: None,
+                prompt: "Private task".to_string(),
+                external_ref: None,
+                metadata_json: "{}".to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:01:00Z".to_string(),
+            })
+            .expect("create task");
+
+        let error = service
+            .get_task(GetTaskCommand {
+                tenant_id: 100_001,
+                path_agent_id,
+                task_id: task.task_id,
+                owner_scope: Some(999),
+                requested_by: sample_subject(),
+            })
+            .expect_err("foreign owner must not read task");
+        assert!(error.to_string().contains("task not found"));
+    }
 }

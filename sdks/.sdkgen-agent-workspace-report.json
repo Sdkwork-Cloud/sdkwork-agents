@@ -4,8 +4,24 @@
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-05T05:47:39.169Z",
+  "startedAt": "2026-07-07T15:51:14.939Z",
   "families": [
+    {
+      "key": "open",
+      "familyDir": "sdkwork-agents-sdk",
+      "authority": "sdkwork-agents-open-api",
+      "input": "sdks/sdkwork-agents-sdk/openapi/sdkwork-agents-open-api.sdkgen.yaml",
+      "output": "sdks/sdkwork-agents-sdk/sdkwork-agents-sdk-typescript/generated/server-openapi",
+      "sdkName": "sdkwork-agents-sdk",
+      "sdkType": "custom",
+      "sdkSurface": "open",
+      "packageName": "@sdkwork/agents-sdk",
+      "apiPrefix": "/agent/v3/api",
+      "generated": false,
+      "skipped": true,
+      "skipReason": "Open SDK is derived from app SDK; regenerate app family first.",
+      "derivedFrom": "sdkwork-agents-app-sdk"
+    },
     {
       "key": "app",
       "familyDir": "sdkwork-agents-app-sdk",
@@ -32,12 +48,43 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "563d8cedd83b26ae75efe9a890ae73777bed7b0afc694821569bcfb1559fbdb3",
+      "fingerprint": "bced626ee4776671d665a6f3cb0a39d2b8d6e2b6bb2d3824fba875f0c56bacef",
       "hasChanges": true,
-      "riskLevel": "medium",
+      "riskLevel": "high",
+      "generated": true
+    },
+    {
+      "key": "backend",
+      "familyDir": "sdkwork-agents-backend-sdk",
+      "authority": "sdkwork-agents-backend-api",
+      "input": "sdks/sdkwork-agents-backend-sdk/openapi/sdkwork-agents-backend-api.sdkgen.yaml",
+      "output": "sdks/sdkwork-agents-backend-sdk/sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
+      "sdkName": "sdkwork-agents-backend-sdk",
+      "sdkType": "backend",
+      "sdkOwner": "sdkwork-agents",
+      "packageName": "@sdkwork/agents-backend-sdk",
+      "apiPrefix": "/backend/v3/api",
+      "sdkDependencies": [
+        {
+          "workspace": "sdkwork-iam-backend-sdk",
+          "role": "appbase-backend-management-capability",
+          "required": true,
+          "dependencyMode": "consumer-sdk",
+          "apiPrefix": "/backend/v3/api",
+          "apiAuthority": "sdkwork-iam-backend-api",
+          "generatedTransportImportPolicy": "forbidden",
+          "packageByLanguage": {
+            "typescript": "@sdkwork/iam-backend-sdk"
+          }
+        }
+      ],
+      "version": "0.1.0",
+      "fingerprint": "86910732644ad33e008ed79bb9f6d9bde156b60a687f7be347d0a090650be9b9",
+      "hasChanges": true,
+      "riskLevel": "high",
       "generated": true
     }
   ],
   "openSdkDerivedFromApp": true,
-  "finishedAt": "2026-07-05T05:47:39.765Z"
+  "finishedAt": "2026-07-07T15:51:20.247Z"
 }

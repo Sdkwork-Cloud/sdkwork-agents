@@ -23,7 +23,7 @@ async fn api_server_bootstrap_health_and_metrics_contracts() {
         .await
         .expect("agents standalone-gateway bootstrap should succeed with dev inline auth");
 
-    for path in ["/health", "/ready", "/live"] {
+    for path in ["/healthz", "/readyz", "/livez"] {
         let response = app
             .clone()
             .oneshot(
@@ -35,7 +35,11 @@ async fn api_server_bootstrap_health_and_metrics_contracts() {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "expected {path} to be ready");
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "expected {path} to be ready"
+        );
     }
 
     let metrics = app
@@ -70,7 +74,7 @@ async fn gateway_assembly_composes_kernel_router() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/health")
+                .uri("/healthz")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -82,12 +86,10 @@ async fn gateway_assembly_composes_kernel_router() {
 }
 
 #[tokio::test]
-async fn app_database_migrate_only_succeeds_with_sqlite() {
+async fn app_database_migrate_only_succeeds_with_postgres_baseline_contract() {
     let _guard = env_test_lock();
-    let previous_database_url = std::env::var("SDKWORK_AGENTS_DATABASE_URL").ok();
-    std::env::set_var("SDKWORK_AGENTS_DATABASE_URL", "sqlite::memory:");
-    sdkwork_agents_standalone_gateway::run_agents_app_database_migrate_only()
-        .await
-        .expect("agents app db-migrate must succeed with sqlite");
-    restore_optional_env("SDKWORK_AGENTS_DATABASE_URL", previous_database_url);
+    let baseline = include_str!("../../../database/ddl/baseline/postgres/0001_agents_baseline.sql");
+    assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_session"));
+    assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_task"));
+    assert!(!baseline.contains("ai_agent_task_run"));
 }

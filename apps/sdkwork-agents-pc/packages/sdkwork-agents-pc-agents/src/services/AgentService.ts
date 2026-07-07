@@ -23,7 +23,7 @@ export interface AgentConfig {
   id?: string;
   name: string;
   description: string;
-  avatar: string;
+  avatar?: string;
   type: 'normal' | 'independent';
   systemPrompt?: string;
   knowledgeBaseIds?: string[];
@@ -107,45 +107,6 @@ const DEFAULT_AGENT_PROVIDER_ID = 'provider.agent.manifest';
 const DEFAULT_AGENT_CONFIGURATION_PROFILE_ID = 'profile.agent.manifest.default';
 const DEFAULT_AGENT_PROVIDER_CAPABILITIES = ['model.chat', 'tool.invoke'] as const;
 const AGENT_UI_CONFIG_CONSTRAINT_PREFIX = 'sdkwork.agent.pc.config:';
-
-const MODEL_ID_BY_UI_VALUE = new Map<string, string>([
-  ['gpt-4', 'model.openai.gpt-4'],
-  ['gpt-4o', 'model.openai.gpt-4o'],
-  ['gpt-4 turbo', 'model.openai.gpt-4-turbo'],
-  ['gpt-4-turbo', 'model.openai.gpt-4-turbo'],
-  ['gpt-3.5 turbo', 'model.openai.gpt-3.5-turbo'],
-  ['gpt-3.5-turbo', 'model.openai.gpt-3.5-turbo'],
-  ['claude 3 opus', 'model.anthropic.claude-3-opus'],
-  ['claude-3-opus', 'model.anthropic.claude-3-opus'],
-  ['claude 3.5 sonnet', 'model.anthropic.claude-3.5-sonnet'],
-  ['claude-3.5-sonnet', 'model.anthropic.claude-3.5-sonnet'],
-  ['claude 3 haiku', 'model.anthropic.claude-3-haiku'],
-  ['claude-3-haiku', 'model.anthropic.claude-3-haiku'],
-  ['gemini 1.5 pro', 'model.google.gemini-1.5-pro'],
-  ['gemini-1.5-pro', 'model.google.gemini-1.5-pro'],
-  ['gemini 1.5 flash', 'model.google.gemini-1.5-flash'],
-  ['gemini-1.5-flash', 'model.google.gemini-1.5-flash'],
-  ['deepseek-v2', 'model.deepseek.deepseek-chat'],
-  ['deepseek-chat', 'model.deepseek.deepseek-chat'],
-  ['deepseek-coder', 'model.deepseek.deepseek-coder'],
-  ['llama 3 70b', 'model.custom.llama-3'],
-  ['custom-llama-3', 'model.custom.llama-3'],
-]);
-
-const MODEL_UI_VALUE_BY_ID = new Map<string, string>([
-  ['model.openai.gpt-4', 'GPT-4'],
-  ['model.openai.gpt-4o', 'GPT-4o'],
-  ['model.openai.gpt-4-turbo', 'GPT-4 Turbo'],
-  ['model.openai.gpt-3.5-turbo', 'GPT-3.5 Turbo'],
-  ['model.anthropic.claude-3-opus', 'Claude 3 Opus'],
-  ['model.anthropic.claude-3.5-sonnet', 'Claude 3.5 Sonnet'],
-  ['model.anthropic.claude-3-haiku', 'Claude 3 Haiku'],
-  ['model.google.gemini-1.5-pro', 'Gemini 1.5 Pro'],
-  ['model.google.gemini-1.5-flash', 'Gemini 1.5 Flash'],
-  ['model.deepseek.deepseek-chat', 'DeepSeek-V2'],
-  ['model.deepseek.deepseek-coder', 'DeepSeek-Coder'],
-  ['model.custom.llama-3', 'Llama 3 70B'],
-]);
 
 function createExecutionId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -271,27 +232,12 @@ function normalizeModelForApi(value: unknown): string | undefined {
   if (model.startsWith('model.')) {
     return model;
   }
-  const mapped = MODEL_ID_BY_UI_VALUE.get(model.trim().toLowerCase());
-  if (mapped) {
-    return mapped;
-  }
   const normalized = normalizeStandardToken(model);
   return normalized ? `model.${normalized}` : undefined;
 }
 
 function normalizeModelForRuntime(value: unknown): string | undefined {
-  const model = asString(value);
-  if (!model) {
-    return undefined;
-  }
-  if (model.startsWith('model.')) {
-    return model;
-  }
-  const mapped = MODEL_ID_BY_UI_VALUE.get(model.trim().toLowerCase());
-  if (mapped) {
-    return mapped;
-  }
-  return model;
+  return normalizeModelForApi(value);
 }
 
 function normalizeModelForUi(value: unknown): string | undefined {
@@ -299,7 +245,7 @@ function normalizeModelForUi(value: unknown): string | undefined {
   if (!model) {
     return undefined;
   }
-  return MODEL_UI_VALUE_BY_ID.get(model) ?? stripStandardIdPrefix(model, 'model.');
+  return stripStandardIdPrefix(model, 'model.');
 }
 
 function requireAgentId(config: AgentConfig): string {
@@ -489,9 +435,10 @@ function buildAgentManifest(config: Partial<AgentConfig>, agentId: string): Reco
 }
 
 function buildAgentManagementProfile(config: Partial<AgentConfig>): AgentManagementProfile {
+  const avatar = asString(config.avatar);
   return {
     author: config.author,
-    avatar: config.avatar,
+    ...(avatar ? { avatar } : {}),
     categoryId: config.categoryId,
     color: config.color,
     debugMode: config.debugMode,
@@ -623,6 +570,28 @@ function isExistingProviderBindingConflict(error: unknown): boolean {
   }
 
   return referencesProviderBinding && code === 'conflict';
+}
+
+function isAgentNotFoundError(error: unknown): boolean {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const status = error.status ?? error.statusCode;
+  if (status === 404 || status === '404') {
+    return true;
+  }
+
+  const response = isRecord(error.response) ? error.response : undefined;
+  const body = isRecord(error.body) ? error.body : undefined;
+  const problem = isRecord(error.problem) ? error.problem : undefined;
+  const code =
+    asNumber(error.code) ??
+    (response ? asNumber(response.code) : undefined) ??
+    (body ? asNumber(body.code) : undefined) ??
+    (problem ? asNumber(problem.code) : undefined);
+
+  return code === 40401;
 }
 
 function asCatalogScope(record: RecordLike): AgentCatalogScope | undefined {
@@ -758,7 +727,7 @@ class SdkworkAgentService implements AgentService {
       page,
       pageSize,
       ...(trimmedQuery ? { q: trimmedQuery } : {}),
-      ...(params.scope === 'market' ? { scope: 'market' as const } : {}),
+      ...(params.scope ? { scope: params.scope } : {}),
     });
     return {
       items: extractAgentRecordItems(response).map(normalizeAgentFromAgentRecord),
@@ -770,8 +739,11 @@ class SdkworkAgentService implements AgentService {
     try {
       const response = await this.getAgentClient().ai.agents.retrieve(id);
       return normalizeAgentFromAgentRecord(extractAgentRecord(response));
-    } catch {
-      return null;
+    } catch (error) {
+      if (isAgentNotFoundError(error)) {
+        return null;
+      }
+      throw error;
     }
   }
 

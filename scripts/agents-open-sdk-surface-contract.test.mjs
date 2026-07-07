@@ -25,7 +25,7 @@ const serviceHttp = fs.readFileSync(
   'utf8',
 );
 
-assert.equal(countAgentOpenApiOperations(openOpenApi), 22);
+assert.equal(countAgentOpenApiOperations(openOpenApi), 27);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/agents\/\{agentId\}\/restore:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/code_engines:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/mcp_servers:/);

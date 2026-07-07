@@ -1,7 +1,13 @@
 import type { KnowledgeBase } from "./KnowledgeSelectionService";
 
+export interface KnowledgeBasesPage {
+  items: KnowledgeBase[];
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
 export interface KnowledgeSelectionAdapter {
-  getBases(): Promise<KnowledgeBase[]>;
+  getBasesPage(params?: { cursor?: string; pageSize?: number }): Promise<KnowledgeBasesPage>;
 }
 
 let activeKnowledgeSelectionAdapter: KnowledgeSelectionAdapter | null = null;

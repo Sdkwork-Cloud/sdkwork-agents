@@ -2123,6 +2123,7 @@ dependencies = [
 name = "sdkwork-agent-api-bridge"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "sdkwork-agent-kernel",
  "sdkwork-code-kernel",
  "serde",
@@ -2149,6 +2150,10 @@ dependencies = [
 [[package]]
 name = "sdkwork-agent-kernel"
 version = "0.1.0"
+dependencies = [
+ "sdkwork-utils-rust",
+ "serde_json",
+]
 
 [[package]]
 name = "sdkwork-agent-plugin-core"
@@ -2190,6 +2195,7 @@ name = "sdkwork-agent-provider-core"
 version = "0.1.0"
 dependencies = [
  "sdkwork-agent-kernel",
+ "sdkwork-utils-rust",
  "serde_json",
 ]
 
@@ -2261,6 +2267,7 @@ version = "0.1.0"
 dependencies = [
  "sdkwork-agent-kernel",
  "sdkwork-agent-provider-core",
+ "sdkwork-agent-provider-transport-ipc",
  "serde",
  "serde_json",
 ]
@@ -2277,6 +2284,7 @@ dependencies = [
 name = "sdkwork-agent-provider-transport-ipc"
 version = "0.1.0"
 dependencies = [
+ "sdkwork-agent-kernel",
  "serde",
  "serde_json",
 ]
@@ -2550,12 +2558,15 @@ name = "sdkwork-iam-bootstrap"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "argon2",
  "base64 0.22.1",
  "chrono",
  "rand_core 0.6.4",
+ "rsa",
  "sdkwork-database-id",
  "sdkwork-iam-context-service",
  "sdkwork-iam-module-registry",
+ "serde_json",
  "sha2",
  "sqlx",
  "uuid",
@@ -2624,6 +2635,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.9",
  "sdkwork-agent-kernel",
+ "sdkwork-agents-contract",
  "sdkwork-agents-runtime-facade",
  "sdkwork-code-kernel",
  "sdkwork-database-config",

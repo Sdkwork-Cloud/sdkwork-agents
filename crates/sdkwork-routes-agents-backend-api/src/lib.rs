@@ -1,6 +1,8 @@
 //! Backend API route boundary for SDKWork agents managed store.
 
-pub use sdkwork_intelligence_agents_service::{build_backend_router, build_backend_routes, AgentHttpState};
+pub use sdkwork_intelligence_agents_service::{
+    build_backend_router, build_backend_routes, AgentHttpState,
+};
 pub use sdkwork_routes_agents_http_shared::{
     backend_route_manifest, wrap_router_with_web_framework,
     wrap_router_with_web_framework_from_env, AgentRequestContext, BACKEND_ROUTES,

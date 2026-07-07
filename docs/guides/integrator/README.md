@@ -39,6 +39,10 @@ Route counts and operation IDs are owned by generated OpenAPI under `sdks/sdkwor
 
 ```powershell
 pnpm check:api-envelope
+pnpm check:api-operation-patterns
+pnpm check:route-path-collisions
+pnpm check:pagination
+pnpm check:app-sdk-consumer-imports
 pnpm verify
 ```
 

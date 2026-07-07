@@ -3,26 +3,40 @@ use crate::domain::{
     AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
     AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentMessageRecord,
     AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord, AgentSessionRecord,
-    AgentSessionStatus, AgentVisibility,
+    AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
     InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, MessageListSort,
-    ProviderBindingListQuery, SessionListQuery,
+    ProviderBindingListQuery, SessionListQuery, TaskListQuery,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
 use crate::validation::{validate_capabilities, validate_standard_id};
-use sdkwork_utils_rust::{is_blank, trim};
 #[cfg(feature = "postgres-sync")]
 use crate::{pg_execute, pg_query, pg_query_optional};
 use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelEvent, KernelEventSeverity, KernelEventSource, KernelResult,
 };
 use sdkwork_code_kernel::CodeTaskIntent;
+use sdkwork_utils_rust::{is_blank, trim};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "postgres-sync")]
 use sqlx::Row;
+
+#[cfg(feature = "postgres-sync")]
+fn map_kernel_row<T, F>(entity: &'static str, map: F) -> Option<T>
+where
+    F: FnOnce() -> KernelResult<T>,
+{
+    match map() {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(entity, error = %error, "dropping malformed postgres row");
+            None
+        }
+    }
+}
 
 #[cfg(feature = "postgres-sync")]
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
@@ -46,6 +60,10 @@ pub const SQL_INSERT_AGENT_PROVIDER_BINDING: &str =
     "INSERT INTO ai_agent_runtime_binding (id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
 pub const SQL_UPDATE_AGENT_PROVIDER_BINDING: &str =
     "UPDATE ai_agent_runtime_binding SET provider_id = $1, implementation_kind = $2, configuration_profile_id = $3, capabilities_json = $4, active = $5, version = $6, updated_at = $7 WHERE tenant_id = $8 AND agent_id = $9 AND binding_id = $10 AND version = $11";
+pub const SQL_DEACTIVATE_ACTIVE_AGENT_PROVIDER_BINDINGS: &str =
+    "UPDATE ai_agent_runtime_binding SET active = false, version = version + 1, updated_at = $3 WHERE tenant_id = $1 AND agent_id = $2 AND active = true";
+pub const SQL_ACTIVATE_AGENT_PROVIDER_BINDING: &str =
+    "UPDATE ai_agent_runtime_binding SET active = true, version = $4, updated_at = $5 WHERE tenant_id = $1 AND agent_id = $2 AND binding_id = $3 AND version = $6";
 pub const SQL_SELECT_AGENT_PROVIDER_BINDING: &str =
     "SELECT id, uuid, tenant_id, agent_id, binding_id, provider_id, implementation_kind, configuration_profile_id, capabilities_json, active, version, created_at::text AS created_at, updated_at::text AS updated_at FROM ai_agent_runtime_binding WHERE tenant_id = $1 AND agent_id = $2 AND binding_id = $3 LIMIT 1";
 pub const SQL_LIST_AGENT_PROVIDER_BINDINGS: &str =
@@ -70,9 +88,9 @@ pub const SQL_LIST_AGENT_COMPOSITION_SLOTS: &str =
 pub const SQL_COUNT_AGENT_COMPOSITION_SLOTS: &str =
     "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_composition_slot WHERE tenant_id = $1 AND agent_id = $2 AND deleted_at IS NULL";
 pub const SQL_LIST_MCP_MARKETPLACE_SLOTS: &str =
-    "SELECT s.id, s.uuid, s.tenant_id, s.organization_id, s.agent_id, s.slot_id, s.slot_kind, s.target_module, s.target_ref, s.target_version_ref, s.priority, s.enabled, s.policy_json::text AS policy_json, s.status, s.version, s.created_at::text AS created_at, s.updated_at::text AS updated_at, s.deleted_at::text AS deleted_at FROM ai_agent_composition_slot s INNER JOIN ai_agent a ON a.tenant_id = s.tenant_id AND a.agent_id = s.agent_id WHERE s.tenant_id = $1 AND s.slot_kind = 'mcp' AND s.deleted_at IS NULL AND a.deleted_at IS NULL ORDER BY s.priority ASC, s.slot_id ASC LIMIT $2 OFFSET $3";
+    "SELECT s.id, s.uuid, s.tenant_id, s.organization_id, s.agent_id, s.slot_id, s.slot_kind, s.target_module, s.target_ref, s.target_version_ref, s.priority, s.enabled, s.policy_json::text AS policy_json, s.status, s.version, s.created_at::text AS created_at, s.updated_at::text AS updated_at, s.deleted_at::text AS deleted_at FROM ai_agent_composition_slot s INNER JOIN ai_agent a ON a.tenant_id = s.tenant_id AND a.agent_id = s.agent_id WHERE s.tenant_id = $1 AND s.slot_kind = 'mcp' AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND ($2::text IS NULL OR (s.target_ref ILIKE $2 OR s.slot_id ILIKE $2 OR s.agent_id ILIKE $2)) ORDER BY s.priority ASC, s.slot_id ASC LIMIT $3 OFFSET $4";
 pub const SQL_COUNT_MCP_MARKETPLACE_SLOTS: &str =
-    "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_composition_slot s INNER JOIN ai_agent a ON a.tenant_id = s.tenant_id AND a.agent_id = s.agent_id WHERE s.tenant_id = $1 AND s.slot_kind = 'mcp' AND s.deleted_at IS NULL AND a.deleted_at IS NULL";
+    "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_composition_slot s INNER JOIN ai_agent a ON a.tenant_id = s.tenant_id AND a.agent_id = s.agent_id WHERE s.tenant_id = $1 AND s.slot_kind = 'mcp' AND s.deleted_at IS NULL AND a.deleted_at IS NULL AND ($2::text IS NULL OR (s.target_ref ILIKE $2 OR s.slot_id ILIKE $2 OR s.agent_id ILIKE $2))";
 
 // Session SQL constants
 // Session SQL constants (postgres-sync only)
@@ -124,7 +142,7 @@ pub const SQL_INSERT_AGENT_INTERACTION: &str =
     "INSERT INTO ai_agent_interaction (id, uuid, tenant_id, organization_id, session_id, agent_id, engine_key, interaction_id, kind, status, prompt, options_json, resolution_json, version, created_at, updated_at, resolved_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17)";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_UPDATE_AGENT_INTERACTION: &str =
-    "UPDATE ai_agent_interaction SET kind = $1, status = $2, prompt = $3, options_json = $4::jsonb, resolution_json = $5::jsonb, version = $6, updated_at = $7, resolved_at = $8 WHERE tenant_id = $9 AND session_id = $10 AND interaction_id = $11";
+    "UPDATE ai_agent_interaction SET kind = $1, status = $2, prompt = $3, options_json = $4::jsonb, resolution_json = $5::jsonb, version = $6, updated_at = $7, resolved_at = $8 WHERE tenant_id = $9 AND session_id = $10 AND interaction_id = $11 AND version = $12";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_SELECT_AGENT_INTERACTION: &str =
     "SELECT id, uuid, tenant_id, organization_id, session_id, agent_id, engine_key, interaction_id, kind, status, prompt, options_json::text AS options_json, resolution_json::text AS resolution_json, version, created_at::text AS created_at, updated_at::text AS updated_at, resolved_at::text AS resolved_at FROM ai_agent_interaction WHERE tenant_id = $1 AND session_id = $2 AND interaction_id = $3 LIMIT 1";
@@ -134,6 +152,23 @@ pub const SQL_LIST_AGENT_INTERACTIONS: &str =
 #[cfg(feature = "postgres-sync")]
 pub const SQL_COUNT_AGENT_INTERACTIONS: &str =
     "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_interaction WHERE tenant_id = $1 AND session_id = $2 AND ($3::smallint IS NULL OR status = $3)";
+
+// Task SQL constants (postgres-sync only)
+#[cfg(feature = "postgres-sync")]
+pub const SQL_INSERT_AGENT_TASK: &str =
+    "INSERT INTO ai_agent_task (id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id, title, prompt, status, external_ref, metadata_json, version, created_at, updated_at, started_at, completed_at, cancelled_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18)";
+#[cfg(feature = "postgres-sync")]
+pub const SQL_UPDATE_AGENT_TASK: &str =
+    "UPDATE ai_agent_task SET title = $1, prompt = $2, status = $3, external_ref = $4, metadata_json = $5::jsonb, version = $6, updated_at = $7, started_at = $8, completed_at = $9, cancelled_at = $10 WHERE tenant_id = $11 AND task_id = $12 AND version = $13";
+#[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_AGENT_TASK: &str =
+    "SELECT id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id, title, prompt, status, external_ref, metadata_json::text AS metadata_json, version, created_at::text AS created_at, updated_at::text AS updated_at, started_at::text AS started_at, completed_at::text AS completed_at, cancelled_at::text AS cancelled_at FROM ai_agent_task WHERE tenant_id = $1 AND task_id = $2 LIMIT 1";
+#[cfg(feature = "postgres-sync")]
+pub const SQL_LIST_AGENT_TASKS: &str =
+    "SELECT id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id, title, prompt, status, external_ref, metadata_json::text AS metadata_json, version, created_at::text AS created_at, updated_at::text AS updated_at, started_at::text AS started_at, completed_at::text AS completed_at, cancelled_at::text AS cancelled_at FROM ai_agent_task WHERE tenant_id = $1 AND ($2::text IS NULL OR agent_id = $2) AND ($3::bigint IS NULL OR owner_user_id = $3) AND ($4::smallint IS NULL OR status = $4) ORDER BY updated_at DESC LIMIT $5 OFFSET $6";
+#[cfg(feature = "postgres-sync")]
+pub const SQL_COUNT_AGENT_TASKS: &str =
+    "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_task WHERE tenant_id = $1 AND ($2::text IS NULL OR agent_id = $2) AND ($3::bigint IS NULL OR owner_user_id = $3) AND ($4::smallint IS NULL OR status = $4)";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentBusinessRow {
@@ -508,8 +543,9 @@ impl AgentMessageRow {
     }
 
     pub fn into_record(self) -> KernelResult<AgentMessageRecord> {
-        let role = AgentMessageRole::from_db_code(self.role)
-            .ok_or_else(|| KernelError::validation(format!("invalid message role db code: {}", self.role)))?;
+        let role = AgentMessageRole::from_db_code(self.role).ok_or_else(|| {
+            KernelError::validation(format!("invalid message role db code: {}", self.role))
+        })?;
         let status = AgentMessageStatus::from_db_code(self.status).ok_or_else(|| {
             KernelError::validation(format!("invalid message status db code: {}", self.status))
         })?;
@@ -594,7 +630,10 @@ impl AgentInteractionRow {
             KernelError::validation(format!("invalid interaction kind db code: {}", self.kind))
         })?;
         let status = AgentInteractionStatus::from_db_code(self.status).ok_or_else(|| {
-            KernelError::validation(format!("invalid interaction status db code: {}", self.status))
+            KernelError::validation(format!(
+                "invalid interaction status db code: {}",
+                self.status
+            ))
         })?;
         Ok(AgentInteractionRecord {
             id: self.id,
@@ -617,6 +656,82 @@ impl AgentInteractionRow {
     }
 }
 
+// ============================================================================
+// AgentTaskRow — persistence row for ai_agent_task
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTaskRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub agent_id: String,
+    pub task_id: String,
+    pub owner_user_id: u64,
+    pub title: Option<String>,
+    pub prompt: String,
+    pub status: i16,
+    pub external_ref: Option<String>,
+    pub metadata_json: String,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub cancelled_at: Option<String>,
+}
+
+impl AgentTaskRow {
+    pub fn from_record(record: &AgentTaskRecord) -> KernelResult<Self> {
+        Ok(Self {
+            id: record.id,
+            uuid: build_task_uuid(record.tenant_id, &record.task_id),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            agent_id: record.agent_id.clone(),
+            task_id: record.task_id.clone(),
+            owner_user_id: record.owner_user_id,
+            title: record.title.clone(),
+            prompt: record.prompt.clone(),
+            status: record.status.as_db_code(),
+            external_ref: record.external_ref.clone(),
+            metadata_json: record.metadata_json.clone(),
+            version: record.version,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            started_at: record.started_at.clone(),
+            completed_at: record.completed_at.clone(),
+            cancelled_at: record.cancelled_at.clone(),
+        })
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentTaskRecord> {
+        let status = AgentTaskStatus::from_db_code(self.status).ok_or_else(|| {
+            KernelError::validation(format!("invalid task status db code: {}", self.status))
+        })?;
+        Ok(AgentTaskRecord {
+            id: self.id,
+            task_id: self.task_id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            agent_id: self.agent_id,
+            owner_user_id: self.owner_user_id,
+            title: self.title,
+            prompt: self.prompt,
+            status,
+            external_ref: self.external_ref,
+            metadata_json: self.metadata_json,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            started_at: self.started_at,
+            completed_at: self.completed_at,
+            cancelled_at: self.cancelled_at,
+        })
+    }
+}
+
 fn build_session_uuid(tenant_id: u64, session_id: &str) -> String {
     format!("agent_session_{tenant_id}_{session_id}")
 }
@@ -627,6 +742,10 @@ fn build_message_uuid(tenant_id: u64, session_id: &str, message_id: &str) -> Str
 
 fn build_interaction_uuid(tenant_id: u64, session_id: &str, interaction_id: &str) -> String {
     format!("agent_interaction_{tenant_id}_{session_id}_{interaction_id}")
+}
+
+fn build_task_uuid(tenant_id: u64, task_id: &str) -> String {
+    format!("agent_task_{tenant_id}_{task_id}")
 }
 
 fn build_composition_slot_uuid(tenant_id: u64, agent_id: &str, slot_id: &str) -> String {
@@ -707,18 +826,16 @@ impl AgentAuditEventRow {
         let organization_id = extract_event_context(event.payload.as_str(), "organization_id")
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0);
-        let agent_internal_id =
-            extract_event_context(event.payload.as_str(), "agent_internal_id")
-                .and_then(|value| value.parse::<u64>().ok())
-                .unwrap_or(0);
+        let agent_internal_id = extract_event_context(event.payload.as_str(), "agent_internal_id")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
         let agent_id = extract_event_context(event.payload.as_str(), "agent_id")
             .unwrap_or_else(|| "unknown".to_string());
         let subject_id = extract_event_context(event.payload.as_str(), "subject_id")
             .or_else(|| event.correlation_id.clone())
             .unwrap_or_else(|| "unknown".to_string());
-        let subject_tenant_id =
-            extract_event_context(event.payload.as_str(), "subject_tenant_id")
-                .unwrap_or_else(|| "unknown".to_string());
+        let subject_tenant_id = extract_event_context(event.payload.as_str(), "subject_tenant_id")
+            .unwrap_or_else(|| "unknown".to_string());
 
         Ok(Self {
             id,
@@ -815,6 +932,13 @@ pub trait PostgresAgentRepositoryAdapter: Send + Sync {
     fn count_rows(&self, query: &AgentListQuery) -> u64;
     fn insert_provider_binding_row(&self, row: AgentProviderBindingRow) -> KernelResult<()>;
     fn update_provider_binding_row(&self, row: AgentProviderBindingRow) -> KernelResult<()>;
+    fn activate_provider_binding_atomic(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str,
+        updated_at: String,
+    ) -> KernelResult<AgentProviderBindingRow>;
     fn get_provider_binding_row(
         &self,
         tenant_id: u64,
@@ -882,6 +1006,13 @@ pub trait PostgresAgentRepositoryAdapter: Send + Sync {
     ) -> Option<AgentInteractionRow>;
     fn list_interaction_rows(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRow>;
     fn count_interaction_rows(&self, query: &InteractionListQuery) -> u64;
+
+    // Task operations
+    fn insert_task_row(&self, row: AgentTaskRow) -> KernelResult<()>;
+    fn update_task_row(&self, row: AgentTaskRow) -> KernelResult<()>;
+    fn get_task_row(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRow>;
+    fn list_task_rows(&self, query: &TaskListQuery) -> Vec<AgentTaskRow>;
+    fn count_task_rows(&self, query: &TaskListQuery) -> u64;
 }
 
 pub struct PostgresAgentRepository<A>
@@ -928,7 +1059,7 @@ where
         self.adapter
             .list_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
@@ -964,12 +1095,24 @@ where
         self.adapter
             .list_provider_binding_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
     fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> u64 {
         self.adapter.count_provider_binding_rows(query)
+    }
+
+    fn activate_provider_binding_atomic(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str,
+        updated_at: String,
+    ) -> KernelResult<AgentProviderBindingRecord> {
+        self.adapter
+            .activate_provider_binding_atomic(tenant_id, agent_id, binding_id, updated_at)
+            .and_then(|row| row.into_record())
     }
 
     fn insert_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
@@ -1000,7 +1143,7 @@ where
         self.adapter
             .list_composition_slot_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
@@ -1015,7 +1158,7 @@ where
         self.adapter
             .list_mcp_marketplace_slot_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
@@ -1047,7 +1190,7 @@ where
         self.adapter
             .list_session_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
@@ -1084,7 +1227,7 @@ where
         self.adapter
             .list_message_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
@@ -1144,22 +1287,52 @@ where
         self.adapter
             .list_interaction_rows(query)
             .into_iter()
-            .filter_map(|row| row.into_record().ok())
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
             .collect()
     }
 
     fn count_interactions(&self, query: &InteractionListQuery) -> u64 {
         self.adapter.count_interaction_rows(query)
     }
+
+    // -----------------------------------------------------------------------
+    // Task persistence
+    // -----------------------------------------------------------------------
+
+    fn insert_task(&self, record: AgentTaskRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_task_row(AgentTaskRow::from_record(&record)?)
+    }
+
+    fn update_task(&self, record: AgentTaskRecord) -> KernelResult<()> {
+        self.adapter
+            .update_task_row(AgentTaskRow::from_record(&record)?)
+    }
+
+    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRecord> {
+        self.adapter
+            .get_task_row(tenant_id, task_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn list_tasks(&self, query: &TaskListQuery) -> Vec<AgentTaskRecord> {
+        self.adapter
+            .list_task_rows(query)
+            .into_iter()
+            .filter_map(|row| map_kernel_row("agents_store_row", || row.into_record()))
+            .collect()
+    }
+
+    fn count_tasks(&self, query: &TaskListQuery) -> u64 {
+        self.adapter.count_task_rows(query)
+    }
 }
 
 pub trait PostgresAuditAdapter: Send + Sync {
     fn next_id(&self) -> KernelResult<u64>;
     fn insert_audit_row(&self, row: AgentAuditEventRow) -> KernelResult<()>;
-    fn list_audit_rows(
-        &self,
-        query: &AuditEventListQuery,
-    ) -> KernelResult<Vec<AgentAuditEventRow>>;
+    fn list_audit_rows(&self, query: &AuditEventListQuery)
+        -> KernelResult<Vec<AgentAuditEventRow>>;
     fn count_audit_rows(&self, query: &AuditEventListQuery) -> KernelResult<u64>;
 }
 
@@ -1223,8 +1396,9 @@ impl SyncPostgresAdapter {
     }
 
     pub fn apply_managed_store_schema(&self) -> KernelResult<()> {
-        let ddl = include_str!("../specs/sql/agents_managed_store_postgres.sql");
-        self.pool.execute_batch_sql(ddl)
+        const DDL: &str =
+            include_str!("../../../database/ddl/baseline/postgres/0001_agents_baseline.sql");
+        self.pool.execute_batch_sql(DDL)
     }
 
     fn with_pool<T>(
@@ -1401,9 +1575,22 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         let visibility_code = query.visibility.map(|visibility| visibility.as_db_code());
 
         self.with_pool(|pool| {
-            let row = pg_query_optional!(pool, SQL_COUNT_AGENT, tenant_id, organization_id, owner_user_id, include_deleted, search_query, visibility_code)?;
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_AGENT,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                include_deleted,
+                search_query,
+                visibility_code
+            )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
@@ -1481,6 +1668,82 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn activate_provider_binding_atomic(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str,
+        updated_at: String,
+    ) -> KernelResult<AgentProviderBindingRow> {
+        let tenant_id_i64 = u64_to_i64(tenant_id, "tenant_id")?;
+
+        fn kernel_err(error: KernelError) -> sqlx::Error {
+            sqlx::Error::Protocol(error.to_string())
+        }
+
+        self.with_pool(|pool| {
+            let pg_pool = pool.pool().clone();
+            let agent_id = agent_id.to_string();
+            let binding_id = binding_id.to_string();
+            pool.run_kernel(async move {
+                let mut tx = pg_pool.begin().await?;
+
+                let current = sqlx::query(SQL_SELECT_AGENT_PROVIDER_BINDING)
+                    .bind(tenant_id_i64)
+                    .bind(&agent_id)
+                    .bind(&binding_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .map(pg_row_to_agent_provider_binding_row)
+                    .transpose()
+                    .map_err(kernel_err)?
+                    .ok_or_else(|| {
+                        kernel_err(KernelError::validation("agent provider binding not found"))
+                    })?;
+
+                if current.active {
+                    tx.commit().await?;
+                    return Ok(current);
+                }
+
+                let previous_version = current.version;
+                let next_version = previous_version.saturating_add(1);
+                let previous_version_i64 =
+                    u64_to_i64(previous_version, "version").map_err(kernel_err)?;
+                let next_version_i64 = u64_to_i64(next_version, "version").map_err(kernel_err)?;
+
+                sqlx::query(SQL_DEACTIVATE_ACTIVE_AGENT_PROVIDER_BINDINGS)
+                    .bind(tenant_id_i64)
+                    .bind(&agent_id)
+                    .bind(&updated_at)
+                    .execute(&mut *tx)
+                    .await?;
+
+                let updated_rows = sqlx::query(SQL_ACTIVATE_AGENT_PROVIDER_BINDING)
+                    .bind(tenant_id_i64)
+                    .bind(&agent_id)
+                    .bind(&binding_id)
+                    .bind(next_version_i64)
+                    .bind(&updated_at)
+                    .bind(previous_version_i64)
+                    .execute(&mut *tx)
+                    .await?;
+                if updated_rows.rows_affected() == 0 {
+                    return Err(kernel_err(KernelError::conflict(
+                        "agent provider binding version mismatch",
+                    )));
+                }
+
+                let mut activated = current;
+                activated.active = true;
+                activated.version = next_version;
+                activated.updated_at = updated_at;
+                tx.commit().await?;
+                Ok(activated)
+            })
+        })
+    }
+
     fn get_provider_binding_row(
         &self,
         tenant_id: u64,
@@ -1546,7 +1809,11 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 query.agent_id
             )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
@@ -1676,7 +1943,11 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 query.agent_id
             )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
@@ -1694,11 +1965,14 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         };
         let page_size = query.pagination.page_size as i64;
         let offset = query.pagination.offset as i64;
+        let search_pattern =
+            crate::mcp_marketplace::mcp_marketplace_search_pattern(query.q.as_deref());
         self.with_pool(|pool| {
             let rows = pg_query!(
                 pool,
                 SQL_LIST_MCP_MARKETPLACE_SLOTS,
                 tenant_id,
+                search_pattern,
                 page_size,
                 offset
             )?;
@@ -1714,10 +1988,21 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             Ok(value) => value,
             Err(_) => return 0,
         };
+        let search_pattern =
+            crate::mcp_marketplace::mcp_marketplace_search_pattern(query.q.as_deref());
         self.with_pool(|pool| {
-            let row = pg_query_optional!(pool, SQL_COUNT_MCP_MARKETPLACE_SLOTS, tenant_id)?;
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_MCP_MARKETPLACE_SLOTS,
+                tenant_id,
+                search_pattern
+            )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
@@ -1799,13 +2084,9 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             )?;
 
             if updated_rows == 0 {
-                let exists = pg_query_optional!(
-                    pool,
-                    SQL_SELECT_AGENT_SESSION,
-                    tenant_id,
-                    row.session_id
-                )?
-                .is_some();
+                let exists =
+                    pg_query_optional!(pool, SQL_SELECT_AGENT_SESSION, tenant_id, row.session_id)?
+                        .is_some();
                 if exists {
                     return Err(KernelError::conflict("session version mismatch"));
                 }
@@ -1818,8 +2099,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_session_row(&self, tenant_id: u64, session_id: &str) -> Option<AgentSessionRow> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
         self.with_pool(|pool| {
-            let row =
-                pg_query_optional!(pool, SQL_SELECT_AGENT_SESSION, tenant_id, session_id)?;
+            let row = pg_query_optional!(pool, SQL_SELECT_AGENT_SESSION, tenant_id, session_id)?;
             row.map(pg_row_to_agent_session_row).transpose()
         })
         .ok()
@@ -1854,9 +2134,7 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 page_size,
                 offset
             )?;
-            rows.into_iter()
-                .map(pg_row_to_agent_session_row)
-                .collect()
+            rows.into_iter().map(pg_row_to_agent_session_row).collect()
         })
         .unwrap_or_default()
     }
@@ -1886,7 +2164,11 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 include_archived
             )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(total as u64)
@@ -2035,9 +2317,14 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                     )?
                 }
             };
-            rows.into_iter()
+            let mut rows: Vec<AgentMessageRow> = rows
+                .into_iter()
                 .map(pg_row_to_agent_message_row)
-                .collect()
+                .collect::<KernelResult<Vec<_>>>()?;
+            if matches!(query.sort, MessageListSort::RecentContextDesc) {
+                rows.reverse();
+            }
+            Ok(rows)
         })
         .unwrap_or_default()
     }
@@ -2068,7 +2355,11 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 status_code
             )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(total as u64)
@@ -2079,17 +2370,9 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_NEXT_MESSAGE_SEQUENCE,
-                tenant_id,
-                session_id
-            )?;
+            let row = pg_query_optional!(pool, SQL_NEXT_MESSAGE_SEQUENCE, tenant_id, session_id)?;
             let next: i64 = row
-                .map(|r| {
-                    r.try_get::<i64, _>("next_sequence")
-                        .map_err(map_sqlx_error)
-                })
+                .map(|r| r.try_get::<i64, _>("next_sequence").map_err(map_sqlx_error))
                 .transpose()?
                 .unwrap_or(1);
             int64_to_u64(next, "next_sequence")
@@ -2108,7 +2391,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         let total_input_tokens = u64_to_i64(session.total_input_tokens, "total_input_tokens")?;
         let total_output_tokens = u64_to_i64(session.total_output_tokens, "total_output_tokens")?;
         let version = u64_to_i64(session.version, "version")?;
-        let previous_version = u64_to_i64(expected_previous_version(session.version)?, "previous_version")?;
+        let previous_version = u64_to_i64(
+            expected_previous_version(session.version)?,
+            "previous_version",
+        )?;
 
         let user_id = u64_to_i64(user.id, "id")?;
         let assistant_id = u64_to_i64(assistant.id, "id")?;
@@ -2152,8 +2438,8 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                     u64_to_i64(user.output_tokens, "output_tokens").map_err(kernel_err)?;
                 let assistant_input_tokens =
                     u64_to_i64(assistant.input_tokens, "input_tokens").map_err(kernel_err)?;
-                let assistant_output_tokens = u64_to_i64(assistant.output_tokens, "output_tokens")
-                    .map_err(kernel_err)?;
+                let assistant_output_tokens =
+                    u64_to_i64(assistant.output_tokens, "output_tokens").map_err(kernel_err)?;
 
                 sqlx::query(SQL_INSERT_AGENT_MESSAGE)
                     .bind(user_id)
@@ -2270,6 +2556,8 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn update_interaction_row(&self, row: AgentInteractionRow) -> KernelResult<()> {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
 
         self.with_pool(|pool| {
             let updated_rows = pg_execute!(
@@ -2285,10 +2573,22 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 row.resolved_at,
                 tenant_id,
                 row.session_id,
-                row.interaction_id
+                row.interaction_id,
+                previous_version
             )?;
 
             if updated_rows == 0 {
+                let exists = pg_query_optional!(
+                    pool,
+                    SQL_SELECT_AGENT_INTERACTION,
+                    tenant_id,
+                    row.session_id,
+                    row.interaction_id
+                )?
+                .is_some();
+                if exists {
+                    return Err(KernelError::conflict("interaction version mismatch"));
+                }
                 return Err(KernelError::validation("interaction not found"));
             }
             Ok(())
@@ -2366,7 +2666,159 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 status_code
             )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
+                .transpose()?
+                .unwrap_or(0);
+            Ok(total as u64)
+        })
+        .unwrap_or(0)
+    }
+
+    fn insert_task_row(&self, row: AgentTaskRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_TASK,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.agent_id,
+                row.task_id,
+                owner_user_id,
+                row.title,
+                row.prompt,
+                row.status,
+                row.external_ref,
+                row.metadata_json,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.started_at,
+                row.completed_at,
+                row.cancelled_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_task_row(&self, row: AgentTaskRow) -> KernelResult<()> {
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+
+        self.with_pool(|pool| {
+            let updated_rows = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_TASK,
+                row.title,
+                row.prompt,
+                row.status,
+                row.external_ref,
+                row.metadata_json,
+                version,
+                row.updated_at,
+                row.started_at,
+                row.completed_at,
+                row.cancelled_at,
+                tenant_id,
+                row.task_id,
+                previous_version
+            )?;
+
+            if updated_rows == 0 {
+                let exists =
+                    pg_query_optional!(pool, SQL_SELECT_AGENT_TASK, tenant_id, row.task_id)?
+                        .is_some();
+                if exists {
+                    return Err(KernelError::conflict("task version mismatch"));
+                }
+                return Err(KernelError::validation("task not found"));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_task_row(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(pool, SQL_SELECT_AGENT_TASK, tenant_id, task_id)?;
+            row.map(pg_row_to_agent_task_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn list_task_rows(&self, query: &TaskListQuery) -> Vec<AgentTaskRow> {
+        let tenant_id = match u64_to_i64(query.tenant_id, "tenant_id") {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        };
+        let agent_id: Option<&str> = query.agent_id.as_deref();
+        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
+        let status_code: Option<i16> = query
+            .status
+            .as_deref()
+            .and_then(AgentTaskStatus::from_code)
+            .map(|s| s.as_db_code());
+        let page_size = query.pagination.page_size as i64;
+        let offset = query.pagination.offset as i64;
+
+        self.with_pool(|pool| {
+            let rows = pg_query!(
+                pool,
+                SQL_LIST_AGENT_TASKS,
+                tenant_id,
+                agent_id,
+                owner_user_id,
+                status_code,
+                page_size,
+                offset
+            )?;
+            rows.into_iter().map(pg_row_to_agent_task_row).collect()
+        })
+        .unwrap_or_default()
+    }
+
+    fn count_task_rows(&self, query: &TaskListQuery) -> u64 {
+        let tenant_id = match u64_to_i64(query.tenant_id, "tenant_id") {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
+        let agent_id: Option<&str> = query.agent_id.as_deref();
+        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
+        let status_code: Option<i16> = query
+            .status
+            .as_deref()
+            .and_then(AgentTaskStatus::from_code)
+            .map(|s| s.as_db_code());
+
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_AGENT_TASKS,
+                tenant_id,
+                agent_id,
+                owner_user_id,
+                status_code
+            )?;
+            let total: i64 = row
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             Ok(total as u64)
@@ -2479,7 +2931,11 @@ impl PostgresAuditAdapter for SyncPostgresAdapter {
                 query.to
             )?;
             let total: i64 = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             int64_to_u64(total, "total_count")
@@ -2519,7 +2975,10 @@ where
         self.adapter.insert_audit_row(row)
     }
 
-    fn list_events(&self, query: &AuditEventListQuery) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
+    fn list_events(
+        &self,
+        query: &AuditEventListQuery,
+    ) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
         use crate::ports::offset_paginated_result;
         let total_count = self.adapter.count_audit_rows(query)?;
         let items = self
@@ -2528,7 +2987,11 @@ where
             .into_iter()
             .map(AgentAuditEventRow::into_kernel_event)
             .collect::<KernelResult<Vec<_>>>()?;
-        Ok(offset_paginated_result(items, &query.pagination, total_count))
+        Ok(offset_paginated_result(
+            items,
+            &query.pagination,
+            total_count,
+        ))
     }
 }
 
@@ -2953,10 +3416,7 @@ fn pg_row_to_agent_message_row(row: PgRow) -> KernelResult<AgentMessageRow> {
         content: row.try_get("content").map_err(map_sqlx_error)?,
         content_type: row.try_get("content_type").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
-        sequence: int64_to_u64(
-            row.try_get("sequence").map_err(map_sqlx_error)?,
-            "sequence",
-        )?,
+        sequence: int64_to_u64(row.try_get("sequence").map_err(map_sqlx_error)?, "sequence")?,
         input_tokens: int64_to_u64(
             row.try_get("input_tokens").map_err(map_sqlx_error)?,
             "input_tokens",
@@ -2985,8 +3445,7 @@ fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionR
             "tenant_id",
         )?,
         organization_id: int64_to_u64(
-            row.try_get("organization_id")
-                .map_err(map_sqlx_error)?,
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
             "organization_id",
         )?,
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
@@ -3002,6 +3461,39 @@ fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionR
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
         resolved_at: row.try_get("resolved_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_task_row(row: PgRow) -> KernelResult<AgentTaskRow> {
+    Ok(AgentTaskRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        task_id: row.try_get("task_id").map_err(map_sqlx_error)?,
+        owner_user_id: int64_to_u64(
+            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
+            "owner_user_id",
+        )?,
+        title: row.try_get("title").map_err(map_sqlx_error)?,
+        prompt: row.try_get("prompt").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        external_ref: row.try_get("external_ref").map_err(map_sqlx_error)?,
+        metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        started_at: row.try_get("started_at").map_err(map_sqlx_error)?,
+        completed_at: row.try_get("completed_at").map_err(map_sqlx_error)?,
+        cancelled_at: row.try_get("cancelled_at").map_err(map_sqlx_error)?,
     })
 }
 

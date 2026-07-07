@@ -1,12 +1,10 @@
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
-    AgentCompositionSlotUpdateCommand, AgentsService, ChatCompletionResult, GetMessageCommand,
-    GetSessionCommand, ListAgentAuditEventsCommand, ListMcpMarketplaceCommand,
-    ProviderBindingListCommand, SendChatMessageCommand,
+    AgentCompositionSlotUpdateCommand, AgentsService, ChatCompletionResult, GetInteractionCommand,
+    GetMessageCommand, GetSessionCommand, GetTaskCommand, ListAgentAuditEventsCommand,
+    ListMcpMarketplaceCommand, ProviderBindingListCommand, SendChatMessageCommand,
 };
-use crate::mcp_marketplace::McpServerMarketplaceRecord;
-use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use crate::chat_runtime::{ChatCompleter, ContractChatCompleter};
 use crate::domain::{
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
@@ -14,34 +12,38 @@ use crate::domain::{
 };
 use crate::dto::{
     ActivateAgentProviderBindingRequestDto, AgentCompositionSlotCreateRequestDto,
-    AgentCompositionSlotRecordDto, AgentCompositionSlotUpdateRequestDto, AgentManagementProfileDto,
-    AgentMessageRecordDto,
-    AgentPreviewResponseRequestDto, AgentPromptOptimizationRequestDto, AgentProviderBindingRecordDto,
+    AgentCompositionSlotRecordDto, AgentCompositionSlotUpdateRequestDto, AgentInteractionRecordDto,
+    AgentManagementProfileDto, AgentMessageRecordDto, AgentPreviewResponseRequestDto,
+    AgentPromptOptimizationRequestDto, AgentProviderBindingRecordDto,
     AgentProviderBindingRequestDto, AgentRecordDto, AgentRuntimeExecutionRecordDto,
-    AgentSessionRecordDto, ArchiveSessionRequestDto,
-    CloseSessionRequestDto, CreateAgentRequestDto,
-    CreateSessionRequestDto, DeleteAgentRequestDto, GetAgentRequestDto, ListAgentsRequestDto,
-    ListMessagesRequestDto, ListSessionsRequestDto, RestoreAgentRequestDto,
-    UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
+    AgentSessionRecordDto, AgentTaskRecordDto, AnswerInteractionRequestDto,
+    ApproveInteractionRequestDto, ArchiveSessionRequestDto, CancelTaskRequestDto,
+    CloseSessionRequestDto, CreateAgentRequestDto, CreateInteractionRequestDto,
+    CreateSessionRequestDto, CreateTaskRequestDto, DeleteAgentRequestDto, GetAgentRequestDto,
+    ListAgentsRequestDto, ListInteractionsRequestDto, ListMessagesRequestDto,
+    ListSessionsRequestDto, ListTasksRequestDto, RestoreAgentRequestDto, UpdateAgentRequestDto,
+    UpdateAgentStatusRequestDto,
 };
+use crate::mcp_marketplace::McpServerMarketplaceRecord;
 use crate::ports::{
     AgentAuditSink, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
     McpMarketplaceListQuery, PaginationParams, ProviderBindingListQuery,
 };
 use crate::response::{
-    created_json, finish_api_json, ApiProblem, ApiResult, PageData, PageInfo, PageMode, ResourceData,
+    created_json, finish_api_json, no_content, ApiProblem, ApiResult, PageData, PageInfo, PageMode,
+    ResourceData,
 };
 use crate::validation::{
-    is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime, parse_organization_id,
-    parse_owner_user_id, parse_rfc3339_datetime, parse_tenant_id, validate_requested_at,
+    is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
+    parse_organization_id, parse_owner_user_id, parse_tenant_id, validate_requested_at,
     validate_standard_id,
 };
+use axum::body::Body;
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
-use axum::extract::{Extension, Path, Query, State};
-use axum::http::header::{CONTENT_TYPE, HeaderName};
+use axum::extract::{DefaultBodyLimit, Extension, Path, Query, State};
+use axum::http::header::{HeaderName, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
-use axum::body::Body;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{middleware, Json, Router};
@@ -49,6 +51,7 @@ use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider,
     PolicyRequest, PolicySubject, ProviderHealth,
 };
+use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -65,7 +68,6 @@ const HEADER_SDKWORK_PERMISSION_SCOPE: &str = "x-sdkwork-permission-scope";
 const HEADER_SDKWORK_TRACE_ID: &str = "x-sdkwork-trace-id";
 const HEADER_SDKWORK_REQUEST_ID: &str = "x-sdkwork-request-id";
 const MAX_PAGE_SIZE: usize = 200;
-const DEFAULT_PAGE_SIZE: usize = 20;
 const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "created",
     "updated",
@@ -241,7 +243,10 @@ fn build_web_request_context(
     };
     sdkwork_web_core::WebRequestContext {
         request_id: sdkwork_web_core::ServerRequestId(
-            agent_context.request_id.clone().unwrap_or_else(synthesize_request_id),
+            agent_context
+                .request_id
+                .clone()
+                .unwrap_or_else(synthesize_request_id),
         ),
         api_surface,
         auth_mode: sdkwork_web_core::WebAuthMode::DualToken,
@@ -520,6 +525,75 @@ impl AgentRepository for DynAgentRepository {
         self.0
             .insert_chat_turn(session, user_message, assistant_message)
     }
+
+    fn insert_task(&self, record: crate::domain::AgentTaskRecord) -> KernelResult<()> {
+        self.0.insert_task(record)
+    }
+
+    fn update_task(&self, record: crate::domain::AgentTaskRecord) -> KernelResult<()> {
+        self.0.update_task(record)
+    }
+
+    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<crate::domain::AgentTaskRecord> {
+        self.0.get_task(tenant_id, task_id)
+    }
+
+    fn list_tasks(
+        &self,
+        query: &crate::ports::TaskListQuery,
+    ) -> Vec<crate::domain::AgentTaskRecord> {
+        self.0.list_tasks(query)
+    }
+
+    fn count_tasks(&self, query: &crate::ports::TaskListQuery) -> u64 {
+        self.0.count_tasks(query)
+    }
+
+    fn insert_interaction(
+        &self,
+        record: crate::domain::AgentInteractionRecord,
+    ) -> KernelResult<()> {
+        self.0.insert_interaction(record)
+    }
+
+    fn update_interaction(
+        &self,
+        record: crate::domain::AgentInteractionRecord,
+    ) -> KernelResult<()> {
+        self.0.update_interaction(record)
+    }
+
+    fn get_interaction(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+        interaction_id: &str,
+    ) -> Option<crate::domain::AgentInteractionRecord> {
+        self.0
+            .get_interaction(tenant_id, session_id, interaction_id)
+    }
+
+    fn list_interactions(
+        &self,
+        query: &crate::ports::InteractionListQuery,
+    ) -> Vec<crate::domain::AgentInteractionRecord> {
+        self.0.list_interactions(query)
+    }
+
+    fn count_interactions(&self, query: &crate::ports::InteractionListQuery) -> u64 {
+        self.0.count_interactions(query)
+    }
+
+    fn activate_provider_binding_atomic(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+        binding_id: &str,
+        updated_at: String,
+    ) -> KernelResult<AgentProviderBindingRecord> {
+        self.0
+            .activate_provider_binding_atomic(tenant_id, agent_id, binding_id, updated_at)
+    }
 }
 
 impl AgentAuditSink for DynAgentAuditSink {
@@ -545,7 +619,8 @@ impl PolicyProvider for DynPolicyProvider {
     }
 }
 
-pub(crate) type HttpService = AgentsService<DynAgentRepository, DynAgentAuditSink, DynPolicyProvider>;
+pub(crate) type HttpService =
+    AgentsService<DynAgentRepository, DynAgentAuditSink, DynPolicyProvider>;
 
 #[derive(Clone)]
 pub struct AgentHttpState {
@@ -652,8 +727,12 @@ async fn trace_request(request: Request<axum::body::Body>, next: Next) -> Respon
     response
 }
 
+/// Maximum JSON request body size for managed-agent HTTP APIs (2 MiB).
+pub const MAX_HTTP_REQUEST_BODY_BYTES: usize = 2 * 1024 * 1024;
+
 fn with_gateway_trusted_context(router: Router<AgentHttpState>) -> Router<AgentHttpState> {
     router
+        .layer(DefaultBodyLimit::max(MAX_HTTP_REQUEST_BODY_BYTES))
         .layer(middleware::from_fn(trace_request))
         .layer(middleware::from_fn(inject_gateway_agent_context))
 }
@@ -720,6 +799,38 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
             get(app_get_message),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+            get(app_list_interactions).post(app_create_interaction),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}",
+            get(app_get_interaction),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
+            post(app_approve_interaction),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
+            post(app_answer_interaction),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks",
+            get(app_list_tasks).post(app_create_task),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+            get(app_get_task),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
+            post(app_cancel_task),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
+            post(app_execute_task),
         )
         .route(
             "/app/v3/api/ai/code_engines",
@@ -793,6 +904,38 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
         .route(
             "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
             get(backend_get_message),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+            get(backend_list_interactions).post(backend_create_interaction),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}",
+            get(backend_get_interaction),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
+            post(backend_approve_interaction),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
+            post(backend_answer_interaction),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks",
+            get(backend_list_tasks).post(backend_create_task),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+            get(backend_get_task),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
+            post(backend_cancel_task),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
+            post(backend_execute_task),
         )
 }
 
@@ -868,6 +1011,38 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
             "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
             get(backend_get_message),
         )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+            get(backend_list_interactions).post(backend_create_interaction),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}",
+            get(backend_get_interaction),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
+            post(backend_approve_interaction),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
+            post(backend_answer_interaction),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks",
+            get(backend_list_tasks).post(backend_create_task),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+            get(backend_get_task),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
+            post(backend_cancel_task),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
+            post(backend_execute_task),
+        )
 }
 
 /// Legacy gateway-trusted backend-api router for contract tests.
@@ -894,7 +1069,7 @@ pub fn build_combined_router(state: AgentHttpState) -> Router {
 pub async fn serve_agents_metrics() -> impl IntoResponse {
     let metrics = crate::infrastructure::AgentMetricsRegistry::global().snapshot();
     let prometheus_text = metrics.to_prometheus_text();
-    
+
     let mut response = prometheus_text.into_response();
     response.headers_mut().insert(
         CONTENT_TYPE,
@@ -921,7 +1096,9 @@ pub fn build_combined_routes() -> Router<AgentHttpState> {
 /// 18-stage pipeline. Tests that exercise `build_combined_router` directly must
 /// inject a minimal context manually via `Extension(test_web_context())`.
 pub mod testing {
-    use sdkwork_web_core::{ServerRequestId, WebApiSurface, WebAuthMode, WebRequestContext, WebTransportFacts};
+    use sdkwork_web_core::{
+        ServerRequestId, WebApiSurface, WebAuthMode, WebRequestContext, WebTransportFacts,
+    };
 
     /// Construct a minimal `WebRequestContext` for app-api contract tests.
     pub fn test_web_context() -> WebRequestContext {
@@ -955,6 +1132,7 @@ struct ListCompositionSlotsQueryParams {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 struct ListMcpServersQueryParams {
+    q: Option<String>,
     page: Option<usize>,
     page_size: Option<usize>,
 }
@@ -1058,6 +1236,27 @@ pub(crate) struct AppListSessionsQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ListTasksQueryParams {
+    pub(crate) tenant_id: String,
+    pub(crate) agent_id: Option<String>,
+    pub(crate) owner_user_id: Option<String>,
+    pub(crate) status: Option<String>,
+    pub(crate) page: Option<usize>,
+    pub(crate) page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppListTasksQueryParams {
+    pub(crate) agent_id: Option<String>,
+    pub(crate) owner_user_id: Option<String>,
+    pub(crate) status: Option<String>,
+    pub(crate) page: Option<usize>,
+    pub(crate) page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ListMessagesQueryParams {
     pub(crate) tenant_id: String,
     pub(crate) role: Option<String>,
@@ -1077,9 +1276,19 @@ pub(crate) struct AppListMessagesQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CompositionSlotDeleteQueryParams {
-    expected_version: Option<String>,
-    requested_at: String,
+pub(crate) struct AppListInteractionsQueryParams {
+    pub(crate) status: Option<String>,
+    pub(crate) page: Option<usize>,
+    pub(crate) page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListInteractionsQueryParams {
+    pub(crate) tenant_id: String,
+    pub(crate) status: Option<String>,
+    pub(crate) page: Option<usize>,
+    pub(crate) page_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1194,13 +1403,6 @@ struct UpdateAgentBody {
 #[serde(rename_all = "camelCase")]
 struct UpdateAgentStatusBody {
     target_status: String,
-    expected_version: Option<String>,
-    requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DeleteAgentBody {
     expected_version: Option<String>,
     requested_at: String,
 }
@@ -1508,7 +1710,9 @@ fn validate_profile_standard_id_array(
     }
     for value in values {
         if is_trimmed_blank(value) {
-            return Err(ApiProblem::validation(format!("{field_name} items is required")));
+            return Err(ApiProblem::validation(format!(
+                "{field_name} items is required"
+            )));
         }
         if !value.starts_with(prefix) {
             return Err(ApiProblem::validation(format!(
@@ -1590,24 +1794,15 @@ impl ApiProblem {
     }
 
     pub(crate) fn from_json_rejection(rejection: JsonRejection) -> Self {
-        Self::validation(format!(
-            "invalid json request: {}",
-            rejection.body_text()
-        ))
+        Self::validation(format!("invalid json request: {}", rejection.body_text()))
     }
 
     pub(crate) fn from_query_rejection(rejection: QueryRejection) -> Self {
-        Self::validation(format!(
-            "invalid query request: {}",
-            rejection.body_text()
-        ))
+        Self::validation(format!("invalid query request: {}", rejection.body_text()))
     }
 
     pub(crate) fn from_path_rejection(rejection: PathRejection) -> Self {
-        Self::validation(format!(
-            "invalid path request: {}",
-            rejection.body_text()
-        ))
+        Self::validation(format!("invalid path request: {}", rejection.body_text()))
     }
 }
 
@@ -1777,15 +1972,18 @@ async fn app_delete_agent(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     agent_id: Result<Path<String>, PathRejection>,
-    body: Result<Json<DeleteAgentBody>, JsonRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentRecordResponse>> = async {
+    let result: ApiResult<()> = async {
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
-        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-        execute_delete(state, RequestScope::from_context(context), agent_id, body).await
+        execute_delete(state, RequestScope::from_context(context), agent_id).await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(()) => {
+            no_content(&web_ctx).unwrap_or_else(|problem| problem.into_response_for(&web_ctx))
+        }
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn open_delete_agent(
@@ -1794,18 +1992,21 @@ async fn open_delete_agent(
     agent_id: Result<Path<String>, PathRejection>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<DeleteAgentBody>, JsonRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentRecordResponse>> = async {
+    let result: ApiResult<()> = async {
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope =
             RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-        execute_delete(state, scope, agent_id, body).await
+        execute_delete(state, scope, agent_id).await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(()) => {
+            no_content(&web_ctx).unwrap_or_else(|problem| problem.into_response_for(&web_ctx))
+        }
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn app_restore_agent(
@@ -1855,7 +2056,11 @@ async fn backend_update_agent_status(
         })
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn backend_restore_agent(
@@ -2102,7 +2307,11 @@ async fn app_create_preview_response(
         .await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn app_create_prompt_optimization(
@@ -2124,7 +2333,11 @@ async fn app_create_prompt_optimization(
         .await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn open_create_preview_response(
@@ -2144,7 +2357,11 @@ async fn open_create_preview_response(
         execute_create_preview_response(state, scope, path.agent_id, body).await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn open_create_prompt_optimization(
@@ -2164,7 +2381,11 @@ async fn open_create_prompt_optimization(
         execute_create_prompt_optimization(state, scope, path.agent_id, body).await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn app_list_composition_slots(
@@ -2218,13 +2439,17 @@ async fn app_list_mcp_servers(
         let tenant_id = scope.tenant_id_u64()?;
         let subject = scope.subject().clone();
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut list_query = McpMarketplaceListQuery::for_tenant(tenant_id).with_pagination(
+            PaginationParams::default()
+                .with_page_size(page_size)
+                .with_page(page),
+        );
+        if let Some(q) = query.q {
+            list_query = list_query.with_q(q);
+        }
         let result = with_service(&state, move |service| {
             service.list_mcp_marketplace(ListMcpMarketplaceCommand {
-                query: McpMarketplaceListQuery::for_tenant(tenant_id).with_pagination(
-                    PaginationParams::default()
-                        .with_page_size(page_size)
-                        .with_page(page),
-                ),
+                query: list_query,
                 requested_by: subject,
             })
         })
@@ -2321,22 +2546,24 @@ async fn app_delete_composition_slot(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
-    query: Result<Query<CompositionSlotDeleteQueryParams>, QueryRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentCompositionSlotRecordResponse>> = async {
+    let result: ApiResult<()> = async {
         let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         execute_delete_composition_slot(
             state,
             RequestScope::from_context(context),
             path.agent_id,
             path.slot_id,
-            query,
         )
         .await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(()) => {
+            no_content(&web_ctx).unwrap_or_else(|problem| problem.into_response_for(&web_ctx))
+        }
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 
 async fn backend_list_composition_slots(
@@ -2351,14 +2578,8 @@ async fn backend_list_composition_slots(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope =
             RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
-        execute_list_composition_slots(
-            state,
-            scope,
-            path.agent_id,
-            query.page,
-            query.page_size,
-        )
-        .await
+        execute_list_composition_slots(state, scope, path.agent_id, query.page, query.page_size)
+            .await
     }
     .await;
     finish_api_json(&web_ctx, result)
@@ -2435,23 +2656,25 @@ async fn backend_delete_composition_slot(
     State(state): State<AgentHttpState>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<TenantAgentSlotPathParams>, PathRejection>,
-    query: Result<Query<CompositionSlotDeleteQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentCompositionSlotRecordResponse>> = async {
+    let result: ApiResult<()> = async {
         let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
-        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         execute_delete_composition_slot(
             state,
             RequestScope::from_context(context),
             path.agent_id,
             path.slot_id,
-            query,
         )
         .await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    match result {
+        Ok(()) => {
+            no_content(&web_ctx).unwrap_or_else(|problem| problem.into_response_for(&web_ctx))
+        }
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
 }
 async fn execute_list_composition_slots(
     state: AgentHttpState,
@@ -2642,31 +2865,21 @@ async fn execute_delete_composition_slot(
     scope: RequestScope,
     agent_id: String,
     slot_id: String,
-    query: CompositionSlotDeleteQueryParams,
-) -> ApiResult<ResourceData<AgentCompositionSlotRecordResponse>> {
-    validate_requested_at(query.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
+) -> ApiResult<()> {
     let tenant_id = scope.tenant_id_u64()?;
-    let expected_version = query
-        .expected_version
-        .as_deref()
-        .map(parse_expected_version)
-        .transpose()
-        .map_err(ApiProblem::from_kernel_error)?;
     let command = AgentCompositionSlotDeleteCommand {
         tenant_id,
         agent_id,
         slot_id,
-        expected_version,
+        expected_version: None,
         requested_by: scope.subject,
-        requested_at: query.requested_at,
+        requested_at: server_requested_at(),
     };
-    let record = with_service(&state, move |service| {
+    with_service(&state, move |service| {
         service.delete_composition_slot(command)
     })
     .await?;
-    Ok(ResourceData {
-        item: map_composition_slot_record(&AgentCompositionSlotRecordDto::from_record(&record)),
-    })
+    Ok(())
 }
 
 fn map_composition_slot_record(
@@ -2782,11 +2995,12 @@ async fn app_get_session(
     path: Result<Path<(String, String)>, PathRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let command = GetSessionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
             session_id,
             owner_scope,
             requested_by: scope.subject,
@@ -2819,6 +3033,330 @@ async fn app_close_session(
         let record = with_service(&state, move |service| service.close_session(command)).await?;
         Ok(ResourceData {
             item: AgentSessionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+// ===========================================================================
+// Task handlers — App API
+// ===========================================================================
+
+async fn app_list_tasks(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    agent_id: Result<Path<String>, PathRejection>,
+    query: Result<Query<AppListTasksQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentTaskRecordDto>> = async {
+        let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let owner_user_id = query
+            .owner_user_id
+            .unwrap_or_else(|| scope.owner_user_id.clone());
+        let mut command = ListTasksRequestDto {
+            tenant_id: scope.tenant_id,
+            owner_user_id: Some(owner_user_id),
+            status: query.status,
+        }
+        .into_command(scope.subject)
+        .map_err(ApiProblem::from_kernel_error)?;
+        command.query = command
+            .query
+            .for_agent(query.agent_id.unwrap_or(agent_id))
+            .with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            );
+        let records = with_service(&state, move |service| service.list_tasks(command)).await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentTaskRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_create_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    agent_id: Result<Path<String>, PathRejection>,
+    body: Result<Json<CreateTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        body.data.tenant_id = scope.tenant_id.clone();
+        body.data.owner_user_id = scope.owner_user_id.clone();
+        let command = body
+            .into_command(agent_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.create_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn app_get_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
+        let command = GetTaskCommand {
+            tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            task_id,
+            owner_scope,
+            requested_by: scope.subject,
+        };
+        let record = with_service(&state, move |service| service.get_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_cancel_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<CancelTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_command(agent_id, task_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let record = with_service(&state, move |service| service.cancel_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_execute_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<CancelTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_execute_command(agent_id, task_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let record = with_service(&state, move |service| service.execute_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+// ===========================================================================
+// Interaction handlers — App API
+// ===========================================================================
+
+async fn app_list_interactions(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<AppListInteractionsQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut command = ListInteractionsRequestDto {
+            tenant_id: scope.tenant_id,
+            status: query.status,
+        }
+        .into_command(session_id, scope.subject)
+        .map_err(ApiProblem::from_kernel_error)?;
+        command.path_agent_id = agent_id;
+        command.owner_scope = owner_scope;
+        command.query = command.query.with_pagination(
+            PaginationParams::default()
+                .with_page_size(page_size)
+                .with_page(page),
+        );
+        let records =
+            with_service(&state, move |service| service.list_interactions(command)).await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentInteractionRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_create_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<CreateInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        body.data.tenant_id = scope.tenant_id.clone();
+        body.data.organization_id = scope.organization_id.clone();
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_command(agent_id.clone(), session_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let record =
+            with_service(&state, move |service| service.create_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn app_get_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
+        let command = GetInteractionCommand {
+            tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            interaction_id,
+            owner_scope,
+            requested_by: scope.subject,
+        };
+        let record = with_service(&state, move |service| service.get_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_approve_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<ApproveInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        body.tenant_id = scope.tenant_id.clone();
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let record =
+            with_service(&state, move |service| service.approve_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_answer_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<AnswerInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        body.tenant_id = scope.tenant_id.clone();
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let record =
+            with_service(&state, move |service| service.answer_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
         })
     }
     .await;
@@ -2902,6 +3440,7 @@ async fn app_create_message(
             owner_scope,
             requested_by: scope.subject,
             requested_at: body.requested_at,
+            prefer_stream: query.stream.unwrap_or(false),
         };
         let chat_result =
             with_service(&state, move |service| service.send_chat_message(command)).await?;
@@ -2918,12 +3457,13 @@ async fn app_get_message(
     path: Result<Path<(String, String, String)>, PathRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentMessageRecordDto>> = async {
-        let Path((_agent_id, session_id, message_id)) =
+        let Path((agent_id, session_id, message_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let command = GetMessageCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
             session_id,
             message_id,
             owner_scope,
@@ -3037,11 +3577,12 @@ async fn backend_get_session(
     query: Result<Query<TenantQueryParams>, QueryRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
         let command = GetSessionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
             session_id,
             owner_scope: None,
             requested_by: scope.subject,
@@ -3119,12 +3660,8 @@ async fn backend_list_messages(
     let result: ApiResult<PageData<AgentMessageRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-        let scope = RequestScope::from_trusted_extension(
-            context,
-            query.tenant_id.clone(),
-            None,
-            None,
-        )?;
+        let scope =
+            RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListMessagesRequestDto {
             tenant_id: scope.tenant_id,
@@ -3170,10 +3707,8 @@ async fn backend_create_message(
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-        let tenant_id = resolve_tenant_from_query_or_body(
-            query.tenant_id.as_str(),
-            body.tenant_id.as_str(),
-        )?;
+        let tenant_id =
+            resolve_tenant_from_query_or_body(query.tenant_id.as_str(), body.tenant_id.as_str())?;
         let scope = RequestScope::from_trusted_extension(context, tenant_id, None, None)?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
         let command = SendChatMessageCommand {
@@ -3189,6 +3724,7 @@ async fn backend_create_message(
             owner_scope: None,
             requested_by: scope.subject,
             requested_at: body.requested_at,
+            prefer_stream: query.stream.unwrap_or(false),
         };
         let chat_result =
             with_service(&state, move |service| service.send_chat_message(command)).await?;
@@ -3206,11 +3742,13 @@ async fn backend_get_message(
     query: Result<Query<TenantQueryParams>, QueryRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentMessageRecordDto>> = async {
-        let Path((_agent_id, session_id, message_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id, message_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
         let command = GetMessageCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
             session_id,
             message_id,
             owner_scope: None,
@@ -3225,6 +3763,334 @@ async fn backend_get_message(
     finish_api_json(&web_ctx, result)
 }
 
+// ===========================================================================
+// Task handlers — Backend API
+// ===========================================================================
+
+async fn backend_list_tasks(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    agent_id: Result<Path<String>, PathRejection>,
+    query: Result<Query<ListTasksQueryParams>, QueryRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+) -> Response {
+    let result: ApiResult<PageData<AgentTaskRecordDto>> = async {
+        let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_trusted_extension(
+            context,
+            query.tenant_id.clone(),
+            None,
+            query.owner_user_id.clone(),
+        )?;
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut command = ListTasksRequestDto {
+            tenant_id: scope.tenant_id,
+            owner_user_id: query.owner_user_id,
+            status: query.status,
+        }
+        .into_command(scope.subject)
+        .map_err(ApiProblem::from_kernel_error)?;
+        command.query = command
+            .query
+            .for_agent(query.agent_id.unwrap_or(agent_id))
+            .with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            );
+        let records = with_service(&state, move |service| service.list_tasks(command)).await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentTaskRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_create_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    agent_id: Result<Path<String>, PathRejection>,
+    body: Result<Json<CreateTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_trusted_extension(
+            context,
+            body.data.tenant_id.clone(),
+            None,
+            Some(body.data.owner_user_id.clone()),
+        )?;
+        let command = body
+            .into_command(agent_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.create_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn backend_get_task(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    query: Result<Query<TenantQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        let command = GetTaskCommand {
+            tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            task_id,
+            owner_scope: None,
+            requested_by: scope.subject,
+        };
+        let record = with_service(&state, move |service| service.get_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_cancel_task(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    body: Result<Json<CancelTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope =
+            RequestScope::from_trusted_extension(context, body.tenant_id.clone(), None, None)?;
+        let command = body
+            .into_command(agent_id, task_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.cancel_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_execute_task(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    body: Result<Json<CancelTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope =
+            RequestScope::from_trusted_extension(context, body.tenant_id.clone(), None, None)?;
+        let command = body
+            .into_execute_command(agent_id, task_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.execute_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+// ===========================================================================
+// Interaction handlers — Backend API
+// ===========================================================================
+
+async fn backend_list_interactions(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<ListInteractionsQueryParams>, QueryRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+) -> Response {
+    let result: ApiResult<PageData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope =
+            RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut command = ListInteractionsRequestDto {
+            tenant_id: scope.tenant_id,
+            status: query.status,
+        }
+        .into_command(session_id, scope.subject)
+        .map_err(ApiProblem::from_kernel_error)?;
+        command.path_agent_id = agent_id;
+        command.query = command.query.with_pagination(
+            PaginationParams::default()
+                .with_page_size(page_size)
+                .with_page(page),
+        );
+        let records =
+            with_service(&state, move |service| service.list_interactions(command)).await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentInteractionRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_create_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<TenantQueryParams>, QueryRejection>,
+    body: Result<Json<CreateInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_trusted_extension(
+            context,
+            query.tenant_id,
+            Some(body.data.organization_id.clone()),
+            None,
+        )?;
+        body.data.tenant_id = scope.tenant_id.clone();
+        let command = body
+            .into_command(agent_id, session_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record =
+            with_service(&state, move |service| service.create_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn backend_get_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    query: Result<Query<TenantQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        let command = GetInteractionCommand {
+            tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            interaction_id,
+            owner_scope: None,
+            requested_by: scope.subject,
+        };
+        let record = with_service(&state, move |service| service.get_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_approve_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    body: Result<Json<ApproveInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope =
+            RequestScope::from_trusted_extension(context, body.tenant_id.clone(), None, None)?;
+        let command = body
+            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record =
+            with_service(&state, move |service| service.approve_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_answer_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    body: Result<Json<AnswerInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope =
+            RequestScope::from_trusted_extension(context, body.tenant_id.clone(), None, None)?;
+        let command = body
+            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record =
+            with_service(&state, move |service| service.answer_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
 /// Invoke a service operation without Mutex locking.
 ///
 /// Since `AgentsService`, `AgentRepository`, and `AgentAuditSink` are all
@@ -3233,9 +4099,16 @@ async fn backend_get_message(
 /// processing.
 pub(crate) async fn with_service<T>(
     state: &AgentHttpState,
-    action: impl FnOnce(&HttpService) -> KernelResult<T>,
-) -> Result<T, ApiProblem> {
-    action(&state.service).map_err(ApiProblem::from_kernel_error)
+    action: impl FnOnce(&HttpService) -> KernelResult<T> + Send + 'static,
+) -> Result<T, ApiProblem>
+where
+    T: Send + 'static,
+{
+    let service = Arc::clone(&state.service);
+    tokio::task::spawn_blocking(move || action(service.as_ref()))
+        .await
+        .map_err(|error| ApiProblem::internal(format!("agents service worker failed: {error}")))?
+        .map_err(ApiProblem::from_kernel_error)
 }
 async fn execute_list(
     state: AgentHttpState,
@@ -3404,21 +4277,18 @@ async fn execute_delete(
     state: AgentHttpState,
     scope: RequestScope,
     agent_id: String,
-    body: DeleteAgentBody,
-) -> ApiResult<ResourceData<AgentRecordResponse>> {
+) -> ApiResult<()> {
     let command = DeleteAgentRequestDto {
         tenant_id: scope.tenant_id,
         agent_id,
-        expected_version: body.expected_version,
-        requested_at: body.requested_at,
+        expected_version: None,
+        requested_at: server_requested_at(),
     }
     .into_command(scope.subject)
     .map_err(ApiProblem::from_kernel_error)?;
 
-    let record = with_service(&state, move |service| service.delete_agent(command)).await?;
-    Ok(ResourceData {
-        item: map_agent_record(&AgentRecordDto::from_record(&record))?,
-    })
+    with_service(&state, move |service| service.delete_agent(command)).await?;
+    Ok(())
 }
 
 async fn execute_restore(
@@ -3786,6 +4656,19 @@ fn parse_optional_query_datetime(
     parse_optional_rfc3339_datetime(value, field_name).map_err(ApiProblem::from_kernel_error)
 }
 
+fn server_requested_at() -> String {
+    let now = OffsetDateTime::now_utc();
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second()
+    )
+}
+
 fn reconcile_resource_tenant_with_subject_header(
     resource_tenant_id: &str,
     header_tenant_id: Option<String>,
@@ -3953,8 +4836,7 @@ fn offset_page_info(page: usize, page_size: usize, total_count: u64, has_more: b
         page_size: page_size as i64,
         offset: ((page as i64) - 1) * (page_size as i64),
     };
-    let mut info =
-        sdkwork_utils_rust::http_api::offset_list_page_info(total_count as i64, params);
+    let mut info = sdkwork_utils_rust::http_api::offset_list_page_info(total_count as i64, params);
     info.has_more = Some(has_more);
     info
 }
@@ -3993,6 +4875,83 @@ mod tests {
         headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
         headers.insert("x-subject-tenant-id", HeaderValue::from_static("100001"));
         request
+    }
+
+    struct EnvVarRestore {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvVarRestore {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarRestore {
+        fn drop(&mut self) {
+            match self.previous.as_ref() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn create_agent_body(agent_id: &str, code: &str) -> Value {
+        json!({
+            "agentId": agent_id,
+            "organizationId": "0",
+            "ownerUserId": "100",
+            "code": code,
+            "displayName": code,
+            "description": "contract test agent",
+            "manifest": test_manifest(),
+            "visibility": "organization",
+            "requestedAt": "2026-06-01T00:00:00Z"
+        })
+    }
+
+    async fn create_app_agent(app: &axum::Router, agent_id: &str, code: &str) {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/agents")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(create_agent_body(agent_id, code).to_string()))
+            .expect("request should be built");
+        let response = app
+            .clone()
+            .oneshot(auth_headers(request))
+            .await
+            .expect("create request should succeed");
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    async fn create_app_provider_binding(app: &axum::Router, agent_id: &str) {
+        let binding_body = json!({
+            "bindingId": "binding.agent-provider.codex",
+            "providerId": "provider.model.codex",
+            "implementationKind": "process-adapter",
+            "configurationProfileId": "profile.codex.default",
+            "capabilities": ["agent.runtime.preview", "agent.runtime.prompt_optimization"],
+            "makeDefault": true,
+            "requestedAt": "2026-06-01T00:01:00Z"
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/app/v3/api/ai/agents/{agent_id}/provider_bindings"
+            ))
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(binding_body.to_string()))
+            .expect("request should be built");
+        let response = app
+            .clone()
+            .oneshot(auth_headers(request))
+            .await
+            .expect("provider binding request should succeed");
+        assert_eq!(response.status(), StatusCode::CREATED);
     }
 
     fn test_agent_context() -> AgentRequestContext {
@@ -4136,6 +5095,147 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn app_delete_agent_uses_204_without_json_body() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            AllowAllPolicyProvider::allow("policy.memory"),
+        );
+        let app = build_combined_router(state)
+            .layer(Extension(test_agent_context()))
+            .layer(Extension(test_web_context()));
+
+        create_app_agent(&app, "agent.delete", "delete").await;
+
+        let request = Request::builder()
+            .method("DELETE")
+            .uri("/app/v3/api/ai/agents/agent.delete")
+            .body(Body::empty())
+            .expect("request should be built");
+        let response = app
+            .oneshot(auth_headers(request))
+            .await
+            .expect("delete request should succeed");
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should be readable");
+        assert!(body_bytes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn app_runtime_create_operations_use_201_status() {
+        let _env_lock = sdkwork_agents_contract::env_test_lock();
+        let _deployment_env = EnvVarRestore::set("SDKWORK_DEPLOYMENT_ENV", "development");
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            AllowAllPolicyProvider::allow("policy.memory"),
+        );
+        let app = build_combined_router(state)
+            .layer(Extension(test_agent_context()))
+            .layer(Extension(test_web_context()));
+
+        create_app_agent(&app, "agent.runtime", "runtime").await;
+        create_app_provider_binding(&app, "agent.runtime").await;
+
+        let preview_body = json!({
+            "executionId": "execution.preview",
+            "content": "Summarize the repository state",
+            "debugMode": false,
+            "model": "codex",
+            "temperature": 0.2,
+            "requestedAt": "2026-06-01T00:02:00Z"
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/agents/agent.runtime/preview_responses")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(preview_body.to_string()))
+            .expect("request should be built");
+        let response = app
+            .clone()
+            .oneshot(auth_headers(request))
+            .await
+            .expect("preview request should succeed");
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let optimization_body = json!({
+            "executionId": "execution.prompt",
+            "prompt": "Make this prompt concise",
+            "requestedAt": "2026-06-01T00:03:00Z"
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/agents/agent.runtime/prompt_optimizations")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(optimization_body.to_string()))
+            .expect("request should be built");
+        let response = app
+            .oneshot(auth_headers(request))
+            .await
+            .expect("prompt optimization request should succeed");
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn app_delete_composition_slot_uses_204_without_json_body() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            AllowAllPolicyProvider::allow("policy.memory"),
+        );
+        let app = build_combined_router(state)
+            .layer(Extension(test_agent_context()))
+            .layer(Extension(test_web_context()));
+
+        create_app_agent(&app, "agent.slot-delete", "slot-delete").await;
+        let slot_body = json!({
+            "data": {
+                "tenantId": "100001",
+                "organizationId": "0",
+                "slotId": "slot.skill.primary",
+                "slotKind": "skill",
+                "targetModule": "skills",
+                "targetRef": "skill.primary",
+                "priority": "10",
+                "enabled": true,
+                "policyJson": "{}"
+            },
+            "requestedAt": "2026-06-01T00:04:00Z"
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/agents/agent.slot-delete/composition_slots")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(slot_body.to_string()))
+            .expect("request should be built");
+        let response = app
+            .clone()
+            .oneshot(auth_headers(request))
+            .await
+            .expect("composition slot create request should succeed");
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let request = Request::builder()
+            .method("DELETE")
+            .uri("/app/v3/api/ai/agents/agent.slot-delete/composition_slots/slot.skill.primary?requestedAt=2026-06-01T00:05:00Z")
+            .body(Body::empty())
+            .expect("request should be built");
+        let response = app
+            .oneshot(auth_headers(request))
+            .await
+            .expect("composition slot delete request should succeed");
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should be readable");
+        assert!(body_bytes.is_empty());
+    }
+
+    #[tokio::test]
     async fn backend_status_update_should_work() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
@@ -4200,7 +5300,7 @@ mod tests {
             .await
             .expect("status request should succeed");
 
-        assert_eq!(status_response.status(), StatusCode::OK);
+        assert_eq!(status_response.status(), StatusCode::CREATED);
         let body_bytes = to_bytes(status_response.into_body(), usize::MAX)
             .await
             .expect("response body should be readable");

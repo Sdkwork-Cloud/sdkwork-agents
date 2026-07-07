@@ -55,7 +55,7 @@ assert.match(mpAgentsPage, /getAgentsMpSdkClient/u, "agents index must load agen
 assert.match(
   mustExist("apps/sdkwork-agents-mini-program/src/pages/agents/index.wxml"),
   /agents-h5/u,
-  "agents index wxml must link to H5 fallback page",
+  "agents index wxml must link to the explicit editor bridge page",
 );
 
 for (const [label, relativePath] of [

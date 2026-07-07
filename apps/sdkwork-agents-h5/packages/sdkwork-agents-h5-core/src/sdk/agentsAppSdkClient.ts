@@ -77,6 +77,7 @@ export function useAgentsAppSdkClient(): SdkworkAgentsAppClient {
 export type {
   AgentManagementProfile,
   AgentRecord,
+  CodeEngineCatalog,
   CreateAgentProviderBindingRequest,
   CreateAgentRequest,
   UpdateAgentRequest,

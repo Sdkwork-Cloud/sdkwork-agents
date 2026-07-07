@@ -1,6 +1,8 @@
 //! Open API route boundary for SDKWork agents managed store.
 
-pub use sdkwork_intelligence_agents_service::{build_open_router, build_open_routes, AgentHttpState};
+pub use sdkwork_intelligence_agents_service::{
+    build_open_router, build_open_routes, AgentHttpState,
+};
 pub use sdkwork_routes_agents_http_shared::{
     open_route_manifest, wrap_router_with_web_framework, wrap_router_with_web_framework_from_env,
     AgentRequestContext, OPEN_ROUTES,

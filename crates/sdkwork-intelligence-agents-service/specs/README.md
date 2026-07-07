@@ -12,7 +12,7 @@ or document this component, but they must not contradict
 | --- | --- |
 | Name | `sdkwork-intelligence-agents-service` |
 | Type | `rust-crate` |
-| Root | `sdkwork-kernel/sdkwork-intelligence-agents-service` |
+| Root | `crates/sdkwork-intelligence-agents-service` |
 | Domain | `intelligence` |
 | Capability | `agents` |
 | Languages | `rust` |

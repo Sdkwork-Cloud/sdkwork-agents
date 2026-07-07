@@ -1,10 +1,10 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use sdkwork_agents_contract::env_test_lock;
+use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_intelligence_agents_service::{
     AgentHttpState, AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
-use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_routes_agents_open_api::{
     build_router, open_route_manifest, wrap_router_with_web_framework,
 };

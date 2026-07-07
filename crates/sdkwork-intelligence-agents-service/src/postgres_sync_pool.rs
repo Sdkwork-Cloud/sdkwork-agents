@@ -162,7 +162,11 @@ impl BlockingPostgresPool {
         let total = self.pool.size();
         let idle = self.pool.num_idle() as u32;
         let active = total.saturating_sub(idle);
-        let utilization = if total > 0 { active as f64 / total as f64 } else { 0.0 };
+        let utilization = if total > 0 {
+            active as f64 / total as f64
+        } else {
+            0.0
+        };
         PoolMetrics {
             total_connections: total,
             idle_connections: idle,

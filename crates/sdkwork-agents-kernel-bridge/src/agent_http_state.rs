@@ -1,14 +1,15 @@
 //! Production and development `AgentHttpState` bootstrap for SDKWork Agents.
 
 use anyhow::{Context, Result};
-use sdkwork_intelligence_agents_service::{
-    AgentBusinessIdGenerator, AgentHttpState, AllowAllPolicyProvider, AUDIT_SINK_NODE_ID,
-    ContractChatCompleter, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
-    PostgresAgentAuditSink, PostgresAgentRepository, RuntimeFacadeChatCompleter, SyncPostgresAdapter,
+use sdkwork_agents_contract::{
+    agents_use_dev_inline_auth_resolver, ensure_dev_auth_bypass_allowed,
 };
-use sdkwork_agents_contract::agents_use_dev_inline_auth_resolver;
+use sdkwork_intelligence_agents_service::{
+    AgentBusinessIdGenerator, AgentHttpState, AllowAllPolicyProvider, IamGatedPolicyProvider,
+    InMemoryAgentAuditSink, InMemoryAgentRepository, PostgresAgentAuditSink,
+    PostgresAgentRepository, RuntimeFacadeChatCompleter, SyncPostgresAdapter, AUDIT_SINK_NODE_ID,
+};
 use std::sync::Arc;
-
 
 /// Build agents managed store HTTP state using postgres in production-like profiles and
 /// in-memory fixtures only when dev inline auth is explicitly enabled.
@@ -23,7 +24,14 @@ use std::sync::Arc;
 /// `AllowAllPolicyProvider` is only used for development scenarios where the
 /// dev inline auth resolver is explicitly enabled.
 pub fn build_agent_http_state() -> Result<AgentHttpState> {
+    ensure_dev_auth_bypass_allowed()
+        .map_err(|message| anyhow::anyhow!("agents security bootstrap: {message}"))?;
+
     if agents_use_dev_inline_auth_resolver() {
+        tracing::warn!(
+            env = %sdkwork_agents_contract::agents_deployment_environment_name(),
+            "agents dev inline auth bypass is active; using in-memory repository and AllowAllPolicyProvider"
+        );
         return Ok(dev_agent_http_state());
     }
 

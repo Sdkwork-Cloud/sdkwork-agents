@@ -6,13 +6,14 @@
 //! subject, and the request timestamp.
 
 use crate::domain::{
-    AgentAuditAction, AgentBusinessStatus, AgentCompositionSlotKind,
-    AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
-    AgentMessageRole, AgentSessionRecord, AgentMessageRecord, AgentVisibility,
+    AgentAuditAction, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionTargetModule,
+    AgentImplementationKind, AgentImplementationType, AgentInteractionKind, AgentMessageRecord,
+    AgentMessageRole, AgentSessionRecord, AgentVisibility,
 };
 use crate::ports::{
     AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
     McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery, SessionListQuery,
+    TaskListQuery,
 };
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -301,6 +302,8 @@ pub struct ArchiveSessionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetSessionCommand {
     pub tenant_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded session.
+    pub path_agent_id: String,
     pub session_id: String,
     /// When set, the session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
@@ -310,6 +313,66 @@ pub struct GetSessionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListSessionsCommand {
     pub query: SessionListQuery,
+    pub requested_by: PolicySubject,
+}
+
+// ---------------------------------------------------------------------------
+// Task commands
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTaskCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub agent_id: String,
+    pub owner_user_id: u64,
+    pub task_id: String,
+    pub title: Option<String>,
+    pub prompt: String,
+    pub external_ref: Option<String>,
+    pub metadata_json: String,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelTaskCommand {
+    pub tenant_id: u64,
+    /// Nested route `{agentId}`; must match the loaded task.
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub expected_version: Option<u64>,
+    /// When set, the task must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecuteTaskCommand {
+    pub tenant_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub expected_version: Option<u64>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetTaskCommand {
+    pub tenant_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded task.
+    pub path_agent_id: String,
+    pub task_id: String,
+    /// When set, the task must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTasksCommand {
+    pub query: TaskListQuery,
     pub requested_by: PolicySubject,
 }
 
@@ -339,6 +402,8 @@ pub struct CreateMessageCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetMessageCommand {
     pub tenant_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded message.
+    pub path_agent_id: String,
     pub session_id: String,
     pub message_id: String,
     /// When set, the parent session must belong to this owner (app-api scope).
@@ -368,6 +433,8 @@ pub struct SendChatMessageCommand {
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
+    /// When true, attempt provider stream chunks for SSE `message.delta` events.
+    pub prefer_stream: bool,
 }
 
 /// Result of a chat completion turn (user message + assistant reply + session).
@@ -376,6 +443,7 @@ pub struct ChatCompletionResult {
     pub session: AgentSessionRecord,
     pub user_message: AgentMessageRecord,
     pub assistant_message: AgentMessageRecord,
+    pub stream_deltas: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -383,27 +451,56 @@ pub struct ChatCompletionResult {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateInteractionCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub agent_id: String,
+    pub interaction_id: String,
+    pub engine_key: String,
+    pub kind: AgentInteractionKind,
+    pub prompt: String,
+    pub options_json: String,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListInteractionsCommand {
     pub query: InteractionListQuery,
+    /// Agent id from the nested HTTP path; must match the parent session.
+    pub path_agent_id: String,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetInteractionCommand {
     pub tenant_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded interaction.
+    pub path_agent_id: String,
     pub session_id: String,
     pub interaction_id: String,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApproveInteractionCommand {
     pub tenant_id: u64,
+    /// Agent id from the nested HTTP path; must match the parent session.
+    pub path_agent_id: String,
     pub session_id: String,
     pub interaction_id: String,
     pub approved: bool,
     pub reason: Option<String>,
     pub expected_version: u64,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
@@ -411,12 +508,16 @@ pub struct ApproveInteractionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnswerInteractionCommand {
     pub tenant_id: u64,
+    /// Agent id from the nested HTTP path; must match the parent session.
+    pub path_agent_id: String,
     pub session_id: String,
     pub interaction_id: String,
     pub answer: String,
     pub option_label: Option<String>,
     pub rejected: bool,
     pub expected_version: u64,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }

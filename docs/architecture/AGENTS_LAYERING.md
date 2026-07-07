@@ -7,7 +7,7 @@ SDKWork Agents follows the same layering model as `sdkwork-memory` and `sdkwork-
 | Layer | Repository | Responsibility |
 | --- | --- | --- |
 | Runtime SPI | `sdkwork-kernel` | Agent lifecycle, providers, sessions, internal runtime API, operational HTTP (`/health`, `/metrics`, `/internal/v3/api/...`) |
-| Application domain | `sdkwork-agents` | Managed agents composition plane, open/app/backend HTTP surfaces, SDK families |
+| Application domain | `sdkwork-agents` | Managed agents composition plane, open/app/backend HTTP surfaces, SDK families, hosted session/message persistence |
 
 `sdkwork-kernel` is mechanism-only. It must not own product policy or managed-agent CRUD.
 

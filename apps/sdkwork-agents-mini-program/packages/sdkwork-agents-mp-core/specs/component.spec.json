@@ -44,36 +44,37 @@
         "workspace": "sdkwork-agents-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api"
-      },
-      {
-        "workspace": "sdkwork-database",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-drive",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-kernel",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-utils",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
-      },
-      {
-        "workspace": "sdkwork-web-framework",
-        "surface": "open-api",
-        "credentialMode": "protected-open-api-flexible"
       }
     ],
     "sdkClients": [
       "@sdkwork/agents-app-sdk"
     ],
+    "permissionComposition": {
+      "inheritanceMode": "module-catalog-with-overrides",
+      "moduleCatalogRefs": [
+        {
+          "moduleId": "agents",
+          "manifestRef": "../../../../../../sdkwork-iam/iam/modules/ai/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        }
+      ],
+      "bootstrapAccessTokenScope": {
+        "inheritFrom": "sdkwork.app.config.json#backend.accessTokenPermissionScope",
+        "supplement": [],
+        "overrideReplace": false
+      },
+      "routePermissionHints": {
+        "inheritFromOpenApi": true,
+        "inheritFromModuleManifests": true,
+        "overrides": []
+      },
+      "consumerPolicy": {
+        "forbidLocalPermissionCatalogForDependencyDomains": true,
+        "allowExplicitOverridesOnly": true,
+        "allowFrontendHintsWithoutServerDuplication": true
+      }
+    },
     "dependencyApiExports": [],
     "dependencyApiSurfaces": []
   }

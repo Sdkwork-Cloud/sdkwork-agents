@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Mic, Radio, Speaker, Headphones, User, Music, Search, Check, Play } from 'lucide-react';
 import { cn } from '@sdkwork/agents-h5-commons';
@@ -9,7 +9,7 @@ export interface SelectVoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedVoices: string[];
-  onSave: (voiceIds: string[]) => void;
+  onSave: (voiceIds: string[], selectedItems: VoiceConfig[]) => void;
   isMulti?: boolean;
 }
 
@@ -23,36 +23,80 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [voices, setVoices] = useState<VoiceConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectionSnapshots, setSelectionSnapshots] = useState<Map<string, VoiceConfig>>(new Map());
+
   const [currentSelection, setCurrentSelection] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setCurrentSelection(selectedVoices);
-      setSearchQuery('');
-      setActiveCategory('all');
-      loadVoices();
+  const loadVoices = useCallback(async (category: string, nextPage = 1, append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
     }
-  }, [isOpen, selectedVoices]);
-
-  const loadVoices = async () => {
-    setLoading(true);
     try {
-      const [market, my] = await Promise.all([
-        voiceService.getMarketVoices(1),
-        voiceService.getMyVoices(1),
-      ]);
-      setVoices([...market.items, ...my.items]);
+      const catalog =
+        category === 'custom'
+          ? await voiceService.getMyVoices(nextPage)
+          : await voiceService.getMarketVoices(nextPage);
+      setVoices((prev) => (append ? [...prev, ...catalog.items] : catalog.items));
+      setPage(catalog.page);
+      setHasMore(catalog.hasMore);
     } catch (error) {
       console.error('Failed to load voices:', error);
       toast(
-        error instanceof Error ? error.message : '无法加载声音目录，请检�?Voice SDK 配置',
+        error instanceof Error ? error.message : '无法加载声音目录，请检查 Voice SDK 配置',
         'error',
       );
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    let cancelled = false;
+    setCurrentSelection(selectedVoices);
+    setSearchQuery('');
+    const category = activeCategory === 'all' ? 'market' : activeCategory;
+    void (async () => {
+      setLoading(true);
+      try {
+        const catalog =
+          category === 'custom'
+            ? await voiceService.getMyVoices(1)
+            : await voiceService.getMarketVoices(1);
+        if (cancelled) {
+          return;
+        }
+        setVoices(catalog.items);
+        setPage(catalog.page);
+        setHasMore(catalog.hasMore);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        console.error('Failed to load voices:', error);
+        toast(
+          error instanceof Error ? error.message : '无法加载声音目录，请检查 Voice SDK 配置',
+          'error',
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, selectedVoices, activeCategory]);
 
   const getIcon = (iconName?: string) => {
     switch (iconName) {
@@ -67,20 +111,22 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
 
   const categories = [
     { id: 'all', name: '全部' },
-    { id: 'reading', name: '阅读' },
-    { id: 'news', name: '播报' },
-    { id: 'anime', name: '动漫' },
-    { id: 'business', name: '客服' },
-    { id: 'custom', name: '克隆' }
+    { id: 'market', name: '市场' },
+    { id: 'custom', name: '克隆' },
   ];
 
-  const handleSelect = (id: string) => {
+  const handleSelect = (voice: VoiceConfig) => {
+    setSelectionSnapshots((prev) => {
+      const next = new Map(prev);
+      next.set(voice.id, voice);
+      return next;
+    });
     if (isMulti) {
-      setCurrentSelection(prev => 
-        prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
+      setCurrentSelection(prev =>
+        prev.includes(voice.id) ? prev.filter(v => v !== voice.id) : [...prev, voice.id]
       );
     } else {
-      setCurrentSelection([id]);
+      setCurrentSelection([voice.id]);
     }
   };
 
@@ -88,7 +134,8 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
     const matchesSearch = !searchQuery.trim() || 
       v.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (v.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = activeCategory === 'all' || v.categoryId === activeCategory;
+    const matchesCategory =
+      activeCategory === 'all' || v.categoryId === activeCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -112,8 +159,8 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#202020] shrink-0">
               <div>
-                <h2 className="text-xl font-bold text-gray-100 mb-1">选择发音�?/h2>
-                <p className="text-xs text-gray-400">为你的智能体挑选合适的声音模型，支持多维度分类与专业克隆音色�?/p>
+                <h2 className="text-xl font-bold text-gray-100 mb-1">选择发音人</h2>
+                <p className="text-xs text-gray-400">为你的智能体挑选合适的声音模型，支持多维度分类与专业克隆音色。</p>
               </div>
               <button
                 onClick={onClose}
@@ -175,7 +222,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                       return (
                         <div
                           key={voice.id}
-                          onClick={() => handleSelect(voice.id)}
+                          onClick={() => handleSelect(voice)}
                           className={cn(
                             "relative group bg-[#252528] rounded-xl border p-4 cursor-pointer transition-all hover:-translate-y-1",
                             isSelected 
@@ -208,7 +255,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                           <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
                             <div className="flex items-center gap-1.5 text-xs text-gray-500">
                               <User size={12} />
-                              <span>{voice.author || '�?}</span>
+                              <span>{voice.author || '我'}</span>
                             </div>
                             <button 
                               onClick={(e) => {
@@ -219,7 +266,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                                   });
                                   return;
                                 }
-                                toast('该音色暂无预览音�?, 'info');
+                                toast('该音色暂无预览音频', 'info');
                               }}
                               className="w-7 h-7 rounded-full bg-[#181818] border border-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-purple-500 hover:border-purple-500 transition-all opacity-0 group-hover:opacity-100"
                             >
@@ -231,14 +278,32 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                     })}
                   </div>
                 )}
+                {!loading && hasMore && (
+                  <div className="flex justify-center pb-8">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void loadVoices(
+                          activeCategory === 'all' ? 'market' : activeCategory,
+                          page + 1,
+                          true,
+                        )
+                      }
+                      disabled={loadingMore}
+                      className="px-4 py-2 rounded-lg text-sm bg-white/5 hover:bg-white/10 text-gray-300 disabled:opacity-50"
+                    >
+                      {loadingMore ? '加载中...' : '加载更多'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Footer */}
             <div className="p-4 border-t border-white/5 bg-[#202020] flex items-center justify-between shrink-0">
               <div className="text-sm text-gray-400">
-                已选择 <span className="text-purple-400 font-semibold">{currentSelection.length}</span> 个声�?
-                {isMulti && <span className="ml-2 text-xs text-gray-500">(支持多�?</span>}
+                已选择 <span className="text-purple-400 font-semibold">{currentSelection.length}</span> 个声音
+                {isMulti && <span className="ml-2 text-xs text-gray-500">(支持多选)</span>}
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -249,7 +314,10 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    onSave(currentSelection);
+                    const selectedItems = currentSelection
+                      .map((id) => selectionSnapshots.get(id))
+                      .filter((item): item is VoiceConfig => Boolean(item));
+                    onSave(currentSelection, selectedItems);
                     onClose();
                   }}
                   className="px-6 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/20 transition-all"

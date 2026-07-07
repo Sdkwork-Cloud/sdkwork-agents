@@ -18,8 +18,9 @@ pub async fn run_agents_app_database_migrate_only() -> Result<(), String> {
 
 pub async fn run_kernel_database_migrate_only() -> Result<(), String> {
     let config = ServerConfig::from_env().map_err(|error| error.to_string())?;
-    let _persistence = sdkwork_agent_server::persistence::PersistenceState::open_from_config(&config)
-        .map_err(|error| format!("kernel persistence migrate/bootstrap failed: {error}"))?;
+    let _persistence =
+        sdkwork_agent_server::persistence::PersistenceState::open_from_config(&config)
+            .map_err(|error| format!("kernel persistence migrate/bootstrap failed: {error}"))?;
     tracing::info!("sdkwork-agents kernel runtime persistence opened for migration");
     Ok(())
 }

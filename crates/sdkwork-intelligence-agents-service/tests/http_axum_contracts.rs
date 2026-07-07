@@ -418,7 +418,10 @@ async fn app_agent_response_should_expose_pc_management_profile() {
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
 
-    assert_eq!(body_json["data"]["item"]["managementProfile"]["avatar"], "robot");
+    assert_eq!(
+        body_json["data"]["item"]["managementProfile"]["avatar"],
+        "robot"
+    );
     assert_eq!(
         body_json["data"]["item"]["managementProfile"]["categoryId"],
         "assistant"
@@ -493,22 +496,46 @@ async fn app_agent_request_should_accept_management_profile_and_store_compatible
     )
     .await;
 
-    assert_eq!(response["data"]["item"]["managementProfile"]["avatar"], "robot");
-    assert_eq!(response["data"]["item"]["managementProfile"]["author"], "SDKWork");
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["avatar"],
+        "robot"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["author"],
+        "SDKWork"
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["knowledgeBaseIds"],
         json!(["knowledge.base.product", "knowledge.base.runbook"])
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["type"], "independent");
-    assert_eq!(response["data"]["item"]["managementProfile"]["users"], "12 users");
-    assert_eq!(response["data"]["item"]["managementProfile"]["debugMode"], true);
-    assert_eq!(response["data"]["item"]["managementProfile"]["jsonMode"], true);
-    assert_eq!(response["data"]["item"]["managementProfile"]["memoryEnabled"], true);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["type"],
+        "independent"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["users"],
+        "12 users"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["debugMode"],
+        true
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["jsonMode"],
+        true
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["memoryEnabled"],
+        true
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["model"],
         "model.openai.gpt-4"
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["temperature"], 0.7);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["temperature"],
+        0.7
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["suggestedPrompts"],
         json!(["What can you do?", "Summarize this document"])
@@ -774,14 +801,26 @@ async fn app_update_agent_management_profile_should_preserve_existing_intent_con
     let response: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
 
-    assert_eq!(response["data"]["item"]["managementProfile"]["avatar"], "robot");
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["avatar"],
+        "robot"
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["categoryId"],
         "assistant"
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["type"], "independent");
-    assert_eq!(response["data"]["item"]["managementProfile"]["debugMode"], false);
-    assert_eq!(response["data"]["item"]["managementProfile"]["jsonMode"], true);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["type"],
+        "independent"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["debugMode"],
+        false
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["jsonMode"],
+        true
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["memoryEnabled"],
         false
@@ -790,7 +829,10 @@ async fn app_update_agent_management_profile_should_preserve_existing_intent_con
         response["data"]["item"]["managementProfile"]["model"],
         "model.anthropic.claude-sonnet"
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["temperature"], 0.2);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["temperature"],
+        0.2
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["suggestedPrompts"],
         json!(["Draft release notes"])
@@ -922,7 +964,10 @@ async fn backend_agent_request_should_accept_management_profile_and_store_compat
     )
     .await;
 
-    assert_eq!(response["data"]["item"]["managementProfile"]["avatar"], "robot");
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["avatar"],
+        "robot"
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["author"],
         "SDKWork Backend"
@@ -934,16 +979,34 @@ async fn backend_agent_request_should_accept_management_profile_and_store_compat
             "knowledge.base.backend.runbook"
         ])
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["type"], "independent");
-    assert_eq!(response["data"]["item"]["managementProfile"]["users"], "42 users");
-    assert_eq!(response["data"]["item"]["managementProfile"]["debugMode"], true);
-    assert_eq!(response["data"]["item"]["managementProfile"]["jsonMode"], false);
-    assert_eq!(response["data"]["item"]["managementProfile"]["memoryEnabled"], true);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["type"],
+        "independent"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["users"],
+        "42 users"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["debugMode"],
+        true
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["jsonMode"],
+        false
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["memoryEnabled"],
+        true
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["model"],
         "model.openai.gpt-4o"
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["temperature"], 0.4);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["temperature"],
+        0.4
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["suggestedPrompts"],
         json!(["Open incident runbook"])
@@ -1085,14 +1148,26 @@ async fn backend_update_agent_management_profile_should_preserve_existing_intent
     )
     .await;
 
-    assert_eq!(response["data"]["item"]["managementProfile"]["avatar"], "robot");
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["avatar"],
+        "robot"
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["categoryId"],
         "assistant"
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["type"], "independent");
-    assert_eq!(response["data"]["item"]["managementProfile"]["debugMode"], false);
-    assert_eq!(response["data"]["item"]["managementProfile"]["jsonMode"], true);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["type"],
+        "independent"
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["debugMode"],
+        false
+    );
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["jsonMode"],
+        true
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["memoryEnabled"],
         false
@@ -1101,7 +1176,10 @@ async fn backend_update_agent_management_profile_should_preserve_existing_intent
         response["data"]["item"]["managementProfile"]["model"],
         "model.azure.gpt-4"
     );
-    assert_eq!(response["data"]["item"]["managementProfile"]["temperature"], 0.1);
+    assert_eq!(
+        response["data"]["item"]["managementProfile"]["temperature"],
+        0.1
+    );
     assert_eq!(
         response["data"]["item"]["managementProfile"]["suggestedPrompts"],
         json!(["Triage latest incident"])
@@ -1212,7 +1290,10 @@ async fn composition_slots_should_work_over_http() {
     let slot_id = "slot.knowledge.product";
     let get_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}");
     let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
-    assert_eq!(get_response["data"]["item"]["targetRef"], json!("kb.space.product"));
+    assert_eq!(
+        get_response["data"]["item"]["targetRef"],
+        json!("kb.space.product")
+    );
 
     let update_body = json!({
         "data": {
@@ -1228,10 +1309,7 @@ async fn composition_slots_should_work_over_http() {
         json!("kb.space.product.v2")
     );
 
-    let delete_uri = format!(
-        "/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}?expectedVersion={}&requestedAt=2026-06-17T00:02:00Z",
-        update_response["data"]["item"]["version"].as_str().unwrap()
-    );
+    let delete_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}");
     let delete_request = Request::builder()
         .method("DELETE")
         .uri(delete_uri)
@@ -1242,12 +1320,188 @@ async fn composition_slots_should_work_over_http() {
         .oneshot(auth_headers(delete_request))
         .await
         .expect("delete request should succeed");
-    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
     let delete_body = to_bytes(delete_response.into_body(), usize::MAX)
         .await
         .expect("delete body should be readable");
-    let delete_json: Value = serde_json::from_slice(&delete_body).expect("valid json");
-    assert!(delete_json["data"]["item"]["deletedAt"].is_string());
+    assert!(delete_body.is_empty());
+}
+
+#[tokio::test]
+async fn agent_tasks_should_work_over_http() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        AllowAllPolicyProvider::allow("policy.memory"),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.tasks.http";
+    create_agent(&app, agent_id, "Task HTTP Agent").await;
+
+    let create_body = json!({
+        "data": {
+            "tenantId": "100001",
+            "organizationId": "0",
+            "ownerUserId": "0",
+            "title": "Nightly sync",
+            "prompt": "Summarize tenant activity",
+            "metadataJson": "{\"deferExecution\":true}"
+        },
+        "requestedAt": "2026-06-17T00:00:00Z"
+    });
+    let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
+    let create_response =
+        post_json(&app, create_uri.as_str(), create_body, StatusCode::CREATED).await;
+    let task_id = create_response["data"]["item"]["taskId"]
+        .as_str()
+        .expect("task id")
+        .to_string();
+    assert_eq!(create_response["data"]["item"]["status"], json!("pending"));
+
+    let list_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
+    let list_response = get_json(&app, list_uri.as_str(), StatusCode::OK).await;
+    assert_eq!(list_response["data"]["items"].as_array().unwrap().len(), 1);
+
+    let get_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}");
+    let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
+    assert_eq!(
+        get_response["data"]["item"]["prompt"],
+        json!("Summarize tenant activity")
+    );
+
+    let cancel_body = json!({
+        "tenantId": "100001",
+        "expectedVersion": get_response["data"]["item"]["version"],
+        "requestedAt": "2026-06-17T00:01:00Z"
+    });
+    let cancel_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}/cancel");
+    let cancel_response = post_json(&app, cancel_uri.as_str(), cancel_body, StatusCode::OK).await;
+    assert_eq!(
+        cancel_response["data"]["item"]["status"],
+        json!("cancelled")
+    );
+}
+
+#[tokio::test]
+async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        AllowAllPolicyProvider::allow("policy.memory"),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.tasks.execute.http";
+    create_agent(&app, agent_id, "Task Execute HTTP Agent").await;
+
+    let create_body = json!({
+        "data": {
+            "tenantId": "100001",
+            "organizationId": "0",
+            "ownerUserId": "0",
+            "title": "Deferred job",
+            "prompt": "Summarize tenant activity",
+            "metadataJson": "{\"deferExecution\":true}"
+        },
+        "requestedAt": "2026-06-17T00:00:00Z"
+    });
+    let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
+    let create_response =
+        post_json(&app, create_uri.as_str(), create_body, StatusCode::CREATED).await;
+    let task_id = create_response["data"]["item"]["taskId"]
+        .as_str()
+        .expect("task id")
+        .to_string();
+    assert_eq!(create_response["data"]["item"]["status"], json!("pending"));
+
+    let get_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}");
+    let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
+
+    let execute_body = json!({
+        "tenantId": "100001",
+        "expectedVersion": get_response["data"]["item"]["version"],
+        "requestedAt": "2026-06-17T00:01:00Z"
+    });
+    let execute_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}/execute");
+    let execute_response =
+        post_json(&app, execute_uri.as_str(), execute_body, StatusCode::OK).await;
+    assert_eq!(
+        execute_response["data"]["item"]["status"],
+        json!("completed")
+    );
+}
+
+#[tokio::test]
+async fn agent_interactions_should_work_over_http() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        AllowAllPolicyProvider::allow("policy.memory"),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.interactions.http";
+    create_agent(&app, agent_id, "Interaction HTTP Agent").await;
+
+    let session_id = "session.interactions.http";
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
+        json!({
+            "data": {
+                "tenantId": "100001",
+                "organizationId": "0",
+                "ownerUserId": "0",
+                "sessionId": session_id,
+                "title": "HTTP interaction test"
+            },
+            "requestedAt": "2026-06-17T00:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let create_body = json!({
+        "data": {
+            "tenantId": "100001",
+            "organizationId": "0",
+            "engineKey": "codex",
+            "kind": "approval",
+            "prompt": "Allow file write to /tmp/demo.txt?"
+        },
+        "requestedAt": "2026-06-17T00:00:01Z"
+    });
+    let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions");
+    let create_response =
+        post_json(&app, create_uri.as_str(), create_body, StatusCode::CREATED).await;
+    let interaction_id = create_response["data"]["item"]["interactionId"]
+        .as_str()
+        .expect("interaction id")
+        .to_string();
+    assert_eq!(create_response["data"]["item"]["status"], json!("pending"));
+
+    let list_uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions");
+    let list_response = get_json(&app, list_uri.as_str(), StatusCode::OK).await;
+    assert_eq!(list_response["data"]["items"].as_array().unwrap().len(), 1);
+
+    let get_uri = format!(
+        "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}"
+    );
+    let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
+    assert_eq!(get_response["data"]["item"]["kind"], json!("approval"));
+
+    let approve_body = json!({
+        "approved": true,
+        "expectedVersion": get_response["data"]["item"]["version"],
+        "requestedAt": "2026-06-17T00:00:02Z"
+    });
+    let approve_uri = format!(
+        "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/approve"
+    );
+    let approve_response =
+        post_json(&app, approve_uri.as_str(), approve_body, StatusCode::OK).await;
+    assert_eq!(
+        approve_response["data"]["item"]["status"],
+        json!("resolved")
+    );
 }
 
 #[tokio::test]
@@ -1289,8 +1543,14 @@ async fn provider_bindings_should_work_over_http() {
         .expect("response body should be readable");
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["data"]["item"]["bindingId"], "binding.rig.default");
-    assert_eq!(body_json["data"]["item"]["providerId"], "provider.model.rig-rust");
+    assert_eq!(
+        body_json["data"]["item"]["bindingId"],
+        "binding.rig.default"
+    );
+    assert_eq!(
+        body_json["data"]["item"]["providerId"],
+        "provider.model.rig-rust"
+    );
     assert_eq!(
         body_json["data"]["item"]["implementationKind"],
         "typed-local-provider"
@@ -1364,7 +1624,10 @@ async fn app_create_agent_should_accept_implementation_type() {
         response["data"]["item"]["implementationProviderId"],
         "provider.agent.langgraph"
     );
-    assert_eq!(response["data"]["item"]["implementationKind"], "protocol-adapter");
+    assert_eq!(
+        response["data"]["item"]["implementationKind"],
+        "protocol-adapter"
+    );
     assert_eq!(response["data"]["item"]["implementationType"], "langgraph");
 }
 
@@ -1401,8 +1664,14 @@ async fn backend_update_agent_should_change_implementation_type() {
         response["data"]["item"]["implementationProviderId"],
         "provider.agent.openai"
     );
-    assert_eq!(response["data"]["item"]["implementationKind"], "process-adapter");
-    assert_eq!(response["data"]["item"]["implementationType"], "openai-agents");
+    assert_eq!(
+        response["data"]["item"]["implementationKind"],
+        "process-adapter"
+    );
+    assert_eq!(
+        response["data"]["item"]["implementationType"],
+        "openai-agents"
+    );
 }
 
 #[tokio::test]
@@ -1579,7 +1848,7 @@ async fn app_agent_preview_response_should_use_agent_runtime_api_contract() {
         .oneshot(request)
         .await
         .expect("preview request should succeed");
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     let body_bytes = to_bytes(response.into_body(), usize::MAX)
         .await
@@ -1590,11 +1859,20 @@ async fn app_agent_preview_response_should_use_agent_runtime_api_contract() {
         body_json["data"]["item"]["executionId"],
         "execution.preview.runtime.1"
     );
-    assert_eq!(body_json["data"]["item"]["agentId"], "agent.preview.runtime");
+    assert_eq!(
+        body_json["data"]["item"]["agentId"],
+        "agent.preview.runtime"
+    );
     assert_eq!(body_json["data"]["item"]["operation"], "preview_response");
     assert_eq!(body_json["data"]["item"]["status"], "completed");
-    assert_eq!(body_json["data"]["item"]["outputPayload"]["content"], "hello");
-    assert_eq!(body_json["data"]["item"]["outputPayload"]["debugMode"], true);
+    assert_eq!(
+        body_json["data"]["item"]["outputPayload"]["content"],
+        "hello"
+    );
+    assert_eq!(
+        body_json["data"]["item"]["outputPayload"]["debugMode"],
+        true
+    );
 }
 
 #[tokio::test]
@@ -1634,7 +1912,7 @@ async fn app_agent_prompt_optimization_should_use_agent_runtime_api_contract() {
         .oneshot(request)
         .await
         .expect("prompt optimization request should succeed");
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     let body_bytes = to_bytes(response.into_body(), usize::MAX)
         .await
@@ -1646,7 +1924,10 @@ async fn app_agent_prompt_optimization_should_use_agent_runtime_api_contract() {
         "execution.prompt.runtime.1"
     );
     assert_eq!(body_json["data"]["item"]["agentId"], "agent.prompt.runtime");
-    assert_eq!(body_json["data"]["item"]["operation"], "prompt_optimization");
+    assert_eq!(
+        body_json["data"]["item"]["operation"],
+        "prompt_optimization"
+    );
     assert_eq!(body_json["data"]["item"]["status"], "completed");
     assert_eq!(
         body_json["data"]["item"]["outputPayload"]["optimizedPrompt"],
@@ -2026,7 +2307,7 @@ async fn missing_subject_header_should_return_problem_detail() {
 }
 
 #[tokio::test]
-async fn delete_without_requested_at_should_return_bad_request() {
+async fn delete_agent_without_body_should_return_no_content() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
@@ -2039,30 +2320,20 @@ async fn delete_without_requested_at_should_return_bad_request() {
     let request = Request::builder()
         .method("DELETE")
         .uri("/app/v3/api/ai/agents/agent.gamma")
-        .header(CONTENT_TYPE, "application/json")
-        .body(Body::from("{}"))
+        .body(Body::empty())
         .expect("request should be built");
 
     let response = app
         .clone()
         .oneshot(auth_headers(request))
         .await
-        .expect("request should return validation error");
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok()),
-        Some("application/problem+json")
-    );
+        .expect("delete request should succeed");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     let body_bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body should be readable");
-    let body_json: Value =
-        serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["code"], 40001);
+    assert!(body_bytes.is_empty());
 }
 
 #[tokio::test]
@@ -2257,21 +2528,14 @@ async fn restore_with_invalid_requested_at_should_return_bad_request() {
     let delete_request = Request::builder()
         .method("DELETE")
         .uri("/app/v3/api/ai/agents/agent.restore.invalid-time")
-        .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            json!({
-                "expectedVersion": "1",
-                "requestedAt": "2026-06-01T04:00:00Z"
-            })
-            .to_string(),
-        ))
+        .body(Body::empty())
         .expect("request should be built");
     let delete_response = app
         .clone()
         .oneshot(auth_headers(delete_request))
         .await
         .expect("delete request should succeed");
-    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let restore_request = Request::builder()
         .method("POST")
@@ -2314,21 +2578,14 @@ async fn app_restore_should_restore_deleted_agent() {
     let delete_request = Request::builder()
         .method("DELETE")
         .uri("/app/v3/api/ai/agents/agent.restore.app")
-        .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            json!({
-                "expectedVersion": "1",
-                "requestedAt": "2026-06-01T03:00:00Z"
-            })
-            .to_string(),
-        ))
+        .body(Body::empty())
         .expect("request should be built");
     let delete_response = app
         .clone()
         .oneshot(auth_headers(delete_request))
         .await
         .expect("delete request should succeed");
-    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let restore_request = Request::builder()
         .method("POST")
@@ -2371,21 +2628,14 @@ async fn backend_restore_should_restore_deleted_agent() {
     let delete_request = Request::builder()
         .method("DELETE")
         .uri("/app/v3/api/ai/agents/agent.restore.backend")
-        .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            json!({
-                "expectedVersion": "1",
-                "requestedAt": "2026-06-01T04:00:00Z"
-            })
-            .to_string(),
-        ))
+        .body(Body::empty())
         .expect("request should be built");
     let delete_response = app
         .clone()
         .oneshot(auth_headers(delete_request))
         .await
         .expect("delete request should succeed");
-    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let restore_request = Request::builder()
         .method("POST")
@@ -2553,7 +2803,7 @@ async fn status_update_with_stale_expected_version_should_return_version_conflic
         .oneshot(auth_headers(first_status_update))
         .await
         .expect("first status update should succeed");
-    assert_eq!(first_status_response.status(), StatusCode::OK);
+    assert_eq!(first_status_response.status(), StatusCode::CREATED);
 
     let stale_status_update = Request::builder()
         .method("POST")
@@ -2619,7 +2869,7 @@ async fn backend_audit_events_should_return_recorded_items() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::OK);
+    assert_eq!(status_response.status(), StatusCode::CREATED);
 
     let list_request = Request::builder()
         .method("GET")
@@ -2674,7 +2924,7 @@ async fn backend_audit_events_action_filter_should_work() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::OK);
+    assert_eq!(status_response.status(), StatusCode::CREATED);
 
     let list_request = Request::builder()
         .method("GET")
@@ -2837,7 +3087,7 @@ async fn backend_audit_events_time_range_filter_should_work() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::OK);
+    assert_eq!(status_response.status(), StatusCode::CREATED);
 
     let list_request = Request::builder()
         .method("GET")
@@ -3008,7 +3258,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
         .oneshot(auth_headers(status_active_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_active_response.status(), StatusCode::OK);
+    assert_eq!(status_active_response.status(), StatusCode::CREATED);
 
     let status_disabled_request = Request::builder()
         .method("POST")
@@ -3028,7 +3278,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
         .oneshot(auth_headers(status_disabled_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_disabled_response.status(), StatusCode::OK);
+    assert_eq!(status_disabled_response.status(), StatusCode::CREATED);
 
     let list_request = Request::builder()
         .method("GET")
@@ -3094,7 +3344,7 @@ async fn backend_audit_events_should_sort_by_instant_desc_across_timezones() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::OK);
+    assert_eq!(status_response.status(), StatusCode::CREATED);
 
     let list_request = Request::builder()
         .method("GET")
@@ -3490,8 +3740,14 @@ async fn app_chat_message_turn_should_return_completion() {
     )
     .await;
     assert_eq!(completion["data"]["item"]["userMessage"]["role"], "user");
-    assert_eq!(completion["data"]["item"]["userMessage"]["content"], "Hello over HTTP");
-    assert_eq!(completion["data"]["item"]["assistantMessage"]["role"], "assistant");
+    assert_eq!(
+        completion["data"]["item"]["userMessage"]["content"],
+        "Hello over HTTP"
+    );
+    assert_eq!(
+        completion["data"]["item"]["assistantMessage"]["role"],
+        "assistant"
+    );
     assert!(completion["data"]["item"]["assistantMessage"]["content"]
         .as_str()
         .unwrap_or("")
@@ -3537,7 +3793,10 @@ async fn open_api_chat_message_should_accept_body_tenant_id() {
         StatusCode::CREATED,
     )
     .await;
-    assert_eq!(completion["data"]["item"]["assistantMessage"]["role"], "assistant");
+    assert_eq!(
+        completion["data"]["item"]["assistantMessage"]["role"],
+        "assistant"
+    );
 }
 
 #[tokio::test]
@@ -3572,6 +3831,23 @@ async fn backend_archive_session_should_transition_status() {
         .as_str()
         .expect("session version");
 
+    let closed = post_json(
+        &app,
+        &format!(
+            "/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/close?tenant_id=100001"
+        ),
+        json!({
+            "tenantId": "100001",
+            "expectedVersion": expected_version,
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    let closed_version = closed["data"]["item"]["version"]
+        .as_str()
+        .expect("closed session version");
+
     let archived = post_json(
         &app,
         &format!(
@@ -3579,7 +3855,7 @@ async fn backend_archive_session_should_transition_status() {
         ),
         json!({
             "tenantId": "100001",
-            "expectedVersion": expected_version,
+            "expectedVersion": closed_version,
             "requestedAt": "2026-06-28T12:00:00Z"
         }),
         StatusCode::OK,

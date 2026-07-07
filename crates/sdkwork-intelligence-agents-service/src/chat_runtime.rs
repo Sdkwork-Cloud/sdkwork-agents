@@ -7,14 +7,14 @@
 
 use crate::domain::{AgentMessageRole, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
-use sdkwork_agent_kernel::{
-    KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
-};
+use sdkwork_agent_kernel::{KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus};
 use sdkwork_agents_runtime_facade::{
-    bootstrap_code_engine, execute_code_engine_turn, CodeEngineTurnInput,
+    bootstrap_code_engine, execute_code_engine_turn, execute_code_engine_turn_with_stream,
+    CodeEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Runtime mode when managed chat inference succeeds through the code-engine facade.
 pub const RUNTIME_MODE_FACADE: &str = "agents-runtime-facade";
@@ -51,14 +51,44 @@ pub struct ChatCompletionOutput {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub runtime_mode: &'static str,
+    pub stream_deltas: Vec<String>,
 }
 
 /// Pluggable chat completion strategy (Open/Closed: swap at service bootstrap).
 pub trait ChatCompleter: Send + Sync {
     fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput;
+
+    fn complete_with_stream_preference(
+        &self,
+        input: &ChatCompletionInput,
+        prefer_stream: bool,
+    ) -> ChatCompletionOutput {
+        let _ = prefer_stream;
+        self.complete(input)
+    }
 }
 
 /// Default managed-agent contract completer used in tests and local deployments.
+/// Maximum wall-clock time for one managed chat completion turn.
+pub const CHAT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Run a chat completion on a worker thread with a hard timeout.
+pub fn complete_with_timeout(
+    completer: Arc<dyn ChatCompleter>,
+    input: &ChatCompletionInput,
+    prefer_stream: bool,
+    timeout: Duration,
+) -> ChatCompletionOutput {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let input = input.clone();
+    std::thread::spawn(move || {
+        let output = completer.complete_with_stream_preference(&input, prefer_stream);
+        let _ = tx.send(output);
+    });
+    rx.recv_timeout(timeout)
+        .unwrap_or_else(|_| inference_error("chat completion timed out"))
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ContractChatCompleter;
 
@@ -119,6 +149,14 @@ pub struct RuntimeFacadeChatCompleter;
 
 impl ChatCompleter for RuntimeFacadeChatCompleter {
     fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
+        self.complete_with_stream_preference(input, false)
+    }
+
+    fn complete_with_stream_preference(
+        &self,
+        input: &ChatCompletionInput,
+        prefer_stream: bool,
+    ) -> ChatCompletionOutput {
         if !input.provider_has_model_chat {
             return complete_chat_turn(input);
         }
@@ -140,16 +178,20 @@ impl ChatCompleter for RuntimeFacadeChatCompleter {
 
         let model_id = resolve_turn_model_id(input, &slot);
         let prompt = build_managed_chat_prompt(input);
+        let turn_input = CodeEngineTurnInput {
+            engine_key: engine_key.to_string(),
+            model_id: model_id.clone(),
+            native_session_id: Some(input.session.session_id.clone()),
+            prompt,
+        };
 
-        match execute_code_engine_turn(
-            &slot,
-            &CodeEngineTurnInput {
-                engine_key: engine_key.to_string(),
-                model_id: model_id.clone(),
-                native_session_id: Some(input.session.session_id.clone()),
-                prompt,
-            },
-        ) {
+        let turn_result = if prefer_stream {
+            execute_code_engine_turn_with_stream(&slot, &turn_input)
+        } else {
+            execute_code_engine_turn(&slot, &turn_input)
+        };
+
+        match turn_result {
             Ok(output) => {
                 let content = output.assistant_content.trim().to_string();
                 if content.is_empty() {
@@ -162,6 +204,7 @@ impl ChatCompleter for RuntimeFacadeChatCompleter {
                     input_tokens: estimate_tokens(input.user_content.as_str()),
                     output_tokens: estimate_tokens(output.assistant_content.as_str()),
                     runtime_mode: RUNTIME_MODE_FACADE,
+                    stream_deltas: output.stream_deltas,
                 }
             }
             Err(error) => inference_error(format!("code engine turn failed: {error}")),
@@ -218,6 +261,7 @@ fn inference_error(message: impl Into<String>) -> ChatCompletionOutput {
         input_tokens: 0,
         output_tokens: 0,
         runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
+        stream_deltas: Vec::new(),
     }
 }
 
@@ -250,10 +294,8 @@ fn invoke_kernel_model(
         .model_id
         .clone()
         .or_else(|| input.session.model_id.clone());
-    let mut request =
-        ModelRequest::new(model_request_id.clone(), build_model_messages(input)).for_session(
-            input.session.session_id.clone(),
-        );
+    let mut request = ModelRequest::new(model_request_id.clone(), build_model_messages(input))
+        .for_session(input.session.session_id.clone());
     if let Some(model_id) = model_id.clone() {
         request = request.with_model_id(model_id);
     }
@@ -278,9 +320,7 @@ fn map_model_response(
         .into_iter()
         .next()
         .filter(|message| !is_blank(Some(message.as_str())))
-        .unwrap_or_else(|| {
-            self_fallback_content(input)
-        });
+        .unwrap_or_else(|| self_fallback_content(input));
     let (input_tokens, output_tokens) = response
         .usage
         .map(|usage| (usage.input_tokens as u64, usage.output_tokens as u64))
@@ -297,6 +337,7 @@ fn map_model_response(
         input_tokens,
         output_tokens,
         runtime_mode: "managed-agent-kernel-model-v1",
+        stream_deltas: Vec::new(),
     })
 }
 
@@ -341,7 +382,11 @@ pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
     let runtime_mode = runtime_mode_for(input);
 
     let content = if input.history.is_empty() {
-        if let Some(welcome) = input.welcome_message.as_deref().filter(|value| !is_blank(Some(*value))) {
+        if let Some(welcome) = input
+            .welcome_message
+            .as_deref()
+            .filter(|value| !is_blank(Some(*value)))
+        {
             format!(
                 "{welcome}\n\nHow can I help you today?\n\n> {}",
                 input.user_content
@@ -380,13 +425,14 @@ pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
         input_tokens,
         output_tokens,
         runtime_mode,
+        stream_deltas: Vec::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{AgentSessionStatus, AgentSessionRecord};
+    use crate::domain::{AgentSessionRecord, AgentSessionStatus};
 
     fn sample_session() -> AgentSessionRecord {
         AgentSessionRecord {

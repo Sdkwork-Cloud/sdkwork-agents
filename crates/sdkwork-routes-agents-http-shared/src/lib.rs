@@ -33,15 +33,29 @@ mod route_manifest_contracts {
 
     #[test]
     fn route_manifest_helpers_build_from_generated_slices() {
-        assert!(!app_route_manifest().match_route("GET", "/app/v3/api/ai/agents").is_none()
-            || !APP_ROUTES.is_empty());
-        assert!(!backend_route_manifest().match_route("GET", "/backend/v3/api/ai/agents").is_none()
-            || !BACKEND_ROUTES.is_empty());
-        assert!(!open_route_manifest().match_route("GET", "/agent/v3/api/ai/agents").is_none()
-            || !OPEN_ROUTES.is_empty());
-        assert!(!combined_route_manifest()
-            .match_route("GET", "/app/v3/api/ai/agents")
-            .is_none()
-            || !COMBINED_ROUTES.is_empty());
+        assert!(
+            !app_route_manifest()
+                .match_route("GET", "/app/v3/api/ai/agents")
+                .is_none()
+                || !APP_ROUTES.is_empty()
+        );
+        assert!(
+            !backend_route_manifest()
+                .match_route("GET", "/backend/v3/api/ai/agents")
+                .is_none()
+                || !BACKEND_ROUTES.is_empty()
+        );
+        assert!(
+            !open_route_manifest()
+                .match_route("GET", "/agent/v3/api/ai/agents")
+                .is_none()
+                || !OPEN_ROUTES.is_empty()
+        );
+        assert!(
+            !combined_route_manifest()
+                .match_route("GET", "/app/v3/api/ai/agents")
+                .is_none()
+                || !COMBINED_ROUTES.is_empty()
+        );
     }
 }

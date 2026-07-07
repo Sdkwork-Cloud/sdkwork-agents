@@ -10,10 +10,9 @@ pub struct ApplicationAssembly {
 }
 
 pub async fn assemble_application_router() -> anyhow::Result<ApplicationAssembly> {
-    let config = Arc::new(
-        ServerConfig::from_env()
-            .map_err(|error| anyhow::anyhow!("load kernel server config for sdkwork-agents: {error}"))?,
-    );
+    let config = Arc::new(ServerConfig::from_env().map_err(|error| {
+        anyhow::anyhow!("load kernel server config for sdkwork-agents: {error}")
+    })?);
     let router = sdkwork_agents_kernel_bridge::build_agents_served_router(config)
         .await
         .map_err(|error| anyhow::anyhow!("compose agents served router: {error}"))?;
