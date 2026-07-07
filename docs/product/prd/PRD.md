@@ -3,7 +3,7 @@
 Status: active
 Owner: agents-platform
 Application: sdkwork-agents
-Updated: 2026-07-07
+Updated: 2026-07-08
 Specs: REQUIREMENTS_SPEC.md, DOCUMENTATION_SPEC.md
 
 ## Document Map
@@ -167,8 +167,9 @@ these modules with `dependencyMode=independent-capability-module` and
 | FR-6 | Live interaction supports approval and user-question pause points | `ai_agent_interaction`; App/Backend `agents.interactions.*`; Open API excluded |
 | FR-7 | Runtime catalog exposes canonical code engines and MCP marketplace projection to app clients | App API `agents.codeEngines.list` and `agents.mcpServers.list` |
 | FR-8 | Product applications cannot directly consume kernel/provider crates | BirdCoder uses `sdkwork-agents-runtime-facade` and `@sdkwork/agents-app-sdk`; direct provider deps are forbidden |
-| FR-9 | Commercial MVP is operable with audit, metrics, SDKs, pagination, production security gates, and fail-closed persistence | PRD Phase 4 gates plus `pnpm verify`, `pnpm check`, `pnpm check:production-security`, API envelope, operation pattern, route collision, pagination, SDK import, composition, and BirdCoder contract checks |
+| FR-9 | Commercial MVP is operable with audit, metrics, SDKs, pagination, frontend identity gates, production security gates, and fail-closed persistence | PRD Phase 4 gates plus `pnpm verify`, `pnpm check`, `pnpm check:frontend-service-identity`, `pnpm check:production-security`, API envelope, operation pattern, route collision, pagination, SDK import, composition, and BirdCoder contract checks |
 | FR-10 | Independent capability modules remain upstream dependencies, never downstream consumers of agents | PRD and architecture dependency matrices say agents → memory/knowledgebase/skills/prompts/mcp/llm/drive; no reverse dependency is permitted |
+| FR-11 | PC/H5 services preserve server-owned message identity and approved client business ID generation | Authored agents services do not call `crypto.randomUUID()` directly; generated SDK chat responses must include server `messageId`; client-required agent/execution business IDs use `@sdkwork/utils/id` helper wrappers |
 
 ## 5. User Scenarios
 
@@ -255,6 +256,7 @@ these modules with `dependencyMode=independent-capability-module` and
 - [x] Postgres interaction 持久化
 - [x] 生产环境禁用 Postgres 不可用时的内存静默降级
 - [x] PC/H5 生产聊天页（`AgentChatView`，sessions/messages API，会话恢复 + 消息上限）
+- [x] PC/H5 前端服务身份门禁（禁止直接 `crypto.randomUUID()`；服务端 `messageId` 缺失即失败）
 - [x] PC/H5 客户端：Auth Gate、知识库 bootstrap、运行时 catalog、composition slot 同步
 - [x] 可选 sibling SDK：skills / voice catalog（无 silent fallback，分页加载）
 - [x] 小程序 runtime bundle 与 TypeScript bootstrap 对齐（verify 门禁）
@@ -269,6 +271,7 @@ these modules with `dependencyMode=independent-capability-module` and
 
 - [ ] 应用商店/渠道发布元数据（截图、描述、`sdkwork.workflow.json` GA 渠道）
 - [x] 端到端自动化 contract（create → chat，纳入 `test:agent-contracts`）
+- [x] `check:frontend-service-identity` 纳入 `pnpm check` / `pnpm check:contracts`
 - [x] Live gateway 冒烟脚本（`pnpm smoke:live`，需运行中的 gateway）
 - [ ] 端到端 live 全链路（Auth + CRUD + Chat + 真实 code-engine 推理，见 [smoke-test.md](../../runbooks/smoke-test.md)）
 - [ ] Grafana 仪表盘对接 `/metrics` + `/metrics/agents`（运维平台）
@@ -301,7 +304,7 @@ these modules with `dependencyMode=independent-capability-module` and
 | Autonomous engines | T2 opt-in | Conformance + health + policy gate before default catalog |
 | Observability | Metrics exposed | Grafana dashboard and operator runbook |
 | Release metadata | Beta manifest | GA channel metadata, screenshots, SBOM/checksum evidence |
-| Production gates | Root `pnpm check` covers API, SDK, pagination, route, composition, apps index, production security, shutdown signal resilience, dev-only policy fail-closed behavior, in-memory lock poison recovery, managed-store ID initialization error propagation, route manifest build-script error propagation, strict repository ports, deployment, docs, topology, and database standards | `pnpm verify`, `pnpm check:production-security`, live smoke, and BirdCoder integration evidence before GA |
+| Production gates | Root `pnpm check` covers API, SDK, pagination, route, composition, frontend service identity, apps index, production security, shutdown signal resilience, dev-only policy fail-closed behavior, in-memory lock poison recovery, managed-store ID initialization error propagation, route manifest build-script error propagation, strict repository ports, deployment, docs, topology, and database standards | `pnpm verify`, `pnpm check:frontend-service-identity`, `pnpm check:production-security`, live smoke, and BirdCoder integration evidence before GA |
 
 ## 8. Linked Requirements
 

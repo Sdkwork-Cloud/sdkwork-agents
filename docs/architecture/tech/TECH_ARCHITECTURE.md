@@ -2,7 +2,7 @@
 
 Status: active
 Owner: agents-platform
-Updated: 2026-07-07
+Updated: 2026-07-08
 Specs: [`ARCHITECTURE_DECISION_SPEC.md`](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [`WEB_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/WEB_FRAMEWORK_SPEC.md), [`DATABASE_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md), [`API_SPEC.md`](../../../../sdkwork-specs/API_SPEC.md), [`SDK_SPEC.md`](../../../../sdkwork-specs/SDK_SPEC.md)
 
 ## 1. Architecture Overview
@@ -353,6 +353,13 @@ ai_agent_runtime      ai_agent_composition        ai_agent_audit_event
 `message.delta` 分片并在结束时返回 completion 信封。逐 token streaming 是 P1 kernel/provider
 缺口，不改变 chat turn 的持久化权威。
 
+PC/H5 services treat persisted chat message identity as server-owned. `assistantMessage.messageId`
+must be present in the generated SDK response; malformed responses are rejected instead of being
+masked with a local fallback ID. Authored PC/H5 agents service source must not call
+`crypto.randomUUID()` directly; client-required business IDs use `@sdkwork/utils/id` through a
+small service helper until the public API contract moves those fields server-side through a reviewed
+breaking change.
+
 PC 管理面 `managementProfile` 通过 `defaultCodeTaskIntent.constraints` 中的
 `sdkwork.agent.pc.config:{json}` 与 OpenAPI 对齐，包含 `knowledgeBaseIds`、`skillIds`、
 `toolIds`、`voiceIds`、`memoryEnabled` 等字段。
@@ -413,6 +420,7 @@ pnpm check:pagination
 pnpm check:app-sdk-consumer-imports
 pnpm check:component-port-bindings
 pnpm check:frontend-composition
+pnpm check:frontend-service-identity
 pnpm check:permission-composition
 pnpm check:composition-resolver
 pnpm check:rust-backend-composition
@@ -421,6 +429,11 @@ node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```
 
 `pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, standalone gateway shutdown handling, dev-only static policy fail-closed behavior, in-memory repository/audit lock recovery, managed-store Snowflake ID initialization error propagation, route manifest build-script error propagation, and strict repository ports. Signal handler installation failures, dev-only policy misconfiguration, poisoned in-memory locks, and OpenAPI route manifest generation failures must be logged or returned with operator-visible context instead of panicking; repository and Postgres adapter constructors that initialize default business ID generators must return `KernelResult` on production paths; incomplete persistence adapters must fail at compile time instead of inheriting default empty stubs.
+
+`pnpm check:frontend-service-identity` validates the PC/H5 authored agents services do not directly
+call browser UUID APIs for SDKWork-owned service identity. The PC chat service contract also proves
+that a missing server `messageId` is treated as an invalid SDK response, preventing UI state from
+silently diverging from persisted `ai_agent_message` rows.
 
 ## 10. Launch Readiness
 
@@ -452,6 +465,7 @@ reason to re-own kernel or sibling module responsibilities inside `sdkwork-agent
 | Agents managed-store Prometheus metrics (`/metrics/agents`, RPS gauge) | Done |
 | Postgres interaction persistence + fail-closed HTTP state bootstrap | Done |
 | PC/H5 production chat UI (`AgentChatView` + sessions/messages API) | Done |
+| PC/H5 frontend service identity gate (`@sdkwork/utils/id` business IDs; server `messageId` required) | Done |
 | PC Auth Gate + knowledge bootstrap + runtime catalog + composition slot sync | Done |
 | Optional skills/voice/knowledge catalog via sibling app SDKs | Done (server-paged pickers; cursor/offset per authority) |
 | Mini-program runtime bundle rebuild in verify (`agents-mini-program build` + runtime contract) | Done |
