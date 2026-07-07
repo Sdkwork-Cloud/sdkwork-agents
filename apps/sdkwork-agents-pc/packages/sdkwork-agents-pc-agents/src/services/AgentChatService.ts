@@ -36,8 +36,13 @@ function pickString(record: Record<string, unknown> | undefined, keys: string[])
 }
 
 function toChatMessage(record: Record<string, unknown>): ChatMessage {
+  const messageId = pickString(record, ["messageId", "message_id", "id"]);
+  if (!messageId) {
+    throw new Error("Chat message did not include messageId.");
+  }
+
   return {
-    id: pickString(record, ["messageId", "message_id", "id"]) ?? crypto.randomUUID(),
+    id: messageId,
     role: (pickString(record, ["role"]) as ChatMessage["role"]) ?? "assistant",
     content: pickString(record, ["content"]) ?? "",
     createdAt: pickString(record, ["createdAt", "created_at"]) ?? new Date().toISOString(),

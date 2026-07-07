@@ -10,6 +10,7 @@ import type {
   UpdateAgentRequest,
 } from '@sdkwork/agents-h5-core/sdk';
 import { syncAgentCompositionSlots } from './CompositionSlotSyncService';
+import { createAgentBusinessId, createAgentExecutionId } from './businessIdentifiers';
 import {
   DEFAULT_LIST_PAGE_SIZE,
   extractArray,
@@ -107,14 +108,6 @@ const DEFAULT_AGENT_PROVIDER_ID = 'provider.agent.manifest';
 const DEFAULT_AGENT_CONFIGURATION_PROFILE_ID = 'profile.agent.manifest.default';
 const DEFAULT_AGENT_PROVIDER_CAPABILITIES = ['model.chat', 'tool.invoke'] as const;
 const AGENT_UI_CONFIG_CONSTRAINT_PREFIX = 'sdkwork.agent.pc.config:';
-
-function createExecutionId(prefix: string): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}.${crypto.randomUUID().toLowerCase()}`;
-  }
-  return `${prefix}.${Math.trunc(performance.now()).toString(36)}`;
-}
-
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -254,20 +247,6 @@ function requireAgentId(config: AgentConfig): string {
     return agentId;
   }
   throw new Error('Agent id is required for backend agent runtime execution');
-}
-
-function createAgentId(name: string): string {
-  const normalizedName = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, '-')
-    .replace(/^-+|-+$/gu, '')
-    .slice(0, 48);
-  const suffix =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID().replace(/-/gu, '').slice(0, 12)
-      : Math.trunc(performance.now()).toString(36);
-  return `agent.pc.${normalizedName || 'managed'}.${suffix}`;
 }
 
 function buildAgentRuntimeInputPayload(
@@ -748,7 +727,7 @@ class SdkworkAgentService implements AgentService {
   }
 
   async createAgent(config: AgentConfig): Promise<AgentConfig> {
-    const agentId = asString(config.id) ?? createAgentId(config.name);
+    const agentId = asString(config.id) ?? createAgentBusinessId(config.name);
     const response = await this.getAgentClient().ai.agents.create(
       buildCreateAgentRequest(config, agentId),
     );
@@ -792,7 +771,7 @@ class SdkworkAgentService implements AgentService {
 
   async requestPreviewResponse(request: AgentPreviewResponseRequest): Promise<AgentPreviewResponse> {
     const agentId = requireAgentId(request.config);
-    const executionId = createExecutionId('execution.pc.agent.preview');
+    const executionId = createAgentExecutionId('preview');
     const model = normalizeModelForRuntime(request.model ?? request.config.model);
     const response = await this.getAgentClient().ai.agents.previewResponses.create(
       agentId,
@@ -836,7 +815,7 @@ class SdkworkAgentService implements AgentService {
 
   async optimizePrompt(request: AgentPromptOptimizeRequest): Promise<AgentPromptOptimizeResult> {
     const agentId = requireAgentId(request.config);
-    const executionId = createExecutionId('execution.pc.agent.prompt');
+    const executionId = createAgentExecutionId('prompt');
     const model = normalizeModelForRuntime(request.config.model);
     const response = await this.getAgentClient().ai.agents.promptOptimizations.create(
       agentId,

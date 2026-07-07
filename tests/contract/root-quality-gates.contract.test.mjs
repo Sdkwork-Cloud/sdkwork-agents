@@ -13,6 +13,7 @@ const requiredCheckScripts = [
   "check:route-path-collisions",
   "check:apps-directory-index",
   "check:component-port-bindings",
+  "check:frontend-service-identity",
   "check:frontend-composition",
   "check:permission-composition",
   "check:composition-resolver",
@@ -39,6 +40,7 @@ test("root check command includes production readiness quality gates", () => {
 
 const requiredContractTestFiles = [
   "tests/contract/production-security.contract.test.mjs",
+  "tests/contract/frontend-service-identity.contract.test.mjs",
 ];
 
 test("contract check command includes production security contracts", () => {
