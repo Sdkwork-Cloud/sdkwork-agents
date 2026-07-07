@@ -420,7 +420,7 @@ pnpm check:production-security
 node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```
 
-`pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, standalone gateway shutdown handling, dev-only static policy fail-closed behavior, in-memory repository/audit lock recovery, managed-store Snowflake ID initialization error propagation, and strict repository ports. Signal handler installation failures, dev-only policy misconfiguration, and poisoned in-memory locks must be logged for operators and must not panic the running gateway; repository and Postgres adapter constructors that initialize default business ID generators must return `KernelResult` on production paths; incomplete persistence adapters must fail at compile time instead of inheriting default empty stubs.
+`pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, standalone gateway shutdown handling, dev-only static policy fail-closed behavior, in-memory repository/audit lock recovery, managed-store Snowflake ID initialization error propagation, route manifest build-script error propagation, and strict repository ports. Signal handler installation failures, dev-only policy misconfiguration, poisoned in-memory locks, and OpenAPI route manifest generation failures must be logged or returned with operator-visible context instead of panicking; repository and Postgres adapter constructors that initialize default business ID generators must return `KernelResult` on production paths; incomplete persistence adapters must fail at compile time instead of inheriting default empty stubs.
 
 ## 10. Launch Readiness
 

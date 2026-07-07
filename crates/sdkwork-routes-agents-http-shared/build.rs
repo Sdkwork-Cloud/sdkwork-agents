@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 use serde::Deserialize;
+
+type BuildResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Debug, Deserialize)]
 struct OpenApiDocument {
@@ -18,10 +21,20 @@ struct Operation {
     security: Option<Vec<BTreeMap<String, Vec<serde_yaml::Value>>>>,
 }
 
-fn main() {
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("required CARGO_MANIFEST_DIR environment variable is missing: {error}"),
+        )
+    })?);
     let app_root = manifest_dir.join("../..");
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("required OUT_DIR environment variable is missing: {error}"),
+        )
+    })?);
 
     let surfaces = [
         (
@@ -50,19 +63,22 @@ fn main() {
     let mut combined_entries = Vec::new();
 
     for (file_name, const_name, path) in &surfaces {
-        let yaml = fs::read_to_string(path).unwrap_or_else(|error| {
-            panic!(
-                "failed to read OpenAPI authority {}: {error}",
-                path.display()
+        let yaml = fs::read_to_string(path).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("failed to read OpenAPI authority {}: {error}", path.display()),
             )
-        });
-        let document: OpenApiDocument =
-            serde_yaml::from_str(&yaml).expect("failed to parse OpenAPI authority yaml");
+        })?;
+        let document: OpenApiDocument = serde_yaml::from_str(&yaml).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("failed to parse OpenAPI authority {}: {error}", path.display()),
+            )
+        })?;
         let entries = collect_routes(&document);
         combined_entries.extend(entries.iter().cloned());
         let source = render_routes(const_name, &entries);
-        fs::write(out_dir.join(file_name), source)
-            .expect("failed to write generated route manifest");
+        write_generated_route_manifest(out_dir.join(file_name), source)?;
     }
 
     combined_entries.sort_by(|left, right| {
@@ -72,13 +88,27 @@ fn main() {
     });
     combined_entries.dedup_by(|left, right| left.path == right.path && left.method == right.method);
     let combined_source = render_routes("COMBINED_ROUTES", &combined_entries);
-    fs::write(out_dir.join("agent_combined_routes.rs"), combined_source)
-        .expect("failed to write combined route manifest");
+    write_generated_route_manifest(out_dir.join("agent_combined_routes.rs"), combined_source)?;
 
     println!("cargo:rerun-if-changed=build.rs");
     for (_, _, path) in &surfaces {
         println!("cargo:rerun-if-changed={}", path.display());
     }
+
+    Ok(())
+}
+
+fn write_generated_route_manifest(path: PathBuf, source: String) -> BuildResult<()> {
+    fs::write(&path, source).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "failed to write generated route manifest {}: {error}",
+                path.display()
+            ),
+        )
+    })?;
+    Ok(())
 }
 
 #[derive(Clone)]

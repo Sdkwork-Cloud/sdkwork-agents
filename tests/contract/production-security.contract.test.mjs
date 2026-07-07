@@ -234,6 +234,32 @@ test("agent repository port does not compile incomplete persistence adapters", (
   }
 });
 
+test("route manifest build script returns explicit errors instead of panicking", () => {
+  const source = readText("crates/sdkwork-routes-agents-http-shared/build.rs");
+
+  assert.match(
+    source,
+    /fn main\(\) -> Result<\(\), Box<dyn std::error::Error>>/,
+    "route manifest build script must expose a fallible main for build-critical errors",
+  );
+  assert.doesNotMatch(
+    source,
+    /panic!\(|\.expect\(/,
+    "route manifest build script must propagate environment, OpenAPI parsing, and file write errors instead of panicking",
+  );
+  assert.match(
+    source,
+    /read_to_string\(path\)[\s\S]*failed to read OpenAPI authority/,
+    "OpenAPI authority read errors must name the failed authority path",
+  );
+  assert.match(
+    source,
+    /serde_yaml::from_str\(&yaml\)[\s\S]*failed to parse OpenAPI authority/,
+    "OpenAPI authority parse errors must name the failed authority path",
+  );
+}
+);
+
 test("operator docs expose production security smoke criteria", () => {
   const smokeRunbook = readText("docs/runbooks/smoke-test.md");
   const prd = readText("docs/product/prd/PRD.md");
