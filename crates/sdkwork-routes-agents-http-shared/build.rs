@@ -66,13 +66,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let yaml = fs::read_to_string(path).map_err(|error| {
             io::Error::new(
                 error.kind(),
-                format!("failed to read OpenAPI authority {}: {error}", path.display()),
+                format!(
+                    "failed to read OpenAPI authority {}: {error}",
+                    path.display()
+                ),
             )
         })?;
         let document: OpenApiDocument = serde_yaml::from_str(&yaml).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("failed to parse OpenAPI authority {}: {error}", path.display()),
+                format!(
+                    "failed to parse OpenAPI authority {}: {error}",
+                    path.display()
+                ),
             )
         })?;
         let entries = collect_routes(&document);

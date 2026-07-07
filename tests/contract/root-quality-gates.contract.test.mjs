@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -55,6 +55,30 @@ test("contract check command includes production security contracts", () => {
       `pnpm check:contracts must run ${relativePath}`,
     );
   }
+});
+
+test("root workflow scripts do not expose migration-only IM synchronization tools", () => {
+  const packageJson = JSON.parse(
+    readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+  );
+  const scripts = packageJson.scripts ?? {};
+
+  for (const [scriptName, command] of Object.entries(scripts)) {
+    assert.doesNotMatch(
+      `${scriptName} ${command}`,
+      /\b(?:sdkwork-im|im-agent|im-pc-agent|migrate-im|retarget-im|sync-im|run-im)\b/,
+      `${scriptName} must not expose migration-only sdkwork-im synchronization in the agents release surface`,
+    );
+  }
+
+  const migrationOnlyScripts = readdirSync(path.join(repoRoot, "scripts")).filter((fileName) =>
+    /(?:^|-)im(?:-|_).*agent|agent.*(?:^|-)im(?:-|_)/.test(fileName),
+  );
+  assert.deepEqual(
+    migrationOnlyScripts,
+    [],
+    "migration-only sdkwork-im agent synchronization scripts must be removed from the agents release root",
+  );
 });
 
 const launchCanonFiles = [
