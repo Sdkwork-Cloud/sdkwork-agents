@@ -32,18 +32,19 @@ pub fn build_agent_http_state() -> Result<AgentHttpState> {
             env = %sdkwork_agents_contract::agents_deployment_environment_name(),
             "agents dev inline auth bypass is active; using in-memory repository and AllowAllPolicyProvider"
         );
-        return Ok(dev_agent_http_state());
+        return dev_agent_http_state();
     }
 
     production_postgres_agent_http_state()
 }
 
-fn dev_agent_http_state() -> AgentHttpState {
-    AgentHttpState::new(
-        InMemoryAgentRepository::new(),
+fn dev_agent_http_state() -> Result<AgentHttpState> {
+    Ok(AgentHttpState::new(
+        InMemoryAgentRepository::try_new().context("build agents dev in-memory repository")?,
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.agents.dev"),
-    )
+        AllowAllPolicyProvider::try_allow("policy.agents.dev")
+            .context("build agents dev-only policy provider")?,
+    ))
 }
 
 fn production_postgres_agent_http_state() -> Result<AgentHttpState> {

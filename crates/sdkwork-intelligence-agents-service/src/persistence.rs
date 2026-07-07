@@ -1350,8 +1350,7 @@ impl SyncPostgresAdapter {
     pub fn connect(connection_uri: &str) -> KernelResult<Self> {
         Ok(Self {
             pool: BlockingPostgresPool::connect(connection_uri)?,
-            id_generator: AgentBusinessIdGenerator::new_default()
-                .expect("default agents managed store snowflake node id is valid"),
+            id_generator: AgentBusinessIdGenerator::new_default()?,
         })
     }
 
@@ -1362,8 +1361,7 @@ impl SyncPostgresAdapter {
     pub fn connect_from_sdkwork_env(service_name: &str) -> KernelResult<Self> {
         Ok(Self {
             pool: BlockingPostgresPool::connect_from_sdkwork_env(service_name)?,
-            id_generator: AgentBusinessIdGenerator::new_default()
-                .expect("default agents managed store snowflake node id is valid"),
+            id_generator: AgentBusinessIdGenerator::new_default()?,
         })
     }
 
@@ -1372,12 +1370,11 @@ impl SyncPostgresAdapter {
         Self::connect_from_sdkwork_env(AGENTS_MANAGED_STORE_DATABASE_SERVICE)
     }
 
-    pub fn from_pool(pool: BlockingPostgresPool) -> Self {
-        Self {
+    pub fn from_pool(pool: BlockingPostgresPool) -> KernelResult<Self> {
+        Ok(Self {
             pool,
-            id_generator: AgentBusinessIdGenerator::new_default()
-                .expect("default agents managed store snowflake node id is valid"),
-        }
+            id_generator: AgentBusinessIdGenerator::new_default()?,
+        })
     }
 
     pub fn with_pool_and_id_generator(

@@ -36,12 +36,10 @@ pub const ENV_DEPLOYMENT_ENV: &str = "SDKWORK_DEPLOYMENT_ENV";
 
 /// Validates that development authentication bypass is not enabled in production.
 ///
-/// Delegates to `sdkwork-agents-contract::ensure_dev_auth_bypass_allowed` and panics
-/// on violation so legacy call sites fail closed during bootstrap.
-pub fn validate_production_security_config() {
-    if let Err(message) = sdkwork_agents_contract::ensure_dev_auth_bypass_allowed() {
-        panic!("SECURITY VIOLATION: {message}");
-    }
+/// Delegates to `sdkwork-agents-contract::ensure_dev_auth_bypass_allowed` so
+/// callers can fail bootstrap explicitly instead of crashing the process.
+pub fn validate_production_security_config() -> Result<(), String> {
+    sdkwork_agents_contract::ensure_dev_auth_bypass_allowed()?;
 
     if agents_dev_auth_bypass_enabled_from_env() {
         tracing::warn!(
@@ -50,6 +48,7 @@ pub fn validate_production_security_config() {
             "Development authentication bypass is enabled. This MUST NOT be used in production."
         );
     }
+    Ok(())
 }
 
 fn agents_dev_auth_bypass_enabled_from_env() -> bool {
@@ -348,10 +347,19 @@ pub struct InMemoryAgentRepository {
 }
 
 impl InMemoryAgentRepository {
+    pub fn try_new() -> KernelResult<Self> {
+        Ok(Self::with_id_generator(
+            AgentBusinessIdGenerator::new_default()?,
+        ))
+    }
+
     pub fn new() -> Self {
+        Self::try_new().expect("default agents in-memory repository constructor should succeed")
+    }
+
+    fn with_id_generator(id_generator: AgentBusinessIdGenerator) -> Self {
         Self {
-            id_generator: AgentBusinessIdGenerator::new_default()
-                .expect("default agents managed store snowflake node id is valid"),
+            id_generator,
             agents: RwLock::new(HashMap::new()),
             agent_list_index: RwLock::new(BTreeMap::new()),
             provider_bindings: RwLock::new(HashMap::new()),
@@ -1172,19 +1180,42 @@ pub struct AllowAllPolicyProvider {
 }
 
 impl AllowAllPolicyProvider {
-    /// Create a provider that allows every request. The `provider_id` should
-    /// identify the policy source (e.g. `"policy.agents.dev"` for development).
+    /// Create a dev-only provider that allows every request. The `provider_id`
+    /// should identify the policy source (e.g. `"policy.agents.dev"` for
+    /// development).
     ///
     /// # Security Check
-    /// This method automatically validates that the application is not running
-    /// in production. If `SDKWORK_AGENTS_DEV_AUTH_BYPASS=true` and the environment
-    /// is identified as production, this method will panic to prevent security
-    /// misconfiguration.
-    pub fn allow(provider_id: impl Into<String>) -> Self {
-        validate_production_security_config();
-        Self {
+    /// This method validates that the application is not running with
+    /// development auth bypass in a production-like profile.
+    pub fn try_allow(provider_id: impl Into<String>) -> Result<Self, String> {
+        validate_production_security_config()?;
+        Ok(Self {
             provider_id: provider_id.into(),
             mode: PolicyMode::Allow("static.allow".to_string()),
+        })
+    }
+
+    /// Compatibility constructor for tests and local-only callers.
+    ///
+    /// If the environment is misconfigured as production-like with dev auth
+    /// bypass enabled, it logs the violation and returns a deny-all static
+    /// provider instead of panicking or allowing requests.
+    pub fn allow(provider_id: impl Into<String>) -> Self {
+        let provider_id = provider_id.into();
+        match Self::try_allow(provider_id.clone()) {
+            Ok(provider) => provider,
+            Err(message) => {
+                tracing::error!(
+                    env_var = ENV_DEV_AUTH_BYPASS,
+                    deployment = %sdkwork_agents_contract::agents_deployment_environment_name(),
+                    error = %message,
+                    "development auth bypass policy provider refused production-like configuration"
+                );
+                Self {
+                    provider_id,
+                    mode: PolicyMode::Deny("static.deny.security_misconfiguration".to_string()),
+                }
+            }
         }
     }
 }
@@ -1770,6 +1801,40 @@ mod tests {
     }
 
     #[test]
+    fn allow_all_policy_provider_fails_closed_without_panic_in_production_like_bypass() {
+        let _guard = sdkwork_agents_contract::env_test_lock();
+        let previous_bypass = std::env::var("SDKWORK_AGENTS_DEV_AUTH_BYPASS").ok();
+        let previous_deploy = std::env::var("SDKWORK_DEPLOYMENT_ENV").ok();
+        let previous_environment = std::env::var("ENVIRONMENT").ok();
+        let previous_agents_env = std::env::var("SDKWORK_AGENTS_ENVIRONMENT").ok();
+        let previous_profile = std::env::var("SDKWORK_AGENTS_CONFIG_PROFILE").ok();
+
+        std::env::remove_var("ENVIRONMENT");
+        std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
+        std::env::remove_var("SDKWORK_AGENTS_CONFIG_PROFILE");
+        std::env::set_var("SDKWORK_AGENTS_DEV_AUTH_BYPASS", "true");
+        std::env::set_var("SDKWORK_DEPLOYMENT_ENV", "production");
+
+        let provider_result = std::panic::catch_unwind(|| {
+            AllowAllPolicyProvider::allow("policy.agents.misconfigured")
+        });
+
+        restore_optional_env("SDKWORK_AGENTS_DEV_AUTH_BYPASS", previous_bypass);
+        restore_optional_env("SDKWORK_DEPLOYMENT_ENV", previous_deploy);
+        restore_optional_env("ENVIRONMENT", previous_environment);
+        restore_optional_env("SDKWORK_AGENTS_ENVIRONMENT", previous_agents_env);
+        restore_optional_env("SDKWORK_AGENTS_CONFIG_PROFILE", previous_profile);
+
+        let provider = provider_result.expect(
+            "AllowAllPolicyProvider::allow must fail closed instead of panicking",
+        );
+        assert!(
+            matches!(provider.mode, PolicyMode::Deny(_)),
+            "misconfigured AllowAllPolicyProvider must deny instead of allowing"
+        );
+    }
+
+    #[test]
     fn in_memory_repository_rejects_stale_provider_binding_update() {
         let repository = InMemoryAgentRepository::new();
         let record = AgentProviderBindingRecord {
@@ -2128,5 +2193,12 @@ mod tests {
         let provider = DenyAllPolicyProvider::default();
         assert!(!provider.reason.is_empty());
         assert!(!provider.provider_id.is_empty());
+    }
+
+    fn restore_optional_env(key: &str, value: Option<String>) {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
     }
 }

@@ -41,7 +41,7 @@ sdkwork-intelligence-agents-service/
 |   |-- dto.rs               # API DTO <-> command/entity mapping
 |   |-- application.rs       # command models + stateless business service (&self)
 |   |-- ports.rs             # repository/audit interfaces (all &self methods)
-|   |-- infrastructure.rs    # in-memory adapters (RwLock-based) + policy stub
+|   |-- infrastructure.rs    # in-memory adapters, IAM-gated/dev-only policy providers, metrics
 |   |-- persistence.rs       # postgres row mapping, SQL with WHERE filtering, adapter wrappers
 |   |-- postgres_sync_pool.rs # blocking pool facade with PoolMetrics monitoring
 |   `-- http.rs              # optional axum app-api/backend-api route entrypoints

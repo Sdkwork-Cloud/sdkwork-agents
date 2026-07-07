@@ -70,8 +70,13 @@ test("production HTTP bootstrap uses IAM, Postgres, and runtime facade completio
   );
   assert.match(
     source,
-    /if agents_use_dev_inline_auth_resolver\(\)\s*\{[\s\S]*return Ok\(dev_agent_http_state\(\)\);[\s\S]*\}\s*production_postgres_agent_http_state\(\)/,
+    /if agents_use_dev_inline_auth_resolver\(\)\s*\{[\s\S]*return dev_agent_http_state\(\);[\s\S]*\}\s*production_postgres_agent_http_state\(\)/,
     "production bootstrap must fall through to Postgres state when dev inline auth is unavailable",
+  );
+  assert.match(
+    source,
+    /AllowAllPolicyProvider::try_allow\("policy\.agents\.dev"\)[\s\S]*context\("build agents dev-only policy provider"\)\?/,
+    "dev HTTP bootstrap must use the fallible dev-only policy constructor",
   );
   assert.match(
     source,
@@ -121,6 +126,54 @@ test("in-memory repository and audit locks recover from poisoned guards", () => 
     source,
     /trait RecoveringMutex[\s\S]*fn recovering_lock/,
     "in-memory audit and metrics lock recovery must stay centralized",
+  );
+});
+
+test("managed-store constructors propagate snowflake initialization errors", () => {
+  const infrastructure = readText(
+    "crates/sdkwork-intelligence-agents-service/src/infrastructure.rs",
+  );
+  const persistence = readText(
+    "crates/sdkwork-intelligence-agents-service/src/persistence.rs",
+  );
+  const bridge = readText(
+    "crates/sdkwork-agents-kernel-bridge/src/agent_http_state.rs",
+  );
+
+  assert.doesNotMatch(
+    `${infrastructure}\n${persistence}`,
+    /AgentBusinessIdGenerator::new_default\(\)\s*\.expect\(/,
+    "managed-store constructors must propagate ID generator initialization errors instead of panicking",
+  );
+  assert.doesNotMatch(
+    infrastructure,
+    /SECURITY VIOLATION|panic to prevent security|will panic to prevent/,
+    "production security validation must return explicit errors or fail closed instead of panicking",
+  );
+  assert.match(
+    infrastructure,
+    /pub fn validate_production_security_config\(\) -> Result<\(\), String>/,
+    "production security validation must be fallible",
+  );
+  assert.match(
+    infrastructure,
+    /pub fn try_allow\(provider_id: impl Into<String>\) -> Result<Self, String>/,
+    "AllowAllPolicyProvider must expose a fallible dev-only constructor",
+  );
+  assert.match(
+    infrastructure,
+    /pub fn try_new\(\) -> KernelResult<Self>/,
+    "in-memory repository must expose a fallible constructor for runtime bootstrap",
+  );
+  assert.match(
+    bridge,
+    /InMemoryAgentRepository::try_new\(\)[\s\S]*context\("build agents dev in-memory repository"\)\?/,
+    "dev HTTP bootstrap must use the fallible in-memory repository constructor",
+  );
+  assert.match(
+    persistence,
+    /pub fn from_pool\(pool: BlockingPostgresPool\) -> KernelResult<Self>/,
+    "postgres adapter from_pool must remain fallible when it builds the default ID generator",
   );
 });
 
