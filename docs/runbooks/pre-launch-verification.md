@@ -70,7 +70,7 @@ pnpm check:production-security
 
 All L2+ app/backend/open business operations must use `SdkWorkApiResponse` success bodies and `ProblemDetail` errors, follow the API operation matrix, avoid path collisions, expose standard pagination, consume composed SDK imports, preserve SDKWork composition boundaries, and prove production-like profiles reject dev inline auth and contract runtime fallback per [TECH-api-specification.md](../architecture/tech/TECH-api-specification.md) and [TECH_ARCHITECTURE.md](../architecture/tech/TECH_ARCHITECTURE.md).
 
-The same production-security gate must also prove runtime resilience on panic-prone infrastructure paths: failure to install Ctrl+C or SIGTERM handlers is logged for operators and does not terminate the process, and poisoned in-memory repository, audit, or metrics locks recover through centralized helpers instead of `expect` panics.
+The same production-security gate must also prove runtime resilience on panic-prone infrastructure paths: failure to install Ctrl+C or SIGTERM handlers is logged for operators and does not terminate the process, poisoned in-memory repository, audit, or metrics locks recover through centralized helpers instead of `expect` panics, and `AgentRepository` persistence methods remain required trait methods so incomplete adapters fail at compile time.
 
 ## 5. Packaging (CI parity)
 

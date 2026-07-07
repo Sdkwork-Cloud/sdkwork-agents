@@ -420,7 +420,7 @@ pnpm check:production-security
 node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```
 
-`pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, standalone gateway shutdown handling, and in-memory repository/audit lock recovery. Signal handler installation failures and poisoned in-memory locks must be logged for operators and must not panic the running gateway.
+`pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, standalone gateway shutdown handling, in-memory repository/audit lock recovery, and strict repository ports. Signal handler installation failures and poisoned in-memory locks must be logged for operators and must not panic the running gateway; incomplete persistence adapters must fail at compile time instead of inheriting default empty stubs.
 
 ## 10. Launch Readiness
 
