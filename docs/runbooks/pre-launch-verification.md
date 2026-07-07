@@ -20,7 +20,7 @@ pnpm verify
 | Rust build | `cargo build --workspace` |
 | Rust tests | `cargo test --workspace --all-features` (includes HTTP + Postgres contract suites) |
 | Mini-program runtime | `pnpm --filter @sdkwork/agents-mini-program build` |
-| Node contracts | `pnpm check:contracts` (platform integration, database framework, root quality gates, production security, Open SDK surface, mini-program runtime, client surface readiness) |
+| Node contracts | `pnpm check:contracts` (platform integration, database framework, root quality gates, production security, frontend service identity, Open SDK surface, mini-program runtime, client surface readiness) |
 | Client typecheck | PC / H5 / mini-program `tsc --noEmit` |
 | PC agent contracts | scope, management profile, chat service, e2e flow (create → chat) |
 | Live smoke (manual) | [smoke-test.md](../runbooks/smoke-test.md) after deployment |
@@ -62,6 +62,7 @@ pnpm check:pagination
 pnpm check:app-sdk-consumer-imports
 pnpm check:component-port-bindings
 pnpm check:frontend-composition
+pnpm check:frontend-service-identity
 pnpm check:permission-composition
 pnpm check:composition-resolver
 pnpm check:rust-backend-composition
@@ -69,6 +70,8 @@ pnpm check:production-security
 ```
 
 All L2+ app/backend/open business operations must use `SdkWorkApiResponse` success bodies and `ProblemDetail` errors, follow the API operation matrix, avoid path collisions, expose standard pagination, consume composed SDK imports, preserve SDKWork composition boundaries, and prove production-like profiles reject dev inline auth and contract runtime fallback per [TECH-api-specification.md](../architecture/tech/TECH-api-specification.md) and [TECH_ARCHITECTURE.md](../architecture/tech/TECH_ARCHITECTURE.md).
+
+The frontend service identity gate must also pass before cutover. It verifies authored PC/H5 agents service source does not call `crypto.randomUUID()` directly, so request/trace identity remains server-owned and client-side business IDs go through approved SDKWork utility helpers. PC/H5 chat services must reject malformed SDK responses that omit `assistantMessage.messageId`; they must not synthesize local fallback message IDs for persisted server messages.
 
 The same production-security gate must also prove runtime resilience on panic-prone infrastructure paths: failure to install Ctrl+C or SIGTERM handlers is logged for operators and does not terminate the process, dev-only static policy construction rejects unsafe production-like bootstrap or falls back to deny-all instead of panicking, poisoned in-memory repository, audit, or metrics locks recover through centralized helpers instead of `expect` panics, managed-store repository and Postgres adapter constructors propagate default Snowflake ID initialization errors through `KernelResult`, route manifest build scripts return explicit OpenAPI/environment/file-system errors instead of panicking, and `AgentRepository` persistence methods remain required trait methods so incomplete adapters fail at compile time.
 
