@@ -51,9 +51,21 @@ fn dev_agent_http_state() -> Result<AgentHttpState> {
 fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     let repository_adapter = SyncPostgresAdapter::connect_from_agents_managed_store_env()
         .context("connect agents managed store postgres adapter")?;
-    repository_adapter
-        .apply_managed_store_schema()
-        .context("apply agents managed store postgres schema")?;
+
+    // Apply schema via the sdkwork-database lifecycle orchestrator instead of
+    // directly executing baseline SQL. This ensures:
+    // 1. Baseline is applied once and tracked in `ops_schema_migration_history`.
+    // 2. Incremental migrations in `database/migrations/postgres/` are applied.
+    // 3. Checksums are recorded for drift detection.
+    // The `database/` directory is shipped in the production image (see
+    // `deployments/docker/Dockerfile`) and `SDKWORK_AGENTS_APP_ROOT` is set.
+    {
+        let pool = repository_adapter.pool().clone();
+        let database_pool = pool.database_pool().clone();
+        pool.block_on(sdkwork_agents_database_host::bootstrap_agents_database(database_pool))
+            .map_err(anyhow::Error::msg)
+            .context("apply agents managed store schema via lifecycle orchestrator")?;
+    }
 
     // The audit sink shares the same physical postgres pool as the repository
     // but uses a dedicated snowflake node id so concurrent `next_id` calls

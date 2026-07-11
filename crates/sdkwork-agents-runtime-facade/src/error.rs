@@ -29,6 +29,10 @@ pub enum RuntimeFacadeError {
     #[error("unsupported engineId \"{engine_key}\"")]
     UnsupportedEngine { engine_key: String },
 
+    /// The requested engine was selected for this host but failed to bootstrap.
+    #[error("engineId \"{engine_key}\" is unavailable: {reason}")]
+    EngineUnavailable { engine_key: String, reason: String },
+
     /// The engine key in the turn input does not match the slot's engine key.
     #[error("engine mismatch: slot={slot_engine} input={input_engine}")]
     EngineMismatch {

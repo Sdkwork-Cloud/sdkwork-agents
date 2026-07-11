@@ -560,6 +560,37 @@ pub trait AgentRepository: Send + Sync {
         binding_id: &str,
     ) -> Option<AgentProviderBindingRecord>;
 
+    /// Load the single active provider binding for an agent.
+    ///
+    /// Implementations SHOULD override this with a dedicated indexed query
+    /// (`WHERE active = TRUE LIMIT 1`) to avoid paginated full scans on hot
+    /// paths such as chat completion and task execution. The default
+    /// implementation falls back to a paginated scan for backward compatibility.
+    fn get_active_provider_binding(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Option<AgentProviderBindingRecord> {
+        let mut page = 1usize;
+        loop {
+            let batch = self.list_provider_bindings(
+                &ProviderBindingListQuery::for_agent(tenant_id, agent_id).with_pagination(
+                    PaginationParams::default()
+                        .with_page_size(MAX_PAGE_SIZE)
+                        .with_page(page),
+                ),
+            );
+            if batch.is_empty() {
+                break;
+            }
+            if let Some(found) = batch.into_iter().find(|binding| binding.active) {
+                return Some(found);
+            }
+            page = page.saturating_add(1);
+        }
+        None
+    }
+
     fn list_provider_bindings(
         &self,
         query: &ProviderBindingListQuery,
@@ -678,26 +709,19 @@ pub trait AgentRepository: Send + Sync {
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64>;
 
     /// Atomically persist one user + assistant chat turn and update session counters.
+    ///
+    /// Adapters MUST override this method with a transactional implementation
+    /// (e.g. SQL `BEGIN ... COMMIT` with `SELECT ... FOR UPDATE`). The default
+    /// implementation is fail-closed to prevent non-atomic data corruption.
     fn insert_chat_turn(
         &self,
-        session: AgentSessionRecord,
-        mut user_message: AgentMessageRecord,
-        mut assistant_message: AgentMessageRecord,
+        _session: AgentSessionRecord,
+        _user_message: AgentMessageRecord,
+        _assistant_message: AgentMessageRecord,
     ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
-        let user_sequence =
-            self.next_message_sequence(user_message.tenant_id, user_message.session_id.as_str())?;
-        user_message.sequence = user_sequence;
-        self.insert_message(user_message.clone())?;
-
-        let assistant_sequence = self.next_message_sequence(
-            assistant_message.tenant_id,
-            assistant_message.session_id.as_str(),
-        )?;
-        assistant_message.sequence = assistant_sequence;
-        self.insert_message(assistant_message.clone())?;
-
-        self.update_session(session.clone())?;
-        Ok((session, user_message, assistant_message))
+        Err(KernelError::Internal {
+            message: "insert_chat_turn requires a transactional adapter override".to_string(),
+        })
     }
 
     // -----------------------------------------------------------------------

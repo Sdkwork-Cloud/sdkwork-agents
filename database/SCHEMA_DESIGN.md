@@ -2,14 +2,20 @@
 
 Status: active
 Owner: agents-platform
-Contract: `database/contract/schema.yaml` (v3.0.0)
+Contract: `database/contract/schema.yaml` (v3.1.0)
 DDL authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
+Migration authority: `database/migrations/postgres/`
 
 ## Engine
 
-PostgreSQL is the only supported managed-store engine. Runtime bootstrap
-(`apply_managed_store_schema`) and `pnpm db:migrate` both apply the same
-baseline DDL file.
+PostgreSQL is the only supported managed-store engine. Schema lifecycle is
+managed by `sdkwork-database-lifecycle` (`LifecycleOrchestrator`) through the
+`baseline-plus-migrations` strategy: the baseline DDL is applied once on an
+empty database, then versioned migrations in `database/migrations/postgres/`
+are applied incrementally. Both runtime bootstrap
+(`bootstrap_agents_database`) and `pnpm db:migrate` use the same lifecycle
+orchestrator, ensuring migrations are tracked in `ops_schema_migration_history`
+with checksum verification.
 
 ## Tables
 

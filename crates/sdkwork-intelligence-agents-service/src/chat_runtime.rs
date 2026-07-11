@@ -72,21 +72,59 @@ pub trait ChatCompleter: Send + Sync {
 /// Maximum wall-clock time for one managed chat completion turn.
 pub const CHAT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Run a chat completion on a worker thread with a hard timeout.
+/// Run a chat completion with a hard timeout.
+///
+/// Uses the tokio bounded blocking pool (when a runtime is available) instead
+/// of spawning an unbounded OS thread per request. This prevents thread
+/// exhaustion and OOM under high concurrency. The completer runs on a separate
+/// blocking worker so the timeout can be enforced; on timeout the detached
+/// task remains bounded by the pool size and its result is dropped.
+///
+/// When no tokio runtime is available (pure unit tests without a runtime
+/// context), falls back to inline execution without timeout isolation.
 pub fn complete_with_timeout(
     completer: Arc<dyn ChatCompleter>,
     input: &ChatCompletionInput,
     prefer_stream: bool,
     timeout: Duration,
 ) -> ChatCompletionOutput {
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    let input = input.clone();
-    std::thread::spawn(move || {
-        let output = completer.complete_with_stream_preference(&input, prefer_stream);
-        let _ = tx.send(output);
+    #[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return run_with_bounded_timeout(
+                &handle,
+                completer,
+                input,
+                prefer_stream,
+                timeout,
+            );
+        }
+        tracing::warn!(
+            "no tokio runtime available; running chat completion inline without timeout isolation"
+        );
+    }
+    completer.complete_with_stream_preference(input, prefer_stream)
+}
+
+#[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
+fn run_with_bounded_timeout(
+    handle: &tokio::runtime::Handle,
+    completer: Arc<dyn ChatCompleter>,
+    input: &ChatCompletionInput,
+    prefer_stream: bool,
+    timeout: Duration,
+) -> ChatCompletionOutput {
+    let input_owned = input.clone();
+    let join_handle = handle.spawn_blocking(move || {
+        completer.complete_with_stream_preference(&input_owned, prefer_stream)
     });
-    rx.recv_timeout(timeout)
-        .unwrap_or_else(|_| inference_error("chat completion timed out"))
+    // Safe to block_on here: complete_with_timeout runs inside a spawn_blocking
+    // worker (see http.rs handler dispatch), not on an async executor thread.
+    match handle.block_on(tokio::time::timeout(timeout, join_handle)) {
+        Ok(Ok(output)) => output,
+        Ok(Err(_join_error)) => inference_error("chat completion task failed"),
+        Err(_elapsed) => inference_error("chat completion timed out"),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -183,6 +221,7 @@ impl ChatCompleter for RuntimeFacadeChatCompleter {
             model_id: model_id.clone(),
             native_session_id: Some(input.session.session_id.clone()),
             prompt,
+            ..Default::default()
         };
 
         let turn_result = if prefer_stream {
@@ -404,17 +443,10 @@ pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
         }
     } else {
         let transcript = build_transcript(&input.history);
-        if input.provider_has_model_chat {
-            format!(
-                "{transcript}user: {}\n\nassistant: Thanks for the context. Based on our conversation, here is my response to your latest message:\n\n> {}",
-                input.user_content, input.user_content
-            )
-        } else {
-            format!(
-                "{transcript}user: {}\n\nassistant: Thanks for the context. Based on our conversation, here is my response to your latest message:\n\n> {}",
-                input.user_content, input.user_content
-            )
-        }
+        format!(
+            "{transcript}user: {}\n\nassistant: Thanks for the context. Based on our conversation, here is my response to your latest message:\n\n> {}",
+            input.user_content, input.user_content
+        )
     };
 
     let output_tokens = estimate_tokens(content.as_str());

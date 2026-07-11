@@ -25,6 +25,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 #[cfg(feature = "postgres-sync")]
+use std::future::Future;
+
+#[cfg(feature = "postgres-sync")]
 fn map_kernel_row<T, F>(entity: &'static str, map: F) -> Option<T>
 where
     F: FnOnce() -> KernelResult<T>,
@@ -36,6 +39,67 @@ where
             None
         }
     }
+}
+
+/// Maximum number of retries when a PostgreSQL deadlock (SQLSTATE 40P01) is detected.
+#[cfg(feature = "postgres-sync")]
+const DEADLOCK_MAX_RETRIES: usize = 3;
+
+/// Initial backoff (milliseconds) before the first deadlock retry.
+/// Backoff doubles on each retry: 10 ms, 20 ms, 40 ms.
+#[cfg(feature = "postgres-sync")]
+const DEADLOCK_INITIAL_BACKOFF_MS: u64 = 10;
+
+/// Returns true when the supplied error is a PostgreSQL `deadlock_detected`
+/// error (SQLSTATE 40P01). Such errors are safe to retry after the failed
+/// transaction has been rolled back.
+#[cfg(feature = "postgres-sync")]
+fn is_postgres_deadlock(error: &sqlx::Error) -> bool {
+    matches!(
+        error,
+        sqlx::Error::Database(db) if db.code().map(|code| code == "40P01").unwrap_or(false)
+    )
+}
+
+/// Executes `operation` and retries on PostgreSQL deadlock (SQLSTATE 40P01)
+/// using exponential backoff. Up to [`DEADLOCK_MAX_RETRIES`] retries are
+/// attempted (10 ms, 20 ms, 40 ms). Non-deadlock errors are returned
+/// immediately without retrying.
+///
+/// The closure must create a fresh transaction on each call — any state
+/// mutated inside the transaction body must be cloned from captured
+/// references so that a retry starts from a clean snapshot.
+#[cfg(feature = "postgres-sync")]
+async fn retry_on_deadlock<T, F, Fut>(operation: F) -> Result<T, sqlx::Error>
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<T, sqlx::Error>>,
+{
+    let mut backoff_ms = DEADLOCK_INITIAL_BACKOFF_MS;
+    let mut last_error: Option<sqlx::Error> = None;
+    for attempt in 0..=DEADLOCK_MAX_RETRIES {
+        match operation().await {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if !is_postgres_deadlock(&error) {
+                    return Err(error);
+                }
+                tracing::warn!(
+                    target: "sdkwork.agents.persistence.deadlock_retry",
+                    attempt,
+                    max_retries = DEADLOCK_MAX_RETRIES,
+                    backoff_ms,
+                    "postgres deadlock detected, retrying transaction"
+                );
+                last_error = Some(error);
+                if attempt < DEADLOCK_MAX_RETRIES {
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = backoff_ms.saturating_mul(2);
+                }
+            }
+        }
+    }
+    Err(last_error.expect("deadlock retry loop exhausted without an error"))
 }
 
 #[cfg(feature = "postgres-sync")]
@@ -50,8 +114,8 @@ pub use sql::{
     SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT, SQL_LIST_AGENT_COMPOSITION_SLOTS,
     SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_MCP_MARKETPLACE_SLOTS,
     SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID, SQL_SELECT_AGENT_COMPOSITION_SLOT,
-    SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT, SQL_UPDATE_AGENT_COMPOSITION_SLOT,
-    SQL_UPDATE_AGENT_PROVIDER_BINDING,
+    SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_SELECT_ACTIVE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT,
+    SQL_UPDATE_AGENT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_PROVIDER_BINDING,
 };
 #[cfg(feature = "postgres-sync")]
 pub use sql::{
@@ -841,6 +905,14 @@ pub trait PostgresAgentRepositoryAdapter: Send + Sync {
         agent_id: &str,
         binding_id: &str,
     ) -> Option<AgentProviderBindingRow>;
+    /// Load the single active provider binding row for an agent via an indexed
+    /// `WHERE active = TRUE LIMIT 1` lookup. Returns `None` when no active
+    /// binding exists for the (tenant, agent) pair.
+    fn get_active_provider_binding_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Option<AgentProviderBindingRow>;
     fn list_provider_binding_rows(
         &self,
         query: &ProviderBindingListQuery,
@@ -981,6 +1053,16 @@ where
     ) -> Option<AgentProviderBindingRecord> {
         self.adapter
             .get_provider_binding_row(tenant_id, agent_id, binding_id)
+            .and_then(|row| row.into_record().ok())
+    }
+
+    fn get_active_provider_binding(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Option<AgentProviderBindingRecord> {
+        self.adapter
+            .get_active_provider_binding_row(tenant_id, agent_id)
             .and_then(|row| row.into_record().ok())
     }
 
@@ -1288,12 +1370,6 @@ impl SyncPostgresAdapter {
         &self.pool
     }
 
-    pub fn apply_managed_store_schema(&self) -> KernelResult<()> {
-        const DDL: &str =
-            include_str!("../../../database/ddl/baseline/postgres/0001_agents_baseline.sql");
-        self.pool.execute_batch_sql(DDL)
-    }
-
     fn with_pool<T>(
         &self,
         action: impl FnOnce(&BlockingPostgresPool) -> KernelResult<T>,
@@ -1448,7 +1524,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             }
             Ok(mapped_rows)
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_rows(&self, query: &AgentListQuery) -> u64 {
@@ -1488,7 +1567,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     fn insert_provider_binding_row(&self, row: AgentProviderBindingRow) -> KernelResult<()> {
@@ -1579,60 +1661,69 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             let agent_id = agent_id.to_string();
             let binding_id = binding_id.to_string();
             pool.run_kernel(async move {
-                let mut tx = pg_pool.begin().await?;
+                retry_on_deadlock(|| async {
+                    let agent_id = agent_id.clone();
+                    let binding_id = binding_id.clone();
+                    let updated_at = updated_at.clone();
+                    let mut tx = pg_pool.begin().await?;
 
-                let current = sqlx::query(SQL_SELECT_AGENT_PROVIDER_BINDING)
-                    .bind(tenant_id_i64)
-                    .bind(&agent_id)
-                    .bind(&binding_id)
-                    .fetch_optional(&mut *tx)
-                    .await?
-                    .map(pg_row_to_agent_provider_binding_row)
-                    .transpose()
-                    .map_err(kernel_err)?
-                    .ok_or_else(|| {
-                        kernel_err(KernelError::validation("agent provider binding not found"))
-                    })?;
+                    let current = sqlx::query(SQL_SELECT_AGENT_PROVIDER_BINDING)
+                        .bind(tenant_id_i64)
+                        .bind(&agent_id)
+                        .bind(&binding_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(pg_row_to_agent_provider_binding_row)
+                        .transpose()
+                        .map_err(kernel_err)?
+                        .ok_or_else(|| {
+                            kernel_err(KernelError::validation(
+                                "agent provider binding not found",
+                            ))
+                        })?;
 
-                if current.active {
+                    if current.active {
+                        tx.commit().await?;
+                        return Ok(current);
+                    }
+
+                    let previous_version = current.version;
+                    let next_version = previous_version.saturating_add(1);
+                    let previous_version_i64 =
+                        u64_to_i64(previous_version, "version").map_err(kernel_err)?;
+                    let next_version_i64 =
+                        u64_to_i64(next_version, "version").map_err(kernel_err)?;
+
+                    sqlx::query(SQL_DEACTIVATE_ACTIVE_AGENT_PROVIDER_BINDINGS)
+                        .bind(tenant_id_i64)
+                        .bind(&agent_id)
+                        .bind(&updated_at)
+                        .execute(&mut *tx)
+                        .await?;
+
+                    let updated_rows = sqlx::query(SQL_ACTIVATE_AGENT_PROVIDER_BINDING)
+                        .bind(tenant_id_i64)
+                        .bind(&agent_id)
+                        .bind(&binding_id)
+                        .bind(next_version_i64)
+                        .bind(&updated_at)
+                        .bind(previous_version_i64)
+                        .execute(&mut *tx)
+                        .await?;
+                    if updated_rows.rows_affected() == 0 {
+                        return Err(kernel_err(KernelError::conflict(
+                            "agent provider binding version mismatch",
+                        )));
+                    }
+
+                    let mut activated = current;
+                    activated.active = true;
+                    activated.version = next_version;
+                    activated.updated_at = updated_at;
                     tx.commit().await?;
-                    return Ok(current);
-                }
-
-                let previous_version = current.version;
-                let next_version = previous_version.saturating_add(1);
-                let previous_version_i64 =
-                    u64_to_i64(previous_version, "version").map_err(kernel_err)?;
-                let next_version_i64 = u64_to_i64(next_version, "version").map_err(kernel_err)?;
-
-                sqlx::query(SQL_DEACTIVATE_ACTIVE_AGENT_PROVIDER_BINDINGS)
-                    .bind(tenant_id_i64)
-                    .bind(&agent_id)
-                    .bind(&updated_at)
-                    .execute(&mut *tx)
-                    .await?;
-
-                let updated_rows = sqlx::query(SQL_ACTIVATE_AGENT_PROVIDER_BINDING)
-                    .bind(tenant_id_i64)
-                    .bind(&agent_id)
-                    .bind(&binding_id)
-                    .bind(next_version_i64)
-                    .bind(&updated_at)
-                    .bind(previous_version_i64)
-                    .execute(&mut *tx)
-                    .await?;
-                if updated_rows.rows_affected() == 0 {
-                    return Err(kernel_err(KernelError::conflict(
-                        "agent provider binding version mismatch",
-                    )));
-                }
-
-                let mut activated = current;
-                activated.active = true;
-                activated.version = next_version;
-                activated.updated_at = updated_at;
-                tx.commit().await?;
-                Ok(activated)
+                    Ok(activated)
+                })
+                .await
             })
         })
     }
@@ -1651,6 +1742,25 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 agent_id,
                 binding_id
+            )?;
+            row.map(pg_row_to_agent_provider_binding_row).transpose()
+        })
+        .ok()
+        .flatten()
+    }
+
+    fn get_active_provider_binding_row(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Option<AgentProviderBindingRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id").ok()?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_ACTIVE_AGENT_PROVIDER_BINDING,
+                tenant_id,
+                agent_id
             )?;
             row.map(pg_row_to_agent_provider_binding_row).transpose()
         })
@@ -1685,7 +1795,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             }
             Ok(mapped_rows)
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_provider_binding_rows(&self, query: &ProviderBindingListQuery) -> u64 {
@@ -1711,7 +1824,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     fn insert_composition_slot_row(&self, row: AgentCompositionSlotRow) -> KernelResult<()> {
@@ -1820,7 +1936,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .map(pg_row_to_agent_composition_slot_row)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_composition_slot_rows(&self, query: &CompositionSlotListQuery) -> u64 {
@@ -1845,7 +1964,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     fn list_mcp_marketplace_slot_rows(
@@ -1873,7 +1995,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .map(pg_row_to_agent_composition_slot_row)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_mcp_marketplace_slot_rows(&self, query: &McpMarketplaceListQuery) -> u64 {
@@ -1900,7 +2025,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(int64_to_u64(total, "total_count").unwrap_or(0))
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -2029,7 +2157,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             )?;
             rows.into_iter().map(pg_row_to_agent_session_row).collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_session_rows(&self, query: &SessionListQuery) -> u64 {
@@ -2066,7 +2197,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(total as u64)
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -2219,7 +2353,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             }
             Ok(rows)
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_message_rows(&self, query: &MessageListQuery) -> u64 {
@@ -2257,7 +2394,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(total as u64)
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
@@ -2275,8 +2415,8 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
     fn insert_chat_turn_rows(
         &self,
         session: AgentSessionRow,
-        mut user: AgentMessageRow,
-        mut assistant: AgentMessageRow,
+        user: AgentMessageRow,
+        assistant: AgentMessageRow,
     ) -> KernelResult<(AgentSessionRow, AgentMessageRow, AgentMessageRow)> {
         let tenant_id = u64_to_i64(session.tenant_id, "tenant_id")?;
         let session_id = session.session_id.clone();
@@ -2299,113 +2439,122 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             let pg_pool = pool.pool().clone();
             pool.run_kernel(async move {
-                let mut tx = pg_pool.begin().await?;
+                retry_on_deadlock(|| async {
+                    let mut user = user.clone();
+                    let mut assistant = assistant.clone();
+                    let session = session.clone();
+                    let session_id = session_id.clone();
+                    let mut tx = pg_pool.begin().await?;
 
-                let locked = sqlx::query(SQL_LOCK_AGENT_SESSION_FOR_UPDATE)
-                    .bind(tenant_id)
-                    .bind(&session_id)
-                    .execute(&mut *tx)
-                    .await?;
-                if locked.rows_affected() == 0 {
-                    return Err(kernel_err(KernelError::validation("session not found")));
-                }
+                    let locked = sqlx::query(SQL_LOCK_AGENT_SESSION_FOR_UPDATE)
+                        .bind(tenant_id)
+                        .bind(&session_id)
+                        .execute(&mut *tx)
+                        .await?;
+                    if locked.rows_affected() == 0 {
+                        return Err(kernel_err(KernelError::validation("session not found")));
+                    }
 
-                let row = sqlx::query(SQL_NEXT_MESSAGE_SEQUENCE)
-                    .bind(tenant_id)
-                    .bind(&session_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-                let user_seq: i64 = row
-                    .and_then(|r| r.try_get::<i64, _>("next_sequence").ok())
-                    .unwrap_or(1);
-                let assistant_seq = user_seq.saturating_add(1);
-                user.sequence = int64_to_u64(user_seq, "sequence").map_err(kernel_err)?;
-                assistant.sequence = int64_to_u64(assistant_seq, "sequence").map_err(kernel_err)?;
+                    let row = sqlx::query(SQL_NEXT_MESSAGE_SEQUENCE)
+                        .bind(tenant_id)
+                        .bind(&session_id)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+                    let user_seq: i64 = row
+                        .and_then(|r| r.try_get::<i64, _>("next_sequence").ok())
+                        .unwrap_or(1);
+                    let assistant_seq = user_seq.saturating_add(1);
+                    user.sequence = int64_to_u64(user_seq, "sequence").map_err(kernel_err)?;
+                    assistant.sequence =
+                        int64_to_u64(assistant_seq, "sequence").map_err(kernel_err)?;
 
-                let user_sequence = u64_to_i64(user.sequence, "sequence").map_err(kernel_err)?;
-                let assistant_sequence =
-                    u64_to_i64(assistant.sequence, "sequence").map_err(kernel_err)?;
-                let user_input_tokens =
-                    u64_to_i64(user.input_tokens, "input_tokens").map_err(kernel_err)?;
-                let user_output_tokens =
-                    u64_to_i64(user.output_tokens, "output_tokens").map_err(kernel_err)?;
-                let assistant_input_tokens =
-                    u64_to_i64(assistant.input_tokens, "input_tokens").map_err(kernel_err)?;
-                let assistant_output_tokens =
-                    u64_to_i64(assistant.output_tokens, "output_tokens").map_err(kernel_err)?;
+                    let user_sequence =
+                        u64_to_i64(user.sequence, "sequence").map_err(kernel_err)?;
+                    let assistant_sequence =
+                        u64_to_i64(assistant.sequence, "sequence").map_err(kernel_err)?;
+                    let user_input_tokens =
+                        u64_to_i64(user.input_tokens, "input_tokens").map_err(kernel_err)?;
+                    let user_output_tokens =
+                        u64_to_i64(user.output_tokens, "output_tokens").map_err(kernel_err)?;
+                    let assistant_input_tokens =
+                        u64_to_i64(assistant.input_tokens, "input_tokens").map_err(kernel_err)?;
+                    let assistant_output_tokens =
+                        u64_to_i64(assistant.output_tokens, "output_tokens").map_err(kernel_err)?;
 
-                sqlx::query(SQL_INSERT_AGENT_MESSAGE)
-                    .bind(user_id)
-                    .bind(&user.uuid)
-                    .bind(tenant_id)
-                    .bind(&user.session_id)
-                    .bind(&user.agent_id)
-                    .bind(user.role)
-                    .bind(&user.message_id)
-                    .bind(&user.content)
-                    .bind(&user.content_type)
-                    .bind(user.status)
-                    .bind(user_sequence)
-                    .bind(user_input_tokens)
-                    .bind(user_output_tokens)
-                    .bind(&user.model_id)
-                    .bind(&user.provider_id)
-                    .bind(&user.artifacts_json)
-                    .bind(&user.metadata_json)
-                    .bind(&user.parent_message_id)
-                    .bind(&user.created_at)
-                    .bind(&user.updated_at)
-                    .execute(&mut *tx)
-                    .await?;
+                    sqlx::query(SQL_INSERT_AGENT_MESSAGE)
+                        .bind(user_id)
+                        .bind(&user.uuid)
+                        .bind(tenant_id)
+                        .bind(&user.session_id)
+                        .bind(&user.agent_id)
+                        .bind(user.role)
+                        .bind(&user.message_id)
+                        .bind(&user.content)
+                        .bind(&user.content_type)
+                        .bind(user.status)
+                        .bind(user_sequence)
+                        .bind(user_input_tokens)
+                        .bind(user_output_tokens)
+                        .bind(&user.model_id)
+                        .bind(&user.provider_id)
+                        .bind(&user.artifacts_json)
+                        .bind(&user.metadata_json)
+                        .bind(&user.parent_message_id)
+                        .bind(&user.created_at)
+                        .bind(&user.updated_at)
+                        .execute(&mut *tx)
+                        .await?;
 
-                sqlx::query(SQL_INSERT_AGENT_MESSAGE)
-                    .bind(assistant_id)
-                    .bind(&assistant.uuid)
-                    .bind(tenant_id)
-                    .bind(&assistant.session_id)
-                    .bind(&assistant.agent_id)
-                    .bind(assistant.role)
-                    .bind(&assistant.message_id)
-                    .bind(&assistant.content)
-                    .bind(&assistant.content_type)
-                    .bind(assistant.status)
-                    .bind(assistant_sequence)
-                    .bind(assistant_input_tokens)
-                    .bind(assistant_output_tokens)
-                    .bind(&assistant.model_id)
-                    .bind(&assistant.provider_id)
-                    .bind(&assistant.artifacts_json)
-                    .bind(&assistant.metadata_json)
-                    .bind(&assistant.parent_message_id)
-                    .bind(&assistant.created_at)
-                    .bind(&assistant.updated_at)
-                    .execute(&mut *tx)
-                    .await?;
+                    sqlx::query(SQL_INSERT_AGENT_MESSAGE)
+                        .bind(assistant_id)
+                        .bind(&assistant.uuid)
+                        .bind(tenant_id)
+                        .bind(&assistant.session_id)
+                        .bind(&assistant.agent_id)
+                        .bind(assistant.role)
+                        .bind(&assistant.message_id)
+                        .bind(&assistant.content)
+                        .bind(&assistant.content_type)
+                        .bind(assistant.status)
+                        .bind(assistant_sequence)
+                        .bind(assistant_input_tokens)
+                        .bind(assistant_output_tokens)
+                        .bind(&assistant.model_id)
+                        .bind(&assistant.provider_id)
+                        .bind(&assistant.artifacts_json)
+                        .bind(&assistant.metadata_json)
+                        .bind(&assistant.parent_message_id)
+                        .bind(&assistant.created_at)
+                        .bind(&assistant.updated_at)
+                        .execute(&mut *tx)
+                        .await?;
 
-                let updated_rows = sqlx::query(SQL_UPDATE_AGENT_SESSION)
-                    .bind(&session.title)
-                    .bind(session.status)
-                    .bind(&session.provider_binding_id)
-                    .bind(&session.model_id)
-                    .bind(message_count)
-                    .bind(total_input_tokens)
-                    .bind(total_output_tokens)
-                    .bind(&session.metadata_json)
-                    .bind(version)
-                    .bind(&session.updated_at)
-                    .bind(&session.last_message_at)
-                    .bind(&session.closed_at)
-                    .bind(tenant_id)
-                    .bind(&session_id)
-                    .bind(previous_version)
-                    .execute(&mut *tx)
-                    .await?;
-                if updated_rows.rows_affected() == 0 {
-                    return Err(kernel_err(KernelError::conflict("session update conflict")));
-                }
+                    let updated_rows = sqlx::query(SQL_UPDATE_AGENT_SESSION)
+                        .bind(&session.title)
+                        .bind(session.status)
+                        .bind(&session.provider_binding_id)
+                        .bind(&session.model_id)
+                        .bind(message_count)
+                        .bind(total_input_tokens)
+                        .bind(total_output_tokens)
+                        .bind(&session.metadata_json)
+                        .bind(version)
+                        .bind(&session.updated_at)
+                        .bind(&session.last_message_at)
+                        .bind(&session.closed_at)
+                        .bind(tenant_id)
+                        .bind(&session_id)
+                        .bind(previous_version)
+                        .execute(&mut *tx)
+                        .await?;
+                    if updated_rows.rows_affected() == 0 {
+                        return Err(kernel_err(KernelError::conflict("session update conflict")));
+                    }
 
-                tx.commit().await?;
-                Ok((session, user, assistant))
+                    tx.commit().await?;
+                    Ok((session, user, assistant))
+                })
+                .await
             })
         })
     }
@@ -2536,7 +2685,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .map(pg_row_to_agent_interaction_row)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_interaction_rows(&self, query: &InteractionListQuery) -> u64 {
@@ -2568,7 +2720,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(total as u64)
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 
     fn insert_task_row(&self, row: AgentTaskRow) -> KernelResult<()> {
@@ -2681,7 +2836,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
             )?;
             rows.into_iter().map(pg_row_to_agent_task_row).collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database list query failed; returning empty result");
+            Vec::new()
+        })
     }
 
     fn count_task_rows(&self, query: &TaskListQuery) -> u64 {
@@ -2716,7 +2874,10 @@ impl PostgresAgentRepositoryAdapter for SyncPostgresAdapter {
                 .unwrap_or(0);
             Ok(total as u64)
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "database count query failed; returning 0");
+            0
+        })
     }
 }
 

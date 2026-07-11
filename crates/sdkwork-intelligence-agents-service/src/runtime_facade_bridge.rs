@@ -65,8 +65,8 @@ pub fn execute_preview_response(
                 &CodeEngineTurnInput {
                     engine_key: engine_key.clone(),
                     model_id: model_id.clone(),
-                    native_session_id: None,
                     prompt: content.to_string(),
+                    ..Default::default()
                 },
             ) {
                 return PreviewExecutionOutput {
@@ -101,8 +101,8 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
                 &CodeEngineTurnInput {
                     engine_key: engine_key.clone(),
                     model_id,
-                    native_session_id: None,
                     prompt: optimization_prompt,
+                    ..Default::default()
                 },
             ) {
                 let optimized = output.assistant_content.trim().to_string();

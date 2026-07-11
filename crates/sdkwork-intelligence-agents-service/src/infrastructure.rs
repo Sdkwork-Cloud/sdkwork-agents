@@ -10,7 +10,6 @@ use crate::ports::{
     InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery,
     SessionListQuery, TaskListQuery,
 };
-use crate::validation::parse_rfc3339_datetime;
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
     ProviderHealth, ProviderManifest,
@@ -19,7 +18,6 @@ use sdkwork_utils_rust::{is_blank, trim};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{LazyLock, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use time::OffsetDateTime;
 
 // ---------------------------------------------------------------------------
 // Production environment safety checks
@@ -666,6 +664,22 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned()
     }
 
+    fn get_active_provider_binding(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Option<AgentProviderBindingRecord> {
+        self.provider_bindings
+            .recovering_read()
+            .values()
+            .find(|binding| {
+                binding.tenant_id == tenant_id
+                    && binding.agent_id == agent_id
+                    && binding.active
+            })
+            .cloned()
+    }
+
     fn list_provider_bindings(
         &self,
         query: &ProviderBindingListQuery,
@@ -986,14 +1000,68 @@ impl AgentRepository for InMemoryAgentRepository {
         mut user_message: AgentMessageRecord,
         mut assistant_message: AgentMessageRecord,
     ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        // Atomic: acquire all relevant write locks in canonical order
+        // (sessions → session_index → messages → message_index) to prevent
+        // race conditions on message sequence and session counters.
         let tenant_id = user_message.tenant_id;
         let session_id = user_message.session_id.clone();
-        let user_sequence = self.next_message_sequence(tenant_id, session_id.as_str())?;
+
+        let mut sessions = self.sessions.recovering_write();
+        let mut session_index = self.session_index.recovering_write();
+        let mut messages = self.messages.recovering_write();
+        let mut message_index = self.message_index.recovering_write();
+
+        // Verify session exists and check optimistic version
+        let session_primary_key = session_primary_key(&session);
+        let existing_session = sessions
+            .get(&session_primary_key)
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        let expected_version = existing_session.version.saturating_add(1);
+        if session.version != expected_version {
+            return Err(KernelError::conflict(format!(
+                "session version mismatch: expected={expected_version}, actual={}",
+                session.version
+            )));
+        }
+
+        // Compute next sequence atomically from the currently held message index
+        let max_sequence = message_index
+            .iter()
+            .filter(|((indexed_tenant_id, indexed_session_id, _, _), _)| {
+                *indexed_tenant_id == tenant_id && indexed_session_id == &session_id
+            })
+            .map(|((_, _, sequence, _), _)| *sequence)
+            .max()
+            .unwrap_or(0);
+        let user_sequence = max_sequence.saturating_add(1);
         user_message.sequence = user_sequence;
         assistant_message.sequence = user_sequence.saturating_add(1);
-        self.insert_message(user_message.clone())?;
-        self.insert_message(assistant_message.clone())?;
-        self.update_session(session.clone())?;
+
+        // Insert user message
+        let user_primary_key = message_primary_key(&user_message);
+        if messages.contains_key(&user_primary_key) {
+            return Err(KernelError::conflict("user message already exists"));
+        }
+        let user_index_key = message_index_key(&user_message);
+        messages.insert(user_primary_key.clone(), user_message.clone());
+        message_index.insert(user_index_key, user_primary_key);
+
+        // Insert assistant message
+        let assistant_primary_key = message_primary_key(&assistant_message);
+        if messages.contains_key(&assistant_primary_key) {
+            return Err(KernelError::conflict("assistant message already exists"));
+        }
+        let assistant_index_key = message_index_key(&assistant_message);
+        messages.insert(assistant_primary_key.clone(), assistant_message.clone());
+        message_index.insert(assistant_index_key, assistant_primary_key);
+
+        // Update session (inline to preserve lock atomicity)
+        let previous_session_index_key = session_index_key(existing_session);
+        let next_session_index_key = session_index_key(&session);
+        sessions.insert(session_primary_key.clone(), session.clone());
+        session_index.remove(&previous_session_index_key);
+        session_index.insert(next_session_index_key, session_primary_key);
+
         Ok((session, user_message, assistant_message))
     }
 
@@ -1519,14 +1587,28 @@ impl PolicyProvider for IamGatedPolicyProvider {
 // In-memory audit sink infrastructure
 // ---------------------------------------------------------------------------
 
-/// In-memory audit sink that stores events in a `Vec`. Uses `Mutex` for
-/// interior mutability so it can implement `AgentAuditSink` with `&self`.
-/// Events are lost when the process exits. Use
-/// [`crate::persistence::PostgresAgentAuditSink`] for production deployments
-/// that require persistent audit trails.
+/// Maximum number of audit events retained by [`InMemoryAgentAuditSink`].
+/// When exceeded, the oldest events (smallest sort key) are evicted. This
+/// prevents unbounded memory growth in long-running processes.
+const MAX_IN_MEMORY_AUDIT_EVENTS: usize = 10_000;
+
+/// Sort key for audit events: `(occurred_at, event_id)` wrapped in `Reverse`
+/// for descending chronological order. The `BTreeMap` maintains this index
+/// incrementally, satisfying PAGINATION_SPEC §5.3 (no per-request rebuild).
+type AuditEventIndexKey = Reverse<(String, String)>;
+
+fn audit_event_sort_key(event: &KernelEvent) -> AuditEventIndexKey {
+    let occurred_at = event.occurred_at.clone().unwrap_or_default();
+    Reverse((occurred_at, event.event_id.clone()))
+}
+
+/// In-memory audit sink backed by a `BTreeMap` with bounded capacity.
+/// Uses `Mutex` for interior mutability. Events are lost when the process
+/// exits. Use [`crate::persistence::PostgresAgentAuditSink`] for production
+/// deployments that require persistent audit trails.
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryAgentAuditSink {
-    events: std::sync::Arc<Mutex<Vec<KernelEvent>>>,
+    events: std::sync::Arc<Mutex<BTreeMap<AuditEventIndexKey, KernelEvent>>>,
 }
 
 impl InMemoryAgentAuditSink {
@@ -1535,13 +1617,27 @@ impl InMemoryAgentAuditSink {
     }
 
     pub fn events(&self) -> Vec<KernelEvent> {
-        self.events.recovering_lock().clone()
+        self.events
+            .recovering_lock()
+            .values()
+            .cloned()
+            .collect()
     }
 }
 
 impl AgentAuditSink for InMemoryAgentAuditSink {
     fn record(&self, event: KernelEvent) -> KernelResult<()> {
-        self.events.recovering_lock().push(event);
+        let mut events = self.events.recovering_lock();
+        let key = audit_event_sort_key(&event);
+        events.insert(key, event);
+        // Evict oldest entries (smallest key = earliest timestamp) when over capacity
+        while events.len() > MAX_IN_MEMORY_AUDIT_EVENTS {
+            if let Some(first_key) = events.keys().next().cloned() {
+                events.remove(&first_key);
+            } else {
+                break;
+            }
+        }
         Ok(())
     }
 
@@ -1551,8 +1647,10 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
     ) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
         use crate::ports::offset_paginated_result;
         let events = self.events.recovering_lock();
-        let mut matched: Vec<KernelEvent> = events
-            .iter()
+        // BTreeMap<Reverse<...>> iterates in descending order (newest first).
+        // Iterate the incrementally maintained index directly — no collect/sort.
+        let filtered = events
+            .values()
             .filter(|event| {
                 crate::persistence::extract_event_context(event.payload.as_str(), "agent_id")
                     .map(|id| id == query.agent_id)
@@ -1588,15 +1686,9 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
                     .map(|to| occurred_at <= to.as_str())
                     .unwrap_or(true)
             })
-            .cloned()
-            .collect();
-        matched.sort_by(|left, right| {
-            audit_event_occurred_at(right)
-                .cmp(&audit_event_occurred_at(left))
-                .then_with(|| right.event_id.cmp(&left.event_id))
-        });
-        let total_count = matched.len() as u64;
-        let page = paginate_iterator(matched.into_iter(), &query.pagination);
+            .cloned();
+        let total_count = count_iterator(filtered.clone());
+        let page = paginate_iterator(filtered, &query.pagination);
         Ok(offset_paginated_result(
             page,
             &query.pagination,
@@ -1736,15 +1828,6 @@ fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery
         }
     }
     true
-}
-
-fn audit_event_occurred_at(event: &KernelEvent) -> OffsetDateTime {
-    let occurred_at_raw = event
-        .occurred_at
-        .as_deref()
-        .unwrap_or("1970-01-01T00:00:00Z");
-    parse_rfc3339_datetime(occurred_at_raw, "audit event occurred_at")
-        .unwrap_or(OffsetDateTime::UNIX_EPOCH)
 }
 
 /// Sort order for provider bindings: active first, then by updated_at desc,

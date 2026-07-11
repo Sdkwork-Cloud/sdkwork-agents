@@ -506,10 +506,10 @@ where
             }
         }
 
-        let active_binding = self
-            .all_provider_bindings_for_agent(command.tenant_id, command.agent_id.as_str())
-            .into_iter()
-            .find(|binding| binding.active);
+        let active_binding = self.repository.get_active_provider_binding(
+            command.tenant_id,
+            command.agent_id.as_str(),
+        );
 
         let preview = execute_preview_response(
             active_binding.as_ref(),
@@ -577,10 +577,10 @@ where
         validate_non_empty(command.prompt.as_str(), "prompt")?;
         validate_json_payload(command.input_payload_json.as_str(), "inputPayload")?;
 
-        let active_binding = self
-            .all_provider_bindings_for_agent(command.tenant_id, command.agent_id.as_str())
-            .into_iter()
-            .find(|binding| binding.active);
+        let active_binding = self.repository.get_active_provider_binding(
+            command.tenant_id,
+            command.agent_id.as_str(),
+        );
 
         let optimization =
             execute_prompt_optimization(active_binding.as_ref(), command.prompt.as_str());
@@ -1404,10 +1404,10 @@ where
         record.mark_running(requested_at.clone());
         self.repository.update_task(record.clone())?;
 
-        let active_binding = self
-            .all_provider_bindings_for_agent(record.tenant_id, record.agent_id.as_str())
-            .into_iter()
-            .find(|binding| binding.active);
+        let active_binding = self.repository.get_active_provider_binding(
+            record.tenant_id,
+            record.agent_id.as_str(),
+        );
 
         let provider_has_model_chat = active_binding
             .as_ref()
@@ -1812,10 +1812,10 @@ where
             .map(|record| (record.role, record.content.clone()))
             .collect::<Vec<_>>();
 
-        let active_binding = self
-            .all_provider_bindings_for_agent(command.tenant_id, command.agent_id.as_str())
-            .into_iter()
-            .find(|binding| binding.active);
+        let active_binding = self.repository.get_active_provider_binding(
+            command.tenant_id,
+            command.agent_id.as_str(),
+        );
 
         let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
             agent.default_code_task_intent.as_ref(),

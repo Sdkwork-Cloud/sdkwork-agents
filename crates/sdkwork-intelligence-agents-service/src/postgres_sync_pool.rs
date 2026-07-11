@@ -129,12 +129,6 @@ impl BlockingPostgresPool {
         self.run(future).map_err(map_sqlx_error)
     }
 
-    pub fn execute_batch_sql(&self, sql: &str) -> Result<(), sdkwork_agent_kernel::KernelError> {
-        let pool = self.pool.clone();
-        let sql = sql.to_owned();
-        self.run_kernel(async move { sqlx::raw_sql(&sql).execute(&pool).await.map(|_| ()) })
-    }
-
     /// Returns the number of connections currently in the pool (both idle and active).
     pub fn pool_size(&self) -> u32 {
         self.pool.size()

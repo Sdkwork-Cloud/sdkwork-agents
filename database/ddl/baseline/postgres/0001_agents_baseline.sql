@@ -8,7 +8,7 @@
 -- ai_agent_audit_event, ai_agent_session, ai_agent_message, ai_agent_interaction,
 -- ai_agent_task.
 
-CREATE OR REPLACE FUNCTION sdkwork_intelligence_agents_service_capabilities_json_is_standard(input TEXT)
+CREATE OR REPLACE FUNCTION sdkwork_intelligence_agents_service_capabilities_json_is_standard(input JSONB)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 IMMUTABLE
@@ -16,7 +16,7 @@ AS $$
 DECLARE
     payload JSONB;
 BEGIN
-    payload := input::jsonb;
+    payload := input;
     IF jsonb_typeof(payload) <> 'array' THEN
         RETURN FALSE;
     END IF;
@@ -52,15 +52,15 @@ CREATE TABLE IF NOT EXISTS ai_agent (
     code VARCHAR(128) NOT NULL,
     display_name VARCHAR(255) NOT NULL,
     description TEXT,
-    manifest_json TEXT NOT NULL,
+    manifest_json JSONB NOT NULL,
     manifest_schema_version VARCHAR(32),
-    default_code_task_intent_json TEXT,
+    default_code_task_intent_json JSONB,
     implementation_provider_id VARCHAR(128),
     implementation_kind VARCHAR(64),
     implementation_type VARCHAR(64) NOT NULL DEFAULT 'sdkwork-native',
     status SMALLINT NOT NULL,
     visibility SMALLINT NOT NULL,
-    tags_json TEXT NOT NULL DEFAULT '[]',
+    tags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     deleted_at TIMESTAMPTZ,
@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS ai_agent (
     CONSTRAINT uk_ai_agent_uuid UNIQUE (uuid),
     CONSTRAINT uk_ai_agent_tenant_agent_id UNIQUE (tenant_id, agent_id),
     CONSTRAINT uk_ai_agent_tenant_code UNIQUE (tenant_id, code),
+    CONSTRAINT uk_ai_agent_tenant_id UNIQUE (tenant_id, id),
     CONSTRAINT ck_ai_agent_implementation_kind CHECK (
         implementation_kind IS NULL OR implementation_kind IN (
             'manifest-only',
@@ -126,7 +127,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_runtime_binding (
     provider_id VARCHAR(128) NOT NULL,
     implementation_kind VARCHAR(64) NOT NULL,
     configuration_profile_id VARCHAR(128) NOT NULL,
-    capabilities_json TEXT NOT NULL DEFAULT '[]',
+    capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     active BOOLEAN NOT NULL DEFAULT FALSE,
     version BIGINT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL,
@@ -217,7 +218,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_audit_event (
     subject_tenant_id VARCHAR(128) NOT NULL,
     request_id VARCHAR(128),
     trace_id VARCHAR(128),
-    payload_json TEXT NOT NULL,
+    payload_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT uk_ai_agent_audit_event_uuid UNIQUE (uuid),
     CONSTRAINT ck_ai_agent_audit_action CHECK (
@@ -270,7 +271,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_session (
     message_count BIGINT NOT NULL DEFAULT 0,
     total_input_tokens BIGINT NOT NULL DEFAULT 0,
     total_output_tokens BIGINT NOT NULL DEFAULT 0,
-    metadata_json TEXT NOT NULL DEFAULT '{}',
+    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
@@ -318,8 +319,8 @@ CREATE TABLE IF NOT EXISTS ai_agent_message (
     output_tokens BIGINT NOT NULL DEFAULT 0,
     model_id VARCHAR(128),
     provider_id VARCHAR(128),
-    artifacts_json TEXT NOT NULL DEFAULT '[]',
-    metadata_json TEXT NOT NULL DEFAULT '{}',
+    artifacts_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     parent_message_id VARCHAR(128),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
@@ -420,3 +421,36 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_task_tenant_agent_status_updated
 
 CREATE INDEX IF NOT EXISTS idx_ai_agent_task_tenant_owner_status
     ON ai_agent_task (tenant_id, owner_user_id, status);
+
+-- ============================================================================
+-- Foreign Key Constraints
+-- All FKs include tenant_id to preserve multi-tenant isolation.
+-- ============================================================================
+ALTER TABLE ai_agent_runtime_binding
+    ADD CONSTRAINT fk_ai_agent_runtime_binding_agent
+    FOREIGN KEY (tenant_id, agent_id) REFERENCES ai_agent(tenant_id, agent_id) ON DELETE CASCADE;
+
+ALTER TABLE ai_agent_composition_slot
+    ADD CONSTRAINT fk_ai_agent_composition_slot_agent
+    FOREIGN KEY (tenant_id, agent_id) REFERENCES ai_agent(tenant_id, agent_id) ON DELETE CASCADE;
+
+ALTER TABLE ai_agent_session
+    ADD CONSTRAINT fk_ai_agent_session_agent
+    FOREIGN KEY (tenant_id, agent_id) REFERENCES ai_agent(tenant_id, agent_id) ON DELETE CASCADE;
+
+ALTER TABLE ai_agent_message
+    ADD CONSTRAINT fk_ai_agent_message_session
+    FOREIGN KEY (tenant_id, session_id) REFERENCES ai_agent_session(tenant_id, session_id) ON DELETE CASCADE;
+
+ALTER TABLE ai_agent_interaction
+    ADD CONSTRAINT fk_ai_agent_interaction_session
+    FOREIGN KEY (tenant_id, session_id) REFERENCES ai_agent_session(tenant_id, session_id) ON DELETE CASCADE;
+
+ALTER TABLE ai_agent_task
+    ADD CONSTRAINT fk_ai_agent_task_agent
+    FOREIGN KEY (tenant_id, agent_id) REFERENCES ai_agent(tenant_id, agent_id) ON DELETE CASCADE;
+
+ALTER TABLE ai_agent_audit_event
+    ADD CONSTRAINT fk_ai_agent_audit_event_agent
+    FOREIGN KEY (tenant_id, agent_internal_id) REFERENCES ai_agent(tenant_id, id) ON DELETE CASCADE;
+

@@ -2283,6 +2283,9 @@ dependencies = [
  "sdkwork-agent-streaming",
  "sdkwork-code-kernel",
  "sdkwork-utils-rust",
+ "sdkwork-web-bootstrap",
+ "sdkwork-web-core",
+ "sdkwork-web-store-redis",
  "serde",
  "serde_json",
  "subtle",
@@ -2371,6 +2374,7 @@ dependencies = [
  "axum 0.8.9",
  "sdkwork-agent-server",
  "sdkwork-agents-contract",
+ "sdkwork-agents-database-host",
  "sdkwork-intelligence-agents-service",
  "sdkwork-routes-agents-http-shared",
  "tokio",
@@ -2485,6 +2489,7 @@ dependencies = [
 name = "sdkwork-database-sqlx"
 version = "0.1.0"
 dependencies = [
+ "libsqlite3-sys",
  "sdkwork-database-config",
  "serde",
  "sqlx",
@@ -2698,6 +2703,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdkwork-web-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "http",
+ "sdkwork-web-axum",
+ "sdkwork-web-contract",
+ "sdkwork-web-core",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "sdkwork-web-contract"
 version = "0.1.0"
 dependencies = [
@@ -2721,6 +2744,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sdkwork-web-store-redis"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "redis",
+ "sdkwork-web-core",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]

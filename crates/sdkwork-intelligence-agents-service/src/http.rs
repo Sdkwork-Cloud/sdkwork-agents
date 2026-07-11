@@ -40,8 +40,8 @@ use crate::ports::{
     McpMarketplaceListQuery, PaginationParams, ProviderBindingListQuery,
 };
 use crate::response::{
-    created_json, finish_api_json, no_content, ApiProblem, ApiResult, PageData, PageInfo, PageMode,
-    ResourceData,
+    created_json, finish_api_json, no_content, success_json, ApiProblem, ApiResult, PageData,
+    PageInfo, PageMode, ResourceData,
 };
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
@@ -59,7 +59,7 @@ use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider,
     PolicyRequest, ProviderHealth,
 };
-use sdkwork_agents_runtime_facade::CodeEngineCatalog;
+use sdkwork_agents_runtime_facade::{CodeEngineCatalog, CodeEngineCatalogEngine};
 use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -168,6 +168,14 @@ impl AgentRepository for DynAgentRepository {
         binding_id: &str,
     ) -> Option<AgentProviderBindingRecord> {
         self.0.get_provider_binding(tenant_id, agent_id, binding_id)
+    }
+
+    fn get_active_provider_binding(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> Option<AgentProviderBindingRecord> {
+        self.0.get_active_provider_binding(tenant_id, agent_id)
     }
 
     fn list_provider_bindings(
@@ -1717,11 +1725,7 @@ async fn backend_update_agent_status(
         })
     }
     .await;
-    match result {
-        Ok(data) => created_json(&web_ctx, data)
-            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
-        Err(problem) => problem.into_response_for(&web_ctx),
-    }
+    finish_api_json(&web_ctx, result)
 }
 
 async fn backend_restore_agent(
@@ -1968,11 +1972,7 @@ async fn app_create_preview_response(
         .await
     }
     .await;
-    match result {
-        Ok(data) => created_json(&web_ctx, data)
-            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
-        Err(problem) => problem.into_response_for(&web_ctx),
-    }
+    finish_api_json(&web_ctx, result)
 }
 
 async fn app_create_prompt_optimization(
@@ -1994,11 +1994,7 @@ async fn app_create_prompt_optimization(
         .await
     }
     .await;
-    match result {
-        Ok(data) => created_json(&web_ctx, data)
-            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
-        Err(problem) => problem.into_response_for(&web_ctx),
-    }
+    finish_api_json(&web_ctx, result)
 }
 
 async fn open_create_preview_response(
@@ -2018,11 +2014,7 @@ async fn open_create_preview_response(
         execute_create_preview_response(state, scope, path.agent_id, body).await
     }
     .await;
-    match result {
-        Ok(data) => created_json(&web_ctx, data)
-            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
-        Err(problem) => problem.into_response_for(&web_ctx),
-    }
+    finish_api_json(&web_ctx, result)
 }
 
 async fn open_create_prompt_optimization(
@@ -2042,11 +2034,7 @@ async fn open_create_prompt_optimization(
         execute_create_prompt_optimization(state, scope, path.agent_id, body).await
     }
     .await;
-    match result {
-        Ok(data) => created_json(&web_ctx, data)
-            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
-        Err(problem) => problem.into_response_for(&web_ctx),
-    }
+    finish_api_json(&web_ctx, result)
 }
 
 async fn app_list_composition_slots(
@@ -2077,12 +2065,24 @@ async fn app_list_code_engines(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
 ) -> Response {
-    let result: ApiResult<ResourceData<CodeEngineCatalog>> = async {
+    let result: ApiResult<PageData<CodeEngineCatalogEngine>> = async {
         let scope = RequestScope::from_context(context);
         let subject = scope.subject().clone();
         let catalog =
             with_service(&state, |service| service.list_code_engine_catalog(subject)).await?;
-        Ok(ResourceData { item: catalog })
+        let total_items = catalog.engines.len();
+        Ok(PageData {
+            items: catalog.engines,
+            page_info: PageInfo {
+                mode: PageMode::Offset,
+                page: Some(1),
+                page_size: Some(total_items as i32),
+                total_items: Some(total_items.to_string()),
+                total_pages: Some(if total_items == 0 { 0 } else { 1 }),
+                next_cursor: None,
+                has_more: Some(false),
+            },
+        })
     }
     .await;
     finish_api_json(&web_ctx, result)
@@ -4398,7 +4398,7 @@ impl ChatCompletionData {
 }
 
 /// Build the chat completion response.
-/// Non-streaming returns `201 Created` with the SDKWork response envelope.
+/// Non-streaming returns `200 OK` with the SDKWork response envelope.
 /// Streaming returns a single SSE `completion` event containing the same envelope.
 fn chat_completion_http_response(
     ctx: &sdkwork_web_core::WebRequestContext,
@@ -4418,7 +4418,7 @@ fn chat_completion_http_response(
         })?;
         let body = format!("event: completion\ndata: {payload}\n\n");
         let mut response = Response::builder()
-            .status(StatusCode::CREATED)
+            .status(StatusCode::OK)
             .header(CONTENT_TYPE, "text/event-stream")
             .body(Body::from(body))
             .map_err(|error| {
@@ -4432,7 +4432,7 @@ fn chat_completion_http_response(
         return Ok(response);
     }
 
-    created_json(ctx, ResourceData { item: chat_data })
+    success_json(ctx, ResourceData { item: chat_data })
 }
 
 fn total_pages(total_items: usize, page_size: usize) -> usize {
