@@ -11,7 +11,7 @@ use axum::http::{HeaderValue, Request, StatusCode};
 use axum::Extension;
 use sdkwork_intelligence_agents_service::{
     build_combined_router, testing::test_web_context, AgentHttpState, AgentRequestContext,
-    AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository, PolicyMode,
+    DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -20,6 +20,10 @@ fn auth_headers(mut request: Request<Body>) -> Request<Body> {
     let headers = request.headers_mut();
     headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
     headers.insert("x-subject-tenant-id", HeaderValue::from_static("100001"));
+    headers.insert(
+        "x-subject-roles",
+        HeaderValue::from_static("ai.agents.manage"),
+    );
     request
 }
 
@@ -27,7 +31,15 @@ fn test_agent_context() -> AgentRequestContext {
     AgentRequestContext::new("100001", "100")
         .with_organization_id("0")
         .with_subject_id("u-1")
-        .with_roles(["agent.write", "agent.read"])
+        .with_roles(["ai.agents.manage"])
+}
+
+fn test_policy_provider() -> IamGatedPolicyProvider {
+    IamGatedPolicyProvider::new("policy.agents.test.iam-gated")
+}
+
+fn test_deny_policy_provider() -> DenyAllPolicyProvider {
+    DenyAllPolicyProvider::new("policy.agents.test.deny", "agent.business.denied")
 }
 
 fn build_test_app(state: AgentHttpState) -> axum::Router {
@@ -232,7 +244,7 @@ async fn app_create_and_retrieve_agent_should_work() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -265,7 +277,7 @@ async fn app_code_engine_catalog_should_return_engines() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -295,7 +307,7 @@ async fn app_mcp_marketplace_should_return_records_array() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -326,7 +338,7 @@ async fn app_create_agent_should_derive_scope_from_request_context() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -364,7 +376,7 @@ async fn app_agent_response_should_expose_pc_management_profile() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -449,7 +461,7 @@ async fn app_agent_request_should_accept_management_profile_and_store_compatible
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -604,7 +616,7 @@ async fn app_agent_management_profile_should_reject_values_outside_openapi_contr
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -714,7 +726,7 @@ async fn app_update_agent_management_profile_should_preserve_existing_intent_con
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -909,7 +921,7 @@ async fn backend_agent_request_should_accept_management_profile_and_store_compat
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1074,7 +1086,7 @@ async fn backend_update_agent_management_profile_should_preserve_existing_intent
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1255,7 +1267,7 @@ async fn composition_slots_should_work_over_http() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.composition.http";
@@ -1332,7 +1344,7 @@ async fn agent_tasks_should_work_over_http() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.tasks.http";
@@ -1387,7 +1399,7 @@ async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.tasks.execute.http";
@@ -1435,7 +1447,7 @@ async fn agent_interactions_should_work_over_http() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.interactions.http";
@@ -1509,7 +1521,7 @@ async fn provider_bindings_should_work_over_http() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1605,7 +1617,7 @@ async fn app_create_agent_should_accept_implementation_type() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1636,7 +1648,7 @@ async fn backend_update_agent_should_change_implementation_type() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1679,7 +1691,7 @@ async fn app_create_agent_with_invalid_implementation_type_should_return_bad_req
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1704,7 +1716,7 @@ async fn provider_bindings_should_apply_pagination_contract() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1774,7 +1786,7 @@ async fn provider_binding_list_missing_agent_should_return_not_found() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1812,7 +1824,7 @@ async fn app_agent_preview_response_should_use_agent_runtime_api_contract() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1880,7 +1892,7 @@ async fn app_agent_prompt_optimization_should_use_agent_runtime_api_contract() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1940,7 +1952,7 @@ async fn app_agent_runtime_execution_missing_agent_should_return_problem_detail(
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -1986,7 +1998,7 @@ async fn provider_binding_activation_missing_agent_should_return_not_found() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2030,7 +2042,7 @@ async fn provider_binding_conflicts_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2082,7 +2094,7 @@ async fn provider_binding_invalid_standard_ids_should_return_bad_request() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2136,7 +2148,7 @@ async fn provider_binding_invalid_capabilities_should_return_bad_request() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2188,7 +2200,7 @@ async fn list_should_apply_pagination_contract() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2229,7 +2241,7 @@ async fn list_should_apply_search_query_filter() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2268,7 +2280,7 @@ async fn missing_subject_header_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2311,7 +2323,7 @@ async fn delete_agent_without_body_should_return_no_content() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2341,7 +2353,7 @@ async fn create_with_invalid_requested_at_should_return_bad_request() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2385,7 +2397,7 @@ async fn create_with_invalid_implementation_provider_id_should_return_bad_reques
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2436,7 +2448,7 @@ async fn create_duplicate_agent_should_return_conflict() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2478,7 +2490,7 @@ async fn create_agent_with_non_standard_agent_id_should_return_bad_request() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2519,7 +2531,7 @@ async fn restore_with_invalid_requested_at_should_return_bad_request() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2569,7 +2581,7 @@ async fn app_restore_should_restore_deleted_agent() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2619,7 +2631,7 @@ async fn backend_restore_should_restore_deleted_agent() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2669,7 +2681,7 @@ async fn update_with_matching_expected_version_should_succeed() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2709,7 +2721,7 @@ async fn update_with_stale_expected_version_should_return_conflict() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2779,7 +2791,7 @@ async fn status_update_with_stale_expected_version_should_return_version_conflic
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2845,7 +2857,7 @@ async fn backend_audit_events_should_return_recorded_items() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2900,7 +2912,7 @@ async fn backend_audit_events_action_filter_should_work() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -2956,7 +2968,7 @@ async fn backend_audit_events_should_filter_provider_binding_actions() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3032,7 +3044,7 @@ async fn backend_audit_events_invalid_action_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3063,7 +3075,7 @@ async fn backend_audit_events_time_range_filter_should_work() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3118,7 +3130,7 @@ async fn backend_audit_events_invalid_from_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3142,7 +3154,7 @@ async fn backend_audit_events_from_after_to_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3166,7 +3178,7 @@ async fn backend_audit_events_page_zero_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3197,7 +3209,7 @@ async fn backend_audit_events_page_size_above_max_should_return_problem_detail()
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3228,7 +3240,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3314,7 +3326,7 @@ async fn backend_audit_events_should_sort_by_instant_desc_across_timezones() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3378,7 +3390,7 @@ async fn invalid_query_should_return_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3415,7 +3427,7 @@ async fn retrieve_missing_agent_should_return_not_found_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3452,10 +3464,7 @@ async fn permission_denied_should_return_permission_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider {
-            provider_id: "policy.memory".to_string(),
-            mode: PolicyMode::Deny("agent.business.denied".to_string()),
-        },
+        test_deny_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3492,7 +3501,7 @@ async fn delete_missing_agent_should_return_not_found_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3529,7 +3538,7 @@ async fn status_missing_agent_should_return_not_found_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3567,7 +3576,7 @@ async fn restore_missing_agent_should_return_not_found_problem_detail() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3604,10 +3613,7 @@ async fn backend_audit_events_permission_denied_should_return_forbidden_problem_
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider {
-            provider_id: "policy.memory".to_string(),
-            mode: PolicyMode::Deny("agent.business.denied".to_string()),
-        },
+        test_deny_policy_provider(),
     );
     let app = build_test_app(state);
 
@@ -3637,7 +3643,7 @@ async fn backend_route_should_reject_subject_tenant_mismatch() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_combined_router(state);
 
@@ -3663,7 +3669,7 @@ async fn backend_route_should_accept_matching_subject_tenant_header() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_combined_router(state);
 
@@ -3680,7 +3686,7 @@ async fn backend_route_should_reject_missing_subject_headers() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_combined_router(state);
 
@@ -3704,7 +3710,7 @@ async fn app_chat_message_turn_should_return_completion() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.chat.http";
@@ -3759,7 +3765,7 @@ async fn open_api_chat_message_should_accept_body_tenant_id() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.chat.open";
@@ -3804,7 +3810,7 @@ async fn backend_archive_session_should_transition_status() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.memory"),
+        test_policy_provider(),
     );
     let app = build_test_app(state);
     let agent_id = "agent.archive.session";

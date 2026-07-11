@@ -4,7 +4,7 @@
   "applicationCode": "agents",
   "packageName": "sdkwork-agents-gateway-assembly",
   "crateDir": "crates/sdkwork-agents-gateway-assembly",
-  "generatedAt": "2026-06-27T05:46:03.345Z",
+  "generatedAt": "2026-07-08T01:44:29.066Z",
   "routeCrates": [
     {
       "packageName": "sdkwork-routes-agents-app-api",
@@ -13,7 +13,7 @@
       "surface": "app-api",
       "pathPrefix": null,
       "mountOrder": 0,
-      "hasGatewayMount": false,
+      "hasGatewayMount": true,
       "hasGatewayRouteManifest": false
     },
     {
@@ -23,7 +23,7 @@
       "surface": "backend-api",
       "pathPrefix": null,
       "mountOrder": 1,
-      "hasGatewayMount": false,
+      "hasGatewayMount": true,
       "hasGatewayRouteManifest": false
     },
     {
@@ -33,7 +33,7 @@
       "surface": "unknown",
       "pathPrefix": null,
       "mountOrder": 2,
-      "hasGatewayMount": false,
+      "hasGatewayMount": true,
       "hasGatewayRouteManifest": false
     },
     {
@@ -43,7 +43,7 @@
       "surface": "open-api",
       "pathPrefix": null,
       "mountOrder": 3,
-      "hasGatewayMount": false,
+      "hasGatewayMount": true,
       "hasGatewayRouteManifest": false
     }
   ]

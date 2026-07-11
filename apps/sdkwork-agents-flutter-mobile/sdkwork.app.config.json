@@ -125,9 +125,9 @@
   },
   "release": {
     "currentVersion": "0.1.0",
-    "defaultChannel": "STABLE",
+    "defaultChannel": "BETA",
     "latest": {
-      "STABLE": "0.1.0"
+      "BETA": "0.1.0"
     },
     "notes": []
   },

@@ -36,7 +36,7 @@ depend on `sdkwork-agents` for their core domain behavior.
 | `sdkwork-knowledgebase` | `slot_kind=knowledge`, `target_module=knowledgebase` | `@sdkwork/knowledgebase-app-sdk` |
 | `sdkwork-skills` | `slot_kind=skill`, `target_module=skills` | `@sdkwork/skills-app-sdk` |
 | `sdkwork-prompts` | `slot_kind=prompt`, `target_module=prompts` | `@sdkwork/prompts-app-sdk` |
-| `sdkwork-mcp` | `slot_kind=mcp`, `target_module=mcp` | marketplace projection; federation TBD |
+| `sdkwork-mcp` | `slot_kind=mcp`, `target_module=mcp` | marketplace projection; federation enablement requires an approved sdkwork-mcp runtime surface |
 | `sdkwork-llm` | runtime binding / model provider profile | model catalog, provider profile, credential references |
 | `sdkwork-drive` | `slot_kind=drive`, `target_module=drive` | `@sdkwork/drive-app-sdk`; Drive Uploader only |
 
@@ -67,11 +67,13 @@ pnpm check:api-operation-patterns
 pnpm check:route-path-collisions
 pnpm check:pagination
 pnpm check:app-sdk-consumer-imports
+pnpm check:agent-sdk-workspace
 pnpm check:component-port-bindings
 pnpm check:frontend-composition
 pnpm check:permission-composition
 pnpm check:composition-resolver
 pnpm check:rust-backend-composition
 pnpm check:production-security
+pnpm gateway:validate:cloud
 node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```

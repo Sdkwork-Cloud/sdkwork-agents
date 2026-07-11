@@ -59,7 +59,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
-      return;
+      return undefined;
     }
     let cancelled = false;
     setCurrentSelection(selectedVoices);

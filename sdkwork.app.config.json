@@ -58,11 +58,11 @@
   },
   "environments": {
     "development": {
-      "topologyProfileId": "standalone.split-services.development",
+      "topologyProfileId": "standalone.development",
       "accessUrlEnv": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL"
     },
     "production": {
-      "topologyProfileId": "cloud.split-services.production",
+      "topologyProfileId": "cloud.production",
       "accessUrlEnv": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL"
     }
   },
@@ -85,13 +85,14 @@
   },
   "release": {
     "currentVersion": "0.1.0",
+    "defaultChannel": "BETA",
     "latest": {
-      "STABLE": "0.1.0"
+      "BETA": "0.1.0"
     },
     "notes": [
       {
         "version": "0.1.0",
-        "channel": "STABLE",
+        "channel": "BETA",
         "current": true,
         "packageIds": ["linux-x64-cloud-server-tar-gz"]
       }

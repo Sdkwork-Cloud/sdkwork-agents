@@ -3,7 +3,7 @@ use axum::http::{Request, StatusCode};
 use sdkwork_agents_contract::env_test_lock;
 use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_intelligence_agents_service::{
-    AgentHttpState, AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
+    AgentHttpState, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
 use sdkwork_routes_agents_app_api::{
     app_route_manifest, build_router, wrap_router_with_web_framework, APP_ROUTES,
@@ -31,7 +31,7 @@ fn test_state() -> AgentHttpState {
     AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
-        AllowAllPolicyProvider::allow("policy.agents"),
+        IamGatedPolicyProvider::new("policy.agents.test.iam-gated"),
     )
 }
 
@@ -65,7 +65,7 @@ fn agents_access_token(user_id: &str) -> String {
         "environment": "dev",
         "deployment_mode": "saas",
         "login_scope": "TENANT",
-        "permission_scope": ["agents.*"]
+        "permission_scope": ["ai.agents.manage"]
     }))
 }
 

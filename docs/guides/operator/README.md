@@ -24,9 +24,9 @@ Authoritative manifest: [deployments/deploy.yaml](../../../deployments/deploy.ya
 
 | Profile | Use case |
 | --- | --- |
-| `cloud.split-services.production` | Cloud split web + API domains |
-| `standalone.unified-process.production` | Single-process binary package |
-| `standalone.unified-process.development` | Local source-tree dev |
+| `cloud.production` | Cloud web + API domains through application public ingress |
+| `standalone.production` | Single application public ingress binary package |
+| `standalone.development` | Local source-tree dev |
 
 Topology and env keys: [specs/topology.spec.json](../../../specs/topology.spec.json), `configs/topology/*.env`.
 

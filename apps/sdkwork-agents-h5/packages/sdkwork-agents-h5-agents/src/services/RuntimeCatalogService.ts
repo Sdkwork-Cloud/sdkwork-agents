@@ -1,5 +1,5 @@
 import { Code2, Cpu, Globe } from "lucide-react";
-import { createElement, type ReactNode } from "react";
+import { createElement } from "react";
 
 import {
   getAgentsAppSdkClientWithSession,
@@ -112,6 +112,7 @@ function extractItems(snapshot: unknown): Record<string, unknown>[] {
   return [];
 }
 
+/** Load model catalog from agents code-engine runtime (`GET /app/v3/api/ai/code_engines`). */
 export async function loadRuntimeModelCatalog(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
 ): Promise<ModelCatalogItem[]> {
@@ -133,6 +134,7 @@ export async function loadRuntimeModelCatalog(
   );
 }
 
+/** One MCP marketplace page for interactive pickers (`PAGINATION_SPEC.md` §8). */
 export async function loadMcpCatalogPage(
   page = 1,
   pageSize = DEFAULT_LIST_PAGE_SIZE,
@@ -177,6 +179,6 @@ export function engineKeyToVendorLabel(engineKey: string): string {
   return labels[engineKey] ?? engineKey;
 }
 
-export function modelCatalogVendorIcon(engineKey: string): ReactNode {
+export function modelCatalogVendorIcon(_engineKey: string): React.ReactNode {
   return createElement(Cpu, { size: 14 });
 }

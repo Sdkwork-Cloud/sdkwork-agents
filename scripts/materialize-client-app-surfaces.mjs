@@ -146,8 +146,8 @@ function manifestV3({
     },
     release: {
       currentVersion: '0.1.0',
-      defaultChannel: 'STABLE',
-      latest: { STABLE: '0.1.0' },
+      defaultChannel: 'BETA',
+      latest: { BETA: '0.1.0' },
       notes: [],
     },
     security: {
@@ -432,7 +432,7 @@ function createReactSurface({
         [`@sdkwork/${applicationCode}-${packageSegment}-core`]: [`./packages/sdkwork-${applicationCode}-${packageSegment}-core/src/index.ts`],
         [`@sdkwork/${applicationCode}-${packageSegment}-commons`]: [`./packages/sdkwork-${applicationCode}-${packageSegment}-commons/src/index.ts`],
         [`@sdkwork/${applicationCode}-${packageSegment}-shell`]: [`./packages/sdkwork-${applicationCode}-${packageSegment}-shell/src/index.ts`],
-        '@sdkwork/agents-app-sdk': ['../../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts'],
+        '@sdkwork/agents-app-sdk': ['../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/src/index.ts'],
       },
     },
     include: ['src', `packages/sdkwork-${applicationCode}-${packageSegment}-core/src`, 'src/vite-env.d.ts'],
@@ -459,7 +459,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@sdkwork/agents-app-sdk": path.resolve(
           repoRoot,
-          "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts",
+          "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/src/index.ts",
         ),
       },
     },
@@ -983,7 +983,7 @@ function createRootWorkspace() {
   - "apps/*"
   - "apps/*/packages/*"
   - "../sdkwork-sdk-commons/sdkwork-sdk-common-typescript"
-  - "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi"
+  - "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript"
 
 catalog:
   "@tailwindcss/vite": ^4.1.14

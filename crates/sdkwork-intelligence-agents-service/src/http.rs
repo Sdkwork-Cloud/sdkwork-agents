@@ -1,3 +1,13 @@
+mod context;
+mod middleware;
+pub mod testing;
+
+#[cfg(test)]
+use context::reconcile_resource_tenant_with_subject_header;
+pub use context::AgentRequestContext;
+use context::RequestScope;
+use middleware::with_gateway_trusted_context;
+
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
@@ -35,21 +45,19 @@ use crate::response::{
 };
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
-    parse_organization_id, parse_owner_user_id, parse_tenant_id, validate_requested_at,
-    validate_standard_id,
+    parse_organization_id, parse_tenant_id, validate_requested_at, validate_standard_id,
 };
 use axum::body::Body;
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
-use axum::extract::{DefaultBodyLimit, Extension, Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::header::{HeaderName, CONTENT_TYPE};
-use axum::http::{HeaderMap, HeaderValue, Request, StatusCode};
-use axum::middleware::Next;
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{middleware, Json, Router};
+use axum::{Json, Router};
 use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider,
-    PolicyRequest, PolicySubject, ProviderHealth,
+    PolicyRequest, ProviderHealth,
 };
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -58,15 +66,6 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use time::OffsetDateTime;
 
-const HEADER_SUBJECT_ID: &str = "x-subject-id";
-const HEADER_SUBJECT_TENANT_ID: &str = "x-subject-tenant-id";
-const HEADER_SUBJECT_ROLES: &str = "x-subject-roles";
-const HEADER_SDKWORK_USER_ID: &str = "x-sdkwork-user-id";
-const HEADER_SDKWORK_ACTOR_ID: &str = "x-sdkwork-actor-id";
-const HEADER_SDKWORK_TENANT_ID: &str = "x-sdkwork-tenant-id";
-const HEADER_SDKWORK_PERMISSION_SCOPE: &str = "x-sdkwork-permission-scope";
-const HEADER_SDKWORK_TRACE_ID: &str = "x-sdkwork-trace-id";
-const HEADER_SDKWORK_REQUEST_ID: &str = "x-sdkwork-request-id";
 const MAX_PAGE_SIZE: usize = 200;
 const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "created",
@@ -94,238 +93,6 @@ const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "interaction_expired",
     "interaction_cancelled",
 ];
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentRequestContext {
-    pub tenant_id: String,
-    pub organization_id: Option<String>,
-    pub owner_user_id: String,
-    pub subject_id: String,
-    pub roles: Vec<String>,
-    /// W3C trace id resolved from `traceparent` (or `x-sdkwork-trace-id`) at the
-    /// gateway boundary. Propagated to every success/error envelope so responses
-    /// stay correlatable end-to-end (`API_SPEC.md` §15.1.1, OBSERVABILITY_SPEC §1).
-    pub trace_id: Option<String>,
-    /// Server request id used as the Problem+json fallback correlation when no
-    /// trace id is present.
-    pub request_id: Option<String>,
-}
-
-impl AgentRequestContext {
-    pub fn new(tenant_id: impl Into<String>, owner_user_id: impl Into<String>) -> Self {
-        let owner_user_id = owner_user_id.into();
-        Self {
-            tenant_id: tenant_id.into(),
-            organization_id: None,
-            subject_id: owner_user_id.clone(),
-            owner_user_id,
-            roles: Vec::new(),
-            trace_id: None,
-            request_id: None,
-        }
-    }
-
-    pub fn with_organization_id(mut self, organization_id: impl Into<String>) -> Self {
-        self.organization_id = Some(organization_id.into());
-        self
-    }
-
-    pub fn with_subject_id(mut self, subject_id: impl Into<String>) -> Self {
-        self.subject_id = subject_id.into();
-        self
-    }
-
-    pub fn with_roles(mut self, roles: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.roles = roles.into_iter().map(Into::into).collect();
-        self
-    }
-
-    pub fn with_trace_id(mut self, trace_id: impl Into<String>) -> Self {
-        self.trace_id = Some(trace_id.into());
-        self
-    }
-
-    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
-        self.request_id = Some(request_id.into());
-        self
-    }
-
-    /// Build trusted context from gateway-injected subject headers before resource tenant reconciliation.
-    pub(crate) fn from_gateway_subject_headers(headers: &HeaderMap) -> Result<Self, ApiProblem> {
-        let subject_id = required_header_any(
-            headers,
-            &[
-                HEADER_SUBJECT_ID,
-                HEADER_SDKWORK_USER_ID,
-                HEADER_SDKWORK_ACTOR_ID,
-            ],
-        )?;
-        // tenant_id is the mandatory multi-tenant isolation key. The gateway
-        // must always inject either `x-subject-tenant-id` or
-        // `x-sdkwork-tenant-id`. Falling back to an empty string (the previous
-        // behavior) allowed a request with a missing tenant header to enter the
-        // application layer as tenant_id="", which downstream code then parsed
-        // as 0 or used to bypass tenant-scoped filters. Reject at the edge.
-        let tenant_id = required_header_any(
-            headers,
-            &[HEADER_SUBJECT_TENANT_ID, HEADER_SDKWORK_TENANT_ID],
-        )?;
-        let mut roles = Vec::new();
-        if let Some(roles_header) = optional_header_any(
-            headers,
-            &[HEADER_SUBJECT_ROLES, HEADER_SDKWORK_PERMISSION_SCOPE],
-        ) {
-            for role in roles_header
-                .split([',', ' '])
-                .map(str::trim)
-                .filter(|role| !role.is_empty())
-            {
-                roles.push(role.to_string());
-            }
-        }
-        // Resolve W3C trace id for envelope correlation. Prefer an explicit
-        // `x-sdkwork-trace-id` header (set by the gateway), then `traceparent`,
-        // then synthesize from the request id so every response stays
-        // correlatable even when upstream proxies strip tracing headers.
-        let request_id = optional_header_any(headers, &[HEADER_SDKWORK_REQUEST_ID])
-            .unwrap_or_else(synthesize_request_id);
-        let trace_id = optional_header_any(headers, &[HEADER_SDKWORK_TRACE_ID])
-            .or_else(|| {
-                sdkwork_web_core::trace::resolve_trace_context(headers, &request_id)
-                    .traceparent
-                    .as_str()
-                    .split('-')
-                    .nth(1)
-                    .map(str::to_owned)
-            })
-            .or_else(|| Some(request_id.clone()));
-        Ok(Self {
-            tenant_id,
-            organization_id: None,
-            owner_user_id: subject_id.clone(),
-            subject_id,
-            roles,
-            trace_id,
-            request_id: Some(request_id),
-        })
-    }
-
-    fn subject(&self) -> PolicySubject {
-        let mut subject = PolicySubject::new(self.subject_id.clone(), self.tenant_id.clone());
-        for role in &self.roles {
-            subject = subject.with_role(role.clone());
-        }
-        subject
-    }
-}
-
-/// Build a minimal framework request context for envelope correlation.
-///
-/// The agents service owns its own lightweight middleware, so we construct a
-/// `WebRequestContext` carrying only the fields required by
-/// `sdkwork_web_core::problem_response` and `SdkWorkApiResponse::success`:
-/// `request_id`, `api_surface`, `transport` facts, and the resolved `trace_id`.
-/// Richer principal/auth fields are populated by the gateway web-framework
-/// layer when this service is mounted behind `sdkwork-web-bootstrap`.
-fn build_web_request_context(
-    agent_context: &AgentRequestContext,
-    request: &Request<axum::body::Body>,
-    api_surface: sdkwork_web_core::WebApiSurface,
-) -> sdkwork_web_core::WebRequestContext {
-    let transport = sdkwork_web_core::WebTransportFacts {
-        path: request.uri().path().to_owned(),
-        method: request.method().as_str().to_owned(),
-        auth_token_present: request.headers().get("authorization").is_some(),
-        access_token_present: request.headers().get("x-sdkwork-access-token").is_some(),
-        api_key_present: request.headers().get("x-sdkwork-api-key").is_some(),
-        oauth_bearer_present: request.headers().get("x-sdkwork-oauth-bearer").is_some(),
-        agent_token_present: request.headers().get("x-sdkwork-agent-token").is_some(),
-    };
-    sdkwork_web_core::WebRequestContext {
-        request_id: sdkwork_web_core::ServerRequestId(
-            agent_context
-                .request_id
-                .clone()
-                .unwrap_or_else(synthesize_request_id),
-        ),
-        api_surface,
-        auth_mode: sdkwork_web_core::WebAuthMode::DualToken,
-        transport,
-        principal: None,
-        locale: None,
-        client_kind: None,
-        operation: None,
-        trace_id: agent_context.trace_id.clone(),
-    }
-}
-
-fn synthesize_request_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("ag-{nanos:032x}")
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct RequestScope {
-    tenant_id: String,
-    organization_id: String,
-    owner_user_id: String,
-    subject: PolicySubject,
-}
-
-impl RequestScope {
-    pub(crate) fn from_context(context: AgentRequestContext) -> Self {
-        let subject = context.subject();
-        Self {
-            tenant_id: context.tenant_id.clone(),
-            organization_id: context.organization_id.unwrap_or_else(|| "0".to_string()),
-            owner_user_id: context.owner_user_id.clone(),
-            subject,
-        }
-    }
-
-    fn owner_scope(&self) -> Result<Option<u64>, ApiProblem> {
-        parse_owner_user_id(&self.owner_user_id)
-            .map(Some)
-            .map_err(ApiProblem::from_kernel_error)
-    }
-
-    pub(crate) fn from_trusted_extension(
-        mut context: AgentRequestContext,
-        resource_tenant_id: String,
-        organization_id: Option<String>,
-        owner_user_id: Option<String>,
-    ) -> Result<Self, ApiProblem> {
-        let header_tenant = if context.tenant_id.is_empty() {
-            None
-        } else {
-            Some(context.tenant_id.clone())
-        };
-        let tenant_id = reconcile_resource_tenant_with_subject_header(
-            resource_tenant_id.as_str(),
-            header_tenant,
-        )?;
-        context.tenant_id = tenant_id;
-        if let Some(organization_id) = organization_id {
-            context.organization_id = Some(organization_id);
-        }
-        if let Some(owner_user_id) = owner_user_id {
-            context.owner_user_id = owner_user_id;
-        }
-        Ok(Self::from_context(context))
-    }
-
-    pub(crate) fn subject(&self) -> &PolicySubject {
-        &self.subject
-    }
-
-    pub(crate) fn tenant_id_u64(&self) -> Result<u64, ApiProblem> {
-        parse_tenant_id(self.tenant_id.as_str()).map_err(ApiProblem::from_kernel_error)
-    }
-}
 
 pub(crate) struct DynAgentRepository(Box<dyn AgentRepository + Send + Sync>);
 pub(crate) struct DynAgentAuditSink(Box<dyn AgentAuditSink + Send + Sync>);
@@ -663,78 +430,6 @@ impl AgentHttpState {
             service: Arc::new(service),
         }
     }
-}
-
-async fn inject_gateway_agent_context(
-    mut request: Request<axum::body::Body>,
-    next: Next,
-) -> Response {
-    let api_surface = classify_api_surface(request.uri().path());
-    match AgentRequestContext::from_gateway_subject_headers(request.headers()) {
-        Ok(context) => {
-            let web_context = build_web_request_context(&context, &request, api_surface);
-            request.extensions_mut().insert(context);
-            request.extensions_mut().insert(web_context);
-            next.run(request).await
-        }
-        // 中间件运行在 `WebRequestContext` 注入之前，只能走 fallback 路径
-        // （内部会生成一个新的服务端 trace id 用于支持排障关联）。
-        Err(problem) => problem.into_response_fallback(),
-    }
-}
-
-/// Classify the request path into a framework API surface so the
-/// `WebRequestContext` carries accurate telemetry for Problem+json correlation.
-fn classify_api_surface(path: &str) -> sdkwork_web_core::WebApiSurface {
-    use sdkwork_web_core::WebApiSurface;
-    if path.starts_with("/app/") {
-        WebApiSurface::AppApi
-    } else if path.starts_with("/backend/") {
-        WebApiSurface::BackendApi
-    } else if path.starts_with("/agent/") || path.starts_with("/open/") {
-        WebApiSurface::OpenApi
-    } else if path.starts_with("/gateway/") {
-        WebApiSurface::GatewayApi
-    } else {
-        WebApiSurface::Unknown
-    }
-}
-
-/// Lightweight request tracing middleware.
-///
-/// Emits a single structured log line per request with method, path, status
-/// and latency. This is the minimal observability baseline required by P1-3
-/// without introducing `tower-http` (which would pull in additional build
-/// scripts that are currently broken on the Windows toolchain). Throughput
-/// limiting (rate limiting) and CORS are intentionally deferred to the
-/// sdkwork-web-framework layer where they can be configured uniformly across
-/// all managed-store surfaces.
-async fn trace_request(request: Request<axum::body::Body>, next: Next) -> Response {
-    let method = request.method().clone();
-    let path = request.uri().path().to_string();
-    let started = std::time::Instant::now();
-    let response = next.run(request).await;
-    let elapsed = started.elapsed();
-    let status = response.status().as_u16();
-    crate::infrastructure::AgentMetricsRegistry::global().record_http_request(status);
-    tracing::info!(
-        method = %method,
-        path = %path,
-        status = response.status().as_u16(),
-        elapsed_ms = elapsed.as_millis() as u64,
-        "agents.managed_store.request"
-    );
-    response
-}
-
-/// Maximum JSON request body size for managed-agent HTTP APIs (2 MiB).
-pub const MAX_HTTP_REQUEST_BODY_BYTES: usize = 2 * 1024 * 1024;
-
-fn with_gateway_trusted_context(router: Router<AgentHttpState>) -> Router<AgentHttpState> {
-    router
-        .layer(DefaultBodyLimit::max(MAX_HTTP_REQUEST_BODY_BYTES))
-        .layer(middleware::from_fn(trace_request))
-        .layer(middleware::from_fn(inject_gateway_agent_context))
 }
 
 /// Raw app-api route tree without gateway or web-framework middleware.
@@ -1088,40 +783,6 @@ pub fn build_combined_routes() -> Router<AgentHttpState> {
         .merge(build_app_routes())
         .merge(build_backend_routes())
         .route("/metrics/agents", get(serve_agents_metrics))
-}
-
-/// Testing helpers for integrating with `WebRequestContext` in contract tests.
-///
-/// Production mounts inject `WebRequestContext` via `sdkwork-web-framework`'s
-/// 18-stage pipeline. Tests that exercise `build_combined_router` directly must
-/// inject a minimal context manually via `Extension(test_web_context())`.
-pub mod testing {
-    use sdkwork_web_core::{
-        ServerRequestId, WebApiSurface, WebAuthMode, WebRequestContext, WebTransportFacts,
-    };
-
-    /// Construct a minimal `WebRequestContext` for app-api contract tests.
-    pub fn test_web_context() -> WebRequestContext {
-        WebRequestContext {
-            request_id: ServerRequestId("req-test-fixed".to_owned()),
-            api_surface: WebApiSurface::AppApi,
-            auth_mode: WebAuthMode::DualToken,
-            principal: None,
-            transport: WebTransportFacts {
-                path: "/app/v3/api/ai/agents".to_owned(),
-                method: "POST".to_owned(),
-                auth_token_present: true,
-                access_token_present: true,
-                api_key_present: false,
-                oauth_bearer_present: false,
-                agent_token_present: false,
-            },
-            locale: None,
-            client_kind: None,
-            operation: None,
-            trace_id: Some("trace-test-fixed".to_owned()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -2906,7 +2567,7 @@ fn map_composition_slot_record(
     }
 }
 // ===========================================================================
-// Session handlers — App API
+// Session handlers  - App API
 // ===========================================================================
 
 async fn app_list_sessions(
@@ -3040,7 +2701,7 @@ async fn app_close_session(
 }
 
 // ===========================================================================
-// Task handlers — App API
+// Task handlers  - App API
 // ===========================================================================
 
 async fn app_list_tasks(
@@ -3198,7 +2859,7 @@ async fn app_execute_task(
 }
 
 // ===========================================================================
-// Interaction handlers — App API
+// Interaction handlers  - App API
 // ===========================================================================
 
 async fn app_list_interactions(
@@ -3364,7 +3025,7 @@ async fn app_answer_interaction(
 }
 
 // ===========================================================================
-// Message handlers — App API
+// Message handlers  - App API
 // ===========================================================================
 
 async fn app_list_messages(
@@ -3479,7 +3140,7 @@ async fn app_get_message(
 }
 
 // ===========================================================================
-// Session handlers — Backend API
+// Session handlers  - Backend API
 // ===========================================================================
 
 async fn backend_list_sessions(
@@ -3647,7 +3308,7 @@ async fn backend_archive_session(
 }
 
 // ===========================================================================
-// Message handlers — Backend API
+// Message handlers  - Backend API
 // ===========================================================================
 
 async fn backend_list_messages(
@@ -3764,7 +3425,7 @@ async fn backend_get_message(
 }
 
 // ===========================================================================
-// Task handlers — Backend API
+// Task handlers  - Backend API
 // ===========================================================================
 
 async fn backend_list_tasks(
@@ -3926,7 +3587,7 @@ async fn backend_execute_task(
 }
 
 // ===========================================================================
-// Interaction handlers — Backend API
+// Interaction handlers  - Backend API
 // ===========================================================================
 
 async fn backend_list_interactions(
@@ -4669,49 +4330,6 @@ fn server_requested_at() -> String {
     )
 }
 
-fn reconcile_resource_tenant_with_subject_header(
-    resource_tenant_id: &str,
-    header_tenant_id: Option<String>,
-) -> Result<String, ApiProblem> {
-    let resource_tenant =
-        parse_tenant_id(resource_tenant_id).map_err(ApiProblem::from_kernel_error)?;
-    let Some(header_tenant_id) = header_tenant_id else {
-        // Defense in depth: the gateway middleware (`from_gateway_subject_headers`)
-        // already rejects requests without a tenant header, but a backend route
-        // must never trust the resource-supplied tenant_id on its own. Without
-        // a subject tenant header to cross-check, a caller could address any
-        // tenant's resource by simply omitting the header. Reject explicitly.
-        return Err(ApiProblem::validation(
-            "subject tenant header is required for backend resource access",
-        ));
-    };
-    let header_tenant = parse_tenant_id(header_tenant_id.as_str())
-        .map_err(|_| ApiProblem::permission("subject tenant does not match resource tenant"))?;
-    if header_tenant != resource_tenant {
-        return Err(ApiProblem::permission(
-            "subject tenant does not match resource tenant",
-        ));
-    }
-    Ok(resource_tenant_id.to_string())
-}
-
-fn required_header_any(headers: &HeaderMap, keys: &[&str]) -> Result<String, ApiProblem> {
-    optional_header_any(headers, keys).ok_or_else(|| {
-        ApiProblem::validation(format!("required header missing: {}", keys.join(" or ")))
-    })
-}
-
-fn optional_header_any(headers: &HeaderMap, keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| optional_header(headers, key))
-}
-
-fn optional_header(headers: &HeaderMap, key: &str) -> Option<String> {
-    headers
-        .get(key)
-        .and_then(|value| value.to_str().ok())
-        .map(ToString::to_string)
-}
-
 pub(crate) fn normalized_pagination(
     page: Option<usize>,
     page_size: Option<usize>,
@@ -4759,9 +4377,8 @@ fn resolve_tenant_from_query_or_body(
     }
 }
 
-/// 聊天完成响应的内部数据形状：`{ session, userMessage, assistantMessage }`。
-///
-/// 该结构序列化后会作为 `ResourceData.item` 被包装进 `SdkWorkApiResponse` 信封。
+/// Internal chat completion payload: `{ session, userMessage, assistantMessage }`.
+/// Serialized as `ResourceData.item` inside the `SdkWorkApiResponse` envelope.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ChatCompletionData {
@@ -4780,11 +4397,9 @@ impl ChatCompletionData {
     }
 }
 
-/// 构造聊天完成响应：
-/// - 非流式：`201 Created` + `SdkWorkApiResponse { code: 0, data: { item: ChatCompletionData }, traceId }`。
-/// - 流式（SSE）：`201 Created` + `text/event-stream`，`data:` 行为完整 `SdkWorkApiResponse` 信封 JSON。
-///
-/// 调用方必须传入 `WebRequestContext` 以便信封和 Problem+json 都能携带真实 `traceId`。
+/// Build the chat completion response.
+/// Non-streaming returns `201 Created` with the SDKWork response envelope.
+/// Streaming returns a single SSE `completion` event containing the same envelope.
 fn chat_completion_http_response(
     ctx: &sdkwork_web_core::WebRequestContext,
     result: &ChatCompletionResult,
@@ -4794,7 +4409,6 @@ fn chat_completion_http_response(
     let trace_id = ctx.resolved_trace_id();
 
     if stream_requested {
-        // SSE 路径：将完整信封作为 `data:` 行的 JSON 负载。
         let envelope = sdkwork_utils_rust::SdkWorkApiResponse::success(
             ResourceData { item: chat_data },
             trace_id.clone(),
@@ -4818,7 +4432,6 @@ fn chat_completion_http_response(
         return Ok(response);
     }
 
-    // 非流式 JSON 路径：复用 `created_json` 生成 `201 + 信封 + trace 头`。
     created_json(ctx, ResourceData { item: chat_data })
 }
 
@@ -4843,12 +4456,13 @@ fn offset_page_info(page: usize, page_size: usize, total_count: u64, has_more: b
 
 #[cfg(test)]
 mod tests {
+    use super::testing::test_web_context;
     use super::*;
     use crate::infrastructure::{
-        AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
+        IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
     };
     use axum::body::{to_bytes, Body};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{HeaderMap, HeaderValue, Request, StatusCode};
     use axum::Extension;
     use tower::ServiceExt;
 
@@ -4874,29 +4488,15 @@ mod tests {
         let headers = request.headers_mut();
         headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
         headers.insert("x-subject-tenant-id", HeaderValue::from_static("100001"));
+        headers.insert(
+            "x-subject-roles",
+            HeaderValue::from_static("ai.agents.manage"),
+        );
         request
     }
 
-    struct EnvVarRestore {
-        key: &'static str,
-        previous: Option<String>,
-    }
-
-    impl EnvVarRestore {
-        fn set(key: &'static str, value: &str) -> Self {
-            let previous = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, previous }
-        }
-    }
-
-    impl Drop for EnvVarRestore {
-        fn drop(&mut self) {
-            match self.previous.as_ref() {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
+    fn test_policy_provider() -> IamGatedPolicyProvider {
+        IamGatedPolicyProvider::new("policy.agents.test.iam-gated")
     }
 
     fn create_agent_body(agent_id: &str, code: &str) -> Value {
@@ -4958,32 +4558,9 @@ mod tests {
         AgentRequestContext::new("100001", "100")
             .with_organization_id("0")
             .with_subject_id("u-1")
-            .with_roles(["agent.write", "agent.read"])
+            .with_roles(["ai.agents.manage"])
             .with_trace_id("trace-test-fixed")
             .with_request_id("req-test-fixed")
-    }
-
-    /// 构造测试用 `WebRequestContext`，供 app-api 路由（未挂载网关中间件）的测试注入。
-    fn test_web_context() -> sdkwork_web_core::WebRequestContext {
-        sdkwork_web_core::WebRequestContext {
-            request_id: sdkwork_web_core::ServerRequestId("req-test-fixed".to_owned()),
-            api_surface: sdkwork_web_core::WebApiSurface::AppApi,
-            auth_mode: sdkwork_web_core::WebAuthMode::DualToken,
-            principal: None,
-            transport: sdkwork_web_core::WebTransportFacts {
-                path: "/app/v3/api/ai/agents".to_owned(),
-                method: "POST".to_owned(),
-                auth_token_present: true,
-                access_token_present: true,
-                api_key_present: false,
-                oauth_bearer_present: false,
-                agent_token_present: false,
-            },
-            locale: None,
-            client_kind: None,
-            operation: None,
-            trace_id: Some("trace-test-fixed".to_owned()),
-        }
     }
 
     #[tokio::test]
@@ -4991,7 +4568,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
+            test_policy_provider(),
         );
         let app = build_combined_router(state)
             .layer(Extension(test_agent_context()))
@@ -5052,7 +4629,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
+            test_policy_provider(),
         );
         let app = build_combined_router(state);
 
@@ -5099,7 +4676,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
+            test_policy_provider(),
         );
         let app = build_combined_router(state)
             .layer(Extension(test_agent_context()))
@@ -5126,12 +4703,10 @@ mod tests {
 
     #[tokio::test]
     async fn app_runtime_create_operations_use_201_status() {
-        let _env_lock = sdkwork_agents_contract::env_test_lock();
-        let _deployment_env = EnvVarRestore::set("SDKWORK_DEPLOYMENT_ENV", "development");
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
+            test_policy_provider(),
         );
         let app = build_combined_router(state)
             .layer(Extension(test_agent_context()))
@@ -5184,7 +4759,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
+            test_policy_provider(),
         );
         let app = build_combined_router(state)
             .layer(Extension(test_agent_context()))
@@ -5240,7 +4815,7 @@ mod tests {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
-            AllowAllPolicyProvider::allow("policy.memory"),
+            test_policy_provider(),
         );
         let app = build_combined_router(state);
 
@@ -5327,7 +4902,7 @@ mod tests {
 
     #[test]
     fn from_gateway_subject_headers_rejects_missing_tenant_header() {
-        // 缺失 tenant header 必须在网关边界被拒绝，避免空 tenant_id 进入应用层
+        // Missing tenant headers must fail at the gateway boundary.
         let headers = subject_headers_with(None);
         let result = AgentRequestContext::from_gateway_subject_headers(&headers);
         let err = result.expect_err("missing tenant header should be rejected");
@@ -5337,7 +4912,7 @@ mod tests {
 
     #[test]
     fn from_gateway_subject_headers_accepts_sdkwork_tenant_header() {
-        // x-sdkwork-tenant-id 是 x-subject-tenant-id 的等价替代头
+        // x-sdkwork-tenant-id ??x-subject-tenant-id 的等价替代头
         let mut headers = HeaderMap::new();
         headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
         headers.insert("x-sdkwork-tenant-id", HeaderValue::from_static("100001"));
@@ -5348,15 +4923,14 @@ mod tests {
 
     #[test]
     fn from_gateway_subject_headers_rejects_tenant_zero() {
-        // tenant_id=0 是保留值，即使 header 存在也必须拒绝
+        // The gateway accepts the header shape; numeric tenant validation runs later.
         let headers = subject_headers_with(Some("0"));
         // from_gateway_subject_headers 仅做 header 存在性校验，tenant_id=0
-        // 在后续 parse_tenant_id 时被拒绝。这里验证 header 层不阻拦解析，
-        // 由 validation.rs::parse_tenant_id_rejects_zero 覆盖数值校验。
+        // Numeric tenant validation is covered by parse_tenant_id.
         let context = AgentRequestContext::from_gateway_subject_headers(&headers)
             .expect("header presence is the gateway concern");
         assert_eq!(context.tenant_id, "0");
-        // 数值校验在 tenant_id_u64 / parse_tenant_id 处生效
+        // Numeric validation happens at the service scope boundary.
         let err = parse_tenant_id(context.tenant_id.as_str())
             .expect_err("tenant_id 0 must be rejected by parse_tenant_id");
         match err {
@@ -5369,7 +4943,7 @@ mod tests {
 
     #[test]
     fn reconcile_resource_tenant_rejects_missing_header() {
-        // 严重越权场景：缺失 subject tenant header 时不得直接信任 resource tenant
+        // 严重越权场景：缺??subject tenant header 时不得直接信??resource tenant
         let err = reconcile_resource_tenant_with_subject_header("100001", None)
             .expect_err("missing header must be rejected");
         assert_eq!(err.status(), StatusCode::BAD_REQUEST);
@@ -5387,7 +4961,7 @@ mod tests {
 
     #[test]
     fn reconcile_resource_tenant_rejects_resource_zero() {
-        // resource tenant_id=0 也必须被拒绝（parse_tenant_id 拦截）
+        // Resource tenant 0 must be rejected by numeric tenant validation.
         let err = reconcile_resource_tenant_with_subject_header("0", Some("100001".to_string()))
             .expect_err("resource tenant 0 must be rejected");
         assert_eq!(err.status(), StatusCode::BAD_REQUEST);

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { ChevronLeft, Copy, Check } from "lucide-react";
+import { ChevronLeft, Bot, Copy, Check } from "lucide-react";
 
 import { Avatar } from "@sdkwork/agents-h5-commons";
 

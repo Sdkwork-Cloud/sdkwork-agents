@@ -40,6 +40,10 @@ paths:
     post:
       tags: [ai]
       summary: Create a managed agent
+      description: |
+        Any authenticated user can create a managed agent. The agent is created
+        in `draft` status and must be activated (draft → active) by a user with
+        `ai.agents.manage` permission, providing the review workflow.
       operationId: agents.create
       security:
         - AuthToken: []
@@ -47,6 +51,7 @@ paths:
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
       x-sdkwork-permission: agent.business.create
+      x-sdkwork-permission-scope: authenticated
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.created
       requestBody:

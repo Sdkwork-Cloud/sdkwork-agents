@@ -20,6 +20,38 @@ function mustExport(relativePath, exportName) {
   );
 }
 
+function listSourceFiles(relativePath) {
+  const absolute = path.join(root, relativePath);
+  const entries = fs.readdirSync(absolute, { withFileTypes: true });
+  return entries.flatMap((entry) => {
+    const childRelativePath = path.join(relativePath, entry.name);
+    if (entry.isDirectory()) {
+      return listSourceFiles(childRelativePath);
+    }
+    return /\.(ts|tsx|js|jsx)$/u.test(entry.name) ? [childRelativePath] : [];
+  });
+}
+
+function assertNoLaunchDebtCopy(label, relativePath) {
+  const forbiddenCopyPatterns = [
+    /后续版本/u,
+    /后续开放/u,
+    /未来版本/u,
+    /敬请期待/u,
+    /待开放/u,
+    /not implemented/iu,
+    /coming soon/iu,
+    /under construction/iu,
+  ];
+  const matches = listSourceFiles(relativePath).flatMap((filePath) => {
+    const content = mustExist(filePath);
+    return forbiddenCopyPatterns
+      .filter((pattern) => pattern.test(content))
+      .map((pattern) => `${filePath} matches ${pattern}`);
+  });
+  assert.deepEqual(matches, [], `${label} source must not expose launch-debt copy`);
+}
+
 const pcAgents = "apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-agents/src";
 const h5Agents = "apps/sdkwork-agents-h5/packages/sdkwork-agents-h5-agents/src";
 const pcApp = "apps/sdkwork-agents-pc/src";
@@ -35,6 +67,8 @@ mustExport(`${pcAgents}/services/AgentChatService.ts`, "AgentChatService");
 mustExport(`${h5Agents}/services/AgentChatService.ts`, "AgentChatService");
 mustExport(`${pcCoreSdk}/runtimeEnv.ts`, "readRuntimeEnv");
 mustExport(`${h5CoreSdk}/runtimeEnv.ts`, "readRuntimeEnv");
+assertNoLaunchDebtCopy("PC agents", pcAgents);
+assertNoLaunchDebtCopy("H5 agents", h5Agents);
 
 const h5AgentsPkg = JSON.parse(
   mustExist("apps/sdkwork-agents-h5/packages/sdkwork-agents-h5-agents/package.json"),
@@ -43,6 +77,46 @@ assert.equal(
   h5AgentsPkg.dependencies?.["@sdkwork/agents-app-sdk"],
   undefined,
   "H5 agents capability package must not depend on @sdkwork/agents-app-sdk directly",
+);
+assert.equal(
+  h5AgentsPkg.dependencies?.["@sdkwork/utils"],
+  "workspace:*",
+  "H5 agents capability package must keep @sdkwork/utils for approved client business ID helpers",
+);
+
+assert.match(
+  mustExist(`${h5Agents}/services/businessIdentifiers.ts`),
+  /const\s+CLIENT_SURFACE\s*=\s*"h5"/u,
+  "H5 business identifiers must use the h5 client surface prefix after materialization",
+);
+
+const h5Materializer = mustExist("scripts/materialize-h5-agents-from-pc.mjs");
+assert.doesNotMatch(
+  h5Materializer,
+  /rmSync\(\s*h5AgentsRoot\s*,\s*\{\s*recursive:\s*true/u,
+  "H5 agents materializer must not recursively remove the package root because that deletes package-local workspace dependency links",
+);
+assert.match(
+  h5Materializer,
+  /entry\.name\s*===\s*"node_modules"/u,
+  "H5 agents materializer must explicitly skip package-local node_modules while syncing source",
+);
+
+const clientAppSurfaceMaterializer = mustExist("scripts/materialize-client-app-surfaces.mjs");
+assert.doesNotMatch(
+  clientAppSurfaceMaterializer,
+  /sdkwork-agents-app-sdk-typescript[\\/]+generated[\\/]+server-openapi/u,
+  "Client app surface materializer must not generate aliases or workspace entries pointing at SDK generated transport output",
+);
+assert.match(
+  clientAppSurfaceMaterializer,
+  /sdks\/sdkwork-agents-app-sdk\/sdkwork-agents-app-sdk-typescript\/src\/index\.ts/u,
+  "Client app surface materializer must generate aliases pointing at the composed app SDK facade",
+);
+assert.match(
+  clientAppSurfaceMaterializer,
+  /- "sdks\/sdkwork-agents-app-sdk\/sdkwork-agents-app-sdk-typescript"/u,
+  "Client app surface materializer must register the composed app SDK TypeScript workspace root",
 );
 
 const mpAgentsPage = mustExist("apps/sdkwork-agents-mini-program/src/pages/agents/index.js");

@@ -6,7 +6,7 @@
     "displayName": "SDKWork Router Agent Backend API",
     "version": "0.1.0",
     "type": "rust-route-crate",
-    "root": "sdkwork-kernel/crates/sdkwork-routes-agents-backend-api",
+    "root": "crates/sdkwork-routes-agents-backend-api",
     "domain": "intelligence",
     "capability": "agents",
     "languages": ["rust"],

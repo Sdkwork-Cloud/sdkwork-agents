@@ -11,6 +11,9 @@ const h5AgentsRoot = path.resolve(repoRoot, "apps/sdkwork-agents-h5/packages/sdk
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (entry.name === "node_modules") {
+      continue;
+    }
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
@@ -25,14 +28,17 @@ function copyDir(src, dest) {
       .split("@sdkwork/agents-pc-commons").join("@sdkwork/agents-h5-commons")
       .split("@sdkwork/agents-pc-core").join("@sdkwork/agents-h5-core")
       .split("sdkwork-agents-pc").join("sdkwork-agents-h5")
-      .split("VITE_SDKWORK_AGENTS_PC_").join("VITE_SDKWORK_AGENTS_H5_");
+      .split("VITE_SDKWORK_AGENTS_PC_").join("VITE_SDKWORK_AGENTS_H5_")
+      .split('const CLIENT_SURFACE = "pc";').join('const CLIENT_SURFACE = "h5";');
     fs.writeFileSync(destPath, content, "utf8");
   }
 }
 
-if (fs.existsSync(h5AgentsRoot)) {
-  fs.rmSync(h5AgentsRoot, { recursive: true, force: true });
+const h5AgentsSrcRoot = path.join(h5AgentsRoot, "src");
+if (fs.existsSync(h5AgentsSrcRoot)) {
+  fs.rmSync(h5AgentsSrcRoot, { recursive: true, force: true });
 }
+fs.mkdirSync(h5AgentsRoot, { recursive: true });
 copyDir(pcAgentsRoot, h5AgentsRoot);
 
 const h5PackageJson = {
@@ -41,11 +47,16 @@ const h5PackageJson = {
   version: "0.1.0",
   type: "module",
   exports: {
-    ".": "./src/index.ts",
+    ".": {
+      types: "./src/index.ts",
+      import: "./src/index.ts",
+      default: "./src/index.ts",
+    },
   },
   dependencies: {
     "@sdkwork/agents-h5-commons": "workspace:*",
     "@sdkwork/agents-h5-core": "workspace:*",
+    "@sdkwork/utils": "workspace:*",
     "@tiptap/extension-placeholder": "catalog:",
     "@tiptap/pm": "catalog:",
     "@tiptap/react": "catalog:",

@@ -130,7 +130,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   useEffect(() => {
-    if (!resizable) return;
+    if (!resizable) {
+      return undefined;
+    }
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return;
       const deltaY = startY.current - e.clientY;

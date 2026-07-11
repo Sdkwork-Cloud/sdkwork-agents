@@ -6,7 +6,7 @@
     "displayName": "SDKWork Agents",
     "version": "0.1.0",
     "type": "web-backend-service",
-    "root": "sdkwork-agents",
+    "root": ".",
     "domain": "intelligence",
     "capability": "agents",
     "surface": "backend-service",
@@ -218,12 +218,14 @@
       "pnpm check:route-path-collisions",
       "pnpm check:pagination",
       "pnpm check:app-sdk-consumer-imports",
+      "pnpm check:agent-sdk-workspace",
       "pnpm check:component-port-bindings",
       "pnpm check:frontend-composition",
       "pnpm check:permission-composition",
       "pnpm check:composition-resolver",
       "pnpm check:rust-backend-composition",
       "pnpm check:production-security",
+      "pnpm gateway:validate:cloud",
       "cargo test -p sdkwork-intelligence-agents-service",
       "cargo test -p sdkwork-routes-agents-http-shared"
     ]

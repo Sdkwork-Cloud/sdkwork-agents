@@ -1,17 +1,19 @@
 # Agents Database Module
 
-Application-level metadata for the SDKWork Agents product. Agent runtime persistence
-(session, task, run state) remains owned by `sdkwork-kernel` via `sdkwork-agent-database`.
+Application-level metadata for the SDKWork Agents product. Agent runtime
+persistence for sessions, tasks, and run state remains owned by
+`sdkwork-kernel` through `sdkwork-agent-database`.
 
-Managed per `DATABASE_FRAMEWORK_SPEC.md` and `database/database.manifest.json`.
+Managed per `DATABASE_FRAMEWORK_SPEC.md` and
+`database/database.manifest.json`.
 
-## Initialization state
+## Initialization State
 
-This module is in **initialization state** for greenfield deployments:
+This module is in initialization state for greenfield deployments:
 
-1. **Baseline** — `database/ddl/baseline/{engine}/0001_agents_baseline.sql` contains the full DDL snapshot.
-2. **Migrations** — `database/migrations/{engine}/` is reserved for post-GA incremental schema changes only. It is intentionally empty at initialization.
-3. **Drift** — run `pnpm db:drift:check` before release.
+1. **Baseline** - `database/ddl/baseline/{engine}/0001_agents_baseline.sql` contains the full DDL snapshot.
+2. **Migrations** - `database/migrations/{engine}/` is reserved for approved incremental schema changes after the baseline contract changes. It is intentionally empty while contract version `3.0.0` is served entirely from the baseline.
+3. **Drift** - run `pnpm db:drift:check` before release.
 
 ## Commands
 

@@ -11,5 +11,9 @@ await esbuild.build({
   platform: "browser",
   format: "cjs",
   target: "es2019",
+  minifySyntax: true,
+  minifyWhitespace: true,
+  minifyIdentifiers: false,
+  legalComments: "none",
   logLevel: "info",
 });

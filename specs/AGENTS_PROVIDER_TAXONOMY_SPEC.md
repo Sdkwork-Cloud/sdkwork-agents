@@ -57,7 +57,7 @@ plugin registration; not listed in code-engine catalog.
 | Knowledge | `AGENT_KNOWLEDGE_PROVIDER_SPI_SPEC.md` | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Plugin |
 | Skills | `AGENT_SKILL_PROVIDER_SPI_SPEC.md` | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Plugin |
 | Planning / tasks | `AGENT_PLANNING_EXECUTION_SPEC.md` | Partial | Partial | Partial | Full | Full | Full |
-| Live interaction | facade → kernel (transition) | Approval | Approval | Permission + Q&A | TBD | TBD | Fail-closed default |
+| Live interaction | facade → kernel (transition) | Approval | Approval | Permission + Q&A | Provider manifest + policy gate required | Provider manifest + policy gate required | Fail-closed default |
 | Streaming | `ModelProvider::stream` | Planned | Planned | Planned | Planned | Planned | Planned |
 
 Memory types (permanent, user-scoped, growth) are owned by `sdkwork-memory` and referenced
@@ -86,7 +86,7 @@ Stored on `ai_agent.implementation_type`:
 | `sdkwork-native` | Kernel native runtime (default) |
 | `rig-rust` | `sdkwork-agent-provider-rig` |
 | `openai-agents` | Future provider binding |
-| `langchain` / `langgraph` / `crewai` / `autogen` / `semantic-kernel` | Declared; binding TBD |
+| `langchain` / `langgraph` / `crewai` / `autogen` / `semantic-kernel` | Declared enum; provider binding requires an approved provider manifest and SDK integration before enablement |
 | `custom` | Tenant-defined manifest + custom provider binding |
 
 Code-engine `engine_key` is orthogonal: it selects the T1/T2 provider for turn execution
@@ -103,6 +103,5 @@ when `implementation_kind` is `process-adapter` or `protocol-adapter`.
 
 ```powershell
 cargo test -p sdkwork-agents-runtime-facade
-cargo test -p sdkwork-agent-provider-codex -p sdkwork-agent-provider-claude-code -p sdkwork-agent-provider-opencode
-# from sdkwork-kernel workspace root
+cargo test --manifest-path ../sdkwork-kernel/Cargo.toml -p sdkwork-agent-provider-codex -p sdkwork-agent-provider-claude-code -p sdkwork-agent-provider-opencode
 ```

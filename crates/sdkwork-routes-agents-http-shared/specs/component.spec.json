@@ -6,7 +6,7 @@
     "displayName": "SDKWork Router Agent HTTP Shared",
     "version": "0.1.0",
     "type": "rust-route-crate",
-    "root": "sdkwork-kernel/crates/sdkwork-routes-agents-http-shared",
+    "root": "crates/sdkwork-routes-agents-http-shared",
     "domain": "intelligence",
     "capability": "agents",
     "languages": ["rust"],

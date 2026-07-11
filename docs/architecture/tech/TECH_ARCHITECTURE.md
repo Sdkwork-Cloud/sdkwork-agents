@@ -235,13 +235,19 @@ crates/
     src/
       domain.rs          # 领域模型 + 公共枚举 (status/visibility/role/kind...)
       ports.rs           # 端口定义 (Repository, AuditSink)
-      persistence.rs     # PostgreSQL 持久化适配器
+      persistence.rs     # PostgreSQL persistence adapter and row mapping
+      persistence/
+        sql.rs           # PostgreSQL SQL constants
       infrastructure.rs  # 内存实现 (测试用)
       application.rs     # 应用服务 (命令处理 · send_chat_message)
       chat_runtime.rs    # 托管 chat turn 完成 (contract mode → runtime-facade)
       dto.rs             # API 请求/响应 DTO + 信封包装类型
       response.rs        # ApiProblem (numeric code) + ResourceData/PageData 信封助手
-      http.rs            # HTTP 路由 (axum) + AgentRequestContext + WebRequestContext 桥接
+      http.rs            # HTTP route assembly (axum handlers + router builders)
+      http/
+        context.rs       # AgentRequestContext + RequestScope + WebRequestContext bridge
+        middleware.rs    # gateway trusted context middleware + request tracing
+        testing.rs       # WebRequestContext test helper
       api.rs             # API 操作元数据 + OpenAPI 校验
       validation.rs      # 输入验证
       id.rs              # Snowflake ID 生成
@@ -359,6 +365,10 @@ masked with a local fallback ID. Authored PC/H5 agents service source must not c
 `crypto.randomUUID()` directly; client-required business IDs use `@sdkwork/utils/id` through a
 small service helper until the public API contract moves those fields server-side through a reviewed
 breaking change.
+PC/H5 session bridges preserve IAM/AppContext compatibility fields from appbase and JWT claims but
+do not synthesize missing `environment`, `deploymentMode`, or `authLevel` values. Missing IAM
+context stays absent so downstream services cannot mistake client guesses for verified session
+facts.
 
 PC 管理面 `managementProfile` 通过 `defaultCodeTaskIntent.constraints` 中的
 `sdkwork.agent.pc.config:{json}` 与 OpenAPI 对齐，包含 `knowledgeBaseIds`、`skillIds`、
@@ -418,6 +428,7 @@ pnpm check:api-operation-patterns
 pnpm check:route-path-collisions
 pnpm check:pagination
 pnpm check:app-sdk-consumer-imports
+pnpm check:agent-sdk-workspace
 pnpm check:component-port-bindings
 pnpm check:frontend-composition
 pnpm check:frontend-service-identity
@@ -425,6 +436,7 @@ pnpm check:permission-composition
 pnpm check:composition-resolver
 pnpm check:rust-backend-composition
 pnpm check:production-security
+pnpm gateway:validate:cloud
 node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```
 
@@ -433,7 +445,8 @@ node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 `pnpm check:frontend-service-identity` validates the PC/H5 authored agents services do not directly
 call browser UUID APIs for SDKWork-owned service identity. The PC chat service contract also proves
 that a missing server `messageId` is treated as an invalid SDK response, preventing UI state from
-silently diverging from persisted `ai_agent_message` rows.
+silently diverging from persisted `ai_agent_message` rows. The root quality gates also validate that
+PC/H5 session bridges do not locally default IAM `environment`, `deploymentMode`, or `authLevel`.
 
 ## 10. Launch Readiness
 
@@ -457,7 +470,7 @@ reason to re-own kernel or sibling module responsibilities inside `sdkwork-agent
 | Structured audit payloads (agent, binding, runtime, marketplace) | Done |
 | PC/H5/MP core `sdkDependencies` + agents-app-sdk wiring | Done |
 | PC/H5 core knowledgebase-app-sdk via `*-core/sdk` (capability packages import core only) | Done |
-| `pnpm check` gates (composition, component ports, frontend, permissions, Rust backend, API envelope, operation patterns, route collisions, pagination, SDK imports, apps index, production security, deploy, docs, scripts, workflow, topology, database) | Done |
+| `pnpm check` gates (composition, component ports, frontend, permissions, Rust backend, API envelope, operation patterns, route collisions, pagination, SDK imports, agent SDK workspace, apps index, production security, deploy, cloud gateway bundle, docs, scripts, workflow, topology, database) | Done |
 | `pnpm verify` includes SDK build, `--all-features` Rust tests, mini-program runtime build, client typecheck, PC agent + e2e flow contracts, Node platform contracts | Done |
 | CI packaging `validate` lifecycle mirrors `pnpm verify` | Done |
 | Archive docs trimmed to redirect stubs (no historical body) | Done |
@@ -465,10 +478,11 @@ reason to re-own kernel or sibling module responsibilities inside `sdkwork-agent
 | Agents managed-store Prometheus metrics (`/metrics/agents`, RPS gauge) | Done |
 | Postgres interaction persistence + fail-closed HTTP state bootstrap | Done |
 | PC/H5 production chat UI (`AgentChatView` + sessions/messages API) | Done |
-| PC/H5 frontend service identity gate (`@sdkwork/utils/id` business IDs; server `messageId` required) | Done |
+| PC/H5 frontend service identity and IAM context gate (`@sdkwork/utils/id` business IDs; server `messageId` required; no local IAM context defaults) | Done |
 | PC Auth Gate + knowledge bootstrap + runtime catalog + composition slot sync | Done |
 | Optional skills/voice/knowledge catalog via sibling app SDKs | Done (server-paged pickers; cursor/offset per authority) |
 | Mini-program runtime bundle rebuild in verify (`agents-mini-program build` + runtime contract) | Done |
+| Rust service module boundary split (`http/context.rs`, `http/middleware.rs`, `http/testing.rs`, `persistence/sql.rs`) | Done |
 
 ### List pagination alignment (`PAGINATION_SPEC.md`)
 
@@ -503,7 +517,6 @@ Messages remain **offset mode** by contract today. Cursor/keyset support belongs
 | P1 | Rate limit + CORS middleware | sdkwork-web-framework |
 | P2 | T2 engines (openclaw, hermes) in default catalog | agents facade + kernel conformance |
 | P2 | Rig live backend (feature-gated) | sdkwork-agent-provider-rig |
-| P2 | Split `http.rs` / `persistence.rs` for maintainability | sdkwork-agents |
 | P2 | Grafana dashboards wired to `/metrics` + `/metrics/agents` | ops |
 | P2 | MCP marketplace federation HTTP | sdkwork-mcp sibling mount |
 | P2 | Direct open SDK sdkgen (`/agent/v3/api` profile) | sdkwork-sdk-generator |

@@ -19,14 +19,17 @@ node .\sdks\workspace-agent-sdkgen.mjs --mode dry-run
 Generated package checks:
 
 ```powershell
-node .\bin\publish-core.mjs --language typescript --project-dir . --action check
-node .\bin\publish-core.mjs --language typescript --project-dir . --action build
+node .\sdks\sdkwork-agents-sdk\sdkwork-agents-sdk-typescript\generated\server-openapi\bin\publish-core.mjs --language typescript --project-dir .\sdks\sdkwork-agents-sdk\sdkwork-agents-sdk-typescript\generated\server-openapi --action check
+node .\sdks\sdkwork-agents-app-sdk\sdkwork-agents-app-sdk-typescript\generated\server-openapi\bin\publish-core.mjs --language typescript --project-dir .\sdks\sdkwork-agents-app-sdk\sdkwork-agents-app-sdk-typescript\generated\server-openapi --action check
+node .\sdks\sdkwork-agents-backend-sdk\sdkwork-agents-backend-sdk-typescript\generated\server-openapi\bin\publish-core.mjs --language typescript --project-dir .\sdks\sdkwork-agents-backend-sdk\sdkwork-agents-backend-sdk-typescript\generated\server-openapi --action check
+node .\sdks\sdkwork-agents-sdk\sdkwork-agents-sdk-typescript\generated\server-openapi\bin\publish-core.mjs --language typescript --project-dir .\sdks\sdkwork-agents-sdk\sdkwork-agents-sdk-typescript\generated\server-openapi --action build
+node .\sdks\sdkwork-agents-app-sdk\sdkwork-agents-app-sdk-typescript\generated\server-openapi\bin\publish-core.mjs --language typescript --project-dir .\sdks\sdkwork-agents-app-sdk\sdkwork-agents-app-sdk-typescript\generated\server-openapi --action build
+node .\sdks\sdkwork-agents-backend-sdk\sdkwork-agents-backend-sdk-typescript\generated\server-openapi\bin\publish-core.mjs --language typescript --project-dir .\sdks\sdkwork-agents-backend-sdk\sdkwork-agents-backend-sdk-typescript\generated\server-openapi --action build
 ```
 
-The package checks were run from:
-
-- `sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi`
-- `sdks/sdkwork-agents-backend-sdk/sdkwork-agents-backend-sdk-typescript/generated/server-openapi`
+The package checks are root-runnable commands and pass the generated package
+directory through `--project-dir` so the verification record does not depend on
+an implicit shell working directory.
 
 ## Families
 

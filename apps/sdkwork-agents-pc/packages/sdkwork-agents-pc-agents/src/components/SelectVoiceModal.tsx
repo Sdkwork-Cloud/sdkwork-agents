@@ -302,7 +302,7 @@ export const SelectVoiceModal: React.FC<SelectVoiceModalProps> = ({
             {/* Footer */}
             <div className="p-4 border-t border-white/5 bg-[#202020] flex items-center justify-between shrink-0">
               <div className="text-sm text-gray-400">
-                已选择 <span className="text-purple-400 font-semibold">{currentSelection.length}</span> 个声音 
+                已选择 <span className="text-purple-400 font-semibold">{currentSelection.length}</span> 个声音
                 {isMulti && <span className="ml-2 text-xs text-gray-500">(支持多选)</span>}
               </div>
               <div className="flex items-center gap-3">

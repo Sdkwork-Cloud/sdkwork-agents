@@ -245,7 +245,7 @@ node crates/sdkwork-intelligence-agents-service/scripts/sync-chat-openapi-surfac
 node sdks/workspace-agent-sdkgen.mjs --mode apply
 
 # sdkwork-birdcoder (consumer)
-cargo test -p sdkwork-birdcoder-kernel-bridge
+cargo test --manifest-path ../sdkwork-birdcoder/Cargo.toml -p sdkwork-birdcoder-kernel-bridge
 cargo test -p sdkwork-agents-runtime-facade
 ```
 

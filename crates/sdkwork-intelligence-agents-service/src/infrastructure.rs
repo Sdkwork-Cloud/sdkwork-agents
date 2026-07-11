@@ -1168,10 +1168,11 @@ pub enum PolicyMode {
 /// request based on its configured [`PolicyMode`].
 ///
 /// **Never use this provider in production.** It does not evaluate subject
-/// roles or resource attributes. Use [`IamGatedPolicyProvider`] for
-/// production deployments, or [`DenyAllPolicyProvider`] as a fail-closed
-/// placeholder when IAM integration is not yet wired. This type is retained
-/// only for local development and integration-test scenarios.
+/// roles or resource attributes. Production deployments use
+/// [`IamGatedPolicyProvider`]. Use [`DenyAllPolicyProvider`] as the
+/// fail-closed default whenever no policy provider is explicitly configured.
+/// This type is retained only for local development and integration-test
+/// scenarios.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowAllPolicyProvider {
     pub provider_id: String,
@@ -1337,6 +1338,16 @@ const READ_ONLY_POLICY_ACTIONS: &[&str] = &[
     "interaction.retrieve",
 ];
 
+/// Policy actions that any **authenticated** subject may perform without a
+/// specific IAM permission scope. These actions are safe for all logged-in
+/// users because their effects are gated by a subsequent review step:
+///
+/// - `create`: agents are always created in `Draft` status. Activating an
+///   agent (Draft → Active) requires the `change_status` action, which still
+///   demands `ai.agents.manage`. This implements the "everyone can create,
+///   admins approve" workflow.
+const OPEN_ACTIONS: &[&str] = &["create"];
+
 /// IAM-gated policy provider that maps agent business actions to IAM permission
 /// scopes and evaluates the request subject's roles/scopes against the
 /// required permission.
@@ -1369,12 +1380,19 @@ impl IamGatedPolicyProvider {
     }
 
     /// Determine the required IAM permission for the given policy action.
-    fn required_permission_for_action(action: Option<&str>) -> &'static str {
-        match action {
-            Some(action) if READ_ONLY_POLICY_ACTIONS.contains(&action) => {
-                IAM_PERMISSION_AGENTS_READ
-            }
-            _ => IAM_PERMISSION_AGENTS_MANAGE,
+    ///
+    /// Returns `None` for open actions (e.g. `create`) that any authenticated
+    /// user may perform. Returns `Some(permission)` for actions that require
+    /// a specific IAM scope.
+    fn required_permission_for_action(action: Option<&str>) -> Option<&'static str> {
+        let action = action?;
+        if OPEN_ACTIONS.contains(&action) {
+            return None;
+        }
+        if READ_ONLY_POLICY_ACTIONS.contains(&action) {
+            Some(IAM_PERMISSION_AGENTS_READ)
+        } else {
+            Some(IAM_PERMISSION_AGENTS_MANAGE)
         }
     }
 
@@ -1451,6 +1469,29 @@ impl PolicyProvider for IamGatedPolicyProvider {
         let action = request.action.as_deref();
         let required_permission = Self::required_permission_for_action(action);
 
+        // Open actions: allow any authenticated subject (fail-closed if no
+        // subject is present).  This lets every logged-in user create agents
+        // while the activation step (`change_status`) still demands
+        // `ai.agents.manage`, preserving the review workflow.
+        if let None = required_permission {
+            if request.subject.is_some() {
+                return Ok(PolicyDecision::allow(
+                    decision_id,
+                    request.policy_request_id,
+                    self.provider_id.clone(),
+                )
+                .with_safe_reason("iam.permission.open:authenticated"));
+            }
+            return Ok(PolicyDecision::deny(
+                decision_id,
+                request.policy_request_id,
+                self.provider_id.clone(),
+                "iam.permission.missing",
+            )
+            .with_safe_reason("iam.permission.missing:authenticated"));
+        }
+
+        let required_permission = required_permission.unwrap();
         if Self::subject_has_permission(request.subject.as_ref(), required_permission) {
             Ok(PolicyDecision::allow(
                 decision_id,
@@ -2075,7 +2116,7 @@ mod tests {
     #[test]
     fn iam_gated_provider_denies_manage_action_with_only_read_permission() {
         let provider = IamGatedPolicyProvider::default();
-        let request = policy_request_with_action_and_roles("create", &["ai.agents.read"]);
+        let request = policy_request_with_action_and_roles("update", &["ai.agents.read"]);
         let decision = provider.evaluate(request).expect("evaluate should succeed");
         assert_eq!(decision.decision, PolicyDecisionValue::Deny);
         assert!(decision
@@ -2173,6 +2214,65 @@ mod tests {
         let request = policy_request_with_action_and_roles("unknown_action", &["ai.agents.read"]);
         let decision = provider.evaluate(request).expect("evaluate should succeed");
         assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+    }
+
+    // --- Open action tests (create is open to any authenticated user) ---
+
+    #[test]
+    fn iam_gated_provider_allows_create_for_any_authenticated_user() {
+        let provider = IamGatedPolicyProvider::default();
+        // Any authenticated user — even with no IAM scopes — can create agents.
+        // The review gate is the activation step (change_status → Active)
+        // which still requires ai.agents.manage.
+        let request = policy_request_with_action_and_roles("create", &[]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+        assert!(decision
+            .safe_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("iam.permission.open:authenticated"));
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_create_with_read_only_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("create", &["ai.agents.read"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_create_without_subject() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = PolicyRequest::new(
+            "req.test",
+            "agent.business.manage",
+            "agent.business.tenant.100001",
+        )
+        .with_action("create");
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+        assert!(decision
+            .safe_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("iam.permission.missing:authenticated"));
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_change_status_without_manage_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        // change_status (activation) must still require ai.agents.manage,
+        // preserving the review workflow even though create is open.
+        let request = policy_request_with_action_and_roles("change_status", &["ai.agents.read"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+        assert!(decision
+            .safe_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("iam.permission.missing:ai.agents.manage"));
     }
 
     // --- DenyAllPolicyProvider tests ---

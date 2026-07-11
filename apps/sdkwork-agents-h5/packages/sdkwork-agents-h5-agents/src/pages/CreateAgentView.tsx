@@ -277,7 +277,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
       setSelectedToolIds(DEFAULT_AGENT_CONFIG.toolIds);
       setSelectedSkillIds(DEFAULT_AGENT_CONFIG.skillIds);
       setDraftId(null);
-      return;
+      return undefined;
     }
 
     let cancelled = false;
@@ -318,7 +318,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
           return;
         }
         toast('加载智能体失败，请稍后重试', 'error');
-        onBack();
+        onBack?.();
       }
     })();
 

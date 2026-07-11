@@ -26,10 +26,13 @@ export interface SdkworkChatSessionTokens {
   refreshToken?: string;
 }
 
-export interface SdkworkChatAppContext extends IamAppContext {
+export interface SdkworkChatAppContext extends Partial<IamAppContext> {
   actorId?: string;
   actorKind?: string;
+  appId: string;
   deviceId?: string;
+  tenantId: string;
+  userId: string;
 }
 
 export interface SdkworkChatSession extends SdkworkChatSessionTokens {
@@ -304,10 +307,10 @@ function normalizeContext(value: unknown): SdkworkChatAppContext | undefined {
     ...(organizationId ? { organizationId } : {}),
     tenantId,
     userId,
-    sessionId: sessionId ?? '',
-    environment: (environment ?? 'dev') as IamAppContext['environment'],
-    deploymentMode: (deploymentMode ?? 'saas') as IamAppContext['deploymentMode'],
-    authLevel: (authLevel ?? 'password') as IamAppContext['authLevel'],
+    ...(sessionId ? { sessionId } : {}),
+    ...(environment ? { environment: environment as IamAppContext['environment'] } : {}),
+    ...(deploymentMode ? { deploymentMode: deploymentMode as IamAppContext['deploymentMode'] } : {}),
+    ...(authLevel ? { authLevel: authLevel as IamAppContext['authLevel'] } : {}),
     dataScope: normalizeStringArray(context.dataScope ?? record.data_scope),
     permissionScope: normalizeStringArray(context.permissionScope ?? record.permission_scope),
   };

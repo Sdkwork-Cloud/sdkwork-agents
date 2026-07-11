@@ -220,7 +220,7 @@ export const SelectToolsModal: React.FC<SelectToolsModalProps> = ({
                 ) : activeTab === 'custom' ? (
                   <div className="text-gray-500 text-sm text-center py-32 flex flex-col items-center justify-center">
                     <Wrench size={32} className="mb-4 text-gray-600 opacity-50" />
-                    自建 API 工具将在后续版本开放配置
+                    请通过 MCP Marketplace 接入自建工具服务，完成后可在第三方 MCP 列表选择
                   </div>
                 ) : visibleItems.length === 0 ? (
                   <div className="text-gray-500 text-sm text-center py-32 flex flex-col items-center justify-center">

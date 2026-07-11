@@ -162,10 +162,10 @@ cargo test -p sdkwork-agents-runtime-facade
 cargo test -p sdkwork-intelligence-agents-service --features http-axum
 
 # sdkwork-birdcoder
-node scripts/birdcoder-agents-integration-contract.test.mjs
-cargo test -p sdkwork-birdcoder-kernel-bridge
+node ..\sdkwork-birdcoder\scripts\birdcoder-agents-integration-contract.test.mjs
+cargo test --manifest-path ..\sdkwork-birdcoder\Cargo.toml -p sdkwork-birdcoder-kernel-bridge
 
-# sdkwork-kernel (from kernel root)
-cargo test -p sdkwork-agent-provider-codex
-cargo test -p sdkwork-agent-provider-rig
+# sdkwork-kernel
+cargo test --manifest-path ..\sdkwork-kernel\Cargo.toml -p sdkwork-agent-provider-codex
+cargo test --manifest-path ..\sdkwork-kernel\Cargo.toml -p sdkwork-agent-provider-rig
 ```

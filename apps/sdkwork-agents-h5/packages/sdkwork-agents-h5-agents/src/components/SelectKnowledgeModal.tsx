@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, Check, Database, FileText, Clock } from 'lucide-react';
 import { cn } from '@sdkwork/agents-h5-commons';

@@ -1,4 +1,4 @@
-﻿import { Blocks } from "lucide-react";
+import { Blocks } from "lucide-react";
 import { createElement } from "react";
 
 import {

@@ -2758,7 +2758,7 @@ mod task_tests {
     };
     use crate::domain::AgentBusinessStatus;
     use crate::infrastructure::{
-        AllowAllPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
+        IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
     };
     use crate::ports::TaskListQuery;
     use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
@@ -2767,8 +2767,12 @@ mod task_tests {
         PolicySubject {
             subject_id: "user.100".to_string(),
             tenant_id: "100001".to_string(),
-            roles: vec!["agent.business.manage".to_string()],
+            roles: vec!["ai.agents.manage".to_string()],
         }
+    }
+
+    fn test_policy_provider() -> IamGatedPolicyProvider {
+        IamGatedPolicyProvider::new("policy.agents.test.iam-gated")
     }
 
     fn sample_manifest(agent_id: &str) -> AgentManifest {
@@ -2824,7 +2828,7 @@ mod task_tests {
     fn create_and_list_tasks_roundtrip() {
         let repository = InMemoryAgentRepository::new();
         let audit_sink = InMemoryAgentAuditSink::default();
-        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let policy_provider = test_policy_provider();
         let service = AgentsService::new(repository, audit_sink, policy_provider);
 
         let created = service
@@ -2884,7 +2888,7 @@ mod task_tests {
     fn cancel_task_rejects_terminal_status() {
         let repository = InMemoryAgentRepository::new();
         let audit_sink = InMemoryAgentAuditSink::default();
-        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let policy_provider = test_policy_provider();
         let service = AgentsService::new(repository, audit_sink, policy_provider);
 
         let created = service
@@ -2946,7 +2950,7 @@ mod task_tests {
     fn execute_task_completes_deferred_pending_task() {
         let repository = InMemoryAgentRepository::new();
         let audit_sink = InMemoryAgentAuditSink::default();
-        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let policy_provider = test_policy_provider();
         let service = AgentsService::new(repository, audit_sink, policy_provider);
 
         let created = service
@@ -2996,7 +3000,7 @@ mod task_tests {
     fn get_task_rejects_foreign_owner_scope() {
         let repository = InMemoryAgentRepository::new();
         let audit_sink = InMemoryAgentAuditSink::default();
-        let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+        let policy_provider = test_policy_provider();
         let service = AgentsService::new(repository, audit_sink, policy_provider);
 
         let created = service

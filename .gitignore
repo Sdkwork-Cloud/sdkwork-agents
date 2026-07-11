@@ -33,6 +33,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+*.db
+*.sqlite
+*.sqlite3
 **/.sdkwork/local/
 **/.sdkwork/secrets/
 **/.sdkwork/cache/

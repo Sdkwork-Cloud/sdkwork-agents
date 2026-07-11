@@ -26,3 +26,6 @@ pub async fn build_served_router(state: AgentHttpState) -> axum::Router {
     )
     .await
 }
+pub async fn gateway_mount(state: AgentHttpState) -> axum::Router {
+    build_served_router(state).await
+}

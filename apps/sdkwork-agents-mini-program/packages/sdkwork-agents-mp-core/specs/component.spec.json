@@ -21,17 +21,17 @@
   "canonicalSpecs": [
     {
       "file": "MINI_PROGRAM_APP_ARCHITECTURE_SPEC.md",
-      "path": "../../../../../../sdkwork-specs/MINI_PROGRAM_APP_ARCHITECTURE_SPEC.md",
+      "path": "../../../../../sdkwork-specs/MINI_PROGRAM_APP_ARCHITECTURE_SPEC.md",
       "purpose": "Mini program application root architecture."
     },
     {
       "file": "APP_COMPOSITION_SPEC.md",
-      "path": "../../../../../../sdkwork-specs/APP_COMPOSITION_SPEC.md",
+      "path": "../../../../../sdkwork-specs/APP_COMPOSITION_SPEC.md",
       "purpose": "Native-authority application composition."
     },
     {
       "file": "APP_SDK_INTEGRATION_SPEC.md",
-      "path": "../../../../../../sdkwork-specs/APP_SDK_INTEGRATION_SPEC.md",
+      "path": "../../../../../sdkwork-specs/APP_SDK_INTEGRATION_SPEC.md",
       "purpose": "Generated app SDK integration."
     }
   ],
@@ -54,7 +54,7 @@
       "moduleCatalogRefs": [
         {
           "moduleId": "agents",
-          "manifestRef": "../../../../../../sdkwork-iam/iam/modules/ai/iam.module.manifest.json",
+          "manifestRef": "../../../../../specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         }
@@ -73,9 +73,17 @@
         "forbidLocalPermissionCatalogForDependencyDomains": true,
         "allowExplicitOverridesOnly": true,
         "allowFrontendHintsWithoutServerDuplication": true
+      },
+      "applicationModule": {
+        "manifestRef": "../../../../../specs/iam.module.manifest.json"
       }
     },
     "dependencyApiExports": [],
     "dependencyApiSurfaces": []
+  },
+  "verification": {
+    "commands": [
+      "pnpm --filter @sdkwork/agents-mini-program typecheck"
+    ]
   }
 }

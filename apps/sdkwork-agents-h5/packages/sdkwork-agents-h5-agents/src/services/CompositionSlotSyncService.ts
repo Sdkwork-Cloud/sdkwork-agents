@@ -76,16 +76,16 @@ export async function syncAgentCompositionSlots(
   const existingItems = await syncAllOffsetPages<
     Record<string, unknown> & { slotId: string }
   >(
-    (params) => client.ai.agents.compositionSlots.list(agentId, params),
-    {
-      mapItems: (response) =>
-        extractArray(response)
-          .map((item) => extractResourceRecord(item))
-          .filter(
-            (item): item is Record<string, unknown> & { slotId: string } =>
-              isRecord(item) && typeof item.slotId === "string",
-          ),
-    },
+      (params) => client.ai.agents.compositionSlots.list(agentId, params),
+      {
+        mapItems: (response) =>
+          extractArray(response)
+            .map((item) => extractResourceRecord(item))
+            .filter(
+              (item): item is Record<string, unknown> & { slotId: string } =>
+                isRecord(item) && typeof item.slotId === "string",
+            ),
+      },
   );
 
   for (const item of existingItems) {

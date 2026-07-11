@@ -1,8 +1,8 @@
 version: 1
-defaultProfile: cloud.split-services.production
+defaultProfile: cloud.production
 
 profiles:
-  cloud.split-services.production:
+  cloud.production:
     install:
       layout: binary-package
     expose:
@@ -20,9 +20,13 @@ profiles:
         tls: sdkwork.com
         mode: api
     packages: []
-    overrides: {}
+    overrides:
+      proxy:
+        upstreams:
+          application: http://127.0.0.1:8095
+          platform: http://127.0.0.1:3900
 
-  standalone.unified-process.production:
+  standalone.production:
     install:
       layout: binary-package
     expose:
@@ -31,9 +35,13 @@ profiles:
         mode: web+api
         web: adaptive
     packages: []
-    overrides: {}
+    overrides:
+      proxy:
+        upstreams:
+          application: http://127.0.0.1:8095
+          platform: http://127.0.0.1:3900
 
-  standalone.unified-process.development:
+  standalone.development:
     install:
       layout: source-tree
     expose:

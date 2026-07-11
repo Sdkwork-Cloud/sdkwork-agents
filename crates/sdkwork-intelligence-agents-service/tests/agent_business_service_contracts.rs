@@ -7,14 +7,13 @@ use sdkwork_intelligence_agents_service::{
     AgentAuditSink, AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
     AgentInteractionKind, AgentListQuery, AgentMessageRole, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentVisibility, AgentsService,
-    AllowAllPolicyProvider, ApproveInteractionCommand, AuditEventListQuery,
-    ChangeAgentStatusCommand, CreateAgentCommand, CreateInteractionCommand, CreateSessionCommand,
-    DeleteAgentCommand, GetAgentCommand, GetInteractionCommand, GetSessionCommand,
+    ApproveInteractionCommand, AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand,
+    CreateInteractionCommand, CreateSessionCommand, DeleteAgentCommand, DenyAllPolicyProvider,
+    GetAgentCommand, GetInteractionCommand, GetSessionCommand, IamGatedPolicyProvider,
     InMemoryAgentRepository, InteractionListQuery, ListAgentAuditEventsCommand, ListAgentsCommand,
-    ListInteractionsCommand, PaginatedResult, PaginationParams, PolicyMode,
-    ProviderBindingListCommand, ProviderBindingListQuery, RestoreAgentCommand,
-    SendChatMessageCommand, UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
-    MAX_PAGE_SIZE,
+    ListInteractionsCommand, PaginatedResult, PaginationParams, ProviderBindingListCommand,
+    ProviderBindingListQuery, RestoreAgentCommand, SendChatMessageCommand, UpdateAgentCommand,
+    DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, MAX_PAGE_SIZE,
 };
 use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
@@ -99,7 +98,15 @@ fn sample_manifest(agent_id: &str) -> AgentManifest {
 }
 
 fn sample_subject() -> PolicySubject {
-    PolicySubject::new("u-1", "100001").with_role("agent.admin")
+    PolicySubject::new("u-1", "100001").with_role("ai.agents.manage")
+}
+
+fn test_policy_provider() -> IamGatedPolicyProvider {
+    IamGatedPolicyProvider::new("policy.agents.test.iam-gated")
+}
+
+fn test_deny_policy_provider() -> DenyAllPolicyProvider {
+    DenyAllPolicyProvider::new("policy.agents.test.deny", "agent.business.denied")
 }
 
 fn create_agent_cmd(
@@ -162,7 +169,7 @@ fn assert_agent_id_validation(error: KernelError) {
 fn create_update_status_delete_restore_and_list_agents() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let create = service
@@ -274,7 +281,7 @@ fn create_update_status_delete_restore_and_list_agents() {
 fn duplicate_agent_id_and_code_are_rejected() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
@@ -320,7 +327,7 @@ fn duplicate_agent_id_and_code_are_rejected() {
 fn create_agent_rejects_non_standard_agent_id() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let error = service
@@ -347,10 +354,7 @@ fn create_agent_rejects_non_standard_agent_id() {
 fn agent_resource_entry_points_validate_standard_agent_id_before_authorization() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider {
-        provider_id: "policy.memory".to_string(),
-        mode: PolicyMode::Deny("agent.business.denied".to_string()),
-    };
+    let policy_provider = test_deny_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
     let invalid_agent_id = "pc.agent.invalid";
 
@@ -497,7 +501,7 @@ fn agent_resource_entry_points_validate_standard_agent_id_before_authorization()
 fn create_agent_records_implementation_type() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let record = service
@@ -535,7 +539,7 @@ fn create_agent_records_implementation_type() {
 fn create_agent_defaults_implementation_type_to_sdkwork_native() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let record = service
@@ -560,7 +564,7 @@ fn create_agent_defaults_implementation_type_to_sdkwork_native() {
 fn update_agent_changes_implementation_contract() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -609,7 +613,7 @@ fn update_agent_changes_implementation_contract() {
 fn stale_expected_version_is_rejected_for_update() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -670,7 +674,7 @@ fn stale_expected_version_is_rejected_for_update() {
 fn deleted_agent_cannot_be_updated() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -725,7 +729,7 @@ fn deleted_agent_cannot_be_updated() {
 fn restore_requires_deleted_status() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
@@ -761,7 +765,7 @@ fn restore_requires_deleted_status() {
 fn list_filters_by_owner_organization_and_deleted_flag() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
@@ -833,7 +837,7 @@ fn list_filters_by_owner_organization_and_deleted_flag() {
 fn list_filters_by_search_query_across_code_name_and_description() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
@@ -895,7 +899,7 @@ fn list_filters_by_search_query_across_code_name_and_description() {
 fn audit_events_are_recorded_for_state_mutations() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, arc_events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     service
@@ -985,10 +989,7 @@ fn audit_events_are_recorded_for_state_mutations() {
 fn policy_deny_blocks_management_operations() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider {
-        provider_id: "policy.memory".to_string(),
-        mode: PolicyMode::Deny("agent.business.denied".to_string()),
-    };
+    let policy_provider = test_deny_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let result = service.create_agent(create_agent_cmd(
@@ -1020,7 +1021,7 @@ fn policy_deny_blocks_management_operations() {
 fn invalid_status_transition_is_rejected() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -1064,7 +1065,7 @@ fn policy_category_constant_is_sdkwork_intelligence_agents_service_manage() {
 fn list_agent_audit_events_returns_events_for_agent() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -1106,7 +1107,7 @@ fn list_agent_audit_events_returns_events_for_agent() {
 fn send_chat_message_persists_user_and_assistant_turn() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -1174,7 +1175,7 @@ fn send_chat_message_persists_user_and_assistant_turn() {
 fn get_session_rejects_foreign_owner_scope() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let policy_provider = AllowAllPolicyProvider::allow("policy.memory");
+    let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
     let created = service
@@ -1221,11 +1222,7 @@ fn get_session_rejects_foreign_owner_scope() {
 fn interaction_approval_lifecycle_persists_and_resolves() {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
-    let service = AgentsService::new(
-        repository,
-        audit_sink,
-        AllowAllPolicyProvider::allow("policy.memory"),
-    );
+    let service = AgentsService::new(repository, audit_sink, test_policy_provider());
 
     let agent = service
         .create_agent(create_agent_cmd(

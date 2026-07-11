@@ -7,9 +7,11 @@ DDL authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 
 ## Engine
 
-PostgreSQL is the **only** supported managed-store engine. Runtime bootstrap (`apply_managed_store_schema`) and `pnpm db:migrate` both apply the same baseline DDL file.
+PostgreSQL is the only supported managed-store engine. Runtime bootstrap
+(`apply_managed_store_schema`) and `pnpm db:migrate` both apply the same
+baseline DDL file.
 
-## Tables (8)
+## Tables
 
 | Table | Responsibility |
 | --- | --- |
@@ -19,11 +21,15 @@ PostgreSQL is the **only** supported managed-store engine. Runtime bootstrap (`a
 | `ai_agent_audit_event` | Immutable management audit log |
 | `ai_agent_session` | Hosted chat sessions |
 | `ai_agent_message` | Session messages and chat turns |
-| `ai_agent_interaction` | Live interaction (approval / user question) |
+| `ai_agent_interaction` | Live interaction approval and user-question records |
 | `ai_agent_task` | Scheduled tasks projected from kernel `AgentTask` |
 
-`ai_agent_task_run` is deferred until kernel `AgentRun` projection ships (PRD Phase 5).
+Current database contract scope excludes `ai_agent_task_run`. Entry criteria
+require a stable kernel `AgentRun` / `AgentStep` projection, approved
+`agents.taskRuns.*` API authority, and a versioned migration from the active
+contract.
 
-## Cross-module references
+## Cross-Module References
 
-Sibling-owned content (memory, knowledge, skills, prompts, drive, MCP) is referenced only through `ai_agent_composition_slot`.
+Sibling-owned content for memory, knowledge, skills, prompts, drive, and MCP is
+referenced only through `ai_agent_composition_slot`.

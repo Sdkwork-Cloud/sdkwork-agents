@@ -102,7 +102,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ onStartChat, onCreateAgent
   useEffect(() => {
     if (skipInitialSearchReload.current) {
       skipInitialSearchReload.current = false;
-      return;
+      return undefined;
     }
     const timer = window.setTimeout(() => {
       void loadMarketPage(1, false, searchQuery);

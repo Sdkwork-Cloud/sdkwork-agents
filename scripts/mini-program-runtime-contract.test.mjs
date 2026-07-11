@@ -22,4 +22,16 @@ for (const marker of [
   assert.match(bundle, new RegExp(marker), `runtime bundle must export ${marker}`);
 }
 
+for (const forbiddenMarker of [
+  "generated/server-openapi",
+  "domain-transport-sdk",
+  "domain-transport-typescript",
+]) {
+  assert.doesNotMatch(
+    bundle,
+    new RegExp(forbiddenMarker.replaceAll("/", "[\\\\/]"), "u"),
+    `runtime bundle must not expose generated SDK transport source path ${forbiddenMarker}`,
+  );
+}
+
 console.log("mini-program runtime contract passed.");
