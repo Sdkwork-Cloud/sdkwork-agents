@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use sdkwork_agent_kernel::{ModelRequest, ModelResponse};
+use sdkwork_agent_kernel::{ModelRequest, ModelResponse, ToolCall};
 use sdkwork_utils_rust::string::is_blank;
 
 use crate::code_engines::CodeEngineSlot;
@@ -59,6 +59,8 @@ pub struct CodeEngineTurnInput {
 pub struct CodeEngineTurnOutput {
     pub assistant_content: String,
     pub native_session_id: Option<String>,
+    /// Provider-neutral tool calls returned by the kernel model provider.
+    pub tool_calls: Vec<ToolCall>,
     /// Token/word deltas when streaming is available; empty when invoke-only.
     pub stream_deltas: Vec<String>,
 }
@@ -91,11 +93,17 @@ pub fn execute_code_engine_turn(
     let assistant_content = response.messages.join("\n");
     validate_output_size(assistant_content.len(), effective_max_output_bytes(input))?;
 
-    Ok(CodeEngineTurnOutput {
+    Ok(build_turn_output(response, input))
+}
+
+fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> CodeEngineTurnOutput {
+    let assistant_content = response.messages.join("\n");
+    CodeEngineTurnOutput {
         assistant_content,
         native_session_id: resolve_native_session_id(&response, input),
+        tool_calls: response.tool_calls,
         stream_deltas: Vec::new(),
-    })
+    }
 }
 
 fn build_model_request(input: &CodeEngineTurnInput) -> ModelRequest {
@@ -216,6 +224,13 @@ pub fn execute_code_engine_turn_with_stream(
         )));
     }
 
+    // A first turn must use the invoke response because ModelStreamChunk does
+    // not carry provider diagnostics or a newly allocated native session id.
+    // Streaming it would make the provider thread impossible to resume.
+    if input.native_session_id.is_none() {
+        return execute_code_engine_turn(slot, input);
+    }
+
     let model_request = build_model_request(input);
     if let Ok(chunks) = slot.stream_model(model_request.clone()) {
         if !chunks.is_empty() {
@@ -232,6 +247,7 @@ pub fn execute_code_engine_turn_with_stream(
                 return Ok(CodeEngineTurnOutput {
                     assistant_content,
                     native_session_id: input.native_session_id.clone(),
+                    tool_calls: Vec::new(),
                     stream_deltas,
                 });
             }
@@ -404,6 +420,19 @@ mod tests {
             resolve_native_session_id(&response, &input).as_deref(),
             Some("session-input")
         );
+    }
+
+    #[test]
+    fn turn_output_preserves_kernel_tool_calls() {
+        let response =
+            ModelResponse::text("request-1", "provider.model.codex", "done").with_tool_call(
+                ToolCall::new("call-1", "codex.shell", r#"{"command":"cargo test"}"#),
+            );
+        let output = build_turn_output(response, &CodeEngineTurnInput::default());
+
+        assert_eq!(output.tool_calls.len(), 1);
+        assert_eq!(output.tool_calls[0].tool_call_id, "call-1");
+        assert_eq!(output.tool_calls[0].tool_id, "codex.shell");
     }
 
     #[test]

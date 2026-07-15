@@ -24,7 +24,7 @@ pub use live_interaction::{
     ApprovalDecision, EngineLiveInteraction, LiveInteractionRegistry, UserQuestionAnswer,
 };
 pub use runtime_host::AgentsCodeEngineHost;
-pub use sdkwork_agent_kernel::{ModelDescriptor, ModelResponseFormat};
+pub use sdkwork_agent_kernel::{ModelDescriptor, ModelResponseFormat, ToolCall};
 pub use turn::{
     execute_code_engine_turn, execute_code_engine_turn_with_stream, CodeEngineTurnInput,
     CodeEngineTurnOutput,
