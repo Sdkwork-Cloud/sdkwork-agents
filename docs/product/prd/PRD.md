@@ -242,7 +242,7 @@ these modules with `dependencyMode=independent-capability-module` and
 ### Phase 2 — Production Hardening (已完成)
 
 - [x] 移除生产环境 AllowAllPolicyProvider，实现 IAM-backed PolicyProvider
-- [x] 实现 PostgresAgentAuditSink 替换内存审计
+- [x] 实现 `SqlAgentAuditSink<SyncPostgresAdapter>` 替换生产内存审计，并保持 row adapter 端口方言无关
 - [x] 确保 sdkwork-agents-runtime-facade 正确集成（workspace 注册 + 文档对齐 + 清理死代码）
 - [x] 修复 std::sync::Mutex 阻塞异步执行器
 - [x] 添加请求追踪中间件（CORS/限流延迟到 web-framework 层统一配置）
@@ -254,7 +254,7 @@ these modules with `dependencyMode=independent-capability-module` and
 - [x] Prometheus metrics 采集（`/metrics/agents`，含 `sdkwork_agents_requests_per_second`）
 - [x] CI 运行 feature-gated HTTP/Postgres 契约测试（`default = ["http-axum", "postgres-sync"]`）
 - [x] Postgres interaction 持久化
-- [x] 生产环境禁用 Postgres 不可用时的内存静默降级
+- [x] 生产环境禁用 Postgres 不可用时的内存静默降级；managed-store 单项、列表和计数读取全部 fail-closed
 - [x] PC/H5 生产聊天页（`AgentChatView`，sessions/messages API，会话恢复 + 消息上限）
 - [x] PC/H5 前端服务身份与 IAM 上下文门禁（禁止直接 `crypto.randomUUID()`；服务端 `messageId` 缺失即失败；session bridge 不本地伪造 `environment` / `deploymentMode` / `authLevel`）
 - [x] PC/H5 客户端：Auth Gate、知识库 bootstrap、运行时 catalog、composition slot 同步
@@ -269,6 +269,9 @@ these modules with `dependencyMode=independent-capability-module` and
 
 ### Phase 4 — Commercial GA (进行中)
 
+- [ ] SQLite managed-store：完整 baseline、生命周期引导、持久化 adapter、事务、分页、审计和双引擎集成测试；在此之前不得把 runtime SQLite 数据库当作 agents managed-store 支持
+- [ ] 业务写入与 `ai_agent_audit_event` 在同一数据库事务提交，或采用具备投递恢复与幂等语义的 transactional outbox
+- [ ] 消息和审计高增长列表使用服务端 keyset/cursor 分页，OpenAPI、SDK、仓储 SQL 和前端消费保持同一合同
 - [ ] 应用商店/渠道发布元数据（截图、描述、`sdkwork.workflow.json` GA 渠道）
 - [x] 端到端自动化 contract（create → chat，纳入 `test:agent-contracts`）
 - [x] `check:frontend-service-identity` 纳入 `pnpm check` / `pnpm check:contracts`
@@ -278,6 +281,7 @@ these modules with `dependencyMode=independent-capability-module` and
 - [x] 移除客户端虚假 catalog fallback（Voice / Skills）
 - [x] SDK `sendAgentChatMessageSync` 封装非流式 chat send
 - [x] Chat SSE 信封（`stream=true` → `201` + `text/event-stream` 单 completion 事件，SdkWorkApiResponse 信封）
+- [x] 服务 worker/provider worker 有界并发与容量耗尽拒绝（默认 128/32，可按部署 profile 配置）
 - [ ] Token 级增量 SSE（多 `data:` 分片；依赖 code-engine 流式分块暴露）
 - [x] 任务调度 API + `ai_agent_task` 持久化（`agents.tasks.*` HTTP + Postgres；Open/App/Backend 三端）
 - [x] 实时交互 API + `ai_agent_interaction` 持久化（`agents.interactions.*`；App/Backend，Open API 不含）
@@ -304,7 +308,10 @@ these modules with `dependencyMode=independent-capability-module` and
 | Autonomous engines | T2 opt-in | Conformance + health + policy gate before default catalog |
 | Observability | Metrics exposed | Grafana dashboard and operator runbook |
 | Release metadata | Beta manifest | GA channel metadata, screenshots, SBOM/checksum evidence |
-| Production gates | Root `pnpm check` covers API, SDK imports, agent SDK workspace ownership, pagination, route, composition, frontend service identity, IAM session context preservation, apps index, production security, shutdown signal resilience, dev-only policy fail-closed behavior, in-memory lock poison recovery, managed-store ID initialization error propagation, route manifest build-script error propagation, strict repository ports, deployment, cloud gateway bundle validation, docs, topology, and database standards | `pnpm verify`, `pnpm gateway:validate:cloud`, `pnpm check:frontend-service-identity`, `pnpm check:production-security`, live smoke, and BirdCoder integration evidence before GA |
+| Managed-store engines | PostgreSQL implementation verified; SQLite managed-store absent | PostgreSQL + SQLite baseline, lifecycle, repository, transaction, pagination, audit, and integration evidence |
+| Audit durability | Persistent PostgreSQL sink, but business and audit writes use separate commits | Atomic business/audit commit or transactional outbox with replay and idempotency evidence |
+| High-growth pagination | Offset pagination | Cursor/keyset pagination for messages and audit events across API, SDK, SQL, and UI |
+| Production gates | Root `pnpm check` covers API, SDK imports, agent SDK workspace ownership, pagination, route, composition, frontend service identity, IAM session context preservation, apps index, production security, bounded worker capacity, shutdown signal resilience, dev-only policy fail-closed behavior, in-memory lock poison recovery, managed-store ID initialization error propagation, repository read failure propagation, route manifest build-script error propagation, strict repository ports, deployment, cloud gateway bundle validation, docs, topology, and database standards | `pnpm verify`, `pnpm gateway:validate:cloud`, `pnpm check:frontend-service-identity`, `pnpm check:production-security`, live smoke, database integration, capacity, and BirdCoder integration evidence before GA |
 
 ## 8. Linked Requirements
 

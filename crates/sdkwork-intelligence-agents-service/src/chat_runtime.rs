@@ -13,17 +13,35 @@ use sdkwork_agents_runtime_facade::{
     CodeEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
+use tokio::sync::Semaphore;
 
 /// Runtime mode when managed chat inference succeeds through the code-engine facade.
 pub const RUNTIME_MODE_FACADE: &str = "agents-runtime-facade";
 /// Runtime mode when inference was attempted but failed (no silent contract fallback).
 pub const RUNTIME_MODE_INFERENCE_ERROR: &str = "managed-agent-inference-error";
+/// Runtime mode when the bounded provider worker capacity is exhausted.
+pub const RUNTIME_MODE_CAPACITY_ERROR: &str = "managed-agent-capacity-error";
 
 pub fn is_inference_error(runtime_mode: &str) -> bool {
     runtime_mode == RUNTIME_MODE_INFERENCE_ERROR
 }
+
+pub fn is_capacity_error(runtime_mode: &str) -> bool {
+    runtime_mode == RUNTIME_MODE_CAPACITY_ERROR
+}
+
+const DEFAULT_PROVIDER_WORKER_LIMIT: usize = 32;
+
+static PROVIDER_WORKER_LIMIT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
+    let configured = std::env::var("SDKWORK_AGENTS_PROVIDER_WORKER_LIMIT")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| (1..=1024).contains(value))
+        .unwrap_or(DEFAULT_PROVIDER_WORKER_LIMIT);
+    Arc::new(Semaphore::new(configured))
+});
 
 /// Input for one chat completion turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,13 +109,7 @@ pub fn complete_with_timeout(
     #[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
     {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            return run_with_bounded_timeout(
-                &handle,
-                completer,
-                input,
-                prefer_stream,
-                timeout,
-            );
+            return run_with_bounded_timeout(&handle, completer, input, prefer_stream, timeout);
         }
         tracing::warn!(
             "no tokio runtime available; running chat completion inline without timeout isolation"
@@ -114,8 +126,25 @@ fn run_with_bounded_timeout(
     prefer_stream: bool,
     timeout: Duration,
 ) -> ChatCompletionOutput {
+    let permit = match PROVIDER_WORKER_LIMIT.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            crate::infrastructure::AgentMetricsRegistry::global()
+                .record_provider_worker_rejection();
+            return ChatCompletionOutput {
+                content: "provider concurrency limit reached".to_string(),
+                model_id: input.model_id.clone(),
+                provider_id: input.provider_id.clone(),
+                input_tokens: 0,
+                output_tokens: 0,
+                runtime_mode: RUNTIME_MODE_CAPACITY_ERROR,
+                stream_deltas: Vec::new(),
+            };
+        }
+    };
     let input_owned = input.clone();
     let join_handle = handle.spawn_blocking(move || {
+        let _permit = permit;
         completer.complete_with_stream_preference(&input_owned, prefer_stream)
     });
     // Safe to block_on here: complete_with_timeout runs inside a spawn_blocking

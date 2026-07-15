@@ -1,32 +1,30 @@
-# Database Contract Migration Summary
+# Database Contract State
 
 Status: active
-Updated: 2026-07-12
+Updated: 2026-07-14
 
 ## Current State
 
 - **Contract version:** 3.1.0 (`database/contract/schema.yaml`)
-- **Engine:** PostgreSQL only
+- **Implemented engine:** PostgreSQL
 - **DDL authority:** `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 - **Migration authority:** `database/migrations/postgres/`
 - **Runtime bootstrap:** `sdkwork_agents_database_host::bootstrap_agents_database()` uses `LifecycleOrchestrator` (init + migrate)
 - **Strategy:** `baseline-plus-migrations` — baseline applied once on empty database, then versioned migrations applied incrementally
 
-## v3.1 Migration (2026-07)
+SQLite now has a native eight-table baseline and a validated service pool facade. Managed-store
+engine support remains gated on the complete repository/audit adapters, transaction semantics,
+lifecycle integration, server-side pagination, and PostgreSQL parity tests. Runtime or kernel
+SQLite databases remain outside this module and must not be reported as agents store parity.
 
-1. Migrated 8 TEXT JSON columns to JSONB for native JSON indexing and validation.
-2. Added 7 foreign key constraints (all tenant-scoped, ON DELETE CASCADE).
-3. Added `UNIQUE(tenant_id, id)` on `ai_agent` for audit event FK reference.
-4. Updated `capabilities_json_is_standard` CHECK function to accept JSONB parameter.
-5. Replaced `SyncPostgresAdapter::apply_managed_store_schema()` (direct baseline SQL execution) with `LifecycleOrchestrator` for proper migration tracking, checksum verification, and incremental migration support.
-6. Migration file: `0002_jsonb_columns_and_fk_constraints`
+The `3.1.0` baseline is the complete schema authority for new installations. It includes native
+JSON columns, tenant-scoped foreign keys, uniqueness constraints, and the capability validation
+function. Incremental migrations begin only after this baseline is released; no migration may
+repeat a structure already owned by the baseline.
 
-## v3 Consolidation (2026-07)
-
-1. Merged runtime embedded DDL into lifecycle baseline as the single source.
-2. Removed SQLite from contract and retired `database/ddl/baseline/sqlite/0001_agents_baseline.sql`.
-3. Kept `ai_agent_task_run` outside contract v3.0.0; entry requires stable kernel `AgentRun` / `AgentStep` projection, approved task-run API authority, and a versioned migration.
-4. Aligned `database.manifest.json#contractVersion` with schema contract.
+`ai_agent_task_run` remains outside the current product contract until the kernel `AgentRun` and
+`AgentStep` projection authority is approved. It must enter through a reviewed API contract and a
+new versioned migration rather than an undocumented table addition.
 
 ## Operations
 

@@ -80,7 +80,7 @@ BirdCoder 等产品只使用 agents 暴露的 SDK/facade。
 | `ai_agent_interaction` | 实时交互（code-engine 审批流） | L2 |
 | `ai_agent_task` | 计划任务（kernel `AgentTask` 投影） | L2 |
 
-DDL 权威：`database/ddl/baseline/postgres/0001_agents_baseline.sql`（PostgreSQL only）。
+DDL 权威：`database/ddl/baseline/postgres/0001_agents_baseline.sql`（当前生产引擎为 PostgreSQL；SQLite 尚未纳入 agents managed-store 契约）。
 
 ### 2.2 Independent module dependencies
 
@@ -440,7 +440,7 @@ pnpm gateway:validate:cloud
 node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```
 
-`pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, standalone gateway shutdown handling, dev-only static policy fail-closed behavior, in-memory repository/audit lock recovery, managed-store Snowflake ID initialization error propagation, route manifest build-script error propagation, and strict repository ports. Signal handler installation failures, dev-only policy misconfiguration, poisoned in-memory locks, and OpenAPI route manifest generation failures must be logged or returned with operator-visible context instead of panicking; repository and Postgres adapter constructors that initialize default business ID generators must return `KernelResult` on production paths; incomplete persistence adapters must fail at compile time instead of inheriting default empty stubs.
+`pnpm check:production-security` validates production-like profile gating, IAM/Postgres/runtime-facade bootstrap, bounded service/provider worker capacity, standalone gateway shutdown handling, dev-only static policy fail-closed behavior, in-memory repository/audit lock recovery, managed-store Snowflake ID initialization error propagation, route manifest build-script error propagation, and strict repository ports. Signal handler installation failures, dev-only policy misconfiguration, poisoned in-memory locks, worker saturation, and OpenAPI route manifest generation failures must be logged or returned with operator-visible context instead of panicking; repository point/list/count failures and malformed persisted rows must propagate to problem responses instead of becoming missing resources or empty pages; incomplete persistence adapters must fail at compile time instead of inheriting default empty stubs.
 
 `pnpm check:frontend-service-identity` validates the PC/H5 authored agents services do not directly
 call browser UUID APIs for SDKWork-owned service identity. The PC chat service contract also proves
@@ -450,9 +450,11 @@ PC/H5 session bridges do not locally default IAM `environment`, `deploymentMode`
 
 ## 10. Launch Readiness
 
-Pre-launch P0/P1 alignment is complete for PC/H5 and BirdCoder code-agent workflows.
-Remaining items are commercial GA hardening and kernel/sibling platform capabilities, not a
-reason to re-own kernel or sibling module responsibilities inside `sdkwork-agents`.
+The verified PostgreSQL PC/H5 and BirdCoder contract paths are pre-launch capable, but the
+application is not Commercial GA ready. SQLite managed-store support, atomic business/audit
+durability, cursor pagination for high-growth message/audit lists, and production live/capacity
+evidence are release blockers. Kernel and sibling module responsibilities remain outside this
+repository and must be integrated through their owned contracts rather than reimplemented here.
 
 ### Completed (pre-launch)
 
@@ -496,7 +498,7 @@ reason to re-own kernel or sibling module responsibilities inside `sdkwork-agent
 | PC/H5 export/sync | Done | `syncAllOffsetPages()` in `*-core/sdk/pagination` (not for UI tables) |
 | Mini program native list | Done | `pageSize=20`, follows `pageInfo.hasMore`, load-more button |
 
-Messages remain **offset mode** by contract today. Cursor/keyset support belongs to a future requirement only when very long sessions require it, and it is not part of the current GA evidence bundle.
+Messages and audit events remain **offset mode** today. Because both are high-growth paths, GA requires keyset/cursor pagination pushed into repository SQL and exposed consistently through OpenAPI, generated/composed SDKs, and interactive clients. Offset-only behavior is not accepted as large-cluster completion evidence.
 
 ### Client surfaces (commercial MVP)
 

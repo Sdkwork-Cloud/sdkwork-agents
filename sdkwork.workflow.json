@@ -108,7 +108,13 @@
       "architecture": "x64",
       "formats": ["tar.gz"],
       "runner": "ubuntu-24.04",
-      "outputGlobs": ["target/release/sdkwork-agents-standalone-gateway*"],
+      "outputGlobs": [
+        "target/release/sdkwork-agents-standalone-gateway*",
+        "database/**",
+        "configs/topology/*.production.env",
+        "deployments/**",
+        "sdkwork.app.config.json"
+      ],
       "deploymentProfile": "cloud",
       "runtimeTarget": "container"
     }

@@ -225,6 +225,19 @@ pub fn finish_api_json<T: Serialize>(ctx: &WebRequestContext, result: ApiResult<
     }
 }
 
+/// Finish a create operation with the canonical HTTP 201 success status.
+pub fn finish_created_api_json<T: Serialize>(
+    ctx: &WebRequestContext,
+    result: ApiResult<T>,
+) -> Response {
+    match result {
+        Ok(data) => {
+            created_json(ctx, data).unwrap_or_else(|problem| problem.into_response_for(ctx))
+        }
+        Err(problem) => problem.into_response_for(ctx),
+    }
+}
+
 /// 收尾 `Result<Response, ApiProblem>`：成功透传，失败走 `problem_response`。
 pub fn finish_api_response(
     ctx: &WebRequestContext,
@@ -261,6 +274,7 @@ mod tests {
             client_kind: None,
             operation: None,
             trace_id: Some("trace-from-context-abc".to_owned()),
+            idempotency_key: None,
         }
     }
 

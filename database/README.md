@@ -11,8 +11,8 @@ Managed per `DATABASE_FRAMEWORK_SPEC.md` and
 
 This module is in initialization state for greenfield deployments:
 
-1. **Baseline** - `database/ddl/baseline/{engine}/0001_agents_baseline.sql` contains the full DDL snapshot.
-2. **Migrations** - `database/migrations/{engine}/` is reserved for approved incremental schema changes after the baseline contract changes. It is intentionally empty while contract version `3.0.0` is served entirely from the baseline.
+1. **Baseline** - `database/ddl/baseline/{engine}/0001_agents_baseline.sql` contains the complete `3.1.0` schema snapshot.
+2. **Migrations** - `database/migrations/{engine}/` accepts only changes introduced after the current baseline is released. A structure already present in the baseline must not be repeated in a migration.
 3. **Drift** - run `pnpm db:drift:check` before release.
 
 ## Commands

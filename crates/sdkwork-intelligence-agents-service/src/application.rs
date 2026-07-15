@@ -4,8 +4,8 @@ mod commands;
 pub use commands::*;
 
 use crate::chat_runtime::{
-    complete_with_timeout, is_inference_error, ChatCompleter, ChatCompletionInput,
-    ContractChatCompleter, CHAT_COMPLETION_TIMEOUT,
+    complete_with_timeout, is_capacity_error, is_inference_error, ChatCompleter,
+    ChatCompletionInput, ContractChatCompleter, CHAT_COMPLETION_TIMEOUT,
 };
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
@@ -123,7 +123,7 @@ where
     ) -> KernelResult<AgentSessionRecord> {
         let session = self
             .repository
-            .get_session(tenant_id, session_id)
+            .get_session(tenant_id, session_id)?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, owner_scope)?;
         Self::ensure_nested_agent_id(&session.agent_id, path_agent_id, "session")?;
@@ -143,7 +143,7 @@ where
 
         if self
             .repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .is_some()
         {
             return Err(KernelError::conflict("agent already exists"));
@@ -203,7 +203,7 @@ where
         )?;
 
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
@@ -225,7 +225,7 @@ where
                 command.tenant_id,
                 command.agent_id.as_str(),
                 command.binding_id.as_str(),
-            )
+            )?
             .is_some()
         {
             return Err(KernelError::conflict(
@@ -279,7 +279,7 @@ where
         )?;
 
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
         validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
 
@@ -302,7 +302,7 @@ where
         &self,
         tenant_id: u64,
         agent_id: &str,
-    ) -> Vec<AgentProviderBindingRecord> {
+    ) -> KernelResult<Vec<AgentProviderBindingRecord>> {
         let mut all = Vec::new();
         let mut page = 1usize;
         loop {
@@ -312,7 +312,7 @@ where
                         .with_page_size(MAX_PAGE_SIZE)
                         .with_page(page),
                 ),
-            );
+            )?;
             if batch.is_empty() {
                 break;
             }
@@ -323,7 +323,7 @@ where
             }
             page = page.saturating_add(1);
         }
-        all
+        Ok(all)
     }
 
     pub fn list_provider_bindings(
@@ -338,10 +338,10 @@ where
             "provider_binding.list",
         )?;
         self.repository
-            .get(command.query.tenant_id, command.query.agent_id.as_str())
+            .get(command.query.tenant_id, command.query.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
-        let total_count = self.repository.count_provider_bindings(&command.query);
-        let items = self.repository.list_provider_bindings(&command.query);
+        let total_count = self.repository.count_provider_bindings(&command.query)?;
+        let items = self.repository.list_provider_bindings(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -364,10 +364,10 @@ where
             "provider_binding.retrieve",
         )?;
         self.repository
-            .get(tenant_id, agent_id)
+            .get(tenant_id, agent_id)?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
         self.repository
-            .get_provider_binding(tenant_id, agent_id, binding_id)
+            .get_provider_binding(tenant_id, agent_id, binding_id)?
             .ok_or_else(|| KernelError::validation("provider binding not found"))
     }
 
@@ -388,7 +388,7 @@ where
         )?;
         let mut record = self
             .repository
-            .get_provider_binding(tenant_id, agent_id, binding_id)
+            .get_provider_binding(tenant_id, agent_id, binding_id)?
             .ok_or_else(|| KernelError::validation("provider binding not found"))?;
         if !record.active {
             return Err(KernelError::validation(
@@ -424,7 +424,7 @@ where
         )?;
         let mut record = self
             .repository
-            .get_session(tenant_id, session_id)
+            .get_session(tenant_id, session_id)?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         if let Some(title) = title {
             record.title = Some(title);
@@ -460,8 +460,10 @@ where
             "agent.business".to_string(),
             "mcp_server.list",
         )?;
-        let total_count = self.repository.count_mcp_marketplace_slots(&command.query);
-        let slots = self.repository.list_mcp_marketplace_slots(&command.query);
+        let total_count = self
+            .repository
+            .count_mcp_marketplace_slots(&command.query)?;
+        let slots = self.repository.list_mcp_marketplace_slots(&command.query)?;
         let items = slots
             .iter()
             .map(crate::mcp_marketplace::project_mcp_slot)
@@ -486,7 +488,7 @@ where
         )?;
 
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
         validate_standard_id(
             command.execution_id.as_str(),
@@ -506,10 +508,9 @@ where
             }
         }
 
-        let active_binding = self.repository.get_active_provider_binding(
-            command.tenant_id,
-            command.agent_id.as_str(),
-        );
+        let active_binding = self
+            .repository
+            .get_active_provider_binding(command.tenant_id, command.agent_id.as_str())?;
 
         let preview = execute_preview_response(
             active_binding.as_ref(),
@@ -567,7 +568,7 @@ where
         )?;
 
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
         validate_standard_id(
             command.execution_id.as_str(),
@@ -577,10 +578,9 @@ where
         validate_non_empty(command.prompt.as_str(), "prompt")?;
         validate_json_payload(command.input_payload_json.as_str(), "inputPayload")?;
 
-        let active_binding = self.repository.get_active_provider_binding(
-            command.tenant_id,
-            command.agent_id.as_str(),
-        );
+        let active_binding = self
+            .repository
+            .get_active_provider_binding(command.tenant_id, command.agent_id.as_str())?;
 
         let optimization =
             execute_prompt_optimization(active_binding.as_ref(), command.prompt.as_str());
@@ -636,7 +636,7 @@ where
         validate_standard_id(command.slot_id.as_str(), "slotId", Some("slot."))?;
         require_non_blank(command.target_ref.as_str(), "targetRef")?;
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
         if self
             .repository
@@ -644,7 +644,7 @@ where
                 command.tenant_id,
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
-            )
+            )?
             .is_some()
         {
             return Err(KernelError::conflict("composition slot already exists"));
@@ -696,10 +696,10 @@ where
         )?;
         validate_agent_id(command.query.agent_id.as_str())?;
         self.repository
-            .get(command.query.tenant_id, command.query.agent_id.as_str())
+            .get(command.query.tenant_id, command.query.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
-        let total_count = self.repository.count_composition_slots(&command.query);
-        let items = self.repository.list_composition_slots(&command.query);
+        let total_count = self.repository.count_composition_slots(&command.query)?;
+        let items = self.repository.list_composition_slots(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -727,7 +727,7 @@ where
                 command.tenant_id,
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("composition slot not found"))
     }
 
@@ -752,7 +752,7 @@ where
                 command.tenant_id,
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("composition slot not found"))?;
         if record.is_deleted() {
             return Err(KernelError::validation("composition slot is deleted"));
@@ -825,7 +825,7 @@ where
                 command.tenant_id,
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("composition slot not found"))?;
         if record.is_deleted() {
             return Err(KernelError::validation("composition slot already deleted"));
@@ -867,7 +867,7 @@ where
 
         let mut record = self
             .repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         if record.is_deleted() {
@@ -934,7 +934,7 @@ where
 
         let mut record = self
             .repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         if record.is_deleted() {
@@ -974,7 +974,7 @@ where
 
         let mut record = self
             .repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         if record.is_deleted() {
@@ -1013,7 +1013,7 @@ where
 
         let mut record = self
             .repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         if !record.is_deleted() {
@@ -1044,7 +1044,7 @@ where
         )?;
 
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))
             .and_then(|record| {
                 if record.is_deleted() {
@@ -1064,7 +1064,7 @@ where
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "list",
         )?;
-        Ok(self.repository.list_paginated(&command.query))
+        Ok(self.repository.list_paginated(&command.query)?)
     }
 
     pub fn list_agent_audit_events(
@@ -1105,13 +1105,13 @@ where
 
         // Ensure the agent exists
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         // Ensure session does not already exist
         if self
             .repository
-            .get_session(command.tenant_id, session_id.as_str())
+            .get_session(command.tenant_id, session_id.as_str())?
             .is_some()
         {
             return Err(KernelError::conflict("session already exists"));
@@ -1169,7 +1169,7 @@ where
 
         let mut record = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
@@ -1205,7 +1205,7 @@ where
 
         let mut record = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
@@ -1242,7 +1242,7 @@ where
         )?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))
             .and_then(|record| {
                 Self::ensure_session_owner_scope(&record, command.owner_scope)?;
@@ -1265,8 +1265,8 @@ where
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "session.list",
         )?;
-        let total_count = self.repository.count_sessions(&command.query);
-        let items = self.repository.list_sessions(&command.query);
+        let total_count = self.repository.count_sessions(&command.query)?;
+        let items = self.repository.list_sessions(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -1302,12 +1302,12 @@ where
         }
 
         self.repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         if self
             .repository
-            .get_task(command.tenant_id, task_id.as_str())
+            .get_task(command.tenant_id, task_id.as_str())?
             .is_some()
         {
             return Err(KernelError::conflict("task already exists"));
@@ -1398,16 +1398,15 @@ where
 
         let agent = self
             .repository
-            .get(record.tenant_id, record.agent_id.as_str())
+            .get(record.tenant_id, record.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         record.mark_running(requested_at.clone());
         self.repository.update_task(record.clone())?;
 
-        let active_binding = self.repository.get_active_provider_binding(
-            record.tenant_id,
-            record.agent_id.as_str(),
-        );
+        let active_binding = self
+            .repository
+            .get_active_provider_binding(record.tenant_id, record.agent_id.as_str())?;
 
         let provider_has_model_chat = active_binding
             .as_ref()
@@ -1460,6 +1459,14 @@ where
             CHAT_COMPLETION_TIMEOUT,
         );
 
+        if is_capacity_error(completion.runtime_mode) {
+            return Err(KernelError::resource_exhausted(completion.content));
+        }
+        if is_capacity_error(completion.runtime_mode) {
+            record.mark_failed(requested_at.clone(), completion.content.as_str());
+            self.repository.update_task(record.clone())?;
+            return Err(KernelError::resource_exhausted(completion.content));
+        }
         if is_inference_error(completion.runtime_mode) {
             record.mark_failed(requested_at.clone(), completion.content.as_str());
             self.repository.update_task(record.clone())?;
@@ -1495,7 +1502,7 @@ where
 
         let mut record = self
             .repository
-            .get_task(command.tenant_id, command.task_id.as_str())
+            .get_task(command.tenant_id, command.task_id.as_str())?
             .ok_or_else(|| KernelError::validation("task not found"))?;
 
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
@@ -1531,7 +1538,7 @@ where
 
         let record = self
             .repository
-            .get_task(command.tenant_id, command.task_id.as_str())
+            .get_task(command.tenant_id, command.task_id.as_str())?
             .ok_or_else(|| KernelError::validation("task not found"))?;
 
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
@@ -1557,7 +1564,7 @@ where
         )?;
         validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
         self.repository
-            .get_task(command.tenant_id, command.task_id.as_str())
+            .get_task(command.tenant_id, command.task_id.as_str())?
             .ok_or_else(|| KernelError::validation("task not found"))
             .and_then(|record| {
                 Self::ensure_task_owner_scope(&record, command.owner_scope)?;
@@ -1580,8 +1587,8 @@ where
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "task.list",
         )?;
-        let total_count = self.repository.count_tasks(&command.query);
-        let items = self.repository.list_tasks(&command.query);
+        let total_count = self.repository.count_tasks(&command.query)?;
+        let items = self.repository.list_tasks(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -1610,7 +1617,7 @@ where
         // Ensure session exists and is active
         let mut session = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         if !session.status.is_active() {
@@ -1626,7 +1633,7 @@ where
                 command.tenant_id,
                 command.session_id.as_str(),
                 command.message_id.as_str(),
-            )
+            )?
             .is_some()
         {
             return Err(KernelError::conflict("message already exists"));
@@ -1706,7 +1713,7 @@ where
         validate_standard_id(command.message_id.as_str(), "messageId", Some("message."))?;
         let session = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
         Self::ensure_nested_agent_id(&session.agent_id, command.path_agent_id.as_str(), "session")?;
@@ -1715,7 +1722,7 @@ where
                 command.tenant_id,
                 command.session_id.as_str(),
                 command.message_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("message not found"))
             .and_then(|record| {
                 Self::ensure_nested_agent_id(
@@ -1739,11 +1746,11 @@ where
         )?;
         let session = self
             .repository
-            .get_session(command.query.tenant_id, command.query.session_id.as_str())
+            .get_session(command.query.tenant_id, command.query.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
-        let total_count = self.repository.count_messages(&command.query);
-        let items = self.repository.list_messages(&command.query);
+        let total_count = self.repository.count_messages(&command.query)?;
+        let items = self.repository.list_messages(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -1768,12 +1775,12 @@ where
 
         let agent = self
             .repository
-            .get(command.tenant_id, command.agent_id.as_str())
+            .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
         let mut session = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
@@ -1806,16 +1813,15 @@ where
                     command.tenant_id,
                     command.session_id.clone(),
                     CHAT_CONTEXT_MESSAGE_LIMIT,
-                ));
+                ))?;
         let history = history_messages
             .iter()
             .map(|record| (record.role, record.content.clone()))
             .collect::<Vec<_>>();
 
-        let active_binding = self.repository.get_active_provider_binding(
-            command.tenant_id,
-            command.agent_id.as_str(),
-        );
+        let active_binding = self
+            .repository
+            .get_active_provider_binding(command.tenant_id, command.agent_id.as_str())?;
 
         let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
             agent.default_code_task_intent.as_ref(),
@@ -2012,7 +2018,7 @@ where
         agent_id: &str,
         updated_at: String,
     ) -> KernelResult<()> {
-        for mut binding in self.all_provider_bindings_for_agent(tenant_id, agent_id) {
+        for mut binding in self.all_provider_bindings_for_agent(tenant_id, agent_id)? {
             if binding.active {
                 binding.active = false;
                 binding.mark_updated(updated_at.clone());
@@ -2284,7 +2290,7 @@ where
         }
 
         self.repository
-            .get_session(command.tenant_id, command.session_id.as_str())
+            .get_session(command.tenant_id, command.session_id.as_str())?
             .ok_or_else(|| KernelError::validation("session not found"))
             .and_then(|session| {
                 Self::ensure_session_owner_scope(&session, command.owner_scope)?;
@@ -2296,7 +2302,7 @@ where
                 if !session.status.is_active() {
                     return Err(KernelError::validation(
                         "session is not active, cannot create interaction",
-                    ));
+                    ))?;
                 }
                 Ok(session)
             })?;
@@ -2307,7 +2313,7 @@ where
                 command.tenant_id,
                 command.session_id.as_str(),
                 interaction_id.as_str(),
-            )
+            )?
             .is_some()
         {
             return Err(KernelError::conflict("interaction already exists"));
@@ -2358,8 +2364,8 @@ where
             command.path_agent_id.as_str(),
             command.owner_scope,
         )?;
-        let total_count = self.repository.count_interactions(&command.query);
-        let items = self.repository.list_interactions(&command.query);
+        let total_count = self.repository.count_interactions(&command.query)?;
+        let items = self.repository.list_interactions(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -2388,7 +2394,7 @@ where
                 command.tenant_id,
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("interaction not found"))
             .and_then(|record| {
                 Self::ensure_nested_agent_id(
@@ -2428,7 +2434,7 @@ where
                 command.tenant_id,
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("interaction not found"))?;
 
         if !record.is_pending() {
@@ -2514,7 +2520,7 @@ where
                 command.tenant_id,
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
-            )
+            )?
             .ok_or_else(|| KernelError::validation("interaction not found"))?;
 
         if !record.is_pending() {

@@ -153,6 +153,7 @@ pub(crate) fn build_web_request_context(
         client_kind: None,
         operation: None,
         trace_id: agent_context.trace_id.clone(),
+        idempotency_key: sdkwork_web_core::extractors::idempotency_key(request.headers()),
     }
 }
 

@@ -1,6 +1,6 @@
 # SDKWork Agents AI Composition Database Specification
 
-- Version: `3.0.0`
+- Version: `3.1.0`
 - Domain: `intelligence`
 - Capability: `agents`
 - Owner: `agents-platform`
@@ -101,28 +101,17 @@ Only agent-core management actions are recorded. No MCP, memory, or knowledge do
 | `composition_slot_updated` | Composition slot updated |
 | `composition_slot_deleted` | Composition slot deleted |
 
-## 6. Migration from legacy `a_agent_*`
+## 6. Schema lifecycle
 
-| Legacy | New |
-| --- | --- |
-| `a_agent_business` | `ai_agent` |
-| `a_agent_provider_binding` | `ai_agent_runtime_binding` |
-| `a_agent_business_audit_event` | `ai_agent_audit_event` |
-| `a_agent_deployment` | **removed** (v3 — dead code, no state machine) |
-| `agents_app_registry` | **removed** (v3 — dead code, zero business reads) |
-| `a_agent_knowledge_*` | **removed** → `sdkwork-knowledgebase` |
-| `a_agent_memory_*` | **removed** → `sdkwork-memory` |
-| `a_agent_mcp_server` | **removed** → `sdkwork-mcp` (`ai_mcp_server`) |
-
-Migration scripts:
-
-- `database/migrations/postgres/0001_ai_agent_core.up.sql` — legacy table renames and cleanup
-- `database/migrations/postgres/0002_ai_agent_refactor.up.sql` — L2 tenant_entity compliance fields (`uuid`/`version`/`organization_id`), JSONB conversion, audit trail columns, soft-delete partial indexes, FK constraints, triggers, and documentation comments
-- `database/migrations/postgres/0003_drop_unused_tables.up.sql` — drop `ai_app_registry`, `ai_agent_deployment`, `ai_agent_outbox_event` (dead code / over-design removal)
+The current greenfield application is governed by the `3.1.0` baseline at
+`database/ddl/baseline/postgres/0001_agents_baseline.sql`. The repository has no legacy
+installation migration path because it has not been released. Future migrations must be
+strictly additive or use an approved expand/contract plan and must not repeat baseline
+constraints, indexes, functions, or columns.
 
 ## 7. Authority
 
-Canonical DDL: `database/ddl/baseline/postgres/0001_ai_agent_baseline.sql`
+Canonical DDL: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 Contract registry: `database/contract/table-registry.json`
 Schema contract: `database/contract/schema.yaml`
 
@@ -139,7 +128,7 @@ Application and frontend layers must not load full result sets and slice in memo
 | MCP marketplace projection | `SQL_LIST_MCP_MARKETPLACE_SLOTS` + `SQL_COUNT_MCP_MARKETPLACE_SLOTS` | Join `ai_agent` + `slot_kind = mcp`; no N+1 agent scan. |
 | `ai_agent_audit_event` | `SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID` + `SQL_COUNT_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID` | Filters: `action`, `from`, `to`; sort: `created_at DESC, id DESC`. |
 | `ai_agent_session` | `SQL_LIST_AGENT_SESSIONS` + `SQL_COUNT_AGENT_SESSIONS` | Offset-paginated; `PageInfo.totalItems` from count query. |
-| `ai_agent_message` | `SQL_LIST_AGENT_MESSAGES` / `SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT` + `SQL_COUNT_AGENT_MESSAGES` | API lists use ASC + offset; chat context uses recent DESC window. |
+| `ai_agent_message` | `SQL_LIST_AGENT_MESSAGES` / `SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT` + `SQL_COUNT_AGENT_MESSAGES` | API lists use ASC + offset today; cursor/keyset migration is required before long-session GA. |
 | `ai_agent_interaction` | `SQL_LIST_AGENT_INTERACTIONS` + `SQL_COUNT_AGENT_INTERACTIONS` | Offset-paginated; App/Backend HTTP surfaces expose `agents.interactions.*`. |
 | `ai_agent_task` | `SQL_LIST_AGENT_TASKS` + `SQL_COUNT_AGENT_TASKS` | Offset-paginated; Open/App/Backend HTTP surfaces expose `agents.tasks.*`. |
 

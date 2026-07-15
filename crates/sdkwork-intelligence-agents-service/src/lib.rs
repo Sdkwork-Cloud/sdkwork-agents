@@ -17,6 +17,8 @@ mod postgres_sync_pool;
 #[cfg(feature = "http-axum")]
 pub mod response;
 mod runtime_facade_bridge;
+#[cfg(feature = "sqlite-sync")]
+mod sqlite_sync_pool;
 mod validation;
 
 pub use api::{
@@ -86,9 +88,13 @@ pub use infrastructure::{
     InMemoryAgentAuditSink, InMemoryAgentRepository, PolicyMode, ENV_DEPLOYMENT_ENV,
     ENV_DEV_AUTH_BYPASS, IAM_PERMISSION_AGENTS_MANAGE, IAM_PERMISSION_AGENTS_READ,
 };
+#[cfg(feature = "sqlite-sync")]
+pub use persistence::sqlite_sql;
+#[cfg(feature = "sqlite-sync")]
+pub use persistence::SyncSqliteAdapter;
 pub use persistence::{
-    extract_event_context, PostgresAgentAuditSink, PostgresAgentRepository,
-    PostgresAgentRepositoryAdapter, SQL_COUNT_AGENT, SQL_COUNT_AGENT_COMPOSITION_SLOTS,
+    extract_event_context, AgentAuditAdapter, AgentRepositoryAdapter, SqlAgentAuditSink,
+    SqlAgentRepository, SQL_COUNT_AGENT, SQL_COUNT_AGENT_COMPOSITION_SLOTS,
     SQL_COUNT_AGENT_PROVIDER_BINDINGS, SQL_COUNT_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
     SQL_COUNT_MCP_MARKETPLACE_SLOTS, SQL_INSERT_AGENT, SQL_INSERT_AGENT_COMPOSITION_SLOT,
     SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT,
@@ -116,3 +122,5 @@ pub use ports::{
     MessageListSort, PaginatedResult, PaginationParams, ProviderBindingListQuery, SessionListQuery,
     CHAT_CONTEXT_MESSAGE_LIMIT, DEFAULT_PAGE_SIZE, MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,
 };
+#[cfg(feature = "sqlite-sync")]
+pub use sqlite_sync_pool::{BlockingSqlitePool, SQLITE_MANAGED_STORE_DATABASE_SERVICE};

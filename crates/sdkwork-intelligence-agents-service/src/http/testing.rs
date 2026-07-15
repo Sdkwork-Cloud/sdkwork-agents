@@ -21,5 +21,6 @@ pub fn test_web_context() -> WebRequestContext {
         client_kind: None,
         operation: None,
         trace_id: Some("trace-test-fixed".to_owned()),
+        idempotency_key: None,
     }
 }

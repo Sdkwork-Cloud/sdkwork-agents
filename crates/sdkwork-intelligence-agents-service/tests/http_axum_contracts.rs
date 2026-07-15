@@ -2815,7 +2815,7 @@ async fn status_update_with_stale_expected_version_should_return_version_conflic
         .oneshot(auth_headers(first_status_update))
         .await
         .expect("first status update should succeed");
-    assert_eq!(first_status_response.status(), StatusCode::CREATED);
+    assert_eq!(first_status_response.status(), StatusCode::OK);
 
     let stale_status_update = Request::builder()
         .method("POST")
@@ -2881,7 +2881,7 @@ async fn backend_audit_events_should_return_recorded_items() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::CREATED);
+    assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
@@ -2936,7 +2936,7 @@ async fn backend_audit_events_action_filter_should_work() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::CREATED);
+    assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
@@ -3099,7 +3099,7 @@ async fn backend_audit_events_time_range_filter_should_work() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::CREATED);
+    assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
@@ -3270,7 +3270,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
         .oneshot(auth_headers(status_active_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_active_response.status(), StatusCode::CREATED);
+    assert_eq!(status_active_response.status(), StatusCode::OK);
 
     let status_disabled_request = Request::builder()
         .method("POST")
@@ -3290,7 +3290,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
         .oneshot(auth_headers(status_disabled_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_disabled_response.status(), StatusCode::CREATED);
+    assert_eq!(status_disabled_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
@@ -3356,7 +3356,7 @@ async fn backend_audit_events_should_sort_by_instant_desc_across_timezones() {
         .oneshot(auth_headers(status_request))
         .await
         .expect("status request should succeed");
-    assert_eq!(status_response.status(), StatusCode::CREATED);
+    assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")

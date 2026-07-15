@@ -17,6 +17,22 @@ spec:
         app.kubernetes.io/name: sdkwork-agents
         app.kubernetes.io/component: standalone-gateway
     spec:
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sdkwork-agents
+              app.kubernetes.io/component: standalone-gateway
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sdkwork-agents
+              app.kubernetes.io/component: standalone-gateway
       containers:
         - name: standalone-gateway
           image: sdkwork-agents:latest

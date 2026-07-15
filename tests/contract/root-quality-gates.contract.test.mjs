@@ -120,6 +120,34 @@ test("root workflow scripts do not expose migration-only IM synchronization tool
   );
 });
 
+test("server release artifact includes immutable runtime and deployment assets", () => {
+  const workflow = JSON.parse(
+    readFileSync(path.join(repoRoot, "sdkwork.workflow.json"), "utf8"),
+  );
+  const serverTarget = workflow.targets.find(
+    (target) => target.profile === "server" && target.runtimeTarget === "container",
+  );
+
+  assert.ok(serverTarget, "workflow must declare a container server target");
+  for (const requiredGlob of [
+    "database/**",
+    "configs/topology/*.production.env",
+    "deployments/**",
+    "sdkwork.app.config.json",
+  ]) {
+    assert.ok(
+      serverTarget.outputGlobs.includes(requiredGlob),
+      `server artifact must include ${requiredGlob}`,
+    );
+  }
+  assert.ok(
+    serverTarget.outputGlobs.some((glob) =>
+      glob.startsWith("target/release/sdkwork-agents-standalone-gateway"),
+    ),
+    "server artifact must include the release gateway binary",
+  );
+});
+
 const launchCanonFiles = [
   "apps/README.md",
   "docs/product/prd/PRD.md",

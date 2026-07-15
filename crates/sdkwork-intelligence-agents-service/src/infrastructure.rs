@@ -10,6 +10,7 @@ use crate::ports::{
     InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery,
     SessionListQuery, TaskListQuery,
 };
+use crate::validation::parse_rfc3339_datetime;
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
     ProviderHealth, ProviderManifest,
@@ -74,6 +75,8 @@ pub struct AgentServiceMetrics {
     pub http_requests_total: u64,
     pub http_errors_total: u64,
     pub http_requests_per_second: f64,
+    pub service_worker_rejections_total: u64,
+    pub provider_worker_rejections_total: u64,
     /// Total number of agents across all tenants
     pub total_agents: u64,
     /// Number of active (non-deleted) agents
@@ -104,6 +107,8 @@ struct ScrapeState {
 pub struct AgentMetricsRegistry {
     http_requests_total: AtomicU64,
     http_errors_total: AtomicU64,
+    service_worker_rejections_total: AtomicU64,
+    provider_worker_rejections_total: AtomicU64,
     scrape_state: Mutex<ScrapeState>,
 }
 
@@ -112,6 +117,8 @@ impl AgentMetricsRegistry {
         static REGISTRY: LazyLock<AgentMetricsRegistry> = LazyLock::new(|| AgentMetricsRegistry {
             http_requests_total: AtomicU64::new(0),
             http_errors_total: AtomicU64::new(0),
+            service_worker_rejections_total: AtomicU64::new(0),
+            provider_worker_rejections_total: AtomicU64::new(0),
             scrape_state: Mutex::new(ScrapeState {
                 instant: Instant::now(),
                 request_total: 0,
@@ -128,9 +135,25 @@ impl AgentMetricsRegistry {
         }
     }
 
+    pub fn record_service_worker_rejection(&self) {
+        self.service_worker_rejections_total
+            .fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub fn record_provider_worker_rejection(&self) {
+        self.provider_worker_rejections_total
+            .fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> AgentServiceMetrics {
         let http_requests_total = self.http_requests_total.load(AtomicOrdering::Relaxed);
         let http_errors_total = self.http_errors_total.load(AtomicOrdering::Relaxed);
+        let service_worker_rejections_total = self
+            .service_worker_rejections_total
+            .load(AtomicOrdering::Relaxed);
+        let provider_worker_rejections_total = self
+            .provider_worker_rejections_total
+            .load(AtomicOrdering::Relaxed);
         let http_requests_per_second = {
             let mut state = self.scrape_state.recovering_lock();
             let now = Instant::now();
@@ -149,6 +172,8 @@ impl AgentMetricsRegistry {
             http_requests_total,
             http_errors_total,
             http_requests_per_second,
+            service_worker_rejections_total,
+            provider_worker_rejections_total,
             ..AgentServiceMetrics::default()
         }
     }
@@ -180,6 +205,20 @@ impl AgentServiceMetrics {
         output.push_str(&format!(
             "sdkwork_agents_requests_per_second {}\n",
             self.http_requests_per_second
+        ));
+
+        output.push_str("# HELP sdkwork_agents_service_worker_rejections_total Requests rejected before entering the blocking service pool\n");
+        output.push_str("# TYPE sdkwork_agents_service_worker_rejections_total counter\n");
+        output.push_str(&format!(
+            "sdkwork_agents_service_worker_rejections_total {}\n",
+            self.service_worker_rejections_total
+        ));
+
+        output.push_str("# HELP sdkwork_agents_provider_worker_rejections_total Provider executions rejected when bounded capacity is exhausted\n");
+        output.push_str("# TYPE sdkwork_agents_provider_worker_rejections_total counter\n");
+        output.push_str(&format!(
+            "sdkwork_agents_provider_worker_rejections_total {}\n",
+            self.provider_worker_rejections_total
         ));
 
         // Help and type declarations
@@ -560,14 +599,15 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(())
     }
 
-    fn get(&self, tenant_id: u64, agent_id: &str) -> Option<AgentBusinessRecord> {
-        self.agents
+    fn get(&self, tenant_id: u64, agent_id: &str) -> KernelResult<Option<AgentBusinessRecord>> {
+        Ok(self
+            .agents
             .recovering_read()
             .get(&(tenant_id, agent_id.to_string()))
-            .cloned()
+            .cloned())
     }
 
-    fn list(&self, query: &AgentListQuery) -> Vec<AgentBusinessRecord> {
+    fn list(&self, query: &AgentListQuery) -> KernelResult<Vec<AgentBusinessRecord>> {
         let agents = self.agents.recovering_read();
         let index = self.agent_list_index.recovering_read();
         let iter = index
@@ -576,19 +616,19 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter_map(|(_, primary_key)| agents.get(primary_key))
             .filter(|record| agent_matches_list_query(record, query))
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_agents(&self, query: &AgentListQuery) -> u64 {
+    fn count_agents(&self, query: &AgentListQuery) -> KernelResult<u64> {
         let agents = self.agents.recovering_read();
         let index = self.agent_list_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
                 .filter_map(|(_, primary_key)| agents.get(primary_key))
                 .filter(|record| agent_matches_list_query(record, query)),
-        )
+        ))
     }
 
     fn insert_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()> {
@@ -657,33 +697,33 @@ impl AgentRepository for InMemoryAgentRepository {
         tenant_id: u64,
         agent_id: &str,
         binding_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
-        self.provider_bindings
+    ) -> KernelResult<Option<AgentProviderBindingRecord>> {
+        Ok(self
+            .provider_bindings
             .recovering_read()
             .get(&(tenant_id, agent_id.to_string(), binding_id.to_string()))
-            .cloned()
+            .cloned())
     }
 
     fn get_active_provider_binding(
         &self,
         tenant_id: u64,
         agent_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
-        self.provider_bindings
+    ) -> KernelResult<Option<AgentProviderBindingRecord>> {
+        Ok(self
+            .provider_bindings
             .recovering_read()
             .values()
             .find(|binding| {
-                binding.tenant_id == tenant_id
-                    && binding.agent_id == agent_id
-                    && binding.active
+                binding.tenant_id == tenant_id && binding.agent_id == agent_id && binding.active
             })
-            .cloned()
+            .cloned())
     }
 
     fn list_provider_bindings(
         &self,
         query: &ProviderBindingListQuery,
-    ) -> Vec<AgentProviderBindingRecord> {
+    ) -> KernelResult<Vec<AgentProviderBindingRecord>> {
         let bindings = self.provider_bindings.recovering_read();
         let index = self.provider_binding_index.recovering_read();
         let iter = index
@@ -693,20 +733,20 @@ impl AgentRepository for InMemoryAgentRepository {
             })
             .filter_map(|(_, primary_key)| bindings.get(primary_key))
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> u64 {
+    fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> KernelResult<u64> {
         let bindings = self.provider_bindings.recovering_read();
         let index = self.provider_binding_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, agent_id, _, _, _), _)| {
                     *tenant_id == query.tenant_id && agent_id == &query.agent_id
                 })
                 .filter_map(|(_, primary_key)| bindings.get(primary_key)),
-        )
+        ))
     }
 
     fn insert_composition_slot(&self, record: AgentCompositionSlotRecord) -> KernelResult<()> {
@@ -750,17 +790,18 @@ impl AgentRepository for InMemoryAgentRepository {
         tenant_id: u64,
         agent_id: &str,
         slot_id: &str,
-    ) -> Option<AgentCompositionSlotRecord> {
-        self.composition_slots
+    ) -> KernelResult<Option<AgentCompositionSlotRecord>> {
+        Ok(self
+            .composition_slots
             .recovering_read()
             .get(&(tenant_id, agent_id.to_string(), slot_id.to_string()))
-            .cloned()
+            .cloned())
     }
 
     fn list_composition_slots(
         &self,
         query: &CompositionSlotListQuery,
-    ) -> Vec<AgentCompositionSlotRecord> {
+    ) -> KernelResult<Vec<AgentCompositionSlotRecord>> {
         let slots = self.composition_slots.recovering_read();
         let index = self.composition_slot_index.recovering_read();
         let iter = index
@@ -771,13 +812,13 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter_map(|(_, primary_key)| slots.get(primary_key))
             .filter(|record| !record.is_deleted())
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> u64 {
+    fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> KernelResult<u64> {
         let slots = self.composition_slots.recovering_read();
         let index = self.composition_slot_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, agent_id, _, _), _)| {
@@ -785,13 +826,13 @@ impl AgentRepository for InMemoryAgentRepository {
                 })
                 .filter_map(|(_, primary_key)| slots.get(primary_key))
                 .filter(|record| !record.is_deleted()),
-        )
+        ))
     }
 
     fn list_mcp_marketplace_slots(
         &self,
         query: &McpMarketplaceListQuery,
-    ) -> Vec<AgentCompositionSlotRecord> {
+    ) -> KernelResult<Vec<AgentCompositionSlotRecord>> {
         let agents = self.agents.recovering_read();
         let agent_index = self.agent_list_index.recovering_read();
         let active_agent_ids = active_agent_ids_for_tenant(&agents, &agent_index, query.tenant_id);
@@ -814,16 +855,16 @@ impl AgentRepository for InMemoryAgentRepository {
                         .unwrap_or(true)
             })
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> u64 {
+    fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> KernelResult<u64> {
         let agents = self.agents.recovering_read();
         let agent_index = self.agent_list_index.recovering_read();
         let active_agent_ids = active_agent_ids_for_tenant(&agents, &agent_index, query.tenant_id);
         let slots = self.composition_slots.recovering_read();
         let index = self.composition_slot_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
@@ -842,7 +883,7 @@ impl AgentRepository for InMemoryAgentRepository {
                             })
                             .unwrap_or(true)
                 }),
-        )
+        ))
     }
 
     fn insert_session(&self, record: AgentSessionRecord) -> KernelResult<()> {
@@ -881,14 +922,19 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(())
     }
 
-    fn get_session(&self, tenant_id: u64, session_id: &str) -> Option<AgentSessionRecord> {
-        self.sessions
+    fn get_session(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRecord>> {
+        Ok(self
+            .sessions
             .recovering_read()
             .get(&(tenant_id, session_id.to_string()))
-            .cloned()
+            .cloned())
     }
 
-    fn list_sessions(&self, query: &SessionListQuery) -> Vec<AgentSessionRecord> {
+    fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>> {
         let sessions = self.sessions.recovering_read();
         let index = self.session_index.recovering_read();
         let iter = index
@@ -897,19 +943,19 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter_map(|(_, primary_key)| sessions.get(primary_key))
             .filter(|record| session_matches_list_query(record, query))
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_sessions(&self, query: &SessionListQuery) -> u64 {
+    fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64> {
         let sessions = self.sessions.recovering_read();
         let index = self.session_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
                 .filter_map(|(_, primary_key)| sessions.get(primary_key))
                 .filter(|record| session_matches_list_query(record, query)),
-        )
+        ))
     }
 
     fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
@@ -946,14 +992,15 @@ impl AgentRepository for InMemoryAgentRepository {
         tenant_id: u64,
         session_id: &str,
         message_id: &str,
-    ) -> Option<AgentMessageRecord> {
-        self.messages
+    ) -> KernelResult<Option<AgentMessageRecord>> {
+        Ok(self
+            .messages
             .recovering_read()
             .get(&(tenant_id, session_id.to_string(), message_id.to_string()))
-            .cloned()
+            .cloned())
     }
 
-    fn list_messages(&self, query: &MessageListQuery) -> Vec<AgentMessageRecord> {
+    fn list_messages(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRecord>> {
         let messages = self.messages.recovering_read();
         let index = self.message_index.recovering_read();
         let iter = index
@@ -964,13 +1011,13 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter_map(|(_, primary_key)| messages.get(primary_key))
             .filter(|record| message_matches_list_query(record, query))
             .cloned();
-        paginate_messages(iter, &query.pagination, query.sort)
+        Ok(paginate_messages(iter, &query.pagination, query.sort))
     }
 
-    fn count_messages(&self, query: &MessageListQuery) -> u64 {
+    fn count_messages(&self, query: &MessageListQuery) -> KernelResult<u64> {
         let messages = self.messages.recovering_read();
         let index = self.message_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, session_id, _, _), _)| {
@@ -978,7 +1025,7 @@ impl AgentRepository for InMemoryAgentRepository {
                 })
                 .filter_map(|(_, primary_key)| messages.get(primary_key))
                 .filter(|record| message_matches_list_query(record, query)),
-        )
+        ))
     }
 
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
@@ -1112,18 +1159,22 @@ impl AgentRepository for InMemoryAgentRepository {
         tenant_id: u64,
         session_id: &str,
         interaction_id: &str,
-    ) -> Option<AgentInteractionRecord> {
-        self.interactions
+    ) -> KernelResult<Option<AgentInteractionRecord>> {
+        Ok(self
+            .interactions
             .recovering_read()
             .get(&(
                 tenant_id,
                 session_id.to_string(),
                 interaction_id.to_string(),
             ))
-            .cloned()
+            .cloned())
     }
 
-    fn list_interactions(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRecord> {
+    fn list_interactions(
+        &self,
+        query: &InteractionListQuery,
+    ) -> KernelResult<Vec<AgentInteractionRecord>> {
         let interactions = self.interactions.recovering_read();
         let index = self.interaction_index.recovering_read();
         let iter = index
@@ -1134,13 +1185,13 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter_map(|(_, primary_key)| interactions.get(primary_key))
             .filter(|record| interaction_matches_list_query(record, query))
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_interactions(&self, query: &InteractionListQuery) -> u64 {
+    fn count_interactions(&self, query: &InteractionListQuery) -> KernelResult<u64> {
         let interactions = self.interactions.recovering_read();
         let index = self.interaction_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, session_id, _, _), _)| {
@@ -1148,7 +1199,7 @@ impl AgentRepository for InMemoryAgentRepository {
                 })
                 .filter_map(|(_, primary_key)| interactions.get(primary_key))
                 .filter(|record| interaction_matches_list_query(record, query)),
-        )
+        ))
     }
 
     fn insert_task(&self, record: AgentTaskRecord) -> KernelResult<()> {
@@ -1187,14 +1238,15 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(())
     }
 
-    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRecord> {
-        self.tasks
+    fn get_task(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRecord>> {
+        Ok(self
+            .tasks
             .recovering_read()
             .get(&(tenant_id, task_id.to_string()))
-            .cloned()
+            .cloned())
     }
 
-    fn list_tasks(&self, query: &TaskListQuery) -> Vec<AgentTaskRecord> {
+    fn list_tasks(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRecord>> {
         let tasks = self.tasks.recovering_read();
         let index = self.task_index.recovering_read();
         let iter = index
@@ -1203,19 +1255,19 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter_map(|(_, primary_key)| tasks.get(primary_key))
             .filter(|record| task_matches_list_query(record, query))
             .cloned();
-        paginate_iterator(iter, &query.pagination)
+        Ok(paginate_iterator(iter, &query.pagination))
     }
 
-    fn count_tasks(&self, query: &TaskListQuery) -> u64 {
+    fn count_tasks(&self, query: &TaskListQuery) -> KernelResult<u64> {
         let tasks = self.tasks.recovering_read();
         let index = self.task_index.recovering_read();
-        count_iterator(
+        Ok(count_iterator(
             index
                 .iter()
                 .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
                 .filter_map(|(_, primary_key)| tasks.get(primary_key))
                 .filter(|record| task_matches_list_query(record, query)),
-        )
+        ))
     }
 }
 
@@ -1595,16 +1647,20 @@ const MAX_IN_MEMORY_AUDIT_EVENTS: usize = 10_000;
 /// Sort key for audit events: `(occurred_at, event_id)` wrapped in `Reverse`
 /// for descending chronological order. The `BTreeMap` maintains this index
 /// incrementally, satisfying PAGINATION_SPEC §5.3 (no per-request rebuild).
-type AuditEventIndexKey = Reverse<(String, String)>;
+type AuditEventIndexKey = Reverse<(time::OffsetDateTime, String)>;
 
-fn audit_event_sort_key(event: &KernelEvent) -> AuditEventIndexKey {
-    let occurred_at = event.occurred_at.clone().unwrap_or_default();
-    Reverse((occurred_at, event.event_id.clone()))
+fn audit_event_sort_key(event: &KernelEvent) -> KernelResult<AuditEventIndexKey> {
+    let occurred_at = event
+        .occurred_at
+        .as_deref()
+        .ok_or_else(|| KernelError::validation("audit event occurred_at is required"))?;
+    let occurred_at = parse_rfc3339_datetime(occurred_at, "audit event occurred_at")?;
+    Ok(Reverse((occurred_at, event.event_id.clone())))
 }
 
 /// In-memory audit sink backed by a `BTreeMap` with bounded capacity.
 /// Uses `Mutex` for interior mutability. Events are lost when the process
-/// exits. Use [`crate::persistence::PostgresAgentAuditSink`] for production
+/// exits. Use [`crate::persistence::SqlAgentAuditSink`] for production
 /// deployments that require persistent audit trails.
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryAgentAuditSink {
@@ -1617,23 +1673,19 @@ impl InMemoryAgentAuditSink {
     }
 
     pub fn events(&self) -> Vec<KernelEvent> {
-        self.events
-            .recovering_lock()
-            .values()
-            .cloned()
-            .collect()
+        self.events.recovering_lock().values().cloned().collect()
     }
 }
 
 impl AgentAuditSink for InMemoryAgentAuditSink {
     fn record(&self, event: KernelEvent) -> KernelResult<()> {
+        let key = audit_event_sort_key(&event)?;
         let mut events = self.events.recovering_lock();
-        let key = audit_event_sort_key(&event);
         events.insert(key, event);
-        // Evict oldest entries (smallest key = earliest timestamp) when over capacity
+        // Reverse ordering places the oldest timestamp at the back of the map.
         while events.len() > MAX_IN_MEMORY_AUDIT_EVENTS {
-            if let Some(first_key) = events.keys().next().cloned() {
-                events.remove(&first_key);
+            if let Some(oldest_key) = events.keys().next_back().cloned() {
+                events.remove(&oldest_key);
             } else {
                 break;
             }
@@ -1646,11 +1698,26 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
         query: &AuditEventListQuery,
     ) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
         use crate::ports::offset_paginated_result;
+        let from = query
+            .from
+            .as_deref()
+            .map(|value| parse_rfc3339_datetime(value, "from"))
+            .transpose()?;
+        let to = query
+            .to
+            .as_deref()
+            .map(|value| parse_rfc3339_datetime(value, "to"))
+            .transpose()?;
         let events = self.events.recovering_lock();
         // BTreeMap<Reverse<...>> iterates in descending order (newest first).
         // Iterate the incrementally maintained index directly — no collect/sort.
         let filtered = events
-            .values()
+            .iter()
+            .filter(|(Reverse((occurred_at, _)), _)| {
+                from.map(|from| *occurred_at >= from).unwrap_or(true)
+                    && to.map(|to| *occurred_at <= to).unwrap_or(true)
+            })
+            .map(|(_, event)| event)
             .filter(|event| {
                 crate::persistence::extract_event_context(event.payload.as_str(), "agent_id")
                     .map(|id| id == query.agent_id)
@@ -1668,22 +1735,6 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
                             .map(|value| value == action)
                             .unwrap_or(false)
                     })
-                    .unwrap_or(true)
-            })
-            .filter(|event| {
-                let occurred_at = event.occurred_at.as_deref().unwrap_or_default();
-                query
-                    .from
-                    .as_ref()
-                    .map(|from| occurred_at >= from.as_str())
-                    .unwrap_or(true)
-            })
-            .filter(|event| {
-                let occurred_at = event.occurred_at.as_deref().unwrap_or_default();
-                query
-                    .to
-                    .as_ref()
-                    .map(|to| occurred_at <= to.as_str())
                     .unwrap_or(true)
             })
             .cloned();
@@ -1923,6 +1974,53 @@ mod tests {
         );
     }
 
+    fn audit_event(event_id: String, occurred_at: &str) -> KernelEvent {
+        KernelEvent::new(
+            event_id,
+            "agent.business.updated",
+            sdkwork_agent_kernel::KernelEventSeverity::Info,
+            r#"{"_context":{"agent_id":"agent.audit"}}"#,
+        )
+        .from_source(sdkwork_agent_kernel::KernelEventSource::Runtime)
+        .occurred_at(occurred_at)
+    }
+
+    #[test]
+    fn in_memory_audit_sink_rejects_invalid_occurred_at() {
+        let sink = InMemoryAgentAuditSink::new();
+        let error = sink
+            .record(audit_event("event.invalid".to_string(), "not-a-timestamp"))
+            .expect_err("invalid audit timestamps must fail closed");
+
+        assert_eq!(error.kind(), KernelErrorKind::ValidationError);
+        assert!(sink.events().is_empty());
+    }
+
+    #[test]
+    fn in_memory_audit_sink_evicts_oldest_event_at_capacity() {
+        let sink = InMemoryAgentAuditSink::new();
+        sink.record(audit_event(
+            "event.oldest".to_string(),
+            "2026-05-31T23:59:59Z",
+        ))
+        .expect("oldest event should be accepted");
+
+        for index in 0..MAX_IN_MEMORY_AUDIT_EVENTS {
+            sink.record(audit_event(
+                format!("event.current.{index:05}"),
+                "2026-06-01T00:00:00Z",
+            ))
+            .expect("current event should be accepted");
+        }
+
+        let events = sink.events();
+        assert_eq!(events.len(), MAX_IN_MEMORY_AUDIT_EVENTS);
+        assert!(events.iter().all(|event| event.event_id != "event.oldest"));
+        assert!(events
+            .iter()
+            .any(|event| event.event_id == "event.current.09999"));
+    }
+
     #[test]
     fn allow_all_policy_provider_fails_closed_without_panic_in_production_like_bypass() {
         let _guard = sdkwork_agents_contract::env_test_lock();
@@ -2148,6 +2246,7 @@ mod tests {
                 &ProviderBindingListQuery::for_agent(100_001, "agent.alpha")
                     .with_pagination(PaginationParams::default().with_page_size(MAX_PAGE_SIZE)),
             )
+            .expect("binding list should succeed")
             .into_iter()
             .map(|record| record.binding_id)
             .collect();

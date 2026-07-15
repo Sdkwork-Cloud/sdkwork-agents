@@ -99,7 +99,10 @@ The same production-security gate must also prove runtime resilience on panic-pr
 
 GitHub workflow: `.github/workflows/package.yml` → `sdkwork.workflow.json`.
 
-CI validate lifecycle mirrors local gates plus client typecheck.
+CI validate lifecycle mirrors local gates plus client typecheck. The server artifact must include
+the release gateway binary, `database/**` lifecycle assets, production topology templates,
+`deployments/**` including HPA/PDB manifests, and `sdkwork.app.config.json`. Packaging only the
+binary is invalid because managed-store initialization and cluster deployment would be incomplete.
 
 ## 6. GA Scope Boundaries
 

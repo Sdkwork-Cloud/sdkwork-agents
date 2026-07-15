@@ -28,28 +28,30 @@ Gateway → Agents Service → PostgreSQL Store
 
 ### Prerequisites
 
-1. PostgreSQL 13+ with `ai_agent` schema initialized
-2. Kubernetes cluster with nginx ingress controller
-3. Prometheus operator for metrics collection
-4. Grafana for dashboard visualization
+1. PostgreSQL 13+ with the SDKWork Agents `3.1.0` baseline applied by the lifecycle orchestrator
+2. Kubernetes cluster with an ingress/controller appropriate for the deployment
+3. Prometheus-compatible metrics collection for `/metrics/agents`
 
 ### Kubernetes Deployment
 
 ```bash
-# Apply namespace and base configuration
-kubectl apply -f ops/kubernetes/deployment-hpa-ingress.yaml
+# Apply the application deployment, service, HPA and disruption budget
+kubectl apply -f deployments/kubernetes/standalone-gateway-deployment.yaml
+kubectl apply -f deployments/kubernetes/standalone-gateway-service.yaml
+kubectl apply -f deployments/kubernetes/standalone-gateway-hpa.yaml
+kubectl apply -f deployments/kubernetes/standalone-gateway-pdb.yaml
 
 # Verify deployment status
-kubectl get deployment sdkwork-intelligence-agents -n sdkwork
-kubectl get pods -l app=sdkwork-intelligence-agents -n sdkwork
-kubectl get hpa sdkwork-intelligence-agents-hpa -n sdkwork
+kubectl get deployment sdkwork-agents-standalone-gateway
+kubectl get pods -l app.kubernetes.io/name=sdkwork-agents
+kubectl get hpa sdkwork-agents-standalone-gateway
 ```
 
 ### Health Check Endpoints
 
 - **Liveness**: `GET /health` (port 8095)
-- **Readiness**: `GET /health` (port 8095)
-- **Metrics**: `GET /metrics` (port 8095)
+- **Readiness**: `GET /ready` (port 8095)
+- **Metrics**: `GET /metrics/agents` (port 8095)
 
 ### Environment Variables
 
@@ -58,6 +60,8 @@ kubectl get hpa sdkwork-intelligence-agents-hpa -n sdkwork
 | `SDKWORK_DEPLOYMENT_ENV` | Yes | Must be `production` for prod deployments |
 | `SDKWORK_AGENTS_DEV_AUTH_BYPASS` | Yes | Must be `false` in production |
 | `SDKWORK_AGENTS_STORE_DATABASE_URL` | Yes | PostgreSQL connection string |
+| `SDKWORK_AGENTS_SERVICE_WORKER_LIMIT` | Yes | Maximum concurrent synchronous service workers; production profile default `128` |
+| `SDKWORK_AGENTS_PROVIDER_WORKER_LIMIT` | Yes | Maximum concurrent provider executions; production profile default `32` |
 | `SDKWORK_TENANT_ID` | No | Default tenant for bootstrap |
 | `SDKWORK_ORGANIZATION_ID` | No | Default organization |
 
@@ -124,14 +128,13 @@ groups:
 
 ### Scaling
 
-Horizontal Pod Autoscaler automatically scales based on:
+Horizontal Pod Autoscaler scales based on:
 - CPU utilization (target: 70%)
-- Memory utilization (target: 80%)
-- Custom metric: requests per second (target: 100 per pod)
+- Memory utilization (target: 75%)
 
 Manual scaling:
 ```bash
-kubectl scale deployment sdkwork-intelligence-agents --replicas=5 -n sdkwork
+kubectl scale deployment sdkwork-agents-standalone-gateway --replicas=5
 ```
 
 ### Database Maintenance
@@ -203,16 +206,16 @@ See `ops/docs/troubleshooting.md` for detailed troubleshooting procedures.
 
 ```bash
 # Check pod logs
-kubectl logs -l app=sdkwork-intelligence-agents -n sdkwork --tail=100
+kubectl logs -l app.kubernetes.io/name=sdkwork-agents --tail=100
 
 # Check pod status
-kubectl describe pod -l app=sdkwork-intelligence-agents -n sdkwork
+kubectl describe pod -l app.kubernetes.io/name=sdkwork-agents
 
 # Check service endpoints
-kubectl get endpoints sdkwork-intelligence-agents -n sdkwork
+kubectl get endpoints sdkwork-agents-standalone-gateway
 
 # Check HPA status
-kubectl describe hpa sdkwork-intelligence-agents-hpa -n sdkwork
+kubectl describe hpa sdkwork-agents-standalone-gateway
 ```
 
 ### Common Issues
@@ -221,7 +224,7 @@ kubectl describe hpa sdkwork-intelligence-agents-hpa -n sdkwork
 |-------|---------|------------|
 | Auth Bypass Rejected | Pod fails readiness or dev-only policy denies requests | Set `SDKWORK_AGENTS_DEV_AUTH_BYPASS=false` |
 | Database Connection Error | 5xx errors on all requests | Verify database URL and network connectivity |
-| HPA Not Scaling | Pods stay at min replicas | Check custom metrics are being collected |
+| HPA Not Scaling | Pods stay at min replicas | Check resource metrics and the configured worker limits |
 | High Error Rate | Dashboard shows >5% errors | Check downstream provider status |
 
 ## Upgrade Procedure

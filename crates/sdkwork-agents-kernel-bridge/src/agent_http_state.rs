@@ -6,8 +6,8 @@ use sdkwork_agents_contract::{
 };
 use sdkwork_intelligence_agents_service::{
     AgentBusinessIdGenerator, AgentHttpState, AllowAllPolicyProvider, IamGatedPolicyProvider,
-    InMemoryAgentAuditSink, InMemoryAgentRepository, PostgresAgentAuditSink,
-    PostgresAgentRepository, RuntimeFacadeChatCompleter, SyncPostgresAdapter, AUDIT_SINK_NODE_ID,
+    InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeChatCompleter, SqlAgentAuditSink,
+    SqlAgentRepository, SyncPostgresAdapter, AUDIT_SINK_NODE_ID,
 };
 use std::sync::Arc;
 
@@ -62,9 +62,11 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     {
         let pool = repository_adapter.pool().clone();
         let database_pool = pool.database_pool().clone();
-        pool.block_on(sdkwork_agents_database_host::bootstrap_agents_database(database_pool))
-            .map_err(anyhow::Error::msg)
-            .context("apply agents managed store schema via lifecycle orchestrator")?;
+        pool.block_on(sdkwork_agents_database_host::bootstrap_agents_database(
+            database_pool,
+        ))
+        .map_err(anyhow::Error::msg)
+        .context("apply agents managed store schema via lifecycle orchestrator")?;
     }
 
     // The audit sink shares the same physical postgres pool as the repository
@@ -80,8 +82,8 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
         SyncPostgresAdapter::with_pool_and_id_generator(audit_pool, audit_id_generator)
     };
 
-    let repository = PostgresAgentRepository::new(repository_adapter);
-    let audit_sink = PostgresAgentAuditSink::new_global(audit_adapter);
+    let repository = SqlAgentRepository::new(repository_adapter);
+    let audit_sink = SqlAgentAuditSink::new_global(audit_adapter);
 
     Ok(AgentHttpState::with_chat_completer(
         repository,

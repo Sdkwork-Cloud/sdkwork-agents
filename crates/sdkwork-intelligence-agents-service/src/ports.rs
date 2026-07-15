@@ -534,19 +534,26 @@ pub trait AgentRepository: Send + Sync {
 
     fn update(&self, record: AgentBusinessRecord) -> KernelResult<()>;
 
-    fn get(&self, tenant_id: u64, agent_id: &str) -> Option<AgentBusinessRecord>;
+    fn get(&self, tenant_id: u64, agent_id: &str) -> KernelResult<Option<AgentBusinessRecord>>;
 
     /// List one page of agents. Pagination is enforced at the repository layer.
-    fn list(&self, query: &AgentListQuery) -> Vec<AgentBusinessRecord>;
+    fn list(&self, query: &AgentListQuery) -> KernelResult<Vec<AgentBusinessRecord>>;
 
     /// Count agents matching list filters (excluding pagination bounds).
-    fn count_agents(&self, query: &AgentListQuery) -> u64;
+    fn count_agents(&self, query: &AgentListQuery) -> KernelResult<u64>;
 
     /// List agents with pagination metadata.
-    fn list_paginated(&self, query: &AgentListQuery) -> PaginatedResult<AgentBusinessRecord> {
-        let total_count = self.count_agents(query);
-        let items = self.list(query);
-        offset_paginated_result(items, &query.pagination, total_count)
+    fn list_paginated(
+        &self,
+        query: &AgentListQuery,
+    ) -> KernelResult<PaginatedResult<AgentBusinessRecord>> {
+        let total_count = self.count_agents(query)?;
+        let items = self.list(query)?;
+        Ok(offset_paginated_result(
+            items,
+            &query.pagination,
+            total_count,
+        ))
     }
 
     fn insert_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()>;
@@ -558,7 +565,7 @@ pub trait AgentRepository: Send + Sync {
         tenant_id: u64,
         agent_id: &str,
         binding_id: &str,
-    ) -> Option<AgentProviderBindingRecord>;
+    ) -> KernelResult<Option<AgentProviderBindingRecord>>;
 
     /// Load the single active provider binding for an agent.
     ///
@@ -570,33 +577,14 @@ pub trait AgentRepository: Send + Sync {
         &self,
         tenant_id: u64,
         agent_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
-        let mut page = 1usize;
-        loop {
-            let batch = self.list_provider_bindings(
-                &ProviderBindingListQuery::for_agent(tenant_id, agent_id).with_pagination(
-                    PaginationParams::default()
-                        .with_page_size(MAX_PAGE_SIZE)
-                        .with_page(page),
-                ),
-            );
-            if batch.is_empty() {
-                break;
-            }
-            if let Some(found) = batch.into_iter().find(|binding| binding.active) {
-                return Some(found);
-            }
-            page = page.saturating_add(1);
-        }
-        None
-    }
+    ) -> KernelResult<Option<AgentProviderBindingRecord>>;
 
     fn list_provider_bindings(
         &self,
         query: &ProviderBindingListQuery,
-    ) -> Vec<AgentProviderBindingRecord>;
+    ) -> KernelResult<Vec<AgentProviderBindingRecord>>;
 
-    fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> u64;
+    fn count_provider_bindings(&self, query: &ProviderBindingListQuery) -> KernelResult<u64>;
 
     /// Atomically deactivate all active bindings for an agent and activate one target binding.
     fn activate_provider_binding_atomic(
@@ -607,7 +595,7 @@ pub trait AgentRepository: Send + Sync {
         updated_at: String,
     ) -> KernelResult<AgentProviderBindingRecord> {
         let mut record = self
-            .get_provider_binding(tenant_id, agent_id, binding_id)
+            .get_provider_binding(tenant_id, agent_id, binding_id)?
             .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
         if record.active {
             return Ok(record);
@@ -620,7 +608,7 @@ pub trait AgentRepository: Send + Sync {
                         .with_page_size(MAX_PAGE_SIZE)
                         .with_page(page),
                 ),
-            );
+            )?;
             if batch.is_empty() {
                 break;
             }
@@ -638,7 +626,7 @@ pub trait AgentRepository: Send + Sync {
             page = page.saturating_add(1);
         }
         record = self
-            .get_provider_binding(tenant_id, agent_id, binding_id)
+            .get_provider_binding(tenant_id, agent_id, binding_id)?
             .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
         record.active = true;
         record.mark_updated(updated_at);
@@ -655,21 +643,21 @@ pub trait AgentRepository: Send + Sync {
         tenant_id: u64,
         agent_id: &str,
         slot_id: &str,
-    ) -> Option<AgentCompositionSlotRecord>;
+    ) -> KernelResult<Option<AgentCompositionSlotRecord>>;
 
     fn list_composition_slots(
         &self,
         query: &CompositionSlotListQuery,
-    ) -> Vec<AgentCompositionSlotRecord>;
+    ) -> KernelResult<Vec<AgentCompositionSlotRecord>>;
 
-    fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> u64;
+    fn count_composition_slots(&self, query: &CompositionSlotListQuery) -> KernelResult<u64>;
 
     fn list_mcp_marketplace_slots(
         &self,
         query: &McpMarketplaceListQuery,
-    ) -> Vec<AgentCompositionSlotRecord>;
+    ) -> KernelResult<Vec<AgentCompositionSlotRecord>>;
 
-    fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> u64;
+    fn count_mcp_marketplace_slots(&self, query: &McpMarketplaceListQuery) -> KernelResult<u64>;
 
     // -----------------------------------------------------------------------
     // Session persistence
@@ -679,11 +667,15 @@ pub trait AgentRepository: Send + Sync {
 
     fn update_session(&self, record: AgentSessionRecord) -> KernelResult<()>;
 
-    fn get_session(&self, tenant_id: u64, session_id: &str) -> Option<AgentSessionRecord>;
+    fn get_session(
+        &self,
+        tenant_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRecord>>;
 
-    fn list_sessions(&self, query: &SessionListQuery) -> Vec<AgentSessionRecord>;
+    fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>>;
 
-    fn count_sessions(&self, query: &SessionListQuery) -> u64;
+    fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64>;
 
     // -----------------------------------------------------------------------
     // Message persistence
@@ -698,11 +690,11 @@ pub trait AgentRepository: Send + Sync {
         tenant_id: u64,
         session_id: &str,
         message_id: &str,
-    ) -> Option<AgentMessageRecord>;
+    ) -> KernelResult<Option<AgentMessageRecord>>;
 
-    fn list_messages(&self, query: &MessageListQuery) -> Vec<AgentMessageRecord>;
+    fn list_messages(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRecord>>;
 
-    fn count_messages(&self, query: &MessageListQuery) -> u64;
+    fn count_messages(&self, query: &MessageListQuery) -> KernelResult<u64>;
 
     /// Next message sequence number for a session. Implementations should
     /// return `message_count + 1` for the session, or `1` if no messages exist.
@@ -737,11 +729,14 @@ pub trait AgentRepository: Send + Sync {
         tenant_id: u64,
         session_id: &str,
         interaction_id: &str,
-    ) -> Option<AgentInteractionRecord>;
+    ) -> KernelResult<Option<AgentInteractionRecord>>;
 
-    fn list_interactions(&self, query: &InteractionListQuery) -> Vec<AgentInteractionRecord>;
+    fn list_interactions(
+        &self,
+        query: &InteractionListQuery,
+    ) -> KernelResult<Vec<AgentInteractionRecord>>;
 
-    fn count_interactions(&self, query: &InteractionListQuery) -> u64;
+    fn count_interactions(&self, query: &InteractionListQuery) -> KernelResult<u64>;
 
     // -----------------------------------------------------------------------
     // Task persistence
@@ -751,11 +746,11 @@ pub trait AgentRepository: Send + Sync {
 
     fn update_task(&self, record: AgentTaskRecord) -> KernelResult<()>;
 
-    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<AgentTaskRecord>;
+    fn get_task(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRecord>>;
 
-    fn list_tasks(&self, query: &TaskListQuery) -> Vec<AgentTaskRecord>;
+    fn list_tasks(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRecord>>;
 
-    fn count_tasks(&self, query: &TaskListQuery) -> u64;
+    fn count_tasks(&self, query: &TaskListQuery) -> KernelResult<u64>;
 }
 
 /// Thread-safe audit event sink port.

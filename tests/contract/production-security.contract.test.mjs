@@ -80,7 +80,7 @@ test("production HTTP bootstrap uses IAM, Postgres, and runtime facade completio
   );
   assert.match(
     source,
-    /fn production_postgres_agent_http_state\(\) -> Result<AgentHttpState>\s*\{[\s\S]*PostgresAgentRepository::new[\s\S]*PostgresAgentAuditSink::new_global[\s\S]*IamGatedPolicyProvider::default\(\)[\s\S]*RuntimeFacadeChatCompleter/,
+    /fn production_postgres_agent_http_state\(\) -> Result<AgentHttpState>\s*\{[\s\S]*SqlAgentRepository::new[\s\S]*SqlAgentAuditSink::new_global[\s\S]*IamGatedPolicyProvider::default\(\)[\s\S]*RuntimeFacadeChatCompleter/,
     "production state must use Postgres repository, Postgres audit, IAM policy, and RuntimeFacadeChatCompleter",
   );
   assert.match(
@@ -232,6 +232,79 @@ test("agent repository port does not compile incomplete persistence adapters", (
       `AgentRepository.${methodName} must be a required trait method`,
     );
   }
+});
+
+test("SQL row adapter ports remain database-dialect neutral", () => {
+  const source = readText(
+    "crates/sdkwork-intelligence-agents-service/src/persistence.rs",
+  );
+
+  assert.match(source, /pub trait AgentRepositoryAdapter: Send \+ Sync/);
+  assert.match(source, /pub trait AgentAuditAdapter: Send \+ Sync/);
+  assert.match(source, /pub struct SqlAgentRepository<A>/);
+  assert.match(source, /pub struct SqlAgentAuditSink<A>/);
+  assert.doesNotMatch(
+    source,
+    /PostgresAgentRepositoryAdapter|PostgresAuditAdapter/,
+    "shared row adapter ports must not encode one SQL dialect in their names",
+  );
+});
+
+test("postgres read failures propagate instead of masquerading as empty or missing data", () => {
+  const source = readText(
+    "crates/sdkwork-intelligence-agents-service/src/persistence.rs",
+  );
+
+  assert.doesNotMatch(
+    source,
+    /database (?:list|count) query failed; returning (?:empty result|0)/,
+    "postgres read failures must reach HTTP problem mapping instead of returning successful empty pages",
+  );
+  assert.doesNotMatch(
+    source,
+    /dropping malformed postgres row/,
+    "malformed persisted rows must fail the page instead of silently changing its contents",
+  );
+  assert.doesNotMatch(
+    source,
+    /\.ok\(\)\s*\.flatten\(\)/,
+    "postgres point reads must not turn query failures into missing resources",
+  );
+  for (const rowType of [
+    "AgentBusinessRow",
+    "AgentProviderBindingRow",
+    "AgentCompositionSlotRow",
+    "AgentSessionRow",
+    "AgentMessageRow",
+    "AgentInteractionRow",
+    "AgentTaskRow",
+  ]) {
+    assert.match(
+      source,
+      new RegExp(`KernelResult<Option<${rowType}>>`),
+      `postgres ${rowType} point reads must expose repository failures`,
+    );
+  }
+  assert.match(
+    source,
+    /fn list_message_rows\([\s\S]*?\) -> KernelResult<Vec<AgentMessageRow>>/,
+    "high-volume message reads must expose repository failures",
+  );
+});
+
+test("blocking service and provider work use bounded observable capacity", () => {
+  const http = readText("crates/sdkwork-intelligence-agents-service/src/http.rs");
+  const chat = readText(
+    "crates/sdkwork-intelligence-agents-service/src/chat_runtime.rs",
+  );
+  const metrics = readText(
+    "crates/sdkwork-intelligence-agents-service/src/infrastructure.rs",
+  );
+
+  assert.match(http, /SERVICE_WORKER_LIMIT[\s\S]*try_acquire_owned/);
+  assert.match(chat, /PROVIDER_WORKER_LIMIT[\s\S]*try_acquire_owned/);
+  assert.match(metrics, /sdkwork_agents_service_worker_rejections_total/);
+  assert.match(metrics, /sdkwork_agents_provider_worker_rejections_total/);
 });
 
 test("route manifest build script returns explicit errors instead of panicking", () => {

@@ -40,8 +40,8 @@ use crate::ports::{
     McpMarketplaceListQuery, PaginationParams, ProviderBindingListQuery,
 };
 use crate::response::{
-    created_json, finish_api_json, no_content, success_json, ApiProblem, ApiResult, PageData,
-    PageInfo, PageMode, ResourceData,
+    created_json, finish_api_json, finish_created_api_json, no_content, ApiProblem, ApiResult,
+    PageData, PageInfo, PageMode, ResourceData,
 };
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
@@ -59,14 +59,28 @@ use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider,
     PolicyRequest, ProviderHealth,
 };
-use sdkwork_agents_runtime_facade::{CodeEngineCatalog, CodeEngineCatalogEngine};
+use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use time::OffsetDateTime;
+use tokio::sync::Semaphore;
 
 const MAX_PAGE_SIZE: usize = 200;
+const DEFAULT_SERVICE_WORKER_LIMIT: usize = 128;
+
+/// Bounds synchronous repository work before it enters Tokio's blocking pool.
+/// A bounded rejection is preferable to an unbounded blocking queue, which can
+/// retain request payloads and tenant context until memory is exhausted.
+static SERVICE_WORKER_LIMIT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
+    let configured = std::env::var("SDKWORK_AGENTS_SERVICE_WORKER_LIMIT")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or(DEFAULT_SERVICE_WORKER_LIMIT);
+    Arc::new(Semaphore::new(configured))
+});
 const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "created",
     "updated",
@@ -138,18 +152,22 @@ impl AgentRepository for DynAgentRepository {
         self.0.update(record)
     }
 
-    fn get(&self, tenant_id: u64, agent_id: &str) -> Option<crate::domain::AgentBusinessRecord> {
+    fn get(
+        &self,
+        tenant_id: u64,
+        agent_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentBusinessRecord>> {
         self.0.get(tenant_id, agent_id)
     }
 
     fn list(
         &self,
         query: &crate::ports::AgentListQuery,
-    ) -> Vec<crate::domain::AgentBusinessRecord> {
+    ) -> KernelResult<Vec<crate::domain::AgentBusinessRecord>> {
         self.0.list(query)
     }
 
-    fn count_agents(&self, query: &crate::ports::AgentListQuery) -> u64 {
+    fn count_agents(&self, query: &crate::ports::AgentListQuery) -> KernelResult<u64> {
         self.0.count_agents(query)
     }
 
@@ -166,7 +184,7 @@ impl AgentRepository for DynAgentRepository {
         tenant_id: u64,
         agent_id: &str,
         binding_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
+    ) -> KernelResult<Option<AgentProviderBindingRecord>> {
         self.0.get_provider_binding(tenant_id, agent_id, binding_id)
     }
 
@@ -174,18 +192,21 @@ impl AgentRepository for DynAgentRepository {
         &self,
         tenant_id: u64,
         agent_id: &str,
-    ) -> Option<AgentProviderBindingRecord> {
+    ) -> KernelResult<Option<AgentProviderBindingRecord>> {
         self.0.get_active_provider_binding(tenant_id, agent_id)
     }
 
     fn list_provider_bindings(
         &self,
         query: &crate::ports::ProviderBindingListQuery,
-    ) -> Vec<AgentProviderBindingRecord> {
+    ) -> KernelResult<Vec<AgentProviderBindingRecord>> {
         self.0.list_provider_bindings(query)
     }
 
-    fn count_provider_bindings(&self, query: &crate::ports::ProviderBindingListQuery) -> u64 {
+    fn count_provider_bindings(
+        &self,
+        query: &crate::ports::ProviderBindingListQuery,
+    ) -> KernelResult<u64> {
         self.0.count_provider_bindings(query)
     }
 
@@ -202,29 +223,35 @@ impl AgentRepository for DynAgentRepository {
         tenant_id: u64,
         agent_id: &str,
         slot_id: &str,
-    ) -> Option<AgentCompositionSlotRecord> {
+    ) -> KernelResult<Option<AgentCompositionSlotRecord>> {
         self.0.get_composition_slot(tenant_id, agent_id, slot_id)
     }
 
     fn list_composition_slots(
         &self,
         query: &crate::ports::CompositionSlotListQuery,
-    ) -> Vec<AgentCompositionSlotRecord> {
+    ) -> KernelResult<Vec<AgentCompositionSlotRecord>> {
         self.0.list_composition_slots(query)
     }
 
-    fn count_composition_slots(&self, query: &crate::ports::CompositionSlotListQuery) -> u64 {
+    fn count_composition_slots(
+        &self,
+        query: &crate::ports::CompositionSlotListQuery,
+    ) -> KernelResult<u64> {
         self.0.count_composition_slots(query)
     }
 
     fn list_mcp_marketplace_slots(
         &self,
         query: &crate::ports::McpMarketplaceListQuery,
-    ) -> Vec<AgentCompositionSlotRecord> {
+    ) -> KernelResult<Vec<AgentCompositionSlotRecord>> {
         self.0.list_mcp_marketplace_slots(query)
     }
 
-    fn count_mcp_marketplace_slots(&self, query: &crate::ports::McpMarketplaceListQuery) -> u64 {
+    fn count_mcp_marketplace_slots(
+        &self,
+        query: &crate::ports::McpMarketplaceListQuery,
+    ) -> KernelResult<u64> {
         self.0.count_mcp_marketplace_slots(query)
     }
 
@@ -240,18 +267,18 @@ impl AgentRepository for DynAgentRepository {
         &self,
         tenant_id: u64,
         session_id: &str,
-    ) -> Option<crate::domain::AgentSessionRecord> {
+    ) -> KernelResult<Option<crate::domain::AgentSessionRecord>> {
         self.0.get_session(tenant_id, session_id)
     }
 
     fn list_sessions(
         &self,
         query: &crate::ports::SessionListQuery,
-    ) -> Vec<crate::domain::AgentSessionRecord> {
+    ) -> KernelResult<Vec<crate::domain::AgentSessionRecord>> {
         self.0.list_sessions(query)
     }
 
-    fn count_sessions(&self, query: &crate::ports::SessionListQuery) -> u64 {
+    fn count_sessions(&self, query: &crate::ports::SessionListQuery) -> KernelResult<u64> {
         self.0.count_sessions(query)
     }
 
@@ -268,18 +295,18 @@ impl AgentRepository for DynAgentRepository {
         tenant_id: u64,
         session_id: &str,
         message_id: &str,
-    ) -> Option<crate::domain::AgentMessageRecord> {
+    ) -> KernelResult<Option<crate::domain::AgentMessageRecord>> {
         self.0.get_message(tenant_id, session_id, message_id)
     }
 
     fn list_messages(
         &self,
         query: &crate::ports::MessageListQuery,
-    ) -> Vec<crate::domain::AgentMessageRecord> {
+    ) -> KernelResult<Vec<crate::domain::AgentMessageRecord>> {
         self.0.list_messages(query)
     }
 
-    fn count_messages(&self, query: &crate::ports::MessageListQuery) -> u64 {
+    fn count_messages(&self, query: &crate::ports::MessageListQuery) -> KernelResult<u64> {
         self.0.count_messages(query)
     }
 
@@ -309,18 +336,22 @@ impl AgentRepository for DynAgentRepository {
         self.0.update_task(record)
     }
 
-    fn get_task(&self, tenant_id: u64, task_id: &str) -> Option<crate::domain::AgentTaskRecord> {
+    fn get_task(
+        &self,
+        tenant_id: u64,
+        task_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentTaskRecord>> {
         self.0.get_task(tenant_id, task_id)
     }
 
     fn list_tasks(
         &self,
         query: &crate::ports::TaskListQuery,
-    ) -> Vec<crate::domain::AgentTaskRecord> {
+    ) -> KernelResult<Vec<crate::domain::AgentTaskRecord>> {
         self.0.list_tasks(query)
     }
 
-    fn count_tasks(&self, query: &crate::ports::TaskListQuery) -> u64 {
+    fn count_tasks(&self, query: &crate::ports::TaskListQuery) -> KernelResult<u64> {
         self.0.count_tasks(query)
     }
 
@@ -343,7 +374,7 @@ impl AgentRepository for DynAgentRepository {
         tenant_id: u64,
         session_id: &str,
         interaction_id: &str,
-    ) -> Option<crate::domain::AgentInteractionRecord> {
+    ) -> KernelResult<Option<crate::domain::AgentInteractionRecord>> {
         self.0
             .get_interaction(tenant_id, session_id, interaction_id)
     }
@@ -351,11 +382,11 @@ impl AgentRepository for DynAgentRepository {
     fn list_interactions(
         &self,
         query: &crate::ports::InteractionListQuery,
-    ) -> Vec<crate::domain::AgentInteractionRecord> {
+    ) -> KernelResult<Vec<crate::domain::AgentInteractionRecord>> {
         self.0.list_interactions(query)
     }
 
-    fn count_interactions(&self, query: &crate::ports::InteractionListQuery) -> u64 {
+    fn count_interactions(&self, query: &crate::ports::InteractionListQuery) -> KernelResult<u64> {
         self.0.count_interactions(query)
     }
 
@@ -1972,7 +2003,7 @@ async fn app_create_preview_response(
         .await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    finish_created_api_json(&web_ctx, result)
 }
 
 async fn app_create_prompt_optimization(
@@ -1994,7 +2025,7 @@ async fn app_create_prompt_optimization(
         .await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    finish_created_api_json(&web_ctx, result)
 }
 
 async fn open_create_preview_response(
@@ -2014,7 +2045,7 @@ async fn open_create_preview_response(
         execute_create_preview_response(state, scope, path.agent_id, body).await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    finish_created_api_json(&web_ctx, result)
 }
 
 async fn open_create_prompt_optimization(
@@ -2034,7 +2065,7 @@ async fn open_create_prompt_optimization(
         execute_create_prompt_optimization(state, scope, path.agent_id, body).await
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    finish_created_api_json(&web_ctx, result)
 }
 
 async fn app_list_composition_slots(
@@ -2065,24 +2096,12 @@ async fn app_list_code_engines(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
 ) -> Response {
-    let result: ApiResult<PageData<CodeEngineCatalogEngine>> = async {
+    let result: ApiResult<ResourceData<CodeEngineCatalog>> = async {
         let scope = RequestScope::from_context(context);
         let subject = scope.subject().clone();
         let catalog =
             with_service(&state, |service| service.list_code_engine_catalog(subject)).await?;
-        let total_items = catalog.engines.len();
-        Ok(PageData {
-            items: catalog.engines,
-            page_info: PageInfo {
-                mode: PageMode::Offset,
-                page: Some(1),
-                page_size: Some(total_items as i32),
-                total_items: Some(total_items.to_string()),
-                total_pages: Some(if total_items == 0 { 0 } else { 1 }),
-                next_cursor: None,
-                has_more: Some(false),
-            },
-        })
+        Ok(ResourceData { item: catalog })
     }
     .await;
     finish_api_json(&web_ctx, result)
@@ -3765,11 +3784,21 @@ pub(crate) async fn with_service<T>(
 where
     T: Send + 'static,
 {
+    let permit = SERVICE_WORKER_LIMIT
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            crate::infrastructure::AgentMetricsRegistry::global().record_service_worker_rejection();
+            ApiProblem::too_many_requests("agents service concurrency limit reached", Some(1))
+        })?;
     let service = Arc::clone(&state.service);
-    tokio::task::spawn_blocking(move || action(service.as_ref()))
-        .await
-        .map_err(|error| ApiProblem::internal(format!("agents service worker failed: {error}")))?
-        .map_err(ApiProblem::from_kernel_error)
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        action(service.as_ref())
+    })
+    .await
+    .map_err(|error| ApiProblem::internal(format!("agents service worker failed: {error}")))?
+    .map_err(ApiProblem::from_kernel_error)
 }
 async fn execute_list(
     state: AgentHttpState,
@@ -4418,7 +4447,7 @@ fn chat_completion_http_response(
         })?;
         let body = format!("event: completion\ndata: {payload}\n\n");
         let mut response = Response::builder()
-            .status(StatusCode::OK)
+            .status(StatusCode::CREATED)
             .header(CONTENT_TYPE, "text/event-stream")
             .body(Body::from(body))
             .map_err(|error| {
@@ -4432,7 +4461,7 @@ fn chat_completion_http_response(
         return Ok(response);
     }
 
-    success_json(ctx, ResourceData { item: chat_data })
+    created_json(ctx, ResourceData { item: chat_data })
 }
 
 fn total_pages(total_items: usize, page_size: usize) -> usize {
@@ -4875,7 +4904,7 @@ mod tests {
             .await
             .expect("status request should succeed");
 
-        assert_eq!(status_response.status(), StatusCode::CREATED);
+        assert_eq!(status_response.status(), StatusCode::OK);
         let body_bytes = to_bytes(status_response.into_body(), usize::MAX)
             .await
             .expect("response body should be readable");
