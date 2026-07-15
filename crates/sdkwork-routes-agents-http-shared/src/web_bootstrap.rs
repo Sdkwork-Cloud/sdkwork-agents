@@ -53,7 +53,7 @@ fn agents_service_security_policy(environment: &WebEnvironment) -> SecurityPolic
         SecurityPolicy::production()
     };
     if matches!(environment, WebEnvironment::Dev | WebEnvironment::Test) {
-        security_policy.cors.allow_all_origins = true;
+        security_policy.cors = sdkwork_web_core::CorsPolicy::development_private_network();
         security_policy
             .cross_site
             .reject_untrusted_state_changing_origins = false;
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn dev_security_policy_allows_browser_origins() {
         let policy = agents_service_security_policy(&WebEnvironment::Dev);
-        assert!(policy.cors.allow_all_origins);
+        assert!(!policy.cors.allow_all_origins);
         assert!(!policy.cross_site.reject_untrusted_state_changing_origins);
     }
 
