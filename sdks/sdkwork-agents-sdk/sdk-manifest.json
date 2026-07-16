@@ -1,18 +1,65 @@
 {
+  "workspace": "sdkwork-agents-sdk",
+  "title": "SDKWork Agent Open API",
+  "apiVersion": "0.1.0",
+  "openapiVersion": "3.1.2",
+  "authoritySpec": "openapi/sdkwork-agents-open-api.openapi.yaml",
+  "generationInputSpec": "openapi/sdkwork-agents-open-api.sdkgen.yaml",
+  "derivedSpecs": {
+    "default": "openapi/sdkwork-agents-open-api.sdkgen.yaml"
+  },
+  "apiAuthority": "sdkwork-agents-open-api",
+  "discoverySurface": {
+    "sdkTarget": "open",
+    "apiPrefix": "/agent/v3/api",
+    "schemaUrl": "/agent/v3/openapi.json",
+    "generatedProtocols": [
+      "http-openapi"
+    ],
+    "manualTransports": []
+  },
+  "languages": [
+    {
+      "language": "typescript",
+      "workspace": "sdkwork-agents-sdk-typescript",
+      "generationState": "derived",
+      "releaseState": "not_published",
+      "generatedPath": "sdkwork-agents-sdk-typescript/generated/server-openapi",
+      "manifestPath": "sdkwork-agents-sdk-typescript/generated/server-openapi/package.json",
+      "consumerPackageName": "@sdkwork/agents-sdk",
+      "name": "@sdkwork/agents-sdk",
+      "version": "0.1.0",
+      "description": "Generator-owned TypeScript transport SDK for SDKWork Agent Open API.",
+      "consumerSurface": {
+        "primaryClient": "SdkworkAgentClient",
+        "apiPrefix": "/agent/v3/api"
+      }
+    }
+  ],
+  "sdkOwner": "sdkwork-agents",
+  "sdkDependencies": [],
+  "metadata": {
+    "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
+    "standardVersion": "2026-06-26",
+    "ownerOnlyOperationCount": 27
+  },
   "schemaVersion": 1,
   "sdkName": "sdkwork-agents-sdk",
   "packageName": "@sdkwork/agents-sdk",
-  "sdkOwner": "sdkwork-agents",
-  "apiAuthority": "sdkwork-agents-open-api",
   "sdkFamily": "sdkwork-agents-sdk",
   "sdkType": "custom",
   "sdkSurface": "open",
   "language": "typescript",
   "apiPrefix": "/agent/v3/api",
-  "generationInputSpec": "openapi/sdkwork-agents-open-api.sdkgen.yaml",
   "generatedOutput": "sdkwork-agents-sdk-typescript/generated/server-openapi",
   "standardProfile": "sdkwork-v3",
-  "sdkDependencies": [],
+  "transportPackageName": "sdkwork-agents-sdk-generated-typescript",
+  "typescript": {
+    "composedRoot": "sdkwork-agents-sdk-typescript",
+    "composedEntry": "sdkwork-agents-sdk-typescript/src/index.ts",
+    "transportRoot": "sdkwork-agents-sdk-typescript/generated/server-openapi",
+    "transportEntry": "sdkwork-agents-sdk-typescript/generated/server-openapi/src/index.ts"
+  },
   "ownerOnlyOperationCount": 27,
   "standardVersion": "2026-06-26",
   "managedBy": "sdks/_shared/agent-sdk-ownership.mjs"

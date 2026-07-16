@@ -56,8 +56,7 @@ impl BlockingPostgresPool {
                 format!("tokio runtime: {error}"),
             )
         })?);
-        let database_pool = runtime
-            .block_on(create_pool_from_config(config))
+        let database_pool = block_on_runtime(runtime.as_ref(), create_pool_from_config(config))
             .map_err(map_pool_error)?;
         Self::from_database_pool(database_pool, runtime).map_err(map_pool_error)
     }
@@ -112,7 +111,7 @@ impl BlockingPostgresPool {
     where
         F: Future<Output = T>,
     {
-        self.runtime.block_on(future)
+        block_on_runtime(self.runtime.as_ref(), future)
     }
 
     pub fn run<F, T>(&self, future: F) -> Result<T, sqlx::Error>
@@ -170,6 +169,16 @@ impl BlockingPostgresPool {
     }
 }
 
+fn block_on_runtime<F, T>(runtime: &Runtime, future: F) -> T
+where
+    F: Future<Output = T>,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+        Err(_) => runtime.block_on(future),
+    }
+}
+
 impl Drop for BlockingPostgresPool {
     fn drop(&mut self) {
         // `Runtime` must not be dropped from inside another Tokio runtime (for example
@@ -196,6 +205,19 @@ pub struct PoolMetrics {
     pub idle_connections: u32,
     pub active_connections: u32,
     pub utilization: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::block_on_runtime;
+    use tokio::runtime::Runtime;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn blocking_adapter_can_drive_a_future_inside_an_async_host() {
+        let runtime = Runtime::new().expect("private runtime builds");
+        assert_eq!(block_on_runtime(&runtime, async { 42 }), 42);
+        tokio::task::block_in_place(|| drop(runtime));
+    }
 }
 
 #[macro_export]

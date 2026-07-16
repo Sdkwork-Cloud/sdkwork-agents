@@ -352,7 +352,7 @@ the last offset page for the newest transcript window and page backward for hist
 SDK generation follows `SDK_SPEC.md` and `SDK_WORKSPACE_GENERATION_SPEC.md`:
 - OpenAPI authority documents live under `sdks/sdkwork-agents-*/openapi/`
 - Generated TypeScript output lives under `sdks/sdkwork-agents-*-typescript/generated/server-openapi/`
-- SDK families declare `.sdkwork-assembly.json` with `sdkOwner` and `apiAuthority`
+- SDK families declare `sdk-manifest.json` with `sdkOwner` and `apiAuthority`
 
 ---
 

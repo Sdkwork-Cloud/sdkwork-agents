@@ -12,6 +12,7 @@
   "tablePrefix": "ai_",
   "contractVersion": "3.1.0",
   "baselineStrategy": "baseline-plus-migrations",
+  "baselineAnchorTable": "ai_agent",
   "modules": [],
   "lifecycle": {
     "autoMigrate": true,

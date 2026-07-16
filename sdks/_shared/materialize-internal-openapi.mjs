@@ -8,7 +8,8 @@ export const INTERNAL_OPENAPI_EXPLICIT_PROBLEM_RESPONSE = `          description
                 $ref: '#/components/schemas/ProblemDetail'`;
 
 export function ensureTrailingNewline(content) {
-  return content.endsWith('\n') ? content : `${content}\n`;
+  const normalized = content.replace(/\r\n?/g, '\n');
+  return normalized.endsWith('\n') ? normalized : `${normalized}\n`;
 }
 
 export function materializeInternalOpenApiAuthority(source, family) {

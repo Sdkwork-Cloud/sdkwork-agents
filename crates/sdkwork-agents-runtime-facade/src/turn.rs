@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use sdkwork_agent_kernel::{ModelRequest, ModelResponse, ToolCall};
+use sdkwork_agent_kernel::{
+    KernelResult, ModelRequest, ModelResponse, ModelStreamChunk, ModelStreamSink, ToolCall,
+};
+use sdkwork_agent_provider_spi::SdkRuntimeStreamCompletion;
 use sdkwork_utils_rust::string::is_blank;
 
 use crate::code_engines::CodeEngineSlot;
@@ -54,6 +57,19 @@ pub struct CodeEngineTurnInput {
     pub max_tokens: Option<i64>,
 }
 
+/// Provider-neutral terminal metadata for a streamed code-engine turn.
+///
+/// The facade constructs this value only after the runtime verifies that the
+/// terminal `model_request_id` belongs to the active turn and that the
+/// provider supplied a non-empty native session id. Product callers therefore
+/// never inspect provider diagnostics or transport frames to resume a turn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodeEngineTurnStreamCompletion {
+    pub model_request_id: String,
+    pub finish_reason: String,
+    pub native_session_id: String,
+}
+
 /// Product-neutral code-engine turn output produced by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeEngineTurnOutput {
@@ -63,6 +79,9 @@ pub struct CodeEngineTurnOutput {
     pub tool_calls: Vec<ToolCall>,
     /// Token/word deltas when streaming is available; empty when invoke-only.
     pub stream_deltas: Vec<String>,
+    /// Verified terminal metadata for a streamed turn. `None` means the turn
+    /// used invoke-only execution or the provider cannot prove completion.
+    pub stream_completion: Option<CodeEngineTurnStreamCompletion>,
 }
 
 pub fn execute_code_engine_turn(
@@ -103,6 +122,7 @@ fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> Co
         native_session_id: resolve_native_session_id(&response, input),
         tool_calls: response.tool_calls,
         stream_deltas: Vec::new(),
+        stream_completion: None,
     }
 }
 
@@ -209,6 +229,23 @@ pub fn execute_code_engine_turn_with_stream(
     slot: &CodeEngineSlot,
     input: &CodeEngineTurnInput,
 ) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+    let mut sink = DiscardingModelStreamSink;
+    execute_code_engine_turn_with_stream_sink(slot, input, &mut sink)
+}
+
+/// Execute a turn and forward each provider-neutral model chunk as it arrives.
+/// The caller owns product projection; this facade owns the kernel SPI
+/// boundary, ordering, output budget enforcement, and native-session proof.
+///
+/// Codex initial turns can stream only because its runtime terminal frame
+/// carries a correlated native session id. Other engines remain invoke-only
+/// until they offer the same proof. Once a chunk is delivered, this function
+/// never invokes the provider again as a fallback.
+pub fn execute_code_engine_turn_with_stream_sink(
+    slot: &CodeEngineSlot,
+    input: &CodeEngineTurnInput,
+    sink: &mut dyn ModelStreamSink,
+) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
     if slot.engine_key() != input.engine_key {
         return Err(RuntimeFacadeError::EngineMismatch {
             slot_engine: slot.engine_key().to_string(),
@@ -223,44 +260,451 @@ pub fn execute_code_engine_turn_with_stream(
             "prompt exceeds maximum size of {MAX_CODE_ENGINE_PROMPT_BYTES} bytes"
         )));
     }
-
-    // A first turn must use the invoke response because ModelStreamChunk does
-    // not carry provider diagnostics or a newly allocated native session id.
-    // Streaming it would make the provider thread impossible to resume.
     if input.native_session_id.is_none() {
+        if slot.supports_first_turn_streaming_completion() {
+            return execute_first_turn_with_stream_completion(slot, input, sink);
+        }
         return execute_code_engine_turn(slot, input);
     }
 
     let model_request = build_model_request(input);
-    if let Ok(chunks) = slot.stream_model(model_request.clone()) {
-        if !chunks.is_empty() {
-            if chunks.len() > MAX_CODE_ENGINE_STREAM_CHUNKS {
-                return Err(RuntimeFacadeError::Kernel(format!(
-                    "stream exceeded maximum chunk count of {MAX_CODE_ENGINE_STREAM_CHUNKS}"
-                )));
-            }
-            let stream_deltas: Vec<String> =
-                chunks.into_iter().map(|chunk| chunk.content).collect();
-            let assistant_content = stream_deltas.join("");
-            validate_output_size(assistant_content.len(), effective_max_output_bytes(input))?;
-            if !assistant_content.trim().is_empty() {
-                return Ok(CodeEngineTurnOutput {
-                    assistant_content,
-                    native_session_id: input.native_session_id.clone(),
-                    tool_calls: Vec::new(),
-                    stream_deltas,
-                });
-            }
+    let mut collector = ForwardingStreamCollector::new(sink);
+    match slot.stream_model_into(model_request, &mut collector) {
+        Ok(()) if !collector.is_empty() => {
+            return build_streamed_turn_output(input, collector.into_deltas(), None);
+        }
+        Ok(()) => {
+            return Err(RuntimeFacadeError::Kernel(
+                "provider stream completed without output; invoke fallback is unsafe after execution"
+                    .to_string(),
+            ));
+        }
+        Err(_error) if collector.is_empty() => {}
+        Err(error) => {
+            return Err(RuntimeFacadeError::Kernel(error.to_string()));
         }
     }
 
     execute_code_engine_turn(slot, input)
 }
 
+fn execute_first_turn_with_stream_completion(
+    slot: &CodeEngineSlot,
+    input: &CodeEngineTurnInput,
+    sink: &mut dyn ModelStreamSink,
+) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+    let model_request = build_model_request(input);
+    let mut collector = ForwardingStreamCollector::new(sink);
+    let runtime_completion = slot
+        .stream_first_turn_model_into(model_request, &mut collector)
+        .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
+    let completion = code_engine_stream_completion(runtime_completion)?;
+
+    build_streamed_turn_output(input, collector.into_deltas(), Some(completion))
+}
+
+fn code_engine_stream_completion(
+    runtime_completion: SdkRuntimeStreamCompletion,
+) -> RuntimeFacadeResult<CodeEngineTurnStreamCompletion> {
+    let native_session_id = runtime_completion
+        .native_session_id
+        .filter(|value| !is_blank(Some(value.as_str())))
+        .ok_or_else(|| {
+            RuntimeFacadeError::Kernel(
+                "provider stream completed without a verified native session id".to_string(),
+            )
+        })?;
+
+    Ok(CodeEngineTurnStreamCompletion {
+        model_request_id: runtime_completion.model_request_id,
+        finish_reason: runtime_completion.finish_reason,
+        native_session_id,
+    })
+}
+
+fn build_streamed_turn_output(
+    input: &CodeEngineTurnInput,
+    stream_deltas: Vec<String>,
+    stream_completion: Option<CodeEngineTurnStreamCompletion>,
+) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+    if stream_deltas.is_empty() {
+        return Err(RuntimeFacadeError::Kernel(
+            "provider stream completed without output".to_string(),
+        ));
+    }
+
+    let assistant_content = stream_deltas.join("");
+    validate_output_size(assistant_content.len(), effective_max_output_bytes(input))?;
+    if assistant_content.trim().is_empty() {
+        return Err(RuntimeFacadeError::Kernel(
+            "provider stream completed with blank output".to_string(),
+        ));
+    }
+
+    let native_session_id = stream_completion
+        .as_ref()
+        .map(|completion| completion.native_session_id.clone())
+        .or_else(|| input.native_session_id.clone())
+        .ok_or_else(|| {
+            RuntimeFacadeError::Kernel(
+                "provider stream completed without a native session id".to_string(),
+            )
+        })?;
+
+    Ok(CodeEngineTurnOutput {
+        assistant_content,
+        native_session_id: Some(native_session_id),
+        tool_calls: Vec::new(),
+        stream_deltas,
+        stream_completion,
+    })
+}
+
+struct ForwardingStreamCollector<'a> {
+    inner: &'a mut dyn ModelStreamSink,
+    deltas: Vec<String>,
+    bytes: usize,
+}
+
+impl<'a> ForwardingStreamCollector<'a> {
+    fn new(inner: &'a mut dyn ModelStreamSink) -> Self {
+        Self {
+            inner,
+            deltas: Vec::new(),
+            bytes: 0,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.deltas.is_empty()
+    }
+
+    fn into_deltas(self) -> Vec<String> {
+        self.deltas
+    }
+}
+
+impl ModelStreamSink for ForwardingStreamCollector<'_> {
+    fn push_chunk(&mut self, chunk: ModelStreamChunk) -> KernelResult<()> {
+        if chunk.content.is_empty() {
+            return Ok(());
+        }
+        if self.deltas.len() >= MAX_CODE_ENGINE_STREAM_CHUNKS {
+            return Err(sdkwork_agent_kernel::KernelError::resource_exhausted(
+                "code-engine stream chunk limit exceeded",
+            ));
+        }
+        self.bytes = self.bytes.checked_add(chunk.content.len()).ok_or_else(|| {
+            sdkwork_agent_kernel::KernelError::resource_exhausted(
+                "code-engine stream output byte count overflow",
+            )
+        })?;
+        if self.bytes > MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES {
+            return Err(sdkwork_agent_kernel::KernelError::resource_exhausted(
+                "code-engine stream output exceeds maximum size",
+            ));
+        }
+
+        self.inner.push_chunk(chunk.clone())?;
+        self.deltas.push(chunk.content);
+        Ok(())
+    }
+}
+
+struct DiscardingModelStreamSink;
+
+impl ModelStreamSink for DiscardingModelStreamSink {
+    fn push_chunk(&mut self, _chunk: ModelStreamChunk) -> KernelResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::code_engines::{bootstrap_code_engine, canonical_code_engine_keys};
+    use sdkwork_agent_kernel::{ModelProvider, ProviderHealth, ProviderManifest};
+    use sdkwork_agent_provider_codex::CodexSdkIntegration;
+    use sdkwork_agent_provider_spi::{
+        NegotiatedCapability, SdkBackendKind, SdkBackendRuntime, SdkCapabilityNegotiation,
+        SdkDriverHealth, SdkRuntimeBackedModelProvider, SdkRuntimeError, SdkRuntimeOperationKind,
+        SdkRuntimeRequest, SdkRuntimeResponse, SdkRuntimeRouter, SDK_CAPABILITY_MODEL_CHAT,
+    };
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    #[derive(Default)]
+    struct RecordingStreamSink {
+        contents: Vec<String>,
+    }
+
+    impl ModelStreamSink for RecordingStreamSink {
+        fn push_chunk(&mut self, chunk: ModelStreamChunk) -> KernelResult<()> {
+            self.contents.push(chunk.content);
+            Ok(())
+        }
+    }
+
+    struct NeverInvokeFallback;
+
+    impl ModelProvider for NeverInvokeFallback {
+        fn provider_manifest(&self) -> ProviderManifest {
+            ProviderManifest::new(
+                "provider.model.codex.test-fallback",
+                "model",
+                "Codex test fallback",
+                "0.1.0",
+                Vec::new(),
+            )
+        }
+
+        fn health(&self) -> ProviderHealth {
+            ProviderHealth::available()
+        }
+
+        fn invoke(&self, _request: ModelRequest) -> KernelResult<ModelResponse> {
+            panic!("the controlled Codex stream test must not invoke a fallback provider")
+        }
+    }
+
+    struct ControlledCodexStreamingRuntime {
+        invoke_count: Arc<AtomicUsize>,
+        stream_count: Arc<AtomicUsize>,
+    }
+
+    impl SdkBackendRuntime for ControlledCodexStreamingRuntime {
+        fn backend_kind(&self) -> SdkBackendKind {
+            SdkBackendKind::RustNative
+        }
+
+        fn health(&self) -> SdkDriverHealth {
+            SdkDriverHealth::healthy()
+        }
+
+        fn invoke(
+            &self,
+            request: &SdkRuntimeRequest,
+        ) -> Result<SdkRuntimeResponse, SdkRuntimeError> {
+            self.invoke_count.fetch_add(1, Ordering::SeqCst);
+            Ok(SdkRuntimeResponse::success(
+                SdkBackendKind::RustNative,
+                &request.capability_id,
+                serde_json::json!({
+                    "ok": true,
+                    "messages": ["unexpected invoke"],
+                }),
+            ))
+        }
+
+        fn invoke_streaming(
+            &self,
+            request: &SdkRuntimeRequest,
+            sink: &mut dyn FnMut(serde_json::Value) -> Result<bool, SdkRuntimeError>,
+        ) -> Result<(), SdkRuntimeError> {
+            self.stream_count.fetch_add(1, Ordering::SeqCst);
+            let model_request_id = request
+                .operation
+                .request_id()
+                .expect("model streaming operation has a request id");
+            if !sink(serde_json::json!({
+                "event": "stream.chunk",
+                "model_request_id": model_request_id,
+                "sequence": 0,
+                "content": "streamed response",
+            }))? {
+                return Ok(());
+            }
+            sink(serde_json::json!({
+                "event": "stream.done",
+                "model_request_id": model_request_id,
+                "finish_reason": "stop",
+                "native_session_id": "thread-controlled",
+            }))?;
+            Ok(())
+        }
+    }
+
+    fn controlled_codex_slot(
+        invoke_count: Arc<AtomicUsize>,
+        stream_count: Arc<AtomicUsize>,
+    ) -> CodeEngineSlot {
+        let mut integration = CodexSdkIntegration::bootstrap().expect("codex bootstrap");
+        let negotiation = SdkCapabilityNegotiation {
+            agent_id: "agent.facade-test".to_string(),
+            binding_id: "binding.facade-test".to_string(),
+            binding_version: "0.1.0".to_string(),
+            selected: vec![NegotiatedCapability {
+                capability_id: SDK_CAPABILITY_MODEL_CHAT.to_string(),
+                backend_kind: SdkBackendKind::RustNative,
+                driver_id: "driver.facade-test".to_string(),
+                runtime_operations: vec![
+                    SdkRuntimeOperationKind::ModelChat,
+                    SdkRuntimeOperationKind::ModelChatStream,
+                ],
+            }],
+            missing_required: Vec::new(),
+            degraded_optional: Vec::new(),
+        };
+        let runtime = Arc::new(
+            SdkRuntimeRouter::new(negotiation).with_rust_runtime(Arc::new(
+                ControlledCodexStreamingRuntime {
+                    invoke_count,
+                    stream_count,
+                },
+            )),
+        );
+        integration.model = SdkRuntimeBackedModelProvider::new(
+            runtime,
+            Arc::new(NeverInvokeFallback),
+            SDK_CAPABILITY_MODEL_CHAT,
+            "provider.model.codex",
+        );
+        CodeEngineSlot::Codex(integration)
+    }
+
+    #[test]
+    fn forwarding_stream_collector_preserves_chunk_order_for_product_projection() {
+        let mut sink = RecordingStreamSink::default();
+        let mut collector = ForwardingStreamCollector::new(&mut sink);
+
+        collector
+            .push_chunk(ModelStreamChunk::output("request-1", 0, "Hello"))
+            .expect("first chunk");
+        collector
+            .push_chunk(ModelStreamChunk::output("request-1", 1, " world"))
+            .expect("second chunk");
+
+        let deltas = collector.into_deltas();
+        assert_eq!(sink.contents, ["Hello", " world"]);
+        assert_eq!(deltas, ["Hello", " world"]);
+    }
+
+    #[test]
+    fn forwarding_stream_collector_discards_empty_transport_chunks() {
+        let mut sink = RecordingStreamSink::default();
+        let mut collector = ForwardingStreamCollector::new(&mut sink);
+
+        collector
+            .push_chunk(ModelStreamChunk::output("request-1", 0, ""))
+            .expect("empty chunk is ignored");
+        collector
+            .push_chunk(ModelStreamChunk::output("request-1", 1, "content"))
+            .expect("content chunk");
+
+        let deltas = collector.into_deltas();
+        assert_eq!(sink.contents, ["content"]);
+        assert_eq!(deltas, ["content"]);
+    }
+
+    #[test]
+    fn verified_runtime_completion_becomes_provider_neutral_turn_completion() {
+        let completion = code_engine_stream_completion(SdkRuntimeStreamCompletion {
+            model_request_id: "request-1".to_string(),
+            finish_reason: "stop".to_string(),
+            native_session_id: Some("thread-1".to_string()),
+        })
+        .expect("native session completion");
+
+        assert_eq!(completion.model_request_id, "request-1");
+        assert_eq!(completion.finish_reason, "stop");
+        assert_eq!(completion.native_session_id, "thread-1");
+    }
+
+    #[test]
+    fn incomplete_runtime_stream_cannot_create_a_first_turn_session() {
+        let result = code_engine_stream_completion(SdkRuntimeStreamCompletion {
+            model_request_id: "request-1".to_string(),
+            finish_reason: "stop".to_string(),
+            native_session_id: None,
+        });
+
+        assert!(matches!(result, Err(RuntimeFacadeError::Kernel(_))));
+    }
+
+    #[test]
+    fn streamed_turn_output_uses_verified_completion_and_ordered_deltas() {
+        let input = CodeEngineTurnInput {
+            engine_key: "codex".to_string(),
+            prompt: "implement this".to_string(),
+            ..Default::default()
+        };
+        let completion = CodeEngineTurnStreamCompletion {
+            model_request_id: "request-1".to_string(),
+            finish_reason: "stop".to_string(),
+            native_session_id: "thread-1".to_string(),
+        };
+
+        let output = build_streamed_turn_output(
+            &input,
+            vec!["first ".to_string(), "second".to_string()],
+            Some(completion.clone()),
+        )
+        .expect("streamed output");
+
+        assert_eq!(output.assistant_content, "first second");
+        assert_eq!(output.native_session_id.as_deref(), Some("thread-1"));
+        assert_eq!(output.stream_deltas, ["first ", "second"]);
+        assert_eq!(output.stream_completion, Some(completion));
+    }
+
+    #[test]
+    fn codex_first_turn_completion_binds_native_session_and_resume_does_not_invoke() {
+        let invoke_count = Arc::new(AtomicUsize::new(0));
+        let stream_count = Arc::new(AtomicUsize::new(0));
+        let slot = controlled_codex_slot(invoke_count.clone(), stream_count.clone());
+
+        let mut first_sink = RecordingStreamSink::default();
+        let first = execute_code_engine_turn_with_stream_sink(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                model_id: "gpt-test".to_string(),
+                prompt: "first turn".to_string(),
+                require_live_provider: true,
+                ..Default::default()
+            },
+            &mut first_sink,
+        )
+        .expect("first streamed turn");
+        assert_eq!(first_sink.contents, ["streamed response"]);
+        assert_eq!(first.assistant_content, "streamed response");
+        assert_eq!(
+            first.native_session_id.as_deref(),
+            Some("thread-controlled")
+        );
+        assert_eq!(
+            first
+                .stream_completion
+                .as_ref()
+                .map(|completion| completion.native_session_id.as_str()),
+            Some("thread-controlled")
+        );
+
+        let mut resumed_sink = RecordingStreamSink::default();
+        let resumed = execute_code_engine_turn_with_stream_sink(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                model_id: "gpt-test".to_string(),
+                native_session_id: first.native_session_id.clone(),
+                prompt: "resumed turn".to_string(),
+                require_live_provider: true,
+                ..Default::default()
+            },
+            &mut resumed_sink,
+        )
+        .expect("resumed streamed turn");
+        assert_eq!(resumed_sink.contents, ["streamed response"]);
+        assert_eq!(
+            resumed.native_session_id.as_deref(),
+            Some("thread-controlled")
+        );
+        assert_eq!(resumed.stream_completion, None);
+        assert_eq!(invoke_count.load(Ordering::SeqCst), 0);
+        assert_eq!(stream_count.load(Ordering::SeqCst), 2);
+    }
 
     #[test]
     fn executes_turn_for_canonical_codex_engine() {
@@ -433,6 +877,7 @@ mod tests {
         assert_eq!(output.tool_calls.len(), 1);
         assert_eq!(output.tool_calls[0].tool_call_id, "call-1");
         assert_eq!(output.tool_calls[0].tool_id, "codex.shell");
+        assert_eq!(output.stream_completion, None);
     }
 
     #[test]

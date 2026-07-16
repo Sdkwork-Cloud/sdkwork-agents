@@ -25,7 +25,8 @@ pub async fn build_agents_served_router(config: Arc<ServerConfig>) -> Result<Rou
 
     let health_state = Arc::new(health::HealthState::new());
     let persistence = Arc::new(
-        PersistenceState::open_from_config(config.as_ref())
+        PersistenceState::open_from_config_async(config.as_ref())
+            .await
             .context("open kernel persistence for agents application")?,
     );
     let runtime_state = Arc::new(

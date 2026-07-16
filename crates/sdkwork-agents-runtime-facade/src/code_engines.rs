@@ -1,5 +1,6 @@
 use sdkwork_agent_kernel::{
     KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
+    ModelStreamSink,
 };
 use sdkwork_agent_provider_claude_code::ClaudeCodeSdkIntegration;
 use sdkwork_agent_provider_codex::CodexSdkIntegration;
@@ -8,8 +9,8 @@ use sdkwork_agent_provider_hermes::HermesSdkIntegration;
 use sdkwork_agent_provider_openclaw::OpenClawSdkIntegration;
 use sdkwork_agent_provider_opencode::OpenCodeSdkIntegration;
 use sdkwork_agent_provider_spi::{
-    CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID, HERMES_BINDING_ID,
-    OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
+    SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
+    HERMES_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
 };
 
 /// Canonical T1 code-engine keys bootstrapped by default in production hosts.
@@ -140,6 +141,45 @@ impl CodeEngineSlot {
         self.model_provider().stream(request)
     }
 
+    /// Streams provider-neutral model chunks through the kernel SPI.
+    ///
+    /// Product callers must consume this method through the runtime facade
+    /// instead of importing individual provider SDKs or transport crates.
+    pub fn stream_model_into(
+        &self,
+        request: ModelRequest,
+        sink: &mut dyn ModelStreamSink,
+    ) -> KernelResult<()> {
+        self.model_provider().stream_into(request, sink)
+    }
+
+    /// Whether this engine can establish a new native session from a verified
+    /// runtime stream completion. Codex is the first provider with that
+    /// end-to-end contract; other providers remain invoke-only for initial
+    /// turns until their runtime can prove the same identity.
+    pub(crate) fn supports_first_turn_streaming_completion(&self) -> bool {
+        matches!(self, Self::Codex(_))
+    }
+
+    /// Streams an initial turn through the runtime-backed completion boundary.
+    ///
+    /// This intentionally remains crate-private: callers consume the
+    /// provider-neutral facade completion rather than transport metadata.
+    pub(crate) fn stream_first_turn_model_into(
+        &self,
+        request: ModelRequest,
+        sink: &mut dyn ModelStreamSink,
+    ) -> KernelResult<SdkRuntimeStreamCompletion> {
+        match self {
+            Self::Codex(integration) => {
+                integration.model.stream_into_with_completion(request, sink)
+            }
+            _ => Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
+                capability_id: "model.streaming.initial_session_completion".to_string(),
+            }),
+        }
+    }
+
     pub(crate) fn model_provider(&self) -> &dyn ModelProvider {
         match self {
             Self::Codex(integration) => &integration.model,
@@ -199,5 +239,14 @@ mod tests {
             assert_eq!(slot.engine_key(), *engine);
             assert!(!slot.list_model_ids().is_empty());
         }
+    }
+
+    #[test]
+    fn only_codex_is_enabled_for_verified_first_turn_streaming() {
+        let codex = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let gemini = bootstrap_code_engine("gemini").expect("gemini bootstrap");
+
+        assert!(codex.supports_first_turn_streaming_completion());
+        assert!(!gemini.supports_first_turn_streaming_completion());
     }
 }

@@ -112,10 +112,10 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_list_filters
 -- GIN trigram indexes for ILIKE/LIKE text search (requires pg_trgm extension)
 -- These enable fast case-insensitive substring search on agent_id, code, display_name, description
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_ai_agent_agent_id_trgm ON ai_agent USING gin (agent_id gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_ai_agent_code_trgm ON ai_agent USING gin (code gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_ai_agent_display_name_trgm ON ai_agent USING gin (display_name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_ai_agent_description_trgm ON ai_agent USING gin (COALESCE(description, '') gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_agent_id_trgm ON ai_agent USING gin (agent_id public.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_code_trgm ON ai_agent USING gin (code public.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_display_name_trgm ON ai_agent USING gin (display_name public.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_description_trgm ON ai_agent USING gin (COALESCE(description, '') public.gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS ai_agent_runtime_binding (
     id BIGINT NOT NULL PRIMARY KEY,
@@ -453,4 +453,3 @@ ALTER TABLE ai_agent_task
 ALTER TABLE ai_agent_audit_event
     ADD CONSTRAINT fk_ai_agent_audit_event_agent
     FOREIGN KEY (tenant_id, agent_internal_id) REFERENCES ai_agent(tenant_id, id) ON DELETE CASCADE;
-

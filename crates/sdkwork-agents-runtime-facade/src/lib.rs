@@ -24,8 +24,12 @@ pub use live_interaction::{
     ApprovalDecision, EngineLiveInteraction, LiveInteractionRegistry, UserQuestionAnswer,
 };
 pub use runtime_host::AgentsCodeEngineHost;
-pub use sdkwork_agent_kernel::{ModelDescriptor, ModelResponseFormat, ToolCall};
+pub use sdkwork_agent_kernel::{
+    KernelError, KernelResult, ModelDescriptor, ModelResponseFormat, ModelStreamChunk,
+    ModelStreamSink, ToolCall,
+};
 pub use turn::{
-    execute_code_engine_turn, execute_code_engine_turn_with_stream, CodeEngineTurnInput,
-    CodeEngineTurnOutput,
+    execute_code_engine_turn, execute_code_engine_turn_with_stream,
+    execute_code_engine_turn_with_stream_sink, CodeEngineTurnInput, CodeEngineTurnOutput,
+    CodeEngineTurnStreamCompletion,
 };

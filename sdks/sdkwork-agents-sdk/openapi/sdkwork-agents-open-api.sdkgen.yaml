@@ -9,31 +9,32 @@ x-sdkwork-sdk-family: sdkwork-agents-sdk
 x-sdkwork-owner-only-input: true
 x-sdkwork-standard-version: '2026-06-26'
 servers:
-  - url: http://localhost:8080
+- url: http://localhost:8080
 tags:
-  - name: ai
-    description: Managed AI agent operations for app clients.
+- name: ai
+  description: Managed AI agent operations for app clients.
 paths:
   /agent/v3/api/ai/agents:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: List managed agents
       operationId: agents.list
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
       x-sdkwork-permission: agent.business.list
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.listed
       parameters:
-        - $ref: '#/components/parameters/IncludeDeleted'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-        - $ref: '#/components/parameters/SearchQ'
+      - $ref: '#/components/parameters/IncludeDeleted'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/SearchQ'
       responses:
         '200':
           description: Managed agent list response
@@ -50,16 +51,16 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a managed agent
-      description: |
-        Any authenticated user can create a managed agent. The agent is created
-        in `draft` status and must be activated (draft → active) by a user with
-        `ai.agents.manage` permission, providing the review workflow.
+      description: "Any authenticated user can create a managed agent. The agent is\
+        \ created\nin `draft` status and must be activated (draft to active) by a user\
+        \ with\n`ai.agents.manage` permission, providing the review workflow.\n"
       operationId: agents.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
       x-sdkwork-permission: agent.business.create
@@ -93,9 +94,10 @@ paths:
                 code: 40301
                 errorCategory: permission
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         '409':
-          description: Resource conflict (duplicate agent_id or code within tenant scope)
+          description: Resource conflict (duplicate agent_id or code within tenant
+            scope)
           content:
             application/problem+json:
               schema:
@@ -108,7 +110,7 @@ paths:
                 code: 40901
                 errorCategory: business
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         default:
           description: RFC 9457 problem detail response
           content:
@@ -119,19 +121,20 @@ paths:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Retrieve one managed agent
       operationId: agents.retrieve
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
       x-sdkwork-permission: agent.business.retrieve
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.retrieved
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       responses:
         '200':
           description: Managed agent response
@@ -153,7 +156,7 @@ paths:
                 code: 40301
                 errorCategory: permission
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         '404':
           description: Agent not found
           content:
@@ -168,7 +171,7 @@ paths:
                 code: 40401
                 errorCategory: resource
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         default:
           description: RFC 9457 problem detail response
           content:
@@ -178,19 +181,20 @@ paths:
     patch:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Update one managed agent
       operationId: agents.update
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
       x-sdkwork-permission: agent.business.update
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.updated
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       requestBody:
         required: true
         content:
@@ -218,7 +222,7 @@ paths:
                 code: 40301
                 errorCategory: permission
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         '404':
           description: Agent not found
           content:
@@ -233,7 +237,7 @@ paths:
                 code: 40401
                 errorCategory: resource
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         '409':
           description: Optimistic concurrency conflict (stale expectedVersion)
           content:
@@ -244,11 +248,11 @@ paths:
                 type: https://sdkwork.dev/problems/version_conflict
                 title: version_conflict
                 status: 409
-                detail: "agent version mismatch: expected=2, actual=3"
+                detail: 'agent version mismatch: expected=2, actual=3'
                 code: 40901
                 errorCategory: concurrency
                 retryable: true
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         default:
           description: RFC 9457 problem detail response
           content:
@@ -258,19 +262,20 @@ paths:
     delete:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Soft-delete one managed agent
       operationId: agents.delete
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
       x-sdkwork-permission: agent.business.delete
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.deleted
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       responses:
         '204':
           description: Soft-deleted managed agent
@@ -288,7 +293,7 @@ paths:
                 code: 40301
                 errorCategory: permission
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         '404':
           description: Agent not found
           content:
@@ -303,7 +308,7 @@ paths:
                 code: 40401
                 errorCategory: resource
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         '409':
           description: Optimistic concurrency conflict (stale expectedVersion)
           content:
@@ -314,11 +319,11 @@ paths:
                 type: https://sdkwork.dev/problems/version_conflict
                 title: version_conflict
                 status: 409
-                detail: "agent version mismatch: expected=2, actual=3"
+                detail: 'agent version mismatch: expected=2, actual=3'
                 code: 40901
                 errorCategory: concurrency
                 retryable: true
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
         default:
           description: RFC 9457 problem detail response
           content:
@@ -329,20 +334,21 @@ paths:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: List provider bindings for one managed agent
       operationId: agents.providerBindings.list
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.providerBindings
       x-sdkwork-permission: agent.business.provider_binding.list
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: Managed agent provider binding list response
@@ -377,19 +383,20 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a provider binding for one managed agent
       operationId: agents.providerBindings.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.providerBindings
       x-sdkwork-permission: agent.business.provider_binding.add
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.provider_binding_changed
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       requestBody:
         required: true
         content:
@@ -437,20 +444,21 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Activate one managed agent provider binding
       operationId: agents.providerBindings.activate
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.providerBindings
       x-sdkwork-permission: agent.business.provider_binding.activate
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.provider_binding_changed
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/BindingIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/BindingIdPath'
       requestBody:
         required: true
         content:
@@ -492,19 +500,20 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a preview response for one managed agent
       operationId: agents.previewResponses.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.previewResponses
       x-sdkwork-permission: agent.business.runtime.preview_response
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime.executed
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       requestBody:
         required: true
         content:
@@ -546,19 +555,20 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a prompt optimization for one managed agent
       operationId: agents.promptOptimizations.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.promptOptimizations
       x-sdkwork-permission: agent.business.runtime.prompt_optimization
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime.executed
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       requestBody:
         required: true
         content:
@@ -596,26 +606,26 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/sessions:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: List chat sessions for one managed agent
       operationId: agents.sessions.list
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: agent.business.session.list
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: Managed agent session list response
@@ -632,19 +642,20 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a chat session for one managed agent
       operationId: agents.sessions.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: agent.business.session.create
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.session_created
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       requestBody:
         required: true
         content:
@@ -664,25 +675,25 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Retrieve one chat session
       operationId: agents.sessions.retrieve
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: agent.business.session.retrieve
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SessionIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
       responses:
         '200':
           description: Managed agent session response
@@ -696,25 +707,25 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Close one chat session
       operationId: agents.sessions.close
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: agent.business.session.close
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.session_closed
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
       requestBody:
         required: true
         content:
@@ -734,27 +745,27 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: List messages in one chat session
       operationId: agents.messages.list
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.messages
       x-sdkwork-permission: agent.business.message.list
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SessionIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: Managed agent message list response
@@ -771,21 +782,22 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Send a user chat message and receive an assistant reply
-      operationId: agents.messages.create
+      operationId: agents.messages.stream
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.messages
       x-sdkwork-permission: agent.business.message.create
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.message_created
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SessionIdPath'
-        - $ref: '#/components/parameters/StreamQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/StreamQuery'
       requestBody:
         required: true
         content:
@@ -793,7 +805,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SendAgentChatMessageRequest'
       responses:
-        '201':
+        '200':
           description: Chat completion response with user and assistant messages
           content:
             application/json:
@@ -802,33 +814,34 @@ paths:
             text/event-stream:
               schema:
                 type: string
-                description: SSE payload with one `completion` event carrying AgentChatCompletionResponse JSON when stream=true
+                description: SSE payload with one `completion` event carrying AgentChatCompletionResponse
+                  JSON when stream=true
         default:
           description: RFC 9457 problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Retrieve one chat message
       operationId: agents.messages.retrieve
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.messages
       x-sdkwork-permission: agent.business.message.retrieve
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SessionIdPath'
-        - $ref: '#/components/parameters/MessageIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/MessageIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
       responses:
         '200':
           description: Managed agent message response
@@ -842,26 +855,26 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/tasks:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: List scheduled tasks for one managed agent
       operationId: agents.tasks.list
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
       x-sdkwork-permission: agent.business.task.list
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: Managed agent task list response
@@ -878,20 +891,21 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a scheduled task for one managed agent
       operationId: agents.tasks.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
       x-sdkwork-permission: agent.business.task.create
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.task_created
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
       requestBody:
         required: true
         content:
@@ -915,20 +929,21 @@ paths:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Retrieve one scheduled task
       operationId: agents.tasks.retrieve
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
       x-sdkwork-permission: agent.business.task.retrieve
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/TaskIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
       responses:
         '200':
           description: Managed agent task response
@@ -946,21 +961,22 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Cancel one scheduled task
       operationId: agents.tasks.cancel
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
       x-sdkwork-permission: agent.business.task.cancel
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.task_cancelled
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/TaskIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
       requestBody:
         required: true
         content:
@@ -980,26 +996,26 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Execute one deferred scheduled task
       operationId: agents.tasks.execute
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
       x-sdkwork-permission: agent.business.task.execute
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.task_executed
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/TaskIdPath'
-        - $ref: '#/components/parameters/TenantIdQuery'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/TenantIdQuery'
       requestBody:
         required: true
         content:
@@ -1019,23 +1035,23 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-
   /agent/v3/api/ai/agents/{agentId}/composition_slots:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: List composition slots for one managed agent
       operationId: agents.compositionSlots.list
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
       x-sdkwork-permission: agent.business.composition_slot.list
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       responses:
         '200':
           description: Managed agent composition slot list response
@@ -1070,19 +1086,20 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Create a composition slot for one managed agent
       operationId: agents.compositionSlots.create
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
       x-sdkwork-permission: agent.business.composition_slot.create
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.composition_slot_created
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
       requestBody:
         required: true
         content:
@@ -1130,19 +1147,20 @@ paths:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Retrieve one managed agent composition slot
       operationId: agents.compositionSlots.retrieve
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
       x-sdkwork-permission: agent.business.composition_slot.retrieve
       x-sdkwork-tenant-scope: tenant
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SlotIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SlotIdPath'
       responses:
         '200':
           description: Managed agent composition slot response
@@ -1177,20 +1195,21 @@ paths:
     patch:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Update one managed agent composition slot
       operationId: agents.compositionSlots.update
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
       x-sdkwork-permission: agent.business.composition_slot.update
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.composition_slot_updated
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SlotIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SlotIdPath'
       requestBody:
         required: true
         content:
@@ -1231,20 +1250,21 @@ paths:
     delete:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-open-api
-      tags: [ai]
+      tags:
+      - ai
       summary: Delete one managed agent composition slot
       operationId: agents.compositionSlots.delete
       security:
-        - AuthToken: []
-          AccessToken: []
+      - AuthToken: []
+        AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
       x-sdkwork-permission: agent.business.composition_slot.delete
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.composition_slot_deleted
       parameters:
-        - $ref: '#/components/parameters/AgentIdPath'
-        - $ref: '#/components/parameters/SlotIdPath'
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SlotIdPath'
       responses:
         '204':
           description: Deleted managed agent composition slot
@@ -1318,7 +1338,8 @@ components:
       name: stream
       in: query
       required: false
-      description: When true, returns text/event-stream with one completion event instead of JSON.
+      description: When true, returns text/event-stream with one completion event
+        instead of JSON.
       schema:
         type: boolean
         default: false
@@ -1353,8 +1374,7 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-
+        pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     SlotIdPath:
       name: slotId
       in: path
@@ -1363,7 +1383,7 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: '^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     BindingIdPath:
       name: bindingId
       in: path
@@ -1372,7 +1392,7 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: '^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     SessionIdPath:
       name: sessionId
       in: path
@@ -1381,7 +1401,7 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     MessageIdPath:
       name: messageId
       in: path
@@ -1390,7 +1410,7 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: '^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     TaskIdPath:
       name: taskId
       in: path
@@ -1399,7 +1419,7 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: '^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        pattern: ^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     Problem:
       description: RFC 9457 problem detail response
       content:
@@ -1417,18 +1437,18 @@ components:
                 code: 40001
                 errorCategory: validation
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
             VersionConflict:
               summary: Optimistic concurrency conflict
               value:
                 type: https://sdkwork.dev/problems/version_conflict
                 title: version_conflict
                 status: 409
-                detail: "agent version mismatch: expected=2, actual=3"
+                detail: 'agent version mismatch: expected=2, actual=3'
                 code: 40901
                 errorCategory: concurrency
                 retryable: true
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
             PermissionRequired:
               summary: Permission denied
               value:
@@ -1439,7 +1459,7 @@ components:
                 code: 40301
                 errorCategory: permission
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
             NotFound:
               summary: Resource not found
               value:
@@ -1450,38 +1470,48 @@ components:
                 code: 40401
                 errorCategory: resource
                 retryable: false
-                traceId: '00000000-0000-0000-0000-000000000000'
+                traceId: 00000000-0000-0000-0000-000000000000
   schemas:
     SdkWorkApiResponse:
       type: object
       additionalProperties: false
-      required: [code, data, traceId]
+      required:
+      - code
+      - data
+      - traceId
       properties:
         code:
           type: integer
           format: int32
-          description: Numeric success result code. MUST be 0 on HTTP 2xx JSON bodies. See API_SPEC.md §15.3.
-          enum: [0]
+          description: Numeric success result code. MUST be 0 on HTTP 2xx JSON bodies.
+            See API_SPEC.md 搂15.3.
+          enum:
+          - 0
           default: 0
           minimum: 0
           maximum: 0
         data:
-          description: Operation-specific payload. Typed per operation through allOf or explicit schema refs.
+          description: Operation-specific payload. Typed per operation through allOf
+            or explicit schema refs.
         traceId:
           type: string
           format: uuid
-          description: Server-owned request correlation id. Clients MUST NOT supply this value.
+          description: Server-owned request correlation id. Clients MUST NOT supply
+            this value.
     SdkWorkResourceData:
       type: object
       additionalProperties: false
-      required: [item]
+      required:
+      - item
       properties:
         item:
           description: Typed domain resource for the operation.
     SdkWorkPageData:
       type: object
       additionalProperties: false
-      required: [items, pageInfo]
+      required:
+      - items
+      - pageInfo
       properties:
         items:
           type: array
@@ -1491,7 +1521,8 @@ components:
     SdkWorkCommandData:
       type: object
       additionalProperties: false
-      required: [accepted]
+      required:
+      - accepted
       properties:
         accepted:
           type: boolean
@@ -1503,7 +1534,10 @@ components:
     SdkWorkAsyncData:
       type: object
       additionalProperties: false
-      required: [accepted, operationId, status]
+      required:
+      - accepted
+      - operationId
+      - status
       properties:
         accepted:
           type: boolean
@@ -1512,33 +1546,63 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, running, succeeded, failed, cancelled]
+          enum:
+          - pending
+          - running
+          - succeeded
+          - failed
+          - cancelled
         pollUrl:
           type: string
           format: uri-reference
     Int64String:
       type: string
-      pattern: '^[0-9]+$'
+      pattern: ^[0-9]+$
     AgentStatus:
       type: string
-      enum: [draft, active, disabled, archived, deleted]
+      enum:
+      - draft
+      - active
+      - disabled
+      - archived
+      - deleted
     AgentVisibility:
       type: string
-      enum: [private, organization, tenant, public]
+      enum:
+      - private
+      - organization
+      - tenant
+      - public
     AgentImplementationKind:
       type: string
-      enum: [manifest-only, typed-local-provider, process-adapter, protocol-adapter]
+      enum:
+      - manifest-only
+      - typed-local-provider
+      - process-adapter
+      - protocol-adapter
     AgentImplementationType:
       type: string
-      enum: [sdkwork-native, rig-rust, openai-agents, langchain, langgraph, crewai, autogen, semantic-kernel, custom]
+      enum:
+      - sdkwork-native
+      - rig-rust
+      - openai-agents
+      - langchain
+      - langgraph
+      - crewai
+      - autogen
+      - semantic-kernel
+      - custom
     PageInfo:
       type: object
       additionalProperties: false
-      required: [mode]
+      required:
+      - mode
       properties:
         mode:
           type: string
-          enum: [offset, cursor]
+          enum:
+          - offset
+          - cursor
           description: Pagination mode used for this response.
         page:
           type: integer
@@ -1556,7 +1620,9 @@ components:
           minimum: 0
           description: Total pages when mode is offset.
         nextCursor:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           description: Opaque cursor for the next page when mode is cursor.
         hasMore:
           type: boolean
@@ -1564,7 +1630,22 @@ components:
     AgentRecord:
       type: object
       additionalProperties: false
-      required: [id, agentId, tenantId, organizationId, ownerUserId, code, displayName, manifest, implementationType, status, visibility, tags, version, createdAt, updatedAt]
+      required:
+      - id
+      - agentId
+      - tenantId
+      - organizationId
+      - ownerUserId
+      - code
+      - displayName
+      - manifest
+      - implementationType
+      - status
+      - visibility
+      - tags
+      - version
+      - createdAt
+      - updatedAt
       properties:
         id:
           $ref: '#/components/schemas/Int64String'
@@ -1572,7 +1653,7 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         tenantId:
           $ref: '#/components/schemas/Int64String'
         organizationId:
@@ -1588,27 +1669,33 @@ components:
           minLength: 1
           maxLength: 255
         description:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           maxLength: 4096
         manifest:
           type: object
           additionalProperties: true
         defaultCodeTaskIntent:
-          type: [object, 'null']
+          type:
+          - object
+          - 'null'
           additionalProperties: true
         managementProfile:
           oneOf:
-            - $ref: '#/components/schemas/AgentManagementProfile'
-            - type: 'null'
+          - $ref: '#/components/schemas/AgentManagementProfile'
+          - type: 'null'
         implementationProviderId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           minLength: 1
           maxLength: 128
-          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         implementationKind:
           oneOf:
-            - $ref: '#/components/schemas/AgentImplementationKind'
-            - type: 'null'
+          - $ref: '#/components/schemas/AgentImplementationKind'
+          - type: 'null'
         implementationType:
           $ref: '#/components/schemas/AgentImplementationType'
         status:
@@ -1631,7 +1718,9 @@ components:
           type: string
           format: date-time
         deletedAt:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           format: date-time
     AgentManagementProfile:
       type: object
@@ -1667,7 +1756,7 @@ components:
             type: string
             minLength: 1
             maxLength: 128
-            pattern: '^knowledge\.base\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+            pattern: ^knowledge\.base\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
           maxItems: 128
         memoryEnabled:
           type: boolean
@@ -1675,14 +1764,14 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^model\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^model\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         skillIds:
           type: array
           items:
             type: string
             minLength: 1
             maxLength: 128
-            pattern: '^skill\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+            pattern: ^skill\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
           maxItems: 128
         suggestedPrompts:
           type: array
@@ -1705,11 +1794,13 @@ components:
             type: string
             minLength: 1
             maxLength: 128
-            pattern: '^tool\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+            pattern: ^tool\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
           maxItems: 128
         type:
           type: string
-          enum: [normal, independent]
+          enum:
+          - normal
+          - independent
         users:
           type: string
           minLength: 1
@@ -1720,7 +1811,7 @@ components:
             type: string
             minLength: 1
             maxLength: 128
-            pattern: '^voice\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+            pattern: ^voice\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
           maxItems: 16
         welcomeMessage:
           type: string
@@ -1729,39 +1820,55 @@ components:
     AgentResponse:
       description: Single managed agent response following SdkWorkApiResponse envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentRecord'
     AgentListResponse:
-      description: Paginated managed agent list response following SdkWorkApiResponse envelope.
+      description: Paginated managed agent list response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkPageData'
-                - type: object
-                  required: [items]
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/AgentRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required:
+              - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentRecord'
     AgentProviderBindingRecord:
       type: object
       additionalProperties: false
-      required: [tenantId, agentId, bindingId, providerId, implementationKind, configurationProfileId, capabilities, active, version, createdAt, updatedAt]
+      required:
+      - tenantId
+      - agentId
+      - bindingId
+      - providerId
+      - implementationKind
+      - configurationProfileId
+      - capabilities
+      - active
+      - version
+      - createdAt
+      - updatedAt
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -1769,24 +1876,24 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         bindingId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         providerId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         implementationKind:
           $ref: '#/components/schemas/AgentImplementationKind'
         configurationProfileId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^profile\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^profile\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         capabilities:
           type: array
           uniqueItems: true
@@ -1794,7 +1901,7 @@ components:
             type: string
             minLength: 1
             maxLength: 128
-            pattern: '^[a-z0-9_-]+(\.[a-z0-9_-]+)+$'
+            pattern: ^[a-z0-9_-]+(\.[a-z0-9_-]+)+$
           maxItems: 128
         active:
           type: boolean
@@ -1807,41 +1914,56 @@ components:
           type: string
           format: date-time
     AgentProviderBindingResponse:
-      description: Single agent provider binding response following SdkWorkApiResponse envelope.
+      description: Single agent provider binding response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentProviderBindingRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentProviderBindingRecord'
     AgentProviderBindingListResponse:
-      description: Paginated agent provider binding list response following SdkWorkApiResponse envelope.
+      description: Paginated agent provider binding list response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkPageData'
-                - type: object
-                  required: [items]
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/AgentProviderBindingRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required:
+              - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentProviderBindingRecord'
     AgentRuntimeExecutionRecord:
       type: object
       additionalProperties: false
-      required: [tenantId, agentId, executionId, operation, status, inputPayload, outputPayload, requestedAt, completedAt]
+      required:
+      - tenantId
+      - agentId
+      - executionId
+      - operation
+      - status
+      - inputPayload
+      - outputPayload
+      - requestedAt
+      - completedAt
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -1849,18 +1971,21 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         executionId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^execution\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^execution\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         operation:
           type: string
-          enum: [preview_response, prompt_optimization]
+          enum:
+          - preview_response
+          - prompt_optimization
         status:
           type: string
-          enum: [completed]
+          enum:
+          - completed
         inputPayload:
           type: object
           additionalProperties: true
@@ -1874,46 +1999,59 @@ components:
           type: string
           format: date-time
     AgentRuntimeExecutionResponse:
-      description: Single agent runtime execution response following SdkWorkApiResponse envelope.
+      description: Single agent runtime execution response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentRuntimeExecutionRecord'
-
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentRuntimeExecutionRecord'
     AgentCompositionSlotKind:
       type: string
-      enum: [memory, knowledge, skill, prompt, drive, tool]
+      enum:
+      - memory
+      - knowledge
+      - skill
+      - prompt
+      - drive
+      - tool
     AgentCompositionTargetModule:
       type: string
-      enum: [memory, knowledgebase, skills, prompts, drive]
+      enum:
+      - memory
+      - knowledgebase
+      - skills
+      - prompts
+      - drive
     AgentCompositionSlotRecord:
       type: object
       additionalProperties: false
       required:
-        - id
-        - tenantId
-        - organizationId
-        - agentId
-        - slotId
-        - slotKind
-        - targetModule
-        - targetRef
-        - priority
-        - enabled
-        - policyJson
-        - status
-        - version
-        - createdAt
-        - updatedAt
+      - id
+      - tenantId
+      - organizationId
+      - agentId
+      - slotId
+      - slotKind
+      - targetModule
+      - targetRef
+      - priority
+      - enabled
+      - policyJson
+      - status
+      - version
+      - createdAt
+      - updatedAt
       properties:
         id:
           $ref: '#/components/schemas/Int64String'
@@ -1925,12 +2063,12 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotKind:
           $ref: '#/components/schemas/AgentCompositionSlotKind'
         targetModule:
@@ -1940,7 +2078,9 @@ components:
           minLength: 1
           maxLength: 256
         targetVersionRef:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           maxLength: 128
         priority:
           $ref: '#/components/schemas/Int64String'
@@ -1959,44 +2099,58 @@ components:
           type: string
           format: date-time
         deletedAt:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           format: date-time
     AgentCompositionSlotResponse:
-      description: Single agent composition slot response following SdkWorkApiResponse envelope.
+      description: Single agent composition slot response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentCompositionSlotRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentCompositionSlotRecord'
     AgentCompositionSlotListResponse:
-      description: Paginated agent composition slot list response following SdkWorkApiResponse envelope.
+      description: Paginated agent composition slot list response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkPageData'
-                - type: object
-                  required: [items]
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/AgentCompositionSlotRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required:
+              - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentCompositionSlotRecord'
     AgentCompositionSlotCreateData:
       type: object
       additionalProperties: false
-      required: [tenantId, organizationId, slotId, slotKind, targetModule, targetRef]
+      required:
+      - tenantId
+      - organizationId
+      - slotId
+      - slotKind
+      - targetModule
+      - targetRef
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -2006,7 +2160,7 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotKind:
           $ref: '#/components/schemas/AgentCompositionSlotKind'
         targetModule:
@@ -2016,7 +2170,9 @@ components:
           minLength: 1
           maxLength: 256
         targetVersionRef:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           maxLength: 128
         priority:
           $ref: '#/components/schemas/Int64String'
@@ -2029,7 +2185,9 @@ components:
     CreateAgentCompositionSlotRequest:
       type: object
       additionalProperties: false
-      required: [data, requestedAt]
+      required:
+      - data
+      - requestedAt
       properties:
         data:
           $ref: '#/components/schemas/AgentCompositionSlotCreateData'
@@ -2039,7 +2197,8 @@ components:
     UpdateAgentCompositionSlotData:
       type: object
       additionalProperties: false
-      required: [tenantId]
+      required:
+      - tenantId
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -2054,7 +2213,9 @@ components:
           minLength: 1
           maxLength: 256
         targetVersionRef:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           maxLength: 128
         priority:
           $ref: '#/components/schemas/Int64String'
@@ -2065,7 +2226,9 @@ components:
     UpdateAgentCompositionSlotRequest:
       type: object
       additionalProperties: false
-      required: [data, requestedAt]
+      required:
+      - data
+      - requestedAt
       properties:
         data:
           $ref: '#/components/schemas/UpdateAgentCompositionSlotData'
@@ -2075,13 +2238,19 @@ components:
     CreateAgentRequest:
       type: object
       additionalProperties: false
-      required: [agentId, code, displayName, manifest, visibility, requestedAt]
+      required:
+      - agentId
+      - code
+      - displayName
+      - manifest
+      - visibility
+      - requestedAt
       properties:
         agentId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         code:
           type: string
           minLength: 1
@@ -2091,27 +2260,33 @@ components:
           minLength: 1
           maxLength: 255
         description:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           maxLength: 4096
         manifest:
           type: object
           additionalProperties: true
         defaultCodeTaskIntent:
-          type: [object, 'null']
+          type:
+          - object
+          - 'null'
           additionalProperties: true
         managementProfile:
           oneOf:
-            - $ref: '#/components/schemas/AgentManagementProfile'
-            - type: 'null'
+          - $ref: '#/components/schemas/AgentManagementProfile'
+          - type: 'null'
         implementationProviderId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           minLength: 1
           maxLength: 128
-          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         implementationKind:
           oneOf:
-            - $ref: '#/components/schemas/AgentImplementationKind'
-            - type: 'null'
+          - $ref: '#/components/schemas/AgentImplementationKind'
+          - type: 'null'
         implementationType:
           $ref: '#/components/schemas/AgentImplementationType'
         visibility:
@@ -2129,25 +2304,30 @@ components:
     CreateAgentProviderBindingRequest:
       type: object
       additionalProperties: false
-      required: [bindingId, providerId, implementationKind, configurationProfileId, requestedAt]
+      required:
+      - bindingId
+      - providerId
+      - implementationKind
+      - configurationProfileId
+      - requestedAt
       properties:
         bindingId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         providerId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         implementationKind:
           $ref: '#/components/schemas/AgentImplementationKind'
         configurationProfileId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^profile\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^profile\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         capabilities:
           type: array
           uniqueItems: true
@@ -2155,7 +2335,7 @@ components:
             type: string
             minLength: 1
             maxLength: 128
-            pattern: '^[a-z0-9_-]+(\.[a-z0-9_-]+)+$'
+            pattern: ^[a-z0-9_-]+(\.[a-z0-9_-]+)+$
           maxItems: 128
         makeDefault:
           type: boolean
@@ -2166,7 +2346,8 @@ components:
     ActivateAgentProviderBindingRequest:
       type: object
       additionalProperties: false
-      required: [requestedAt]
+      required:
+      - requestedAt
       properties:
         requestedAt:
           type: string
@@ -2174,13 +2355,16 @@ components:
     CreateAgentPreviewResponseRequest:
       type: object
       additionalProperties: false
-      required: [executionId, content, requestedAt]
+      required:
+      - executionId
+      - content
+      - requestedAt
       properties:
         executionId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^execution\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^execution\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         content:
           type: string
           minLength: 1
@@ -2208,13 +2392,16 @@ components:
     CreateAgentPromptOptimizationRequest:
       type: object
       additionalProperties: false
-      required: [executionId, prompt, requestedAt]
+      required:
+      - executionId
+      - prompt
+      - requestedAt
       properties:
         executionId:
           type: string
           minLength: 1
           maxLength: 128
-          pattern: '^execution\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^execution\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         prompt:
           type: string
           minLength: 1
@@ -2228,14 +2415,17 @@ components:
     UpdateAgentRequest:
       type: object
       additionalProperties: false
-      required: [requestedAt]
+      required:
+      - requestedAt
       properties:
         displayName:
           type: string
           minLength: 1
           maxLength: 255
         description:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           maxLength: 4096
         manifest:
           type: object
@@ -2250,21 +2440,25 @@ components:
             maxLength: 64
           maxItems: 64
         defaultCodeTaskIntent:
-          type: [object, 'null']
+          type:
+          - object
+          - 'null'
           additionalProperties: true
         managementProfile:
           oneOf:
-            - $ref: '#/components/schemas/AgentManagementProfile'
-            - type: 'null'
+          - $ref: '#/components/schemas/AgentManagementProfile'
+          - type: 'null'
         implementationProviderId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           minLength: 1
           maxLength: 128
-          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         implementationKind:
           oneOf:
-            - $ref: '#/components/schemas/AgentImplementationKind'
-            - type: 'null'
+          - $ref: '#/components/schemas/AgentImplementationKind'
+          - type: 'null'
         implementationType:
           $ref: '#/components/schemas/AgentImplementationType'
         expectedVersion:
@@ -2275,7 +2469,8 @@ components:
     RestoreAgentRequest:
       type: object
       additionalProperties: false
-      required: [requestedAt]
+      required:
+      - requestedAt
       properties:
         expectedVersion:
           $ref: '#/components/schemas/Int64String'
@@ -2285,11 +2480,19 @@ components:
     AgentSessionRecord:
       type: object
       additionalProperties: false
-      required: [sessionId, agentId, tenantId, status, messageCount, version, createdAt, updatedAt]
+      required:
+      - sessionId
+      - agentId
+      - tenantId
+      - status
+      - messageCount
+      - version
+      - createdAt
+      - updatedAt
       properties:
         sessionId:
           type: string
-          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         agentId:
           type: string
         tenantId:
@@ -2302,7 +2505,11 @@ components:
           type: string
         status:
           type: string
-          enum: [active, idle, closed, archived]
+          enum:
+          - active
+          - idle
+          - closed
+          - archived
         providerBindingId:
           type: string
         modelId:
@@ -2332,39 +2539,52 @@ components:
     AgentSessionResponse:
       description: Single agent session response following SdkWorkApiResponse envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentSessionRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentSessionRecord'
     AgentSessionListResponse:
-      description: Paginated agent session list response following SdkWorkApiResponse envelope.
+      description: Paginated agent session list response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkPageData'
-                - type: object
-                  required: [items]
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/AgentSessionRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required:
+              - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentSessionRecord'
     AgentTaskRecord:
       type: object
       additionalProperties: false
-      required: [taskId, agentId, title, prompt, status, version, createdAt, updatedAt]
+      required:
+      - taskId
+      - agentId
+      - title
+      - prompt
+      - status
+      - version
+      - createdAt
+      - updatedAt
       properties:
         taskId:
           type: string
@@ -2399,38 +2619,45 @@ components:
           format: date-time
     AgentTaskResponse:
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentTaskRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentTaskRecord'
     AgentTaskListResponse:
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkPageData'
-                - type: object
-                  required: [items]
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/AgentTaskRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required:
+              - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentTaskRecord'
     CreateAgentTaskRequest:
       type: object
       additionalProperties: false
-      required: [title, prompt, requestedAt]
+      required:
+      - title
+      - prompt
+      - requestedAt
       properties:
         title:
           type: string
@@ -2446,7 +2673,8 @@ components:
     CancelAgentTaskRequest:
       type: object
       additionalProperties: false
-      required: [requestedAt]
+      required:
+      - requestedAt
       properties:
         expectedVersion:
           $ref: '#/components/schemas/Int64String'
@@ -2456,7 +2684,8 @@ components:
     CreateAgentSessionRequest:
       type: object
       additionalProperties: false
-      required: [requestedAt]
+      required:
+      - requestedAt
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -2466,7 +2695,7 @@ components:
           $ref: '#/components/schemas/Int64String'
         sessionId:
           type: string
-          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         title:
           type: string
         providerBindingId:
@@ -2481,7 +2710,9 @@ components:
     CloseAgentSessionRequest:
       type: object
       additionalProperties: false
-      required: [tenantId, requestedAt]
+      required:
+      - tenantId
+      - requestedAt
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -2493,25 +2724,43 @@ components:
     AgentMessageRecord:
       type: object
       additionalProperties: false
-      required: [messageId, sessionId, agentId, role, content, status, sequence, createdAt, updatedAt]
+      required:
+      - messageId
+      - sessionId
+      - agentId
+      - role
+      - content
+      - status
+      - sequence
+      - createdAt
+      - updatedAt
       properties:
         messageId:
           type: string
-          pattern: '^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         sessionId:
           type: string
         agentId:
           type: string
         role:
           type: string
-          enum: [user, assistant, system, tool]
+          enum:
+          - user
+          - assistant
+          - system
+          - tool
         content:
           type: string
         contentType:
           type: string
         status:
           type: string
-          enum: [sent, delivered, read, failed, cancelled]
+          enum:
+          - sent
+          - delivered
+          - read
+          - failed
+          - cancelled
         sequence:
           $ref: '#/components/schemas/Int64String'
         inputTokens:
@@ -2533,39 +2782,47 @@ components:
     AgentMessageResponse:
       description: Single agent message response following SdkWorkApiResponse envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
-                  properties:
-                    item:
-                      $ref: '#/components/schemas/AgentMessageRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentMessageRecord'
     AgentMessageListResponse:
-      description: Paginated agent message list response following SdkWorkApiResponse envelope.
+      description: Paginated agent message list response following SdkWorkApiResponse
+        envelope.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkPageData'
-                - type: object
-                  required: [items]
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/AgentMessageRecord'
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required:
+              - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentMessageRecord'
     SendAgentChatMessageRequest:
       type: object
       additionalProperties: false
-      required: [tenantId, content, requestedAt]
+      required:
+      - tenantId
+      - content
+      - requestedAt
       properties:
         tenantId:
           $ref: '#/components/schemas/Int64String'
@@ -2582,50 +2839,66 @@ components:
           type: string
           format: date-time
     AgentChatCompletionResponse:
-      description: Agent chat completion response following SdkWorkApiResponse envelope with composite item payload.
+      description: Agent chat completion response following SdkWorkApiResponse envelope
+        with composite item payload.
       allOf:
-        - $ref: '#/components/schemas/SdkWorkApiResponse'
-        - type: object
-          required: [data]
-          properties:
-            data:
-              allOf:
-                - $ref: '#/components/schemas/SdkWorkResourceData'
-                - type: object
-                  required: [item]
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required:
+              - item
+              properties:
+                item:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - session
+                  - userMessage
+                  - assistantMessage
                   properties:
-                    item:
-                      type: object
-                      additionalProperties: false
-                      required: [session, userMessage, assistantMessage]
-                      properties:
-                        session:
-                          $ref: '#/components/schemas/AgentSessionRecord'
-                        userMessage:
-                          $ref: '#/components/schemas/AgentMessageRecord'
-                        assistantMessage:
-                          $ref: '#/components/schemas/AgentMessageRecord'
+                    session:
+                      $ref: '#/components/schemas/AgentSessionRecord'
+                    userMessage:
+                      $ref: '#/components/schemas/AgentMessageRecord'
+                    assistantMessage:
+                      $ref: '#/components/schemas/AgentMessageRecord'
     FieldError:
       type: object
       additionalProperties: false
-      required: [field, message]
+      required:
+      - field
+      - message
       properties:
         field:
           type: string
-          description: JSON Pointer or dot-path to the invalid field, for example `/agentId` or `data.item.code`.
+          description: JSON Pointer or dot-path to the invalid field, for example
+            `/agentId` or `data.item.code`.
         message:
           type: string
-          description: Safe validation message for logs and optional UI display. MUST NOT reveal secrets or enumeration hints.
+          description: Safe validation message for logs and optional UI display. MUST
+            NOT reveal secrets or enumeration hints.
         code:
           type: integer
           format: int32
           minimum: 40011
           maximum: 40099
-          description: Optional field-level validation subcode when ProblemDetail.code is 40001 VALIDATION_ERROR.
+          description: Optional field-level validation subcode when ProblemDetail.code
+            is 40001 VALIDATION_ERROR.
     ProblemDetail:
       type: object
       additionalProperties: true
-      required: [type, title, status, code, traceId]
+      required:
+      - type
+      - title
+      - status
+      - code
+      - traceId
       properties:
         type:
           type: string
@@ -2643,7 +2916,8 @@ components:
         code:
           type: integer
           format: int32
-          description: Numeric error result code. MUST be non-zero. See API_SPEC.md §15.3.
+          description: Numeric error result code. MUST be non-zero. See API_SPEC.md
+            搂15.3.
           minimum: 40001
           maximum: 79999
         traceId:

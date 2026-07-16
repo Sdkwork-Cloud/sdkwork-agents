@@ -30,7 +30,6 @@ function verifyFamily(family) {
   const sourceOpenApiPath = path.join(repoRoot, family.sourceOpenApi);
   const authorityPath = path.join(familyRoot, 'openapi', `${family.authority}.openapi.yaml`);
   const sdkgenPath = path.join(familyRoot, 'openapi', `${family.authority}.sdkgen.yaml`);
-  const assemblyPath = path.join(familyRoot, '.sdkwork-assembly.json');
   const sdkManifestPath = path.join(familyRoot, 'sdk-manifest.json');
   const componentSpecPath = path.join(familyRoot, 'specs', 'component.spec.json');
   const generatedOutputPath = path.join(
@@ -43,7 +42,6 @@ function verifyFamily(family) {
     sourceOpenApiPath,
     authorityPath,
     sdkgenPath,
-    assemblyPath,
     sdkManifestPath,
     componentSpecPath
   ]) {
@@ -73,51 +71,17 @@ function verifyFamily(family) {
   );
 
   const ownerOnlyOperationCount = countAgentOpenApiOperations(actualSdkgen);
-  const assembly = readJson(assemblyPath);
   const sdkManifest = readJson(sdkManifestPath);
   const componentSpec = readJson(componentSpecPath);
 
-  assert.equal(assembly.workspace, family.familyDir, `${family.familyDir} assembly workspace`);
-  assert.equal(assembly.apiAuthority, family.authority, `${family.familyDir} assembly authority`);
-  assert.equal(
-    assembly.authoritySpec,
-    `openapi/${family.authority}.openapi.yaml`,
-    `${family.familyDir} assembly authoritySpec`
-  );
-  assert.equal(
-    assembly.generationInputSpec,
-    `openapi/${family.authority}.sdkgen.yaml`,
-    `${family.familyDir} assembly generationInputSpec`
-  );
-  assert.equal(
-    assembly.discoverySurface?.apiPrefix,
-    family.apiPrefix,
-    `${family.familyDir} assembly apiPrefix`
-  );
-  assert.equal(assembly.sdkOwner, AGENTS_SDK_OWNER, `${family.familyDir} assembly sdkOwner`);
-  assert.equal(
-    assembly.metadata?.managedBy,
-    'sdks/_shared/agent-sdk-ownership.mjs',
-    `${family.familyDir} assembly managedBy`
-  );
-  assert.equal(
-    assembly.metadata?.standardVersion,
-    AGENTS_SDK_OWNERSHIP_STANDARD_VERSION,
-    `${family.familyDir} assembly standardVersion`
-  );
-  assert.equal(
-    assembly.metadata?.ownerOnlyOperationCount,
-    ownerOnlyOperationCount,
-    `${family.familyDir} assembly ownerOnlyOperationCount`
-  );
-  assert.deepEqual(
-    assembly.sdkDependencies,
-    family.sdkDependencies,
-    `${family.familyDir} assembly sdkDependencies`
-  );
+  assert.equal(sdkManifest.workspace, family.familyDir, `${family.familyDir} manifest workspace`);
+  assert.equal(sdkManifest.authoritySpec, `openapi/${family.authority}.openapi.yaml`);
+  assert.equal(sdkManifest.discoverySurface?.apiPrefix, family.apiPrefix);
+  assert.equal(sdkManifest.metadata?.managedBy, 'sdks/_shared/agent-sdk-ownership.mjs');
+  assert.equal(sdkManifest.metadata?.standardVersion, AGENTS_SDK_OWNERSHIP_STANDARD_VERSION);
 
-  const typescriptLanguage = assembly.languages?.find((entry) => entry.language === 'typescript');
-  assert.ok(typescriptLanguage, `${family.familyDir} assembly must declare TypeScript language`);
+  const typescriptLanguage = sdkManifest.languages?.find((entry) => entry.language === 'typescript');
+  assert.ok(typescriptLanguage, `${family.familyDir} manifest must declare TypeScript language`);
   assert.equal(
     typescriptLanguage.workspace,
     family.languagePackageDir,
@@ -133,7 +97,11 @@ function verifyFamily(family) {
     `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}/package.json`,
     `${family.familyDir} TypeScript manifestPath`
   );
-  assert.equal(typescriptLanguage.name, family.packageName, `${family.familyDir} package name`);
+  assert.equal(
+    typescriptLanguage.consumerPackageName,
+    family.packageName,
+    `${family.familyDir} consumer package name`,
+  );
 
   assert.equal(sdkManifest.schemaVersion, 1, `${family.familyDir} sdk manifest schemaVersion`);
   assert.equal(sdkManifest.sdkName, family.sdkName, `${family.familyDir} sdkName`);
@@ -182,7 +150,7 @@ function verifyFamily(family) {
   assert.equal(componentSpec.component?.generated, true, `${family.familyDir} generated flag`);
   assert.deepEqual(
     componentSpec.component?.manifests,
-    ['.sdkwork-assembly.json'],
+    ['sdk-manifest.json'],
     `${family.familyDir} component manifests`
   );
   assert.equal(componentSpec.sdk?.family, family.familyDir, `${family.familyDir} sdk.family`);
