@@ -102,7 +102,7 @@ the path `{agentId}` matches the stored resource `agent_id`.
 
 | Method | Path suffix | operationId | Semantics |
 | --- | --- | --- | --- |
-| POST | `.../sessions/{sessionId}/messages` | `agents.messages.create` | User sends `content`; service persists user + assistant messages and returns `AgentChatCompletionResponse` |
+| POST | `.../sessions/{sessionId}/messages` | `agents.messages.stream` | User sends `content`; service persists user + assistant messages and returns `AgentChatCompletionResponse` as JSON or SSE |
 | GET | `.../sessions/{sessionId}/messages` | `agents.messages.list` | Paginated transcript (`page`, `page_size`); default sort ascending by sequence; clients load the last page for the newest window and page backward for history |
 | GET | `.../messages/{messageId}` | `agents.messages.retrieve` | Single message |
 
@@ -146,7 +146,7 @@ keeping `code`/`traceId` consistent with the JSON path. Errors render as
 | `agents.sessions.close` | `agent.business.session.close` |
 | `agents.sessions.archive` | `agent.business.session.archive` |
 | `agents.messages.list` | `agent.business.message.list` |
-| `agents.messages.create` | `agent.business.message.create` |
+| `agents.messages.stream` | `agent.business.message.create` |
 | `agents.messages.retrieve` | `agent.business.message.retrieve` |
 
 ## 4. Surface Comparison Matrix

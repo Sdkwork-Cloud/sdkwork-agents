@@ -207,19 +207,6 @@ pub struct PoolMetrics {
     pub utilization: f64,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::block_on_runtime;
-    use tokio::runtime::Runtime;
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn blocking_adapter_can_drive_a_future_inside_an_async_host() {
-        let runtime = Runtime::new().expect("private runtime builds");
-        assert_eq!(block_on_runtime(&runtime, async { 42 }), 42);
-        tokio::task::block_in_place(|| drop(runtime));
-    }
-}
-
 #[macro_export]
 macro_rules! pg_execute {
     ($pool:expr, $sql:expr $(, $param:expr)* $(,)?) => {{
@@ -248,4 +235,17 @@ macro_rules! pg_query_optional {
             sqlx::query::<sqlx::Postgres>($sql) $(.bind(&$param))* .fetch_optional(&pg).await
         })
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::block_on_runtime;
+    use tokio::runtime::Runtime;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn blocking_adapter_can_drive_a_future_inside_an_async_host() {
+        let runtime = Runtime::new().expect("private runtime builds");
+        assert_eq!(block_on_runtime(&runtime, async { 42 }), 42);
+        tokio::task::block_in_place(|| drop(runtime));
+    }
 }

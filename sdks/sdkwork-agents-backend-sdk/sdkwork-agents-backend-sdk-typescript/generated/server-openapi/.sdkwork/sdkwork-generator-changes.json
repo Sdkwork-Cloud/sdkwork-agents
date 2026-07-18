@@ -9,12 +9,11 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-backend-sdk"
   },
-  "changeFingerprint": "86910732644ad33e008ed79bb9f6d9bde156b60a687f7be347d0a090650be9b9",
+  "changeFingerprint": "5080e571d013e10cef8bef9ea050f64dc3a6ee87d5d88bc6760b1a38acd8c683",
   "changes": {
     "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts",
-      "src/types/index.ts"
+      "src/api/ai.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -86,6 +85,7 @@
       "src/types/create-agent-session-request.ts",
       "src/types/create-agent-task-request.ts",
       "src/types/field-error.ts",
+      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/page-info.ts",
       "src/types/problem-detail.ts",
@@ -102,9 +102,7 @@
       "src/types/update-agent-status-request.ts",
       "tsconfig.json"
     ],
-    "deletedGeneratedFiles": [
-      "src/types/delete-agent-request.ts"
-    ],
+    "deletedGeneratedFiles": [],
     "scaffoldedFiles": [],
     "preservedScaffoldFiles": [
       "custom/build-runtime.mjs",
@@ -115,8 +113,7 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface",
-      "models"
+      "api-surface"
     ],
     "details": [
       {
@@ -124,28 +121,21 @@
         "paths": [
           "src/api/ai.ts"
         ]
-      },
-      {
-        "area": "models",
-        "paths": [
-          "src/types/delete-agent-request.ts",
-          "src/types/index.ts"
-        ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models. Verification is required."
+    "summary": "Detected impact areas: api-surface. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -163,7 +153,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -181,14 +171,12 @@
   },
   "executionDecision": {
     "schemaVersion": 1,
-    "riskLevel": "high",
+    "riskLevel": "medium",
     "nextAction": "verify",
     "requiresManualReview": false,
     "applyRequiresExpectedFingerprint": false,
     "summary": "Changes have been applied. Run the required verification plan now.",
     "reasons": [
-      "deleted-generated-files",
-      "manual-review-required",
       "verification-required"
     ]
   },

@@ -1,0 +1,438 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { CreativeInputBox } from '@/packages/sdkwork-chatbox-pc-commons/src/components/CreativeInputBox';
+import { ImageDetailModal } from '@/packages/sdkwork-chatbox-pc-inspiration/src/components/ImageDetailModal';
+import { VideoDetailModal } from '@/packages/sdkwork-chatbox-pc-inspiration/src/components/VideoDetailModal';
+import { useTranslation } from 'react-i18next';
+import { SidebarOpen, Sparkles } from 'lucide-react';
+import { cn } from '@/packages/sdkwork-chatbox-pc-commons/src/components/MarkdownRenderer';
+
+import { CreativeSession, CreativeMessage } from './types';
+import { CreativeSidebar } from './components/CreativeSidebar';
+import { CreativeEmptyState } from './components/CreativeEmptyState';
+import { CreativeToolbar } from './components/CreativeToolbar';
+import { CreativeMessageItem } from './components/CreativeMessageItem';
+import { PromptHistoryItem } from './components/CreativeHistoryLog';
+
+import { CreativeService } from '@/packages/sdkwork-chatbox-pc-core/src/services/CreativeService';
+
+export const CreativeView = () => {
+  const { t } = useTranslation('chat');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
+  const [sessions, setSessions] = useState<CreativeSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState('default');
+
+  const [historyLogs, setHistoryLogs] = useState<PromptHistoryItem[]>(() => {
+    const saved = localStorage.getItem('creative_prompt_history_logs');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [
+      {
+        id: 'demo-1',
+        prompt: '一只穿戴宇航服、手持激光剑的未来派赛博朋克风猫咪，深邃星空背景，色彩鲜艳，写实风格，8k 极致细节',
+        mode: 'image',
+        timestamp: Date.now() - 3600000 * 2,
+        settings: {
+          model: 'Flux 1.0 Ultra',
+          ratio: '16:9',
+          style: 'Cyberpunk'
+        }
+      },
+      {
+        id: 'demo-2',
+        prompt: '生成一首轻快欢跃、具有动感夏日海滩风情的电子尤克里里纯音乐',
+        mode: 'music',
+        timestamp: Date.now() - 3600000 * 24,
+        settings: {
+          model: 'Suno Music 3.5',
+          duration: 30
+        }
+      }
+    ];
+  });
+
+  const [inputKey, setInputKey] = useState(0);
+  const [currentDefaultValue, setCurrentDefaultValue] = useState('');
+  const [currentInitialMode, setCurrentInitialMode] = useState('agent');
+  const [currentInitialSettings, setCurrentInitialSettings] = useState<any>(undefined);
+
+  const onLoadConfig = (item: PromptHistoryItem) => {
+    setCurrentDefaultValue(item.prompt);
+    setCurrentInitialMode(item.mode);
+    setCurrentInitialSettings(item.settings);
+    setInputKey(prev => prev + 1);
+    showToast("已成功载入该历史 Prompts 及配置参数！");
+  };
+
+  const onReRun = (item: PromptHistoryItem) => {
+    showToast("正在重新运行选定的历史配置...");
+    handleSend(item.prompt, item.mode, item.settings);
+  };
+
+  const onDeleteLog = (id: string) => {
+    setHistoryLogs(prev => {
+      const updated = prev.filter(x => x.id !== id);
+      localStorage.setItem('creative_prompt_history_logs', JSON.stringify(updated));
+      return updated;
+    });
+    showToast("已删除该条历史记录");
+  };
+
+  const onClearLogs = () => {
+    setHistoryLogs([]);
+    localStorage.removeItem('creative_prompt_history_logs');
+    showToast("历史生成记录已清空");
+  };
+
+  useEffect(() => {
+    CreativeService.getSessions().then(data => {
+      setSessions(data);
+      if (data.length > 0) setActiveSessionId(data[0].id);
+    });
+  }, []);
+  
+  // Interactive features
+  const [selectedImage, setSelectedImage] = useState<any | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [messageLayouts, setMessageLayouts] = useState<Record<string, 'grid' | 'masonry' | 'carousel'>>({});
+  const [carouselIndices, setCarouselIndices] = useState<Record<string, number>>({});
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3000);
+  };
+
+  const handleTogglePin = (id: string) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === id) {
+        const nextPin = !s.isPinned;
+        showToast(nextPin ? "已置顶会话" : "已取消置顶");
+        return { ...s, isPinned: nextPin };
+      }
+      return s;
+    }));
+  };
+
+  const handleSaveRename = (id: string, customTitle?: string) => {
+    const finalTitle = (customTitle || '').trim();
+    if (!finalTitle) return;
+    setSessions(prev => prev.map(s => {
+      if (s.id === id) {
+        return { ...s, title: finalTitle };
+      }
+      return s;
+    }));
+    showToast("会话重命名成功");
+  };
+
+  const handleToggleLayout = (msgId: string) => {
+    setMessageLayouts(prev => {
+      const current = prev[msgId] || 'grid';
+      let next: 'grid' | 'masonry' | 'carousel' = 'grid';
+      if (current === 'grid') next = 'masonry';
+      else if (current === 'masonry') next = 'carousel';
+      else next = 'grid';
+      
+      showToast(`已切换布局排版为: ${next === 'grid' ? '经典网格' : next === 'masonry' ? '海报拼图' : '焦点轮播'}`);
+      return { ...prev, [msgId]: next };
+    });
+  };
+
+  const handleDeleteMessage = (msgId: string) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === activeSessionId) {
+        const index = s.messages.findIndex(m => m.id === msgId);
+        if (index === -1) return s;
+        
+        let toRemoveIndices = [index];
+        if (index > 0 && s.messages[index - 1].role === 'user') {
+          toRemoveIndices.push(index - 1);
+        }
+        
+        return {
+          ...s,
+          messages: s.messages.filter((_, idx) => !toRemoveIndices.includes(idx))
+        };
+      }
+      return s;
+    }));
+    showToast("已删除该条生成内容");
+  };
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const currentSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentSession?.messages]);
+
+  // Handle incoming prompt from InspirationView
+  useEffect(() => {
+    const pendingPrompt = sessionStorage.getItem('pending_creative_prompt');
+    const pendingMode = sessionStorage.getItem('pending_creative_mode') || 'agent';
+    
+    if (pendingPrompt) {
+      // Clear immediately to avoid multiple triggering
+      sessionStorage.removeItem('pending_creative_prompt');
+      sessionStorage.removeItem('pending_creative_mode');
+      
+      // Trigger the generation
+      handleSend(pendingPrompt, pendingMode);
+    }
+  }, [activeSessionId]);
+
+  const handleNewChat = () => {
+    const newId = Date.now().toString();
+    setSessions(prev => [
+      { id: newId, title: '新对话', messages: [] },
+      ...prev
+    ]);
+    setActiveSessionId(newId);
+  };
+
+  const handleDeleteSession = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (sessions.length <= 1) {
+      // Reset the default session instead of deleting last one
+      setSessions([{ id: 'default', title: '默认创作', messages: [] }]);
+      setActiveSessionId('default');
+      return;
+    }
+    const filtered = sessions.filter(s => s.id !== id);
+    setSessions(filtered);
+    if (activeSessionId === id) {
+      setActiveSessionId(filtered[0].id);
+    }
+  };
+
+  const handleSend = async (text: string, mode: string = 'agent', settings?: any) => {
+    if (!text.trim()) return;
+
+    // Track/Sync in History Log
+    const newLogItem: PromptHistoryItem = {
+      id: 'log-' + Date.now() + Math.random().toString(36).substr(2, 4),
+      prompt: text.trim(),
+      mode: mode,
+      timestamp: Date.now(),
+      settings: settings || {
+        model: mode === 'agent' ? 'Agent Pro' : (mode === 'video' ? '视频 5.0' : '图片 5.0 Ultra'),
+        ratio: '1:1'
+      }
+    };
+    setHistoryLogs(prev => {
+      const filtered = prev.filter(x => x.prompt.trim() !== text.trim());
+      const updated = [newLogItem, ...filtered].slice(0, 50);
+      localStorage.setItem('creative_prompt_history_logs', JSON.stringify(updated));
+      return updated;
+    });
+
+    const userMsgId = 'user-' + Date.now();
+    const userMessage: CreativeMessage = {
+      id: userMsgId,
+      role: 'user',
+      text: text
+    };
+
+    // Add user message to session & update title if default/new
+    setSessions(prev => prev.map(s => {
+      if (s.id === activeSessionId) {
+        const title = (s.title === '默认创作' || s.title === '新对话') 
+          ? (text.length > 12 ? text.slice(0, 12) + '...' : text)
+          : s.title;
+        return {
+          ...s,
+          title,
+          messages: [...s.messages, userMessage]
+        };
+      }
+      return s;
+    }));
+
+    // Trigger service generation
+    await CreativeService.generateContent(text, mode, (assistantMsg) => {
+      setSessions(prev => prev.map(s => {
+        if (s.id === activeSessionId) {
+          const exists = s.messages.some(m => m.id === assistantMsg.id);
+          return {
+            ...s,
+            messages: exists 
+              ? s.messages.map(m => m.id === assistantMsg.id ? assistantMsg : m)
+              : [...s.messages, assistantMsg]
+          };
+        }
+        return s;
+      }));
+    });
+  };
+
+  return (
+    <div className="flex h-full w-full bg-[#141414] text-white overflow-hidden font-sans">
+      <style>{`
+        @keyframes scan {
+          0% { transform: translateY(-100%); }
+          50% { transform: translateY(100%); }
+          100% { transform: translateY(-100%); }
+        }
+        .scanner-bar {
+          animation: scan 3s ease-in-out infinite;
+        }
+      `}</style>
+
+      {/* Sidebar */}
+      <CreativeSidebar 
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        setActiveSessionId={setActiveSessionId}
+        handleNewChat={handleNewChat}
+        handleSaveRename={handleSaveRename}
+        handleTogglePin={handleTogglePin}
+        handleDeleteSession={handleDeleteSession}
+        historyLogs={historyLogs}
+        onReRun={onReRun}
+        onLoadConfig={onLoadConfig}
+        onDeleteLog={onDeleteLog}
+        onClearLogs={onClearLogs}
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col relative min-w-0 bg-[#121212]">
+        {/* Toggle Sidebar Button */}
+        {!isSidebarOpen && (
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-4 left-4 p-2 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-zinc-200 transition-colors z-50 bg-[#141414] border border-white/5 cursor-pointer"
+          >
+            <SidebarOpen size={18} />
+          </button>
+        )}
+
+        {!currentSession ? (
+          <div className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500 bg-[#121212]">
+            <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin mb-4" />
+            <p className="text-sm">加载中...</p>
+          </div>
+        ) : currentSession.messages.length === 0 ? (
+          /* Empty Landing View */
+          <CreativeEmptyState 
+            activeSessionId={activeSessionId}
+            handleSend={handleSend}
+          />
+        ) : (
+          /* Message Flow Dialog View */
+          <div className="flex-1 flex flex-col overflow-hidden w-full relative">
+            {/* Header / Filter Toolbar */}
+            <CreativeToolbar title={currentSession.title} />
+
+            {/* Scrollable conversation history */}
+            <div 
+              ref={scrollContainerRef}
+              className="flex-1 overflow-y-auto px-6 py-6 space-y-8 custom-scrollbar bg-[#0f0f11]"
+            >
+              <div className="max-w-[1056px] mx-auto w-full space-y-8">
+                {currentSession.messages.filter(m => m.role === 'assistant').map((m) => (
+                  <CreativeMessageItem
+                    key={m.id}
+                    message={m}
+                    layout={messageLayouts[m.id] || 'grid'}
+                    carouselIndex={carouselIndices[m.id] || 0}
+                    onPreviewImage={(message, idx) => {
+                      if (message.mode === 'video') {
+                        setSelectedVideo({
+                          id: message.id + '-' + idx,
+                          title: message.text || 'AI 智能创作视频',
+                          author: '我',
+                          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
+                          likes: 88,
+                          duration: '00:05',
+                          desc: message.text || '通过 AI 智能生成的创意视频片段。',
+                          cover: message.imageUrls?.[idx] || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800&q=80',
+                          videoUrl: message.videoUrls?.[idx] || 'https://assets.mixkit.co/videos/preview/mixkit-space-exploration-with-a-retro-futuristic-computer-43180-large.mp4'
+                        });
+                      } else {
+                        setSelectedImage({
+                          src: message.imageUrls?.[idx] || '',
+                          imageUrls: message.imageUrls || [message.imageUrl || ''],
+                          currentIndex: idx,
+                          prompt: message.text || '',
+                          author: '我',
+                          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
+                          date: '刚刚',
+                          likes: 120,
+                          aspectRatio: message.modelInfo?.includes('1:1') ? '1:1' : '16:9',
+                          model: message.modelInfo || '图片 5.0 Ultra'
+                        });
+                      }
+                    }}
+                    onSetCarouselIndex={(idx) => setCarouselIndices(prev => ({ ...prev, [m.id]: idx }))}
+                    onToggleLayout={() => handleToggleLayout(m.id)}
+                    onSend={handleSend}
+                    onDelete={() => handleDeleteMessage(m.id)}
+                  />
+                ))}
+                <div ref={messagesEndRef} className="h-4" />
+              </div>
+            </div>
+
+            {/* Bottom floating input box */}
+            <div className="p-6 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11] to-transparent w-full">
+              <div className="max-w-[1056px] mx-auto relative">
+                <CreativeInputBox 
+                  key={activeSessionId + "-bottom-" + inputKey} 
+                  defaultValue={currentDefaultValue}
+                  initialMode={currentInitialMode} 
+                  initialSettings={currentInitialSettings}
+                  onSubmit={(val, mode, settings) => {
+                    handleSend(val, mode, settings);
+                    setCurrentDefaultValue('');
+                  }} 
+                  className="w-full shadow-2xl" 
+                />
+                
+                {/* Floating footer text */}
+                <div className="text-center mt-3 text-[10px] text-zinc-500 font-medium">
+                  创作内容由 AI 生成，请注意甄别其真实性与合规性
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Global Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-cyan-950 border border-cyan-800 text-cyan-300 px-4 py-2 rounded-lg text-xs font-medium shadow-2xl z-[100] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in duration-300">
+          <Sparkles size={14} className="text-cyan-400" />
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Reusable Image/Video Detail Modal for High-Res View */}
+      <ImageDetailModal
+        isOpen={!!selectedImage}
+        onClose={() => setSelectedImage(null)}
+        image={selectedImage}
+      />
+
+      <VideoDetailModal
+        isOpen={!!selectedVideo}
+        onClose={() => setSelectedVideo(null)}
+        video={selectedVideo}
+      />
+    </div>
+  );
+};

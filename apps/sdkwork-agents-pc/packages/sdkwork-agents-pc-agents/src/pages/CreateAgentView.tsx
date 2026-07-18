@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ChevronLeft, Save, Bot, Brain, Database, Settings2, Sparkles, Edit2, RotateCcw, Copy, Check, Trash2, Mic, Plug, Wand2, MessageSquare, AlertCircle, RefreshCw, ChevronDown, Wrench, Layers, TerminalSquare, Brackets, FileText, PlayCircle } from 'lucide-react';
 import { Avatar, IconButton } from '@sdkwork/agents-pc-commons';
-import { MessageInput } from '../components/MessageInput';
+import { LazyMessageInput } from '../components/LazyMessageInput';
+import { agentsDriveUploadService } from '@sdkwork/agents-pc-core/sdk';
 import { toast } from '../components/Toast';
 import { agentService, type AgentConfig } from '../services/AgentService';
 import { EditBasicInfoModal } from '../components/EditBasicInfoModal';
@@ -181,6 +182,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
   const [name, setName] = useState('新智能体');
   const [desc, setDesc] = useState('这是一个新创建的智能体');
   const [avatar, setAvatar] = useState('');
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('');
   const [agentType, setAgentType] = useState<AgentConfig['type']>('normal');
   const [model, setModel] = useState(DEFAULT_AGENT_CONFIG.model);
   const [temperature, setTemperature] = useState(DEFAULT_AGENT_CONFIG.temperature);
@@ -299,6 +301,17 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         setDesc(agent.description || '');
         setPrompt(agent.systemPrompt ?? '');
         setAvatar(agent.avatar || '');
+        if (agent.avatar?.startsWith('drive://')) {
+          void agentsDriveUploadService.resolvePreviewUrl(agent.avatar)
+            .then((url) => {
+              if (!cancelled) setAvatarPreviewUrl(url);
+            })
+            .catch(() => {
+              if (!cancelled) setAvatarPreviewUrl('');
+            });
+        } else {
+          setAvatarPreviewUrl(agent.avatar || '');
+        }
         setAgentType(agent.type);
         setModel(agent.model || DEFAULT_AGENT_CONFIG.model);
         setTemperature(agent.temperature ?? DEFAULT_AGENT_CONFIG.temperature);
@@ -327,7 +340,9 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
     };
   }, [initialAgentId, onBack]);
 
-  const resolveAgentDisplayAvatar = () => avatar || DEFAULT_AGENT_AVATAR;
+  const resolveAgentDisplayAvatar = () => (
+    avatarPreviewUrl || (!avatar.startsWith('drive://') ? avatar : '') || DEFAULT_AGENT_AVATAR
+  );
 
   const buildCurrentAgentConfig = (agentId?: string): AgentConfig => ({
     ...(agentId ? { id: agentId } : {}),
@@ -1041,8 +1056,14 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
                 ))}
               </div>
             )}
-            <MessageInput 
+            <LazyMessageInput
               onSend={handleTestSend}
+              uploadResourceId={draftId ?? undefined}
+              resolveUploadResourceId={async () => {
+                const persisted = await ensurePersistedAgentForRuntime();
+                if (!persisted.id) throw new Error('Persisted Agent id is required for uploads.');
+                return persisted.id;
+              }}
               isTyping={isTyping}
               onStop={() => setIsTyping(false)}
               placeholder="发送测试消息..."
@@ -1060,10 +1081,21 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
         initialName={name}
         initialDesc={desc}
         initialAvatar={avatar}
-        onSave={(newName, newDesc, newAvatar) => {
+        initialAvatarPreview={avatarPreviewUrl}
+        onUploadAvatar={async (file) => {
+          const persisted = await ensurePersistedAgentForRuntime();
+          if (!persisted.id) throw new Error('Persisted Agent id is required for avatar upload.');
+          return agentsDriveUploadService.upload({
+            file,
+            purpose: 'agent-avatar',
+            resourceId: persisted.id,
+          });
+        }}
+        onSave={(newName, newDesc, newAvatar, newAvatarPreview) => {
            setName(newName);
            setDesc(newDesc);
            if (newAvatar) setAvatar(newAvatar);
+           setAvatarPreviewUrl(newAvatarPreview || '');
            setIsEditModalOpen(false);
            toast('基础信息已更新', 'success');
         }}

@@ -76,25 +76,26 @@ async fn backend_router_web_framework_rejects_unauthenticated_requests() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
-async fn backend_router_web_framework_accepts_dev_jwt_dual_tokens() {
+#[test]
+fn backend_router_web_framework_accepts_dev_jwt_dual_tokens() {
     let _guard = env_test_lock();
     std::env::set_var("SDKWORK_ENV", "dev");
     std::env::set_var("SDKWORK_IAM_ALLOW_DEV_AUTH_FALLBACK", "true");
-    let app = test_app();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/backend/v3/api/ai/agents?tenant_id=100001")
+                    .header("Authorization", agents_auth_token_bearer("30001"))
+                    .header("Access-Token", agents_access_token("30001"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/backend/v3/api/ai/agents?tenant_id=100001")
-                .header("Authorization", agents_auth_token_bearer("30001"))
-                .header("Access-Token", agents_access_token("30001"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+    });
 }

@@ -22,10 +22,12 @@
   },
   "dependencies": {
     "@sdkwork/agents-app-sdk": "workspace:*",
+    "@sdkwork/drive-app-sdk": "workspace:*",
     "@sdkwork/iam-contracts": "workspace:*",
     "@sdkwork/knowledgebase-app-sdk": "workspace:*",
     "@sdkwork/voice-app-sdk": "workspace:*",
     "@sdkwork/skills-app-sdk": "workspace:*",
-    "@sdkwork/sdk-common": "workspace:*"
+    "@sdkwork/sdk-common": "workspace:*",
+    "@sdkwork/utils": "workspace:*"
   }
 }

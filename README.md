@@ -67,7 +67,7 @@ Pre-flight: `pnpm verify` and `pnpm topology:validate`. See [docs/runbooks/pre-l
 | `sdkwork-web-framework` | Integrated via `sdkwork-routes-agents-*` route crates |
 | `sdkwork-database` | Integrated (app registry + agents managed store + kernel runtime DB) |
 | `sdkwork-utils` | Integrated in contract, service response/validation, runtime-facade |
-| `sdkwork-drive` | Required when upload ships | Composition slots + `@sdkwork/drive-app-sdk` per `DRIVE_SPEC.md` |
+| `sdkwork-drive` | Integrated for PC uploads | PC core Drive Uploader facade + `@sdkwork/drive-app-sdk`; Agents persists canonical Drive references only |
 | `sdkwork-discovery` | Deferred until RPC services ship |
 
 ## Application Roots

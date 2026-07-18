@@ -1593,7 +1593,7 @@ impl PolicyProvider for IamGatedPolicyProvider {
         // subject is present).  This lets every logged-in user create agents
         // while the activation step (`change_status`) still demands
         // `ai.agents.manage`, preserving the review workflow.
-        if let None = required_permission {
+        if required_permission.is_none() {
             if request.subject.is_some() {
                 return Ok(PolicyDecision::allow(
                     decision_id,
@@ -1883,7 +1883,6 @@ fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery
 
 /// Sort order for provider bindings: active first, then by updated_at desc,
 /// then by binding_id ascending. Encoded in `provider_binding_index_key`.
-
 #[cfg(test)]
 mod tests {
     use super::*;

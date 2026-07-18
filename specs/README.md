@@ -22,7 +22,7 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 | `sdkwork-web-framework` | **Integrated** | `sdkwork-routes-agents-*` + `build_served_combined_router` in kernel-bridge |
 | `sdkwork-database` | **Integrated** | `database/` assets, `sdkwork-agents-database-host`, managed-store postgres path |
 | `sdkwork-utils` | **Integrated** | `SdkWorkApiResponse`, `parse_bool`, `is_blank`, `trim`, `uuid` across contract/service/facade |
-| `sdkwork-drive` | **Reference-only in GA scope** | Composition slots may reference drive resources; any file upload feature must wire Drive Uploader before entering product scope |
+| `sdkwork-drive` | **Integrated for PC upload scope** | PC core uses `@sdkwork/drive-app-sdk` Drive Uploader; Agents messages and slots retain canonical Drive-backed media references only |
 | `sdkwork-discovery` | **Inactive** | No first-party RPC services yet |
 
 ## Independent Module Integration

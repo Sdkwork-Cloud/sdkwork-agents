@@ -135,7 +135,7 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         method: "POST",
         path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
         tag: "ai",
-        operation_id: "agents.messages.create",
+        operation_id: "agents.messages.stream",
     },
     ApiOperation {
         method: "GET",
@@ -300,7 +300,7 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         method: "POST",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
         tag: "ai",
-        operation_id: "agents.messages.create",
+        operation_id: "agents.messages.stream",
     },
     ApiOperation {
         method: "GET",
@@ -507,7 +507,7 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         method: "POST",
         path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
         tag: "ai",
-        operation_id: "agents.messages.create",
+        operation_id: "agents.messages.stream",
     },
     ApiOperation {
         method: "GET",
@@ -592,6 +592,26 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const COMPOSITION_SLOT_ID_PATTERN: &str = r"^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$";
+
+    fn assert_composition_slot_id_pattern(label: &str, openapi: &str) {
+        let document: serde_yaml::Value = serde_yaml::from_str(openapi)
+            .unwrap_or_else(|error| panic!("{label} OpenAPI must be valid YAML: {error}"));
+        let pattern = document
+            .get("components")
+            .and_then(|value| value.get("parameters"))
+            .and_then(|value| value.get("SlotIdPath"))
+            .and_then(|value| value.get("schema"))
+            .and_then(|value| value.get("pattern"))
+            .and_then(serde_yaml::Value::as_str);
+
+        assert_eq!(
+            pattern,
+            Some(COMPOSITION_SLOT_ID_PATTERN),
+            "{label} OpenAPI SlotIdPath must enforce the canonical composition slot ID pattern"
+        );
+    }
 
     #[test]
     fn provider_binding_operations_are_registered() {
@@ -732,6 +752,8 @@ mod tests {
             ("app", app_openapi, "/app/v3/api"),
             ("backend", backend_openapi, "/backend/v3/api"),
         ] {
+            assert_composition_slot_id_pattern(label, openapi);
+
             for required in [
                 format!("{prefix}/ai/agents/{{agentId}}/provider_bindings:"),
                 format!("{prefix}/ai/agents/{{agentId}}/composition_slots:"),
@@ -751,7 +773,6 @@ mod tests {
                 "AgentCompositionSlotListResponse:".to_string(),
                 "x-sdkwork-permission: agent.business.composition_slot.list".to_string(),
                 "x-sdkwork-permission: agent.business.composition_slot.create".to_string(),
-                "pattern: '^slot\\.[a-z0-9_-]+(\\.[a-z0-9_-]+)*$'".to_string(),
             ] {
                 assert!(
                     openapi.contains(required.as_str()),
@@ -768,7 +789,7 @@ mod tests {
                     format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/close:"),
                     "operationId: agents.sessions.list".to_string(),
                     "operationId: agents.sessions.create".to_string(),
-                    "operationId: agents.messages.create".to_string(),
+                    "operationId: agents.messages.stream".to_string(),
                     "operationId: agents.messages.list".to_string(),
                     "AgentChatCompletionResponse:".to_string(),
                 ] {
@@ -891,7 +912,7 @@ mod tests {
             .filter(|line| {
                 let trimmed = line.trim_start();
                 let rest = trimmed.strip_prefix("operationId:").unwrap_or("");
-                rest.trim().len() > 0
+                !rest.trim().is_empty()
             })
             .count()
     }

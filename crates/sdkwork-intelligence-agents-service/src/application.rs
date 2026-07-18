@@ -1064,7 +1064,7 @@ where
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "list",
         )?;
-        Ok(self.repository.list_paginated(&command.query)?)
+        self.repository.list_paginated(&command.query)
     }
 
     pub fn list_agent_audit_events(
@@ -2106,16 +2106,17 @@ where
         input: AgentBusinessAuditEventInput<'_>,
     ) -> KernelResult<()> {
         // Use structured JSON payload for marketplace events
-        let audit_payload = MarketplaceAuditPayload::new(
-            input.action,
-            input.item_kind,
-            input.item_id,
-            input.tenant_id,
-            input.organization_id,
-            input.status,
-            input.visibility,
-            input.version,
-        );
+        let audit_payload =
+            MarketplaceAuditPayload::new(crate::domain::MarketplaceAuditPayloadInput {
+                action: input.action,
+                item_kind: input.item_kind,
+                item_id: input.item_id,
+                tenant_id: input.tenant_id,
+                organization_id: input.organization_id,
+                status: input.status,
+                visibility: input.visibility,
+                version: input.version,
+            });
         let payload_json = audit_payload.to_json().map_err(|error| {
             KernelError::validation(format!("marketplace audit payload serialization: {error}"))
         })?;

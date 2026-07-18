@@ -1,0 +1,10 @@
+{
+  "name": "sdkwork-chatbox-pc-desktop",
+  "version": "1.0.0",
+  "description": "Tauri desktop shell for sdkwork-chatbox",
+  "private": true,
+  "scripts": {
+    "dev:desktop": "tauri dev",
+    "build:desktop": "tauri build"
+  }
+}

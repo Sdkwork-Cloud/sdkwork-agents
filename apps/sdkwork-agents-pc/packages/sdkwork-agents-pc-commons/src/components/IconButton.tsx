@@ -1,10 +1,10 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentPropsWithoutRef } from "react";
 
 import { cn } from "../utils";
 
-interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+type IconButtonProps = ComponentPropsWithoutRef<"button"> & {
   active?: boolean;
-}
+};
 
 export function IconButton({ className, active, type = "button", ...props }: IconButtonProps) {
   return (

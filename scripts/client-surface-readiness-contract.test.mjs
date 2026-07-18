@@ -59,7 +59,7 @@ const h5App = "apps/sdkwork-agents-h5/src";
 const pcCoreSdk = "apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-core/src/sdk";
 const h5CoreSdk = "apps/sdkwork-agents-h5/packages/sdkwork-agents-h5-core/src/sdk";
 
-mustExport(`${pcApp}/components/AuthGate.tsx`, "AuthGate");
+mustExport(`${pcApp}/AuthGate.tsx`, "AuthGate");
 mustExport(`${h5App}/components/AuthGate.tsx`, "AuthGate");
 mustExport(`${pcAgents}/pages/AgentChatView.tsx`, "AgentChatView");
 mustExport(`${h5Agents}/pages/AgentChatView.tsx`, "AgentChatView");
@@ -132,14 +132,18 @@ assert.match(
   "agents index wxml must link to the explicit editor bridge page",
 );
 
-for (const [label, relativePath] of [
-  ["PC", `${pcApp}/App.tsx`],
-  ["H5", `${h5App}/App.tsx`],
-]) {
-  const appSource = mustExist(relativePath);
-  assert.match(appSource, /AuthGate/u, `${label} App.tsx must wrap routes with AuthGate`);
-  assert.match(appSource, /AgentChatView/u, `${label} App.tsx must wire AgentChatView`);
-  assert.match(appSource, /CHAT_ROUTE/u, `${label} App.tsx must wire chat route constant`);
-}
+const pcAppSource = mustExist(`${pcApp}/App.tsx`);
+assert.match(pcAppSource, /AuthGate/u, "PC App.tsx must wrap the workbench with AuthGate");
+assert.match(pcAppSource, /WorkbenchLayout/u, "PC App.tsx must wire the production workbench");
+assert.match(
+  mustExist(`${pcApp}/components/WorkbenchLayout.tsx`),
+  /AgentWorkspace/u,
+  "PC workbench must wire the SDK-backed agent workspace",
+);
+
+const h5AppSource = mustExist(`${h5App}/App.tsx`);
+assert.match(h5AppSource, /AuthGate/u, "H5 App.tsx must wrap routes with AuthGate");
+assert.match(h5AppSource, /AgentChatView/u, "H5 App.tsx must wire AgentChatView");
+assert.match(h5AppSource, /CHAT_ROUTE/u, "H5 App.tsx must wire the chat route constant");
 
 console.log("client surface readiness contract passed.");

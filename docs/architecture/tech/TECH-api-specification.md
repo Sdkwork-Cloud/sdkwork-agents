@@ -83,7 +83,7 @@ Public integration surface for external API consumers.
 | # | Method | Path | operationId | Description |
 | --- | --- | --- | --- | --- |
 | 19 | GET | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.list` | List messages in a session |
-| 20 | POST | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.create` | Send user content; returns chat completion (user + assistant messages) |
+| 20 | POST | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.stream` | Send user content; returns chat completion as JSON or SSE |
 | 21 | GET | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/{message_id}` | `agents.messages.retrieve` | Retrieve a single message |
 | 22 | POST | `/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/close` | `agents.sessions.close` | Close a chat session |
 
@@ -155,7 +155,7 @@ Application client surface for PC, H5, Flutter, and Mini Program apps.
 | # | Method | Path | operationId | Description |
 | --- | --- | --- | --- | --- |
 | 21 | GET | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.list` | List messages in a session |
-| 22 | POST | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.create` | Send a message to an agent |
+| 22 | POST | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.stream` | Send a message to an agent as JSON or SSE |
 | 23 | GET | `/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/{message_id}` | `agents.messages.retrieve` | Retrieve a single message |
 
 ### 2.7 Live interactions (App + Backend only)
@@ -243,7 +243,7 @@ Admin/operations surface for management, auditing, and control-plane operations.
 | # | Method | Path | operationId | Description |
 | --- | --- | --- | --- | --- |
 | 21 | GET | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.list` | List messages (admin) |
-| 22 | POST | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.create` | Create a message (admin) |
+| 22 | POST | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages` | `agents.messages.stream` | Send a message as JSON or SSE (admin) |
 | 23 | GET | `/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/{message_id}` | `agents.messages.retrieve` | Retrieve a message (admin) |
 
 ### 3.7 Live interactions
@@ -310,7 +310,7 @@ opts into inline execution. After create, call `agents.tasks.execute` to run def
 | agents.sessions.close | ✓ | ✓ | ✓ |
 | agents.sessions.archive | — | — | ✓ |
 | agents.messages.list | ✓ | ✓ | ✓ |
-| agents.messages.create | ✓ | ✓ | ✓ |
+| agents.messages.stream | ✓ | ✓ | ✓ |
 | agents.messages.retrieve | ✓ | ✓ | ✓ |
 | agents.interactions.* | — | ✓ | ✓ |
 | agents.tasks.* | ✓ | ✓ | ✓ |

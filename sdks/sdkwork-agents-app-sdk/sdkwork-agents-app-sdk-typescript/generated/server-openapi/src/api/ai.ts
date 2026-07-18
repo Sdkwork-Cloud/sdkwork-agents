@@ -179,7 +179,7 @@ export interface AiAgentsMessagesListParams {
   pageSize?: number;
 }
 
-export interface AiAgentsMessagesCreateParams {
+export interface AiAgentsMessagesStreamParams {
   stream?: boolean;
 }
 
@@ -201,7 +201,7 @@ export class AiAgentsMessagesApi {
   }
 
 /** Send a user chat message and receive an assistant reply */
-  async create(agentId: string, sessionId: string, body: AppSendAgentChatMessageRequest, params?: AiAgentsMessagesCreateParams): Promise<AsyncIterable<string>> {
+  async stream(agentId: string, sessionId: string, body: AppSendAgentChatMessageRequest, params?: AiAgentsMessagesStreamParams): Promise<AsyncIterable<string>> {
     const query = buildQueryString([
       { name: 'stream', value: params?.stream, style: 'form', explode: true, allowReserved: false },
     ]);

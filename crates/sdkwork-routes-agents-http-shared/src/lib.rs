@@ -19,6 +19,10 @@ pub use web_bootstrap::{
 
 pub use sdkwork_intelligence_agents_service::{AgentHttpState, AgentRequestContext};
 
+pub fn gateway_mount() -> axum::Router {
+    axum::Router::new()
+}
+
 #[cfg(test)]
 mod route_manifest_contracts {
     use super::*;
@@ -33,32 +37,17 @@ mod route_manifest_contracts {
 
     #[test]
     fn route_manifest_helpers_build_from_generated_slices() {
-        assert!(
-            !app_route_manifest()
-                .match_route("GET", "/app/v3/api/ai/agents")
-                .is_none()
-                || !APP_ROUTES.is_empty()
-        );
-        assert!(
-            !backend_route_manifest()
-                .match_route("GET", "/backend/v3/api/ai/agents")
-                .is_none()
-                || !BACKEND_ROUTES.is_empty()
-        );
-        assert!(
-            !open_route_manifest()
-                .match_route("GET", "/agent/v3/api/ai/agents")
-                .is_none()
-                || !OPEN_ROUTES.is_empty()
-        );
-        assert!(
-            !combined_route_manifest()
-                .match_route("GET", "/app/v3/api/ai/agents")
-                .is_none()
-                || !COMBINED_ROUTES.is_empty()
-        );
+        assert!(app_route_manifest()
+            .match_route("GET", "/app/v3/api/ai/agents")
+            .is_some());
+        assert!(backend_route_manifest()
+            .match_route("GET", "/backend/v3/api/ai/agents")
+            .is_some());
+        assert!(open_route_manifest()
+            .match_route("GET", "/agent/v3/api/ai/agents")
+            .is_some());
+        assert!(combined_route_manifest()
+            .match_route("GET", "/app/v3/api/ai/agents")
+            .is_some());
     }
-}
-pub fn gateway_mount() -> axum::Router {
-    axum::Router::new()
 }

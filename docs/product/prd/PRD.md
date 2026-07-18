@@ -3,7 +3,7 @@
 Status: active
 Owner: agents-platform
 Application: sdkwork-agents
-Updated: 2026-07-08
+Updated: 2026-07-18
 Specs: REQUIREMENTS_SPEC.md, DOCUMENTATION_SPEC.md
 
 ## Document Map
@@ -78,7 +78,7 @@ sdkwork-agents 解决的核心问题：
 - 不实现技能管理（由 `sdkwork-skills` 拥有）
 - 不实现提示词管理（由 `sdkwork-prompts` 拥有）
 - 不实现 LLM 模型目录、模型供应商凭证、模型网关或模型运行面（由 `sdkwork-llm` / kernel provider 拥有）
-- 不实现文件上传（由 `sdkwork-drive` 拥有）
+- 不在 agents 域实现对象存储、上传会话或本地上传 API；PC 上传通过 `sdkwork-drive` Drive Uploader，agents 只保存 canonical Drive 资源引用和编排元数据
 - 不定义 kernel Provider SPI（由 `sdkwork-kernel` 拥有）
 - 不实现 coding-session / workbench 投影（由 `sdkwork-birdcoder` 拥有）
 - 不在 agents 内重复实现 Codex/Claude/OpenCode 官方 SDK 绑定（由 kernel provider 插件拥有）
@@ -162,7 +162,7 @@ these modules with `dependencyMode=independent-capability-module` and
 | FR-1 | Agent lifecycle supports create, retrieve, list, update, soft delete, restore, status control, tenant/user scoping | Open/App/Backend APIs expose lifecycle operations; App API applies owner isolation |
 | FR-2 | Runtime binding is provider-neutral and allows one active binding per agent | `ai_agent_runtime_binding` persists bindings; activation is atomic and audited |
 | FR-3 | External capabilities are composed through slots, not duplicated in agents tables | `ai_agent_composition_slot` stores `slot_kind`, `target_module`, `target_ref`, priority, policy, status |
-| FR-4 | Hosted chat supports session/message persistence and canonical chat turn | `ai_agent_session` and `ai_agent_message`; `agents.messages.create` persists user + assistant messages atomically |
+| FR-4 | Hosted chat supports session/message persistence and canonical chat turn | `ai_agent_session` and `ai_agent_message`; `agents.messages.stream` persists user + assistant messages atomically and supports JSON or SSE response negotiation |
 | FR-5 | Task scheduling is product-owned while execution runs remain kernel-projected | `ai_agent_task` and `agents.tasks.*` are live; `agents.taskRuns.*` is non-GA scope until kernel `AgentRun` projection is stable |
 | FR-6 | Live interaction supports approval and user-question pause points | `ai_agent_interaction`; App/Backend `agents.interactions.*`; Open API excluded |
 | FR-7 | Runtime catalog exposes canonical code engines and MCP marketplace projection to app clients | App API `agents.codeEngines.list` and `agents.mcpServers.list` |
@@ -170,6 +170,7 @@ these modules with `dependencyMode=independent-capability-module` and
 | FR-9 | Commercial MVP is operable with audit, metrics, SDKs, pagination, frontend identity gates, production security gates, and fail-closed persistence | PRD Phase 4 gates plus `pnpm verify`, `pnpm check`, `pnpm check:frontend-service-identity`, `pnpm check:production-security`, API envelope, operation pattern, route collision, pagination, SDK import, composition, and BirdCoder contract checks |
 | FR-10 | Independent capability modules remain upstream dependencies, never downstream consumers of agents | PRD and architecture dependency matrices say agents → memory/knowledgebase/skills/prompts/mcp/llm/drive; no reverse dependency is permitted |
 | FR-11 | PC/H5 services preserve server-owned message identity, approved client business ID generation, and token-derived IAM context | Authored agents services do not call `crypto.randomUUID()` directly; generated SDK chat responses must include server `messageId`; client-required agent/execution business IDs use `@sdkwork/utils/id` helper wrappers; PC/H5 session bridges do not synthesize `environment`, `deploymentMode`, or `authLevel` defaults when IAM/JWT context omits them |
+| FR-12 | PC 文件输入统一通过 Drive Uploader 形成稳定媒体资源 | 当前生产范围的 Agent 头像和聊天图片/附件/视频/语音使用 `@sdkwork/drive-app-sdk` composed uploader；业务只持久化 `drive://spaces/{spaceId}/nodes/{nodeId}` 与 `MediaResource`，短期下载 URL 仅用于预览；Creative policy 已治理但 UI 在权威 generation API 获批前不发布 |
 
 ## 5. User Scenarios
 
@@ -258,6 +259,7 @@ these modules with `dependencyMode=independent-capability-module` and
 - [x] PC/H5 生产聊天页（`AgentChatView`，sessions/messages API，会话恢复 + 消息上限）
 - [x] PC/H5 前端服务身份与 IAM 上下文门禁（禁止直接 `crypto.randomUUID()`；服务端 `messageId` 缺失即失败；session bridge 不本地伪造 `environment` / `deploymentMode` / `authLevel`）
 - [x] PC/H5 客户端：Auth Gate、知识库 bootstrap、运行时 catalog、composition slot 同步
+- [x] PC Drive Uploader：生产头像与聊天媒体统一通过 composed Drive SDK；Creative media policy 已集中但原型生成 UI 不进入生产 composition；无 app-local upload API、上传表、对象存储 provider 或持久化预签名 URL
 - [x] 可选 sibling SDK：skills / voice catalog（无 silent fallback，分页加载）
 - [x] 小程序 runtime bundle 与 TypeScript bootstrap 对齐（verify 门禁）
 - [x] 客户端 E2E 流程 contract（create agent → chat，`agent-e2e-flow-contract.test.ts`）

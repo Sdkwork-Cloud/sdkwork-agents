@@ -86,72 +86,74 @@ impl Drop for GatewayTestEnvironment {
     }
 }
 
-#[tokio::test]
-async fn api_server_bootstrap_health_and_metrics_contracts() {
+#[test]
+fn api_server_bootstrap_health_and_metrics_contracts() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("bootstrap-health");
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = sdkwork_agents_standalone_gateway::build_router()
+            .await
+            .expect("agents standalone-gateway bootstrap should succeed with dev inline auth");
 
-    let app = sdkwork_agents_standalone_gateway::build_router()
-        .await
-        .expect("agents standalone-gateway bootstrap should succeed with dev inline auth");
+        for path in ["/healthz", "/readyz", "/livez"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(path)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "expected {path} to be ready"
+            );
+        }
 
-    for path in ["/healthz", "/readyz", "/livez"] {
-        let response = app
-            .clone()
+        let metrics = app
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(path)
+                    .uri("/metrics")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(
-            response.status(),
-            StatusCode::OK,
-            "expected {path} to be ready"
-        );
-    }
-
-    let metrics = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/metrics")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(metrics.status(), StatusCode::OK);
+        assert_eq!(metrics.status(), StatusCode::OK);
+    });
 }
 
-#[tokio::test]
-async fn gateway_assembly_composes_kernel_router() {
+#[test]
+fn gateway_assembly_composes_kernel_router() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("gateway-assembly");
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let assembly = sdkwork_agents_gateway_assembly::assemble_application_router()
+            .await
+            .expect("gateway assembly should compose kernel routes");
 
-    let assembly = sdkwork_agents_gateway_assembly::assemble_application_router()
-        .await
-        .expect("gateway assembly should compose kernel routes");
-
-    let healthz = assembly
-        .router
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/healthz")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(healthz.status(), StatusCode::OK);
+        let healthz = assembly
+            .router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(healthz.status(), StatusCode::OK);
+    });
 }
 
-#[tokio::test]
-async fn app_database_migrate_only_succeeds_with_postgres_baseline_contract() {
+#[test]
+fn app_database_migrate_only_succeeds_with_postgres_baseline_contract() {
     let _guard = env_test_lock();
     let baseline = include_str!("../../../database/ddl/baseline/postgres/0001_agents_baseline.sql");
     assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_session"));

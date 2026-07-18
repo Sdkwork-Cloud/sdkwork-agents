@@ -359,29 +359,32 @@ pub struct MarketplaceAuditPayload {
     pub version: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarketplaceAuditPayloadInput<'a> {
+    pub action: AgentAuditAction,
+    pub item_kind: &'a str,
+    pub item_id: &'a str,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub status: AgentBusinessStatus,
+    pub visibility: AgentVisibility,
+    pub version: u64,
+}
+
 impl MarketplaceAuditPayload {
     pub const SCHEMA_VERSION: &'static str = "v1";
 
-    pub fn new(
-        action: AgentAuditAction,
-        item_kind: &str,
-        item_id: &str,
-        tenant_id: u64,
-        organization_id: u64,
-        status: AgentBusinessStatus,
-        visibility: AgentVisibility,
-        version: u64,
-    ) -> Self {
+    pub fn new(input: MarketplaceAuditPayloadInput<'_>) -> Self {
         Self {
             schema_version: Self::SCHEMA_VERSION.to_string(),
-            action: action.action_code().to_string(),
-            item_kind: item_kind.to_string(),
-            item_id: item_id.to_string(),
-            tenant_id,
-            organization_id,
-            status: status.as_str().to_string(),
-            visibility: visibility.as_str().to_string(),
-            version,
+            action: input.action.action_code().to_string(),
+            item_kind: input.item_kind.to_string(),
+            item_id: input.item_id.to_string(),
+            tenant_id: input.tenant_id,
+            organization_id: input.organization_id,
+            status: input.status.as_str().to_string(),
+            visibility: input.visibility.as_str().to_string(),
+            version: input.version,
         }
     }
 

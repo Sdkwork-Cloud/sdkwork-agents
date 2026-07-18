@@ -4,6 +4,7 @@ import {
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import { extractOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
+import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk";
 
 import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";
 
@@ -138,10 +139,26 @@ export class AgentChatService {
     sessionId: string,
     content: string,
     modelId?: string,
+    media?: AgentsDriveMediaResource | AgentsDriveMediaResource[],
   ): Promise<ChatMessage> {
+    const mediaResources = media ? (Array.isArray(media) ? media : [media]) : [];
     const body = {
       content: content.trim(),
-      contentType: "text/plain",
+      contentType: mediaResources[0]?.mimeType ?? "text/plain",
+      ...(mediaResources.length > 0 ? {
+        metadataJson: JSON.stringify({
+          mediaResources: mediaResources.map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            source: item.source,
+            uri: item.uri,
+            fileName: item.fileName,
+            mimeType: item.mimeType,
+            sizeBytes: item.sizeBytes,
+            metadata: item.metadata,
+          })),
+        }),
+      } : {}),
       requestedAt: new Date().toISOString(),
       ...(modelId ? { modelId } : {}),
     };

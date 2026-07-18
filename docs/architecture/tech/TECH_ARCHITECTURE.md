@@ -2,7 +2,7 @@
 
 Status: active
 Owner: agents-platform
-Updated: 2026-07-08
+Updated: 2026-07-18
 Specs: [`ARCHITECTURE_DECISION_SPEC.md`](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [`WEB_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/WEB_FRAMEWORK_SPEC.md), [`DATABASE_FRAMEWORK_SPEC.md`](../../../../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md), [`API_SPEC.md`](../../../../sdkwork-specs/API_SPEC.md), [`SDK_SPEC.md`](../../../../sdkwork-specs/SDK_SPEC.md)
 
 ## 1. Architecture Overview
@@ -166,6 +166,25 @@ Alignment tracker: [`specs/agents-birdcoder-alignment.spec.json`](../../../specs
 BirdCoder ownership remains narrow: `coding_session*`, workbench projection, repository state,
 and code-task UI stay in BirdCoder. Shared agent lifecycle, provider catalog, messages,
 interactions, tasks, and runtime turns go through `sdkwork-agents`.
+
+### 2.7 PC SDK 与 Drive 上传边界
+
+PC 是静态 Vite 应用，可由浏览器或 Tauri 桌面宿主承载。应用 composition root 初始化 IAM runtime、一个全局 TokenManager 以及 Agents、Drive、Knowledgebase、Skills、Voice composed SDK；UI 和 feature package 不创建 SDK client、不拼认证头，也不调用 raw HTTP。生产 composition 只发布 Agent catalog/lifecycle 和 `AgentChatView`，目录、编辑器与会话均通过窄 service 入口和 composed SDK；stock-data inspiration、generic creative generation、asset gallery 与原型 workbench 不进入生产导航或入口依赖图。
+
+```text
+PC UI / feature
+    -> sdkwork-agents-pc-core/driveUploadService
+    -> @sdkwork/drive-app-sdk client.uploader.uploadByProfile
+    -> Drive App API
+    -> MediaResource + drive://spaces/{spaceId}/nodes/{nodeId}
+    -> Agents message metadataJson / composition reference
+```
+
+上传 purpose/profile 在 PC core 集中治理：头像使用 `avatar`，聊天与 Creative 图片使用 `image`，语音/音频使用 `audio`，视频使用 `video`，普通聊天附件使用 `attachment`。每类输入在调用 Drive 前执行大小和 MIME 校验，并携带稳定的 `appResourceType`、`appResourceId`、`scene`、`source` 和长期保留策略。Drive 返回的 15 分钟下载 URL 只用于当前 UI 预览，不能作为业务身份持久化；应用不拥有上传 API、上传表、provider object key 或分片状态。服务端若处理文件，必须使用 Drive Rust SDK、`DriveUploaderService` 或经批准的 RPC facade，禁止 raw Drive HTTP。
+
+当前生产上传范围是 Agent 头像和会话媒体。Creative image/audio/video policy 已在同一 facade 中完成类型与 profile 治理，但在权威 generation API、资产归属和结果 `MediaResource` 合同获批前不发布对应 UI。生产构建按真实使用点懒加载 IAM 登录、Agent 编辑器、Markdown/Tiptap 和导出库，`check:bundle-budget` 限制入口依赖闭包为 260 KiB gzip，并禁止重型编辑器/导出 chunk 回到首屏。
+
+当前没有本应用拥有的 RPC server/client，因此不接入 `sdkwork-discovery`；首次引入 RPC 时必须同时按 `RPC_FRAMEWORK_SPEC.md`、`DISCOVERY_SPEC.md` 和韧性规范完成注册、解析与验证。
 
 ## 3. Composition Slot Pattern
 
@@ -482,6 +501,7 @@ repository and must be integrated through their owned contracts rather than reim
 | PC/H5 production chat UI (`AgentChatView` + sessions/messages API) | Done |
 | PC/H5 frontend service identity and IAM context gate (`@sdkwork/utils/id` business IDs; server `messageId` required; no local IAM context defaults) | Done |
 | PC Auth Gate + knowledge bootstrap + runtime catalog + composition slot sync | Done |
+| PC composed Drive Uploader + canonical MediaResource persistence boundary | Done |
 | Optional skills/voice/knowledge catalog via sibling app SDKs | Done (server-paged pickers; cursor/offset per authority) |
 | Mini-program runtime bundle rebuild in verify (`agents-mini-program build` + runtime contract) | Done |
 | Rust service module boundary split (`http/context.rs`, `http/middleware.rs`, `http/testing.rs`, `persistence/sql.rs`) | Done |

@@ -1,44 +1,75 @@
 {
   "name": "@sdkwork/agents-pc",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.app.json && vite build",
+    "build": "vite build && pnpm run check:bundle-budget",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "test:agent-contracts": "tsx --tsconfig tsconfig.app.json scripts/agent-service-scope-consistency-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-service-management-profile-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-chat-service-contract.test.ts && tsx --tsconfig tsconfig.app.json scripts/agent-e2e-flow-contract.test.ts"
+    "clean": "node scripts/clean.mjs",
+    "lint": "tsc --noEmit",
+    "typecheck": "pnpm run lint",
+    "test:agent-contract": "tsx --test tests/agent-catalog.test.ts",
+    "test:iam-contract": "node --test tests/iam-integration.contract.test.mjs && tsx --test tests/auth-routing.test.ts",
+    "test:drive-contract": "tsx --test tests/drive-upload.contract.test.ts",
+    "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
+    "test:agent-contracts": "pnpm run test:agent-contract && pnpm run test:iam-contract && pnpm run test:drive-contract"
   },
   "dependencies": {
+    "@sdkwork/auth-pc-react": "workspace:*",
+    "@sdkwork/auth-runtime-pc-react": "workspace:*",
+    "@sdkwork/core-pc-react": "workspace:*",
+    "@sdkwork/iam-contracts": "workspace:*",
     "@sdkwork/agents-pc-agents": "workspace:*",
     "@sdkwork/agents-pc-core": "workspace:*",
-    "@sdkwork/agents-pc-commons": "workspace:*",
-    "@sdkwork/agents-pc-shell": "workspace:*",
-    "@sdkwork/sdk-common": "workspace:*",
-    "clsx": "catalog:",
-    "lucide-react": "catalog:",
-    "motion": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:",
+    "@sdkwork/chatbox-pc-core": "workspace:*",
+    "@sdkwork/utils": "workspace:*",
+    "@monaco-editor/react": "^4.7.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@sdkwork/ui-pc-react": "workspace:*",
+    "@types/reveal.js": "^5.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "clsx": "^2.1.1",
+    "html-to-image": "^1.11.13",
+    "i18next": "^26.3.1",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-i18next": "^17.0.8",
     "react-router-dom": "^7.17.0",
-    "tailwind-merge": "catalog:",
-    "tailwindcss": "catalog:",
-    "@tailwindcss/vite": "catalog:"
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
+    "reveal.js": "^6.0.1",
+    "tailwindcss": "^4.1.14",
+    "tailwind-merge": "^3.6.0",
+    "vite": "^6.2.3"
   },
   "devDependencies": {
-    "@types/react": "catalog:",
-    "@types/react-dom": "catalog:",
-    "@vitejs/plugin-react": "catalog:",
-    "tsx": "catalog:",
-    "typescript": "catalog:",
-    "vite": "catalog:"
+    "@types/node": "^22.14.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "autoprefixer": "^10.4.21",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  },
+  "overrides": {
+    "node-domexception": "npm:domexception@^4.0.0"
   },
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./agents": {
+      "types": "./src/agents/index.ts",
+      "import": "./src/agents/index.ts",
+      "default": "./src/agents/index.ts"
     }
   }
 }

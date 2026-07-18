@@ -205,6 +205,17 @@ fn sql_injection_prevention_all_queries() {
 }
 
 #[test]
+fn create_flow_casts_rfc3339_text_to_postgres_timestamptz() {
+    assert!(SQL_INSERT_AGENT.contains("$18::timestamptz"));
+    assert!(SQL_INSERT_AGENT.contains("$19::timestamptz"));
+    assert!(SQL_INSERT_AGENT.contains("$20::timestamptz"));
+    assert!(SQL_INSERT_AUDIT_EVENT.contains("$13::timestamptz"));
+    assert!(SQL_INSERT_AGENT_COMPOSITION_SLOT.contains("$16::timestamptz"));
+    assert!(SQL_INSERT_AGENT_COMPOSITION_SLOT.contains("$17::timestamptz"));
+    assert!(SQL_INSERT_AGENT_COMPOSITION_SLOT.contains("$18::timestamptz"));
+}
+
+#[test]
 fn postgres_session_sql_is_tenant_scoped() {
     tenant_scoped_select_sql(SQL_SELECT_AGENT_SESSION, "ai_agent_session");
     tenant_scoped_list_sql(SQL_LIST_AGENT_SESSIONS, "ai_agent_session");

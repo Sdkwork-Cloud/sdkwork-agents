@@ -1,0 +1,4 @@
+# Server environment configuration
+environment = "development"
+deployment_mode = "server"
+runtime_target = "server"

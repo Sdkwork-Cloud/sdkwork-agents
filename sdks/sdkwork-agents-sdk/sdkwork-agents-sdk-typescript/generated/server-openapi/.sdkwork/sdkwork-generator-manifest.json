@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "42af450170fd20d5e63c1bf2b1a97903f2d7a3a5815eefa7d0b77cd8dad1ebe9"
+      "sha256": "889807fee5c1fa199a890e904b97273478f9f0105f78620d804e08afa4231bf8"
     },
     {
       "path": "src/api/base.ts",
@@ -92,7 +92,7 @@
     },
     {
       "path": "src/types/agent-chat-completion-response.ts",
-      "sha256": "9d7fad32953ad614dcf971a172b0d09fd96f69b7c3332477835e9254605306a0"
+      "sha256": "bc7b8dd5ff78ca6b54e44a64529b56e0e8c61659218616e66f6452c00ca394f1"
     },
     {
       "path": "src/types/agent-composition-slot-create-data.ts",
@@ -104,7 +104,7 @@
     },
     {
       "path": "src/types/agent-composition-slot-list-response.ts",
-      "sha256": "aeb4dfbfd82f0e3355cce3b1b1c559826be6cf7ec82f210fbc6905c60955dc07"
+      "sha256": "f5445fb5fd8ad5f415e504994998e12775ebddd14a6d185a726b74c7a5c79d3b"
     },
     {
       "path": "src/types/agent-composition-slot-record.ts",
@@ -112,7 +112,7 @@
     },
     {
       "path": "src/types/agent-composition-slot-response.ts",
-      "sha256": "83eccd51e3e238e52173fd1bbdf76d36006d9d1b273e1ba880cdf6f7b17cd670"
+      "sha256": "f9100e0c00e9758cfe28fc608c3838e73cd590dd375af090e34cc846ca5216b1"
     },
     {
       "path": "src/types/agent-composition-target-module.ts",
@@ -128,7 +128,7 @@
     },
     {
       "path": "src/types/agent-interaction-list-response.ts",
-      "sha256": "abcbfcd9ad23b210dc5d299905fe688011a9222ab1c763211d1c219b7d0031bb"
+      "sha256": "8043ee3536e165167eb706ae99955f2a87c3a23c963630ce02154464c204a0d4"
     },
     {
       "path": "src/types/agent-interaction-record.ts",
@@ -136,11 +136,11 @@
     },
     {
       "path": "src/types/agent-interaction-response.ts",
-      "sha256": "57f790ab956a4e56ff05d2e0e00795d3f2fd4da3e665c1a8012aa6a99d6b3573"
+      "sha256": "35e73ea7d95e7600fc77261690ca48f8125d968e948765a540d609560d06b6ca"
     },
     {
       "path": "src/types/agent-list-response.ts",
-      "sha256": "f67377109ebf17e307b9c956c2b30a718bd50a7761df6eabaacaf14037848152"
+      "sha256": "462ff7d25f3c73676ba054b38e132ac1115b6da0fbda36d2f48dbad886f02bcc"
     },
     {
       "path": "src/types/agent-management-profile.ts",
@@ -148,7 +148,7 @@
     },
     {
       "path": "src/types/agent-message-list-response.ts",
-      "sha256": "1530ff678e5df9214ff534d4bfd9ec9d191a920ac88d1d08c1012e52fa761529"
+      "sha256": "5f9a3ac050de8ec93091ba3c46cea3fa551202a533459c08ee1273ff3e5a965b"
     },
     {
       "path": "src/types/agent-message-record.ts",
@@ -156,11 +156,11 @@
     },
     {
       "path": "src/types/agent-message-response.ts",
-      "sha256": "0379e72fcee1dee23300cc9ed47b50d37ba0b46c188163e70d2229815fec5993"
+      "sha256": "d50ea6e4d9d41c83cc929981f05855d6edebc1d952735d47f241ec2c2c46d67f"
     },
     {
       "path": "src/types/agent-provider-binding-list-response.ts",
-      "sha256": "dfad66e9ee0fa183664829b1ddf301e1f83920d2bb4292dbbc22cd8f83d0ceff"
+      "sha256": "41612cebe84b5ca1a8f7fdb94d73bec208fde82723a2e5b36ac0387e479d55e7"
     },
     {
       "path": "src/types/agent-provider-binding-record.ts",
@@ -168,7 +168,7 @@
     },
     {
       "path": "src/types/agent-provider-binding-response.ts",
-      "sha256": "ca363d8147bc6ba2f604c699fc04aca907ad8bb7519742d51896e7a446d419b7"
+      "sha256": "b92c77705cb9b225f6838b5e7a03e0614158b6a815bb13325cb6b6a76b313e88"
     },
     {
       "path": "src/types/agent-record.ts",
@@ -176,7 +176,7 @@
     },
     {
       "path": "src/types/agent-response.ts",
-      "sha256": "e196f0182430685f8ce964286b4710b1e04ebbb5675935781046fa7024d151fc"
+      "sha256": "218598cf61c94c7f9fa62d989c0f73eeced397f727e5e2c23f9a78b1e4ebf989"
     },
     {
       "path": "src/types/agent-runtime-execution-record.ts",
@@ -184,11 +184,11 @@
     },
     {
       "path": "src/types/agent-runtime-execution-response.ts",
-      "sha256": "c50f1ff37be164395f59fdc3c5672d56a98f1e1f8a07dbf6de9c642c7e714d22"
+      "sha256": "f1debd18fdf64f342378933435f0f2c22b94a2de4bc7dc7029f16d8152f1e92f"
     },
     {
       "path": "src/types/agent-session-list-response.ts",
-      "sha256": "e8f7ef90179519b7c41f213e0b305587c1d7b56f510efae27dff1d1305e6ca82"
+      "sha256": "b7befa3ee98c95c3719000f951eb0ddaaeebcb25aed984fcaddbeb7896eab40d"
     },
     {
       "path": "src/types/agent-session-record.ts",
@@ -196,7 +196,7 @@
     },
     {
       "path": "src/types/agent-session-response.ts",
-      "sha256": "c9a0b3398b666d527fa6e187dd1b062c8009d114e538a80bfba8a5b4bdbe5508"
+      "sha256": "8b00a8df3f63a80cca728a6e201f9f7d2479927eab9b8f5bcf02af058ba421c8"
     },
     {
       "path": "src/types/agent-status.ts",
@@ -204,7 +204,7 @@
     },
     {
       "path": "src/types/agent-task-list-response.ts",
-      "sha256": "38e27afecd94481c1df2385780cb5515b56b82abd41e11c6b331b5332ba4719d"
+      "sha256": "dec0a8ddda26777f9b1405040ec0038d71d6d3ebd4a691412d2ab92010ed3415"
     },
     {
       "path": "src/types/agent-task-record.ts",
@@ -212,7 +212,7 @@
     },
     {
       "path": "src/types/agent-task-response.ts",
-      "sha256": "f12a5c43988920dbc4edc67f27f498865469e4a9f6fe24a893bc87fc4be1a436"
+      "sha256": "a38de90caaf7e9cf1f0f47cc5e4257e7aa9cd2c2b912c8d0cad393c326853e3c"
     },
     {
       "path": "src/types/agent-visibility.ts",
@@ -256,7 +256,7 @@
     },
     {
       "path": "src/types/code-engine-catalog-list-response.ts",
-      "sha256": "ce203f6ce0a9eaf3373a693c97a513a1c727dfe91d190f07b7e2a62ff3ef74f2"
+      "sha256": "06aee104c7a46a000eda1255a8d25f139e1506177dc4d91aee5d9735f04099fd"
     },
     {
       "path": "src/types/code-engine-catalog.ts",
@@ -320,7 +320,7 @@
     },
     {
       "path": "src/types/mcp-server-marketplace-list-response.ts",
-      "sha256": "9fffbb2eb7ab5ff62bac5f2aaa4cf5c33222c30d5f72639c4995bbbf1d132c53"
+      "sha256": "4f0d969a35c25c30c2ea0e8415d34bc1f310ce81e644fabe232ae00597d7d582"
     },
     {
       "path": "src/types/mcp-server-marketplace-record.ts",
@@ -332,7 +332,7 @@
     },
     {
       "path": "src/types/problem-detail.ts",
-      "sha256": "52a5992d354d3f5585d3eebf13a968b0cbad1f80b6bd3e50c6cbcd9f601482ca"
+      "sha256": "ee5d3d04cec827933250794cf8051230dab439ace3eed0e82ce4fe7d38797880"
     },
     {
       "path": "src/types/restore-agent-request.ts",
@@ -340,7 +340,7 @@
     },
     {
       "path": "src/types/sdk-work-api-response.ts",
-      "sha256": "1bce4a243c1f87c7e5630df3cc66a1569227e704cecc8a60da2d5bda789f5b9a"
+      "sha256": "4d4daf7439a9c4cbe292a71e548bef4f9e0866bbef4a0b5649ddc6509a5eb534"
     },
     {
       "path": "src/types/sdk-work-async-data.ts",

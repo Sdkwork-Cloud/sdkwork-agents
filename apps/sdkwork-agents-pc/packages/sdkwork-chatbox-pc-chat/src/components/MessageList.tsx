@@ -1,0 +1,65 @@
+import React, { useState } from 'react';
+import { Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { ChatMessage } from '@/packages/sdkwork-chatbox-pc-core/src/sdk/types';
+import { ChatMessageItem } from './ChatMessageItem';
+
+interface MessageListProps {
+  messages: ChatMessage[];
+  messagesEndRef: React.RefObject<HTMLDivElement>;
+  onOpenArtifact: (lang: string, code: string, mode?: 'preview' | 'code') => void;
+}
+
+export const MessageList: React.FC<MessageListProps> = ({ messages, messagesEndRef, onOpenArtifact }) => {
+  const { t } = useTranslation('chat');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
+
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleFeedback = (id: string, type: 'up' | 'down') => {
+    setFeedback(prev => {
+      const isRemoving = prev[id] === type;
+      const { [id]: _, ...rest } = prev;
+      if (isRemoving) {
+        return rest;
+      }
+      return { ...rest, [id]: type };
+    });
+  };
+
+  if (messages.length === 0) {
+    return (
+      <div className="h-[calc(100vh-200px)] flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500 ease-out">
+        <div className="w-16 h-16 bg-gradient-to-tr from-[#1890ff] to-[#096dd9] text-white rounded-2xl flex items-center justify-center mb-6 shadow-[#1890ff]/20 shadow-xl border border-[#1890ff]/30 ring-4 ring-[#1890ff]/10">
+          <Sparkles size={32} className="text-white drop-shadow-md" />
+        </div>
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">{t('howCanIHelp')}</h2>
+        <p className="text-[15px] leading-relaxed text-gray-500 dark:text-gray-400 max-w-sm">
+          {t('welcomeDescription')}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto w-full pb-48 px-4 sm:px-6 pt-10 flex flex-col gap-10">
+      {messages.map((message) => (
+        <ChatMessageItem
+          key={message.id}
+          message={message}
+          copiedId={copiedId}
+          feedback={feedback}
+          handleCopy={handleCopy}
+          handleFeedback={handleFeedback}
+          onOpenArtifact={onOpenArtifact}
+        />
+      ))}
+      <div ref={messagesEndRef} />
+    </div>
+  );
+};

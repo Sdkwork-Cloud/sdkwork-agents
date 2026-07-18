@@ -46,6 +46,11 @@
         "credentialMode": "authenticated-app-api"
       },
       {
+        "workspace": "sdkwork-drive-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
         "workspace": "sdkwork-knowledgebase-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api"
@@ -63,6 +68,7 @@
     ],
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
+      "@sdkwork/drive-app-sdk",
       "@sdkwork/knowledgebase-app-sdk",
       "@sdkwork/skills-app-sdk",
       "@sdkwork/voice-app-sdk"
@@ -73,6 +79,12 @@
         {
           "moduleId": "agents",
           "manifestRef": "../../../../../specs/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        },
+        {
+          "moduleId": "drive",
+          "manifestRef": "../../../../../../sdkwork-iam/iam/modules/drive/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         },

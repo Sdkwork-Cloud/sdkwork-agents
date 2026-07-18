@@ -1,14 +1,14 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
+import {StrictMode} from 'react';
+import {createRoot} from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
+import '@/packages/sdkwork-chatbox-pc-core/src/i18n';
+import { bootstrapAgentsSdk } from './bootstrap';
 
-import App from "./App";
-import { bootstrap } from "./bootstrap/runtime";
-import "./index.css";
+bootstrapAgentsSdk();
 
-bootstrap();
-
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
     <App />
-  </React.StrictMode>,
+  </StrictMode>,
 );

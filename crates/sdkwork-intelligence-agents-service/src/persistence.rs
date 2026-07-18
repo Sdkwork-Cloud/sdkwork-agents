@@ -21,7 +21,7 @@ use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelEvent, KernelEventSeverity, KernelEventSource, KernelResult,
 };
 use sdkwork_code_kernel::CodeTaskIntent;
-use sdkwork_utils_rust::{is_blank, trim};
+use sdkwork_utils_rust::{is_blank, sha256_hash, trim};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlite-sync")]
 use sqlx::sqlite::SqliteRow;
@@ -687,23 +687,23 @@ impl AgentTaskRow {
 }
 
 fn build_session_uuid(tenant_id: u64, session_id: &str) -> String {
-    format!("agent_session_{tenant_id}_{session_id}")
+    build_storage_uuid("session", tenant_id, &[session_id])
 }
 
 fn build_message_uuid(tenant_id: u64, session_id: &str, message_id: &str) -> String {
-    format!("agent_message_{tenant_id}_{session_id}_{message_id}")
+    build_storage_uuid("message", tenant_id, &[session_id, message_id])
 }
 
 fn build_interaction_uuid(tenant_id: u64, session_id: &str, interaction_id: &str) -> String {
-    format!("agent_interaction_{tenant_id}_{session_id}_{interaction_id}")
+    build_storage_uuid("interaction", tenant_id, &[session_id, interaction_id])
 }
 
 fn build_task_uuid(tenant_id: u64, task_id: &str) -> String {
-    format!("agent_task_{tenant_id}_{task_id}")
+    build_storage_uuid("task", tenant_id, &[task_id])
 }
 
 fn build_composition_slot_uuid(tenant_id: u64, agent_id: &str, slot_id: &str) -> String {
-    format!("composition_slot_{tenant_id}_{agent_id}_{slot_id}")
+    build_storage_uuid("composition-slot", tenant_id, &[agent_id, slot_id])
 }
 
 fn parse_implementation_kind(input: &str) -> KernelResult<AgentImplementationKind> {
@@ -793,7 +793,7 @@ impl AgentAuditEventRow {
 
         Ok(Self {
             id,
-            uuid: format!("audit_{}_{}", tenant_id, event.event_id),
+            uuid: build_storage_uuid("audit-event", tenant_id, &[event.event_id.as_str()]),
             tenant_id,
             organization_id,
             agent_internal_id,
@@ -3101,14 +3101,30 @@ where
 }
 
 fn build_agent_business_uuid(tenant_id: u64, agent_id: &str) -> String {
-    format!("agent_business_{}_{}", tenant_id, agent_id)
+    build_storage_uuid("agent-business", tenant_id, &[agent_id])
 }
 
 fn build_agent_provider_binding_uuid(tenant_id: u64, agent_id: &str, binding_id: &str) -> String {
-    format!(
-        "agent_provider_binding_{}_{}_{}",
-        tenant_id, agent_id, binding_id
-    )
+    build_storage_uuid("provider-binding", tenant_id, &[agent_id, binding_id])
+}
+
+fn build_storage_uuid(resource_kind: &str, tenant_id: u64, identity_parts: &[&str]) -> String {
+    let mut material = format!(
+        "sdkwork.agents.storage.v1\n{}:{resource_kind}",
+        resource_kind.len()
+    );
+    let tenant_id = tenant_id.to_string();
+    material.push('\n');
+    material.push_str(tenant_id.len().to_string().as_str());
+    material.push(':');
+    material.push_str(tenant_id.as_str());
+    for part in identity_parts {
+        material.push('\n');
+        material.push_str(part.len().to_string().as_str());
+        material.push(':');
+        material.push_str(part);
+    }
+    sha256_hash(material.as_bytes())
 }
 
 /// Extract a structured context value from a `KernelEvent` payload by key.
@@ -3642,7 +3658,76 @@ fn pg_row_to_agent_task_row(row: PgRow) -> KernelResult<AgentTaskRow> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_event_context;
+    use super::{
+        build_agent_business_uuid, build_agent_provider_binding_uuid, build_composition_slot_uuid,
+        build_interaction_uuid, build_message_uuid, build_session_uuid, build_task_uuid,
+        extract_event_context, AgentAuditEventRow,
+    };
+    use sdkwork_agent_kernel::{KernelEvent, KernelEventSeverity, KernelEventSource};
+
+    #[test]
+    fn storage_uuids_are_stable_bounded_and_resource_scoped() {
+        let tenant_id = 4_096_123_456_789_012_345;
+        let agent_id = format!("agent.pc.{}.123456789abc", "a".repeat(48));
+        let session_id = format!("session.pc.{}", "s".repeat(100));
+        let message_id = format!("message.pc.{}", "m".repeat(100));
+        let interaction_id = format!("interaction.pc.{}", "i".repeat(100));
+        let task_id = format!("task.pc.{}", "t".repeat(100));
+        let slot_id = format!("slot.pc.{}", "c".repeat(100));
+        let binding_id = format!("binding.pc.{}", "b".repeat(100));
+
+        let uuids = [
+            build_agent_business_uuid(tenant_id, &agent_id),
+            build_agent_provider_binding_uuid(tenant_id, &agent_id, &binding_id),
+            build_composition_slot_uuid(tenant_id, &agent_id, &slot_id),
+            build_session_uuid(tenant_id, &session_id),
+            build_message_uuid(tenant_id, &session_id, &message_id),
+            build_interaction_uuid(tenant_id, &session_id, &interaction_id),
+            build_task_uuid(tenant_id, &task_id),
+        ];
+
+        assert!(uuids.iter().all(|uuid| uuid.len() == 64));
+        assert_eq!(uuids[0], build_agent_business_uuid(tenant_id, &agent_id));
+        let mut distinct = uuids.to_vec();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(distinct.len(), uuids.len());
+    }
+
+    #[test]
+    fn storage_uuid_digest_contract_is_stable() {
+        assert_eq!(
+            build_agent_business_uuid(100_001, "agent.alpha"),
+            "c11c4a8d54102db9c618039faae87657511c2a55846e2d9b43b6d7916d357599"
+        );
+    }
+
+    #[test]
+    fn long_create_audit_event_uses_bounded_storage_uuid() {
+        let tenant_id = 4_096_123_456_789_012_345_u64;
+        let agent_id = format!("agent.pc.{}.123456789abc", "a".repeat(48));
+        let event = KernelEvent::new(
+            format!("agent_audit_{agent_id}_1"),
+            "agent.business.created",
+            KernelEventSeverity::Info,
+            serde_json::json!({
+                "_context": {
+                    "tenant_id": tenant_id.to_string(),
+                    "agent_id": agent_id,
+                    "agent_internal_id": "4096123456789012346"
+                }
+            })
+            .to_string(),
+        )
+        .from_source(KernelEventSource::Runtime)
+        .occurred_at("2026-07-18T00:00:00Z");
+
+        let row = AgentAuditEventRow::from_kernel_event(&event, 1)
+            .expect("long create audit event should map to storage");
+
+        assert_eq!(row.uuid.len(), 64);
+        assert_eq!(row.agent_id, agent_id);
+    }
 
     #[cfg(feature = "sqlite-sync")]
     fn sqlite_agent_record() -> crate::domain::AgentBusinessRecord {
@@ -3650,7 +3735,7 @@ mod tests {
             id: 101,
             agent_id: "agent.sqlite.test".to_string(),
             tenant_id: 100_001,
-            organization_id: 10,
+            organization_id: 0,
             owner_user_id: 20,
             code: "sqlite-test".to_string(),
             display_name: "SQLite Test".to_string(),

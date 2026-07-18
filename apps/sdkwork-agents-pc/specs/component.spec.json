@@ -4,70 +4,70 @@
   "component": {
     "name": "sdkwork-agents-pc",
     "displayName": "SDKWork Agents PC",
-    "version": "0.1.0",
+    "version": "0.0.0",
     "type": "pc-app-root",
     "root": "apps/sdkwork-agents-pc",
     "domain": "agents",
     "capability": "agents",
     "surface": "app",
-    "languages": [
-      "typescript"
-    ],
+    "languages": ["typescript"],
     "generated": false,
+    "status": "active",
     "manifests": [
       "package.json",
-      "sdkwork.app.config.json"
+      "sdkwork.app.config.json",
+      "specs/component.spec.json"
     ]
   },
   "canonicalSpecs": [
     {
       "file": "APP_PC_ARCHITECTURE_SPEC.md",
       "path": "../../../sdkwork-specs/APP_PC_ARCHITECTURE_SPEC.md",
-      "purpose": "pc application root architecture standard."
+      "purpose": "PC application root architecture."
     },
     {
-      "file": "APP_CLIENT_ARCHITECTURE_ALIGNMENT_SPEC.md",
-      "path": "../../../sdkwork-specs/APP_CLIENT_ARCHITECTURE_ALIGNMENT_SPEC.md",
-      "purpose": "Cross-client package taxonomy and dependency direction."
-    },
-    {
-      "file": "APP_COMPOSITION_SPEC.md",
-      "path": "../../../sdkwork-specs/APP_COMPOSITION_SPEC.md",
-      "purpose": "Native-authority application composition."
+      "file": "IAM_LOGIN_INTEGRATION_SPEC.md",
+      "path": "../../../sdkwork-specs/IAM_LOGIN_INTEGRATION_SPEC.md",
+      "purpose": "Appbase IAM login, session, and route guard integration."
     },
     {
       "file": "APP_SDK_INTEGRATION_SPEC.md",
       "path": "../../../sdkwork-specs/APP_SDK_INTEGRATION_SPEC.md",
-      "purpose": "SDK integration and TokenManager wiring."
+      "purpose": "Composed SDK and global TokenManager integration."
     },
     {
-      "file": "CODE_STYLE_SPEC.md",
-      "path": "../../../sdkwork-specs/CODE_STYLE_SPEC.md",
-      "purpose": "Authored source structure and generated code boundaries."
-    },
-    {
-      "file": "NAMING_SPEC.md",
-      "path": "../../../sdkwork-specs/NAMING_SPEC.md",
-      "purpose": "Canonical SDKWork naming rules."
+      "file": "TEST_SPEC.md",
+      "path": "../../../sdkwork-specs/TEST_SPEC.md",
+      "purpose": "Frontend and IAM verification."
     }
   ],
   "contracts": {
-    "publicExports": [
-      "src/main.tsx"
+    "publicExports": ["src/index.ts", "src/agents/index.ts"],
+    "runtimeEntrypoints": ["src/main.tsx", "package.json#scripts.dev"],
+    "sdkClients": [
+      "@sdkwork/agents-app-sdk",
+      "@sdkwork/drive-app-sdk",
+      "@sdkwork/iam-app-sdk",
+      "@sdkwork/knowledgebase-app-sdk",
+      "@sdkwork/skills-app-sdk",
+      "@sdkwork/voice-app-sdk"
     ],
-    "runtimeEntrypoints": [
-      "package.json#scripts.dev"
-    ],
-    "sdkClients": [],
     "sdkDependencies": [
-      "sdkwork-agents-app-sdk"
+      "sdkwork-agents-app-sdk",
+      "sdkwork-drive-app-sdk",
+      "sdkwork-iam-app-sdk",
+      "sdkwork-knowledgebase-app-sdk",
+      "sdkwork-skills-app-sdk",
+      "sdkwork-voice-app-sdk"
     ],
     "dependencyApiExports": [],
     "dependencyApiSurfaces": []
   },
   "verification": {
     "commands": [
-      "pnpm run typecheck",
+      "pnpm run test:agent-contract",
+      "pnpm run test:iam-contract",
+      "pnpm run test:agent-contracts",
       "pnpm run build"
     ]
   }

@@ -22,7 +22,7 @@ pnpm verify
 | Mini-program runtime | `pnpm --filter @sdkwork/agents-mini-program build` |
 | Node contracts | `pnpm check:contracts` (platform integration, database framework, root quality gates, production security, frontend service identity, Open SDK surface, mini-program runtime, client surface readiness) |
 | Client typecheck | PC / H5 / mini-program `tsc --noEmit` |
-| PC agent contracts | scope, management profile, chat service, e2e flow (create → chat) |
+| PC agent contracts | Agent catalog, IAM/auth routing, and Drive upload contracts |
 | Live smoke (manual) | [smoke-test.md](../runbooks/smoke-test.md) after deployment |
 
 Optional broader sweep:
@@ -30,7 +30,14 @@ Optional broader sweep:
 ```powershell
 pnpm test
 pnpm workflow:build-client-surfaces
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 ```
+
+On Windows, `cargo fmt --all -- --check` can exceed the process command-line
+limit when Cargo expands sibling path dependencies. In that environment, use
+`cargo metadata --no-deps --format-version 1` to enumerate this repository's
+workspace members and run `cargo fmt -p <package> -- --check` for each member.
 
 ## 2. Topology and database
 
@@ -113,7 +120,9 @@ Documented in [TECH_ARCHITECTURE.md](../architecture/tech/TECH_ARCHITECTURE.md) 
 | Token-level SSE streaming | Excluded from the current GA evidence bundle; current SDKWork contract ships single completion SSE events | `sdkwork-kernel` provider stream SPI |
 | Rate limit / CORS middleware | Enforced by the shared web-framework adoption plan, not reimplemented locally | `sdkwork-web-framework` |
 | Flutter mobile app | Excluded from the current GA evidence bundle until an owned Dart app SDK is available | `sdkwork-agents` mobile track |
-| File upload | Excluded from product scope unless the feature wires sdkwork-drive Drive Uploader first | `sdkwork-drive` + consuming feature |
+| File upload | PC GA scope is included through `@sdkwork/drive-app-sdk` Drive Uploader; verify avatar and chat media persist only canonical `drive://` MediaResource references and never presigned URLs. Creative upload policies are governed but its UI remains outside production composition. | `sdkwork-drive` + PC core uploader facade |
+
+Before cutover, run `pnpm --filter @sdkwork/agents-pc test:drive-contract`. Confirm the deployment exposes the Drive App API Base URL, shares the IAM TokenManager, rejects unsupported MIME/oversized input before upload, and can resolve a canonical Drive URI to a short-lived preview URL. No browser provider secret, app-local `/upload` route, Node proxy, raw Drive HTTP, object-storage SDK, persisted Blob/Data URL, or fake-success fallback is permitted.
 
 ## Sign-off
 

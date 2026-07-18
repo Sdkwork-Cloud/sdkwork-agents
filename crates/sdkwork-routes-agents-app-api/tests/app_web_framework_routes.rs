@@ -105,51 +105,53 @@ async fn app_router_web_framework_rejects_unauthenticated_requests() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
-async fn app_router_web_framework_accepts_dev_jwt_dual_tokens() {
+#[test]
+fn app_router_web_framework_accepts_dev_jwt_dual_tokens() {
     let _guard = env_test_lock();
     std::env::set_var("SDKWORK_ENV", "dev");
     std::env::set_var("SDKWORK_IAM_ALLOW_DEV_AUTH_FALLBACK", "true");
     std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "development");
-    let app = test_app();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/app/v3/api/ai/agents")
+                    .header("Authorization", agents_auth_token_bearer("30001"))
+                    .header("Access-Token", agents_access_token("30001"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/app/v3/api/ai/agents")
-                .header("Authorization", agents_auth_token_bearer("30001"))
-                .header("Access-Token", agents_access_token("30001"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+    });
 }
 
-#[tokio::test]
-async fn app_router_web_framework_accepts_browser_origin_in_development() {
+#[test]
+fn app_router_web_framework_accepts_browser_origin_in_development() {
     let _guard = env_test_lock();
     std::env::set_var("SDKWORK_ENV", "dev");
     std::env::set_var("SDKWORK_IAM_ALLOW_DEV_AUTH_FALLBACK", "true");
     std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "development");
-    let app = test_app();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/app/v3/api/ai/agents")
+                    .header("origin", "http://localhost:4176")
+                    .header("Authorization", agents_auth_token_bearer("30001"))
+                    .header("Access-Token", agents_access_token("30001"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/app/v3/api/ai/agents")
-                .header("origin", "http://localhost:4176")
-                .header("Authorization", agents_auth_token_bearer("30001"))
-                .header("Access-Token", agents_access_token("30001"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_ne!(response.status(), StatusCode::FORBIDDEN);
+        assert_ne!(response.status(), StatusCode::FORBIDDEN);
+    });
 }

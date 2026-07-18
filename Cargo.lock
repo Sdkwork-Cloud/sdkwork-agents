@@ -1153,6 +1153,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2295,6 +2305,7 @@ dependencies = [
 name = "sdkwork-agent-server"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "anyhow",
  "axum 0.8.9",
  "chrono",
@@ -2441,6 +2452,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
+ "if-addrs",
  "sdkwork-agent-server",
  "sdkwork-agents-database-host",
  "sdkwork-agents-gateway-assembly",
@@ -2596,6 +2608,7 @@ dependencies = [
  "sdkwork-iam-context-service",
  "sdkwork-utils-rust",
  "sdkwork-web-axum",
+ "sdkwork-web-bootstrap",
  "sdkwork-web-core",
  "serde",
  "serde_json",
@@ -2631,6 +2644,7 @@ dependencies = [
  "sdkwork-web-core",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sqlx",
  "time",
  "tokio",

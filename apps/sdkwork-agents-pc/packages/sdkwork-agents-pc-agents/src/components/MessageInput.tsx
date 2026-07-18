@@ -6,11 +6,22 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from './Toast';
 import { cn } from '@sdkwork/agents-pc-commons';
+import {
+  agentsDriveUploadService,
+  type AgentsDriveMediaResource,
+  type AgentsDriveUploadPurpose,
+} from '@sdkwork/agents-pc-core/sdk';
 import { EmojiPicker } from './EmojiPicker';
 import { translateMessageInput as t } from './messageInputI18n';
 
 export interface MessageInputProps {
-  onSend?: (content: string, type?: 'text'|'image'|'file'|'voice'|'video', extraInfo?: any) => void;
+  onSend?: (
+    content: string,
+    type?: 'text'|'image'|'file'|'voice'|'video',
+    media?: AgentsDriveMediaResource,
+  ) => void | Promise<void>;
+  uploadResourceId?: string;
+  resolveUploadResourceId?: () => Promise<string>;
   placeholder?: string;
   disabled?: boolean;
   isTyping?: boolean;
@@ -36,29 +47,29 @@ function resolveFileMessageType(file: File): 'image' | 'file' | 'video' {
   return 'file';
 }
 
-function formatFileSize(size: number): string {
-  return size > 1024 * 1024
-    ? `${(size / (1024 * 1024)).toFixed(1)} MB`
-    : `${(size / 1024).toFixed(1)} KB`;
+function resolveUploadPurpose(
+  type: 'file' | 'image' | 'video' | 'voice',
+): AgentsDriveUploadPurpose {
+  switch (type) {
+    case 'image': return 'agent-chat-image';
+    case 'video': return 'agent-chat-video';
+    case 'voice': return 'agent-chat-voice';
+    default: return 'agent-chat-attachment';
+  }
 }
 
-function createLocalPreviewUrl(file: Blob): string {
-  return URL.createObjectURL(file);
-}
-
-function sendFileMessage(
+async function uploadAndSendFileMessage(
   file: File,
   onSend: NonNullable<MessageInputProps['onSend']>,
+  uploadResourceId: string,
   type: 'file' | 'image' | 'video' | 'voice' = resolveFileMessageType(file),
-  extraInfo: Record<string, unknown> = {},
-): void {
-  onSend(createLocalPreviewUrl(file), type, {
-    ...extraInfo,
+): Promise<void> {
+  const media = await agentsDriveUploadService.upload({
     file,
-    fileName: file.name,
-    fileSize: formatFileSize(file.size),
-    mimeType: file.type,
+    purpose: resolveUploadPurpose(type),
+    resourceId: uploadResourceId,
   });
+  await onSend(media.uri, type, media);
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -72,6 +83,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   replyingTo,
   onCancelReply,
   onHistoryClick,
+  uploadResourceId,
+  resolveUploadResourceId,
 }) => {
   const resolvedPlaceholder = placeholder ?? '输入消息...';
   const agentTypingPlaceholder = '智能体正在输入...';
@@ -90,6 +103,26 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const voiceTimerRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
+
+  const uploadFile = async (
+    file: File,
+    type: 'file' | 'image' | 'video' | 'voice' = resolveFileMessageType(file),
+  ): Promise<void> => {
+    if (!onSend) {
+      toast('Drive upload is unavailable until the Agent resource is ready.', 'error');
+      return;
+    }
+    try {
+      const resolvedResourceId = uploadResourceId ?? await resolveUploadResourceId?.();
+      if (!resolvedResourceId) {
+        throw new Error('Drive upload requires a persisted Agent resource.');
+      }
+      await uploadAndSendFileMessage(file, onSend, resolvedResourceId, type);
+    } catch (error) {
+      console.error('Drive upload failed', error);
+      toast('Drive upload failed. Please verify your session and retry.', 'error');
+    }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -112,9 +145,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (onSend) {
-        sendFileMessage(file, onSend);
-      }
+      void uploadFile(file);
     }
   };
 
@@ -221,8 +252,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf('image') !== -1) {
             const file = items[i].getAsFile();
-            if (file && onSend) {
-                sendFileMessage(file, onSend, 'image');
+            if (file) {
+                void uploadFile(file, 'image');
                 e.preventDefault();
             }
         }
@@ -232,9 +263,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (onSend) {
-        sendFileMessage(file, onSend);
-      }
+      await uploadFile(file);
       
       // Reset input so the same file can be selected again if needed
       e.target.value = '';
@@ -306,9 +335,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         const finalDuration = voiceDurationRef.current;
         
         // Send actual voice message
-        if (finalDuration >= 1 && onSend) {
+        if (finalDuration >= 1) {
           const file = new File([audioBlob], `voice-${Date.now()}.webm`, { type: mimeType });
-          sendFileMessage(file, onSend, 'voice', { duration: finalDuration, mimeType });
+          await uploadFile(file, 'voice');
         } else if (finalDuration < 1) {
           toast(t('chat.messageInput.toast.voiceTooShort'), 'error');
         }
@@ -440,9 +469,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                     canvas.toBlob(async blob => {
                       if (blob) {
                         const file = new File([blob], `Screenshot_${new Date().getTime()}.png`, { type: 'image/png' });
-                        if (onSend) {
-                          sendFileMessage(file, onSend, 'image');
-                        }
+                        await uploadFile(file, 'image');
                       }
                       stream.getTracks().forEach(t => t.stop());
                     }, 'image/png');

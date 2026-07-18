@@ -17,6 +17,12 @@ export interface SelectModelPopoverProps {
   onSave: (modelId: string) => void;
 }
 
+interface ModelVendor {
+  icon: React.ReactNode;
+  id: string;
+  name: string;
+}
+
 export const SelectModelPopover: React.FC<SelectModelPopoverProps> = ({
   isOpen,
   onClose,
@@ -26,7 +32,7 @@ export const SelectModelPopover: React.FC<SelectModelPopoverProps> = ({
   loading = false,
   onSave,
 }) => {
-  const vendors = Array.from(
+  const vendors: ModelVendor[] = Array.from(
     models.reduce((map, model) => {
       if (!map.has(model.engineKey)) {
         map.set(model.engineKey, {
@@ -36,7 +42,7 @@ export const SelectModelPopover: React.FC<SelectModelPopoverProps> = ({
         });
       }
       return map;
-    }, new Map<string, { id: string; name: string; icon: React.ReactNode }>()).values(),
+    }, new Map<string, ModelVendor>()).values(),
   );
 
   const [activeVendorId, setActiveVendorId] = useState<string>('');

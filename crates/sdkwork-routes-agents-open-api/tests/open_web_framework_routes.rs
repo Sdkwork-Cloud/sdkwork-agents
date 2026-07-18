@@ -53,24 +53,25 @@ async fn open_router_web_framework_rejects_unauthenticated_requests() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
-async fn open_router_web_framework_accepts_dev_api_key() {
+#[test]
+fn open_router_web_framework_accepts_dev_api_key() {
     let _guard = env_test_lock();
     std::env::set_var("SDKWORK_ENV", "dev");
     std::env::set_var("SDKWORK_IAM_ALLOW_DEV_AUTH_FALLBACK", "true");
-    let app = test_app();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/agent/v3/api/ai/agents")
+                    .header("x-api-key", agents_dev_api_key("30001", "key-1"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/agent/v3/api/ai/agents")
-                .header("x-api-key", agents_dev_api_key("30001", "key-1"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+    });
 }

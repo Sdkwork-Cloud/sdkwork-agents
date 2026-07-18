@@ -1,21 +1,131 @@
+@import "tailwindcss";
+@source "../../../../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-auth-pc-react/src";
+@source "../../../../sdkwork-ui/sdkwork-ui-pc-react/src";
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  color-scheme: dark;
-  font-family: Inter, system-ui, sans-serif;
+  color-scheme: light dark;
+  font-family: Inter, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --sdk-color-brand-primary: #22d3ee;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: #141414;
-  color: #f3f4f6;
+@layer base {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: #d1d5db; /* gray-300 */
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #9ca3af; /* gray-400 */
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: #333;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background-color: #555;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+  .dark * {
+    scrollbar-color: #333 transparent;
+  }
+
+  body {
+    @apply m-0 min-h-screen antialiased text-gray-900 bg-white dark:text-gray-100 dark:bg-[#0d0d0d];
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  a:focus-visible {
+    outline: 2px solid #67e8f9;
+    outline-offset: 3px;
+  }
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.agents-iam-auth-routes {
+  background:
+    radial-gradient(circle at 18% 18%, rgb(8 145 178 / 16%), transparent 32rem),
+    radial-gradient(circle at 82% 82%, rgb(37 99 235 / 12%), transparent 34rem),
+    #09090b !important;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
+.agents-auth-page {
+  background:
+    linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px),
+    transparent !important;
+  background-size: 48px 48px !important;
+}
+
+.agents-auth-shell {
+  isolation: isolate;
+}
+
+.agents-auth-shell::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgb(255 255 255 / 3%), transparent 45%);
+  content: "";
+  pointer-events: none;
+}
+
+.agents-auth-loading {
+  background-image:
+    radial-gradient(circle at 50% 35%, rgb(8 145 178 / 12%), transparent 28rem),
+    linear-gradient(rgb(255 255 255 / 1.8%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 1.8%) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
+}
+
+@media (max-width: 767px) {
+  .agents-auth-shell {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@layer utilities {
+  .markdown-body img {
+    @apply rounded-md border border-gray-200 dark:border-gray-800 max-w-full;
+  }
+  .markdown-body video {
+    @apply w-full rounded-md border border-gray-200 dark:border-gray-800;
+  }
+  .markdown-body audio {
+    @apply w-full mt-2;
+  }
 }

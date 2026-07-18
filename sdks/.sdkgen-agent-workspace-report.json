@@ -4,7 +4,7 @@
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-07T15:51:14.939Z",
+  "startedAt": "2026-07-18T06:40:37.574Z",
   "families": [
     {
       "key": "open",
@@ -48,9 +48,9 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "bced626ee4776671d665a6f3cb0a39d2b8d6e2b6bb2d3824fba875f0c56bacef",
+      "fingerprint": "901e64a486b6bb023440021db5c3bbd5d9c9abaffaf4bdb3b008d9a955555052",
       "hasChanges": true,
-      "riskLevel": "high",
+      "riskLevel": "medium",
       "generated": true
     },
     {
@@ -79,12 +79,12 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "86910732644ad33e008ed79bb9f6d9bde156b60a687f7be347d0a090650be9b9",
+      "fingerprint": "5080e571d013e10cef8bef9ea050f64dc3a6ee87d5d88bc6760b1a38acd8c683",
       "hasChanges": true,
-      "riskLevel": "high",
+      "riskLevel": "medium",
       "generated": true
     }
   ],
   "openSdkDerivedFromApp": true,
-  "finishedAt": "2026-07-07T15:51:20.247Z"
+  "finishedAt": "2026-07-18T06:40:38.593Z"
 }

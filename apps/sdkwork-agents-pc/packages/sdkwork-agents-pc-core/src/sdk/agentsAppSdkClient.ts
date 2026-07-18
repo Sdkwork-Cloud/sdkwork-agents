@@ -23,11 +23,16 @@ export type SdkworkAgentsAppClientConfig = SdkworkAppConfig & {
 
 let agentsAppSdkClient: SdkworkAgentsAppClient | null = null;
 
+function resolveDefaultPublicHttpUrl(): string {
+  return typeof window === "undefined" ? "http://127.0.0.1:8095" : window.location.origin;
+}
+
 export function resolveAgentsAppSdkBaseUrl(): string {
   const fromEnv = readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_APP_API_BASE_URL");
   if (fromEnv) return fromEnv;
   const publicUrl =
-    readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_APPLICATION_PUBLIC_HTTP_URL") ?? "http://127.0.0.1:8095";
+    readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_APPLICATION_PUBLIC_HTTP_URL")
+    ?? resolveDefaultPublicHttpUrl();
   return `${String(publicUrl).replace(/\/+$/u, "")}/app/v3/api`;
 }
 

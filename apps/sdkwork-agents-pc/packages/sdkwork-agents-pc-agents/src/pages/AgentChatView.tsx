@@ -4,11 +4,12 @@ import { ChevronLeft, Bot, Copy, Check } from "lucide-react";
 
 import { Avatar } from "@sdkwork/agents-pc-commons";
 
-import { MessageInput } from "../components/MessageInput";
+import { LazyMessageInput } from "../components/LazyMessageInput";
 import { toast } from "../components/Toast";
 import { agentService } from "../services/AgentService";
 import { agentChatService, type ChatMessage } from "../services/AgentChatService";
 import { createDefaultAvatar } from "../services/DefaultAvatarService";
+import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk";
 
 export interface AgentChatViewProps {
   agentId: string;
@@ -142,7 +143,11 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
     }
   };
 
-  const handleSend = async (content: string) => {
+  const handleSend = async (
+    content: string,
+    _type: 'text' | 'image' | 'file' | 'voice' | 'video' = 'text',
+    media?: AgentsDriveMediaResource,
+  ) => {
     if (!content.trim() || isTyping || !sessionId) {
       return;
     }
@@ -150,14 +155,20 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
     const userMessage: ChatMessage = {
       id: `local-user-${Date.now()}`,
       role: "user",
-      content: content.trim(),
+      content: media?.fileName ?? content.trim(),
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => trimMessages([...prev, userMessage]));
     setIsTyping(true);
 
     try {
-      const assistant = await agentChatService.sendMessage(agentId, sessionId, content.trim());
+      const assistant = await agentChatService.sendMessage(
+        agentId,
+        sessionId,
+        content.trim(),
+        undefined,
+        media,
+      );
       setMessages((prev) => trimMessages([...prev, assistant]));
     } catch {
       setMessages((prev) => prev.filter((message) => message.id !== userMessage.id));
@@ -263,8 +274,9 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
       </div>
 
       <div className="shrink-0 border-t border-white/5 bg-[#202020] p-3">
-        <MessageInput
+        <LazyMessageInput
           onSend={handleSend}
+          uploadResourceId={`${agentId}:${sessionId ?? 'pending'}`}
           placeholder="输入消息，使用生产 sessions/messages API..."
           disabled={bootstrapping || !sessionId}
           isTyping={isTyping}
