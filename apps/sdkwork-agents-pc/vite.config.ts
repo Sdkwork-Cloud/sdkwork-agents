@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     define: {
+      '__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__': JSON.stringify(accessToken),
       'process.env.SDKWORK_ACCESS_TOKEN': JSON.stringify(accessToken),
     },
     plugins: [react(), tailwindcss()],

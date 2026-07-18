@@ -9,7 +9,7 @@ test('pc composes the canonical Appbase PC auth runtime', () => {
   assert.match(runtime, /createSdkworkAppbasePcAuthRuntime/);
   assert.match(runtime, /prepareCredentialEntryTokens/);
   assert.match(runtime, /credentialEntry:\s*\{/);
-  assert.match(runtime, /process\.env\.SDKWORK_ACCESS_TOKEN/);
+  assert.match(runtime, /__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__/);
   assert.match(runtime, /getSdkworkChatGlobalTokenManager\(\)/);
   assert.match(runtime, /sessionBridge:\s*\{/);
   assert.match(runtime, /persistAppSdkSessionTokens/);
@@ -84,4 +84,5 @@ test('pc declares independent IAM and Agent API base URLs', () => {
   assert.match(env, /VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL/);
   assert.match(env, /VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL="http:\/\/127\.0\.0\.1:3900"/);
   assert.match(vite, /'\/app\/v3\/api': 'http:\/\/127\.0\.0\.1:8095'/);
+  assert.match(vite, /__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__/);
 });

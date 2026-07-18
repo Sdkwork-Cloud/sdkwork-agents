@@ -16,6 +16,8 @@ import {
 
 import { resolveAgentsPcRuntimeConfig } from './runtimeConfig';
 
+declare const __SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__: string;
+
 let composition: SdkworkAppbasePcAuthRuntimeComposition | null = null;
 
 interface AgentsPcIamSession {
@@ -50,7 +52,7 @@ export function initializeAgentsPcIamRuntime(
     credentialEntry: {
       prepareTokens: () => prepareCredentialEntryTokens(
         tokenManager,
-        () => process.env.SDKWORK_ACCESS_TOKEN,
+        () => __SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__ || undefined,
       ),
     },
     localeProvider: () => config.locale,
