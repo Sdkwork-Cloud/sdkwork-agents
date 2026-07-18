@@ -54,7 +54,10 @@ test('browser SDK token managers leave credential-entry bootstrap to the canonic
     assert.doesNotMatch(session, /bootstrapAccessToken/);
   }
 
-  assert.match(read('apps/sdkwork-agents-pc/src/bootstrap/iamRuntime.ts'), /createSdkworkAppbasePcAuthRuntime/);
+  const iamRuntime = read('apps/sdkwork-agents-pc/src/bootstrap/iamRuntime.ts');
+  assert.match(iamRuntime, /createSdkworkAppbasePcAuthRuntime/);
+  assert.match(iamRuntime, /prepareCredentialEntryTokens/);
+  assert.match(iamRuntime, /process\.env\.SDKWORK_ACCESS_TOKEN/);
 });
 
 test('Vite hands private development bootstrap tokens to IAM credential entry without a public env key', () => {

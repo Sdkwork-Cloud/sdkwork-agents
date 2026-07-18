@@ -4,6 +4,7 @@ import {
   type SdkworkAppbasePcAuthRuntimeComposition,
   type SdkworkAppbasePcAuthRuntimeSdkClient,
 } from '@sdkwork/auth-runtime-pc-react';
+import { prepareCredentialEntryTokens } from '@sdkwork/iam-credential-entry';
 import type { IamAppContext } from '@sdkwork/iam-contracts';
 import {
   clearAppSdkSessionTokens,
@@ -35,6 +36,7 @@ export function initializeAgentsPcIamRuntime(
   }
 
   const config = resolveAgentsPcRuntimeConfig();
+  const tokenManager = getSdkworkChatGlobalTokenManager();
   composition = createSdkworkAppbasePcAuthRuntime({
     app: {
       appId: config.appId,
@@ -45,6 +47,12 @@ export function initializeAgentsPcIamRuntime(
     baseUrls: {
       appbaseAppApiBaseUrl: config.appbaseAppApiBaseUrl,
     },
+    credentialEntry: {
+      prepareTokens: () => prepareCredentialEntryTokens(
+        tokenManager,
+        () => process.env.SDKWORK_ACCESS_TOKEN,
+      ),
+    },
     localeProvider: () => config.locale,
     sdkClients,
     sessionBridge: {
@@ -52,7 +60,7 @@ export function initializeAgentsPcIamRuntime(
       commitSession: (session) => commitIamSession(session as AgentsPcIamSession),
       readSession: () => toIamSession(readAppSdkSessionTokens()),
     },
-    tokenManager: getSdkworkChatGlobalTokenManager(),
+    tokenManager,
   });
 
   return composition;

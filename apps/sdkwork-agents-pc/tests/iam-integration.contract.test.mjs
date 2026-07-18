@@ -7,6 +7,9 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 test('pc composes the canonical Appbase PC auth runtime', () => {
   const runtime = read('src/bootstrap/iamRuntime.ts');
   assert.match(runtime, /createSdkworkAppbasePcAuthRuntime/);
+  assert.match(runtime, /prepareCredentialEntryTokens/);
+  assert.match(runtime, /credentialEntry:\s*\{/);
+  assert.match(runtime, /process\.env\.SDKWORK_ACCESS_TOKEN/);
   assert.match(runtime, /getSdkworkChatGlobalTokenManager\(\)/);
   assert.match(runtime, /sessionBridge:\s*\{/);
   assert.match(runtime, /persistAppSdkSessionTokens/);
