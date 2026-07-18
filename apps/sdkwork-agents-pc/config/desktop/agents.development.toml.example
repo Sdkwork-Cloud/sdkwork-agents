@@ -1,4 +1,4 @@
 # Desktop environment configuration
 environment = "development"
-deployment_mode = "desktop"
+deployment_profile = "standalone"
 runtime_target = "desktop"

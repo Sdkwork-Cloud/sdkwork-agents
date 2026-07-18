@@ -38,7 +38,6 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
-/apps/sdkwork-agents-pc2.zip
 **/.sdkwork/local/
 **/.sdkwork/secrets/
 **/.sdkwork/cache/

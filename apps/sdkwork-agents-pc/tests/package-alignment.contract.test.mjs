@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -9,6 +9,9 @@ const packagesRoot = path.join(appRoot, 'packages');
 const retiredProductToken = ['chat', 'box'].join('');
 const retiredPackageStem = ['sdkwork', retiredProductToken].join('-');
 const retiredNpmScope = `@sdkwork/${retiredProductToken}`;
+const migrationArchive = path.join(path.dirname(appRoot), `${path.basename(appRoot)}2.zip`);
+const TEXT_FILE_PATTERN = /\.(?:cjs|css|html|js|json|jsx|lock|md|mjs|scss|toml|ts|tsx|txt|xml|yaml|yml)$/;
+const EXCLUDED_DIRECTORIES = new Set(['.git', 'dist', 'node_modules', 'target']);
 
 const EXPECTED_PACKAGES = [
   'sdkwork-agents-pc-agents',
@@ -23,16 +26,16 @@ const EXPECTED_PACKAGES = [
   'sdkwork-agents-pc-presentation',
 ];
 
-function sourceFiles(root) {
+function activeFiles(root) {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.name === 'node_modules') {
+    if (entry.isDirectory() && EXCLUDED_DIRECTORIES.has(entry.name)) {
       return [];
     }
     const absolutePath = path.join(root, entry.name);
     if (entry.isDirectory()) {
-      return sourceFiles(absolutePath);
+      return activeFiles(absolutePath);
     }
-    return /\.(?:json|ts|tsx)$/.test(entry.name) ? [absolutePath] : [];
+    return [absolutePath];
   });
 }
 
@@ -58,10 +61,25 @@ test('all PC packages use the canonical agents package family', () => {
 });
 
 test('canonical PC packages contain no legacy package identity or source deep imports', () => {
-  for (const file of sourceFiles(packagesRoot)) {
+  for (const file of activeFiles(packagesRoot).filter((entry) => TEXT_FILE_PATTERN.test(entry))) {
     const source = readFileSync(file, 'utf8');
     assert.equal(source.toLowerCase().includes(retiredPackageStem), false, file);
     assert.equal(source.toLowerCase().includes(retiredNpmScope), false, file);
     assert.doesNotMatch(source, /@\/packages\//, file);
+  }
+});
+
+test('active PC application tree contains no retired product identity or migration archive', () => {
+  assert.equal(existsSync(migrationArchive), false, migrationArchive);
+
+  for (const file of activeFiles(appRoot)) {
+    const relativePath = path.relative(appRoot, file);
+    assert.equal(relativePath.toLowerCase().includes(retiredPackageStem), false, relativePath);
+
+    if (TEXT_FILE_PATTERN.test(file)) {
+      const source = readFileSync(file, 'utf8').toLowerCase();
+      assert.equal(source.includes(retiredPackageStem), false, relativePath);
+      assert.equal(source.includes(retiredNpmScope), false, relativePath);
+    }
   }
 });

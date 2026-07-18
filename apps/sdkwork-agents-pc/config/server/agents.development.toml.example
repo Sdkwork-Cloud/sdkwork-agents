@@ -1,4 +1,4 @@
 # Server environment configuration
 environment = "development"
-deployment_mode = "server"
+deployment_profile = "standalone"
 runtime_target = "server"
