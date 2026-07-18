@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
+const repositoryRoot = path.resolve(appRoot, '..', '..');
 const packagesRoot = path.join(appRoot, 'packages');
 const retiredProductToken = ['chat', 'box'].join('');
 const retiredPackageStem = ['sdkwork', retiredProductToken].join('-');
@@ -69,11 +70,11 @@ test('canonical PC packages contain no legacy package identity or source deep im
   }
 });
 
-test('active PC application tree contains no retired product identity or migration archive', () => {
+test('active repository tree contains no retired product identity or migration archive', () => {
   assert.equal(existsSync(migrationArchive), false, migrationArchive);
 
-  for (const file of activeFiles(appRoot)) {
-    const relativePath = path.relative(appRoot, file);
+  for (const file of activeFiles(repositoryRoot)) {
+    const relativePath = path.relative(repositoryRoot, file);
     assert.equal(relativePath.toLowerCase().includes(retiredPackageStem), false, relativePath);
 
     if (TEXT_FILE_PATTERN.test(file)) {
