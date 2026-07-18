@@ -2,20 +2,53 @@ import path from 'node:path';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, __dirname, '');
-  const accessToken = mode === 'development'
-    ? env.SDKWORK_ACCESS_TOKEN ?? process.env.SDKWORK_ACCESS_TOKEN ?? ''
-    : '';
+function serializeCredentialEntryBootstrapForInlineScript(token: string): string {
+  return JSON.stringify(token)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026');
+}
+
+function createAgentsCredentialEntryBootstrapPlugin(
+  mode: string,
+  accessToken: string,
+): Plugin | undefined {
+  if (mode !== 'development' || !accessToken) {
+    return undefined;
+  }
 
   return {
-    define: {
-      '__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__': JSON.stringify(accessToken),
-      'process.env.SDKWORK_ACCESS_TOKEN': JSON.stringify(accessToken),
+    name: 'sdkwork-agents-iam-credential-entry-bootstrap',
+    apply: 'serve',
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html) => ({
+        html,
+        tags: [
+          {
+            tag: 'script',
+            children:
+              'globalThis.__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__ = '
+              + `${serializeCredentialEntryBootstrapForInlineScript(accessToken)};`,
+            injectTo: 'head-prepend',
+          },
+        ],
+      }),
     },
-    plugins: [react(), tailwindcss()],
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const credentialEntryBootstrapAccessToken = process.env.SDKWORK_ACCESS_TOKEN ?? '';
+
+  return {
+    plugins: [
+      createAgentsCredentialEntryBootstrapPlugin(mode, credentialEntryBootstrapAccessToken),
+      react(),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

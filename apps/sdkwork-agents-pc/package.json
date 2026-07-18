@@ -20,7 +20,6 @@
     "@sdkwork/auth-pc-react": "workspace:*",
     "@sdkwork/auth-runtime-pc-react": "workspace:*",
     "@sdkwork/core-pc-react": "workspace:*",
-    "@sdkwork/iam-credential-entry": "workspace:*",
     "@sdkwork/iam-contracts": "workspace:*",
     "@sdkwork/agents-pc-agents": "workspace:*",
     "@sdkwork/agents-pc-core": "workspace:*",

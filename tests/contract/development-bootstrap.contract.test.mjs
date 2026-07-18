@@ -56,8 +56,7 @@ test('browser SDK token managers leave credential-entry bootstrap to the canonic
 
   const iamRuntime = read('apps/sdkwork-agents-pc/src/bootstrap/iamRuntime.ts');
   assert.match(iamRuntime, /createSdkworkAppbasePcAuthRuntime/);
-  assert.match(iamRuntime, /prepareCredentialEntryTokens/);
-  assert.match(iamRuntime, /__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__/);
+  assert.doesNotMatch(iamRuntime, /credentialEntry.*skipWrap/s);
 });
 
 test('Vite hands private development bootstrap tokens to IAM credential entry without a public env key', () => {
@@ -76,6 +75,7 @@ test('Vite hands private development bootstrap tokens to IAM credential entry wi
     read('apps/sdkwork-agents-pc/vite.config.ts'),
     /__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__/,
   );
+  assert.match(read('apps/sdkwork-agents-pc/vite.config.ts'), /transformIndexHtml/);
 });
 
 test('standalone PC dev uses the canonical IAM renderer bootstrap runner', () => {
