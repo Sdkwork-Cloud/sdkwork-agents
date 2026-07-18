@@ -2699,9 +2699,11 @@ name = "sdkwork-routes-agents-http-shared"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.9",
+ "sdkwork-agents-contract",
  "sdkwork-iam-web-adapter",
  "sdkwork-intelligence-agents-service",
  "sdkwork-web-axum",
+ "sdkwork-web-bootstrap",
  "sdkwork-web-contract",
  "sdkwork-web-core",
  "serde",

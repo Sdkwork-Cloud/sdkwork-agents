@@ -1,6 +1,7 @@
 import { bootstrap } from "./runtime";
 import {
   configureAgentsAppSdkBaseUrl,
+  configureAgentsAppSdkBootstrapAccessToken,
   getAgentsAppSdkClient,
 } from "@sdkwork/agents-mp-core/sdk";
 
@@ -16,4 +17,4 @@ export function getAgentsMpSdkClient() {
   return getAgentsAppSdkClient();
 }
 
-export { configureAgentsAppSdkBaseUrl };
+export { configureAgentsAppSdkBaseUrl, configureAgentsAppSdkBootstrapAccessToken };

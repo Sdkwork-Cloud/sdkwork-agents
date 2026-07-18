@@ -38,7 +38,7 @@ const requiredDirectories = [
   'sdks',
   'database',
   'deployments',
-  'configs',
+  'etc',
   'scripts',
   'docs',
   'tests',

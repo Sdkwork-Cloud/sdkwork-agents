@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sdkwork.com/schemas/agents/sdkwork.deployment.config.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "application", "defaultProfile", "environments", "profiles"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "sdkwork.deployment-index" },
+    "application": { "const": "sdkwork-agents" },
+    "defaultProfile": {
+      "type": "string",
+      "pattern": "^(standalone|cloud)\\.(development|test|staging|production)$"
+    },
+    "environments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["development", "test", "staging", "production"],
+      "properties": {
+        "development": { "$ref": "#/$defs/environment" },
+        "test": { "$ref": "#/$defs/environment" },
+        "staging": { "$ref": "#/$defs/environment" },
+        "production": { "$ref": "#/$defs/environment" }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standalone.development",
+        "standalone.test",
+        "standalone.staging",
+        "standalone.production",
+        "cloud.development",
+        "cloud.test",
+        "cloud.staging",
+        "cloud.production"
+      ],
+      "properties": {
+        "standalone.development": { "$ref": "#/$defs/profile" },
+        "standalone.test": { "$ref": "#/$defs/profile" },
+        "standalone.staging": { "$ref": "#/$defs/profile" },
+        "standalone.production": { "$ref": "#/$defs/profile" },
+        "cloud.development": { "$ref": "#/$defs/profile" },
+        "cloud.test": { "$ref": "#/$defs/profile" },
+        "cloud.staging": { "$ref": "#/$defs/profile" },
+        "cloud.production": { "$ref": "#/$defs/profile" }
+      }
+    }
+  },
+  "$defs": {
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicationOrigin", "cloudApiBaseUrl"],
+      "properties": {
+        "applicationOrigin": { "$ref": "#/$defs/httpOrigin" },
+        "cloudApiBaseUrl": { "$ref": "#/$defs/httpOrigin" }
+      }
+    },
+    "httpOrigin": {
+      "type": "string",
+      "pattern": "^https?://[^/?#@*]+$"
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["config"],
+      "properties": {
+        "config": {
+          "type": "string",
+          "pattern": "^topology/(standalone|cloud)\\.(development|test|staging|production)\\.env$"
+        }
+      }
+    }
+  }
+}

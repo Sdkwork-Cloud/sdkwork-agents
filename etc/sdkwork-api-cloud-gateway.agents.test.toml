@@ -2,7 +2,7 @@ mode = "embedded"
 
 [service]
 name = "sdkwork-api-cloud-gateway"
-environment = "production"
+environment = "test"
 
 [server]
 bind = "0.0.0.0:8080"
@@ -45,19 +45,19 @@ coverage = "agents-open-api-upstream-routes"
 
 [[upstreams]]
 serviceId = "sdkwork-agents-app-api"
-baseUrl = "https://agents-app.sdkwork.com"
+baseUrl = "https://agents-app.test.invalid"
 
 [[upstreams]]
 serviceId = "sdkwork-agents-backend-api"
-baseUrl = "https://agents-admin.sdkwork.com"
+baseUrl = "https://agents-admin.test.invalid"
 
 [[upstreams]]
 serviceId = "sdkwork-agents-open-api"
-baseUrl = "https://agent.sdkwork.com"
+baseUrl = "https://agent.test.invalid"
 
 [cors]
 allowAnyOrigin = false
-allowedOrigins = ["https://agents.sdkwork.com"]
+allowedOrigins = ["https://agents.test.invalid"]
 
 [request]
 maxBodyBytes = 33554432
@@ -84,7 +84,7 @@ includePolicyInventory = true
 includeRouteInventory = true
 
 [security]
-allowedHosts = ["agents.sdkwork.com", "api.sdkwork.com"]
+allowedHosts = ["agents.test.invalid", "api.test.invalid"]
 trustedProxyCidrs = []
 secureHeadersEnabled = true
 maxHeaderBytes = 65536

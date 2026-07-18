@@ -10,6 +10,7 @@ const backendAppId = 'sdkwork-agents';
 const defaultTenantId = '100001';
 const defaultOrganizationId = '0';
 const defaultPublicHttpUrl = 'http://127.0.0.1:8095';
+const defaultAppbaseGatewayHttpUrl = 'http://127.0.0.1:3900';
 
 function write(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -120,18 +121,6 @@ function manifestV3({
         workspaceRoot: sourceRoot,
         framework,
         managedBy: 'sdkwork-agents-client-scaffold',
-      },
-    },
-    environments: {
-      development: {
-        accessUrl: `${defaultPublicHttpUrl}`,
-        deployUrl: `${defaultPublicHttpUrl}`,
-        deployEnv: 'development',
-      },
-      production: {
-        accessUrl: 'https://api.sdkwork.com',
-        deployUrl: 'https://api.sdkwork.com',
-        deployEnv: 'production',
       },
     },
     artifacts: {
@@ -343,7 +332,8 @@ function createReactSurface({
       backendApiBaseUrl: `${defaultPublicHttpUrl}/backend/v3/api`,
     },
     appbase: {
-      loginUrl: 'http://127.0.0.1:3900',
+      appApiBaseUrl: defaultAppbaseGatewayHttpUrl,
+      loginUrl: defaultAppbaseGatewayHttpUrl,
     },
   });
 
@@ -352,11 +342,13 @@ function createReactSurface({
     'SDKWORK_ACCESS_TOKEN=',
     '',
     `# Browser-visible runtime overrides for ${appRootName}.`,
+    `${envPrefix}_ENVIRONMENT=development`,
     `${envPrefix}_APPLICATION_PUBLIC_HTTP_URL=${defaultPublicHttpUrl}`,
     `${envPrefix}_APP_API_BASE_URL=${defaultPublicHttpUrl}/app/v3/api`,
-    `${envPrefix}_APPBASE_APP_API_BASE_URL=${defaultPublicHttpUrl}/app/v3/api`,
+    'VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL=' + defaultAppbaseGatewayHttpUrl,
+    envPrefix + '_APPBASE_APP_API_BASE_URL=',
     `${envPrefix}_BACKEND_API_BASE_URL=${defaultPublicHttpUrl}/backend/v3/api`,
-    `${envPrefix}_APPBASE_LOGIN_URL=http://127.0.0.1:3900`,
+    envPrefix + '_APPBASE_LOGIN_URL=',
     '',
   ].join('\n'));
 
@@ -517,16 +509,118 @@ export default function App() {
 }
 `);
 
-  const environmentTs = `export interface AgentsEnvironment {
+  const environmentTs = `export type AgentsLifecycleEnvironment = "development" | "test" | "staging" | "production";
+export type AgentsRuntimeEnvironment = Readonly<Record<string, unknown>>;
+
+export interface AgentsEnvironment {
   apiBaseUrl: string;
   appbaseAppApiBaseUrl: string;
   backendApiBaseUrl: string;
   appbaseLoginUrl: string;
+  lifecycleEnvironment: AgentsLifecycleEnvironment;
 }
 
-function normalizeBaseUrl(value: string | undefined, fallback: string): string {
-  const normalized = String(value ?? "").trim();
-  return normalized || fallback;
+const APP_API_SUFFIX = "/app/v3/api";
+const DEVELOPMENT_APPLICATION_PUBLIC_HTTP_URL = "${defaultPublicHttpUrl}";
+const DEVELOPMENT_APPBASE_GATEWAY_HTTP_URL = "${defaultAppbaseGatewayHttpUrl}";
+const APPBASE_APP_API_BASE_URL_ENV = "${envPrefix}_APPBASE_APP_API_BASE_URL";
+const PLATFORM_API_GATEWAY_HTTP_URL_ENV = "VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL";
+const LIFECYCLE_ENVIRONMENTS = new Set<AgentsLifecycleEnvironment>([
+  "development",
+  "test",
+  "staging",
+  "production",
+]);
+
+function readEnv(environment: AgentsRuntimeEnvironment, key: string): string | undefined {
+  const value = environment[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stripTrailingSlashes(value: string): string {
+  let normalized = value.trim();
+  while (normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
+function resolveLifecycleEnvironment(
+  environment: AgentsRuntimeEnvironment,
+): AgentsLifecycleEnvironment {
+  const configuredEnvironment = readEnv(environment, "${envPrefix}_ENVIRONMENT")
+    ?? readEnv(environment, "MODE");
+  if (configuredEnvironment) {
+    const normalized = configuredEnvironment.toLowerCase();
+    if (LIFECYCLE_ENVIRONMENTS.has(normalized as AgentsLifecycleEnvironment)) {
+      return normalized as AgentsLifecycleEnvironment;
+    }
+    throw new Error(
+      "${envPrefix}_ENVIRONMENT must be development, test, staging, or production.",
+    );
+  }
+
+  return environment.PROD === true || environment.PROD === "true"
+    ? "production"
+    : "development";
+}
+
+export function normalizeAppbaseGatewayBaseUrl(value: string): string {
+  const normalized = stripTrailingSlashes(value);
+  if (!normalized) {
+    throw new Error("Appbase IAM gateway URL must not be empty.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error("Appbase IAM gateway URL must be an absolute HTTP(S) URL.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Appbase IAM gateway URL must use HTTP or HTTPS.");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("Appbase IAM gateway URL must not include a query string or fragment.");
+  }
+
+  const duplicatedAppApiSuffix = APP_API_SUFFIX + APP_API_SUFFIX;
+  if (normalized.endsWith(duplicatedAppApiSuffix)) {
+    throw new Error("Appbase IAM gateway URL must not include " + APP_API_SUFFIX + " more than once.");
+  }
+
+  return normalized.endsWith(APP_API_SUFFIX)
+    ? normalized.slice(0, -APP_API_SUFFIX.length)
+    : normalized;
+}
+
+function resolveAppbaseGatewayBaseUrl(
+  environment: AgentsRuntimeEnvironment,
+  lifecycleEnvironment: AgentsLifecycleEnvironment,
+): string {
+  const configuredBaseUrl = readEnv(environment, APPBASE_APP_API_BASE_URL_ENV)
+    ?? readEnv(environment, PLATFORM_API_GATEWAY_HTTP_URL_ENV);
+  if (configuredBaseUrl) {
+    return normalizeAppbaseGatewayBaseUrl(configuredBaseUrl);
+  }
+  if (lifecycleEnvironment === "development") {
+    return DEVELOPMENT_APPBASE_GATEWAY_HTTP_URL;
+  }
+
+  throw new Error(
+    APPBASE_APP_API_BASE_URL_ENV
+      + " or "
+      + PLATFORM_API_GATEWAY_HTTP_URL_ENV
+      + " is required for "
+      + lifecycleEnvironment
+      + ".",
+  );
+}
+
+function resolveDefaultApplicationPublicHttpUrl(): string {
+  return typeof window === "undefined"
+    ? DEVELOPMENT_APPLICATION_PUBLIC_HTTP_URL
+    : window.location.origin;
 }
 
 function deriveAppApiBaseUrl(applicationPublicHttpUrl: string): string {
@@ -537,30 +631,30 @@ function deriveBackendApiBaseUrl(applicationPublicHttpUrl: string): string {
   return \`\${applicationPublicHttpUrl.replace(/\\/+\$/u, "")}/backend/v3/api\`;
 }
 
-export function resolveEnvironment(): AgentsEnvironment {
-  const applicationPublicHttpUrl = normalizeBaseUrl(
-    import.meta.env.${envPrefix}_APPLICATION_PUBLIC_HTTP_URL,
-    "${defaultPublicHttpUrl}",
-  );
+export function createAgentsEnvironment(
+  environment: AgentsRuntimeEnvironment,
+): AgentsEnvironment {
+  const lifecycleEnvironment = resolveLifecycleEnvironment(environment);
+  const applicationPublicHttpUrl = readEnv(
+    environment,
+    "${envPrefix}_APPLICATION_PUBLIC_HTTP_URL",
+  ) ?? resolveDefaultApplicationPublicHttpUrl();
+  const appbaseAppApiBaseUrl = resolveAppbaseGatewayBaseUrl(environment, lifecycleEnvironment);
 
   return {
-    apiBaseUrl: normalizeBaseUrl(
-      import.meta.env.${envPrefix}_APP_API_BASE_URL,
-      deriveAppApiBaseUrl(applicationPublicHttpUrl),
-    ),
-    appbaseAppApiBaseUrl: normalizeBaseUrl(
-      import.meta.env.${envPrefix}_APPBASE_APP_API_BASE_URL,
-      deriveAppApiBaseUrl(applicationPublicHttpUrl),
-    ),
-    backendApiBaseUrl: normalizeBaseUrl(
-      import.meta.env.${envPrefix}_BACKEND_API_BASE_URL,
-      deriveBackendApiBaseUrl(applicationPublicHttpUrl),
-    ),
-    appbaseLoginUrl: normalizeBaseUrl(
-      import.meta.env.${envPrefix}_APPBASE_LOGIN_URL,
-      "http://127.0.0.1:3900",
-    ),
+    apiBaseUrl: readEnv(environment, "${envPrefix}_APP_API_BASE_URL")
+      ?? deriveAppApiBaseUrl(applicationPublicHttpUrl),
+    appbaseAppApiBaseUrl,
+    backendApiBaseUrl: readEnv(environment, "${envPrefix}_BACKEND_API_BASE_URL")
+      ?? deriveBackendApiBaseUrl(applicationPublicHttpUrl),
+    appbaseLoginUrl: readEnv(environment, "${envPrefix}_APPBASE_LOGIN_URL")
+      ?? appbaseAppApiBaseUrl,
+    lifecycleEnvironment,
   };
+}
+
+export function resolveEnvironment(): AgentsEnvironment {
+  return createAgentsEnvironment(import.meta.env as AgentsRuntimeEnvironment);
 }
 `;
 

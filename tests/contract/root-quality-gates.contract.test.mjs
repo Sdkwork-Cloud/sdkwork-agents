@@ -20,6 +20,7 @@ const requiredCheckScripts = [
   "check:composition-resolver",
   "check:rust-backend-composition",
   "check:production-security",
+  "check:source-config-standard",
   "gateway:validate:cloud",
 ];
 
@@ -131,7 +132,7 @@ test("server release artifact includes immutable runtime and deployment assets",
   assert.ok(serverTarget, "workflow must declare a container server target");
   for (const requiredGlob of [
     "database/**",
-    "configs/topology/*.production.env",
+    "etc/topology/*.production.env",
     "deployments/**",
     "sdkwork.app.config.json",
   ]) {

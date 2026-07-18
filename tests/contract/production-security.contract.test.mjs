@@ -58,6 +58,56 @@ test("runtime environment helpers fail closed for production-like profiles", () 
   );
 });
 
+test("container profile entrypoint rejects lifecycle identity downgrades before process startup", () => {
+  const source = readText("deployments/docker/agents-container-entrypoint.sh");
+  const immutableIdentityFields = [
+    "SDKWORK_AGENTS_PROFILE_ID",
+    "SDKWORK_AGENTS_DEPLOYMENT_PROFILE",
+    "SDKWORK_AGENTS_ENVIRONMENT",
+    "SDKWORK_ENVIRONMENT",
+  ];
+
+  assert.match(
+    source,
+    /standalone\.development \| standalone\.test \| standalone\.staging \| standalone\.production[\s\S]*cloud\.development \| cloud\.test \| cloud\.staging \| cloud\.production/,
+    "container startup must accept only declared topology profile identifiers",
+  );
+  assert.match(
+    source,
+    /profile_file="\/app\/etc\/topology\/\$\{profile_id\}\.env"/,
+    "container startup must load the selected in-image topology profile",
+  );
+  assert.doesNotMatch(
+    source,
+    /SDKWORK_AGENTS_PROFILE_FILE:-/,
+    "container startup must not allow an arbitrary profile-file environment override",
+  );
+
+  for (const field of immutableIdentityFields) {
+    assert.match(
+      source,
+      new RegExp(`verify_existing_security_value ${field} `),
+      `${field} must be compared with the selected profile before startup`,
+    );
+  }
+
+  assert.match(
+    source,
+    /profile_agents_environment" \!= "\$expected_environment"[\s\S]*profile_environment" \!= "\$expected_environment"[\s\S]*selected profile lifecycle environment does not match/,
+    "profile lifecycle projections must agree with the selected profile identifier",
+  );
+  assert.match(
+    source,
+    /test \| staging \| production\)[\s\S]*selected production-like profile must declare SDKWORK_CORS_ALLOWED_ORIGINS/,
+    "production-like profiles must declare a non-empty CORS baseline",
+  );
+  assert.match(
+    source,
+    /effective_cors_allowed_origins=\$\(printenv SDKWORK_CORS_ALLOWED_ORIGINS\)[\s\S]*export SDKWORK_CORS_ALLOWED_ORIGINS="\$effective_cors_allowed_origins"/,
+    "operator-provided exact CORS values must remain materializable after profile identity validation",
+  );
+});
+
 test("production HTTP bootstrap uses IAM, Postgres, and runtime facade completion", () => {
   const source = readText(
     "crates/sdkwork-agents-kernel-bridge/src/agent_http_state.rs",

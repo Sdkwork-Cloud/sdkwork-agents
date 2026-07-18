@@ -111,7 +111,7 @@
       "outputGlobs": [
         "target/release/sdkwork-agents-standalone-gateway*",
         "database/**",
-        "configs/topology/*.production.env",
+        "etc/topology/*.production.env",
         "deployments/**",
         "sdkwork.app.config.json"
       ],

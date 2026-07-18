@@ -29,11 +29,6 @@ export function AuthGate({ children }: AuthGateProps) {
   }, []);
 
   if (!authenticated) {
-    const bootstrapToken = import.meta.env.SDKWORK_ACCESS_TOKEN?.trim();
-    if (bootstrapToken) {
-      return <>{children}</>;
-    }
-
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#141414] px-6 text-center text-gray-100">
         <h1 className="text-xl font-semibold">登录后继续</h1>

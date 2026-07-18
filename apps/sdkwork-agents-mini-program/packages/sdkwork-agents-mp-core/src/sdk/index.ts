@@ -1,5 +1,6 @@
 export {
   configureAgentsAppSdkBaseUrl,
+  configureAgentsAppSdkBootstrapAccessToken,
   createAgentsAppSdkClientConfig,
   getAgentsAppSdkClient,
   initAgentsAppSdkClient,

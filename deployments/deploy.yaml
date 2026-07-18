@@ -29,11 +29,8 @@ profiles:
   standalone.production:
     install:
       layout: binary-package
-    expose:
-      - domain: agents.local.sdkwork.test
-        tls: sdkwork.com
-        mode: web+api
-        web: adaptive
+    # The private standalone origin is operator-registered at deployment time.
+    expose: []
     packages: []
     overrides:
       proxy:
@@ -44,11 +41,8 @@ profiles:
   standalone.development:
     install:
       layout: source-tree
-    expose:
-      - domain: agents.local.sdkwork.test
-        tls: off
-        mode: web+api
-        web: adaptive
+    # Source development profile binds the application ingress to 127.0.0.1:8095.
+    expose: []
     packages: []
     overrides:
       allowInsecureTls: true

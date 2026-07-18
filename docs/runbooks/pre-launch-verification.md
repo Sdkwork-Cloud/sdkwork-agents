@@ -47,7 +47,7 @@ pnpm db:validate
 pnpm db:drift:check
 ```
 
-Confirm `configs/topology/*.env` uses canonical subject IDs (`SDKWORK_AGENTS_TENANT_ID=100001`, not legacy `1001`).
+Confirm `etc/topology/*.env` uses canonical subject IDs (`SDKWORK_AGENTS_TENANT_ID=100001`, not legacy `1001`).
 
 ## 3. Deploy manifest
 

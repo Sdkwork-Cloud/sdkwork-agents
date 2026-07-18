@@ -5,6 +5,8 @@ node_modules/
 !.env.example
 *.local.toml
 config/*.local.toml
+/etc/**/*.local.*
+/etc/secrets/
 .sdkwork/local/
 .sdkwork/tmp/
 .sdkwork/cache/
@@ -46,6 +48,7 @@ Thumbs.db
 **/.sdkwork/sdkwork-generator-changes.json
 **/.sdkwork/sdkwork-generator-manifest.json
 **/.sdkwork/sdkwork-generator-report.json
+**/*.bootstrap.local.json
 
 # Common runtime/build artifacts (auto-aligned)
 *.sqlite-shm

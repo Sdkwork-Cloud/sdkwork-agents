@@ -101,18 +101,6 @@
       "managedBy": "sdkwork-agents-client-scaffold"
     }
   },
-  "environments": {
-    "development": {
-      "accessUrl": "http://127.0.0.1:8095",
-      "deployUrl": "http://127.0.0.1:8095",
-      "deployEnv": "development"
-    },
-    "production": {
-      "accessUrl": "https://api.sdkwork.com",
-      "deployUrl": "https://api.sdkwork.com",
-      "deployEnv": "production"
-    }
-  },
   "artifacts": {
     "installConfig": {
       "packages": [],

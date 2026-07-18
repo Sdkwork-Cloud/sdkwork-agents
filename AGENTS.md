@@ -34,7 +34,7 @@ Read `sdkwork.app.config.json` only when the task touches Agents application beh
 - `etc/`: deployable-root source configuration governed by `SOURCE_CONFIG_SPEC.md`; runtime values must not be moved into the app manifest.
 - `.sdkwork/`: repository/application AI workspace metadata.
 - `specs/`: local application/component contracts.
-- `apis/`, `apps/`, `crates/`, `sdks/`, `database/`, `configs/`, `deployments/`, `scripts/`, `tools/`, `docs/`, `tests/`.
+- `apis/`, `apps/`, `crates/`, `sdks/`, `database/`, `deployments/`, `scripts/`, `tools/`, `docs/`, `tests/`.
 - `package.json`, `Cargo.toml`: language/build manifests.
 
 ## Documentation Canon

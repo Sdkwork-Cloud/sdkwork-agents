@@ -8,9 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY --from=builder /src/target/release/sdkwork-agents-standalone-gateway /usr/local/bin/sdkwork-agents-standalone-gateway
 COPY --from=builder /src/database /app/database
+COPY --from=builder /src/etc /app/etc
+COPY deployments/docker/agents-container-entrypoint.sh /usr/local/bin/sdkwork-agents-container-entrypoint
+RUN chmod 0755 /usr/local/bin/sdkwork-agents-container-entrypoint
 ENV SDKWORK_AGENTS_APP_ROOT=/app
-ENV SDKWORK_AGENTS_ENVIRONMENT=production
-ENV SDKWORK_AGENTS_CONFIG_PROFILE=production
-ENV SDKWORK_AGENTS_APPLICATION_PUBLIC_INGRESS_BIND=0.0.0.0:8095
 EXPOSE 8095
+ENTRYPOINT ["sdkwork-agents-container-entrypoint"]
 CMD ["sdkwork-agents-standalone-gateway"]

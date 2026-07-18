@@ -4,6 +4,7 @@
     "backendApiBaseUrl": "http://127.0.0.1:8095/backend/v3/api"
   },
   "appbase": {
+    "appApiBaseUrl": "http://127.0.0.1:3900",
     "loginUrl": "http://127.0.0.1:3900"
   }
 }

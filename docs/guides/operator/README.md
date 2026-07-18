@@ -28,7 +28,7 @@ Authoritative manifest: [deployments/deploy.yaml](../../../deployments/deploy.ya
 | `standalone.production` | Single application public ingress binary package |
 | `standalone.development` | Local source-tree dev |
 
-Topology and env keys: [specs/topology.spec.json](../../../specs/topology.spec.json), `configs/topology/*.env`.
+Topology and env keys: [specs/topology.spec.json](../../../specs/topology.spec.json), `etc/topology/*.env`.
 
 ## Database
 

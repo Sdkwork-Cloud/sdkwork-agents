@@ -1,0 +1,35 @@
+{
+  "$schema": "../specs/sdkwork.deployment.config.schema.json",
+  "schemaVersion": 1,
+  "kind": "sdkwork.deployment-index",
+  "application": "sdkwork-agents",
+  "defaultProfile": "standalone.development",
+  "environments": {
+    "development": {
+      "applicationOrigin": "http://127.0.0.1:8095",
+      "cloudApiBaseUrl": "http://127.0.0.1:3900"
+    },
+    "test": {
+      "applicationOrigin": "https://agents.test.invalid",
+      "cloudApiBaseUrl": "https://api.test.invalid"
+    },
+    "staging": {
+      "applicationOrigin": "https://agents.staging.invalid",
+      "cloudApiBaseUrl": "https://api.staging.invalid"
+    },
+    "production": {
+      "applicationOrigin": "https://agents.sdkwork.com",
+      "cloudApiBaseUrl": "https://api.sdkwork.com"
+    }
+  },
+  "profiles": {
+    "standalone.development": { "config": "topology/standalone.development.env" },
+    "standalone.test": { "config": "topology/standalone.test.env" },
+    "standalone.staging": { "config": "topology/standalone.staging.env" },
+    "standalone.production": { "config": "topology/standalone.production.env" },
+    "cloud.development": { "config": "topology/cloud.development.env" },
+    "cloud.test": { "config": "topology/cloud.test.env" },
+    "cloud.staging": { "config": "topology/cloud.staging.env" },
+    "cloud.production": { "config": "topology/cloud.production.env" }
+  }
+}

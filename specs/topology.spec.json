@@ -3,7 +3,7 @@
   "kind": "sdkwork.app.topology",
   "appId": "sdkwork-agents",
   "archetype": "application-http-gateway",
-  "profileRoot": "configs/topology",
+  "profileRoot": "etc/topology",
   "profilePattern": "{deploymentProfile}.{environment}.env",
   "vocabulary": {
     "deploymentProfile": {
@@ -15,6 +15,8 @@
     "environment": {
       "allowed": [
         "development",
+        "test",
+        "staging",
         "production"
       ]
     }
@@ -22,14 +24,17 @@
   "defaults": {
     "developmentProfileId": "standalone.development",
     "productionProfileId": "cloud.production",
-    "desktopBuildProfileId": "standalone.production",
-    "gatewayBind": "127.0.0.1:8095"
+    "desktopBuildProfileId": "standalone.production"
   },
   "profileFiles": {
-    "standalone.development": "configs/topology/standalone.development.env",
-    "standalone.production": "configs/topology/standalone.production.env",
-    "cloud.development": "configs/topology/cloud.development.env",
-    "cloud.production": "configs/topology/cloud.production.env"
+    "standalone.development": "etc/topology/standalone.development.env",
+    "standalone.test": "etc/topology/standalone.test.env",
+    "standalone.staging": "etc/topology/standalone.staging.env",
+    "standalone.production": "etc/topology/standalone.production.env",
+    "cloud.development": "etc/topology/cloud.development.env",
+    "cloud.test": "etc/topology/cloud.test.env",
+    "cloud.staging": "etc/topology/cloud.staging.env",
+    "cloud.production": "etc/topology/cloud.production.env"
   },
   "envKeys": {
     "deploymentProfile": "SDKWORK_AGENTS_DEPLOYMENT_PROFILE",
@@ -94,23 +99,6 @@
       "autostartEnv": "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_AUTOSTART"
     }
   },
-  "cloudPublicHosts": {
-    "application.public-ingress": {
-      "httpHost": "agents.sdkwork.com"
-    },
-    "application.backend-http": {
-      "httpHost": "agents-admin.sdkwork.com"
-    },
-    "application.open-http": {
-      "httpHost": "agent.sdkwork.com"
-    },
-    "application.app-http": {
-      "httpHost": "agents-app.sdkwork.com"
-    },
-    "platform.api-gateway": {
-      "httpHost": "api.sdkwork.com"
-    }
-  },
   "database": {
     "appPrefix": "SDKWORK_AGENTS"
   },
@@ -131,12 +119,44 @@
       "crate": "sdkwork-api-cloud-gateway",
       "binary": "sdkwork-api-cloud-gateway",
       "repository": "sdkwork-api-cloud-gateway",
-      "configGlob": "configs/sdkwork-api-cloud-gateway.agents.{profile}.toml"
+      "configGlob": "etc/sdkwork-api-cloud-gateway.agents.{profile}.toml"
     }
   },
   "orchestration": {
     "profiles": {
       "standalone.development": {
+        "processes": [
+          {
+            "id": "application.public-ingress",
+            "crate": "sdkwork-agents-standalone-gateway",
+            "binary": "sdkwork-agents-standalone-gateway",
+            "required": true
+          },
+          {
+            "id": "pc-renderer",
+            "package": "@sdkwork/agents-pc",
+            "script": "vite",
+            "required": true
+          }
+        ],
+        "healthSurfaces": [
+          "application.public-ingress"
+        ]
+      },
+      "standalone.test": {
+        "processes": [
+          {
+            "id": "application.public-ingress",
+            "crate": "sdkwork-agents-standalone-gateway",
+            "binary": "sdkwork-agents-standalone-gateway",
+            "required": true
+          }
+        ],
+        "healthSurfaces": [
+          "application.public-ingress"
+        ]
+      },
+      "standalone.staging": {
         "processes": [
           {
             "id": "application.public-ingress",
@@ -163,6 +183,48 @@
         ]
       },
       "cloud.development": {
+        "processes": [
+          {
+            "id": "platform.api-gateway",
+            "crate": "sdkwork-api-cloud-gateway",
+            "binary": "sdkwork-api-cloud-gateway",
+            "repository": "sdkwork-api-cloud-gateway",
+            "required": false
+          },
+          {
+            "id": "application.public-ingress",
+            "crate": "sdkwork-agents-standalone-gateway",
+            "binary": "sdkwork-agents-standalone-gateway",
+            "required": true
+          }
+        ],
+        "healthSurfaces": [
+          "application.public-ingress",
+          "platform.api-gateway"
+        ]
+      },
+      "cloud.test": {
+        "processes": [
+          {
+            "id": "platform.api-gateway",
+            "crate": "sdkwork-api-cloud-gateway",
+            "binary": "sdkwork-api-cloud-gateway",
+            "repository": "sdkwork-api-cloud-gateway",
+            "required": false
+          },
+          {
+            "id": "application.public-ingress",
+            "crate": "sdkwork-agents-standalone-gateway",
+            "binary": "sdkwork-agents-standalone-gateway",
+            "required": true
+          }
+        ],
+        "healthSurfaces": [
+          "application.public-ingress",
+          "platform.api-gateway"
+        ]
+      },
+      "cloud.staging": {
         "processes": [
           {
             "id": "platform.api-gateway",
@@ -221,6 +283,8 @@
   "packaging": {
     "cloudConfigFiles": [
       "sdkwork-api-cloud-gateway.agents.development.toml",
+      "sdkwork-api-cloud-gateway.agents.test.toml",
+      "sdkwork-api-cloud-gateway.agents.staging.toml",
       "sdkwork-api-cloud-gateway.agents.production.toml"
     ],
     "targets": [

@@ -1,7 +1,7 @@
 use crate::generated::{APP_ROUTES, BACKEND_ROUTES, COMBINED_ROUTES, OPEN_ROUTES};
 use std::sync::Arc;
 
-use axum::http::Request;
+use axum::http::{Request, Uri};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::Router;
@@ -13,16 +13,20 @@ use sdkwork_web_core::{
     WebRequestContextProfile,
 };
 
+fn canonical_agents_lifecycle_environment(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "dev" | "development" | "local" => "development".to_owned(),
+        "test" | "testing" => "test".to_owned(),
+        "stage" | "staging" => "staging".to_owned(),
+        "prod" | "production" | "live" => "production".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
 fn parse_agents_web_environment(value: Option<String>) -> WebEnvironment {
-    match value
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "dev" | "development" => WebEnvironment::Dev,
-        "test" | "testing" => WebEnvironment::Test,
+    match canonical_agents_lifecycle_environment(value.as_deref().unwrap_or("")).as_str() {
+        "development" => WebEnvironment::Dev,
+        "test" => WebEnvironment::Test,
         _ => WebEnvironment::Prod,
     }
 }
@@ -37,28 +41,126 @@ fn first_nonempty_env(keys: &[&str]) -> Option<String> {
 }
 
 fn resolve_agents_web_environment_from_process_env() -> WebEnvironment {
-    parse_agents_web_environment(first_nonempty_env(&[
-        "SDKWORK_AGENTS_ENVIRONMENT",
-        "SDKWORK_IM_ENVIRONMENT",
-        "SDKWORK_ENV",
-        "ENVIRONMENT",
-    ]))
+    let shared_environment = first_nonempty_env(&["SDKWORK_ENVIRONMENT"]);
+    let agents_environment = first_nonempty_env(&["SDKWORK_AGENTS_ENVIRONMENT"]);
+    if let (Some(shared_environment), Some(agents_environment)) =
+        (&shared_environment, &agents_environment)
+    {
+        if canonical_agents_lifecycle_environment(shared_environment)
+            != canonical_agents_lifecycle_environment(agents_environment)
+        {
+            panic!(
+                "SDKWORK_ENVIRONMENT and SDKWORK_AGENTS_ENVIRONMENT resolve to different lifecycle environments"
+            );
+        }
+    }
+    parse_agents_web_environment(
+        shared_environment
+            .or(agents_environment)
+            .or_else(|| first_nonempty_env(&["SDKWORK_ENV", "ENVIRONMENT"])),
+    )
 }
 
-/// Agents HTTP security policy aligned with IM embedded dependency bootstrap behavior.
+fn configured_agents_cors_origins_from_process_env() -> Vec<String> {
+    let mut shared_origins =
+        sdkwork_web_bootstrap::cors_allowed_origins_from_env(&["SDKWORK_CORS_ALLOWED_ORIGINS"]);
+    let mut agents_origins = sdkwork_web_bootstrap::cors_allowed_origins_from_env(&[
+        "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
+    ]);
+    if !shared_origins.is_empty() && !agents_origins.is_empty() {
+        shared_origins.sort();
+        shared_origins.dedup();
+        agents_origins.sort();
+        agents_origins.dedup();
+        if shared_origins != agents_origins {
+            panic!(
+                "SDKWORK_CORS_ALLOWED_ORIGINS and SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS must describe the same origin set"
+            );
+        }
+    }
+    if std::env::var_os("SDKWORK_CORS_ALLOWED_ORIGINS").is_some() {
+        shared_origins
+    } else {
+        agents_origins
+    }
+}
+
+fn is_exact_http_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    let Some(scheme) = uri.scheme_str() else {
+        return false;
+    };
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    matches!(scheme, "http" | "https")
+        && !authority.as_str().contains('@')
+        && !origin.contains('*')
+        && origin == format!("{scheme}://{authority}")
+}
+
+fn ensure_production_cors_configuration(
+    requires_exact_origins: bool,
+    security_policy: &SecurityPolicy,
+) {
+    if !requires_exact_origins {
+        return;
+    }
+
+    if security_policy.cors.allowed_origins.is_empty() {
+        panic!(
+            "production-like Agents HTTP runtime requires SDKWORK_CORS_ALLOWED_ORIGINS or SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS"
+        );
+    }
+
+    if let Some(origin) = security_policy
+        .cors
+        .allowed_origins
+        .iter()
+        .find(|origin| !is_exact_http_origin(origin))
+    {
+        panic!("invalid exact HTTP(S) origin in production-like Agents HTTP CORS configuration: {origin}");
+    }
+
+    if let Err(error) = security_policy.cors.validate_for_production() {
+        panic!("invalid production-like Agents HTTP CORS configuration: {error}");
+    }
+}
+
+/// Agents HTTP security policy aligned with the shared Web Framework bootstrap behavior.
 fn agents_service_security_policy(environment: &WebEnvironment) -> SecurityPolicy {
-    let mut security_policy = if matches!(environment, WebEnvironment::Dev | WebEnvironment::Test) {
+    let configured_origins = configured_agents_cors_origins_from_process_env();
+    let has_configured_origins = !configured_origins.is_empty();
+    let requires_exact_origins = matches!(environment, WebEnvironment::Prod)
+        || matches!(environment, WebEnvironment::Test) && has_configured_origins;
+    let cors_environment = if matches!(environment, WebEnvironment::Test) && has_configured_origins
+    {
+        WebEnvironment::Prod
+    } else {
+        environment.clone()
+    };
+    let cors = sdkwork_web_bootstrap::security_policy_for_environment(
+        &cors_environment,
+        configured_origins,
+    )
+    .cors;
+    let use_development_security_policy = matches!(environment, WebEnvironment::Dev)
+        || matches!(environment, WebEnvironment::Test) && !has_configured_origins;
+    let mut security_policy = if use_development_security_policy {
         SecurityPolicy::default()
     } else {
         SecurityPolicy::production()
     };
-    if matches!(environment, WebEnvironment::Dev | WebEnvironment::Test) {
-        security_policy.cors = sdkwork_web_core::CorsPolicy::development_private_network();
+    security_policy.cors = cors;
+    if use_development_security_policy {
         security_policy
             .cross_site
             .reject_untrusted_state_changing_origins = false;
         security_policy.cross_site.reject_cookie_auth_without_origin = false;
     }
+    ensure_production_cors_configuration(requires_exact_origins, &security_policy);
     security_policy
 }
 
@@ -78,12 +180,13 @@ pub fn combined_route_manifest() -> HttpRouteManifest {
     HttpRouteManifest::new(COMBINED_ROUTES)
 }
 
-fn agent_web_request_context_profile() -> WebRequestContextProfile {
+fn agent_web_request_context_profile(environment: WebEnvironment) -> WebRequestContextProfile {
     WebRequestContextProfile {
         open_api_prefixes: vec![
             "/agent/v3/api".to_owned(),
             sdkwork_web_core::OPEN_API_PREFIX.to_owned(),
         ],
+        environment,
         ..WebRequestContextProfile::default()
     }
 }
@@ -124,7 +227,7 @@ pub fn wrap_router_with_web_framework(
     let environment = resolve_agents_web_environment_from_process_env();
     let security_policy = agents_service_security_policy(&environment);
     let layer = WebFrameworkLayer::new(resolver)
-        .with_profile(agent_web_request_context_profile())
+        .with_profile(agent_web_request_context_profile(environment))
         .with_security_policy(security_policy)
         .with_route_manifest(route_manifest)
         .with_domain_injector(Arc::new(AgentRequestContextInjector));
@@ -161,6 +264,7 @@ mod tests {
         agents_service_security_policy, parse_agents_web_environment,
         resolve_agents_web_environment_from_process_env,
     };
+    use sdkwork_agents_contract::env_test_lock;
     use sdkwork_web_core::WebEnvironment;
 
     #[test]
@@ -172,8 +276,57 @@ mod tests {
 
     #[test]
     fn production_security_policy_rejects_permissive_cors() {
+        let _guard = env_test_lock();
+        std::env::set_var("SDKWORK_CORS_ALLOWED_ORIGINS", "https://agents.sdkwork.com");
+        std::env::set_var(
+            "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
+            "https://agents.sdkwork.com",
+        );
         let policy = agents_service_security_policy(&WebEnvironment::Prod);
+        std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
+        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
         assert!(!policy.cors.allow_all_origins);
+        policy
+            .cors
+            .validate_origin_value("https://agents.sdkwork.com")
+            .expect("configured production origin");
+        policy
+            .cors
+            .validate_origin_value("https://evil.example")
+            .expect_err("unknown production origin");
+    }
+
+    #[test]
+    #[should_panic(expected = "requires SDKWORK_CORS_ALLOWED_ORIGINS")]
+    fn production_security_policy_requires_explicit_origin_allowlist() {
+        let _guard = env_test_lock();
+        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
+        std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
+        let _ = agents_service_security_policy(&WebEnvironment::Prod);
+    }
+
+    #[test]
+    fn test_security_policy_uses_exact_origins_when_configured() {
+        let _guard = env_test_lock();
+        std::env::set_var(
+            "SDKWORK_CORS_ALLOWED_ORIGINS",
+            "https://test.agents.sdkwork.com",
+        );
+        std::env::set_var(
+            "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
+            "https://test.agents.sdkwork.com",
+        );
+        let policy = agents_service_security_policy(&WebEnvironment::Test);
+        std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
+        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
+        policy
+            .cors
+            .validate_origin_value("https://test.agents.sdkwork.com")
+            .expect("configured test origin");
+        policy
+            .cors
+            .validate_origin_value("http://127.0.0.1:5173")
+            .expect_err("test profile with exact origins must reject development wildcard origins");
     }
 
     #[test]
@@ -186,10 +339,16 @@ mod tests {
             parse_agents_web_environment(Some("production".to_owned())),
             WebEnvironment::Prod
         );
+        assert_eq!(
+            parse_agents_web_environment(Some("staging".to_owned())),
+            WebEnvironment::Prod
+        );
     }
 
     #[test]
     fn resolve_environment_from_agents_env_key() {
+        let _guard = env_test_lock();
+        std::env::remove_var("SDKWORK_ENVIRONMENT");
         unsafe {
             std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "development");
         }
@@ -200,5 +359,54 @@ mod tests {
         unsafe {
             std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
         }
+    }
+
+    #[test]
+    fn resolve_environment_uses_shared_environment_projection() {
+        let _guard = env_test_lock();
+        std::env::set_var("SDKWORK_ENVIRONMENT", "test");
+        std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
+        assert_eq!(
+            resolve_agents_web_environment_from_process_env(),
+            WebEnvironment::Test
+        );
+        std::env::remove_var("SDKWORK_ENVIRONMENT");
+    }
+
+    #[test]
+    fn shared_and_agents_environment_projection_must_agree() {
+        let _guard = env_test_lock();
+        std::env::set_var("SDKWORK_ENVIRONMENT", "test");
+        std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "production");
+        let result = std::panic::catch_unwind(resolve_agents_web_environment_from_process_env);
+        std::env::remove_var("SDKWORK_ENVIRONMENT");
+        std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn shared_and_agents_staging_and_production_projections_must_not_converge_silently() {
+        let _guard = env_test_lock();
+        std::env::set_var("SDKWORK_ENVIRONMENT", "staging");
+        std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "production");
+        let result = std::panic::catch_unwind(resolve_agents_web_environment_from_process_env);
+        std::env::remove_var("SDKWORK_ENVIRONMENT");
+        std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn shared_and_agents_cors_origin_projections_must_agree() {
+        let _guard = env_test_lock();
+        std::env::set_var("SDKWORK_CORS_ALLOWED_ORIGINS", "https://agents.sdkwork.com");
+        std::env::set_var(
+            "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
+            "https://different.sdkwork.com",
+        );
+        let result =
+            std::panic::catch_unwind(|| agents_service_security_policy(&WebEnvironment::Prod));
+        std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
+        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
+        assert!(result.is_err());
     }
 }

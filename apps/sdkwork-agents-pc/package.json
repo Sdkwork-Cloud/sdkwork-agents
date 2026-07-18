@@ -4,14 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node ../../../sdkwork-iam/scripts/dev/run-pc-renderer-dev-with-bootstrap.mjs -- vite",
     "build": "vite build && pnpm run check:bundle-budget",
     "preview": "vite preview",
     "clean": "node scripts/clean.mjs",
     "lint": "tsc --noEmit",
     "typecheck": "pnpm run lint",
     "test:agent-contract": "tsx --test tests/agent-catalog.test.ts",
-    "test:iam-contract": "node --test tests/iam-integration.contract.test.mjs && tsx --test tests/auth-routing.test.ts",
+    "test:iam-contract": "node --test tests/iam-integration.contract.test.mjs && tsx --test tests/auth-routing.test.ts tests/runtime-config.test.ts",
     "test:drive-contract": "tsx --test tests/drive-upload.contract.test.ts",
     "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
     "test:agent-contracts": "pnpm run test:agent-contract && pnpm run test:iam-contract && pnpm run test:drive-contract"

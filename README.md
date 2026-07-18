@@ -55,7 +55,7 @@ Application metadata uses `SDKWORK_AGENTS_DATABASE_*`. Kernel agents managed sto
 - Deploy manifest: [`deployments/deploy.yaml`](deployments/deploy.yaml) (cloud + standalone profiles)
 - Docker: [`deployments/docker/Dockerfile`](deployments/docker/Dockerfile)
 - Kubernetes: [`deployments/kubernetes/`](deployments/kubernetes/)
-- Topology profiles: [`configs/topology/`](configs/topology/)
+- Topology profiles: [`etc/topology/`](etc/topology/)
 - Local env template: [`.env.example`](.env.example)
 
 Pre-flight: `pnpm verify` and `pnpm topology:validate`. See [docs/runbooks/pre-launch-verification.md](docs/runbooks/pre-launch-verification.md).

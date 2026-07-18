@@ -43,7 +43,7 @@ export function initializeAgentsPcIamRuntime(
       platform: 'pc',
     },
     baseUrls: {
-      appbaseAppApiBaseUrl: normalizeGeneratedSdkBaseUrl(config.appbaseAppApiBaseUrl),
+      appbaseAppApiBaseUrl: config.appbaseAppApiBaseUrl,
     },
     localeProvider: () => config.locale,
     sdkClients,
@@ -85,14 +85,6 @@ export async function hydrateAgentsPcIamSession(): Promise<void> {
 
 export function resetAgentsPcIamRuntimeForTests(): void {
   composition = null;
-}
-
-function normalizeGeneratedSdkBaseUrl(baseUrl: string): string {
-  const suffix = '/app/v3/api';
-  const normalized = baseUrl.replace(/\/+$/u, '');
-  return normalized.endsWith(suffix)
-    ? normalized.slice(0, -suffix.length) || normalized
-    : normalized;
 }
 
 function commitIamSession(session: AgentsPcIamSession): AgentsPcIamSession {

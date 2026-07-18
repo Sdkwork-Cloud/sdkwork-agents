@@ -56,16 +56,6 @@
     "installPlatforms": ["API"],
     "installSkill": false
   },
-  "environments": {
-    "development": {
-      "topologyProfileId": "standalone.development",
-      "accessUrlEnv": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL"
-    },
-    "production": {
-      "topologyProfileId": "cloud.production",
-      "accessUrlEnv": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL"
-    }
-  },
   "artifacts": {
     "installConfig": {
       "packages": [
@@ -104,6 +94,7 @@
     "sbomRequired": true
   },
   "metadata": {
+    "deploymentConfig": "etc/sdkwork.deployment.config.json",
     "topologySpec": "specs/topology.spec.json",
     "workflowManifest": "sdkwork.workflow.json",
     "kernelDependency": "../sdkwork-kernel"

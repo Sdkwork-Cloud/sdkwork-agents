@@ -7,7 +7,10 @@ App({
   },
   onLaunch() {
     try {
-      bootstrapAgentsMiniProgram();
+      bootstrapAgentsMiniProgram({
+        appApiBaseUrl: this.globalData.agentsAppApiBaseUrl,
+        accessToken: this.globalData.sdkworkAccessToken,
+      });
     } catch {
       // Runtime bundle is produced by pnpm run build.
     }

@@ -2,10 +2,10 @@ mode = "embedded"
 
 [service]
 name = "sdkwork-api-cloud-gateway"
-environment = "development"
+environment = "staging"
 
 [server]
-bind = "127.0.0.1:3900"
+bind = "0.0.0.0:8080"
 
 [[dependencySurfaces]]
 serviceId = "sdkwork-agents-app-api"
@@ -45,36 +45,36 @@ coverage = "agents-open-api-upstream-routes"
 
 [[upstreams]]
 serviceId = "sdkwork-agents-app-api"
-baseUrl = "http://127.0.0.1:8098"
+baseUrl = "https://agents-app.staging.invalid"
 
 [[upstreams]]
 serviceId = "sdkwork-agents-backend-api"
-baseUrl = "http://127.0.0.1:8096"
+baseUrl = "https://agents-admin.staging.invalid"
 
 [[upstreams]]
 serviceId = "sdkwork-agents-open-api"
-baseUrl = "http://127.0.0.1:8097"
+baseUrl = "https://agent.staging.invalid"
 
 [cors]
-allowAnyOrigin = true
-allowedOrigins = []
+allowAnyOrigin = false
+allowedOrigins = ["https://agents.staging.invalid"]
 
 [request]
 maxBodyBytes = 33554432
-timeoutMs = 0
+timeoutMs = 30000
 
 [readiness]
-checkUpstreams = false
-timeoutMs = 1000
+checkUpstreams = true
+timeoutMs = 2000
 
 [observability]
 accessLogEnabled = true
 auditLogEnabled = true
 accessLogSampleRateBasisPoints = 10000
 auditLogSampleRateBasisPoints = 10000
-metricsEnabled = false
+metricsEnabled = true
 metricsPath = "/metrics"
-tracingEnabled = false
+tracingEnabled = true
 redactHeaders = ["authorization", "access-token", "cookie", "x-api-key", "set-cookie"]
 
 [diagnostics]
@@ -84,25 +84,25 @@ includePolicyInventory = true
 includeRouteInventory = true
 
 [security]
-allowedHosts = []
+allowedHosts = ["agents.staging.invalid", "api.staging.invalid"]
 trustedProxyCidrs = []
 secureHeadersEnabled = true
 maxHeaderBytes = 65536
 maxHeaderCount = 128
 rejectCredentialHeadersOnAnonymousAuthRoutes = true
-csrfGuardEnabled = false
+csrfGuardEnabled = true
 
 [security.waf]
-enabled = false
-mode = "monitor"
+enabled = true
+mode = "enforce"
 inspectQuery = true
 inspectHeaders = true
-inspectJsonBody = false
+inspectJsonBody = true
 
 [traffic]
-rateLimitEnabled = false
+rateLimitEnabled = true
 compatXRateLimitHeaders = true
-globalMaxInFlight = 1024
+globalMaxInFlight = 2048
 rateLimits = []
 concurrencyLimits = []
 
@@ -112,11 +112,11 @@ dryRun = false
 rules = []
 
 [resilience]
-retryEnabled = false
-maxAttempts = 1
+retryEnabled = true
+maxAttempts = 2
 retryStatuses = [502, 503, 504]
-retryBackoffMs = 0
-circuitBreakerEnabled = false
+retryBackoffMs = 100
+circuitBreakerEnabled = true
 failureThreshold = 5
 openSeconds = 30
 halfOpenMaxAttempts = 1

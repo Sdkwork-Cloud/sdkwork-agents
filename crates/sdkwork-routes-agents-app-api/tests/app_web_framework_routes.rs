@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{header, Request, StatusCode};
 use sdkwork_agents_contract::env_test_lock;
 use sdkwork_iam_web_adapter::IamWebRequestContextResolver;
 use sdkwork_intelligence_agents_service::{
@@ -154,4 +154,69 @@ fn app_router_web_framework_accepts_browser_origin_in_development() {
 
         assert_ne!(response.status(), StatusCode::FORBIDDEN);
     });
+}
+
+#[test]
+fn app_router_web_framework_enforces_exact_production_cors_origins() {
+    let _guard = env_test_lock();
+    std::env::set_var("SDKWORK_ENVIRONMENT", "production");
+    std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "production");
+    std::env::set_var("SDKWORK_CORS_ALLOWED_ORIGINS", "https://agents.sdkwork.com");
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let allowlisted_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/app/v3/api/ai/agents")
+                    .header("origin", "https://agents.sdkwork.com")
+                    .header("access-control-request-method", "POST")
+                    .header("access-control-request-headers", "content-type")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(allowlisted_response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            allowlisted_response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|value| value.to_str().ok()),
+            Some("https://agents.sdkwork.com")
+        );
+        assert_ne!(
+            allowlisted_response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|value| value.to_str().ok()),
+            Some("*")
+        );
+        assert!(allowlisted_response
+            .headers()
+            .get(header::VARY)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value
+                .split(',')
+                .any(|part| part.trim().eq_ignore_ascii_case("origin"))));
+
+        let rejected_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/app/v3/api/ai/agents")
+                    .header("origin", "https://evil.example")
+                    .header("access-control-request-method", "POST")
+                    .header("access-control-request-headers", "content-type")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(rejected_response.status(), StatusCode::FORBIDDEN);
+    });
+    std::env::remove_var("SDKWORK_ENVIRONMENT");
+    std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
+    std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
 }

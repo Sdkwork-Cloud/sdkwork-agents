@@ -2,6 +2,7 @@ import { bootstrapSdkClients } from "./sdkClients";
 
 export interface AgentsMiniProgramBootstrapOptions {
   appApiBaseUrl?: string;
+  accessToken?: string;
 }
 
 export function bootstrap(options: AgentsMiniProgramBootstrapOptions = {}) {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -23,12 +23,56 @@ function readEnv(relativePath) {
   );
 }
 
+function readJson(relativePath) {
+  return JSON.parse(read(relativePath));
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function assertExactHttpOrigin(origin, message) {
+  assert.doesNotMatch(origin, /\*/u, message);
+  const parsed = new URL(origin);
+  assert.ok(parsed.protocol === 'http:' || parsed.protocol === 'https:', message);
+  assert.equal(parsed.origin, origin, message);
+  assert.equal(parsed.search, '', message);
+  assert.equal(parsed.hash, '', message);
+  assert.equal(parsed.username, '', message);
+  assert.equal(parsed.password, '', message);
+}
+
 test('root dev runner starts the API gateway before the PC browser renderer', () => {
   const runner = read('scripts/agents-dev.mjs');
 
+  assert.match(runner, /from ['"]@sdkwork\/app-topology['"]/u);
+  assert.match(runner, /topology\.defaults\.developmentProfileId/u);
+  assert.match(runner, /parseArgs/u);
+  assert.match(runner, /resolveSelectedProfile/u);
+  assert.match(runner, /topology\.loadProfile\(selectedProfile\.profileId\)/u);
+  assert.match(runner, /topology\.applyProfileEnv\(selectedProfile\.profileId\)/u);
+  assert.match(runner, /topology\.listOrchestrationProcesses\(selectedProfile\.profileId\)/u);
+  assert.match(runner, /topology\.listHealthSurfaces\(selectedProfile\.profileId\)/u);
+  assert.match(runner, /assertLocallyRunnableProfile/u);
+  assert.match(runner, /only runs standalone\.development locally/u);
+  assert.match(runner, /reportResolvedProfile/u);
+  assert.match(runner, /SDKWORK_ENVIRONMENT = selectedProfile\.environment/u);
+  assert.match(runner, /process\.env/u);
+  assert.match(runner, /env: \{ \.\.\.runtimeEnv, \.\.\.options\.env \}/u);
+  assert.match(runner, /import \{ existsSync, mkdirSync, readFileSync, rmSync, writeFileSync \} from ['"]node:fs['"]/u);
+  assert.match(runner, /execFileSync\('git', \['checkout', 'HEAD', '--', \.\.\.missing\]/u);
+  assert.match(runner, /gatewayProfileMatchesRuntime/u);
+  assert.match(runner, /writeGatewayProfileMarker/u);
+  assert.match(runner, /async function stopChild/u);
+  assert.match(runner, /await Promise\.allSettled/u);
+  assert.match(runner, /await shutdown\(1,/u);
+  assert.doesNotMatch(runner, /killer\.unref\(\)/u);
+  assert.doesNotMatch(runner, /setTimeout\(\(\) => process\.exit/u);
   assert.match(runner, /sdkwork-agents-standalone-gateway/u);
+  assert.match(runner, /applicationIngressProcess\.crate/u);
+  assert.match(runner, /pcRendererProcess\.package/u);
+  assert.match(runner, /pcRendererProcess\.script/u);
   assert.match(runner, /\/healthz/u);
-  assert.match(runner, /@sdkwork\/agents-pc/u);
   assert.match(runner, /waitForGateway/u);
   assert.match(runner, /--host/u);
   assert.match(runner, /--strictPort/u);
@@ -58,21 +102,109 @@ test('gateway startup output distinguishes health links from authenticated API o
   assert.match(accessUrls, /API origin \(authentication required\)/u);
 });
 
-test('all topology profiles project one environment into embedded Web Framework routers', () => {
-  for (const profile of [
+test('source topology profiles project exact CORS and IAM origins from etc', () => {
+  const profiles = [
     'standalone.development',
+    'standalone.test',
+    'standalone.staging',
     'standalone.production',
     'cloud.development',
+    'cloud.test',
+    'cloud.staging',
     'cloud.production',
-  ]) {
-    const env = readEnv(`configs/topology/${profile}.env`);
+  ];
+  const deploymentIndex = readJson('etc/sdkwork.deployment.config.json');
+  const topology = readJson('specs/topology.spec.json');
+  const rootManifest = readJson('sdkwork.app.config.json');
+  const packageScript = read('scripts/package-cloud-gateway-config.mjs');
+
+  assert.equal(topology.profileRoot, 'etc/topology');
+  assert.deepEqual(topology.vocabulary.environment.allowed, [
+    'development',
+    'test',
+    'staging',
+    'production',
+  ]);
+  assert.equal(rootManifest.environments, undefined);
+  assert.equal(rootManifest.metadata.deploymentConfig, 'etc/sdkwork.deployment.config.json');
+  assert.equal(existsSync(path.join(repoRoot, 'configs')), false);
+  assert.match(packageScript, /specs\/topology\.spec\.json/u);
+  assert.match(packageScript, /etc\/\$\{fileName\}/u);
+  assert.doesNotMatch(packageScript, /configs\//u);
+
+  for (const profile of profiles) {
+    const [deploymentProfile, environment] = profile.split('.');
+    const env = readEnv(`etc/topology/${profile}.env`);
+
+    assert.equal(deploymentIndex.profiles[profile].config, `topology/${profile}.env`);
+    assert.equal(topology.profileFiles[profile], `etc/topology/${profile}.env`);
+    assert.equal(env.SDKWORK_AGENTS_DEPLOYMENT_PROFILE, deploymentProfile);
+    assert.equal(env.SDKWORK_AGENTS_ENVIRONMENT, environment);
+    assert.equal(env.SDKWORK_ENVIRONMENT, environment);
+    assert.equal(env.SDKWORK_AGENTS_PROFILE_ID, profile);
     assert.equal(
-      env.SDKWORK_ENVIRONMENT,
-      env.SDKWORK_AGENTS_ENVIRONMENT,
-      `${profile} must project the application environment to embedded IAM and dependency routers`,
+      env.VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+      env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+      `${profile} must project the platform IAM gateway to generic browser runtime config`,
     );
-    if (env.SDKWORK_AGENTS_ENVIRONMENT === 'production') {
-      assert.equal(env.SDKWORK_CORS_ALLOWED_ORIGINS, 'https://agents.sdkwork.com');
+    assert.equal(
+      env.VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL,
+      env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+      `${profile} must provide the PC IAM/Appbase gateway base URL`,
+    );
+    assert.equal(
+      env.VITE_SDKWORK_AGENTS_H5_APPBASE_APP_API_BASE_URL,
+      env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+      `${profile} must provide the H5 IAM/Appbase gateway base URL`,
+    );
+
+    if (environment === 'development') {
+      assert.equal(env.SDKWORK_CORS_ALLOWED_ORIGINS, undefined);
+      continue;
     }
+
+    const origins = env.SDKWORK_CORS_ALLOWED_ORIGINS.split(',').filter(Boolean);
+    assert.ok(origins.length > 0, `${profile} must declare CORS origins`);
+    for (const origin of origins) {
+      assertExactHttpOrigin(origin, `${profile} must use an exact HTTP(S) CORS origin`);
+    }
+    assert.equal(env.SDKWORK_AGENTS_DEV_AUTH_BYPASS, 'false');
+    assert.equal(env.VITE_SDKWORK_AGENTS_PC_ENVIRONMENT, environment);
+    assert.equal(env.VITE_SDKWORK_AGENTS_H5_ENVIRONMENT, environment);
+
+    if (deploymentProfile === 'cloud') {
+      const gatewayPath = `etc/sdkwork-api-cloud-gateway.agents.${environment}.toml`;
+      assert.equal(env.SDKWORK_API_CLOUD_GATEWAY_CONFIG, gatewayPath);
+      const gatewayConfig = read(gatewayPath);
+      assert.match(gatewayConfig, new RegExp(`environment = "${environment}"`));
+      assert.match(
+        gatewayConfig,
+        new RegExp(
+          `\\[cors\\][\\s\\S]*allowAnyOrigin = false[\\s\\S]*allowedOrigins = \\["${escapeRegex(origins[0])}"\\]`,
+        ),
+        `${profile} cloud gateway must match the profile's exact CORS origin`,
+      );
+    }
+  }
+
+  assert.equal(
+    readEnv('etc/topology/cloud.production.env').SDKWORK_CORS_ALLOWED_ORIGINS,
+    'https://agents.sdkwork.com',
+  );
+  for (const profile of ['standalone.test', 'standalone.staging', 'standalone.production']) {
+    assert.match(
+      readEnv(`etc/topology/${profile}.env`).SDKWORK_CORS_ALLOWED_ORIGINS,
+      /\.invalid$/u,
+      `${profile} must remain an operator-materialized fail-closed template`,
+    );
+  }
+
+  for (const manifestPath of [
+    'apps/sdkwork-agents-pc/sdkwork.app.config.json',
+    'apps/sdkwork-agents-h5/sdkwork.app.config.json',
+    'apps/sdkwork-agents-flutter-mobile/sdkwork.app.config.json',
+    'apps/sdkwork-agents-mini-program/sdkwork.app.config.json',
+  ]) {
+    assert.equal(readJson(manifestPath).environments, undefined, `${manifestPath} must not duplicate etc environment URLs`);
   }
 });
