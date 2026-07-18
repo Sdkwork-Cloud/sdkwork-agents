@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "sdkwork": {
+    "architecture": "pc-react",
+    "surface": "app"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",

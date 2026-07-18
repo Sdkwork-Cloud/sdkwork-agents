@@ -6,13 +6,13 @@ import {
   normalizeAppbaseGatewayBaseUrl,
 } from '../src/bootstrap/runtimeConfig.ts';
 
-test('PC keeps the Agents application API and Appbase IAM gateway separate in development', () => {
+test('PC uses the embedded IAM gateway on the standalone application ingress', () => {
   const config = createAgentsPcRuntimeConfig({
     VITE_SDKWORK_AGENTS_PC_ENVIRONMENT: 'development',
   });
 
   assert.equal(config.agentsAppApiBaseUrl, 'http://127.0.0.1:8095/app/v3/api');
-  assert.equal(config.appbaseAppApiBaseUrl, 'http://127.0.0.1:3900');
+  assert.equal(config.appbaseAppApiBaseUrl, 'http://127.0.0.1:8095');
   assert.equal(config.environment, 'dev');
   assert.equal(config.lifecycleEnvironment, 'development');
 });

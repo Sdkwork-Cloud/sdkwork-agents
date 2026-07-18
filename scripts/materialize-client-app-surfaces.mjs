@@ -10,7 +10,8 @@ const backendAppId = 'sdkwork-agents';
 const defaultTenantId = '100001';
 const defaultOrganizationId = '0';
 const defaultPublicHttpUrl = 'http://127.0.0.1:8095';
-const defaultAppbaseGatewayHttpUrl = 'http://127.0.0.1:3900';
+const defaultPlatformGatewayHttpUrl = 'http://127.0.0.1:3900';
+const defaultAppbaseGatewayHttpUrl = defaultPublicHttpUrl;
 
 function write(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -345,10 +346,10 @@ function createReactSurface({
     `${envPrefix}_ENVIRONMENT=development`,
     `${envPrefix}_APPLICATION_PUBLIC_HTTP_URL=${defaultPublicHttpUrl}`,
     `${envPrefix}_APP_API_BASE_URL=${defaultPublicHttpUrl}/app/v3/api`,
-    'VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL=' + defaultAppbaseGatewayHttpUrl,
-    envPrefix + '_APPBASE_APP_API_BASE_URL=',
+    'VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL=' + defaultPlatformGatewayHttpUrl,
+    envPrefix + '_APPBASE_APP_API_BASE_URL=' + defaultAppbaseGatewayHttpUrl,
     `${envPrefix}_BACKEND_API_BASE_URL=${defaultPublicHttpUrl}/backend/v3/api`,
-    envPrefix + '_APPBASE_LOGIN_URL=',
+    envPrefix + '_APPBASE_LOGIN_URL=' + defaultAppbaseGatewayHttpUrl,
     '',
   ].join('\n'));
 
@@ -763,7 +764,7 @@ function createMiniProgramSurface() {
       apiBaseUrl: `${defaultPublicHttpUrl}/app/v3/api`,
     },
     appbase: {
-      loginUrl: 'http://127.0.0.1:3900',
+      loginUrl: defaultAppbaseGatewayHttpUrl,
     },
   });
   writeJson(path.join(appRoot, 'config/host/mp-weixin.development.example.json'), {
@@ -948,7 +949,7 @@ function createFlutterSurface() {
       apiBaseUrl: `${defaultPublicHttpUrl}/app/v3/api`,
     },
     appbase: {
-      loginUrl: 'http://127.0.0.1:3900',
+      loginUrl: defaultAppbaseGatewayHttpUrl,
     },
   });
   write(path.join(appRoot, '.env.example'), 'SDKWORK_ACCESS_TOKEN=\n');

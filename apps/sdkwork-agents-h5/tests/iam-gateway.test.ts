@@ -4,14 +4,14 @@ import test from "node:test";
 
 import { createAgentsEnvironment } from "../src/bootstrap/environment.ts";
 
-test("H5 keeps the Agents application API and Appbase IAM gateway separate in development", () => {
+test("H5 uses the embedded IAM gateway on the standalone application ingress", () => {
   const environment = createAgentsEnvironment({
     VITE_SDKWORK_AGENTS_H5_ENVIRONMENT: "development",
   });
 
   assert.equal(environment.apiBaseUrl, "http://127.0.0.1:8095/app/v3/api");
-  assert.equal(environment.appbaseAppApiBaseUrl, "http://127.0.0.1:3900");
-  assert.equal(environment.appbaseLoginUrl, "http://127.0.0.1:3900");
+  assert.equal(environment.appbaseAppApiBaseUrl, "http://127.0.0.1:8095");
+  assert.equal(environment.appbaseLoginUrl, "http://127.0.0.1:8095");
   assert.equal(environment.lifecycleEnvironment, "development");
 });
 
@@ -62,7 +62,7 @@ test("H5 normalizes an IAM app-api URL to a gateway root before OAuth calls", ()
   );
 });
 
-test("the client materializer keeps Appbase independent from the Agents app-api origin", () => {
+test("the client materializer keeps standalone IAM on the Agents application ingress", () => {
   const materializer = readFileSync(
     new URL("../../../scripts/materialize-client-app-surfaces.mjs", import.meta.url),
     "utf8",
@@ -70,7 +70,7 @@ test("the client materializer keeps Appbase independent from the Agents app-api 
 
   assert.match(
     materializer,
-    /defaultAppbaseGatewayHttpUrl = ['"]http:\/\/127\.0\.0\.1:3900['"]/,
+    /defaultAppbaseGatewayHttpUrl = defaultPublicHttpUrl/,
   );
   assert.match(
     materializer,
@@ -78,15 +78,12 @@ test("the client materializer keeps Appbase independent from the Agents app-api 
   );
   assert.match(
     materializer,
-    /envPrefix \+ '_APPBASE_APP_API_BASE_URL='/,
+    /envPrefix \+ '_APPBASE_APP_API_BASE_URL=' \+ defaultAppbaseGatewayHttpUrl/,
   );
   assert.match(
     materializer,
     /function resolveAppbaseGatewayBaseUrl/,
   );
-  assert.doesNotMatch(
-    materializer,
-    /\$\{envPrefix\}_APPBASE_APP_API_BASE_URL=\$\{defaultPublicHttpUrl\}\/app\/v3\/api/,
-  );
+  assert.doesNotMatch(materializer, /APPBASE_APP_API_BASE_URL=.*\/app\/v3\/api/);
   assert.doesNotMatch(materializer, /environments:\s*\{/);
 });

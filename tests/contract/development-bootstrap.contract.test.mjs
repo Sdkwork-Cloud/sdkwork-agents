@@ -26,7 +26,7 @@ test('development bootstrap access tokens come from the canonical IAM helper', (
   assert.equal(token.split('.').length, 3);
   assert.ok(signature.length > 0);
   assert.equal(claims.app_id, 'sdkwork-agents');
-  assert.equal(claims.environment, 'dev');
+  assert.equal(claims.environment, 'development');
   assert.equal(claims.token_kind, 'access');
   assert.equal(claims.tenant_id, '100001');
   assert.equal(claims.organization_id, '0');
@@ -41,6 +41,33 @@ test('root dev runner registers the application root and supplies private bootst
   assert.match(runner, /SDKWORK_APP_ROOT = repoRoot/);
   assert.match(runner, /SDKWORK_IAM_APP_ROOT/);
   assert.doesNotMatch(runner, /createHmac|randomBytes|signDevelopmentAccessToken/);
+});
+
+test('standalone gateway provisions and mounts IAM before credential entry', () => {
+  const workspaceCargo = read('Cargo.toml');
+  const assemblyCargo = read('crates/sdkwork-agents-gateway-assembly/Cargo.toml');
+  const assemblyBootstrap = read('crates/sdkwork-agents-gateway-assembly/src/bootstrap.rs');
+  const iamBootstrap = read('crates/sdkwork-agents-gateway-assembly/src/bootstrap/iam.rs');
+
+  assert.match(workspaceCargo, /sdkwork-iam-embedded-application-bootstrap/);
+  assert.match(workspaceCargo, /sdkwork-iam-database-host/);
+  assert.match(workspaceCargo, /sdkwork-routes-iam-app-api/);
+  assert.match(assemblyCargo, /sdkwork-iam-embedded-application-bootstrap\.workspace = true/);
+  assert.match(assemblyCargo, /sdkwork-iam-database-host\.workspace = true/);
+  assert.match(assemblyCargo, /sdkwork-routes-iam-app-api\.workspace = true/);
+  assert.match(iamBootstrap, /bootstrap_iam_database_from_env\(\)/);
+  assert.match(iamBootstrap, /ensure_tenant_application_from_app_root\(/);
+  assert.match(iamBootstrap, /build_sdkwork_iam_app_api_router\(\)/);
+  assert.match(
+    assemblyBootstrap,
+    /let iam_router\s*=\s*iam::wire_iam_app_router\(\)[\s\S]*let agents_router\s*=\s*sdkwork_agents_kernel_bridge::build_agents_served_router/u,
+    'IAM database lifecycle must install the canonical session pool before Agents resolvers are built',
+  );
+  assert.match(assemblyBootstrap, /agents_router\s*\.merge\(iam_router\)/s);
+  assert.match(
+    assemblyBootstrap,
+    /middleware::cors_layer\(\s*config\.as_ref\(\),?\s*\)/s,
+  );
 });
 
 test('browser SDK token managers leave credential-entry bootstrap to the canonical IAM runtime', () => {
@@ -65,7 +92,7 @@ test('Vite hands private development bootstrap tokens to IAM credential entry wi
     'apps/sdkwork-agents-h5/vite.config.ts',
   ]) {
     const vite = read(relativePath);
-    assert.match(vite, /mode === ['"]development['"]/);
+    assert.match(vite, /mode\s*[!=]==\s*['"]development['"]/);
     assert.match(vite, /process\.env\.SDKWORK_ACCESS_TOKEN/);
     assert.doesNotMatch(vite, /VITE_[A-Z0-9_]*ACCESS_TOKEN/);
     assert.doesNotMatch(vite, /__SDKWORK_DEVELOPMENT_ACCESS_TOKEN__/);

@@ -15,7 +15,7 @@ import {
   isVoiceAppSdkConfigured,
 } from '@sdkwork/agents-pc-core/sdk';
 import type { SdkworkAppbasePcAuthRuntimeSdkClient } from '@sdkwork/auth-runtime-pc-react';
-import { configureChatAgentPort } from '@sdkwork/chatbox-pc-core';
+import { configureChatAgentPort } from '@sdkwork/agents-pc-chat';
 
 import { initializeAgentsPcIamRuntime } from './iamRuntime';
 

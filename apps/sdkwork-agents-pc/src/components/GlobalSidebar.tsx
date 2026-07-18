@@ -2,15 +2,21 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Bell,
   Bot,
+  Folder,
   Gem,
+  Home,
+  LayoutGrid,
+  MessageSquare,
+  Presentation,
   SlidersHorizontal,
   Sparkles,
   Terminal,
 } from 'lucide-react';
 import type { FC } from 'react';
-import { cn } from '@/packages/sdkwork-chatbox-pc-commons/src/components/MarkdownRenderer';
+import { cn } from '@sdkwork/agents-pc-commons';
+import { WORKBENCH_TABS, type WorkbenchTab } from './workbenchTabs';
 
-export type WorkbenchTab = 'agents';
+export type { WorkbenchTab } from './workbenchTabs';
 
 interface GlobalSidebarProps {
   activeTab: WorkbenchTab;
@@ -25,9 +31,20 @@ interface SidebarItem {
   label: string;
 }
 
-const SIDEBAR_ITEMS: SidebarItem[] = [
-  { id: 'agents', icon: Bot, label: 'Agent' },
-];
+const SIDEBAR_ITEM_BY_TAB: Record<WorkbenchTab, Omit<SidebarItem, 'id'>> = {
+  agents: { icon: Bot, label: 'Agent' },
+  chat_session: { icon: MessageSquare, label: '对话' },
+  inspiration: { icon: Home, label: '灵感' },
+  creative: { icon: Sparkles, label: '生成' },
+  assets: { icon: Folder, label: '资产' },
+  presentation: { icon: Presentation, label: '演说' },
+  canvas: { icon: LayoutGrid, label: '画布' },
+};
+
+const SIDEBAR_ITEMS: SidebarItem[] = WORKBENCH_TABS.map((id) => ({
+  id,
+  ...SIDEBAR_ITEM_BY_TAB[id],
+}));
 
 export const GlobalSidebar: FC<GlobalSidebarProps> = ({ activeTab, setActiveTab, avatarBg, username }) => (
   <div className="relative z-50 flex h-full w-[68px] shrink-0 flex-col items-center border-r border-white/5 bg-[#18181A] py-4">
@@ -35,7 +52,7 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({ activeTab, setActiveTab,
       <Sparkles className="fill-white text-white" size={16} />
     </div>
 
-    <nav aria-label="工作区" className="flex w-full flex-col gap-1 px-2">
+    <nav aria-label="工作区" className="flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto px-2">
       {SIDEBAR_ITEMS.map(({ id, icon: Icon, label }) => {
         const active = activeTab === id;
         return (

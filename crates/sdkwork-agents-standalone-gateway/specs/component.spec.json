@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-standalone-gateway",
+    "displayName": "SDKWork Agents Standalone Gateway",
+    "version": "0.1.0",
+    "type": "rust-standalone-gateway",
+    "root": "crates/sdkwork-agents-standalone-gateway",
+    "domain": "application",
+    "capability": "standalone-gateway",
+    "surface": "gateway-api",
+    "status": "ACTIVE",
+    "languages": ["rust"],
+    "generated": false,
+    "private": true,
+    "manifests": ["Cargo.toml"]
+  },
+  "canonicalSpecs": [
+    {
+      "file": "APPLICATION_GATEWAY_SPEC.md",
+      "path": "../../../sdkwork-specs/APPLICATION_GATEWAY_SPEC.md",
+      "purpose": "Standalone application ingress and embedded platform adapter rules."
+    },
+    {
+      "file": "IAM_LOGIN_INTEGRATION_SPEC.md",
+      "path": "../../../sdkwork-specs/IAM_LOGIN_INTEGRATION_SPEC.md",
+      "purpose": "Same-origin IAM login and tenant application provisioning."
+    },
+    {
+      "file": "RUST_CODE_SPEC.md",
+      "path": "../../../sdkwork-specs/RUST_CODE_SPEC.md",
+      "purpose": "Rust runtime gateway structure and verification."
+    }
+  ],
+  "contracts": {
+    "layerRole": "runtime-gateway",
+    "publicExports": [
+      ".",
+      "sdkwork_agents_standalone_gateway::build_router"
+    ],
+    "runtimeEntrypoints": [
+      "src/main.rs",
+      "src/bootstrap.rs#build_router",
+      "Cargo.toml[[bin]].sdkwork-agents-standalone-gateway"
+    ],
+    "routeManifest": null,
+    "sdkClients": [],
+    "sdkDependencies": [
+      {
+        "workspace": "sdkwork-iam-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api",
+        "required": true
+      }
+    ],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": [
+      {
+        "workspace": "sdkwork-iam",
+        "sdkFamily": "sdkwork-iam-app-sdk",
+        "apiAuthority": "sdkwork-iam-app-api",
+        "surface": "app-api",
+        "apiPrefix": "/app/v3/api",
+        "runtimeMode": "same-origin-mounted",
+        "cargoDependency": "sdkwork-agents-gateway-assembly",
+        "embeddedExecutableExport": "sdkwork_agents_standalone_gateway::build_router",
+        "coverageEvidence": [
+          "../sdkwork-agents-gateway-assembly/src/bootstrap/iam.rs#wire_iam_app_router",
+          "src/bootstrap.rs#build_router"
+        ]
+      }
+    ],
+    "events": [],
+    "configKeys": [
+      "SDKWORK_APP_ROOT",
+      "SDKWORK_AGENTS_APP_ROOT",
+      "SDKWORK_IAM_APP_ROOT",
+      "SDKWORK_IAM_DATABASE_URL"
+    ]
+  },
+  "integration": {
+    "authority": "The standalone gateway owns runtime composition only; sdkwork-iam retains IAM domain, persistence, and API authority.",
+    "securityPolicy": "Credential-entry routes and Agents business routes share one application ingress and token-derived request context."
+  },
+  "verification": {
+    "commands": [
+      "cargo test -p sdkwork-agents-gateway-assembly",
+      "cargo check -p sdkwork-agents-standalone-gateway",
+      "pnpm run gateway:assembly:validate"
+    ]
+  }
+}

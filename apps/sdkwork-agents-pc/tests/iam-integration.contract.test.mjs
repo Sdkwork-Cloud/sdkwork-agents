@@ -68,7 +68,7 @@ test('pc shares IAM credentials across authenticated SDK clients', () => {
   assert.match(bootstrap, /initializeAgentsPcIamRuntime\(sdkClients\)/);
 });
 
-test('pc declares independent IAM and Agent API base URLs', () => {
+test('pc keeps IAM configurable while standalone development uses one application ingress', () => {
   const config = read('src/bootstrap/runtimeConfig.ts');
   const env = read('.env.example');
   const vite = read('vite.config.ts');
@@ -76,10 +76,13 @@ test('pc declares independent IAM and Agent API base URLs', () => {
   assert.match(config, /VITE_SDKWORK_AGENTS_PC_APP_API_BASE_URL/);
   assert.match(config, /VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL/);
   assert.match(config, /VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL/);
-  assert.match(config, /DEVELOPMENT_APPBASE_GATEWAY_HTTP_URL = 'http:\/\/127\.0\.0\.1:3900'/);
+  assert.match(config, /DEVELOPMENT_APPBASE_GATEWAY_HTTP_URL = DEVELOPMENT_PUBLIC_HTTP_URL/);
   assert.doesNotMatch(config, /appbaseAppApiBaseUrl:\s*agentsAppApiBaseUrl/);
   assert.match(env, /VITE_SDKWORK_AGENTS_PC_APP_API_BASE_URL/);
-  assert.match(env, /VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL/);
+  assert.match(
+    env,
+    /VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL="http:\/\/127\.0\.0\.1:8095"/,
+  );
   assert.match(env, /VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL="http:\/\/127\.0\.0\.1:3900"/);
   assert.match(vite, /'\/app\/v3\/api': 'http:\/\/127\.0\.0\.1:8095'/);
   assert.match(vite, /__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__/);

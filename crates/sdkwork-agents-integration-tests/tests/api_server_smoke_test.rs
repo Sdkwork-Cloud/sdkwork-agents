@@ -2,8 +2,14 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use sdkwork_agents_contract::env_test_lock;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
+
+fn gateway_test_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("create gateway test runtime"))
+}
 
 struct TestEnvVar {
     key: &'static str,
@@ -90,7 +96,7 @@ impl Drop for GatewayTestEnvironment {
 fn api_server_bootstrap_health_and_metrics_contracts() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("bootstrap-health");
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
+    gateway_test_runtime().block_on(async {
         let app = sdkwork_agents_standalone_gateway::build_router()
             .await
             .expect("agents standalone-gateway bootstrap should succeed with dev inline auth");
@@ -132,7 +138,7 @@ fn api_server_bootstrap_health_and_metrics_contracts() {
 fn gateway_assembly_composes_kernel_router() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("gateway-assembly");
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
+    gateway_test_runtime().block_on(async {
         let assembly = sdkwork_agents_gateway_assembly::assemble_application_router()
             .await
             .expect("gateway assembly should compose kernel routes");

@@ -102,6 +102,7 @@
   },
   "verification": {
     "commands": [
+      "pnpm --filter @sdkwork/agents-app-sdk test",
       "node sdks/materialize-agent-v3-openapi-boundaries.mjs",
       "node sdks/sdkwork-agents-app-sdk/bin/verify-sdk.mjs",
       "node sdks/test/verify-agent-sdk-ownership-boundaries.test.mjs",

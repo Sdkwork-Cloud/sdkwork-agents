@@ -34,25 +34,56 @@
       "file": "DATABASE_FRAMEWORK_SPEC.md",
       "path": "../../../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md",
       "purpose": "Database lifecycle bootstrap ownership for embedded assemblies."
+    },
+    {
+      "file": "IAM_LOGIN_INTEGRATION_SPEC.md",
+      "path": "../../../sdkwork-specs/IAM_LOGIN_INTEGRATION_SPEC.md",
+      "purpose": "Embedded IAM route and tenant application bootstrap contract."
     }
   ],
   "contracts": {
     "publicExports": [
       "."
     ],
-    "runtimeEntrypoints": [],
+    "runtimeEntrypoints": [
+      "src/bootstrap.rs#assemble_application_router",
+      "src/bootstrap/iam.rs#wire_iam_app_router"
+    ],
     "routeManifest": "assembly-manifest.json",
     "sdkClients": [],
-    "sdkDependencies": [],
+    "sdkDependencies": [
+      {
+        "workspace": "sdkwork-iam-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api",
+        "required": true
+      }
+    ],
     "dependencyApiExports": [],
-    "dependencyApiSurfaces": [],
+    "dependencyApiSurfaces": [
+      {
+        "workspace": "sdkwork-iam",
+        "sdkFamily": "sdkwork-iam-app-sdk",
+        "apiAuthority": "sdkwork-iam-app-api",
+        "surface": "app-api",
+        "apiPrefix": "/app/v3/api",
+        "runtimeMode": "same-origin-mounted",
+        "cargoDependency": "sdkwork-routes-iam-app-api",
+        "embeddedExecutableExport": "sdkwork_agents_gateway_assembly::assemble_application_router",
+        "coverageEvidence": [
+          "src/bootstrap/iam.rs#wire_iam_app_router",
+          "src/bootstrap.rs#assemble_application_router"
+        ]
+      }
+    ],
     "events": [],
     "configKeys": []
   },
   "verification": {
     "commands": [
       "pnpm run gateway:assembly:validate",
-      "cargo check -p sdkwork-agents-gateway-assembly"
+      "cargo check -p sdkwork-agents-gateway-assembly",
+      "cargo test -p sdkwork-agents-gateway-assembly"
     ]
   }
 }

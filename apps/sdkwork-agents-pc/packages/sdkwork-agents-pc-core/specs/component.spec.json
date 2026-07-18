@@ -15,7 +15,8 @@
     ],
     "generated": false,
     "manifests": [
-      "package.json"
+      "package.json",
+      "specs/component.spec.json"
     ]
   },
   "canonicalSpecs": [
@@ -37,7 +38,12 @@
   ],
   "contracts": {
     "publicExports": [
-      "."
+      ".",
+      "./composition",
+      "./host",
+      "./modules",
+      "./sdk",
+      "./session"
     ],
     "sdkDependencies": [
       {

@@ -147,19 +147,34 @@ test('source topology profiles project exact CORS and IAM origins from etc', () 
       env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
       `${profile} must project the platform IAM gateway to generic browser runtime config`,
     );
+    const expectedIamGateway = deploymentProfile === 'standalone'
+      ? env.SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL
+      : env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL;
     assert.equal(
       env.VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL,
-      env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+      expectedIamGateway,
       `${profile} must provide the PC IAM/Appbase gateway base URL`,
     );
     assert.equal(
       env.VITE_SDKWORK_AGENTS_H5_APPBASE_APP_API_BASE_URL,
-      env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+      expectedIamGateway,
       `${profile} must provide the H5 IAM/Appbase gateway base URL`,
+    );
+    assert.equal(
+      env.VITE_SDKWORK_AGENTS_H5_APPBASE_LOGIN_URL,
+      expectedIamGateway,
+      `${profile} must provide the H5 IAM login origin`,
     );
 
     if (environment === 'development') {
       assert.equal(env.SDKWORK_CORS_ALLOWED_ORIGINS, undefined);
+      if (deploymentProfile === 'standalone') {
+        assert.match(
+          env.SDKWORK_DATABASE_PATH,
+          /^\.runtime\//,
+          'standalone development kernel state must stay outside the source tree',
+        );
+      }
       continue;
     }
 

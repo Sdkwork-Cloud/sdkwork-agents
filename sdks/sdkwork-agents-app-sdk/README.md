@@ -39,6 +39,11 @@ The generator command uses:
 User-facing clients should consume `@sdkwork/agents-app-sdk` or approved
 service facades built on it. They must not call `/backend/v3/api`.
 
+`createClient` and `SdkworkAppClient` accept the resolved App API surface URL,
+which must end with `/app/v3/api`. The composed facade maps that surface URL to
+the generator-owned transport root, so callers must not strip or append the API
+prefix themselves.
+
 ## SDKWork Documentation Contract
 
 Domain: intelligence

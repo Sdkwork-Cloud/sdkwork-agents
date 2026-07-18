@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Wifi, Activity, Clock, Settings, List } from 'lucide-react';
-import { cn } from '@/packages/sdkwork-chatbox-pc-commons/src/components/MarkdownRenderer';
+import { cn } from '@sdkwork/agents-pc-commons';
 import { useAgentState } from '@/src/contexts/AgentStateContext';
 import { AgentConfigModal } from './AgentConfigModal';
 import { AgentHistoryLog } from './AgentHistoryLog';

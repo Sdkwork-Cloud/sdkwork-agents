@@ -31,8 +31,9 @@
   "scripts": {
     "generate:dry-run": "node ../../workspace-agent-sdkgen.mjs --family app --mode dry-run",
     "generate": "node ../../workspace-agent-sdkgen.mjs --family app --mode apply",
-    "build": "node ../bin/verify-sdk.mjs",
-    "verify": "node ../bin/verify-sdk.mjs"
+    "test": "tsx --test tests/base-url.test.ts",
+    "build": "pnpm run test && node ../bin/verify-sdk.mjs",
+    "verify": "pnpm run test && node ../bin/verify-sdk.mjs"
   },
   "publishConfig": {
     "access": "public",
@@ -50,6 +51,9 @@
   },
   "dependencies": {
     "@sdkwork/sdk-common": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "catalog:"
   },
   "files": [
     "src",

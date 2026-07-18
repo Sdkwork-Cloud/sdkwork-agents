@@ -3,7 +3,7 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-agents-pc-commons",
-    "displayName": "sdkwork-agents-pc-commons",
+    "displayName": "SDKWork Agents PC Commons",
     "version": "0.1.0",
     "type": "typescript-package",
     "root": "apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-commons",
@@ -15,7 +15,8 @@
     ],
     "generated": false,
     "manifests": [
-      "package.json"
+      "package.json",
+      "specs/component.spec.json"
     ]
   },
   "canonicalSpecs": [
@@ -57,7 +58,8 @@
   ],
   "contracts": {
     "publicExports": [
-      "."
+      ".",
+      "./i18n"
     ],
     "layerRole": "frontend-commons",
     "sdkClients": [],
