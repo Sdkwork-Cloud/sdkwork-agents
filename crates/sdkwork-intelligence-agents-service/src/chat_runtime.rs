@@ -503,11 +503,13 @@ mod tests {
             organization_id: 0,
             agent_id: "agent.test".to_string(),
             owner_user_id: 42,
+            project_id: None,
             title: Some("Test".to_string()),
             status: AgentSessionStatus::Active,
             provider_binding_id: None,
             model_id: Some("model.contract".to_string()),
             message_count: 0,
+            last_message_sequence: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
             metadata_json: "{}".to_string(),
@@ -516,6 +518,8 @@ mod tests {
             updated_at: "2026-06-28T00:00:00Z".to_string(),
             last_message_at: None,
             closed_at: None,
+            archived_at: None,
+            deleted_at: None,
         }
     }
 

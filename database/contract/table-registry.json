@@ -49,6 +49,60 @@
       "owner": "agents-platform",
       "compliance_level": "L2",
       "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_project",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_project_composition_slot",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_chat_turn",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_message_drive_ref",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_message_feedback",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_resource_user_state",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_project_member",
+      "owner": "agents-platform",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_share_link",
+      "owner": "agents-platform",
+      "compliance_level": "L3",
+      "lifecycle_status": "active"
+    },
+    {
+      "table_name": "ai_agent_outbox_event",
+      "owner": "agents-platform",
+      "compliance_level": "L3",
+      "lifecycle_status": "active"
     }
   ]
 }

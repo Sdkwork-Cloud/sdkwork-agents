@@ -31,6 +31,33 @@ function assertDirectory(relativePath) {
   assert(fs.existsSync(path.join(repoRoot, relativePath)), `${relativePath}/ must exist`);
 }
 
+function toRepoRelative(absolutePath) {
+  return path.relative(repoRoot, absolutePath).replaceAll('\\', '/');
+}
+
+function listAuthoredFiles(dir, predicate, files = []) {
+  if (!fs.existsSync(dir)) return files;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (
+      entry.name === 'node_modules'
+      || entry.name === 'target'
+      || entry.name === 'dist'
+      || entry.name === 'build'
+      || entry.name === 'coverage'
+      || entry.name === '.git'
+    ) {
+      continue;
+    }
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      listAuthoredFiles(absolute, predicate, files);
+    } else if (predicate(absolute)) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
 const requiredDirectories = [
   'apis',
   'apps',
@@ -199,6 +226,10 @@ assert(depIds.includes('sdkwork-web-framework'), 'component.spec.json must decla
 assert(depIds.includes('sdkwork-database'), 'component.spec.json must declare sdkwork-database');
 assert(depIds.includes('sdkwork-utils'), 'component.spec.json must declare sdkwork-utils');
 assert(depIds.includes('sdkwork-kernel'), 'component.spec.json must declare sdkwork-kernel');
+assert(
+  !depIds.some((workspace) => /^sdkwork-im(?:$|-)/u.test(workspace)),
+  'component.spec.json must not declare sdkwork-im; sdkwork-im is an Agents consumer',
+);
 const driveDep = sdkDeps.find((entry) => entry.workspace === 'sdkwork-drive');
 assert(driveDep, 'component.spec.json must declare sdkwork-drive for upload integration');
 assert(!depIds.includes('sdkwork-discovery'), 'component.spec.json must not require sdkwork-discovery yet');
@@ -252,6 +283,130 @@ assert(
   workspaceYaml.includes('sdkwork-utils-typescript'),
   'pnpm-workspace.yaml must declare @sdkwork/utils for iam-contracts transitive workspace resolution',
 );
+
+const agentsImBoundarySpec = readText('specs/AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md');
+assert(
+  agentsImBoundarySpec.includes('sdkwork-im -> sdkwork-agents -> sdkwork-kernel'),
+  'Agents IM boundary spec must declare sdkwork-im -> sdkwork-agents -> sdkwork-kernel',
+);
+assert(
+  agentsImBoundarySpec.includes('`sdkwork-agents` MUST NOT depend on `sdkwork-im`'),
+  'Agents IM boundary spec must forbid the reverse sdkwork-agents-to-sdkwork-im dependency',
+);
+
+const agentsDatabaseSpec = readText(
+  'crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md',
+);
+for (const targetTable of [
+  'ai_agent_project',
+  'ai_agent_project_composition_slot',
+  'ai_agent_chat_turn',
+  'ai_agent_message_drive_ref',
+  'ai_agent_message_feedback',
+  'ai_agent_resource_user_state',
+  'ai_agent_project_member',
+  'ai_agent_share_link',
+  'ai_agent_outbox_event',
+]) {
+  assert(
+    agentsDatabaseSpec.includes(`\`${targetTable}\``),
+    `Agents database target design must define ${targetTable}`,
+  );
+}
+assert(
+  agentsDatabaseSpec.includes('The active Agents inventory is 17 tables'),
+  'Agents database contract must declare the active 17-table inventory',
+);
+assert(
+  agentsDatabaseSpec.includes('Status: active commercial Chat/Project contract'),
+  'Agents database contract 4.0 must remain active after runtime and contract synchronization',
+);
+assert(
+  agentsDatabaseSpec.includes('Reuse `sdkwork-search`')
+    && agentsDatabaseSpec.includes('Reuse `sdkwork-generations`'),
+  'Agents chat database target must reuse Search and Generations authorities',
+);
+
+const forbiddenImDependencyPattern = /(?:@sdkwork\/im-|sdkwork[-_]im(?:[-_][a-z0-9_-]+)?|\.\.[\\/]sdkwork-im)(?:[\\/]|\b)/iu;
+for (const [manifestPath, manifestText] of [
+  ['Cargo.toml', cargoToml],
+  ['package.json', JSON.stringify(packageJson)],
+  ['pnpm-workspace.yaml', workspaceYaml],
+  ['specs/component.spec.json', JSON.stringify(componentSpec.contracts?.sdkDependencies ?? [])],
+]) {
+  assert(
+    !forbiddenImDependencyPattern.test(manifestText),
+    `${manifestPath} must not declare an sdkwork-im dependency`,
+  );
+}
+
+for (const manifestPath of listAuthoredFiles(
+  repoRoot,
+  (candidate) => ['Cargo.toml', 'package.json'].includes(path.basename(candidate)),
+)) {
+  const relativePath = toRepoRelative(manifestPath);
+  if (path.basename(manifestPath) === 'package.json') {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    for (const dependencyGroup of [
+      'dependencies',
+      'devDependencies',
+      'optionalDependencies',
+      'peerDependencies',
+    ]) {
+      for (const dependencyName of Object.keys(manifest[dependencyGroup] ?? {})) {
+        assert(
+          !forbiddenImDependencyPattern.test(dependencyName),
+          `${relativePath} ${dependencyGroup} must not declare ${dependencyName}; sdkwork-im is a consumer`,
+        );
+      }
+    }
+  } else {
+    const manifest = fs.readFileSync(manifestPath, 'utf8');
+    assert(
+      !forbiddenImDependencyPattern.test(manifest),
+      `${relativePath} must not declare an sdkwork-im crate or path dependency`,
+    );
+  }
+}
+
+const sourceImportPattern = /(?:\bfrom\s*|\bimport\s*\(|\brequire\s*\(|\buse\s+|\bextern\s+crate\s+|\bpath\s*=\s*)['"]?(?:@sdkwork\/im-[a-z0-9_./-]*|sdkwork_im_[a-z0-9_]*|\.\.[\\/]sdkwork-im(?:[\\/][a-z0-9_./\\-]*)?)/iu;
+const authoredSourceExtensions = /\.(?:cjs|js|jsx|mjs|rs|ts|tsx)$/u;
+for (const sourceRoot of ['apis', 'apps', 'crates', 'sdks']) {
+  for (const filePath of listAuthoredFiles(path.join(repoRoot, sourceRoot), (candidate) => authoredSourceExtensions.test(candidate))) {
+    const source = fs.readFileSync(filePath, 'utf8');
+    assert(
+      !sourceImportPattern.test(source),
+      `${toRepoRelative(filePath)} must not import sdkwork-im; dependency direction is sdkwork-im -> sdkwork-agents`,
+    );
+  }
+}
+
+const imSqlOwnershipPattern = /\b(?:CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|ALTER\s+TABLE\s+|INSERT\s+INTO\s+|UPDATE\s+|DELETE\s+FROM\s+|REFERENCES\s+)['"`]?im_[a-z0-9_]+/iu;
+const imContractTablePattern = /(?:\bname\s*:\s*|"(?:table|tableName|physicalName)"\s*:\s*")im_[a-z0-9_]+/iu;
+for (const databaseRoot of ['database', 'crates']) {
+  for (const filePath of listAuthoredFiles(
+    path.join(repoRoot, databaseRoot),
+    (candidate) => /\.(?:json|sql|ya?ml)$/u.test(candidate) && !candidate.includes(`${path.sep}specs${path.sep}`),
+  )) {
+    const source = fs.readFileSync(filePath, 'utf8');
+    assert(
+      !imSqlOwnershipPattern.test(source) && !imContractTablePattern.test(source),
+      `${toRepoRelative(filePath)} must not declare, mutate, or reference an im_* table`,
+    );
+  }
+}
+
+for (const sourceRoot of ['apis', 'apps', 'crates', 'sdks']) {
+  for (const filePath of listAuthoredFiles(
+    path.join(repoRoot, sourceRoot),
+    (candidate) => /\.(?:cjs|js|jsx|mjs|rs|ts|tsx)$/u.test(candidate),
+  )) {
+    assert(
+      !imSqlOwnershipPattern.test(fs.readFileSync(filePath, 'utf8')),
+      `${toRepoRelative(filePath)} must not contain SQL that mutates or references an im_* table`,
+    );
+  }
+}
 
 const forbiddenCapabilitySdkImports = ['@sdkwork/agents-app-sdk', '@sdkwork/knowledgebase-app-sdk'];
 function listTypeScriptSources(dir, files = []) {

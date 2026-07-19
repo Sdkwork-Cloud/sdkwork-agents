@@ -8,12 +8,22 @@ interface MessageListProps {
   messages: ChatMessage[];
   messagesEndRef: React.RefObject<HTMLDivElement>;
   onOpenArtifact: (lang: string, code: string, mode?: 'preview' | 'code') => void;
+  onFeedback: (messageId: string, rating: 'up' | 'down' | undefined) => Promise<boolean>;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, messagesEndRef, onOpenArtifact }) => {
+export const MessageList: React.FC<MessageListProps> = ({
+  messages,
+  messagesEndRef,
+  onOpenArtifact,
+  onFeedback,
+}) => {
   const { t } = useTranslation('chat');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
+  const feedback = Object.fromEntries(
+    messages
+      .filter((message) => message.feedback)
+      .map((message) => [message.id, message.feedback]),
+  ) as Record<string, 'up' | 'down'>;
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -22,14 +32,8 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, messagesEndR
   };
 
   const handleFeedback = (id: string, type: 'up' | 'down') => {
-    setFeedback(prev => {
-      const isRemoving = prev[id] === type;
-      const { [id]: _, ...rest } = prev;
-      if (isRemoving) {
-        return rest;
-      }
-      return { ...rest, [id]: type };
-    });
+    const rating = feedback[id] === type ? undefined : type;
+    void onFeedback(id, rating).catch(() => undefined);
   };
 
   if (messages.length === 0) {

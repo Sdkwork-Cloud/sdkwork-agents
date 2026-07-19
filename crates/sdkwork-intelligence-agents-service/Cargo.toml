@@ -38,6 +38,7 @@ time.workspace = true
 [dev-dependencies]
 async-trait.workspace = true
 serde_yaml.workspace = true
+sdkwork-agents-database-host.workspace = true
 
 [[test]]
 name = "agent_postgres_sync_contracts"

@@ -1,27 +1,11 @@
 {
   "schemaVersion": 1,
   "app": "agents",
-  "mode": "apply",
+  "mode": "dry-run",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-18T06:40:37.574Z",
+  "startedAt": "2026-07-19T08:02:27.728Z",
   "families": [
-    {
-      "key": "open",
-      "familyDir": "sdkwork-agents-sdk",
-      "authority": "sdkwork-agents-open-api",
-      "input": "sdks/sdkwork-agents-sdk/openapi/sdkwork-agents-open-api.sdkgen.yaml",
-      "output": "sdks/sdkwork-agents-sdk/sdkwork-agents-sdk-typescript/generated/server-openapi",
-      "sdkName": "sdkwork-agents-sdk",
-      "sdkType": "custom",
-      "sdkSurface": "open",
-      "packageName": "@sdkwork/agents-sdk",
-      "apiPrefix": "/agent/v3/api",
-      "generated": false,
-      "skipped": true,
-      "skipReason": "Open SDK is derived from app SDK; regenerate app family first.",
-      "derivedFrom": "sdkwork-agents-app-sdk"
-    },
     {
       "key": "app",
       "familyDir": "sdkwork-agents-app-sdk",
@@ -45,46 +29,50 @@
           "packageByLanguage": {
             "typescript": "@sdkwork/iam-app-sdk"
           }
-        }
-      ],
-      "version": "0.1.0",
-      "fingerprint": "901e64a486b6bb023440021db5c3bbd5d9c9abaffaf4bdb3b008d9a955555052",
-      "hasChanges": true,
-      "riskLevel": "medium",
-      "generated": true
-    },
-    {
-      "key": "backend",
-      "familyDir": "sdkwork-agents-backend-sdk",
-      "authority": "sdkwork-agents-backend-api",
-      "input": "sdks/sdkwork-agents-backend-sdk/openapi/sdkwork-agents-backend-api.sdkgen.yaml",
-      "output": "sdks/sdkwork-agents-backend-sdk/sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
-      "sdkName": "sdkwork-agents-backend-sdk",
-      "sdkType": "backend",
-      "sdkOwner": "sdkwork-agents",
-      "packageName": "@sdkwork/agents-backend-sdk",
-      "apiPrefix": "/backend/v3/api",
-      "sdkDependencies": [
+        },
         {
-          "workspace": "sdkwork-iam-backend-sdk",
-          "role": "appbase-backend-management-capability",
+          "workspace": "sdkwork-drive-app-sdk",
+          "role": "drive-uploader-file-storage-capability",
           "required": true,
           "dependencyMode": "consumer-sdk",
-          "apiPrefix": "/backend/v3/api",
-          "apiAuthority": "sdkwork-iam-backend-api",
+          "apiPrefix": "/app/v3/api",
+          "apiAuthority": "sdkwork-drive.app",
           "generatedTransportImportPolicy": "forbidden",
           "packageByLanguage": {
-            "typescript": "@sdkwork/iam-backend-sdk"
+            "typescript": "@sdkwork/drive-app-sdk"
+          }
+        },
+        {
+          "workspace": "sdkwork-prompts-app-sdk",
+          "role": "project-instructions-capability",
+          "required": true,
+          "dependencyMode": "consumer-sdk",
+          "apiPrefix": "/app/v3/api",
+          "apiAuthority": "sdkwork-prompts-app-api",
+          "generatedTransportImportPolicy": "forbidden",
+          "packageByLanguage": {
+            "typescript": "@sdkwork/prompts-app-sdk"
+          }
+        },
+        {
+          "workspace": "sdkwork-memory-app-sdk",
+          "role": "project-memory-selection-capability",
+          "required": true,
+          "dependencyMode": "consumer-sdk",
+          "apiPrefix": "/app/v3/api",
+          "apiAuthority": "sdkwork-memory.app",
+          "generatedTransportImportPolicy": "forbidden",
+          "packageByLanguage": {
+            "typescript": "@sdkwork/memory-app-sdk"
           }
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "5080e571d013e10cef8bef9ea050f64dc3a6ee87d5d88bc6760b1a38acd8c683",
-      "hasChanges": true,
-      "riskLevel": "medium",
-      "generated": true
+      "fingerprint": "f86d24843d6982c225202d370dea0f4276409ee75ed20a324f8ce38e3172fc31",
+      "hasChanges": false,
+      "riskLevel": "low",
+      "generated": false
     }
   ],
-  "openSdkDerivedFromApp": true,
-  "finishedAt": "2026-07-18T06:40:38.593Z"
+  "finishedAt": "2026-07-19T08:02:28.031Z"
 }

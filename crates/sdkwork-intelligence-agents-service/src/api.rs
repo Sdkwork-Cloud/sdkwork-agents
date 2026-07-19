@@ -178,6 +178,72 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
 pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     ApiOperation {
         method: "GET",
+        path: "/app/v3/api/ai/projects",
+        tag: "ai",
+        operation_id: "agents.projects.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/projects",
+        tag: "ai",
+        operation_id: "agents.projects.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/projects/{projectId}",
+        tag: "ai",
+        operation_id: "agents.projects.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/projects/{projectId}",
+        tag: "ai",
+        operation_id: "agents.projects.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/projects/{projectId}",
+        tag: "ai",
+        operation_id: "agents.projects.delete",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/projects/{projectId}/archive",
+        tag: "ai",
+        operation_id: "agents.projects.archive",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/projects/{projectId}/composition_slots",
+        tag: "ai",
+        operation_id: "agents.projectCompositionSlots.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/projects/{projectId}/composition_slots",
+        tag: "ai",
+        operation_id: "agents.projectCompositionSlots.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/projects/{projectId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.projectCompositionSlots.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/projects/{projectId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.projectCompositionSlots.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/projects/{projectId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.projectCompositionSlots.delete",
+    },
+    ApiOperation {
+        method: "GET",
         path: "/app/v3/api/ai/agents",
         tag: "ai",
         operation_id: "agents.list",
@@ -280,15 +346,51 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/user_states",
+        tag: "ai",
+        operation_id: "agents.sessionUserStates.list",
+    },
+    ApiOperation {
+        method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}",
         tag: "ai",
         operation_id: "agents.sessions.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}",
+        tag: "ai",
+        operation_id: "agents.sessions.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}",
+        tag: "ai",
+        operation_id: "agents.sessions.delete",
     },
     ApiOperation {
         method: "POST",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close",
         tag: "ai",
         operation_id: "agents.sessions.close",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/user_state",
+        tag: "ai",
+        operation_id: "agents.sessionUserStates.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/user_state",
+        tag: "ai",
+        operation_id: "agents.sessionUserStates.update",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/message_feedback",
+        tag: "ai",
+        operation_id: "agents.messageFeedback.list",
     },
     ApiOperation {
         method: "GET",
@@ -303,10 +405,34 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.messages.stream",
     },
     ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/complete",
+        tag: "ai",
+        operation_id: "agents.messages.complete",
+    },
+    ApiOperation {
         method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
         tag: "ai",
         operation_id: "agents.messages.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}/feedback",
+        tag: "ai",
+        operation_id: "agents.messageFeedback.update",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
+        tag: "ai",
+        operation_id: "agents.chatTurns.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
+        tag: "ai",
+        operation_id: "agents.chatTurns.cancel",
     },
     ApiOperation {
         method: "GET",
@@ -811,6 +937,23 @@ mod tests {
                     "operationId: agents.mcpServers.list".to_string(),
                     "CodeEngineCatalogListResponse:".to_string(),
                     "McpServerMarketplaceListResponse:".to_string(),
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/user_states:"),
+                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/user_state:"),
+                    "operationId: agents.sessionUserStates.list".to_string(),
+                    "operationId: agents.sessionUserStates.retrieve".to_string(),
+                    "operationId: agents.sessionUserStates.update".to_string(),
+                    "AgentResourceUserStateRecord:".to_string(),
+                    "UpdateAgentSessionUserStateRequest:".to_string(),
+                    format!(
+                        "{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/message_feedback:"
+                    ),
+                    format!(
+                        "{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/messages/{{messageId}}/feedback:"
+                    ),
+                    "operationId: agents.messageFeedback.list".to_string(),
+                    "operationId: agents.messageFeedback.update".to_string(),
+                    "AgentMessageFeedbackRecord:".to_string(),
+                    "UpdateAgentMessageFeedbackRequest:".to_string(),
                 ] {
                     assert!(
                         openapi.contains(required.as_str()),
@@ -924,7 +1067,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 27);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 35);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 56);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 33);
 
         assert_eq!(
@@ -950,7 +1093,6 @@ mod tests {
             "agents.providerBindings.retrieve",
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
-            "agents.sessions.update",
             "agents.codeEngines.health",
             "agents.mcpServers.list",
         ] {
@@ -985,7 +1127,6 @@ mod tests {
             "agents.providerBindings.retrieve",
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
-            "agents.sessions.update",
             "agents.codeEngines.health",
         ] {
             assert!(

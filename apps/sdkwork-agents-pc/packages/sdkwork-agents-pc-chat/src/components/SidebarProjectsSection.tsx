@@ -2,15 +2,16 @@ import React, { useState } from "react";
 import { ChevronDown, Plus, MoreHorizontal, Folder } from "lucide-react";
 import { cn } from "@sdkwork/agents-pc-commons";
 import { SidebarProjectContextMenu } from "./SidebarProjectContextMenu";
+import type { ChatProject } from "../services/ProjectService";
 
 interface SidebarProjectsSectionProps {
-  projects: string[];
+  projects: ChatProject[];
   activeProject?: string | null;
-  onProjectSelect?: (project: string) => void;
-  onProjectSettings?: (project: string) => void;
+  onProjectSelect?: (project: ChatProject) => void;
+  onProjectSettings?: (project: ChatProject) => void;
   onProjectCreate?: (title: string) => void;
-  onProjectRename?: (oldTitle: string, newTitle: string) => void;
-  onProjectDelete?: (title: string) => void;
+  onProjectRename?: (project: ChatProject, newTitle: string) => void;
+  onProjectDelete?: (project: ChatProject) => void;
 }
 
 export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
@@ -26,14 +27,14 @@ export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
   const [editingProject, setEditingProject] = useState<string | null>(null);
 
-  const handleProjectDropdownClick = (e: React.MouseEvent, project: string) => {
+  const handleProjectDropdownClick = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
-    if (activeProjectDropdown === project) {
+    if (activeProjectDropdown === projectId) {
       setActiveProjectDropdown(null);
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
       setDropdownPos({ top: rect.bottom, left: rect.right - 180 });
-      setActiveProjectDropdown(project);
+      setActiveProjectDropdown(projectId);
     }
   };
 
@@ -64,7 +65,6 @@ export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
               e.stopPropagation();
               const newTitle = `新项目 ${projects.length + 1}`;
               onProjectCreate?.(newTitle);
-              setEditingProject(newTitle);
             }}
           />
           <MoreHorizontal
@@ -74,9 +74,9 @@ export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
         </div>
       </div>
       <div className="space-y-0.5">
-        {projects.slice(0, 5).map((project, idx) => (
-          <div key={idx} className="relative group">
-            {editingProject === project ? (
+        {projects.slice(0, 5).map((project) => (
+          <div key={project.projectId} className="relative group">
+            {editingProject === project.projectId ? (
               <div className="flex items-center justify-between text-zinc-300 font-medium rounded-lg w-full py-1.5 px-2.5 bg-indigo-500/10 border border-indigo-500/30">
                 <div className="flex items-center gap-3 w-full">
                   <Folder
@@ -86,11 +86,11 @@ export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
                   <input
                     type="text"
                     className="bg-transparent border-none outline-none text-[14px] text-white w-full h-full"
-                    defaultValue={project}
+                    defaultValue={project.name}
                     autoFocus
                     onBlur={(e) => {
                       const newVal = e.target.value.trim();
-                      if (newVal && newVal !== project) {
+                      if (newVal && newVal !== project.name) {
                         onProjectRename?.(project, newVal);
                       }
                       setEditingProject(null);
@@ -110,7 +110,7 @@ export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
                 onClick={() => onProjectSelect?.(project)}
                 className={cn(
                   "flex items-center justify-between font-medium rounded-lg transition-all w-full py-2 px-2.5",
-                  activeProject === project
+                  activeProject === project.projectId
                     ? "bg-indigo-500/15 text-white"
                     : "text-zinc-300 hover:bg-indigo-500/10 hover:text-white"
                 )}
@@ -120,29 +120,29 @@ export const SidebarProjectsSection: React.FC<SidebarProjectsSectionProps> = ({
                     size={18}
                     className={cn(
                       "transition-colors shrink-0",
-                      activeProject === project
+                      activeProject === project.projectId
                         ? "text-indigo-400"
                         : "text-zinc-400 group-hover:text-indigo-400"
                     )}
                   />
-                  <span className="text-[14px] truncate">{project}</span>
+                  <span className="text-[14px] truncate">{project.name}</span>
                 </div>
                 <div
                   className="p-1 rounded text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-zinc-300 hover:bg-zinc-700/50 transition-all shrink-0 cursor-pointer"
-                  onClick={(e) => handleProjectDropdownClick(e, project)}
+                  onClick={(e) => handleProjectDropdownClick(e, project.projectId)}
                 >
                   <MoreHorizontal size={14} />
                 </div>
               </button>
             )}
-            {activeProjectDropdown === project && (
+            {activeProjectDropdown === project.projectId && (
               <SidebarProjectContextMenu
-                project={project}
+                project={project.name}
                 dropdownPos={dropdownPos}
                 onClose={() => setActiveProjectDropdown(null)}
                 onProjectSettings={() => onProjectSettings?.(project)}
                 onProjectSelect={() => onProjectSelect?.(project)}
-                onProjectRename={() => setEditingProject(project)}
+                onProjectRename={() => setEditingProject(project.projectId)}
                 onProjectDelete={() => onProjectDelete?.(project)}
               />
             )}

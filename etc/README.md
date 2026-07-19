@@ -29,6 +29,11 @@ common/IAM gateway is a separately deployed owner and must be materialized with
 the same real origin set before it serves `/app/v3/api/oauth/**`.
 
 - `development` relies on the Web Framework loopback/private-network policy.
+- `standalone.development` uses the SDKWork database config PostgreSQL profile for
+  the Agents managed store and never enables inline auth bypass. It intentionally
+  leaves the connection URL/password out of tracked source config; local SDKWork
+  PostgreSQL defaults or ignored operator overrides provide credentials. The
+  `cloud.development` profile consumes deployed APIs and declares no local database.
 - `test` and `staging` use reserved `.invalid` template origins. They are
   intentionally non-routable and must be replaced, before any browser-facing
   rollout, with every real browser, desktop WebView, and H5 origin that calls

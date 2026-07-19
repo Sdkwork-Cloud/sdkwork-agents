@@ -10,6 +10,8 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 | [AGENTS_KERNEL_BOUNDARY_SPEC.md](./AGENTS_KERNEL_BOUNDARY_SPEC.md) | Kernel vs agents vs product boundary (frozen) |
 | [AGENTS_PROVIDER_TAXONOMY_SPEC.md](./AGENTS_PROVIDER_TAXONOMY_SPEC.md) | Code / autonomous / framework agent taxonomy |
 | [AGENTS_KERNEL_SPI_GAP_ANALYSIS.md](./AGENTS_KERNEL_SPI_GAP_ANALYSIS.md) | SPI gaps, commercial readiness, roadmap |
+| [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](./AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md) | Mandatory `sdkwork-im -> sdkwork-agents` dependency direction and database ownership boundary |
+| [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md) | Active frontend-aligned Chat/Project database contract `4.0.0` |
 | [agents-birdcoder-alignment.spec.json](./agents-birdcoder-alignment.spec.json) | Machine-readable cross-repo alignment tracker |
 | [docs/architecture/AGENTS_LAYERING.md](../docs/architecture/AGENTS_LAYERING.md) | Crate and SDK layering |
 | [docs/product/prd/PRD.md](../docs/product/prd/PRD.md) | Product requirements |
@@ -40,6 +42,11 @@ depend on `sdkwork-agents` for their core domain behavior.
 | `sdkwork-llm` | runtime binding / model provider profile | model catalog, provider profile, credential references |
 | `sdkwork-drive` | `slot_kind=drive`, `target_module=drive` | `@sdkwork/drive-app-sdk`; Drive Uploader only |
 
+The active chat/project `4.0.0` contract additionally reuses `sdkwork-search` for
+cross-resource indexing/query and `sdkwork-generations` for image/video/music/
+voice generation records. They are not declared as active component dependencies
+until the SDK/facade implementation and verification gates are delivered.
+
 Do not reverse the dependency: memory, knowledgebase, skills, prompts, mcp, llm,
 and drive own their tables, APIs, SDKs, and runtime contracts. Agents stores only
 references and orchestration policy. The root `specs/component.spec.json` declares
@@ -53,6 +60,11 @@ Runtime composition uses sibling checkout `../sdkwork-kernel` per `DEPENDENCY_MA
 
 Products (including `sdkwork-birdcoder`) MUST consume agent runtime through
 `sdkwork-agents-runtime-facade` and `@sdkwork/agents-app-sdk`, not `sdkwork-agent-provider-*`.
+
+`sdkwork-im` is also an Agents consumer. The mandatory direction is
+`sdkwork-im -> sdkwork-agents -> sdkwork-kernel`; Agents MUST NOT import IM SDKs,
+read or write `im_*` tables, or persist IM conversation/group/message ownership.
+See `AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md`.
 
 Client composition authority: `APP_COMPOSITION_SPEC.md` via `pnpm check:app-composition` (`verify-repo.mjs`). Do not add `dependency.composition.json`.
 

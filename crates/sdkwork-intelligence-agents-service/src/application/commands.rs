@@ -5,16 +5,21 @@
 //! target entity, optional optimistic-concurrency version, the requesting
 //! subject, and the request timestamp.
 
+use crate::chat_turn::AgentChatTurnRecord;
 use crate::domain::{
     AgentAuditAction, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionTargetModule,
-    AgentImplementationKind, AgentImplementationType, AgentInteractionKind, AgentMessageRecord,
-    AgentMessageRole, AgentSessionRecord, AgentVisibility,
+    AgentImplementationKind, AgentImplementationType, AgentInteractionKind,
+    AgentMessageDriveRefRecord, AgentMessageFeedbackRating, AgentMessageFeedbackRecord,
+    AgentMessageRecord, AgentMessageRole, AgentResourceUserStateRecord, AgentSessionRecord,
+    AgentVisibility,
 };
 use crate::ports::{
     AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
-    McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery, SessionListQuery,
-    TaskListQuery,
+    McpMarketplaceListQuery, MessageFeedbackListQuery, MessageListQuery,
+    ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
+    ResourceUserStateListQuery, SessionListQuery, TaskListQuery,
 };
+use crate::project::{AgentProjectDriveAccessMode, AgentProjectVisibility};
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
 
@@ -263,16 +268,170 @@ pub struct AgentCompositionSlotGetCommand {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateProjectCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub owner_user_id: u64,
+    pub name: String,
+    pub description: Option<String>,
+    pub visibility: AgentProjectVisibility,
+    pub drive_access_mode: AgentProjectDriveAccessMode,
+    pub default_agent_id: Option<String>,
+    pub default_model_id: Option<String>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateProjectCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub owner_scope: Option<u64>,
+    pub expected_version: Option<u64>,
+    pub name: Option<String>,
+    pub description: Option<Option<String>>,
+    pub visibility: Option<AgentProjectVisibility>,
+    pub drive_access_mode: Option<AgentProjectDriveAccessMode>,
+    pub default_agent_id: Option<Option<String>>,
+    pub default_model_id: Option<Option<String>>,
+    pub requested_user_id: u64,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectMutationCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub owner_scope: Option<u64>,
+    pub expected_version: Option<u64>,
+    pub requested_user_id: u64,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetProjectCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListProjectsCommand {
+    pub query: ProjectListQuery,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateProjectCompositionSlotCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub slot_id: String,
+    pub slot_kind: AgentCompositionSlotKind,
+    pub target_module: AgentCompositionTargetModule,
+    pub target_ref: String,
+    pub target_version_ref: Option<String>,
+    pub priority: i32,
+    pub enabled: bool,
+    pub policy_json: String,
+    pub owner_scope: Option<u64>,
+    pub requested_user_id: u64,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateProjectCompositionSlotCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub slot_id: String,
+    pub expected_version: Option<u64>,
+    pub slot_kind: Option<AgentCompositionSlotKind>,
+    pub target_module: Option<AgentCompositionTargetModule>,
+    pub target_ref: Option<String>,
+    pub target_version_ref: Option<Option<String>>,
+    pub priority: Option<i32>,
+    pub enabled: Option<bool>,
+    pub policy_json: Option<String>,
+    pub owner_scope: Option<u64>,
+    pub requested_user_id: u64,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetProjectCompositionSlotCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub slot_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListProjectCompositionSlotsCommand {
+    pub query: ProjectCompositionSlotListQuery,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteProjectCompositionSlotCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub slot_id: String,
+    pub expected_version: Option<u64>,
+    pub owner_scope: Option<u64>,
+    pub requested_user_id: u64,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateSessionCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub agent_id: String,
     pub owner_user_id: u64,
+    pub project_id: Option<String>,
     pub session_id: String,
     pub title: Option<String>,
     pub provider_binding_id: Option<String>,
     pub model_id: Option<String>,
     pub metadata_json: String,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateSessionCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub title: Option<String>,
+    pub project_id: Option<Option<String>>,
+    pub expected_version: Option<u64>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteSessionCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
@@ -419,8 +578,31 @@ pub struct ListMessagesCommand {
     pub requested_by: PolicySubject,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentMessageMediaResourceInput {
+    pub id: String,
+    pub kind: String,
+    pub source: String,
+    pub uri: String,
+    pub url: Option<String>,
+    pub public_url: Option<String>,
+    pub object_blob_id: Option<String>,
+    pub file_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub size_bytes: Option<String>,
+    pub checksum: Option<serde_json::Value>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub duration_seconds: Option<f64>,
+    pub alt_text: Option<String>,
+    pub title: Option<String>,
+    pub access: Option<serde_json::Value>,
+    pub metadata: Option<serde_json::Value>,
+}
+
 /// Send a user chat message and produce an assistant reply in one turn.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SendChatMessageCommand {
     pub tenant_id: u64,
     pub agent_id: String,
@@ -428,7 +610,10 @@ pub struct SendChatMessageCommand {
     pub content: String,
     pub content_type: String,
     pub metadata_json: String,
+    pub media_resources: Vec<AgentMessageMediaResourceInput>,
     pub model_id: Option<String>,
+    pub idempotency_key: Option<String>,
+    pub client_request_id: Option<String>,
     /// When set, the session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
@@ -438,13 +623,123 @@ pub struct SendChatMessageCommand {
 }
 
 /// Result of a chat completion turn (user message + assistant reply + session).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChatCompletionResult {
     pub session: AgentSessionRecord,
     pub user_message: AgentMessageRecord,
     pub assistant_message: AgentMessageRecord,
+    pub user_message_drive_refs: Vec<AgentMessageDriveRefRecord>,
     pub stream_deltas: Vec<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentMessageWithDriveRefs {
+    pub message: AgentMessageRecord,
+    pub drive_refs: Vec<AgentMessageDriveRefRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetChatTurnCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetChatTurnByIdempotencyCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub owner_user_id: u64,
+    pub idempotency_key: String,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelChatTurnCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub expected_version: Option<u64>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatTurnReconciliationResult {
+    pub examined: usize,
+    pub failed: Vec<AgentChatTurnRecord>,
+    pub skipped_conflicts: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListSessionUserStatesCommand {
+    pub query: ResourceUserStateListQuery,
+    pub path_agent_id: String,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetSessionUserStateCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateSessionUserStateCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub pinned: Option<bool>,
+    pub hidden: Option<bool>,
+    pub mark_opened: bool,
+    pub last_read_message_sequence: Option<u64>,
+    pub custom_title: Option<Option<String>>,
+    pub expected_version: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+pub type SessionUserStateResult = AgentResourceUserStateRecord;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListMessageFeedbackCommand {
+    pub query: MessageFeedbackListQuery,
+    pub path_agent_id: String,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateMessageFeedbackCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub message_id: String,
+    pub rating: Option<AgentMessageFeedbackRating>,
+    pub reason_code: Option<String>,
+    pub comment: Option<String>,
+    pub expected_version: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+pub type MessageFeedbackResult = AgentMessageFeedbackRecord;
 
 // ---------------------------------------------------------------------------
 // Interaction commands

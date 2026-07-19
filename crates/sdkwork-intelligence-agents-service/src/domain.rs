@@ -121,10 +121,14 @@ pub enum AgentAuditAction {
     CompositionSlotUpdated,
     CompositionSlotDeleted,
     SessionCreated,
+    SessionRenamed,
+    SessionMoved,
     SessionClosed,
     SessionArchived,
+    SessionDeleted,
     MessageCreated,
     MessageFailed,
+    MessageFeedbackChanged,
     InteractionCreated,
     InteractionResolved,
     InteractionRejected,
@@ -134,6 +138,18 @@ pub enum AgentAuditAction {
     TaskCompleted,
     TaskFailed,
     TaskCancelled,
+    ProjectCreated,
+    ProjectUpdated,
+    ProjectArchived,
+    ProjectDeleted,
+    ProjectCompositionSlotCreated,
+    ProjectCompositionSlotUpdated,
+    ProjectCompositionSlotDeleted,
+    TurnRequested,
+    TurnCompleted,
+    TurnFailed,
+    TurnCancelRequested,
+    TurnCancelled,
 }
 
 impl AgentAuditAction {
@@ -154,10 +170,14 @@ impl AgentAuditAction {
             Self::CompositionSlotUpdated => "agent.business.composition_slot.updated",
             Self::CompositionSlotDeleted => "agent.business.composition_slot.deleted",
             Self::SessionCreated => "agent.business.session.created",
+            Self::SessionRenamed => "agent.business.session.renamed",
+            Self::SessionMoved => "agent.business.session.moved",
             Self::SessionClosed => "agent.business.session.closed",
             Self::SessionArchived => "agent.business.session.archived",
+            Self::SessionDeleted => "agent.business.session.deleted",
             Self::MessageCreated => "agent.business.message.created",
             Self::MessageFailed => "agent.business.message.failed",
+            Self::MessageFeedbackChanged => "agent.business.message.feedback_changed",
             Self::InteractionCreated => "agent.business.interaction.created",
             Self::InteractionResolved => "agent.business.interaction.resolved",
             Self::InteractionRejected => "agent.business.interaction.rejected",
@@ -167,6 +187,24 @@ impl AgentAuditAction {
             Self::TaskCompleted => "agent.business.task.completed",
             Self::TaskFailed => "agent.business.task.failed",
             Self::TaskCancelled => "agent.business.task.cancelled",
+            Self::ProjectCreated => "agent.business.project.created",
+            Self::ProjectUpdated => "agent.business.project.updated",
+            Self::ProjectArchived => "agent.business.project.archived",
+            Self::ProjectDeleted => "agent.business.project.deleted",
+            Self::ProjectCompositionSlotCreated => {
+                "agent.business.project.composition_slot.created"
+            }
+            Self::ProjectCompositionSlotUpdated => {
+                "agent.business.project.composition_slot.updated"
+            }
+            Self::ProjectCompositionSlotDeleted => {
+                "agent.business.project.composition_slot.deleted"
+            }
+            Self::TurnRequested => "agent.business.chat_turn.requested",
+            Self::TurnCompleted => "agent.business.chat_turn.completed",
+            Self::TurnFailed => "agent.business.chat_turn.failed",
+            Self::TurnCancelRequested => "agent.business.chat_turn.cancel_requested",
+            Self::TurnCancelled => "agent.business.chat_turn.cancelled",
         }
     }
 
@@ -187,10 +225,14 @@ impl AgentAuditAction {
             Self::CompositionSlotUpdated => "composition_slot_updated",
             Self::CompositionSlotDeleted => "composition_slot_deleted",
             Self::SessionCreated => "session_created",
+            Self::SessionRenamed => "session_renamed",
+            Self::SessionMoved => "session_moved",
             Self::SessionClosed => "session_closed",
             Self::SessionArchived => "session_archived",
+            Self::SessionDeleted => "session_deleted",
             Self::MessageCreated => "message_created",
             Self::MessageFailed => "message_failed",
+            Self::MessageFeedbackChanged => "message_feedback_changed",
             Self::InteractionCreated => "interaction_created",
             Self::InteractionResolved => "interaction_resolved",
             Self::InteractionRejected => "interaction_rejected",
@@ -200,6 +242,18 @@ impl AgentAuditAction {
             Self::TaskCompleted => "task_completed",
             Self::TaskFailed => "task_failed",
             Self::TaskCancelled => "task_cancelled",
+            Self::ProjectCreated => "project_created",
+            Self::ProjectUpdated => "project_updated",
+            Self::ProjectArchived => "project_archived",
+            Self::ProjectDeleted => "project_deleted",
+            Self::ProjectCompositionSlotCreated => "project_composition_slot_created",
+            Self::ProjectCompositionSlotUpdated => "project_composition_slot_updated",
+            Self::ProjectCompositionSlotDeleted => "project_composition_slot_deleted",
+            Self::TurnRequested => "turn_requested",
+            Self::TurnCompleted => "turn_completed",
+            Self::TurnFailed => "turn_failed",
+            Self::TurnCancelRequested => "turn_cancel_requested",
+            Self::TurnCancelled => "turn_cancelled",
         }
     }
 }
@@ -679,6 +733,7 @@ pub enum AgentCompositionTargetModule {
     Prompts,
     Drive,
     Mcp,
+    Tools,
 }
 
 impl AgentCompositionTargetModule {
@@ -690,6 +745,7 @@ impl AgentCompositionTargetModule {
             Self::Prompts => "prompts",
             Self::Drive => "drive",
             Self::Mcp => "mcp",
+            Self::Tools => "tools",
         }
     }
 
@@ -701,6 +757,7 @@ impl AgentCompositionTargetModule {
             "prompts" => Some(Self::Prompts),
             "drive" => Some(Self::Drive),
             "mcp" => Some(Self::Mcp),
+            "tools" => Some(Self::Tools),
             _ => None,
         }
     }
@@ -847,11 +904,13 @@ pub struct AgentSessionRecord {
     pub organization_id: u64,
     pub agent_id: String,
     pub owner_user_id: u64,
+    pub project_id: Option<String>,
     pub title: Option<String>,
     pub status: AgentSessionStatus,
     pub provider_binding_id: Option<String>,
     pub model_id: Option<String>,
     pub message_count: u64,
+    pub last_message_sequence: u64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
     pub metadata_json: String,
@@ -860,6 +919,8 @@ pub struct AgentSessionRecord {
     pub updated_at: String,
     pub last_message_at: Option<String>,
     pub closed_at: Option<String>,
+    pub archived_at: Option<String>,
+    pub deleted_at: Option<String>,
 }
 
 impl AgentSessionRecord {
@@ -875,6 +936,7 @@ impl AgentSessionRecord {
         occurred_at: impl Into<String>,
     ) {
         self.message_count = self.message_count.saturating_add(1);
+        self.last_message_sequence = self.last_message_sequence.saturating_add(1);
         self.total_input_tokens = self.total_input_tokens.saturating_add(input_tokens);
         self.total_output_tokens = self.total_output_tokens.saturating_add(output_tokens);
         self.last_message_at = Some(occurred_at.into());
@@ -893,6 +955,7 @@ impl AgentSessionRecord {
         occurred_at: impl Into<String>,
     ) {
         self.message_count = self.message_count.saturating_add(2);
+        self.last_message_sequence = self.last_message_sequence.saturating_add(2);
         self.total_input_tokens = self.total_input_tokens.saturating_add(input_tokens);
         self.total_output_tokens = self.total_output_tokens.saturating_add(output_tokens);
         self.last_message_at = Some(occurred_at.into());
@@ -910,6 +973,69 @@ impl AgentSessionRecord {
         self.updated_at = ts;
         self.version = self.version.saturating_add(1);
     }
+
+    pub fn archive(&mut self, archived_at: impl Into<String>) {
+        let ts = archived_at.into();
+        self.status = AgentSessionStatus::Archived;
+        self.archived_at = Some(ts.clone());
+        self.updated_at = ts;
+        self.version = self.version.saturating_add(1);
+    }
+
+    pub fn soft_delete(&mut self, deleted_at: impl Into<String>) {
+        let ts = deleted_at.into();
+        self.deleted_at = Some(ts.clone());
+        self.updated_at = ts;
+        self.version = self.version.saturating_add(1);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentResourceType {
+    Session,
+    Project,
+}
+
+impl AgentResourceType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Session => "session",
+            Self::Project => "project",
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Session => 0,
+            Self::Project => 1,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Session),
+            1 => Some(Self::Project),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentResourceUserStateRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub resource_type: AgentResourceType,
+    pub resource_id: String,
+    pub pinned_at: Option<String>,
+    pub hidden_at: Option<String>,
+    pub last_opened_at: Option<String>,
+    pub last_read_message_sequence: Option<u64>,
+    pub custom_title: Option<String>,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 // ============================================================================
@@ -1051,6 +1177,7 @@ pub struct AgentMessageRecord {
     pub artifacts_json: String,
     pub metadata_json: String,
     pub parent_message_id: Option<String>,
+    pub turn_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1059,6 +1186,97 @@ impl AgentMessageRecord {
     pub fn mark_updated(&mut self, updated_at: impl Into<String>) {
         self.updated_at = updated_at.into();
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentMessageFeedbackRating {
+    Up,
+    Down,
+}
+
+impl AgentMessageFeedbackRating {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Up => 1,
+            Self::Down => -1,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            1 => Some(Self::Up),
+            -1 => Some(Self::Down),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentMessageFeedbackRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub message_id: String,
+    pub user_id: u64,
+    pub rating: AgentMessageFeedbackRating,
+    pub reason_code: Option<String>,
+    pub comment: Option<String>,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentMessageMediaRole {
+    Attachment,
+    Image,
+    Voice,
+    GeneratedOutput,
+    Artifact,
+}
+
+impl AgentMessageMediaRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Attachment => "attachment",
+            Self::Image => "image",
+            Self::Voice => "voice",
+            Self::GeneratedOutput => "generated_output",
+            Self::Artifact => "artifact",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentMessageDriveRefRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub message_id: String,
+    pub media_role: AgentMessageMediaRole,
+    pub drive_space_id: String,
+    pub drive_node_id: String,
+    pub drive_uri: String,
+    pub media_resource_id: Option<String>,
+    pub object_blob_id: Option<String>,
+    pub resource_snapshot_json: String,
+    pub resource_hash: String,
+    pub alt_text: Option<String>,
+    pub sort_order: u32,
+    pub status: i16,
+    pub created_by: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+    pub retention_until: Option<String>,
 }
 
 // ============================================================================

@@ -4,15 +4,17 @@ import { cn } from '@sdkwork/agents-pc-commons';
 import { ProjectService, ProjectDetails } from '@sdkwork/agents-pc-chat';
 
 interface ProjectHomeViewProps {
-  projectName: string;
+  projectId: string;
 }
 
-export const ProjectHomeView: React.FC<ProjectHomeViewProps> = ({ projectName }) => {
+export const ProjectHomeView: React.FC<ProjectHomeViewProps> = ({ projectId }) => {
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
 
   useEffect(() => {
-    ProjectService.getProjectDetails(projectName).then(setProjectDetails);
-  }, [projectName]);
+    ProjectService.getProjectDetails(projectId).then(setProjectDetails);
+  }, [projectId]);
+
+  const projectName = projectDetails?.name ?? '';
 
   const formatDate = (ts: number) => {
     const d = new Date(ts);

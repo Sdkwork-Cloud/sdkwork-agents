@@ -2,7 +2,7 @@
 
 Status: active
 Owner: agents-platform
-Contract: `database/contract/schema.yaml` (v3.1.0)
+Contract: `database/contract/schema.yaml` (v4.0.0 active)
 DDL authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 Migration authority: `database/migrations/postgres/`
 
@@ -29,6 +29,19 @@ with checksum verification.
 | `ai_agent_message` | Session messages and chat turns |
 | `ai_agent_interaction` | Live interaction approval and user-question records |
 | `ai_agent_task` | Scheduled tasks projected from kernel `AgentTask` |
+| `ai_agent_project` | Chat project identity, ownership, lifecycle, and access policy |
+| `ai_agent_project_composition_slot` | Project composition references to sibling modules |
+| `ai_agent_chat_turn` | Idempotent inference command and terminal state |
+| `ai_agent_message_drive_ref` | Typed Drive-backed message resources |
+| `ai_agent_message_feedback` | Per-user assistant response feedback |
+| `ai_agent_resource_user_state` | Per-user session/project state |
+| `ai_agent_project_member` | Project ACL and collaboration lifecycle |
+| `ai_agent_share_link` | Hashed project/session share grants |
+| `ai_agent_outbox_event` | Reliable aggregate event publication |
+
+The nine Chat/Project tables are active in contract `4.0.0`; their immutable
+migration provenance remains under `database/migrations/postgres/` rather than
+being folded into the historical baseline.
 
 Current database contract scope excludes `ai_agent_task_run`. Entry criteria
 require a stable kernel `AgentRun` / `AgentStep` projection, approved

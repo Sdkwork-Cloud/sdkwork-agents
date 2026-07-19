@@ -185,6 +185,12 @@
       "cloud.development": {
         "processes": [
           {
+            "id": "pc-renderer",
+            "package": "@sdkwork/agents-pc",
+            "script": "vite",
+            "required": true
+          },
+          {
             "id": "platform.api-gateway",
             "crate": "sdkwork-api-cloud-gateway",
             "binary": "sdkwork-api-cloud-gateway",

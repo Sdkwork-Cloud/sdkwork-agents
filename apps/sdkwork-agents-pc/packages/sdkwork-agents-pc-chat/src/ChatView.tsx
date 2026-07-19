@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   ChatMessage,
   ChatSession,
+  type ChatProject,
 } from "@sdkwork/agents-pc-chat";
 import { cn } from "@sdkwork/agents-pc-commons";
 import { ChatService } from "./services/ChatService";
@@ -28,14 +29,14 @@ export const ChatView = () => {
   const { t } = useTranslation("chat");
 
   const [sessions, setSessions] = useState<ChatSession[]>([
-    { id: "1", title: t("newChat"), messages: [], updatedAt: Date.now() },
+    { id: "1", title: t("newChat"), messages: [], updatedAt: Date.now(), version: "" },
   ]);
   const [currentSessionId, setCurrentSessionId] = useState<string>("1");
   const [activeView, setActiveView] = useState<'chat' | 'library'>('chat');
-  const [projects, setProjects] = useState<string[]>([]);
-  const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ChatProject[]>([]);
+  const [activeProject, setActiveProject] = useState<ChatProject | null>(null);
   const [activeProjectSettings, setActiveProjectSettings] = useState<
-    string | null
+    ChatProject | null
   >(null);
   const [input, setInput] = useState(() => {
     try {
@@ -46,7 +47,23 @@ export const ChatView = () => {
   });
 
   useEffect(() => {
-    ProjectService.getProjects().then(setProjects);
+    void ProjectService.getProjects()
+      .then(setProjects)
+      .catch((error) => console.error("Project list failed", error));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void ChatService.loadSessions(selectedModel)
+      .then((remoteSessions) => {
+        if (!active || remoteSessions.length === 0) return;
+        setSessions(remoteSessions);
+        setCurrentSessionId(remoteSessions[0].id);
+      })
+      .catch((error) => console.error("Chat history load failed", error));
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -82,6 +99,8 @@ export const ChatView = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const pinMutationsRef = useRef<Set<string>>(new Set());
+  const feedbackMutationsRef = useRef<Set<string>>(new Set());
 
   const currentSession = sessions.find((s) => s.id === currentSessionId)!;
 
@@ -165,6 +184,7 @@ export const ChatView = () => {
       title: t("newChat"),
       messages: [],
       updatedAt: Date.now(),
+      version: "",
     };
     setSessions((prev) => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
@@ -198,24 +218,118 @@ export const ChatView = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleNewChat]);
 
-  const handleRenameSession = (id: string, newTitle: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, title: newTitle } : s))
+  const handleRenameSession = async (id: string, newTitle: string) => {
+    const session = sessions.find((item) => item.id === id);
+    if (!session) return;
+    const updated = await ChatService.renameSession(id, newTitle, session.version);
+    setSessions((prev) => prev.map((item) => item.id === id ? {
+      ...item,
+      title: updated.title,
+      version: updated.version,
+      updatedAt: Date.parse(updated.updatedAt) || Date.now(),
+    } : item));
+  };
+
+  const handleTogglePin = async (id: string, pinned: boolean): Promise<boolean> => {
+    if (pinMutationsRef.current.has(id)) return false;
+    const session = sessions.find((item) => item.id === id);
+    if (!session) return false;
+    pinMutationsRef.current.add(id);
+    setSessions((previous) => previous.map((item) =>
+      item.id === id ? { ...item, pinned } : item
+    ));
+    try {
+      const updated = await ChatService.setSessionPinned(
+        id,
+        pinned,
+        session.userStateVersion,
+      );
+      setSessions((previous) => previous.map((item) => item.id === id ? {
+        ...item,
+        pinned: updated.pinned,
+        userStateVersion: updated.version,
+      } : item));
+      return true;
+    } catch (error) {
+      setSessions((previous) => previous.map((item) => item.id === id ? {
+        ...item,
+        pinned: session.pinned ?? false,
+        userStateVersion: session.userStateVersion,
+      } : item));
+      console.error("Chat pin update failed", error);
+      throw error;
+    } finally {
+      pinMutationsRef.current.delete(id);
+    }
+  };
+
+  const handleMessageFeedback = async (
+    messageId: string,
+    rating: 'up' | 'down' | undefined,
+  ): Promise<boolean> => {
+    const mutationKey = `${currentSessionId}:${messageId}`;
+    if (feedbackMutationsRef.current.has(mutationKey)) return false;
+    const session = sessions.find((item) => item.id === currentSessionId);
+    const message = session?.messages.find((item) => item.id === messageId);
+    if (!session || !message || message.role !== 'model') return false;
+    feedbackMutationsRef.current.add(mutationKey);
+    setSessions((previous) => previous.map((item) => item.id === session.id ? {
+      ...item,
+      messages: item.messages.map((candidate) =>
+        candidate.id === messageId ? { ...candidate, feedback: rating } : candidate
+      ),
+    } : item));
+    try {
+      const updated = await ChatService.setMessageFeedback(
+        session.id,
+        messageId,
+        rating,
+        message.feedbackVersion,
+      );
+      setSessions((previous) => previous.map((item) => item.id === session.id ? {
+        ...item,
+        messages: item.messages.map((candidate) => candidate.id === messageId ? {
+          ...candidate,
+          feedback: updated.rating,
+          feedbackVersion: updated.version,
+        } : candidate),
+      } : item));
+      return true;
+    } catch (error) {
+      setSessions((previous) => previous.map((item) => item.id === session.id ? {
+        ...item,
+        messages: item.messages.map((candidate) => candidate.id === messageId ? {
+          ...candidate,
+          feedback: message.feedback,
+          feedbackVersion: message.feedbackVersion,
+        } : candidate),
+      } : item));
+      console.error("Chat message feedback update failed", error);
+      throw error;
+    } finally {
+      feedbackMutationsRef.current.delete(mutationKey);
+    }
+  };
+
+  const handleCreateProject = async (title: string) => {
+    const created = await ProjectService.createProject(title);
+    setProjects((previous) => [created, ...previous]);
+  };
+
+  const handleRenameProject = async (project: ChatProject, newTitle: string) => {
+    const updated = await ProjectService.updateProject(project, { name: newTitle });
+    setProjects((previous) =>
+      previous.map((item) => item.projectId === project.projectId ? updated : item),
     );
+    if (activeProject?.projectId === project.projectId) setActiveProject(updated);
   };
 
-  const handleCreateProject = (title: string) => {
-    setProjects(prev => [title, ...prev]);
-  };
-
-  const handleRenameProject = (oldTitle: string, newTitle: string) => {
-    setProjects(prev => prev.map(p => p === oldTitle ? newTitle : p));
-    if (activeProject === oldTitle) setActiveProject(newTitle);
-  };
-
-  const handleDeleteProject = (title: string) => {
-    setProjects(prev => prev.filter(p => p !== title));
-    if (activeProject === title) setActiveProject(null);
+  const handleDeleteProject = async (project: ChatProject) => {
+    await ProjectService.deleteProject(project.projectId);
+    setProjects((previous) =>
+      previous.filter((item) => item.projectId !== project.projectId),
+    );
+    if (activeProject?.projectId === project.projectId) setActiveProject(null);
   };
 
   const handleSelectSession = (id: string) => {
@@ -226,12 +340,25 @@ export const ChatView = () => {
     setShouldAutoScroll(true);
   };
 
-  const handleDeleteSession = (e: React.MouseEvent, id: string) => {
+  const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    await ChatService.deleteSession(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (currentSessionId === id) {
       setCurrentSessionId(sessions.find((s) => s.id !== id)?.id || "");
     }
+  };
+
+  const handleMoveSessionToProject = async (sessionId: string, project: ChatProject) => {
+    const session = sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    const updated = await ChatService.moveSession(sessionId, project.projectId, session.version);
+    setSessions((previous) => previous.map((item) => item.id === sessionId ? {
+      ...item,
+      projectId: project.projectId,
+      version: updated.version,
+      updatedAt: Date.parse(updated.updatedAt) || Date.now(),
+    } : item));
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -250,7 +377,10 @@ export const ChatView = () => {
     })))
       .then((uploaded) => {
         setSelectedMediaResources((previous) => [...previous, ...uploaded]);
-        setSelectedImages((previous) => [...previous, ...uploaded.map((media) => media.url)]);
+        setSelectedImages((previous) => [
+          ...previous,
+          ...uploaded.flatMap((media) => (media.url ? [media.url] : [])),
+        ]);
       })
       .catch((error) => {
         console.error('Chat image Drive upload failed', error);
@@ -331,6 +461,7 @@ export const ChatView = () => {
 
     try {
       await ChatService.streamChat({
+        sessionId: currentSessionId,
         model: selectedModel,
         messages: requestMessages,
         signal: abortController.signal,
@@ -349,7 +480,21 @@ export const ChatView = () => {
             }),
           );
         },
-        onComplete: () => {
+        onComplete: (completedMessage) => {
+          if (completedMessage?.id) {
+            setSessions((previous) => previous.map((session) =>
+              session.id === currentSessionId
+                ? {
+                    ...session,
+                    messages: session.messages.map((message) =>
+                      message.id === modelMessageId
+                        ? { ...message, id: completedMessage.id }
+                        : message
+                    ),
+                  }
+                : session
+            ));
+          }
           setIsGenerating(false);
           abortControllerRef.current = null;
         },
@@ -412,11 +557,13 @@ export const ChatView = () => {
         onSelectSession={handleSelectSession}
         onDeleteSession={handleDeleteSession}
         onRenameSession={handleRenameSession}
+        onTogglePin={handleTogglePin}
+        onMoveSessionToProject={handleMoveSessionToProject}
         onOpenUserProfile={(tab) => setProfileModalTab(tab)}
         onOpenFileLibrary={() => setActiveView('library')}
         projects={projects}
-        activeProject={activeProject}
-        onProjectSelect={(project) => setActiveProject(project)}
+        activeProject={activeProject?.projectId}
+        onProjectSelect={setActiveProject}
         onProjectSettings={(project) => setActiveProjectSettings(project)}
         onProjectCreate={handleCreateProject}
         onProjectRename={handleRenameProject}
@@ -455,6 +602,7 @@ export const ChatView = () => {
               <MessageList
                 messages={currentSession?.messages || []}
                 messagesEndRef={messagesEndRef}
+                onFeedback={handleMessageFeedback}
                 onOpenArtifact={(lang, code, mode) => {
                   const finalMode =
                     mode ||
@@ -488,7 +636,7 @@ export const ChatView = () => {
             />
           </>
         ) : (
-          <ProjectHomeView projectName={activeProject} />
+          <ProjectHomeView projectId={activeProject.projectId} />
         )}
       </div>
 
@@ -510,8 +658,20 @@ export const ChatView = () => {
       )}
       {activeProjectSettings && (
         <ProjectSettingsModal
-          projectName={activeProjectSettings}
+          project={activeProjectSettings}
           onClose={() => setActiveProjectSettings(null)}
+          onSaved={(updated) => {
+            setProjects((previous) => previous.map((item) =>
+              item.projectId === updated.projectId ? updated : item
+            ));
+            if (activeProject?.projectId === updated.projectId) setActiveProject(updated);
+            setActiveProjectSettings(updated);
+          }}
+          onDeleted={(projectId) => {
+            setProjects((previous) => previous.filter((item) => item.projectId !== projectId));
+            if (activeProject?.projectId === projectId) setActiveProject(null);
+            setActiveProjectSettings(null);
+          }}
         />
       )}
       {profileModalTab !== null && (

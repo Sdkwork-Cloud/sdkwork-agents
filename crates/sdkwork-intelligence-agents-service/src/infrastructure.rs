@@ -1,15 +1,19 @@
+use crate::chat_turn::AgentChatTurnRecord;
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
-    AgentInteractionRecord, AgentMessageRecord, AgentProviderBindingRecord, AgentSessionRecord,
-    AgentTaskRecord,
+    AgentInteractionRecord, AgentMessageDriveRefRecord, AgentMessageFeedbackRecord,
+    AgentMessageRecord, AgentProviderBindingRecord, AgentResourceType,
+    AgentResourceUserStateRecord, AgentSessionRecord, AgentTaskRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 use crate::in_memory_pagination::{count_iterator, paginate_iterator, paginate_messages};
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, McpMarketplaceListQuery, MessageListQuery, ProviderBindingListQuery,
-    SessionListQuery, TaskListQuery,
+    InteractionListQuery, McpMarketplaceListQuery, MessageFeedbackListQuery, MessageListQuery,
+    ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
+    ResourceUserStateListQuery, SessionListQuery, TaskListQuery,
 };
+use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::parse_rfc3339_datetime;
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
@@ -303,14 +307,22 @@ impl AgentServiceMetrics {
 /// and eliminates the global `Mutex<AgentsService>` bottleneck.
 type AgentPrimaryKey = (u64, String);
 type AgentIndexKey = (u64, Reverse<String>, Reverse<u64>, String);
+type ProjectPrimaryKey = (u64, u64, String);
+type ProjectIndexKey = (u64, u64, Reverse<String>, Reverse<u64>, String);
+type ProjectCompositionSlotPrimaryKey = (u64, u64, String, String);
 type ProviderBindingPrimaryKey = (u64, String, String);
 type ProviderBindingIndexKey = (u64, String, Reverse<bool>, Reverse<String>, String);
 type CompositionSlotPrimaryKey = (u64, String, String);
 type CompositionSlotIndexKey = (u64, String, i32, String);
 type SessionPrimaryKey = (u64, String);
+type ResourceUserStatePrimaryKey = (u64, u64, u64, i16, String);
 type SessionIndexKey = (u64, Reverse<String>, String);
 type MessagePrimaryKey = (u64, String, String);
+type MessageFeedbackPrimaryKey = (u64, u64, String, u64);
+type MessageDriveRefPrimaryKey = (u64, u64, String, String, String);
 type MessageIndexKey = (u64, String, u64, String);
+type ChatTurnPrimaryKey = (u64, u64, String);
+type ChatTurnIdempotencyKey = (u64, u64, u64, String);
 type InteractionPrimaryKey = (u64, String, String);
 type InteractionIndexKey = (u64, String, Reverse<String>, String);
 type TaskPrimaryKey = (u64, String);
@@ -369,14 +381,24 @@ pub struct InMemoryAgentRepository {
     id_generator: AgentBusinessIdGenerator,
     agents: RwLock<HashMap<AgentPrimaryKey, AgentBusinessRecord>>,
     agent_list_index: RwLock<BTreeMap<AgentIndexKey, AgentPrimaryKey>>,
+    projects: RwLock<HashMap<ProjectPrimaryKey, AgentProjectRecord>>,
+    project_index: RwLock<BTreeMap<ProjectIndexKey, ProjectPrimaryKey>>,
+    project_composition_slots:
+        RwLock<HashMap<ProjectCompositionSlotPrimaryKey, AgentProjectCompositionSlotRecord>>,
     provider_bindings: RwLock<HashMap<ProviderBindingPrimaryKey, AgentProviderBindingRecord>>,
     provider_binding_index: RwLock<BTreeMap<ProviderBindingIndexKey, ProviderBindingPrimaryKey>>,
     composition_slots: RwLock<HashMap<CompositionSlotPrimaryKey, AgentCompositionSlotRecord>>,
     composition_slot_index: RwLock<BTreeMap<CompositionSlotIndexKey, CompositionSlotPrimaryKey>>,
     sessions: RwLock<HashMap<SessionPrimaryKey, AgentSessionRecord>>,
     session_index: RwLock<BTreeMap<SessionIndexKey, SessionPrimaryKey>>,
+    resource_user_states:
+        RwLock<HashMap<ResourceUserStatePrimaryKey, AgentResourceUserStateRecord>>,
     messages: RwLock<HashMap<MessagePrimaryKey, AgentMessageRecord>>,
+    message_feedback: RwLock<HashMap<MessageFeedbackPrimaryKey, AgentMessageFeedbackRecord>>,
+    message_drive_refs: RwLock<HashMap<MessageDriveRefPrimaryKey, AgentMessageDriveRefRecord>>,
     message_index: RwLock<BTreeMap<MessageIndexKey, MessagePrimaryKey>>,
+    chat_turns: RwLock<HashMap<ChatTurnPrimaryKey, AgentChatTurnRecord>>,
+    chat_turn_idempotency: RwLock<HashMap<ChatTurnIdempotencyKey, ChatTurnPrimaryKey>>,
     interactions: RwLock<HashMap<InteractionPrimaryKey, AgentInteractionRecord>>,
     interaction_index: RwLock<BTreeMap<InteractionIndexKey, InteractionPrimaryKey>>,
     tasks: RwLock<HashMap<TaskPrimaryKey, AgentTaskRecord>>,
@@ -399,14 +421,22 @@ impl InMemoryAgentRepository {
             id_generator,
             agents: RwLock::new(HashMap::new()),
             agent_list_index: RwLock::new(BTreeMap::new()),
+            projects: RwLock::new(HashMap::new()),
+            project_index: RwLock::new(BTreeMap::new()),
+            project_composition_slots: RwLock::new(HashMap::new()),
             provider_bindings: RwLock::new(HashMap::new()),
             provider_binding_index: RwLock::new(BTreeMap::new()),
             composition_slots: RwLock::new(HashMap::new()),
             composition_slot_index: RwLock::new(BTreeMap::new()),
             sessions: RwLock::new(HashMap::new()),
             session_index: RwLock::new(BTreeMap::new()),
+            resource_user_states: RwLock::new(HashMap::new()),
             messages: RwLock::new(HashMap::new()),
+            message_feedback: RwLock::new(HashMap::new()),
+            message_drive_refs: RwLock::new(HashMap::new()),
             message_index: RwLock::new(BTreeMap::new()),
+            chat_turns: RwLock::new(HashMap::new()),
+            chat_turn_idempotency: RwLock::new(HashMap::new()),
             interactions: RwLock::new(HashMap::new()),
             interaction_index: RwLock::new(BTreeMap::new()),
             tasks: RwLock::new(HashMap::new()),
@@ -429,6 +459,24 @@ fn agent_index_key(record: &AgentBusinessRecord) -> AgentIndexKey {
         Reverse(record.updated_at.clone()),
         Reverse(record.id),
         record.agent_id.clone(),
+    )
+}
+
+fn project_primary_key(record: &AgentProjectRecord) -> ProjectPrimaryKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.project_id.clone(),
+    )
+}
+
+fn project_index_key(record: &AgentProjectRecord) -> ProjectIndexKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        Reverse(record.updated_at.clone()),
+        Reverse(record.id),
+        record.project_id.clone(),
     )
 }
 
@@ -479,11 +527,53 @@ fn session_index_key(record: &AgentSessionRecord) -> SessionIndexKey {
     )
 }
 
+fn resource_user_state_primary_key(
+    record: &AgentResourceUserStateRecord,
+) -> ResourceUserStatePrimaryKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.user_id,
+        record.resource_type.as_db_code(),
+        record.resource_id.clone(),
+    )
+}
+
+fn resource_user_state_matches_agent(
+    record: &AgentResourceUserStateRecord,
+    query: &ResourceUserStateListQuery,
+    sessions: &HashMap<SessionPrimaryKey, AgentSessionRecord>,
+) -> bool {
+    let Some(agent_id) = query.agent_id.as_deref() else {
+        return true;
+    };
+    if record.resource_type != AgentResourceType::Session {
+        return false;
+    }
+    sessions
+        .get(&(record.tenant_id, record.resource_id.clone()))
+        .is_some_and(|session| {
+            session.organization_id == record.organization_id
+                && session.owner_user_id == record.user_id
+                && session.agent_id == agent_id
+                && session.deleted_at.is_none()
+        })
+}
+
 fn message_primary_key(record: &AgentMessageRecord) -> MessagePrimaryKey {
     (
         record.tenant_id,
         record.session_id.clone(),
         record.message_id.clone(),
+    )
+}
+
+fn message_feedback_primary_key(record: &AgentMessageFeedbackRecord) -> MessageFeedbackPrimaryKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.message_id.clone(),
+        record.user_id,
     )
 }
 
@@ -629,6 +719,194 @@ impl AgentRepository for InMemoryAgentRepository {
                 .filter_map(|(_, primary_key)| agents.get(primary_key))
                 .filter(|record| agent_matches_list_query(record, query)),
         ))
+    }
+
+    fn insert_project(&self, record: AgentProjectRecord) -> KernelResult<()> {
+        let primary_key = project_primary_key(&record);
+        let mut projects = self.projects.recovering_write();
+        if projects.contains_key(&primary_key) {
+            return Err(KernelError::conflict("project already exists"));
+        }
+        let index_key = project_index_key(&record);
+        projects.insert(primary_key.clone(), record);
+        self.project_index
+            .recovering_write()
+            .insert(index_key, primary_key);
+        Ok(())
+    }
+
+    fn update_project(&self, record: AgentProjectRecord) -> KernelResult<()> {
+        let primary_key = project_primary_key(&record);
+        let mut projects = self.projects.recovering_write();
+        let existing = projects
+            .get(&primary_key)
+            .ok_or_else(|| KernelError::validation("project not found"))?;
+        let expected_version = existing.version.saturating_add(1);
+        if record.version != expected_version {
+            return Err(KernelError::conflict(format!(
+                "project version mismatch: expected={expected_version}, actual={}",
+                record.version
+            )));
+        }
+        let previous_index_key = project_index_key(existing);
+        let next_index_key = project_index_key(&record);
+        projects.insert(primary_key.clone(), record);
+        let mut index = self.project_index.recovering_write();
+        index.remove(&previous_index_key);
+        index.insert(next_index_key, primary_key);
+        Ok(())
+    }
+
+    fn get_project(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        project_id: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>> {
+        Ok(self
+            .projects
+            .recovering_read()
+            .get(&(tenant_id, organization_id, project_id.to_string()))
+            .filter(|record| record.status != AgentProjectStatus::Deleted)
+            .cloned())
+    }
+
+    fn list_projects(&self, query: &ProjectListQuery) -> KernelResult<Vec<AgentProjectRecord>> {
+        let projects = self.projects.recovering_read();
+        let index = self.project_index.recovering_read();
+        let records = index
+            .iter()
+            .filter(|((tenant_id, organization_id, _, _, _), _)| {
+                *tenant_id == query.tenant_id && *organization_id == query.organization_id
+            })
+            .filter_map(|(_, key)| projects.get(key))
+            .filter(|record| project_matches_list_query(record, query))
+            .cloned();
+        Ok(paginate_iterator(records, &query.pagination))
+    }
+
+    fn count_projects(&self, query: &ProjectListQuery) -> KernelResult<u64> {
+        let projects = self.projects.recovering_read();
+        Ok(count_iterator(projects.values().filter(|record| {
+            project_matches_list_query(record, query)
+        })))
+    }
+
+    fn insert_project_composition_slot(
+        &self,
+        record: AgentProjectCompositionSlotRecord,
+    ) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.project_id.clone(),
+            record.slot_id.clone(),
+        );
+        let mut slots = self.project_composition_slots.recovering_write();
+        if slots.contains_key(&key) {
+            return Err(KernelError::conflict(
+                "project composition slot already exists",
+            ));
+        }
+        slots.insert(key, record);
+        Ok(())
+    }
+
+    fn update_project_composition_slot(
+        &self,
+        record: AgentProjectCompositionSlotRecord,
+    ) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.project_id.clone(),
+            record.slot_id.clone(),
+        );
+        let mut slots = self.project_composition_slots.recovering_write();
+        let existing = slots
+            .get(&key)
+            .ok_or_else(|| KernelError::validation("project composition slot not found"))?;
+        if record.version != existing.version.saturating_add(1) {
+            return Err(KernelError::conflict(
+                "project composition slot version mismatch",
+            ));
+        }
+        slots.insert(key, record);
+        Ok(())
+    }
+
+    fn get_project_composition_slot(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        project_id: &str,
+        slot_id: &str,
+    ) -> KernelResult<Option<AgentProjectCompositionSlotRecord>> {
+        Ok(self
+            .project_composition_slots
+            .recovering_read()
+            .get(&(
+                tenant_id,
+                organization_id,
+                project_id.to_string(),
+                slot_id.to_string(),
+            ))
+            .cloned())
+    }
+
+    fn list_project_composition_slots(
+        &self,
+        query: &ProjectCompositionSlotListQuery,
+    ) -> KernelResult<Vec<AgentProjectCompositionSlotRecord>> {
+        let mut slots = self
+            .project_composition_slots
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.project_id == query.project_id
+                    && record.deleted_at.is_none()
+                    && query
+                        .slot_kind
+                        .as_ref()
+                        .is_none_or(|kind| &record.slot_kind == kind)
+                    && query
+                        .enabled
+                        .is_none_or(|enabled| record.enabled == enabled)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        slots.sort_by(|left, right| {
+            left.priority
+                .cmp(&right.priority)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(paginate_iterator(slots.into_iter(), &query.pagination))
+    }
+
+    fn count_project_composition_slots(
+        &self,
+        query: &ProjectCompositionSlotListQuery,
+    ) -> KernelResult<u64> {
+        Ok(self
+            .project_composition_slots
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.project_id == query.project_id
+                    && record.deleted_at.is_none()
+                    && query
+                        .slot_kind
+                        .as_ref()
+                        .is_none_or(|kind| &record.slot_kind == kind)
+                    && query
+                        .enabled
+                        .is_none_or(|enabled| record.enabled == enabled)
+            })
+            .count() as u64)
     }
 
     fn insert_provider_binding(&self, record: AgentProviderBindingRecord) -> KernelResult<()> {
@@ -931,6 +1209,7 @@ impl AgentRepository for InMemoryAgentRepository {
             .sessions
             .recovering_read()
             .get(&(tenant_id, session_id.to_string()))
+            .filter(|record| record.deleted_at.is_none())
             .cloned())
     }
 
@@ -956,6 +1235,111 @@ impl AgentRepository for InMemoryAgentRepository {
                 .filter_map(|(_, primary_key)| sessions.get(primary_key))
                 .filter(|record| session_matches_list_query(record, query)),
         ))
+    }
+
+    fn upsert_resource_user_state(
+        &self,
+        record: AgentResourceUserStateRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentResourceUserStateRecord> {
+        let key = resource_user_state_primary_key(&record);
+        let mut states = self.resource_user_states.recovering_write();
+        match states.get(&key) {
+            Some(existing) => {
+                if expected_version != Some(existing.version) {
+                    return Err(KernelError::conflict(
+                        "resource user state version mismatch",
+                    ));
+                }
+                if record.version != existing.version.saturating_add(1) {
+                    return Err(KernelError::conflict(
+                        "resource user state version mismatch",
+                    ));
+                }
+            }
+            None => {
+                if expected_version.is_some() || record.version != 0 {
+                    return Err(KernelError::conflict(
+                        "resource user state version mismatch",
+                    ));
+                }
+            }
+        }
+        states.insert(key, record.clone());
+        Ok(record)
+    }
+
+    fn get_resource_user_state(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        resource_type: AgentResourceType,
+        resource_id: &str,
+    ) -> KernelResult<Option<AgentResourceUserStateRecord>> {
+        Ok(self
+            .resource_user_states
+            .recovering_read()
+            .get(&(
+                tenant_id,
+                organization_id,
+                user_id,
+                resource_type.as_db_code(),
+                resource_id.to_owned(),
+            ))
+            .cloned())
+    }
+
+    fn list_resource_user_states(
+        &self,
+        query: &ResourceUserStateListQuery,
+    ) -> KernelResult<Vec<AgentResourceUserStateRecord>> {
+        let sessions = self.sessions.recovering_read();
+        let mut records = self
+            .resource_user_states
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.user_id == query.user_id
+                    && record.resource_type == query.resource_type
+                    && (!query.pinned_only || record.pinned_at.is_some())
+                    && (query.include_hidden || record.hidden_at.is_none())
+            })
+            .filter(|record| resource_user_state_matches_agent(record, query, &sessions))
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            right
+                .pinned_at
+                .cmp(&left.pinned_at)
+                .then_with(|| right.last_opened_at.cmp(&left.last_opened_at))
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(records
+            .into_iter()
+            .skip(query.pagination.offset)
+            .take(query.pagination.page_size)
+            .collect())
+    }
+
+    fn count_resource_user_states(&self, query: &ResourceUserStateListQuery) -> KernelResult<u64> {
+        let sessions = self.sessions.recovering_read();
+        Ok(self
+            .resource_user_states
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.user_id == query.user_id
+                    && record.resource_type == query.resource_type
+                    && (!query.pinned_only || record.pinned_at.is_some())
+                    && (query.include_hidden || record.hidden_at.is_none())
+            })
+            .filter(|record| resource_user_state_matches_agent(record, query, &sessions))
+            .count() as u64)
     }
 
     fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
@@ -1028,6 +1412,105 @@ impl AgentRepository for InMemoryAgentRepository {
         ))
     }
 
+    fn upsert_message_feedback(
+        &self,
+        record: AgentMessageFeedbackRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentMessageFeedbackRecord> {
+        let key = message_feedback_primary_key(&record);
+        let mut feedback = self.message_feedback.recovering_write();
+        match feedback.get(&key) {
+            Some(existing) => {
+                let reviving_without_version = existing.deleted_at.is_some()
+                    && record.deleted_at.is_none()
+                    && expected_version.is_none();
+                if !reviving_without_version && expected_version != Some(existing.version) {
+                    return Err(KernelError::conflict("message feedback version mismatch"));
+                }
+                if record.version != existing.version.saturating_add(1) {
+                    return Err(KernelError::conflict("message feedback version mismatch"));
+                }
+            }
+            None => {
+                if expected_version.is_some() || record.version != 0 {
+                    return Err(KernelError::conflict("message feedback version mismatch"));
+                }
+            }
+        }
+        feedback.insert(key, record.clone());
+        Ok(record)
+    }
+
+    fn get_message_feedback(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        message_id: &str,
+        user_id: u64,
+        include_deleted: bool,
+    ) -> KernelResult<Option<AgentMessageFeedbackRecord>> {
+        Ok(self
+            .message_feedback
+            .recovering_read()
+            .get(&(tenant_id, organization_id, message_id.to_string(), user_id))
+            .filter(|record| include_deleted || record.deleted_at.is_none())
+            .cloned())
+    }
+
+    fn list_message_feedback(
+        &self,
+        query: &MessageFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentMessageFeedbackRecord>> {
+        let messages = self.messages.recovering_read();
+        let mut records = self
+            .message_feedback
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.user_id == query.user_id
+                    && record.deleted_at.is_none()
+            })
+            .filter_map(|record| {
+                messages
+                    .get(&(
+                        query.tenant_id,
+                        query.session_id.clone(),
+                        record.message_id.clone(),
+                    ))
+                    .map(|message| (message.sequence, record.clone()))
+            })
+            .collect::<Vec<_>>();
+        records.sort_by_key(|(sequence, record)| (*sequence, record.id));
+        Ok(records
+            .into_iter()
+            .skip(query.pagination.offset)
+            .take(query.pagination.page_size)
+            .map(|(_, record)| record)
+            .collect())
+    }
+
+    fn count_message_feedback(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64> {
+        let messages = self.messages.recovering_read();
+        Ok(self
+            .message_feedback
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.user_id == query.user_id
+                    && record.deleted_at.is_none()
+                    && messages.contains_key(&(
+                        query.tenant_id,
+                        query.session_id.clone(),
+                        record.message_id.clone(),
+                    ))
+            })
+            .count() as u64)
+    }
+
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
         let index = self.message_index.recovering_read();
         let max_sequence = index
@@ -1041,8 +1524,116 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(max_sequence.saturating_add(1))
     }
 
+    fn get_chat_turn_by_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+        let index = self.chat_turn_idempotency.recovering_read();
+        let turns = self.chat_turns.recovering_read();
+        Ok(index
+            .get(&(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                idempotency_key.to_string(),
+            ))
+            .and_then(|primary_key| turns.get(primary_key))
+            .cloned())
+    }
+
+    fn get_chat_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+        Ok(self
+            .chat_turns
+            .recovering_read()
+            .get(&(tenant_id, organization_id, turn_id.to_string()))
+            .cloned())
+    }
+
+    fn list_reconcilable_chat_turns(
+        &self,
+        stale_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentChatTurnRecord>> {
+        let mut turns = self
+            .chat_turns
+            .recovering_read()
+            .values()
+            .filter(|turn| {
+                matches!(
+                    turn.status,
+                    crate::chat_turn::AgentChatTurnStatus::Requested
+                        | crate::chat_turn::AgentChatTurnStatus::Running
+                ) && turn.updated_at.as_str() < stale_before
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        turns.sort_by(|left, right| {
+            left.updated_at
+                .cmp(&right.updated_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        turns.truncate(limit.min(200));
+        Ok(turns)
+    }
+
+    fn insert_chat_turn_reservation(&self, turn: AgentChatTurnRecord) -> KernelResult<()> {
+        let primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
+        let idempotency_key = (
+            turn.tenant_id,
+            turn.organization_id,
+            turn.owner_user_id,
+            turn.idempotency_key.clone(),
+        );
+        let mut turns = self.chat_turns.recovering_write();
+        let mut index = self.chat_turn_idempotency.recovering_write();
+        if turns.contains_key(&primary_key) || index.contains_key(&idempotency_key) {
+            return Err(KernelError::conflict("chat turn idempotency conflict"));
+        }
+        turns.insert(primary_key.clone(), turn);
+        index.insert(idempotency_key, primary_key);
+        Ok(())
+    }
+
+    fn update_chat_turn_state(
+        &self,
+        turn: AgentChatTurnRecord,
+        expected_version: u64,
+    ) -> KernelResult<AgentChatTurnRecord> {
+        let primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
+        let mut turns = self.chat_turns.recovering_write();
+        let existing = turns
+            .get(&primary_key)
+            .ok_or_else(|| KernelError::validation("chat turn not found"))?;
+        if existing.version != expected_version
+            || turn.version != expected_version.saturating_add(1)
+        {
+            return Err(KernelError::conflict("chat turn version mismatch"));
+        }
+        if existing.idempotency_key != turn.idempotency_key
+            || existing.payload_hash != turn.payload_hash
+            || existing.session_id != turn.session_id
+            || existing.agent_id != turn.agent_id
+            || existing.owner_user_id != turn.owner_user_id
+        {
+            return Err(KernelError::validation(
+                "chat turn immutable scope mismatch",
+            ));
+        }
+        turns.insert(primary_key, turn.clone());
+        Ok(turn)
+    }
+
     fn insert_chat_turn(
         &self,
+        turn: AgentChatTurnRecord,
         session: AgentSessionRecord,
         mut user_message: AgentMessageRecord,
         mut assistant_message: AgentMessageRecord,
@@ -1053,6 +1644,30 @@ impl AgentRepository for InMemoryAgentRepository {
         let tenant_id = user_message.tenant_id;
         let session_id = user_message.session_id.clone();
 
+        let mut turns = self.chat_turns.recovering_write();
+        let mut turn_idempotency = self.chat_turn_idempotency.recovering_write();
+        let turn_primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
+        let turn_idempotency_key = (
+            turn.tenant_id,
+            turn.organization_id,
+            turn.owner_user_id,
+            turn.idempotency_key.clone(),
+        );
+        if let Some(existing) = turns.get(&turn_primary_key) {
+            if existing.payload_hash != turn.payload_hash
+                || existing.idempotency_key != turn.idempotency_key
+                || turn.version != existing.version.saturating_add(1)
+                || !matches!(
+                    existing.status,
+                    crate::chat_turn::AgentChatTurnStatus::Requested
+                        | crate::chat_turn::AgentChatTurnStatus::Running
+                )
+            {
+                return Err(KernelError::conflict("chat turn idempotency conflict"));
+            }
+        } else if turn_idempotency.contains_key(&turn_idempotency_key) {
+            return Err(KernelError::conflict("chat turn idempotency conflict"));
+        }
         let mut sessions = self.sessions.recovering_write();
         let mut session_index = self.session_index.recovering_write();
         let mut messages = self.messages.recovering_write();
@@ -1109,7 +1724,103 @@ impl AgentRepository for InMemoryAgentRepository {
         session_index.remove(&previous_session_index_key);
         session_index.insert(next_session_index_key, session_primary_key);
 
+        turns.insert(turn_primary_key.clone(), turn);
+        turn_idempotency.insert(turn_idempotency_key, turn_primary_key);
+
         Ok((session, user_message, assistant_message))
+    }
+
+    fn insert_chat_turn_with_drive_refs(
+        &self,
+        turn: AgentChatTurnRecord,
+        session: AgentSessionRecord,
+        user_message: AgentMessageRecord,
+        assistant_message: AgentMessageRecord,
+        drive_refs: Vec<AgentMessageDriveRefRecord>,
+    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        let mut refs = self.message_drive_refs.recovering_write();
+        let mut pending = Vec::with_capacity(drive_refs.len());
+        for record in drive_refs {
+            if record.tenant_id != user_message.tenant_id
+                || record.organization_id != session.organization_id
+                || record.message_id != user_message.message_id
+            {
+                return Err(KernelError::validation(
+                    "message Drive reference scope mismatch",
+                ));
+            }
+            let key = (
+                record.tenant_id,
+                record.organization_id,
+                record.message_id.clone(),
+                record.drive_node_id.clone(),
+                record.media_role.as_str().to_string(),
+            );
+            if refs.contains_key(&key) || pending.iter().any(|(candidate, _)| candidate == &key) {
+                return Err(KernelError::conflict("duplicate message Drive reference"));
+            }
+            pending.push((key, record));
+        }
+        let result = self.insert_chat_turn(turn, session, user_message, assistant_message)?;
+        for (key, record) in pending {
+            refs.insert(key, record);
+        }
+        Ok(result)
+    }
+
+    fn list_message_drive_refs(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        message_id: &str,
+    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        let mut records = self
+            .message_drive_refs
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && record.message_id == message_id
+                    && record.deleted_at.is_none()
+                    && record.status == 0
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by_key(|record| (record.sort_order, record.id));
+        Ok(records)
+    }
+
+    fn list_message_drive_refs_batch(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        message_ids: &[String],
+    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        let message_ids = message_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut records = self
+            .message_drive_refs
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && message_ids.contains(record.message_id.as_str())
+                    && record.deleted_at.is_none()
+                    && record.status == 0
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            left.message_id
+                .cmp(&right.message_id)
+                .then(left.sort_order.cmp(&right.sort_order))
+                .then(left.id.cmp(&right.id))
+        });
+        Ok(records)
     }
 
     fn insert_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
@@ -1760,6 +2471,14 @@ fn session_matches_list_query(record: &AgentSessionRecord, query: &SessionListQu
     if record.tenant_id != query.tenant_id {
         return false;
     }
+    if record.deleted_at.is_some() {
+        return false;
+    }
+    if let Some(organization_id) = query.organization_id {
+        if record.organization_id != organization_id {
+            return false;
+        }
+    }
     if let Some(agent_id) = query.agent_id.as_ref() {
         if record.agent_id != *agent_id {
             return false;
@@ -1770,12 +2489,46 @@ fn session_matches_list_query(record: &AgentSessionRecord, query: &SessionListQu
             return false;
         }
     }
+    if let Some(project_id) = query.project_id.as_ref() {
+        if record.project_id.as_ref() != Some(project_id) {
+            return false;
+        }
+    }
     if let Some(status) = query.status.as_ref() {
         if record.status.as_str() != status {
             return false;
         }
     }
     query.include_archived || record.status.as_str() != "archived"
+}
+
+fn project_matches_list_query(record: &AgentProjectRecord, query: &ProjectListQuery) -> bool {
+    if record.tenant_id != query.tenant_id || record.organization_id != query.organization_id {
+        return false;
+    }
+    if let Some(owner_user_id) = query.owner_user_id {
+        if record.owner_user_id != owner_user_id {
+            return false;
+        }
+    }
+    if let Some(status) = query.status {
+        if record.status != status {
+            return false;
+        }
+    }
+    if !query.include_deleted && record.status == AgentProjectStatus::Deleted {
+        return false;
+    }
+    if let Some(search_query) = query.search_query.as_deref() {
+        let needle = trim(search_query).to_lowercase();
+        let description = record.description.as_deref().unwrap_or_default();
+        if !record.name.to_lowercase().contains(&needle)
+            && !description.to_lowercase().contains(&needle)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn message_matches_list_query(record: &AgentMessageRecord, query: &MessageListQuery) -> bool {

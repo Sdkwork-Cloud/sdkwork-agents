@@ -10,6 +10,10 @@ export const WORKBENCH_TABS = [
 
 export type WorkbenchTab = typeof WORKBENCH_TABS[number];
 
+export type SidebarTab = WorkbenchTab;
+
+export const SIDEBAR_TABS: readonly SidebarTab[] = WORKBENCH_TABS;
+
 export const DEFAULT_WORKBENCH_TAB: WorkbenchTab = 'chat_session';
 
 export function isWorkbenchTab(value: unknown): value is WorkbenchTab {

@@ -1,7 +1,7 @@
 schema_version: 1
 kind: sdkwork.database.schema
 module_id: agents
-contract_version: 3.1.0
+contract_version: 4.0.0
 owner_team: agents-platform
 compliance_level: L2
 engines:
@@ -44,6 +44,42 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: 'Scheduled agent tasks projected from kernel AgentTask'
+  - name: ai_agent_project
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Agents chat project identity, lifecycle, ownership, and access policy'
+  - name: ai_agent_project_composition_slot
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Project-scoped references to sibling-owned resources'
+  - name: ai_agent_chat_turn
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Idempotent inference command lifecycle, usage, error, and trace correlation'
+  - name: ai_agent_message_drive_ref
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Typed message relation to Drive-backed MediaResource values'
+  - name: ai_agent_message_feedback
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Per-user assistant message quality feedback'
+  - name: ai_agent_resource_user_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Per-user pinned, hidden, opened, read, and custom-title state'
+  - name: ai_agent_project_member
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Agents project collaboration ACL; not IM membership'
+  - name: ai_agent_share_link
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Hashed, revocable, expiring Agents project/session grants'
+  - name: ai_agent_outbox_event
+    lifecycle_status: active
+    owner: agents-platform
+    description: 'Reliable Agents aggregate event publication'
 # Cross-module references (owned by other modules):
 # - ai_agent_composition_slot.slot_kind IN ('memory') → sdkwork-memory
 # - ai_agent_composition_slot.slot_kind IN ('knowledge') → sdkwork-knowledgebase

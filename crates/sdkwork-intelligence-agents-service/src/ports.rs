@@ -1,7 +1,11 @@
+use crate::chat_turn::AgentChatTurnRecord;
 use crate::domain::{
-    AgentBusinessRecord, AgentCompositionSlotRecord, AgentInteractionRecord, AgentMessageRecord,
-    AgentProviderBindingRecord, AgentSessionRecord, AgentTaskRecord, AgentVisibility,
+    AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
+    AgentInteractionRecord, AgentMessageDriveRefRecord, AgentMessageFeedbackRecord,
+    AgentMessageRecord, AgentProviderBindingRecord, AgentResourceType,
+    AgentResourceUserStateRecord, AgentSessionRecord, AgentTaskRecord, AgentVisibility,
 };
+use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::optional_non_blank;
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
 
@@ -349,18 +353,99 @@ pub enum MessageListSort {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionListQuery {
     pub tenant_id: u64,
+    pub organization_id: Option<u64>,
     pub agent_id: Option<String>,
+    pub project_id: Option<String>,
     pub owner_user_id: Option<u64>,
     pub status: Option<String>,
     pub include_archived: bool,
     pub pagination: PaginationParams,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub owner_user_id: Option<u64>,
+    pub status: Option<AgentProjectStatus>,
+    pub search_query: Option<String>,
+    pub include_deleted: bool,
+    pub pagination: PaginationParams,
+}
+
+impl ProjectListQuery {
+    pub fn for_organization(tenant_id: u64, organization_id: u64) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            owner_user_id: None,
+            status: None,
+            search_query: None,
+            include_deleted: false,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn for_owner(mut self, owner_user_id: u64) -> Self {
+        self.owner_user_id = Some(owner_user_id);
+        self
+    }
+
+    pub fn with_status(mut self, status: AgentProjectStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn with_search(mut self, search_query: impl Into<String>) -> Self {
+        self.search_query = optional_non_blank(search_query.into());
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectCompositionSlotListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub slot_kind: Option<AgentCompositionSlotKind>,
+    pub enabled: Option<bool>,
+    pub pagination: PaginationParams,
+}
+
+impl ProjectCompositionSlotListQuery {
+    pub fn for_project(
+        tenant_id: u64,
+        organization_id: u64,
+        project_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            project_id: project_id.into(),
+            slot_kind: None,
+            enabled: None,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
 impl SessionListQuery {
     pub fn for_tenant(tenant_id: u64) -> Self {
         Self {
             tenant_id,
+            organization_id: None,
             agent_id: None,
+            project_id: None,
             owner_user_id: None,
             status: None,
             include_archived: false,
@@ -370,6 +455,16 @@ impl SessionListQuery {
 
     pub fn for_agent(mut self, agent_id: impl Into<String>) -> Self {
         self.agent_id = Some(agent_id.into());
+        self
+    }
+
+    pub fn for_organization(mut self, organization_id: u64) -> Self {
+        self.organization_id = Some(organization_id);
+        self
+    }
+
+    pub fn for_project(mut self, project_id: impl Into<String>) -> Self {
+        self.project_id = Some(project_id.into());
         self
     }
 
@@ -394,6 +489,48 @@ impl SessionListQuery {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceUserStateListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub resource_type: AgentResourceType,
+    pub agent_id: Option<String>,
+    pub pinned_only: bool,
+    pub include_hidden: bool,
+    pub pagination: PaginationParams,
+}
+
+impl ResourceUserStateListQuery {
+    pub fn for_user_sessions(tenant_id: u64, organization_id: u64, user_id: u64) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            user_id,
+            resource_type: AgentResourceType::Session,
+            agent_id: None,
+            pinned_only: false,
+            include_hidden: false,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn pinned_only(mut self) -> Self {
+        self.pinned_only = true;
+        self
+    }
+
+    pub fn for_agent(mut self, agent_id: impl Into<String>) -> Self {
+        self.agent_id = Some(agent_id.into());
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
 /// Query parameters for listing agent messages within a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageListQuery {
@@ -403,6 +540,37 @@ pub struct MessageListQuery {
     pub status: Option<String>,
     pub sort: MessageListSort,
     pub pagination: PaginationParams,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageFeedbackListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub session_id: String,
+    pub pagination: PaginationParams,
+}
+
+impl MessageFeedbackListQuery {
+    pub fn for_user_session(
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            user_id,
+            session_id: session_id.into(),
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
 }
 
 impl MessageListQuery {
@@ -542,6 +710,49 @@ pub trait AgentRepository: Send + Sync {
     /// Count agents matching list filters (excluding pagination bounds).
     fn count_agents(&self, query: &AgentListQuery) -> KernelResult<u64>;
 
+    fn insert_project(&self, record: AgentProjectRecord) -> KernelResult<()>;
+
+    fn update_project(&self, record: AgentProjectRecord) -> KernelResult<()>;
+
+    fn get_project(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        project_id: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>>;
+
+    fn list_projects(&self, query: &ProjectListQuery) -> KernelResult<Vec<AgentProjectRecord>>;
+
+    fn count_projects(&self, query: &ProjectListQuery) -> KernelResult<u64>;
+
+    fn insert_project_composition_slot(
+        &self,
+        record: AgentProjectCompositionSlotRecord,
+    ) -> KernelResult<()>;
+
+    fn update_project_composition_slot(
+        &self,
+        record: AgentProjectCompositionSlotRecord,
+    ) -> KernelResult<()>;
+
+    fn get_project_composition_slot(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        project_id: &str,
+        slot_id: &str,
+    ) -> KernelResult<Option<AgentProjectCompositionSlotRecord>>;
+
+    fn list_project_composition_slots(
+        &self,
+        query: &ProjectCompositionSlotListQuery,
+    ) -> KernelResult<Vec<AgentProjectCompositionSlotRecord>>;
+
+    fn count_project_composition_slots(
+        &self,
+        query: &ProjectCompositionSlotListQuery,
+    ) -> KernelResult<u64>;
+
     /// List agents with pagination metadata.
     fn list_paginated(
         &self,
@@ -677,6 +888,28 @@ pub trait AgentRepository: Send + Sync {
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64>;
 
+    fn upsert_resource_user_state(
+        &self,
+        record: AgentResourceUserStateRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentResourceUserStateRecord>;
+
+    fn get_resource_user_state(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        resource_type: AgentResourceType,
+        resource_id: &str,
+    ) -> KernelResult<Option<AgentResourceUserStateRecord>>;
+
+    fn list_resource_user_states(
+        &self,
+        query: &ResourceUserStateListQuery,
+    ) -> KernelResult<Vec<AgentResourceUserStateRecord>>;
+
+    fn count_resource_user_states(&self, query: &ResourceUserStateListQuery) -> KernelResult<u64>;
+
     // -----------------------------------------------------------------------
     // Message persistence
     // -----------------------------------------------------------------------
@@ -696,9 +929,66 @@ pub trait AgentRepository: Send + Sync {
 
     fn count_messages(&self, query: &MessageListQuery) -> KernelResult<u64>;
 
+    fn upsert_message_feedback(
+        &self,
+        record: AgentMessageFeedbackRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentMessageFeedbackRecord>;
+
+    fn get_message_feedback(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        message_id: &str,
+        user_id: u64,
+        include_deleted: bool,
+    ) -> KernelResult<Option<AgentMessageFeedbackRecord>>;
+
+    fn list_message_feedback(
+        &self,
+        query: &MessageFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentMessageFeedbackRecord>>;
+
+    fn count_message_feedback(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64>;
+
     /// Next message sequence number for a session. Implementations should
     /// return `message_count + 1` for the session, or `1` if no messages exist.
     fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64>;
+
+    fn get_chat_turn_by_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentChatTurnRecord>>;
+    fn get_chat_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<AgentChatTurnRecord>>;
+    fn list_reconcilable_chat_turns(
+        &self,
+        stale_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentChatTurnRecord>>;
+
+    fn insert_chat_turn_reservation(&self, _turn: AgentChatTurnRecord) -> KernelResult<()> {
+        Err(KernelError::Internal {
+            message: "insert_chat_turn_reservation requires an adapter override".to_string(),
+        })
+    }
+
+    fn update_chat_turn_state(
+        &self,
+        _turn: AgentChatTurnRecord,
+        _expected_version: u64,
+    ) -> KernelResult<AgentChatTurnRecord> {
+        Err(KernelError::Internal {
+            message: "update_chat_turn_state requires an adapter override".to_string(),
+        })
+    }
 
     /// Atomically persist one user + assistant chat turn and update session counters.
     ///
@@ -707,6 +997,7 @@ pub trait AgentRepository: Send + Sync {
     /// implementation is fail-closed to prevent non-atomic data corruption.
     fn insert_chat_turn(
         &self,
+        _turn: AgentChatTurnRecord,
         _session: AgentSessionRecord,
         _user_message: AgentMessageRecord,
         _assistant_message: AgentMessageRecord,
@@ -714,6 +1005,40 @@ pub trait AgentRepository: Send + Sync {
         Err(KernelError::Internal {
             message: "insert_chat_turn requires a transactional adapter override".to_string(),
         })
+    }
+
+    fn insert_chat_turn_with_drive_refs(
+        &self,
+        _turn: AgentChatTurnRecord,
+        _session: AgentSessionRecord,
+        _user_message: AgentMessageRecord,
+        _assistant_message: AgentMessageRecord,
+        _drive_refs: Vec<AgentMessageDriveRefRecord>,
+    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        Err(KernelError::Internal {
+            message: "insert_chat_turn_with_drive_refs requires a transactional adapter override"
+                .to_string(),
+        })
+    }
+
+    fn list_message_drive_refs(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        message_id: &str,
+    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>>;
+
+    fn list_message_drive_refs_batch(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        message_ids: &[String],
+    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        let mut records = Vec::new();
+        for message_id in message_ids {
+            records.extend(self.list_message_drive_refs(tenant_id, organization_id, message_id)?);
+        }
+        Ok(records)
     }
 
     // -----------------------------------------------------------------------

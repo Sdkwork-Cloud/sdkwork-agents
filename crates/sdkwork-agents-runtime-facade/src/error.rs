@@ -25,6 +25,8 @@ use thiserror::Error;
 ///   live-interaction handler implementation.
 #[derive(Debug, Error)]
 pub enum RuntimeFacadeError {
+    #[error("invalid facade input: {0}")]
+    InvalidInput(String),
     /// The requested engine key is not supported or not registered.
     #[error("unsupported engineId \"{engine_key}\"")]
     UnsupportedEngine { engine_key: String },

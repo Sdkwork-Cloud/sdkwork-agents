@@ -3,6 +3,7 @@ import {
   getAgentsAppSdkClientWithSession,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
+import { uuid } from "@sdkwork/utils";
 import { extractOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-h5-core/sdk/pagination";
 
 import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";
@@ -139,10 +140,13 @@ export class AgentChatService {
     content: string,
     modelId?: string,
   ): Promise<ChatMessage> {
+    const requestId = uuid();
     const body = {
       content: content.trim(),
       contentType: "text/plain",
       requestedAt: new Date().toISOString(),
+      idempotencyKey: requestId,
+      clientRequestId: requestId,
       ...(modelId ? { modelId } : {}),
     };
     const response = await sendAgentChatMessageSync(

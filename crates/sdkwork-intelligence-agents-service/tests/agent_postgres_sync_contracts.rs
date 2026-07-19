@@ -2,13 +2,14 @@
 
 use sdkwork_intelligence_agents_service::{
     SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_MESSAGES, SQL_COUNT_AGENT_SESSIONS,
-    SQL_COUNT_AGENT_TASKS, SQL_INSERT_AGENT, SQL_INSERT_AGENT_COMPOSITION_SLOT,
-    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_MESSAGE, SQL_INSERT_AGENT_PROVIDER_BINDING,
-    SQL_INSERT_AGENT_SESSION, SQL_INSERT_AGENT_TASK, SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT,
-    SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_MESSAGES,
-    SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT, SQL_LIST_AGENT_PROVIDER_BINDINGS,
-    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS, SQL_NEXT_MESSAGE_SEQUENCE,
-    SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID, SQL_SELECT_AGENT_COMPOSITION_SLOT,
+    SQL_COUNT_AGENT_TASKS, SQL_INSERT_AGENT, SQL_INSERT_AGENT_CHAT_TURN,
+    SQL_INSERT_AGENT_COMPOSITION_SLOT, SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_MESSAGE,
+    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION, SQL_INSERT_AGENT_TASK,
+    SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT, SQL_LIST_AGENT_COMPOSITION_SLOTS,
+    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_MESSAGES, SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT,
+    SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS,
+    SQL_NEXT_MESSAGE_SEQUENCE, SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
+    SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_COMPOSITION_SLOT,
     SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_MESSAGE, SQL_SELECT_AGENT_PROVIDER_BINDING,
     SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_TASK, SQL_UPDATE_AGENT,
     SQL_UPDATE_AGENT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_MESSAGE,
@@ -109,10 +110,10 @@ fn assert_parameterized_query(sql: &str, query_name: &str) {
 fn assert_safe_insert(sql: &str, query_name: &str) {
     assert_parameterized_query(sql, query_name);
 
-    // INSERT should use VALUES ($1, $2, ...) pattern
+    // INSERT may use VALUES or INSERT ... SELECT when parent scope is resolved in SQL.
     assert!(
-        sql.contains("VALUES") || sql.contains("values"),
-        "{query_name} must be a valid INSERT statement with VALUES clause"
+        sql.contains("VALUES") || sql.contains("values") || sql.contains(" SELECT "),
+        "{query_name} must be a valid parameterized INSERT statement"
     );
 }
 
@@ -209,7 +210,7 @@ fn create_flow_casts_rfc3339_text_to_postgres_timestamptz() {
     assert!(SQL_INSERT_AGENT.contains("$18::timestamptz"));
     assert!(SQL_INSERT_AGENT.contains("$19::timestamptz"));
     assert!(SQL_INSERT_AGENT.contains("$20::timestamptz"));
-    assert!(SQL_INSERT_AUDIT_EVENT.contains("$13::timestamptz"));
+    assert!(SQL_INSERT_AUDIT_EVENT.contains("$15::timestamptz"));
     assert!(SQL_INSERT_AGENT_COMPOSITION_SLOT.contains("$16::timestamptz"));
     assert!(SQL_INSERT_AGENT_COMPOSITION_SLOT.contains("$17::timestamptz"));
     assert!(SQL_INSERT_AGENT_COMPOSITION_SLOT.contains("$18::timestamptz"));
@@ -233,15 +234,60 @@ fn postgres_message_sql_is_tenant_scoped() {
 }
 
 #[test]
+fn commercial_chat_expand_columns_are_populated_and_soft_deletes_are_hidden() {
+    for required in ["created_by", "updated_by", "last_message_sequence"] {
+        assert!(
+            SQL_INSERT_AGENT_SESSION.contains(required),
+            "session insert must populate {required}"
+        );
+    }
+    for required in [
+        "organization_id",
+        "owner_user_id",
+        "sender_type",
+        "sender_user_id",
+        "created_by",
+    ] {
+        assert!(
+            SQL_INSERT_AGENT_MESSAGE.contains(required),
+            "message insert must populate {required}"
+        );
+    }
+    assert!(SQL_INSERT_AGENT_MESSAGE.contains("FROM ai_agent_session"));
+    assert!(SQL_NEXT_MESSAGE_SEQUENCE.contains("last_message_sequence + 1"));
+    assert!(SQL_UPDATE_AGENT_SESSION.contains("last_message_sequence = GREATEST"));
+    for sql in [
+        SQL_SELECT_AGENT_SESSION,
+        SQL_LIST_AGENT_SESSIONS,
+        SQL_SELECT_AGENT_MESSAGE,
+        SQL_LIST_AGENT_MESSAGES,
+    ] {
+        assert!(sql.contains("deleted_at IS NULL"));
+    }
+}
+
+#[test]
+fn chat_turn_sql_uses_scoped_idempotency_and_links_messages() {
+    assert!(SQL_INSERT_AGENT_CHAT_TURN.contains("idempotency_key"));
+    assert!(SQL_INSERT_AGENT_CHAT_TURN.contains("response_message_id"));
+    assert!(SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY.contains("tenant_id = $1"));
+    assert!(SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY.contains("organization_id = $2"));
+    assert!(SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY.contains("owner_user_id = $3"));
+    assert!(SQL_INSERT_AGENT_MESSAGE.contains("turn_id"));
+}
+
+#[test]
 fn postgres_session_list_has_mandatory_pagination() {
     assert!(
-        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $6"),
+        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $8"),
         "SQL_LIST_AGENT_SESSIONS must have LIMIT parameter for mandatory pagination"
     );
     assert!(
-        SQL_LIST_AGENT_SESSIONS.contains("OFFSET $7"),
+        SQL_LIST_AGENT_SESSIONS.contains("OFFSET $9"),
         "SQL_LIST_AGENT_SESSIONS must have OFFSET parameter for page navigation"
     );
+    assert!(SQL_LIST_AGENT_SESSIONS.contains("organization_id = $2"));
+    assert!(SQL_LIST_AGENT_SESSIONS.contains("project_id = $4"));
 }
 
 #[test]

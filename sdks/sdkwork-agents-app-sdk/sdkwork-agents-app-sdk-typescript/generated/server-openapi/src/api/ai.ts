@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotRecord, AgentInteractionRecord, AgentMessageRecord, AgentProviderBindingRecord, AgentRecord, AgentRuntimeExecutionRecord, AgentSessionRecord, AgentTaskRecord, AnswerAgentInteractionRequest, AppCloseAgentSessionRequest, AppCreateAgentSessionRequest, ApproveAgentInteractionRequest, AppSendAgentChatMessageRequest, CancelAgentTaskRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentTaskRequest, McpServerMarketplaceRecord, RestoreAgentRequest, SdkWorkPageData, SdkWorkResourceData, UpdateAgentCompositionSlotRequest, UpdateAgentRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentChatTurnRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionRecord, AgentMessageFeedbackRecord, AgentMessageRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionRecord, AgentTaskRecord, AnswerAgentInteractionRequest, AppCloseAgentSessionRequest, AppCreateAgentSessionRequest, ApproveAgentInteractionRequest, AppSendAgentChatMessageRequest, AppUpdateAgentSessionRequest, CancelAgentChatTurnRequest, CancelAgentTaskRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentTaskRequest, Int64String, McpServerMarketplaceRecord, RestoreAgentRequest, SdkWorkPageData, SdkWorkResourceData, UpdateAgentCompositionSlotRequest, UpdateAgentMessageFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionUserStateRequest } from '../types';
 
 
 export interface AiAgentsMcpServersListParams {
@@ -174,6 +174,25 @@ export class AiAgentsInteractionsApi {
   }
 }
 
+export class AiAgentsChatTurnsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Retrieve one durable chat turn */
+  async retrieve(agentId: string, sessionId: string, turnId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turns/${serializePathParameter(turnId, { name: 'turnId', style: 'simple', explode: false })}`));
+  }
+
+/** Cancel one requested or running chat turn */
+  async cancel(agentId: string, sessionId: string, turnId: string, body: CancelAgentChatTurnRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turns/${serializePathParameter(turnId, { name: 'turnId', style: 'simple', explode: false })}/cancel`), body, undefined, undefined, 'application/json');
+  }
+}
+
 export interface AiAgentsMessagesListParams {
   page?: number;
   pageSize?: number;
@@ -212,11 +231,82 @@ export class AiAgentsMessagesApi {
   async retrieve(agentId: string, sessionId: string, messageId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
     return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages/${serializePathParameter(messageId, { name: 'messageId', style: 'simple', explode: false })}`));
   }
+
+/** Send a chat message and return one complete JSON response */
+  async complete(agentId: string, sessionId: string, body: AppSendAgentChatMessageRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages/complete`), body, undefined, undefined, 'application/json');
+  }
+}
+
+export interface AiAgentsMessageFeedbackListParams {
+  page?: number;
+  pageSize?: number;
+}
+
+export class AiAgentsMessageFeedbackApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List the authenticated user's feedback for assistant messages in a session */
+  async list(agentId: string, sessionId: string, params?: AiAgentsMessageFeedbackListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/message_feedback`), query));
+  }
+
+/** Submit, change, or clear assistant message feedback */
+  async update(agentId: string, sessionId: string, messageId: string, body: UpdateAgentMessageFeedbackRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/messages/${serializePathParameter(messageId, { name: 'messageId', style: 'simple', explode: false })}/feedback`), body, undefined, undefined, 'application/json');
+  }
+}
+
+export interface AiAgentsSessionUserStatesListParams {
+  page?: number;
+  pageSize?: number;
+  pinnedOnly?: boolean;
+  includeHidden?: boolean;
+}
+
+export class AiAgentsSessionUserStatesApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List per-user state for chat sessions owned by the authenticated user */
+  async list(agentId: string, params?: AiAgentsSessionUserStatesListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'pinnedOnly', value: params?.pinnedOnly, style: 'form', explode: true, allowReserved: false },
+      { name: 'includeHidden', value: params?.includeHidden, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/user_states`), query));
+  }
+
+/** Retrieve the authenticated user's state for one chat session */
+  async retrieve(agentId: string, sessionId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/user_state`));
+  }
+
+/** Update the authenticated user's state for one chat session */
+  async update(agentId: string, sessionId: string, body: UpdateAgentSessionUserStateRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/user_state`), body, undefined, undefined, 'application/json');
+  }
 }
 
 export interface AiAgentsSessionsListParams {
   page?: number;
   pageSize?: number;
+  projectId?: string;
 }
 
 export class AiAgentsSessionsApi {
@@ -232,6 +322,7 @@ export class AiAgentsSessionsApi {
     const query = buildQueryString([
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'projectId', value: params?.projectId, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), query));
   }
@@ -246,9 +337,127 @@ export class AiAgentsSessionsApi {
     return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}`));
   }
 
+/** Rename or move one chat session */
+  async update(agentId: string, sessionId: string, body: AppUpdateAgentSessionRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
+  }
+
+/** Soft delete one chat session */
+  async delete(agentId: string, sessionId: string): Promise<void> {
+    return this.client.delete<void>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}`));
+  }
+
 /** Close one chat session */
   async close(agentId: string, sessionId: string, body: AppCloseAgentSessionRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
     return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/close`), body, undefined, undefined, 'application/json');
+  }
+}
+
+export interface AiAgentsProjectCompositionSlotsListParams {
+  page?: number;
+  pageSize?: number;
+  slotKind?: AgentCompositionSlotKind;
+  enabled?: boolean;
+}
+
+export interface AiAgentsProjectCompositionSlotsDeleteParams {
+  expectedVersion: Int64String;
+}
+
+export class AiAgentsProjectCompositionSlotsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List composition slots for a commercial chat project */
+  async list(projectId: string, params?: AiAgentsProjectCompositionSlotsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'slotKind', value: params?.slotKind, style: 'form', explode: true, allowReserved: false },
+      { name: 'enabled', value: params?.enabled, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/composition_slots`), query));
+  }
+
+/** Add a composition slot to a commercial chat project */
+  async create(projectId: string, body: CreateAgentProjectCompositionSlotRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/composition_slots`), body, undefined, undefined, 'application/json');
+  }
+
+/** Retrieve a project composition slot */
+  async retrieve(projectId: string, slotId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`));
+  }
+
+/** Update a project composition slot */
+  async update(projectId: string, slotId: string, body: UpdateAgentProjectCompositionSlotRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
+  }
+
+/** Soft-delete a project composition slot */
+  async delete(projectId: string, slotId: string, params: AiAgentsProjectCompositionSlotsDeleteParams): Promise<void> {
+    const query = buildQueryString([
+      { name: 'expected_version', value: params.expectedVersion, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.delete<void>(appendQueryString(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/composition_slots/${serializePathParameter(slotId, { name: 'slotId', style: 'simple', explode: false })}`), query));
+  }
+}
+
+export interface AiAgentsProjectsListParams {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: AgentProjectStatus;
+  includeDeleted?: boolean;
+}
+
+export class AiAgentsProjectsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List commercial chat projects for the current user */
+  async list(params?: AiAgentsProjectsListParams): Promise<SdkWorkPageData & Record<string, unknown>> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'includeDeleted', value: params?.includeDeleted, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.get<SdkWorkPageData & Record<string, unknown>>(appendQueryString(appApiPath(`/ai/projects`), query));
+  }
+
+/** Create a commercial chat project */
+  async create(body: CreateAgentProjectRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects`), body, undefined, undefined, 'application/json');
+  }
+
+/** Retrieve a commercial chat project */
+  async retrieve(projectId: string): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.get<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}`));
+  }
+
+/** Update a commercial chat project */
+  async update(projectId: string, body: UpdateAgentProjectRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.patch<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}`), body, undefined, undefined, 'application/json');
+  }
+
+/** Soft-delete a commercial chat project */
+  async delete(projectId: string): Promise<void> {
+    return this.client.delete<void>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}`));
+  }
+
+/** Archive a commercial chat project */
+  async archive(projectId: string, body: AgentProjectMutationRequest): Promise<SdkWorkResourceData & Record<string, unknown>> {
+    return this.client.post<SdkWorkResourceData & Record<string, unknown>>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/archive`), body, undefined, undefined, 'application/json');
   }
 }
 
@@ -326,8 +535,13 @@ export class AiAgentsApi {
   public readonly providerBindings: AiAgentsProviderBindingsApi;
   public readonly previewResponses: AiAgentsPreviewResponsesApi;
   public readonly promptOptimizations: AiAgentsPromptOptimizationsApi;
+  public readonly projects: AiAgentsProjectsApi;
+  public readonly projectCompositionSlots: AiAgentsProjectCompositionSlotsApi;
   public readonly sessions: AiAgentsSessionsApi;
+  public readonly sessionUserStates: AiAgentsSessionUserStatesApi;
+  public readonly messageFeedback: AiAgentsMessageFeedbackApi;
   public readonly messages: AiAgentsMessagesApi;
+  public readonly chatTurns: AiAgentsChatTurnsApi;
   public readonly interactions: AiAgentsInteractionsApi;
   public readonly tasks: AiAgentsTasksApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
@@ -339,8 +553,13 @@ export class AiAgentsApi {
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
     this.previewResponses = new AiAgentsPreviewResponsesApi(client);
     this.promptOptimizations = new AiAgentsPromptOptimizationsApi(client);
+    this.projects = new AiAgentsProjectsApi(client);
+    this.projectCompositionSlots = new AiAgentsProjectCompositionSlotsApi(client);
     this.sessions = new AiAgentsSessionsApi(client);
+    this.sessionUserStates = new AiAgentsSessionUserStatesApi(client);
+    this.messageFeedback = new AiAgentsMessageFeedbackApi(client);
     this.messages = new AiAgentsMessagesApi(client);
+    this.chatTurns = new AiAgentsChatTurnsApi(client);
     this.interactions = new AiAgentsInteractionsApi(client);
     this.tasks = new AiAgentsTasksApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);

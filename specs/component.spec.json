@@ -71,6 +71,16 @@
       "purpose": "Kernel SPI gap analysis, commercial readiness, and improvement roadmap."
     },
     {
+      "file": "AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md",
+      "path": "specs/AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md",
+      "purpose": "Mandatory sdkwork-im consumer direction and Agents/IM database ownership boundary."
+    },
+    {
+      "file": "AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
+      "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
+      "purpose": "Active Agents database contract and inactive frontend-aligned chat/project target design."
+    },
+    {
       "file": "agents-birdcoder-alignment.spec.json",
       "path": "specs/agents-birdcoder-alignment.spec.json",
       "purpose": "Machine-readable agents/kernel/BirdCoder alignment tracker."
@@ -127,7 +137,10 @@
         "integrationMode": "composition-slot",
         "slotKind": "memory",
         "reverseDependencyPolicy": "forbidden",
-        "generatedTransportImportPolicy": "forbidden"
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/memory-app-sdk"
+        }
       },
       {
         "workspace": "sdkwork-knowledgebase",
@@ -163,7 +176,10 @@
         "integrationMode": "composition-slot",
         "slotKind": "prompt",
         "reverseDependencyPolicy": "forbidden",
-        "generatedTransportImportPolicy": "forbidden"
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/prompts-app-sdk"
+        }
       },
       {
         "workspace": "sdkwork-mcp",

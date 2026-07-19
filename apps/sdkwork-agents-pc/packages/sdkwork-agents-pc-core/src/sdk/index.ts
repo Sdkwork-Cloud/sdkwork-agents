@@ -2,6 +2,8 @@ export * from "./agentsAppSdkClient";
 export * from "./driveAppSdkClient";
 export * from "./driveUploadService";
 export * from "./knowledgebaseAppSdkClient";
+export * from "./memoryAppSdkClient";
+export * from "./promptsAppSdkClient";
 export * from "./runtimeEnv";
 export * from "./skillsAppSdkClient";
 export * from "./voiceAppSdkClient";

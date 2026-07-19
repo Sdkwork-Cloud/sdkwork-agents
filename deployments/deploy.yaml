@@ -37,12 +37,3 @@ profiles:
         upstreams:
           application: http://127.0.0.1:8095
           platform: http://127.0.0.1:3900
-
-  standalone.development:
-    install:
-      layout: source-tree
-    # Source development profile binds the application ingress to 127.0.0.1:8095.
-    expose: []
-    packages: []
-    overrides:
-      allowInsecureTls: true

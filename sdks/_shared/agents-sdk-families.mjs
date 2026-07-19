@@ -27,6 +27,45 @@ const APPBASE_BACKEND_DEPENDENCY = {
   },
 };
 
+const DRIVE_APP_DEPENDENCY = {
+  workspace: 'sdkwork-drive-app-sdk',
+  role: 'drive-uploader-file-storage-capability',
+  required: true,
+  dependencyMode: 'consumer-sdk',
+  apiPrefix: '/app/v3/api',
+  apiAuthority: 'sdkwork-drive.app',
+  generatedTransportImportPolicy: 'forbidden',
+  packageByLanguage: {
+    typescript: '@sdkwork/drive-app-sdk',
+  },
+};
+
+const PROMPTS_APP_DEPENDENCY = {
+  workspace: 'sdkwork-prompts-app-sdk',
+  role: 'project-instructions-capability',
+  required: true,
+  dependencyMode: 'consumer-sdk',
+  apiPrefix: '/app/v3/api',
+  apiAuthority: 'sdkwork-prompts-app-api',
+  generatedTransportImportPolicy: 'forbidden',
+  packageByLanguage: {
+    typescript: '@sdkwork/prompts-app-sdk',
+  },
+};
+
+const MEMORY_APP_DEPENDENCY = {
+  workspace: 'sdkwork-memory-app-sdk',
+  role: 'project-memory-selection-capability',
+  required: true,
+  dependencyMode: 'consumer-sdk',
+  apiPrefix: '/app/v3/api',
+  apiAuthority: 'sdkwork-memory.app',
+  generatedTransportImportPolicy: 'forbidden',
+  packageByLanguage: {
+    typescript: '@sdkwork/memory-app-sdk',
+  },
+};
+
 export const AGENTS_SDK_FAMILIES = [
   {
     key: 'open',
@@ -67,7 +106,12 @@ export const AGENTS_SDK_FAMILIES = [
     audience: 'app, desktop, mobile, H5, and user-facing clients',
     capability: 'agents-app-sdk',
     sdkOwner: AGENTS_SDK_OWNER,
-    sdkDependencies: [APPBASE_APP_DEPENDENCY],
+    sdkDependencies: [
+      APPBASE_APP_DEPENDENCY,
+      DRIVE_APP_DEPENDENCY,
+      PROMPTS_APP_DEPENDENCY,
+      MEMORY_APP_DEPENDENCY,
+    ],
   },
   {
     key: 'backend',

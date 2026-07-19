@@ -1,4 +1,5 @@
 import type { Int64String } from './int64-string';
+import type { MediaResource } from './media-resource';
 
 export interface AgentMessageRecord {
   messageId: string;
@@ -14,6 +15,8 @@ export interface AgentMessageRecord {
   modelId?: string;
   providerId?: string;
   parentMessageId?: string;
+  turnId?: string | null;
+  mediaResources: MediaResource[];
   createdAt: string;
   updatedAt: string;
 }

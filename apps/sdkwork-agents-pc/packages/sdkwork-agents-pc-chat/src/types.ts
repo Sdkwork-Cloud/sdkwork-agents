@@ -6,6 +6,8 @@ export interface ChatMessage {
   text: string;
   images?: string[];
   mediaResources?: import('@sdkwork/agents-pc-core/sdk').AgentsDriveMediaResource[];
+  feedback?: 'up' | 'down';
+  feedbackVersion?: string;
 }
 
 export interface ChatSession {
@@ -13,4 +15,8 @@ export interface ChatSession {
   title: string;
   messages: ChatMessage[];
   updatedAt: number;
+  version: string;
+  projectId?: string;
+  pinned?: boolean;
+  userStateVersion?: string;
 }

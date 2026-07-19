@@ -30,7 +30,7 @@ import {
   FolderPlus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { ChatSession } from "@sdkwork/agents-pc-chat";
+import { ChatSession, type ChatProject } from "@sdkwork/agents-pc-chat";
 import { cn } from "@sdkwork/agents-pc-commons";
 import { BirdCoderModal } from "./BirdCoderModal";
 import { SearchModal } from "./SearchModal";
@@ -48,15 +48,17 @@ export interface SidebarProps {
   onSelectSession: (id: string) => void;
   onDeleteSession: (e: React.MouseEvent, id: string) => void;
   onRenameSession: (id: string, newTitle: string) => void;
+  onTogglePin: (id: string, pinned: boolean) => Promise<boolean>;
+  onMoveSessionToProject: (sessionId: string, project: ChatProject) => void;
   onOpenUserProfile: (tab: "profile" | "billing") => void;
   onOpenFileLibrary: () => void;
-  projects: string[];
+  projects: ChatProject[];
   activeProject?: string | null;
-  onProjectSelect?: (project: string) => void;
-  onProjectSettings?: (project: string) => void;
+  onProjectSelect?: (project: ChatProject) => void;
+  onProjectSettings?: (project: ChatProject) => void;
   onProjectCreate?: (title: string) => void;
-  onProjectRename?: (oldTitle: string, newTitle: string) => void;
-  onProjectDelete?: (title: string) => void;
+  onProjectRename?: (project: ChatProject, newTitle: string) => void;
+  onProjectDelete?: (project: ChatProject) => void;
 }
 
 const AVATAR_COLOR_TEMPLATES = [
@@ -77,6 +79,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectSession,
   onDeleteSession,
   onRenameSession,
+  onTogglePin,
+  onMoveSessionToProject,
   onOpenUserProfile,
   onOpenFileLibrary,
   projects,
@@ -101,16 +105,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Real-time search filter
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Storing pinned conversation IDs in localStorage for high-fidelity state persistence
-  const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem("chat_pinned_ids");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
 
   // Action feedback/alert state local toast
   const [sidebarToast, setSidebarToast] = useState("");
@@ -164,19 +158,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, [tCommon]);
 
-  // Save pinned state changes
   const togglePin = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    setPinnedIds((prev) => {
-      const updated = prev.includes(sessionId)
-        ? prev.filter((id) => id !== sessionId)
-        : [...prev, sessionId];
-      localStorage.setItem("chat_pinned_ids", JSON.stringify(updated));
-      return updated;
-    });
-    setSidebarToast(
-      pinnedIds.includes(sessionId) ? t("unpinnedToast") : t("pinnedToast"),
-    );
+    const wasPinned = sessions.find((session) => session.id === sessionId)?.pinned ?? false;
+    void onTogglePin(sessionId, !wasPinned)
+      .then((updated) => {
+        if (updated) {
+          setSidebarToast(wasPinned ? t("unpinnedToast") : t("pinnedToast"));
+        }
+      })
+      .catch(() => undefined);
   };
 
   useEffect(() => {
@@ -198,10 +189,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Split sessions into Pinned and Recent categories
   const pinnedSessions = filteredSessions.filter((s) =>
-    pinnedIds.includes(s.id),
+    s.pinned,
   );
   const recentSessions = filteredSessions.filter(
-    (s) => !pinnedIds.includes(s.id),
+    (s) => !s.pinned,
   );
 
   return (
@@ -329,9 +320,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         setActiveDropdown={setActiveDropdown}
                         t={t}
                         projectsList={projects}
-                        onMoveToProject={(project) =>
-                          setSidebarToast(`已移动到 ${project}`)
-                        }
+                        onMoveToProject={(project) => {
+                          void onMoveSessionToProject(session.id, project);
+                          setSidebarToast(`已移动到 ${project.name}`);
+                        }}
                         canDelete={sessions.length > 1}
                       />
                     ))}
@@ -368,9 +360,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         setActiveDropdown={setActiveDropdown}
                         t={t}
                         projectsList={projects}
-                        onMoveToProject={(project) =>
-                          setSidebarToast(`已移动到 ${project}`)
-                        }
+                        onMoveToProject={(project) => {
+                          void onMoveSessionToProject(session.id, project);
+                          setSidebarToast(`已移动到 ${project.name}`);
+                        }}
                         canDelete={sessions.length > 1}
                       />
                     ))}

@@ -27,7 +27,8 @@ test('development bootstrap access tokens come from the canonical IAM helper', (
   assert.ok(signature.length > 0);
   assert.equal(claims.app_id, 'sdkwork-agents');
   assert.equal(claims.environment, 'development');
-  assert.equal(claims.token_kind, 'access');
+  assert.equal(claims.token_type, 'access');
+  assert.equal(claims.login_scope, 'TENANT');
   assert.equal(claims.tenant_id, '100001');
   assert.equal(claims.organization_id, '0');
 });

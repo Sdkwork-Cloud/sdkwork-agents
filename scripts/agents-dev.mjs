@@ -74,19 +74,31 @@ function resolveSelectedProfile() {
 }
 
 function assertLocallyRunnableProfile() {
-  if (selectedProfile.deploymentProfile !== 'standalone' || selectedProfile.environment !== 'development') {
+  if (selectedProfile.environment !== 'development') {
     throw new Error(
-      `pnpm dev validates ${selectedProfile.profileId} but only runs standalone.development locally. Use the selected profile's deployment orchestration for ${selectedProfile.profileId}.`,
+      `pnpm dev only runs development profiles, received ${selectedProfile.profileId}.`,
     );
-  }
-  if (!applicationIngressProcess?.crate) {
-    throw new Error(`${selectedProfile.profileId} must declare application.public-ingress in topology orchestration`);
   }
   if (!pcRendererProcess?.package || !pcRendererProcess.script) {
     throw new Error(`${selectedProfile.profileId} must declare pc-renderer in topology orchestration`);
   }
-  if (!healthSurfaces.includes('application.public-ingress')) {
-    throw new Error(`${selectedProfile.profileId} must health-check application.public-ingress`);
+  if (selectedProfile.deploymentProfile === 'standalone') {
+    if (!applicationIngressProcess?.crate) {
+      throw new Error(`${selectedProfile.profileId} must declare application.public-ingress in topology orchestration`);
+    }
+    if (!healthSurfaces.includes('application.public-ingress')) {
+      throw new Error(`${selectedProfile.profileId} must health-check application.public-ingress`);
+    }
+    return;
+  }
+  for (const [name, value] of [
+    ['application public URL', runtimeEnv.SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL],
+    ['platform API gateway URL', runtimeEnv.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL],
+  ]) {
+    const url = new URL(value ?? '');
+    if (url.protocol !== 'https:' || ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(url.hostname)) {
+      throw new Error(`${selectedProfile.profileId} ${name} must be an explicit remote HTTPS URL`);
+    }
   }
 }
 
@@ -237,27 +249,32 @@ try {
   reportResolvedProfile();
   assertLocallyRunnableProfile();
   ensureBuildCriticalSources();
-  const healthyGateway = await gatewayIsHealthy();
-  if (healthyGateway && gatewayProfileMatchesRuntime()) {
-    console.log(`[sdkwork-agents-dev] reusing healthy API gateway: ${gatewayHealthUrl}`);
-  } else {
-    if (healthyGateway) {
-      throw new Error(
-        `A healthy API gateway is already listening at ${gatewayHealthUrl}, but its profile does not match ${selectedProfile.profileId}. Stop that gateway before running pnpm dev.`,
-      );
+  if (selectedProfile.deploymentProfile === 'standalone') {
+    const healthyGateway = await gatewayIsHealthy();
+    if (healthyGateway && gatewayProfileMatchesRuntime()) {
+      console.log(`[sdkwork-agents-dev] reusing healthy API gateway: ${gatewayHealthUrl}`);
+    } else {
+      if (healthyGateway) {
+        throw new Error(
+          `A healthy API gateway is already listening at ${gatewayHealthUrl}, but its profile does not match ${selectedProfile.profileId}. Stop that gateway before running pnpm dev.`,
+        );
+      }
+      ownsGateway = true;
+      start('cargo', ['run', '-p', applicationIngressProcess.crate, '--quiet'], {
+        env: {
+          SDKWORK_AGENTS_APPLICATION_PUBLIC_INGRESS_BIND: gatewayBind,
+          SDKWORK_AGENT_SERVER_BIND: gatewayBind,
+        },
+      });
+      await waitForGateway();
+      writeGatewayProfileMarker();
     }
-    ownsGateway = true;
-    start('cargo', ['run', '-p', applicationIngressProcess.crate, '--quiet'], {
-      env: {
-        SDKWORK_AGENTS_APPLICATION_PUBLIC_INGRESS_BIND: gatewayBind,
-        SDKWORK_AGENT_SERVER_BIND: gatewayBind,
-      },
-    });
-    await waitForGateway();
-    writeGatewayProfileMarker();
+    console.log(`[sdkwork-agents-dev] API health: ${gatewayHealthUrl}`);
+  } else {
+    console.log(
+      `[sdkwork-agents-dev] using deployed cloud APIs: ${runtimeEnv.SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL}`,
+    );
   }
-
-  console.log(`[sdkwork-agents-dev] API health: ${gatewayHealthUrl}`);
   start(
     'pnpm',
     ['--filter', pcRendererProcess.package, 'exec', pcRendererProcess.script, '--host', webHost, '--port', webPort, '--strictPort'],

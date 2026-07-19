@@ -175,7 +175,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </div>
       <div className="text-center mt-4 text-[11px] text-gray-400 dark:text-gray-500 font-medium pointer-events-auto">
-        ChatGPT 也可能会犯错。请核查重要信息。
+        {t('disclaimer')}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 mod commands;
@@ -7,21 +8,28 @@ use crate::chat_runtime::{
     complete_with_timeout, is_capacity_error, is_inference_error, ChatCompleter,
     ChatCompletionInput, ContractChatCompleter, CHAT_COMPLETION_TIMEOUT,
 };
+use crate::chat_turn::{AgentChatTurnRecord, AgentChatTurnStatus};
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
-    AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord,
-    AgentInteractionStatus, AgentMessageRecord, AgentMessageRole, AgentMessageStatus,
-    AgentProviderBindingRecord, AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
-    AgentRuntimeExecutionStatus, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord,
-    AgentTaskStatus, AgentVisibility, MarketplaceAuditPayload, MessageAuditPayload,
-    ProviderBindingAuditPayload, RuntimeExecutionAuditPayload, SessionAuditPayload,
-    TaskAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
+    AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
+    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
+    AgentMessageDriveRefRecord, AgentMessageFeedbackRecord, AgentMessageMediaRole,
+    AgentMessageRecord, AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord,
+    AgentResourceType, AgentResourceUserStateRecord, AgentRuntimeExecutionOperation,
+    AgentRuntimeExecutionRecord, AgentRuntimeExecutionStatus, AgentSessionRecord,
+    AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility, MarketplaceAuditPayload,
+    MessageAuditPayload, ProviderBindingAuditPayload, RuntimeExecutionAuditPayload,
+    SessionAuditPayload, TaskAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{
     offset_paginated_result, AgentAuditSink, AgentRepository, MessageListQuery, PaginatedResult,
     PaginationParams, ProviderBindingListQuery, CHAT_CONTEXT_MESSAGE_LIMIT,
     MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,
+};
+use crate::project::{
+    AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
+    AgentProjectStatus, AgentProjectVisibility,
 };
 use crate::runtime_facade_bridge::{
     execute_preview_response, execute_prompt_optimization, RUNTIME_MODE_CONTRACT_FALLBACK,
@@ -31,11 +39,362 @@ use crate::validation::{
     is_trimmed_blank, require_non_blank, validate_capabilities, validate_standard_id,
 };
 use sdkwork_agent_kernel::{
-    KernelError, KernelEvent, KernelEventRedaction, KernelEventSeverity, KernelEventSource,
-    KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider, PolicyRequest,
-    PolicySubject,
+    KernelError, KernelErrorKind, KernelEvent, KernelEventRedaction, KernelEventSeverity,
+    KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider,
+    PolicyRequest, PolicySubject,
 };
 use sdkwork_agents_contract::agents_allow_contract_runtime_fallback;
+use sdkwork_utils_rust::{sha256_hash, trim};
+
+const MAX_CHAT_MEDIA_RESOURCES: usize = 10;
+const MAX_CHAT_MEDIA_SNAPSHOT_BYTES: usize = 16 * 1024;
+const MAX_CHAT_MEDIA_SNAPSHOTS_TOTAL_BYTES: usize = 64 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedMessageDriveResource {
+    media_role: AgentMessageMediaRole,
+    drive_space_id: String,
+    drive_node_id: String,
+    drive_uri: String,
+    media_resource_id: String,
+    object_blob_id: Option<String>,
+    resource_snapshot_json: String,
+    resource_hash: String,
+    alt_text: Option<String>,
+    sort_order: u32,
+}
+
+fn bounded_optional_media_string(
+    value: &Option<String>,
+    field_name: &str,
+    max_bytes: usize,
+) -> KernelResult<Option<String>> {
+    let Some(value) = value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    if value.len() > max_bytes {
+        return Err(KernelError::validation(format!(
+            "{field_name} exceeds {max_bytes} bytes"
+        )));
+    }
+    Ok(Some(value.to_string()))
+}
+
+fn reject_forbidden_media_metadata(value: &serde_json::Value) -> KernelResult<()> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let normalized_key = key
+                    .chars()
+                    .filter(|value| value.is_ascii_alphanumeric())
+                    .flat_map(char::to_lowercase)
+                    .collect::<String>();
+                if matches!(
+                    normalized_key.as_str(),
+                    "bucketid"
+                        | "bucketname"
+                        | "objectkey"
+                        | "presignedurl"
+                        | "signedurl"
+                        | "downloadurl"
+                        | "uploadurl"
+                ) {
+                    return Err(KernelError::validation(format!(
+                        "media metadata field {key} is forbidden"
+                    )));
+                }
+                reject_forbidden_media_metadata(child)?;
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                reject_forbidden_media_metadata(item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn parse_drive_uri(uri: &str) -> KernelResult<(String, String)> {
+    const PREFIX: &str = "drive://spaces/";
+    let remainder = uri.strip_prefix(PREFIX).ok_or_else(|| {
+        KernelError::validation(
+            "mediaResources.uri must use drive://spaces/{spaceId}/nodes/{nodeId}",
+        )
+    })?;
+    let (space_id, node_id) = remainder.split_once("/nodes/").ok_or_else(|| {
+        KernelError::validation(
+            "mediaResources.uri must use drive://spaces/{spaceId}/nodes/{nodeId}",
+        )
+    })?;
+    if space_id.is_empty()
+        || node_id.is_empty()
+        || space_id.len() > 128
+        || node_id.len() > 128
+        || space_id.contains(['/', '?', '#'])
+        || node_id.contains(['/', '?', '#'])
+    {
+        return Err(KernelError::validation(
+            "mediaResources.uri contains an invalid Drive space or node id",
+        ));
+    }
+    Ok((space_id.to_string(), node_id.to_string()))
+}
+
+fn metadata_drive_value<'a>(
+    metadata: &'a serde_json::Map<String, serde_json::Value>,
+    flat_key: &str,
+    nested_key: &str,
+) -> Option<&'a str> {
+    metadata
+        .get(flat_key)
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            metadata
+                .get("drive")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|drive| drive.get(nested_key))
+                .and_then(serde_json::Value::as_str)
+        })
+}
+
+fn normalize_message_drive_resources(
+    resources: &[AgentMessageMediaResourceInput],
+) -> KernelResult<Vec<NormalizedMessageDriveResource>> {
+    if resources.len() > MAX_CHAT_MEDIA_RESOURCES {
+        return Err(KernelError::validation(format!(
+            "mediaResources exceeds maximum item count of {MAX_CHAT_MEDIA_RESOURCES}"
+        )));
+    }
+
+    let mut normalized = Vec::with_capacity(resources.len());
+    let mut uniqueness = std::collections::HashSet::with_capacity(resources.len());
+    let mut total_snapshot_bytes = 0usize;
+    for (sort_order, resource) in resources.iter().enumerate() {
+        let kind = resource.kind.trim();
+        if !matches!(
+            kind,
+            "image" | "video" | "audio" | "voice" | "document" | "archive" | "model" | "other"
+        ) {
+            return Err(KernelError::validation("mediaResources.kind is invalid"));
+        }
+        if resource.source.trim() != "drive" {
+            return Err(KernelError::validation(
+                "mediaResources.source must be drive",
+            ));
+        }
+        if resource.uri.len() > 512 {
+            return Err(KernelError::validation(
+                "mediaResources.uri exceeds 512 bytes",
+            ));
+        }
+        let (drive_space_id, drive_node_id) = parse_drive_uri(resource.uri.trim())?;
+        if resource.id.trim() != drive_node_id {
+            return Err(KernelError::validation(
+                "mediaResources.id must equal the Drive node id",
+            ));
+        }
+
+        let media_role = match kind {
+            "image" => AgentMessageMediaRole::Image,
+            "voice" => AgentMessageMediaRole::Voice,
+            _ => AgentMessageMediaRole::Attachment,
+        };
+        if !uniqueness.insert((drive_node_id.clone(), media_role.as_str())) {
+            return Err(KernelError::conflict("duplicate message Drive reference"));
+        }
+
+        let object_blob_id =
+            bounded_optional_media_string(&resource.object_blob_id, "objectBlobId", 128)?;
+        let file_name = bounded_optional_media_string(&resource.file_name, "fileName", 512)?;
+        let mime_type = bounded_optional_media_string(&resource.mime_type, "mimeType", 256)?;
+        let size_bytes = bounded_optional_media_string(&resource.size_bytes, "sizeBytes", 32)?;
+        if let Some(value) = size_bytes.as_deref() {
+            if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(KernelError::validation(
+                    "mediaResources.sizeBytes must contain decimal digits",
+                ));
+            }
+        }
+        let alt_text = bounded_optional_media_string(&resource.alt_text, "altText", 512)?;
+        let title = bounded_optional_media_string(&resource.title, "title", 255)?;
+        if let Some(duration) = resource.duration_seconds {
+            if !duration.is_finite() || duration < 0.0 {
+                return Err(KernelError::validation(
+                    "mediaResources.durationSeconds must be finite and non-negative",
+                ));
+            }
+        }
+
+        let checksum = resource
+            .checksum
+            .as_ref()
+            .map(|value| -> KernelResult<serde_json::Value> {
+                let object = value.as_object().ok_or_else(|| {
+                    KernelError::validation("mediaResources.checksum must be an object")
+                })?;
+                let algorithm = object
+                    .get("algorithm")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| {
+                        KernelError::validation("mediaResources.checksum.algorithm is required")
+                    })?;
+                if !matches!(algorithm, "sha256" | "md5" | "etag") {
+                    return Err(KernelError::validation(
+                        "mediaResources.checksum.algorithm is invalid",
+                    ));
+                }
+                let value = object
+                    .get("value")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty() && value.len() <= 256)
+                    .ok_or_else(|| {
+                        KernelError::validation("mediaResources.checksum.value is invalid")
+                    })?;
+                Ok(serde_json::json!({"algorithm": algorithm, "value": value}))
+            })
+            .transpose()?;
+
+        let access = resource
+            .access
+            .as_ref()
+            .map(|value| -> KernelResult<serde_json::Value> {
+                let object = value.as_object().ok_or_else(|| {
+                    KernelError::validation("mediaResources.access must be an object")
+                })?;
+                let visibility = object
+                    .get("visibility")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| {
+                        KernelError::validation("mediaResources.access.visibility is required")
+                    })?;
+                if !matches!(
+                    visibility,
+                    "private" | "tenant" | "organization" | "public" | "signed"
+                ) {
+                    return Err(KernelError::validation(
+                        "mediaResources.access.visibility is invalid",
+                    ));
+                }
+                let mut sanitized = serde_json::Map::new();
+                sanitized.insert("visibility".to_string(), visibility.into());
+                if let Some(expires_at) = object
+                    .get("expiresAt")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| value.len() <= 64)
+                {
+                    sanitized.insert("expiresAt".to_string(), expires_at.into());
+                }
+                Ok(serde_json::Value::Object(sanitized))
+            })
+            .transpose()?;
+
+        let metadata = resource
+            .metadata
+            .as_ref()
+            .map(|value| -> KernelResult<serde_json::Value> {
+                reject_forbidden_media_metadata(value)?;
+                let object = value.as_object().ok_or_else(|| {
+                    KernelError::validation("mediaResources.metadata must be an object")
+                })?;
+                if metadata_drive_value(object, "driveSpaceId", "spaceId")
+                    .is_some_and(|value| value != drive_space_id)
+                    || metadata_drive_value(object, "driveNodeId", "nodeId")
+                        .is_some_and(|value| value != drive_node_id)
+                {
+                    return Err(KernelError::validation(
+                        "mediaResources.metadata Drive identity does not match uri",
+                    ));
+                }
+                let mut drive = serde_json::Map::new();
+                drive.insert("spaceId".to_string(), drive_space_id.clone().into());
+                drive.insert("nodeId".to_string(), drive_node_id.clone().into());
+                for key in ["spaceType", "nodeVersion"] {
+                    if let Some(value) = metadata_drive_value(object, key, key)
+                        .filter(|value| !value.is_empty() && value.len() <= 128)
+                    {
+                        drive.insert(key.to_string(), value.into());
+                    }
+                }
+                Ok(serde_json::json!({"drive": drive}))
+            })
+            .transpose()?
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "drive": {
+                        "spaceId": drive_space_id,
+                        "nodeId": drive_node_id,
+                    }
+                })
+            });
+
+        let mut snapshot = serde_json::Map::new();
+        snapshot.insert("id".to_string(), drive_node_id.clone().into());
+        snapshot.insert("kind".to_string(), kind.into());
+        snapshot.insert("source".to_string(), "drive".into());
+        snapshot.insert("uri".to_string(), resource.uri.trim().into());
+        for (key, value) in [
+            ("objectBlobId", object_blob_id.as_ref()),
+            ("fileName", file_name.as_ref()),
+            ("mimeType", mime_type.as_ref()),
+            ("sizeBytes", size_bytes.as_ref()),
+            ("altText", alt_text.as_ref()),
+            ("title", title.as_ref()),
+        ] {
+            if let Some(value) = value {
+                snapshot.insert(key.to_string(), value.clone().into());
+            }
+        }
+        if let Some(value) = checksum {
+            snapshot.insert("checksum".to_string(), value);
+        }
+        if let Some(value) = resource.width {
+            snapshot.insert("width".to_string(), value.into());
+        }
+        if let Some(value) = resource.height {
+            snapshot.insert("height".to_string(), value.into());
+        }
+        if let Some(value) = resource.duration_seconds {
+            snapshot.insert("durationSeconds".to_string(), serde_json::json!(value));
+        }
+        if let Some(value) = access {
+            snapshot.insert("access".to_string(), value);
+        }
+        snapshot.insert("metadata".to_string(), metadata);
+
+        let resource_snapshot_json = serde_json::Value::Object(snapshot).to_string();
+        if resource_snapshot_json.len() > MAX_CHAT_MEDIA_SNAPSHOT_BYTES {
+            return Err(KernelError::validation(format!(
+                "mediaResources snapshot exceeds {MAX_CHAT_MEDIA_SNAPSHOT_BYTES} bytes"
+            )));
+        }
+        total_snapshot_bytes = total_snapshot_bytes.saturating_add(resource_snapshot_json.len());
+        if total_snapshot_bytes > MAX_CHAT_MEDIA_SNAPSHOTS_TOTAL_BYTES {
+            return Err(KernelError::validation(format!(
+                "mediaResources snapshots exceed {MAX_CHAT_MEDIA_SNAPSHOTS_TOTAL_BYTES} bytes"
+            )));
+        }
+        normalized.push(NormalizedMessageDriveResource {
+            media_role,
+            drive_space_id,
+            drive_node_id: drive_node_id.clone(),
+            drive_uri: resource.uri.trim().to_string(),
+            media_resource_id: drive_node_id,
+            object_blob_id,
+            resource_hash: sha256_hash(resource_snapshot_json.as_bytes()),
+            resource_snapshot_json,
+            alt_text,
+            sort_order: u32::try_from(sort_order)
+                .map_err(|_| KernelError::validation("mediaResources sort order overflow"))?,
+        });
+    }
+    Ok(normalized)
+}
 
 /// Stateless agent business service.
 ///
@@ -87,6 +446,37 @@ where
             }
         }
         Ok(())
+    }
+
+    fn ensure_project_owner_scope(
+        project: &AgentProjectRecord,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<()> {
+        if let Some(required_owner) = owner_scope {
+            if project.owner_user_id != required_owner {
+                return Err(KernelError::validation("project not found"));
+            }
+        }
+        Ok(())
+    }
+
+    fn load_active_project_for_composition(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        project_id: &str,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<AgentProjectRecord> {
+        validate_standard_id(project_id, "projectId", Some("project."))?;
+        let project = self
+            .repository
+            .get_project(tenant_id, organization_id, project_id)?
+            .ok_or_else(|| KernelError::validation("project not found"))?;
+        Self::ensure_project_owner_scope(&project, owner_scope)?;
+        if project.status != AgentProjectStatus::Active {
+            return Err(KernelError::validation("project is not active"));
+        }
+        Ok(project)
     }
 
     fn ensure_task_owner_scope(
@@ -1082,6 +1472,523 @@ where
     }
 
     // -----------------------------------------------------------------------
+    // Project management
+    // -----------------------------------------------------------------------
+
+    pub fn create_project(
+        &self,
+        command: CreateProjectCommand,
+    ) -> KernelResult<AgentProjectRecord> {
+        let project_id = if is_trimmed_blank(command.project_id.as_str()) {
+            format!("project.{}", self.repository.next_id()?)
+        } else {
+            command.project_id.clone()
+        };
+        validate_standard_id(project_id.as_str(), "projectId", Some("project."))?;
+        require_non_blank(command.name.as_str(), "name")?;
+        if command.name.len() > 255 {
+            return Err(KernelError::validation("name exceeds 255 bytes"));
+        }
+        validate_project_drive_access(command.visibility, command.drive_access_mode)?;
+        self.authorize(
+            "agent.business.project.create",
+            command.requested_by.clone(),
+            format!("agent.business.project.{project_id}"),
+            "project.create",
+        )?;
+        if let Some(agent_id) = command.default_agent_id.as_deref() {
+            validate_agent_id(agent_id)?;
+            let agent = self
+                .repository
+                .get(command.tenant_id, agent_id)?
+                .ok_or_else(|| KernelError::validation("default agent not found"))?;
+            if agent.organization_id != command.organization_id {
+                return Err(KernelError::validation("default agent not found"));
+            }
+        }
+        if self
+            .repository
+            .get_project(command.tenant_id, command.organization_id, &project_id)?
+            .is_some()
+        {
+            return Err(KernelError::conflict("project already exists"));
+        }
+        let record = AgentProjectRecord {
+            id: self.repository.next_id()?,
+            project_id,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            owner_user_id: command.owner_user_id,
+            name: trim(command.name.as_str()).to_string(),
+            description: command.description,
+            visibility: command.visibility,
+            status: AgentProjectStatus::Active,
+            drive_access_mode: command.drive_access_mode,
+            default_agent_id: command.default_agent_id,
+            default_model_id: command.default_model_id,
+            created_by: command.owner_user_id,
+            updated_by: command.owner_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+        self.repository.insert_project(record.clone())?;
+        self.emit_project_audit_event(
+            AgentAuditAction::ProjectCreated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn update_project(
+        &self,
+        command: UpdateProjectCommand,
+    ) -> KernelResult<AgentProjectRecord> {
+        validate_standard_id(&command.project_id, "projectId", Some("project."))?;
+        self.authorize(
+            "agent.business.project.update",
+            command.requested_by.clone(),
+            format!("agent.business.project.{}", command.project_id),
+            "project.update",
+        )?;
+        let mut record = self
+            .repository
+            .get_project(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+            )?
+            .ok_or_else(|| KernelError::validation("project not found"))?;
+        Self::ensure_project_owner_scope(&record, command.owner_scope)?;
+        ensure_expected_version(record.version, command.expected_version, "project")?;
+        if record.status != AgentProjectStatus::Active {
+            return Err(KernelError::validation("project is not active"));
+        }
+        if let Some(name) = command.name {
+            require_non_blank(&name, "name")?;
+            if name.len() > 255 {
+                return Err(KernelError::validation("name exceeds 255 bytes"));
+            }
+            record.name = trim(&name).to_string();
+        }
+        if let Some(description) = command.description {
+            record.description = description;
+        }
+        if let Some(visibility) = command.visibility {
+            record.visibility = visibility;
+        }
+        if let Some(drive_access_mode) = command.drive_access_mode {
+            record.drive_access_mode = drive_access_mode;
+        }
+        validate_project_drive_access(record.visibility, record.drive_access_mode)?;
+        if let Some(default_agent_id) = command.default_agent_id {
+            if let Some(agent_id) = default_agent_id.as_deref() {
+                validate_agent_id(agent_id)?;
+                let agent = self
+                    .repository
+                    .get(command.tenant_id, agent_id)?
+                    .ok_or_else(|| KernelError::validation("default agent not found"))?;
+                if agent.organization_id != command.organization_id {
+                    return Err(KernelError::validation("default agent not found"));
+                }
+            }
+            record.default_agent_id = default_agent_id;
+        }
+        if let Some(default_model_id) = command.default_model_id {
+            record.default_model_id = default_model_id;
+        }
+        record.mark_updated(command.requested_user_id, command.requested_at.clone());
+        self.repository.update_project(record.clone())?;
+        self.emit_project_audit_event(
+            AgentAuditAction::ProjectUpdated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn archive_project(
+        &self,
+        command: ProjectMutationCommand,
+    ) -> KernelResult<AgentProjectRecord> {
+        self.mutate_project_status(command, AgentProjectStatus::Archived)
+    }
+
+    pub fn delete_project(
+        &self,
+        command: ProjectMutationCommand,
+    ) -> KernelResult<AgentProjectRecord> {
+        self.mutate_project_status(command, AgentProjectStatus::Deleted)
+    }
+
+    fn mutate_project_status(
+        &self,
+        command: ProjectMutationCommand,
+        target: AgentProjectStatus,
+    ) -> KernelResult<AgentProjectRecord> {
+        validate_standard_id(&command.project_id, "projectId", Some("project."))?;
+        let (request_id, action, audit_action) = match target {
+            AgentProjectStatus::Archived => (
+                "agent.business.project.archive",
+                "project.archive",
+                AgentAuditAction::ProjectArchived,
+            ),
+            AgentProjectStatus::Deleted => (
+                "agent.business.project.delete",
+                "project.delete",
+                AgentAuditAction::ProjectDeleted,
+            ),
+            AgentProjectStatus::Active => {
+                return Err(KernelError::validation("unsupported project transition"));
+            }
+        };
+        self.authorize(
+            request_id,
+            command.requested_by.clone(),
+            format!("agent.business.project.{}", command.project_id),
+            action,
+        )?;
+        let mut record = self
+            .repository
+            .get_project(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+            )?
+            .ok_or_else(|| KernelError::validation("project not found"))?;
+        Self::ensure_project_owner_scope(&record, command.owner_scope)?;
+        if target != AgentProjectStatus::Deleted || command.expected_version.is_some() {
+            ensure_expected_version(record.version, command.expected_version, "project")?;
+        }
+        match target {
+            AgentProjectStatus::Archived => {
+                record.archive(command.requested_user_id, command.requested_at.clone())
+            }
+            AgentProjectStatus::Deleted => {
+                record.soft_delete(command.requested_user_id, command.requested_at.clone())
+            }
+            AgentProjectStatus::Active => unreachable!(),
+        }
+        self.repository.update_project(record.clone())?;
+        self.emit_project_audit_event(
+            audit_action,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn get_project(&self, command: GetProjectCommand) -> KernelResult<AgentProjectRecord> {
+        self.authorize(
+            "agent.business.project.retrieve",
+            command.requested_by,
+            format!("agent.business.project.{}", command.project_id),
+            "project.retrieve",
+        )?;
+        validate_standard_id(&command.project_id, "projectId", Some("project."))?;
+        self.repository
+            .get_project(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+            )?
+            .ok_or_else(|| KernelError::validation("project not found"))
+            .and_then(|record| {
+                Self::ensure_project_owner_scope(&record, command.owner_scope)?;
+                Ok(record)
+            })
+    }
+
+    pub fn list_projects(
+        &self,
+        command: ListProjectsCommand,
+    ) -> KernelResult<PaginatedResult<AgentProjectRecord>> {
+        self.authorize(
+            "agent.business.project.list",
+            command.requested_by,
+            format!(
+                "agent.business.project.tenant.{}.organization.{}",
+                command.query.tenant_id, command.query.organization_id
+            ),
+            "project.list",
+        )?;
+        let total_count = self.repository.count_projects(&command.query)?;
+        let items = self.repository.list_projects(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn create_project_composition_slot(
+        &self,
+        command: CreateProjectCompositionSlotCommand,
+    ) -> KernelResult<AgentProjectCompositionSlotRecord> {
+        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        self.authorize(
+            "agent.business.project.composition_slot.create",
+            command.requested_by.clone(),
+            format!(
+                "agent.business.project.{}.composition_slot.{}",
+                command.project_id, command.slot_id
+            ),
+            "project.composition_slot.create",
+        )?;
+        self.load_active_project_for_composition(
+            command.tenant_id,
+            command.organization_id,
+            &command.project_id,
+            command.owner_scope,
+        )?;
+        validate_project_composition_slot_fields(
+            command.slot_kind,
+            command.target_module,
+            &command.target_ref,
+            command.target_version_ref.as_deref(),
+            command.priority,
+            &command.policy_json,
+        )?;
+        if self
+            .repository
+            .get_project_composition_slot(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+                &command.slot_id,
+            )?
+            .is_some()
+        {
+            return Err(KernelError::conflict(
+                "project composition slot already exists",
+            ));
+        }
+        let record = AgentProjectCompositionSlotRecord {
+            id: self.repository.next_id()?,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            project_id: command.project_id,
+            slot_id: command.slot_id,
+            slot_kind: command.slot_kind,
+            target_module: command.target_module,
+            target_ref: trim(&command.target_ref).to_string(),
+            target_version_ref: command.target_version_ref,
+            priority: command.priority,
+            enabled: command.enabled,
+            policy_json: command.policy_json,
+            created_by: command.requested_user_id,
+            updated_by: command.requested_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+        self.repository
+            .insert_project_composition_slot(record.clone())?;
+        self.emit_project_composition_slot_audit_event(
+            AgentAuditAction::ProjectCompositionSlotCreated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn get_project_composition_slot(
+        &self,
+        command: GetProjectCompositionSlotCommand,
+    ) -> KernelResult<AgentProjectCompositionSlotRecord> {
+        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        self.authorize(
+            "agent.business.project.composition_slot.retrieve",
+            command.requested_by,
+            format!(
+                "agent.business.project.{}.composition_slot.{}",
+                command.project_id, command.slot_id
+            ),
+            "project.composition_slot.retrieve",
+        )?;
+        self.load_active_project_for_composition(
+            command.tenant_id,
+            command.organization_id,
+            &command.project_id,
+            command.owner_scope,
+        )?;
+        self.repository
+            .get_project_composition_slot(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+                &command.slot_id,
+            )?
+            .ok_or_else(|| KernelError::validation("project composition slot not found"))
+    }
+
+    pub fn list_project_composition_slots(
+        &self,
+        command: ListProjectCompositionSlotsCommand,
+    ) -> KernelResult<PaginatedResult<AgentProjectCompositionSlotRecord>> {
+        self.authorize(
+            "agent.business.project.composition_slot.list",
+            command.requested_by,
+            format!(
+                "agent.business.project.{}.composition_slots",
+                command.query.project_id
+            ),
+            "project.composition_slot.list",
+        )?;
+        self.load_active_project_for_composition(
+            command.query.tenant_id,
+            command.query.organization_id,
+            &command.query.project_id,
+            command.owner_scope,
+        )?;
+        let total_count = self
+            .repository
+            .count_project_composition_slots(&command.query)?;
+        let items = self
+            .repository
+            .list_project_composition_slots(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn update_project_composition_slot(
+        &self,
+        command: UpdateProjectCompositionSlotCommand,
+    ) -> KernelResult<AgentProjectCompositionSlotRecord> {
+        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        self.authorize(
+            "agent.business.project.composition_slot.update",
+            command.requested_by.clone(),
+            format!(
+                "agent.business.project.{}.composition_slot.{}",
+                command.project_id, command.slot_id
+            ),
+            "project.composition_slot.update",
+        )?;
+        self.load_active_project_for_composition(
+            command.tenant_id,
+            command.organization_id,
+            &command.project_id,
+            command.owner_scope,
+        )?;
+        let mut record = self
+            .repository
+            .get_project_composition_slot(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+                &command.slot_id,
+            )?
+            .ok_or_else(|| KernelError::validation("project composition slot not found"))?;
+        ensure_expected_version(
+            record.version,
+            command.expected_version,
+            "project composition slot",
+        )?;
+        if let Some(slot_kind) = command.slot_kind {
+            record.slot_kind = slot_kind;
+        }
+        if let Some(target_module) = command.target_module {
+            record.target_module = target_module;
+        }
+        if let Some(target_ref) = command.target_ref {
+            record.target_ref = trim(&target_ref).to_string();
+        }
+        if let Some(target_version_ref) = command.target_version_ref {
+            record.target_version_ref = target_version_ref;
+        }
+        if let Some(priority) = command.priority {
+            record.priority = priority;
+        }
+        if let Some(enabled) = command.enabled {
+            record.enabled = enabled;
+        }
+        if let Some(policy_json) = command.policy_json {
+            record.policy_json = policy_json;
+        }
+        validate_project_composition_slot_fields(
+            record.slot_kind,
+            record.target_module,
+            &record.target_ref,
+            record.target_version_ref.as_deref(),
+            record.priority,
+            &record.policy_json,
+        )?;
+        record.mark_updated(command.requested_user_id, command.requested_at.clone());
+        self.repository
+            .update_project_composition_slot(record.clone())?;
+        self.emit_project_composition_slot_audit_event(
+            AgentAuditAction::ProjectCompositionSlotUpdated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn delete_project_composition_slot(
+        &self,
+        command: DeleteProjectCompositionSlotCommand,
+    ) -> KernelResult<AgentProjectCompositionSlotRecord> {
+        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        self.authorize(
+            "agent.business.project.composition_slot.delete",
+            command.requested_by.clone(),
+            format!(
+                "agent.business.project.{}.composition_slot.{}",
+                command.project_id, command.slot_id
+            ),
+            "project.composition_slot.delete",
+        )?;
+        self.load_active_project_for_composition(
+            command.tenant_id,
+            command.organization_id,
+            &command.project_id,
+            command.owner_scope,
+        )?;
+        let mut record = self
+            .repository
+            .get_project_composition_slot(
+                command.tenant_id,
+                command.organization_id,
+                &command.project_id,
+                &command.slot_id,
+            )?
+            .ok_or_else(|| KernelError::validation("project composition slot not found"))?;
+        ensure_expected_version(
+            record.version,
+            command.expected_version,
+            "project composition slot",
+        )?;
+        record.soft_delete(command.requested_user_id, command.requested_at.clone());
+        self.repository
+            .update_project_composition_slot(record.clone())?;
+        self.emit_project_composition_slot_audit_event(
+            AgentAuditAction::ProjectCompositionSlotDeleted,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    // -----------------------------------------------------------------------
     // Session management
     // -----------------------------------------------------------------------
 
@@ -1126,6 +2033,18 @@ where
 
         let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
 
+        if let Some(project_id) = command.project_id.as_deref() {
+            validate_standard_id(project_id, "projectId", Some("project."))?;
+            let project = self
+                .repository
+                .get_project(command.tenant_id, command.organization_id, project_id)?
+                .ok_or_else(|| KernelError::validation("project not found"))?;
+            Self::ensure_project_owner_scope(&project, Some(command.owner_user_id))?;
+            if project.status != AgentProjectStatus::Active {
+                return Err(KernelError::validation("project is not active"));
+            }
+        }
+
         let record = AgentSessionRecord {
             id: self.repository.next_id()?,
             session_id,
@@ -1133,11 +2052,13 @@ where
             organization_id: command.organization_id,
             agent_id: command.agent_id,
             owner_user_id: command.owner_user_id,
+            project_id: command.project_id,
             title: command.title,
             status: AgentSessionStatus::Active,
             provider_binding_id: command.provider_binding_id,
             model_id: command.model_id,
             message_count: 0,
+            last_message_sequence: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
             metadata_json,
@@ -1146,11 +2067,103 @@ where
             updated_at: command.requested_at.clone(),
             last_message_at: None,
             closed_at: None,
+            archived_at: None,
+            deleted_at: None,
         };
 
         self.repository.insert_session(record.clone())?;
         self.emit_session_audit_event(
             AgentAuditAction::SessionCreated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn update_session(
+        &self,
+        command: UpdateSessionCommand,
+    ) -> KernelResult<AgentSessionRecord> {
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        self.authorize(
+            "agent.business.session.update",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}", command.session_id),
+            "session.update",
+        )?;
+        let mut record = self
+            .repository
+            .get_session(command.tenant_id, command.session_id.as_str())?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        if record.organization_id != command.organization_id {
+            return Err(KernelError::validation("session organization mismatch"));
+        }
+        if command.expected_version.is_some() {
+            ensure_expected_version(record.version, command.expected_version, "session")?;
+        }
+        if record.deleted_at.is_some() {
+            return Err(KernelError::validation("session not found"));
+        }
+
+        let mut audit_action = AgentAuditAction::SessionRenamed;
+        if let Some(title) = command.title {
+            require_non_blank(&title, "title")?;
+            if title.len() > 512 {
+                return Err(KernelError::validation("title exceeds 512 bytes"));
+            }
+            record.title = Some(trim(&title).to_string());
+        }
+        if let Some(project_id) = command.project_id {
+            audit_action = AgentAuditAction::SessionMoved;
+            if let Some(project_id) = project_id.as_deref() {
+                validate_standard_id(project_id, "projectId", Some("project."))?;
+                let project = self
+                    .repository
+                    .get_project(command.tenant_id, command.organization_id, project_id)?
+                    .ok_or_else(|| KernelError::validation("project not found"))?;
+                Self::ensure_project_owner_scope(&project, command.owner_scope)?;
+                if project.status != AgentProjectStatus::Active {
+                    return Err(KernelError::validation("project is not active"));
+                }
+            }
+            record.project_id = project_id;
+        }
+        record.mark_updated(command.requested_at.clone());
+        self.repository.update_session(record.clone())?;
+        self.emit_session_audit_event(
+            audit_action,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn delete_session(
+        &self,
+        command: DeleteSessionCommand,
+    ) -> KernelResult<AgentSessionRecord> {
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        self.authorize(
+            "agent.business.session.delete",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}", command.session_id),
+            "session.delete",
+        )?;
+        let mut record = self
+            .repository
+            .get_session(command.tenant_id, command.session_id.as_str())?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        if record.organization_id != command.organization_id {
+            return Err(KernelError::validation("session organization mismatch"));
+        }
+        record.soft_delete(command.requested_at.clone());
+        self.repository.update_session(record.clone())?;
+        self.emit_session_audit_event(
+            AgentAuditAction::SessionDeleted,
             &record,
             command.requested_by,
             command.requested_at,
@@ -1221,8 +2234,7 @@ where
 
         ensure_expected_version(record.version, command.expected_version, "session")?;
 
-        record.status = AgentSessionStatus::Archived;
-        record.mark_updated(command.requested_at.clone());
+        record.archive(command.requested_at.clone());
         self.repository.update_session(record.clone())?;
         self.emit_session_audit_event(
             AgentAuditAction::SessionArchived,
@@ -1274,6 +2286,353 @@ where
         ))
     }
 
+    pub fn list_session_user_states(
+        &self,
+        command: ListSessionUserStatesCommand,
+    ) -> KernelResult<PaginatedResult<AgentResourceUserStateRecord>> {
+        validate_agent_id(command.path_agent_id.as_str())?;
+        self.authorize(
+            "agent.business.session.user_state.list",
+            command.requested_by,
+            format!(
+                "agent.business.agent.{}.session.user_state",
+                command.path_agent_id
+            ),
+            "session.user_state.list",
+        )?;
+        let mut query = command.query;
+        query.resource_type = AgentResourceType::Session;
+        query.agent_id = Some(command.path_agent_id);
+        let total_count = self.repository.count_resource_user_states(&query)?;
+        let items = self.repository.list_resource_user_states(&query)?;
+        Ok(offset_paginated_result(
+            items,
+            &query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn get_session_user_state(
+        &self,
+        command: GetSessionUserStateCommand,
+    ) -> KernelResult<SessionUserStateResult> {
+        validate_agent_id(command.path_agent_id.as_str())?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        self.authorize(
+            "agent.business.session.user_state.retrieve",
+            command.requested_by,
+            format!("agent.business.session.{}.user_state", command.session_id),
+            "session.user_state.retrieve",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            Some(command.user_id),
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        self.repository
+            .get_resource_user_state(
+                command.tenant_id,
+                command.organization_id,
+                command.user_id,
+                AgentResourceType::Session,
+                command.session_id.as_str(),
+            )?
+            .ok_or_else(|| KernelError::validation("session user state not found"))
+    }
+
+    pub fn update_session_user_state(
+        &self,
+        command: UpdateSessionUserStateCommand,
+    ) -> KernelResult<SessionUserStateResult> {
+        validate_agent_id(command.path_agent_id.as_str())?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        if command.pinned.is_none()
+            && command.hidden.is_none()
+            && !command.mark_opened
+            && command.last_read_message_sequence.is_none()
+            && command.custom_title.is_none()
+        {
+            return Err(KernelError::validation(
+                "session user state update requires a changed field",
+            ));
+        }
+        self.authorize(
+            "agent.business.session.user_state.update",
+            command.requested_by,
+            format!("agent.business.session.{}.user_state", command.session_id),
+            "session.user_state.update",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            Some(command.user_id),
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+
+        let existing = self.repository.get_resource_user_state(
+            command.tenant_id,
+            command.organization_id,
+            command.user_id,
+            AgentResourceType::Session,
+            command.session_id.as_str(),
+        )?;
+        let mut record = match existing {
+            Some(record) => {
+                ensure_expected_version(
+                    record.version,
+                    command.expected_version,
+                    "session user state",
+                )?;
+                record
+            }
+            None => {
+                if command.expected_version.is_some() {
+                    return Err(KernelError::conflict("session user state version mismatch"));
+                }
+                AgentResourceUserStateRecord {
+                    id: self.repository.next_id()?,
+                    tenant_id: command.tenant_id,
+                    organization_id: command.organization_id,
+                    user_id: command.user_id,
+                    resource_type: AgentResourceType::Session,
+                    resource_id: command.session_id.clone(),
+                    pinned_at: None,
+                    hidden_at: None,
+                    last_opened_at: None,
+                    last_read_message_sequence: None,
+                    custom_title: None,
+                    version: 0,
+                    created_at: command.requested_at.clone(),
+                    updated_at: command.requested_at.clone(),
+                }
+            }
+        };
+
+        if let Some(pinned) = command.pinned {
+            record.pinned_at = pinned.then(|| command.requested_at.clone());
+        }
+        if let Some(hidden) = command.hidden {
+            record.hidden_at = hidden.then(|| command.requested_at.clone());
+        }
+        if command.mark_opened {
+            record.last_opened_at = Some(command.requested_at.clone());
+        }
+        if let Some(sequence) = command.last_read_message_sequence {
+            if sequence > session.last_message_sequence {
+                return Err(KernelError::validation(
+                    "lastReadMessageSequence exceeds the session message sequence",
+                ));
+            }
+            if record
+                .last_read_message_sequence
+                .is_some_and(|current| sequence < current)
+            {
+                return Err(KernelError::conflict(
+                    "lastReadMessageSequence cannot move backwards",
+                ));
+            }
+            record.last_read_message_sequence = Some(sequence);
+        }
+        if let Some(custom_title) = command.custom_title {
+            record.custom_title = custom_title
+                .map(|title| {
+                    require_non_blank(title.as_str(), "customTitle")?;
+                    if title.len() > 512 {
+                        return Err(KernelError::validation("customTitle exceeds 512 bytes"));
+                    }
+                    reject_secret_material(title.as_str(), "customTitle")?;
+                    Ok(trim(title.as_str()).to_string())
+                })
+                .transpose()?;
+        }
+        if command.expected_version.is_some() {
+            record.version = record
+                .version
+                .checked_add(1)
+                .ok_or_else(|| KernelError::conflict("session user state version overflow"))?;
+        }
+        record.updated_at = command.requested_at;
+        self.repository
+            .upsert_resource_user_state(record, command.expected_version)
+    }
+
+    pub fn list_message_feedback(
+        &self,
+        command: ListMessageFeedbackCommand,
+    ) -> KernelResult<PaginatedResult<AgentMessageFeedbackRecord>> {
+        validate_agent_id(command.path_agent_id.as_str())?;
+        validate_standard_id(
+            command.query.session_id.as_str(),
+            "sessionId",
+            Some("session."),
+        )?;
+        self.authorize(
+            "agent.business.message.feedback.list",
+            command.requested_by,
+            format!(
+                "agent.business.session.{}.message.feedback",
+                command.query.session_id
+            ),
+            "message.feedback.list",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.query.tenant_id,
+            command.query.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            Some(command.query.user_id),
+        )?;
+        if session.organization_id != command.query.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        let total_count = self.repository.count_message_feedback(&command.query)?;
+        let items = self.repository.list_message_feedback(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn update_message_feedback(
+        &self,
+        command: UpdateMessageFeedbackCommand,
+    ) -> KernelResult<MessageFeedbackResult> {
+        validate_agent_id(command.path_agent_id.as_str())?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.message_id.as_str(), "messageId", Some("msg."))?;
+        self.authorize(
+            "agent.business.message.feedback.update",
+            command.requested_by.clone(),
+            format!("agent.business.message.{}.feedback", command.message_id),
+            "message.feedback.update",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            Some(command.user_id),
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("message not found"));
+        }
+        let message = self
+            .repository
+            .get_message(
+                command.tenant_id,
+                command.session_id.as_str(),
+                command.message_id.as_str(),
+            )?
+            .ok_or_else(|| KernelError::validation("message not found"))?;
+        Self::ensure_nested_agent_id(&message.agent_id, command.path_agent_id.as_str(), "message")?;
+        if message.role != AgentMessageRole::Assistant {
+            return Err(KernelError::validation(
+                "feedback is only supported for assistant messages",
+            ));
+        }
+        if let Some(reason_code) = command.reason_code.as_deref() {
+            require_non_blank(reason_code, "reasonCode")?;
+            if reason_code.len() > 64 {
+                return Err(KernelError::validation("reasonCode exceeds 64 bytes"));
+            }
+            reject_secret_material(reason_code, "reasonCode")?;
+        }
+        if let Some(comment) = command.comment.as_deref() {
+            require_non_blank(comment, "comment")?;
+            if comment.len() > 1024 {
+                return Err(KernelError::validation("comment exceeds 1024 bytes"));
+            }
+            reject_secret_material(comment, "comment")?;
+        }
+        if command.rating.is_none() && (command.reason_code.is_some() || command.comment.is_some())
+        {
+            return Err(KernelError::validation(
+                "clearing feedback cannot include reasonCode or comment",
+            ));
+        }
+
+        let existing = self.repository.get_message_feedback(
+            command.tenant_id,
+            command.organization_id,
+            command.message_id.as_str(),
+            command.user_id,
+            true,
+        )?;
+        let mut record =
+            match (existing, command.rating) {
+                (Some(mut record), Some(rating)) => {
+                    if record.deleted_at.is_none() || command.expected_version.is_some() {
+                        ensure_expected_version(
+                            record.version,
+                            command.expected_version,
+                            "message feedback",
+                        )?;
+                    }
+                    record.version = record.version.checked_add(1).ok_or_else(|| {
+                        KernelError::conflict("message feedback version overflow")
+                    })?;
+                    record.rating = rating;
+                    record.reason_code = command.reason_code.as_deref().map(trim);
+                    record.comment = command.comment.as_deref().map(trim);
+                    record.updated_at = command.requested_at.clone();
+                    record.deleted_at = None;
+                    record
+                }
+                (None, Some(rating)) => {
+                    if command.expected_version.is_some() {
+                        return Err(KernelError::conflict("message feedback version mismatch"));
+                    }
+                    AgentMessageFeedbackRecord {
+                        id: self.repository.next_id()?,
+                        tenant_id: command.tenant_id,
+                        organization_id: command.organization_id,
+                        message_id: command.message_id.clone(),
+                        user_id: command.user_id,
+                        rating,
+                        reason_code: command.reason_code.as_deref().map(trim),
+                        comment: command.comment.as_deref().map(trim),
+                        version: 0,
+                        created_at: command.requested_at.clone(),
+                        updated_at: command.requested_at.clone(),
+                        deleted_at: None,
+                    }
+                }
+                (Some(mut record), None) if record.deleted_at.is_none() => {
+                    ensure_expected_version(
+                        record.version,
+                        command.expected_version,
+                        "message feedback",
+                    )?;
+                    record.version = record.version.checked_add(1).ok_or_else(|| {
+                        KernelError::conflict("message feedback version overflow")
+                    })?;
+                    record.updated_at = command.requested_at.clone();
+                    record.deleted_at = Some(command.requested_at.clone());
+                    record
+                }
+                (_, None) => {
+                    return Err(KernelError::validation("message feedback not found"));
+                }
+            };
+        record.updated_at = command.requested_at.clone();
+        let record = self
+            .repository
+            .upsert_message_feedback(record, command.expected_version)?;
+        self.emit_message_audit_event(
+            AgentAuditAction::MessageFeedbackChanged,
+            &message,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
     // -----------------------------------------------------------------------
     // Task management
     // -----------------------------------------------------------------------
@@ -1316,6 +2675,7 @@ where
         if !is_trimmed_blank(command.metadata_json.as_str()) {
             validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
         }
+
         let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
 
         let record = AgentTaskRecord {
@@ -1420,6 +2780,7 @@ where
             organization_id: record.organization_id,
             agent_id: record.agent_id.clone(),
             owner_user_id: record.owner_user_id,
+            project_id: None,
             title: record.title.clone(),
             status: AgentSessionStatus::Active,
             provider_binding_id: active_binding
@@ -1427,6 +2788,7 @@ where
                 .map(|binding| binding.binding_id.clone()),
             model_id: None,
             message_count: 0,
+            last_message_sequence: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
             metadata_json: "{}".to_string(),
@@ -1435,6 +2797,8 @@ where
             updated_at: requested_at.clone(),
             last_message_at: None,
             closed_at: None,
+            archived_at: None,
+            deleted_at: None,
         };
 
         let prompt = record.prompt.clone();
@@ -1606,7 +2970,7 @@ where
         &self,
         command: CreateMessageCommand,
     ) -> KernelResult<AgentMessageRecord> {
-        validate_standard_id(command.message_id.as_str(), "messageId", Some("message."))?;
+        validate_standard_id(command.message_id.as_str(), "messageId", Some("msg."))?;
         self.authorize(
             "agent.business.message.create",
             command.requested_by.clone(),
@@ -1680,6 +3044,7 @@ where
             artifacts_json,
             metadata_json,
             parent_message_id: command.parent_message_id,
+            turn_id: None,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
         };
@@ -1710,7 +3075,7 @@ where
             format!("agent.business.session.{}", command.session_id),
             "message.retrieve",
         )?;
-        validate_standard_id(command.message_id.as_str(), "messageId", Some("message."))?;
+        validate_standard_id(command.message_id.as_str(), "messageId", Some("msg."))?;
         let session = self
             .repository
             .get_session(command.tenant_id, command.session_id.as_str())?
@@ -1756,6 +3121,252 @@ where
             &command.query.pagination,
             total_count,
         ))
+    }
+
+    pub fn list_messages_with_drive_refs(
+        &self,
+        command: ListMessagesCommand,
+    ) -> KernelResult<PaginatedResult<AgentMessageWithDriveRefs>> {
+        let tenant_id = command.query.tenant_id;
+        let session_id = command.query.session_id.clone();
+        let page = self.list_messages(command)?;
+        let organization_id = self
+            .repository
+            .get_session(tenant_id, &session_id)?
+            .ok_or_else(|| KernelError::validation("session not found"))?
+            .organization_id;
+        let message_ids = page
+            .items
+            .iter()
+            .map(|message| message.message_id.clone())
+            .collect::<Vec<_>>();
+        let mut refs_by_message = HashMap::<String, Vec<AgentMessageDriveRefRecord>>::new();
+        for drive_ref in self.repository.list_message_drive_refs_batch(
+            tenant_id,
+            organization_id,
+            &message_ids,
+        )? {
+            refs_by_message
+                .entry(drive_ref.message_id.clone())
+                .or_default()
+                .push(drive_ref);
+        }
+        let items = page
+            .items
+            .into_iter()
+            .map(|message| AgentMessageWithDriveRefs {
+                drive_refs: refs_by_message
+                    .remove(&message.message_id)
+                    .unwrap_or_default(),
+                message,
+            })
+            .collect();
+        Ok(PaginatedResult {
+            items,
+            has_more: page.has_more,
+            next_page_token: page.next_page_token,
+            total_count: page.total_count,
+        })
+    }
+
+    pub fn get_message_with_drive_refs(
+        &self,
+        command: GetMessageCommand,
+    ) -> KernelResult<AgentMessageWithDriveRefs> {
+        let tenant_id = command.tenant_id;
+        let session_id = command.session_id.clone();
+        let message = self.get_message(command)?;
+        let organization_id = self
+            .repository
+            .get_session(tenant_id, &session_id)?
+            .ok_or_else(|| KernelError::validation("session not found"))?
+            .organization_id;
+        let drive_refs = self.repository.list_message_drive_refs(
+            tenant_id,
+            organization_id,
+            &message.message_id,
+        )?;
+        Ok(AgentMessageWithDriveRefs {
+            message,
+            drive_refs,
+        })
+    }
+
+    pub fn get_chat_turn(&self, command: GetChatTurnCommand) -> KernelResult<AgentChatTurnRecord> {
+        validate_agent_id(&command.path_agent_id)?;
+        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
+        validate_standard_id(&command.turn_id, "turnId", Some("turn."))?;
+        self.authorize(
+            "agent.business.chat_turn.retrieve",
+            command.requested_by,
+            format!("agent.business.chat_turn.{}", command.turn_id),
+            "chat_turn.retrieve",
+        )?;
+        let session = self
+            .repository
+            .get_session(command.tenant_id, &command.session_id)?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&session, command.owner_scope)?;
+        if session.organization_id != command.organization_id
+            || session.agent_id != command.path_agent_id
+        {
+            return Err(KernelError::validation("chat turn not found"));
+        }
+        let turn = self
+            .repository
+            .get_chat_turn(command.tenant_id, command.organization_id, &command.turn_id)?
+            .ok_or_else(|| KernelError::validation("chat turn not found"))?;
+        if turn.session_id != command.session_id || turn.agent_id != command.path_agent_id {
+            return Err(KernelError::validation("chat turn not found"));
+        }
+        Ok(turn)
+    }
+
+    pub fn get_chat_turn_by_idempotency(
+        &self,
+        command: GetChatTurnByIdempotencyCommand,
+    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+        validate_agent_id(&command.path_agent_id)?;
+        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
+        require_non_blank(&command.idempotency_key, "idempotencyKey")?;
+        if command.idempotency_key.len() > 256 {
+            return Err(KernelError::validation("idempotencyKey exceeds 256 bytes"));
+        }
+        self.authorize(
+            "agent.business.chat_turn.retrieve",
+            command.requested_by,
+            format!(
+                "agent.business.chat_turn.idempotency.{}",
+                command.idempotency_key
+            ),
+            "chat_turn.retrieve",
+        )?;
+        let session = self
+            .repository
+            .get_session(command.tenant_id, &command.session_id)?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&session, Some(command.owner_user_id))?;
+        if session.organization_id != command.organization_id
+            || session.agent_id != command.path_agent_id
+        {
+            return Err(KernelError::validation("chat turn not found"));
+        }
+        let turn = self.repository.get_chat_turn_by_idempotency(
+            command.tenant_id,
+            command.organization_id,
+            command.owner_user_id,
+            &command.idempotency_key,
+        )?;
+        if let Some(turn) = turn.as_ref() {
+            if turn.session_id != command.session_id || turn.agent_id != command.path_agent_id {
+                return Err(KernelError::validation("chat turn not found"));
+            }
+        }
+        Ok(turn)
+    }
+
+    pub fn cancel_chat_turn(
+        &self,
+        command: CancelChatTurnCommand,
+    ) -> KernelResult<AgentChatTurnRecord> {
+        let audit_subject = command.requested_by.clone();
+        self.authorize(
+            "agent.business.chat_turn.cancel",
+            command.requested_by.clone(),
+            format!("agent.business.chat_turn.{}", command.turn_id),
+            "chat_turn.cancel",
+        )?;
+        let mut turn = self.get_chat_turn(GetChatTurnCommand {
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            path_agent_id: command.path_agent_id,
+            session_id: command.session_id,
+            turn_id: command.turn_id,
+            owner_scope: command.owner_scope,
+            requested_by: command.requested_by,
+        })?;
+        if let Some(expected_version) = command.expected_version {
+            if expected_version != turn.version {
+                return Err(KernelError::conflict("chat turn version mismatch"));
+            }
+        }
+        if !matches!(
+            turn.status,
+            AgentChatTurnStatus::Requested | AgentChatTurnStatus::Running
+        ) {
+            return Err(KernelError::validation("chat turn cannot be cancelled"));
+        }
+        let expected_version = turn.version;
+        turn.mark_cancelled(command.requested_at.clone());
+        let turn = self
+            .repository
+            .update_chat_turn_state(turn, expected_version)?;
+        self.emit_chat_turn_audit_event(
+            AgentAuditAction::TurnCancelRequested,
+            &turn,
+            audit_subject.clone(),
+            command.requested_at.clone(),
+        )?;
+        self.emit_chat_turn_audit_event(
+            AgentAuditAction::TurnCancelled,
+            &turn,
+            audit_subject,
+            command.requested_at,
+        )?;
+        Ok(turn)
+    }
+
+    pub fn reconcile_stale_chat_turns(
+        &self,
+        stale_before: &str,
+        occurred_at: &str,
+        limit: usize,
+    ) -> KernelResult<ChatTurnReconciliationResult> {
+        if is_trimmed_blank(stale_before) || is_trimmed_blank(occurred_at) {
+            return Err(KernelError::validation(
+                "stale_before and occurred_at are required",
+            ));
+        }
+        let turns = self
+            .repository
+            .list_reconcilable_chat_turns(stale_before, limit.clamp(1, 200))?;
+        let examined = turns.len();
+        let mut failed = Vec::with_capacity(examined);
+        let mut skipped_conflicts = 0usize;
+        for mut turn in turns {
+            let expected_version = turn.version;
+            turn.mark_failed(
+                "chat_turn_reconciliation_timeout",
+                "chat turn did not reach a terminal state before the reconciliation deadline",
+                occurred_at,
+            );
+            match self
+                .repository
+                .update_chat_turn_state(turn, expected_version)
+            {
+                Ok(record) => {
+                    self.emit_chat_turn_audit_event(
+                        AgentAuditAction::TurnFailed,
+                        &record,
+                        PolicySubject::new(
+                            "system.agents.reconciliation",
+                            record.tenant_id.to_string(),
+                        ),
+                        occurred_at.to_string(),
+                    )?;
+                    failed.push(record);
+                }
+                Err(error) if error.kind() == KernelErrorKind::Conflict => {
+                    skipped_conflicts = skipped_conflicts.saturating_add(1);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(ChatTurnReconciliationResult {
+            examined,
+            failed,
+            skipped_conflicts,
+        })
     }
 
     /// Send one user message, persist it, run managed chat completion, and persist
@@ -1805,7 +3416,151 @@ where
         reject_secret_material(command.content.as_str(), "content")?;
         if !is_trimmed_blank(command.metadata_json.as_str()) {
             validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
+            if serde_json::from_str::<serde_json::Value>(&command.metadata_json)
+                .ok()
+                .and_then(|value| value.as_object().cloned())
+                .is_some_and(|object| object.contains_key("mediaResources"))
+            {
+                return Err(KernelError::validation(
+                    "metadataJson.mediaResources is not supported; use mediaResources",
+                ));
+            }
         }
+        let normalized_media_resources =
+            normalize_message_drive_resources(&command.media_resources)?;
+
+        let payload_hash = sha256_hash(
+            serde_json::json!({
+                "agentId": &command.agent_id,
+                "sessionId": &command.session_id,
+                "content": &command.content,
+                "contentType": &command.content_type,
+                "metadataJson": &command.metadata_json,
+                "mediaResources": normalized_media_resources
+                    .iter()
+                    .map(|resource| resource.resource_snapshot_json.as_str())
+                    .collect::<Vec<_>>(),
+                "modelId": &command.model_id,
+            })
+            .to_string()
+            .as_bytes(),
+        );
+        let idempotency_key = command
+            .idempotency_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| {
+                format!(
+                    "legacy:{}",
+                    sha256_hash(format!("{}:{}", command.requested_at, payload_hash).as_bytes(),)
+                )
+            });
+        if idempotency_key.len() > 256 {
+            return Err(KernelError::validation("idempotencyKey exceeds 256 bytes"));
+        }
+        if let Some(existing_turn) = self.repository.get_chat_turn_by_idempotency(
+            command.tenant_id,
+            session.organization_id,
+            session.owner_user_id,
+            &idempotency_key,
+        )? {
+            if existing_turn.payload_hash != payload_hash {
+                return Err(KernelError::conflict(
+                    "idempotency key was already used with a different payload",
+                ));
+            }
+            if existing_turn.status != AgentChatTurnStatus::Completed {
+                return Err(KernelError::conflict("chat turn is not completed"));
+            }
+            let response_message_id =
+                existing_turn
+                    .response_message_id
+                    .as_deref()
+                    .ok_or_else(|| KernelError::Internal {
+                        message: "completed chat turn is missing response_message_id".to_string(),
+                    })?;
+            let user_message = self
+                .repository
+                .get_message(
+                    command.tenant_id,
+                    &command.session_id,
+                    &existing_turn.request_message_id,
+                )?
+                .ok_or_else(|| KernelError::Internal {
+                    message: "completed chat turn is missing request message".to_string(),
+                })?;
+            let assistant_message = self
+                .repository
+                .get_message(command.tenant_id, &command.session_id, response_message_id)?
+                .ok_or_else(|| KernelError::Internal {
+                    message: "completed chat turn is missing response message".to_string(),
+                })?;
+            let user_message_drive_refs = self.repository.list_message_drive_refs(
+                command.tenant_id,
+                session.organization_id,
+                &user_message.message_id,
+            )?;
+            return Ok(ChatCompletionResult {
+                session,
+                user_message,
+                assistant_message,
+                user_message_drive_refs,
+                stream_deltas: Vec::new(),
+            });
+        }
+
+        let active_binding = self
+            .repository
+            .get_active_provider_binding(command.tenant_id, command.agent_id.as_str())?;
+        let turn_id = format!("turn.{}", self.repository.next_id()?);
+        let user_message_id = format!("msg.{}", self.repository.next_id()?);
+        let assistant_message_id = format!("msg.{}", self.repository.next_id()?);
+        let mut turn = AgentChatTurnRecord {
+            id: self.repository.next_id()?,
+            turn_id: turn_id.clone(),
+            tenant_id: command.tenant_id,
+            organization_id: session.organization_id,
+            session_id: command.session_id.clone(),
+            agent_id: command.agent_id.clone(),
+            owner_user_id: session.owner_user_id,
+            client_request_id: command.client_request_id.clone(),
+            idempotency_key: idempotency_key.clone(),
+            payload_hash: payload_hash.clone(),
+            request_message_id: user_message_id.clone(),
+            response_message_id: None,
+            status: AgentChatTurnStatus::Requested,
+            requested_model_id: command.model_id.clone(),
+            provider_binding_id: active_binding
+                .as_ref()
+                .map(|binding| binding.binding_id.clone()),
+            model_id: None,
+            provider_id: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            finish_reason: None,
+            error_code: None,
+            error_detail: None,
+            trace_id: command.client_request_id.clone(),
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            started_at: None,
+            completed_at: None,
+            cancel_requested_at: None,
+            cancelled_at: None,
+            retention_until: None,
+        };
+        self.repository.insert_chat_turn_reservation(turn.clone())?;
+        self.emit_chat_turn_audit_event(
+            AgentAuditAction::TurnRequested,
+            &turn,
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
+        turn.mark_running(command.requested_at.clone());
+        turn = self.repository.update_chat_turn_state(turn, 0)?;
 
         let history_messages =
             self.repository
@@ -1818,10 +3573,6 @@ where
             .iter()
             .map(|record| (record.role, record.content.clone()))
             .collect::<Vec<_>>();
-
-        let active_binding = self
-            .repository
-            .get_active_provider_binding(command.tenant_id, command.agent_id.as_str())?;
 
         let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
             agent.default_code_task_intent.as_ref(),
@@ -1854,13 +3605,24 @@ where
             CHAT_COMPLETION_TIMEOUT,
         );
         if is_inference_error(completion.runtime_mode) {
+            turn.mark_failed(
+                "chat_inference_failed",
+                "managed chat inference failed",
+                command.requested_at.clone(),
+            );
+            let failed_turn = self.repository.update_chat_turn_state(turn, 1)?;
+            self.emit_chat_turn_audit_event(
+                AgentAuditAction::TurnFailed,
+                &failed_turn,
+                command.requested_by,
+                command.requested_at,
+            )?;
             return Err(KernelError::provider_error(
                 "chat_inference_failed",
                 completion.content,
             ));
         }
 
-        let user_message_id = format!("msg.{}", self.repository.next_id()?);
         let user_metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
         let user_message = AgentMessageRecord {
             id: self.repository.next_id()?,
@@ -1880,11 +3642,38 @@ where
             artifacts_json: "[]".to_string(),
             metadata_json: user_metadata_json,
             parent_message_id: None,
+            turn_id: Some(turn_id.clone()),
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
         };
+        let user_message_drive_refs = normalized_media_resources
+            .into_iter()
+            .map(|resource| {
+                Ok(AgentMessageDriveRefRecord {
+                    id: self.repository.next_id()?,
+                    tenant_id: command.tenant_id,
+                    organization_id: session.organization_id,
+                    message_id: user_message.message_id.clone(),
+                    media_role: resource.media_role,
+                    drive_space_id: resource.drive_space_id,
+                    drive_node_id: resource.drive_node_id,
+                    drive_uri: resource.drive_uri,
+                    media_resource_id: Some(resource.media_resource_id),
+                    object_blob_id: resource.object_blob_id,
+                    resource_snapshot_json: resource.resource_snapshot_json,
+                    resource_hash: resource.resource_hash,
+                    alt_text: resource.alt_text,
+                    sort_order: resource.sort_order,
+                    status: 0,
+                    created_by: session.owner_user_id,
+                    created_at: command.requested_at.clone(),
+                    updated_at: command.requested_at.clone(),
+                    deleted_at: None,
+                    retention_until: None,
+                })
+            })
+            .collect::<KernelResult<Vec<_>>>()?;
 
-        let assistant_message_id = format!("msg.{}", self.repository.next_id()?);
         let assistant_metadata_json = serde_json::json!({
             "runtimeMode": completion.runtime_mode,
         })
@@ -1902,11 +3691,12 @@ where
             sequence: 0,
             input_tokens: completion.input_tokens,
             output_tokens: completion.output_tokens,
-            model_id: completion.model_id,
-            provider_id: completion.provider_id,
+            model_id: completion.model_id.clone(),
+            provider_id: completion.provider_id.clone(),
             artifacts_json: "[]".to_string(),
             metadata_json: assistant_metadata_json,
             parent_message_id: Some(user_message.message_id.clone()),
+            turn_id: Some(turn_id.clone()),
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
         };
@@ -1917,9 +3707,29 @@ where
             command.requested_at.clone(),
         );
 
+        turn.response_message_id = Some(assistant_message.message_id.clone());
+        turn.model_id = completion.model_id.clone();
+        turn.provider_id = completion.provider_id.clone();
+        turn.input_tokens = completion.input_tokens;
+        turn.output_tokens = completion.output_tokens;
+        turn.mark_completed(command.requested_at.clone());
+        let completed_turn = turn.clone();
+
         let (session, user_message, assistant_message) =
-            self.repository
-                .insert_chat_turn(session, user_message, assistant_message)?;
+            self.repository.insert_chat_turn_with_drive_refs(
+                turn,
+                session,
+                user_message,
+                assistant_message,
+                user_message_drive_refs.clone(),
+            )?;
+
+        self.emit_chat_turn_audit_event(
+            AgentAuditAction::TurnCompleted,
+            &completed_turn,
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
 
         self.emit_message_audit_event(
             AgentAuditAction::MessageCreated,
@@ -1938,6 +3748,7 @@ where
             session,
             user_message,
             assistant_message,
+            user_message_drive_refs,
             stream_deltas: completion.stream_deltas,
         })
     }
@@ -1997,6 +3808,7 @@ where
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", AgentAuditPayload::SCHEMA_VERSION)
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -2028,6 +3840,143 @@ where
         Ok(())
     }
 
+    fn emit_project_audit_event(
+        &self,
+        action: AgentAuditAction,
+        record: &AgentProjectRecord,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let payload_json = serde_json::json!({
+            "schemaVersion": "v1",
+            "projectId": record.project_id,
+            "tenantId": record.tenant_id.to_string(),
+            "organizationId": record.organization_id.to_string(),
+            "ownerUserId": record.owner_user_id.to_string(),
+            "status": record.status.as_str(),
+            "visibility": record.visibility.as_str(),
+            "version": record.version.to_string(),
+        })
+        .to_string();
+        let event = KernelEvent::new(
+            format!("agent_project_{}_{}", record.project_id, record.version),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "project")
+        .with_context("aggregate_id", record.project_id.as_str())
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.project.audit.v1");
+        self.audit_sink.record(event)
+    }
+
+    fn emit_project_composition_slot_audit_event(
+        &self,
+        action: AgentAuditAction,
+        record: &AgentProjectCompositionSlotRecord,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let payload_json = serde_json::json!({
+            "schemaVersion": "v1",
+            "projectId": record.project_id,
+            "slotId": record.slot_id,
+            "slotKind": record.slot_kind.as_str(),
+            "targetModule": record.target_module.as_str(),
+            "targetRef": record.target_ref,
+            "enabled": record.enabled,
+            "priority": record.priority,
+            "version": record.version.to_string(),
+        })
+        .to_string();
+        let event = KernelEvent::new(
+            format!(
+                "agent_project_slot_{}_{}_{}",
+                record.project_id, record.slot_id, record.version
+            ),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "project_composition_slot")
+        .with_context("aggregate_id", record.slot_id.as_str())
+        .with_context("project_id", record.project_id.as_str())
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.project-composition-slot.audit.v1");
+        self.audit_sink.record(event)
+    }
+
+    fn emit_chat_turn_audit_event(
+        &self,
+        action: AgentAuditAction,
+        record: &AgentChatTurnRecord,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let payload_json = serde_json::json!({
+            "schemaVersion": "v1",
+            "turnId": record.turn_id,
+            "sessionId": record.session_id,
+            "agentId": record.agent_id,
+            "status": record.status.as_str(),
+            "errorCode": record.error_code,
+            "version": record.version.to_string(),
+        })
+        .to_string();
+        let event = KernelEvent::new(
+            format!(
+                "agent_chat_turn_{}_{}_{}",
+                record.turn_id,
+                action.action_code(),
+                record.version
+            ),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "chat_turn")
+        .with_context("aggregate_id", record.turn_id.as_str())
+        .with_context("session_id", record.session_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.chat-turn.audit.v1");
+        self.audit_sink.record(event)
+    }
+
     fn emit_binding_audit_event(
         &self,
         action: AgentAuditAction,
@@ -2053,6 +4002,7 @@ where
             "schema_version",
             ProviderBindingAuditPayload::SCHEMA_VERSION,
         )
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -2091,6 +4041,7 @@ where
             "schema_version",
             RuntimeExecutionAuditPayload::SCHEMA_VERSION,
         )
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -2133,6 +4084,9 @@ where
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", MarketplaceAuditPayload::SCHEMA_VERSION)
+        .with_context("audit_action", input.action.action_code())
+        .with_context("aggregate_type", "marketplace")
+        .with_context("aggregate_id", input.item_id)
         .with_context("subject_id", input.subject.subject_id.as_str())
         .with_context("subject_tenant_id", input.subject.tenant_id.as_str())
         .with_context("tenant_id", input.tenant_id.to_string().as_str())
@@ -2167,6 +4121,7 @@ where
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", SessionAuditPayload::SCHEMA_VERSION)
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("session_id", record.session_id.as_str())
@@ -2203,6 +4158,7 @@ where
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", MessageAuditPayload::SCHEMA_VERSION)
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("message_id", record.message_id.as_str())
@@ -2236,6 +4192,7 @@ where
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", TaskAuditPayload::SCHEMA_VERSION)
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("task_id", record.task_id.as_str())
@@ -2609,6 +4566,7 @@ where
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("interaction_id", record.interaction_id.as_str())
@@ -2688,6 +4646,88 @@ fn is_valid_status_transition(from: AgentBusinessStatus, to: AgentBusinessStatus
 
 fn validate_agent_id(value: &str) -> KernelResult<()> {
     validate_standard_id(value, "agentId", Some("agent."))
+}
+
+fn validate_project_drive_access(
+    visibility: AgentProjectVisibility,
+    drive_access_mode: AgentProjectDriveAccessMode,
+) -> KernelResult<()> {
+    if visibility == AgentProjectVisibility::Shared
+        && drive_access_mode == AgentProjectDriveAccessMode::OwnerLibrary
+    {
+        return Err(KernelError::validation(
+            "shared projects cannot access the owner's private Drive library",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_project_composition_slot_fields(
+    slot_kind: AgentCompositionSlotKind,
+    target_module: AgentCompositionTargetModule,
+    target_ref: &str,
+    target_version_ref: Option<&str>,
+    priority: i32,
+    policy_json: &str,
+) -> KernelResult<()> {
+    let module_matches_kind = matches!(
+        (slot_kind, target_module),
+        (
+            AgentCompositionSlotKind::Prompt,
+            AgentCompositionTargetModule::Prompts
+        ) | (
+            AgentCompositionSlotKind::Memory,
+            AgentCompositionTargetModule::Memory
+        ) | (
+            AgentCompositionSlotKind::Knowledge,
+            AgentCompositionTargetModule::Knowledgebase
+        ) | (
+            AgentCompositionSlotKind::Skill,
+            AgentCompositionTargetModule::Skills
+        ) | (
+            AgentCompositionSlotKind::Mcp,
+            AgentCompositionTargetModule::Mcp
+        ) | (
+            AgentCompositionSlotKind::Drive,
+            AgentCompositionTargetModule::Drive
+        ) | (
+            AgentCompositionSlotKind::Tool,
+            AgentCompositionTargetModule::Tools
+        )
+    );
+    if !module_matches_kind {
+        return Err(KernelError::validation(
+            "slotKind does not match targetModule",
+        ));
+    }
+    require_non_blank(target_ref, "targetRef")?;
+    if target_ref != trim(target_ref) {
+        return Err(KernelError::validation(
+            "targetRef must not contain leading or trailing whitespace",
+        ));
+    }
+    if target_ref.chars().count() > 256 {
+        return Err(KernelError::validation(
+            "targetRef must be at most 256 characters",
+        ));
+    }
+    reject_secret_material(target_ref, "targetRef")?;
+    validate_optional_plain_ref(target_version_ref, "targetVersionRef")?;
+    if !(-10_000..=10_000).contains(&priority) {
+        return Err(KernelError::validation(
+            "priority must be between -10000 and 10000",
+        ));
+    }
+    if policy_json.len() > 16 * 1024 {
+        return Err(KernelError::validation("policyJson exceeds 16384 bytes"));
+    }
+    let policy: serde_json::Value = serde_json::from_str(policy_json).map_err(|error| {
+        KernelError::validation(format!("policyJson must be valid JSON: {error}"))
+    })?;
+    if !policy.is_object() {
+        return Err(KernelError::validation("policyJson must be a JSON object"));
+    }
+    Ok(())
 }
 
 fn validate_optional_plain_ref(value: Option<&str>, field_name: &str) -> KernelResult<()> {

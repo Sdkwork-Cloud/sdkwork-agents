@@ -17,14 +17,20 @@ export interface AgentsDriveMediaResource extends MediaResource {
   kind: AgentsMediaKind;
   source: "drive";
   uri: string;
-  url: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: string;
+  url?: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: string;
   metadata: {
-    driveSpaceId: string;
-    driveNodeId: string;
-    uploadItemId: string;
+    driveSpaceId?: string;
+    driveNodeId?: string;
+    uploadItemId?: string;
+    drive?: {
+      spaceId: string;
+      nodeId: string;
+      spaceType?: string;
+      nodeVersion?: string;
+    };
   };
 }
 

@@ -4,16 +4,18 @@ use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelEvent, KernelResult
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_intelligence_agents_service::{
     extract_event_context, offset_paginated_result, ActivateAgentProviderBindingCommand,
-    AgentAuditSink, AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
-    AgentInteractionKind, AgentListQuery, AgentMessageRole, AgentPreviewResponseCommand,
-    AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentVisibility, AgentsService,
-    ApproveInteractionCommand, AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand,
-    CreateInteractionCommand, CreateSessionCommand, DeleteAgentCommand, DenyAllPolicyProvider,
-    GetAgentCommand, GetInteractionCommand, GetSessionCommand, IamGatedPolicyProvider,
-    InMemoryAgentRepository, InteractionListQuery, ListAgentAuditEventsCommand, ListAgentsCommand,
-    ListInteractionsCommand, PaginatedResult, PaginationParams, ProviderBindingListCommand,
-    ProviderBindingListQuery, RestoreAgentCommand, SendChatMessageCommand, UpdateAgentCommand,
-    DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, MAX_PAGE_SIZE,
+    AgentAuditSink, AgentBusinessStatus, AgentChatTurnStatus, AgentImplementationKind,
+    AgentImplementationType, AgentInteractionKind, AgentListQuery, AgentMessageMediaResourceInput,
+    AgentMessageRole, AgentPreviewResponseCommand, AgentPromptOptimizationCommand,
+    AgentProviderBindingCommand, AgentVisibility, AgentsService, ApproveInteractionCommand,
+    AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand, CreateInteractionCommand,
+    CreateSessionCommand, DeleteAgentCommand, DenyAllPolicyProvider, GetAgentCommand,
+    GetChatTurnByIdempotencyCommand, GetChatTurnCommand, GetInteractionCommand, GetSessionCommand,
+    IamGatedPolicyProvider, InMemoryAgentRepository, InteractionListQuery,
+    ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand, PaginatedResult,
+    PaginationParams, ProviderBindingListCommand, ProviderBindingListQuery, RestoreAgentCommand,
+    SendChatMessageCommand, UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
+    MAX_PAGE_SIZE,
 };
 use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
@@ -1139,6 +1141,7 @@ fn send_chat_message_persists_user_and_assistant_turn() {
             agent_id: created.agent_id.clone(),
             owner_user_id: 100,
             session_id: String::new(),
+            project_id: None,
             title: Some("Support chat".to_string()),
             provider_binding_id: None,
             model_id: None,
@@ -1148,20 +1151,47 @@ fn send_chat_message_persists_user_and_assistant_turn() {
         })
         .expect("create session should succeed");
 
+    let chat_command = SendChatMessageCommand {
+        tenant_id: 100_001,
+        agent_id: created.agent_id,
+        session_id: session.session_id,
+        content: "Hello, can you help?".to_string(),
+        content_type: "text/plain".to_string(),
+        metadata_json: "{}".to_string(),
+        media_resources: vec![AgentMessageMediaResourceInput {
+            id: "node-chat-1".to_string(),
+            kind: "image".to_string(),
+            source: "drive".to_string(),
+            uri: "drive://spaces/space-chat/nodes/node-chat-1".to_string(),
+            url: Some("https://drive.example.invalid/signed?secret=redacted".to_string()),
+            public_url: None,
+            object_blob_id: None,
+            file_name: Some("chat.png".to_string()),
+            mime_type: Some("image/png".to_string()),
+            size_bytes: Some("42".to_string()),
+            checksum: None,
+            width: Some(32),
+            height: Some(24),
+            duration_seconds: None,
+            alt_text: Some("Chat fixture".to_string()),
+            title: None,
+            access: Some(serde_json::json!({"visibility": "private"})),
+            metadata: Some(serde_json::json!({
+                "driveSpaceId": "space-chat",
+                "driveNodeId": "node-chat-1",
+                "uploadItemId": "upload-transient-1"
+            })),
+        }],
+        model_id: None,
+        idempotency_key: Some("chat-test-idempotency-1".to_string()),
+        client_request_id: Some("request.chat.1".to_string()),
+        owner_scope: None,
+        requested_by: sample_subject(),
+        requested_at: "2026-06-01T05:01:30Z".to_string(),
+        prefer_stream: false,
+    };
     let result = service
-        .send_chat_message(SendChatMessageCommand {
-            tenant_id: 100_001,
-            agent_id: created.agent_id,
-            session_id: session.session_id,
-            content: "Hello, can you help?".to_string(),
-            content_type: "text/plain".to_string(),
-            metadata_json: "{}".to_string(),
-            model_id: None,
-            owner_scope: None,
-            requested_by: sample_subject(),
-            requested_at: "2026-06-01T05:01:30Z".to_string(),
-            prefer_stream: false,
-        })
+        .send_chat_message(chat_command.clone())
         .expect("send chat message should succeed");
 
     assert_eq!(result.user_message.role, AgentMessageRole::User);
@@ -1169,6 +1199,75 @@ fn send_chat_message_persists_user_and_assistant_turn() {
     assert_eq!(result.assistant_message.role, AgentMessageRole::Assistant);
     assert!(!result.assistant_message.content.is_empty());
     assert_eq!(result.session.message_count, 2);
+    let completed_turn = service
+        .get_chat_turn(GetChatTurnCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: result.user_message.agent_id.clone(),
+            session_id: result.user_message.session_id.clone(),
+            turn_id: result.user_message.turn_id.clone().unwrap(),
+            owner_scope: None,
+            requested_by: sample_subject(),
+        })
+        .unwrap();
+    assert_eq!(completed_turn.status, AgentChatTurnStatus::Completed);
+    assert_eq!(completed_turn.version, 2);
+    assert!(completed_turn.started_at.is_some());
+    let turn_by_idempotency = service
+        .get_chat_turn_by_idempotency(GetChatTurnByIdempotencyCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: result.user_message.agent_id.clone(),
+            session_id: result.user_message.session_id.clone(),
+            owner_user_id: 100,
+            idempotency_key: "chat-test-idempotency-1".to_string(),
+            requested_by: sample_subject(),
+        })
+        .expect("turn idempotency lookup should succeed")
+        .expect("completed turn should be found");
+    assert_eq!(turn_by_idempotency.turn_id, completed_turn.turn_id);
+    assert_eq!(turn_by_idempotency.status, AgentChatTurnStatus::Completed);
+    let hidden_from_foreign_owner =
+        service.get_chat_turn_by_idempotency(GetChatTurnByIdempotencyCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: result.user_message.agent_id.clone(),
+            session_id: result.user_message.session_id.clone(),
+            owner_user_id: 999,
+            idempotency_key: "chat-test-idempotency-1".to_string(),
+            requested_by: sample_subject(),
+        });
+    assert!(hidden_from_foreign_owner.is_err());
+    assert_eq!(result.user_message_drive_refs.len(), 1);
+    let snapshot: serde_json::Value =
+        serde_json::from_str(&result.user_message_drive_refs[0].resource_snapshot_json).unwrap();
+    assert!(snapshot.get("url").is_none());
+    assert!(snapshot.pointer("/metadata/uploadItemId").is_none());
+    assert_eq!(
+        snapshot.pointer("/metadata/drive/nodeId"),
+        Some(&serde_json::json!("node-chat-1"))
+    );
+
+    let replay = service
+        .send_chat_message(chat_command.clone())
+        .expect("same idempotency key and payload should replay");
+    assert_eq!(
+        replay.user_message.message_id,
+        result.user_message.message_id
+    );
+    assert_eq!(
+        replay.assistant_message.message_id,
+        result.assistant_message.message_id,
+    );
+    assert_eq!(replay.session.message_count, 2);
+    assert_eq!(
+        replay.user_message_drive_refs,
+        result.user_message_drive_refs
+    );
+
+    let mut conflicting = chat_command;
+    conflicting.content = "Different payload".to_string();
+    assert!(service.send_chat_message(conflicting).is_err());
 }
 
 #[test]
@@ -1197,6 +1296,7 @@ fn get_session_rejects_foreign_owner_scope() {
             agent_id: created.agent_id.clone(),
             owner_user_id: 100,
             session_id: String::new(),
+            project_id: None,
             title: Some("Private chat".to_string()),
             provider_binding_id: None,
             model_id: None,
@@ -1243,6 +1343,7 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
             agent_id: agent.agent_id.clone(),
             owner_user_id: 100,
             session_id: String::new(),
+            project_id: None,
             title: Some("Interaction session".to_string()),
             provider_binding_id: None,
             model_id: None,

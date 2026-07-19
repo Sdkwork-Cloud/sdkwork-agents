@@ -330,9 +330,6 @@ export function normalizeSdkworkChatSessionUser(value: unknown): SdkworkChatSess
   const userRecord = value as Record<string, unknown>;
   const chatId = normalizeString(userRecord.chatId)
     ?? normalizeString(userRecord.chat_id)
-    ?? normalizeString(userRecord.imId)
-    ?? normalizeString(userRecord.im_id)
-    ?? normalizeString(userRecord.sdkworkImId)
     ?? normalizeString(userRecord.SDKWORK_AGENTS_PC_id);
   const normalized: SdkworkChatSessionUser = {
     ...(avatar ? { avatar } : {}),

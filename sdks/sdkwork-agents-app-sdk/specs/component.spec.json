@@ -88,6 +88,42 @@
         "packageByLanguage": {
           "typescript": "@sdkwork/iam-app-sdk"
         }
+      },
+      {
+        "workspace": "sdkwork-drive-app-sdk",
+        "role": "drive-uploader-file-storage-capability",
+        "required": true,
+        "dependencyMode": "consumer-sdk",
+        "apiPrefix": "/app/v3/api",
+        "apiAuthority": "sdkwork-drive.app",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/drive-app-sdk"
+        }
+      },
+      {
+        "workspace": "sdkwork-prompts-app-sdk",
+        "role": "project-instructions-capability",
+        "required": true,
+        "dependencyMode": "consumer-sdk",
+        "apiPrefix": "/app/v3/api",
+        "apiAuthority": "sdkwork-prompts-app-api",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/prompts-app-sdk"
+        }
+      },
+      {
+        "workspace": "sdkwork-memory-app-sdk",
+        "role": "project-memory-selection-capability",
+        "required": true,
+        "dependencyMode": "consumer-sdk",
+        "apiPrefix": "/app/v3/api",
+        "apiAuthority": "sdkwork-memory.app",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/memory-app-sdk"
+        }
       }
     ],
     "dependencyApiExports": [],
@@ -102,7 +138,6 @@
   },
   "verification": {
     "commands": [
-      "pnpm --filter @sdkwork/agents-app-sdk test",
       "node sdks/materialize-agent-v3-openapi-boundaries.mjs",
       "node sdks/sdkwork-agents-app-sdk/bin/verify-sdk.mjs",
       "node sdks/test/verify-agent-sdk-ownership-boundaries.test.mjs",

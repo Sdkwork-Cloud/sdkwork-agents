@@ -200,6 +200,38 @@ async fn get_json(app: &axum::Router, uri: &str, expected_status: StatusCode) ->
     serde_json::from_slice(&body_bytes).expect("response body should be valid json")
 }
 
+async fn request_without_body(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    expected_status: StatusCode,
+) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .body(Body::empty())
+        .expect("request should be built");
+    let response = app
+        .clone()
+        .oneshot(auth_headers(request))
+        .await
+        .expect("request should succeed");
+    let status = response.status();
+    let body_bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    assert_eq!(
+        status,
+        expected_status,
+        "{uri}: {}",
+        String::from_utf8_lossy(&body_bytes)
+    );
+    assert!(
+        body_bytes.is_empty(),
+        "{uri}: a no-content response must not include a response body"
+    );
+}
+
 fn response_constraints(response: &Value) -> Vec<String> {
     response["data"]["item"]["defaultCodeTaskIntent"]["constraints"]
         .as_array()
@@ -3703,6 +3735,331 @@ async fn backend_route_should_reject_missing_subject_headers() {
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
     assert_eq!(body_json["title"], "Validation failed");
+}
+
+#[tokio::test]
+async fn app_project_crud_should_be_versioned_listed_archived_and_deleted() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let project_id = "project.http.commercial";
+
+    let created = post_json(
+        &app,
+        "/app/v3/api/ai/projects",
+        json!({
+            "projectId": project_id,
+            "name": "Commercial workspace",
+            "description": "HTTP project contract",
+            "visibility": "private",
+            "driveAccessMode": "owner_library"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(created["data"]["item"]["projectId"], project_id);
+    assert_eq!(created["data"]["item"]["version"], "0");
+
+    let retrieved = get_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(retrieved["data"]["item"]["name"], "Commercial workspace");
+
+    let updated = patch_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}"),
+        json!({
+            "expectedVersion": created["data"]["item"]["version"],
+            "name": "Commercial workspace renamed"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        updated["data"]["item"]["name"],
+        "Commercial workspace renamed"
+    );
+    assert_eq!(updated["data"]["item"]["version"], "1");
+
+    let listed = get_json(
+        &app,
+        "/app/v3/api/ai/projects?q=renamed&page=1&pageSize=20",
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["data"]["items"].as_array().map(Vec::len), Some(1));
+    assert_eq!(listed["data"]["items"][0]["projectId"], project_id);
+
+    let archived = post_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}/archive"),
+        json!({
+            "expectedVersion": updated["data"]["item"]["version"]
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(archived["data"]["item"]["status"], "archived");
+    assert_eq!(archived["data"]["item"]["version"], "2");
+
+    request_without_body(
+        &app,
+        "DELETE",
+        &format!("/app/v3/api/ai/projects/{project_id}"),
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}"),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn app_project_composition_slot_crud_should_match_generated_sdk_contract() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let project_id = "project.http.composition";
+    let slot_id = "slot.instructions";
+
+    post_json(
+        &app,
+        "/app/v3/api/ai/projects",
+        json!({
+            "projectId": project_id,
+            "name": "Composition workspace",
+            "visibility": "private",
+            "driveAccessMode": "explicit_resources"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let created = post_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}/composition_slots"),
+        json!({
+            "slotId": slot_id,
+            "slotKind": "prompt",
+            "targetModule": "prompts",
+            "targetRef": "prompt.project.instructions",
+            "targetVersionRef": "version.1",
+            "priority": 10,
+            "enabled": true,
+            "policyJson": "{\"mode\":\"system\"}"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(created["data"]["item"]["version"], "0");
+
+    let listed = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/projects/{project_id}/composition_slots?slotKind=prompt&enabled=true&page=1&page_size=20"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["data"]["items"].as_array().map(Vec::len), Some(1));
+    assert_eq!(listed["data"]["items"][0]["slotId"], slot_id);
+
+    let retrieved = get_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}/composition_slots/{slot_id}"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(retrieved["data"]["item"]["targetModule"], "prompts");
+
+    let updated = patch_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}/composition_slots/{slot_id}"),
+        json!({
+            "expectedVersion": "0",
+            "enabled": false,
+            "clearTargetVersionRef": true
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(updated["data"]["item"]["version"], "1");
+    assert_eq!(updated["data"]["item"]["enabled"], false);
+    assert!(updated["data"]["item"]["targetVersionRef"].is_null());
+
+    let missing_version_request = Request::builder()
+        .method("DELETE")
+        .uri(format!(
+            "/app/v3/api/ai/projects/{project_id}/composition_slots/{slot_id}"
+        ))
+        .body(Body::empty())
+        .expect("delete request should be built");
+    let missing_version_response = app
+        .clone()
+        .oneshot(auth_headers(missing_version_request))
+        .await
+        .expect("delete request should complete");
+    assert_eq!(missing_version_response.status(), StatusCode::BAD_REQUEST);
+    request_without_body(
+        &app,
+        "DELETE",
+        &format!(
+            "/app/v3/api/ai/projects/{project_id}/composition_slots/{slot_id}?expected_version=1"
+        ),
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn app_chat_complete_should_replay_same_idempotency_payload_and_reject_conflicts() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.chat.complete.http";
+    create_agent(&app, agent_id, "Complete Chat HTTP Agent").await;
+
+    let session_id = "session.chat.complete.http";
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
+        json!({
+            "data": {
+                "tenantId": "0",
+                "organizationId": "0",
+                "ownerUserId": "0",
+                "sessionId": session_id,
+                "title": "Idempotent HTTP chat"
+            },
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/complete");
+    let payload = json!({
+        "content": "One commercial turn",
+        "idempotencyKey": "idem.http.complete.1",
+        "clientRequestId": "client.http.complete.1",
+        "requestedAt": "2026-06-28T12:00:01Z"
+    });
+    let first = post_json(&app, &uri, payload.clone(), StatusCode::CREATED).await;
+    let replay = post_json(&app, &uri, payload, StatusCode::CREATED).await;
+    assert_eq!(
+        replay["data"]["item"]["userMessage"]["messageId"],
+        first["data"]["item"]["userMessage"]["messageId"]
+    );
+    assert_eq!(
+        replay["data"]["item"]["assistantMessage"]["messageId"],
+        first["data"]["item"]["assistantMessage"]["messageId"]
+    );
+
+    let conflict = post_json(
+        &app,
+        &uri,
+        json!({
+            "content": "A different payload",
+            "idempotencyKey": "idem.http.complete.1",
+            "clientRequestId": "client.http.complete.2",
+            "requestedAt": "2026-06-28T12:00:02Z"
+        }),
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(conflict["title"], "Conflict");
+}
+
+#[tokio::test]
+async fn app_session_should_support_flat_create_rename_project_move_filter_and_delete() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.session.commercial.http";
+    create_agent(&app, agent_id, "Commercial Session Agent").await;
+    let project_id = "project.session.commercial";
+    post_json(
+        &app,
+        "/app/v3/api/ai/projects",
+        json!({
+            "projectId": project_id,
+            "name": "Session project"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let session_id = "session.commercial.http";
+    let created = post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
+        json!({
+            "sessionId": session_id,
+            "title": "Unsorted conversation",
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(created["data"]["item"]["sessionId"], session_id);
+    assert_eq!(created["data"]["item"]["lastMessageSequence"], "0");
+
+    let moved = patch_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}"),
+        json!({
+            "expectedVersion": created["data"]["item"]["version"],
+            "title": "Project conversation",
+            "projectId": project_id
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(moved["data"]["item"]["projectId"], project_id);
+    assert_eq!(moved["data"]["item"]["title"], "Project conversation");
+
+    let listed = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions?projectId={project_id}&page=1&pageSize=20"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["data"]["items"].as_array().map(Vec::len), Some(1));
+    assert_eq!(listed["data"]["items"][0]["sessionId"], session_id);
+
+    request_without_body(
+        &app,
+        "DELETE",
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}"),
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}"),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
 }
 
 #[tokio::test]

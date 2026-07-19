@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { FC } from 'react';
 import { cn } from '@sdkwork/agents-pc-commons';
-import { WORKBENCH_TABS, type WorkbenchTab } from './workbenchTabs';
+import { SIDEBAR_TABS, type SidebarTab, type WorkbenchTab } from './workbenchTabs';
 
 export type { WorkbenchTab } from './workbenchTabs';
 
@@ -27,21 +27,21 @@ interface GlobalSidebarProps {
 
 interface SidebarItem {
   icon: LucideIcon;
-  id: WorkbenchTab;
+  id: SidebarTab;
   label: string;
 }
 
-const SIDEBAR_ITEM_BY_TAB: Record<WorkbenchTab, Omit<SidebarItem, 'id'>> = {
+const SIDEBAR_ITEM_BY_TAB: Record<SidebarTab, Omit<SidebarItem, 'id'>> = {
   agents: { icon: Bot, label: 'Agent' },
   chat_session: { icon: MessageSquare, label: '对话' },
   inspiration: { icon: Home, label: '灵感' },
   creative: { icon: Sparkles, label: '生成' },
   assets: { icon: Folder, label: '资产' },
-  presentation: { icon: Presentation, label: '演说' },
+  presentation: { icon: Presentation, label: '演示' },
   canvas: { icon: LayoutGrid, label: '画布' },
 };
 
-const SIDEBAR_ITEMS: SidebarItem[] = WORKBENCH_TABS.map((id) => ({
+const SIDEBAR_ITEMS: SidebarItem[] = SIDEBAR_TABS.map((id) => ({
   id,
   ...SIDEBAR_ITEM_BY_TAB[id],
 }));

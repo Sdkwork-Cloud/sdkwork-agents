@@ -95,6 +95,7 @@ test('Agents App SDK chat helper uses the same canonical app-api prefix', async 
     const client = createClient({ baseUrl: APP_API_BASE_URL });
     await sendAgentChatMessageSync(client, 'agent-1', 'session-1', {
       content: 'hello',
+      idempotencyKey: 'chat-test-1',
       requestedAt: '2026-07-18T00:00:00.000Z',
     });
   } finally {
@@ -102,6 +103,6 @@ test('Agents App SDK chat helper uses the same canonical app-api prefix', async 
   }
 
   assert.deepEqual(requestedUrls, [
-    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/messages?stream=false',
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/messages/complete',
   ]);
 });

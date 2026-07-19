@@ -3,6 +3,7 @@
 //! Product repositories (BirdCoder, IM PC) must depend on this crate instead of
 //! importing `sdkwork-agent-provider-*` or `sdkwork-agent-kernel` types directly.
 
+mod chat;
 mod code_engines;
 mod engine_catalog;
 mod error;
@@ -10,6 +11,7 @@ mod live_interaction;
 mod runtime_host;
 mod turn;
 
+pub use chat::*;
 pub use code_engines::{
     bootstrap_code_engine, canonical_code_engine_keys, code_engine_agent_id,
     code_engine_binding_id, is_canonical_code_engine, CodeEngineBootstrapError, CodeEngineSlot,

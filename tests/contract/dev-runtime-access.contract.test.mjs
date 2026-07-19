@@ -42,7 +42,7 @@ function assertExactHttpOrigin(origin, message) {
   assert.equal(parsed.password, '', message);
 }
 
-test('root dev runner starts the API gateway before the PC browser renderer', () => {
+test('root dev runner supports standalone gateway and remote cloud development profiles', () => {
   const runner = read('scripts/agents-dev.mjs');
 
   assert.match(runner, /from ['"]@sdkwork\/app-topology['"]/u);
@@ -54,7 +54,10 @@ test('root dev runner starts the API gateway before the PC browser renderer', ()
   assert.match(runner, /topology\.listOrchestrationProcesses\(selectedProfile\.profileId\)/u);
   assert.match(runner, /topology\.listHealthSurfaces\(selectedProfile\.profileId\)/u);
   assert.match(runner, /assertLocallyRunnableProfile/u);
-  assert.match(runner, /only runs standalone\.development locally/u);
+  assert.match(runner, /only runs development profiles/u);
+  assert.match(runner, /selectedProfile\.deploymentProfile === ['"]standalone['"]/u);
+  assert.match(runner, /must be an explicit remote HTTPS URL/u);
+  assert.match(runner, /using deployed cloud APIs/u);
   assert.match(runner, /reportResolvedProfile/u);
   assert.match(runner, /SDKWORK_ENVIRONMENT = selectedProfile\.environment/u);
   assert.match(runner, /process\.env/u);
@@ -169,11 +172,21 @@ test('source topology profiles project exact CORS and IAM origins from etc', () 
     if (environment === 'development') {
       assert.equal(env.SDKWORK_CORS_ALLOWED_ORIGINS, undefined);
       if (deploymentProfile === 'standalone') {
-        assert.match(
-          env.SDKWORK_DATABASE_PATH,
-          /^\.runtime\//,
-          'standalone development kernel state must stay outside the source tree',
-        );
+        assert.equal(env.SDKWORK_AGENTS_DEV_AUTH_BYPASS, 'false');
+        assert.equal(env.SDKWORK_AGENTS_DATABASE_ENGINE, 'postgresql');
+        assert.equal(env.SDKWORK_AGENTS_STORE_DATABASE_ENGINE, 'postgresql');
+        assert.equal(env.SDKWORK_AGENTS_DATABASE_SCHEMA, 'public');
+        assert.equal(env.SDKWORK_AGENTS_STORE_DATABASE_SCHEMA, 'public');
+        assert.equal(env.SDKWORK_AGENTS_DATABASE_SSL_MODE, 'disable');
+        assert.equal(env.SDKWORK_AGENTS_STORE_DATABASE_SSL_MODE, 'disable');
+        assert.equal(env.SDKWORK_AGENTS_DATABASE_URL, undefined);
+        assert.equal(env.SDKWORK_AGENTS_STORE_DATABASE_URL, undefined);
+        assert.equal(env.SDKWORK_DATABASE_PATH, undefined);
+      } else {
+        assert.equal(env.SDKWORK_AGENTS_DATABASE_ENGINE, undefined);
+        assert.equal(env.SDKWORK_AGENTS_STORE_DATABASE_ENGINE, undefined);
+        assert.equal(env.SDKWORK_AGENTS_DATABASE_URL, undefined);
+        assert.equal(env.SDKWORK_AGENTS_STORE_DATABASE_URL, undefined);
       }
       continue;
     }

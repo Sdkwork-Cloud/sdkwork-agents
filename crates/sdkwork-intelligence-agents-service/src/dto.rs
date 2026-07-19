@@ -10,7 +10,8 @@ use crate::application::{
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotRecord, AgentImplementationKind,
     AgentImplementationType, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentMessageRecord, AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord,
+    AgentMessageDriveRefRecord, AgentMessageFeedbackRecord, AgentMessageRecord, AgentMessageRole,
+    AgentMessageStatus, AgentProviderBindingRecord, AgentResourceUserStateRecord,
     AgentRuntimeExecutionRecord, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord,
     AgentTaskStatus, AgentVisibility,
 };
@@ -893,6 +894,7 @@ pub struct CreateSessionDataDto {
     pub owner_user_id: String,
     #[serde(default)]
     pub session_id: Option<String>,
+    pub project_id: Option<String>,
     pub title: Option<String>,
     pub provider_binding_id: Option<String>,
     pub model_id: Option<String>,
@@ -919,6 +921,7 @@ impl CreateSessionRequestDto {
             agent_id,
             owner_user_id: parse_owner_user_id(&self.data.owner_user_id)?,
             session_id: self.data.session_id.unwrap_or_default(),
+            project_id: self.data.project_id,
             title: self.data.title,
             provider_binding_id: self.data.provider_binding_id,
             model_id: self.data.model_id,
@@ -1027,11 +1030,13 @@ pub struct AgentSessionRecordDto {
     pub organization_id: String,
     pub agent_id: String,
     pub owner_user_id: String,
+    pub project_id: Option<String>,
     pub title: Option<String>,
     pub status: String,
     pub provider_binding_id: Option<String>,
     pub model_id: Option<String>,
     pub message_count: String,
+    pub last_message_sequence: String,
     pub total_input_tokens: String,
     pub total_output_tokens: String,
     pub metadata_json: String,
@@ -1040,6 +1045,7 @@ pub struct AgentSessionRecordDto {
     pub updated_at: String,
     pub last_message_at: Option<String>,
     pub closed_at: Option<String>,
+    pub archived_at: Option<String>,
 }
 
 impl AgentSessionRecordDto {
@@ -1051,11 +1057,13 @@ impl AgentSessionRecordDto {
             organization_id: record.organization_id.to_string(),
             agent_id: record.agent_id.clone(),
             owner_user_id: record.owner_user_id.to_string(),
+            project_id: record.project_id.clone(),
             title: record.title.clone(),
             status: record.status.as_str().to_string(),
             provider_binding_id: record.provider_binding_id.clone(),
             model_id: record.model_id.clone(),
             message_count: record.message_count.to_string(),
+            last_message_sequence: record.last_message_sequence.to_string(),
             total_input_tokens: record.total_input_tokens.to_string(),
             total_output_tokens: record.total_output_tokens.to_string(),
             metadata_json: record.metadata_json.clone(),
@@ -1064,6 +1072,7 @@ impl AgentSessionRecordDto {
             updated_at: record.updated_at.clone(),
             last_message_at: record.last_message_at.clone(),
             closed_at: record.closed_at.clone(),
+            archived_at: record.archived_at.clone(),
         }
     }
 }
@@ -1103,6 +1112,92 @@ impl AgentSessionListResponseDto {
                     .map(AgentSessionRecordDto::from_record)
                     .collect(),
             },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResourceUserStateRecordDto {
+    pub id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub user_id: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hidden_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_opened_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_read_message_sequence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl AgentResourceUserStateRecordDto {
+    pub fn from_record(record: &AgentResourceUserStateRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            user_id: record.user_id.to_string(),
+            resource_type: record.resource_type.as_str().to_string(),
+            resource_id: record.resource_id.clone(),
+            pinned_at: record.pinned_at.clone(),
+            hidden_at: record.hidden_at.clone(),
+            last_opened_at: record.last_opened_at.clone(),
+            last_read_message_sequence: record
+                .last_read_message_sequence
+                .map(|value| value.to_string()),
+            custom_title: record.custom_title.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageFeedbackRecordDto {
+    pub id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub message_id: String,
+    pub user_id: String,
+    pub rating: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<String>,
+}
+
+impl AgentMessageFeedbackRecordDto {
+    pub fn from_record(record: &AgentMessageFeedbackRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            message_id: record.message_id.clone(),
+            user_id: record.user_id.to_string(),
+            rating: record.rating.as_str().to_string(),
+            reason_code: record.reason_code.clone(),
+            comment: record.comment.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            deleted_at: record.deleted_at.clone(),
         }
     }
 }
@@ -1588,7 +1683,9 @@ pub struct AgentMessageRecordDto {
     pub provider_id: Option<String>,
     pub artifacts_json: String,
     pub metadata_json: String,
+    pub media_resources: Vec<Value>,
     pub parent_message_id: Option<String>,
+    pub turn_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1612,10 +1709,41 @@ impl AgentMessageRecordDto {
             provider_id: record.provider_id.clone(),
             artifacts_json: record.artifacts_json.clone(),
             metadata_json: record.metadata_json.clone(),
+            media_resources: Vec::new(),
             parent_message_id: record.parent_message_id.clone(),
+            turn_id: record.turn_id.clone(),
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
         }
+    }
+
+    pub fn from_record_with_drive_refs(
+        record: &AgentMessageRecord,
+        drive_refs: &[AgentMessageDriveRefRecord],
+    ) -> KernelResult<Self> {
+        let mut dto = Self::from_record(record);
+        dto.media_resources = drive_refs
+            .iter()
+            .map(|drive_ref| {
+                let value = serde_json::from_str::<Value>(&drive_ref.resource_snapshot_json)
+                    .map_err(|error| KernelError::Internal {
+                        message: format!(
+                            "invalid persisted MediaResource snapshot for message {}: {error}",
+                            record.message_id
+                        ),
+                    })?;
+                if !value.is_object() {
+                    return Err(KernelError::Internal {
+                        message: format!(
+                            "persisted MediaResource snapshot for message {} is not an object",
+                            record.message_id
+                        ),
+                    });
+                }
+                Ok(value)
+            })
+            .collect::<KernelResult<Vec<_>>>()?;
+        Ok(dto)
     }
 }
 

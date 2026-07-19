@@ -435,6 +435,18 @@ importers:
         specifier: ^5.8.2
         version: 5.9.3
 
+  ../sdkwork-memory/sdks/sdkwork-memory-app-sdk/sdkwork-memory-app-sdk-typescript:
+    dependencies:
+      '@sdkwork/sdk-common':
+        specifier: workspace:*
+        version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
+
+  ../sdkwork-prompts/sdks/sdkwork-prompts-app-sdk/sdkwork-prompts-app-sdk-typescript:
+    dependencies:
+      '@sdkwork/sdk-common':
+        specifier: workspace:*
+        version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
+
   ../sdkwork-sdk-commons/sdkwork-sdk-common-typescript:
     devDependencies:
       '@types/node':
@@ -1081,6 +1093,12 @@ importers:
       '@sdkwork/knowledgebase-app-sdk':
         specifier: workspace:*
         version: link:../../../../../sdkwork-knowledgebase/sdks/sdkwork-knowledgebase-app-sdk/sdkwork-knowledgebase-app-sdk-typescript
+      '@sdkwork/memory-app-sdk':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-memory/sdks/sdkwork-memory-app-sdk/sdkwork-memory-app-sdk-typescript
+      '@sdkwork/prompts-app-sdk':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-prompts/sdks/sdkwork-prompts-app-sdk/sdkwork-prompts-app-sdk-typescript
       '@sdkwork/sdk-common':
         specifier: workspace:*
         version: link:../../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript

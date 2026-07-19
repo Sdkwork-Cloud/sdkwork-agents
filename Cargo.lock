@@ -2500,7 +2500,9 @@ dependencies = [
  "anyhow",
  "axum 0.8.9",
  "sdkwork-agent-server",
+ "sdkwork-agents-database-host",
  "sdkwork-agents-kernel-bridge",
+ "sdkwork-agents-runtime-facade",
  "sdkwork-iam-database-host",
  "sdkwork-iam-embedded-application-bootstrap",
  "sdkwork-routes-agents-app-api",
@@ -2684,6 +2686,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2810,6 +2813,7 @@ dependencies = [
  "axum 0.8.9",
  "sdkwork-agent-kernel",
  "sdkwork-agents-contract",
+ "sdkwork-agents-database-host",
  "sdkwork-agents-runtime-facade",
  "sdkwork-code-kernel",
  "sdkwork-database-config",

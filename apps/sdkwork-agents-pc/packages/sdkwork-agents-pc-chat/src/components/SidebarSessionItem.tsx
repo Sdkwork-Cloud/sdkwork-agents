@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Pin, MoreHorizontal, Check, X } from 'lucide-react';
 import { cn } from '@sdkwork/agents-pc-commons';
-import { ChatSession } from '@sdkwork/agents-pc-chat';
+import { ChatSession, type ChatProject } from '@sdkwork/agents-pc-chat';
 import { SidebarSessionContextMenu } from './SidebarSessionContextMenu';
 
 interface SidebarSessionItemProps {
@@ -17,8 +17,8 @@ interface SidebarSessionItemProps {
   handleDropdownClick: (e: React.MouseEvent, id: string) => void;
   setActiveDropdown: (id: string | null) => void;
   t: (key: string) => string;
-  projectsList: string[];
-  onMoveToProject: (project: string) => void;
+  projectsList: ChatProject[];
+  onMoveToProject: (project: ChatProject) => void;
   canDelete: boolean;
 }
 

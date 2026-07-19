@@ -164,6 +164,7 @@
       "cargo test -p sdkwork-intelligence-agents-service",
       "cargo test -p sdkwork-intelligence-agents-service --features http-axum",
       "cargo test -p sdkwork-intelligence-agents-service --features postgres-sync",
+      "pnpm test:database:postgres-live",
       "node sdks/materialize-agent-v3-openapi-boundaries.mjs",
       "node sdks/workspace-agent-sdkgen.mjs --mode dry-run",
       "node scripts/check-agent-sdk-workspace.mjs",

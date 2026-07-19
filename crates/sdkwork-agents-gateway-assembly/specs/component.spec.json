@@ -47,6 +47,9 @@
     ],
     "runtimeEntrypoints": [
       "src/bootstrap.rs#assemble_application_router",
+      "src/lib.rs#assemble_app_business_router",
+      "src/lib.rs#assemble_app_business_runtime",
+      "src/lib.rs#bootstrap_application_database_from_env",
       "src/bootstrap/iam.rs#wire_iam_app_router"
     ],
     "routeManifest": "assembly-manifest.json",

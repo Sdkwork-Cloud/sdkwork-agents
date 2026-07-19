@@ -1,81 +1,282 @@
-import React from 'react';
-import { X, Bot } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { FolderCog, Loader2, Save, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import {
+  ProjectService,
+  type ChatProject,
+  type ProjectSettingsData,
+} from '../services/ProjectService';
+
 interface ProjectSettingsModalProps {
+  project: ChatProject;
   onClose: () => void;
-  projectName: string;
+  onSaved: (project: ChatProject) => void;
+  onDeleted: (projectId: string) => void;
 }
 
-export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ onClose, projectName }) => {
-  const { t } = useTranslation('common');
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : String(error);
+}
+
+export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
+  project,
+  onClose,
+  onSaved,
+  onDeleted,
+}) => {
+  const { t } = useTranslation('chat');
+  const [settings, setSettings] = useState<ProjectSettingsData | null>(null);
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? '');
+  const [visibility, setVisibility] = useState(project.visibility);
+  const [driveAccessMode, setDriveAccessMode] = useState(project.driveAccessMode);
+  const [instructions, setInstructions] = useState('');
+  const [memorySpaceId, setMemorySpaceId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    ProjectService.getProjectSettings(project.projectId)
+      .then((loaded) => {
+        if (!active) return;
+        setSettings(loaded);
+        setName(loaded.project.name);
+        setDescription(loaded.project.description ?? '');
+        setVisibility(loaded.project.visibility);
+        setDriveAccessMode(loaded.project.driveAccessMode);
+        setInstructions(loaded.instructions);
+        setMemorySpaceId(loaded.memorySpaceId ?? '');
+      })
+      .catch((cause) => active && setError(errorMessage(cause)))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [project.projectId]);
+
+  const handleVisibilityChange = (next: ChatProject['visibility']) => {
+    setVisibility(next);
+    if (next === 'shared' && driveAccessMode === 'owner_library') {
+      setDriveAccessMode('explicit_resources');
+    }
+  };
+
+  const handleSave = async () => {
+    if (!settings || !name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updatedProject = await ProjectService.updateProject(settings.project, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        visibility,
+        driveAccessMode,
+      });
+      let updatedSlots = await ProjectService.saveProjectInstructions(
+        updatedProject,
+        settings.slots,
+        instructions,
+      );
+      updatedSlots = await ProjectService.saveProjectMemorySpace(
+        updatedProject.projectId,
+        updatedSlots,
+        memorySpaceId || undefined,
+      );
+      setSettings({
+        ...settings,
+        project: updatedProject,
+        slots: updatedSlots,
+        instructions,
+        memorySpaceId: memorySpaceId || undefined,
+      });
+      onSaved(updatedProject);
+      onClose();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(t('projectDeleteConfirm'))) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await ProjectService.deleteProject(project.projectId);
+      onDeleted(project.projectId);
+      onClose();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const busy = loading || saving || deleting;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
-      <div 
-        className="bg-[#1C1C1E] w-full max-w-[520px] rounded-2xl shadow-2xl flex flex-col border border-white/10 animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/65 p-4"
+      onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="project-settings-title"
+        className="flex max-h-[min(760px,calc(100vh-32px))] w-full max-w-[620px] flex-col overflow-hidden rounded-lg border border-white/10 bg-[#18181a] shadow-2xl"
       >
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
-          <h2 className="text-lg font-medium text-white">项目设置</h2>
-          <button 
+        <header className="flex min-h-16 items-center justify-between border-b border-white/10 px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <FolderCog size={20} className="shrink-0 text-zinc-400" />
+            <h2 id="project-settings-title" className="truncate text-base font-semibold text-white">
+              {t('projectSettings')}
+            </h2>
+          </div>
+          <button
+            type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-white p-1 rounded-md hover:bg-white/10 transition-colors"
+            disabled={busy}
+            className="grid size-9 place-items-center rounded-md text-zinc-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40"
+            aria-label={t('close')}
+            title={t('close')}
           >
-            <X size={20} />
+            <X size={19} />
           </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm text-zinc-300 font-medium">项目名称</label>
-            <div className="flex items-center gap-3 bg-[#111111] border border-white/10 rounded-xl px-4 py-3">
-              <Bot size={18} className="text-zinc-400" />
-              <input 
-                type="text"
-                defaultValue={projectName}
-                className="bg-transparent border-none outline-none text-white text-[15px] flex-1"
-              />
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          {loading ? (
+            <div className="grid min-h-64 place-items-center" aria-label={t('loading')}>
+              <Loader2 size={24} className="animate-spin text-zinc-400" />
             </div>
-          </div>
-          
-          <div className="space-y-2">
-            <label className="text-sm text-zinc-300 font-medium block">指令</label>
-            <span className="text-xs text-zinc-500 block mb-2">设置此项目的背景信息并自定义 ChatGPT 的回复方式。</span>
-            <textarea 
-              className="w-full bg-[#111111] border border-white/10 rounded-xl px-4 py-3 text-white text-[14px] min-h-[100px] outline-none focus:border-indigo-500/50 transition-colors resize-y placeholder:text-zinc-600"
-              placeholder="例如“用西班牙语回答。参考最新的 JavaScript 文档。回答要简短且突出重点。”"
-            />
-          </div>
-          
-          <div className="space-y-2">
-            <label className="text-sm text-zinc-300 font-medium block">记忆</label>
-            <div className="w-full bg-[#111111] border border-white/10 rounded-xl px-4 py-3 text-white text-[14px]">
-              默认
-            </div>
-            <span className="text-xs text-zinc-500 block mt-2">该项目可以访问外部聊天的记忆，反之亦然。此设置无法更改。</span>
-          </div>
-          
-          <div className="space-y-2">
-            <label className="text-sm text-zinc-300 font-medium block">库访问权限</label>
-            <div className="relative">
-              <select className="w-full bg-[#111111] border border-white/10 rounded-xl px-4 py-3 text-white text-[14px] outline-none appearance-none cursor-pointer">
-                <option value="enabled">已启用</option>
-                <option value="disabled">已禁用</option>
-              </select>
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          ) : (
+            <div className="space-y-5">
+              {error && (
+                <div role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-zinc-300">{t('projectName')}</span>
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  maxLength={255}
+                  disabled={busy}
+                  className="h-10 w-full rounded-md border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none transition-colors focus:border-emerald-500/60 disabled:opacity-50"
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-zinc-300">{t('projectDescription')}</span>
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  disabled={busy}
+                  rows={3}
+                  className="w-full resize-y rounded-md border border-white/10 bg-[#101012] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-emerald-500/60 disabled:opacity-50"
+                />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-zinc-300">{t('projectVisibility')}</span>
+                  <select
+                    value={visibility}
+                    onChange={(event) => handleVisibilityChange(event.target.value as ChatProject['visibility'])}
+                    disabled={busy}
+                    className="h-10 w-full rounded-md border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-emerald-500/60 disabled:opacity-50"
+                  >
+                    <option value="private">{t('projectVisibilityPrivate')}</option>
+                    <option value="organization">{t('projectVisibilityOrganization')}</option>
+                    <option value="shared">{t('projectVisibilityShared')}</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-zinc-300">{t('projectDriveAccess')}</span>
+                  <select
+                    value={driveAccessMode}
+                    onChange={(event) => setDriveAccessMode(event.target.value as ChatProject['driveAccessMode'])}
+                    disabled={busy}
+                    className="h-10 w-full rounded-md border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-emerald-500/60 disabled:opacity-50"
+                  >
+                    <option value="disabled">{t('projectDriveDisabled')}</option>
+                    <option value="owner_library" disabled={visibility === 'shared'}>
+                      {t('projectDriveOwnerLibrary')}
+                    </option>
+                    <option value="explicit_resources">{t('projectDriveExplicitResources')}</option>
+                  </select>
+                </label>
               </div>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-zinc-300">{t('projectInstructions')}</span>
+                <textarea
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.target.value)}
+                  disabled={busy}
+                  rows={6}
+                  className="w-full resize-y rounded-md border border-white/10 bg-[#101012] px-3 py-2 text-sm leading-6 text-white outline-none transition-colors focus:border-emerald-500/60 disabled:opacity-50"
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-zinc-300">{t('projectMemory')}</span>
+                <select
+                  value={memorySpaceId}
+                  onChange={(event) => setMemorySpaceId(event.target.value)}
+                  disabled={busy}
+                  className="h-10 w-full rounded-md border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-emerald-500/60 disabled:opacity-50"
+                >
+                  <option value="">{t('projectMemoryDefault')}</option>
+                  {settings?.memorySpaces.map((space) => (
+                    <option key={space.spaceId} value={space.spaceId}>{space.displayName}</option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <span className="text-xs text-zinc-500 block mt-2">此项目在保持私有状态时可访问你的文件库。共享此项目将禁用库访问权限。</span>
-          </div>
-          
-          <div className="pt-2">
-            <button className="px-4 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors text-[14px] font-medium">
-              删除项目
+          )}
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-5 py-4">
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={busy}
+            className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"
+          >
+            {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {t('deleteProject')}
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="h-9 rounded-md px-4 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-40"
+            >
+              {t('cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={busy || !settings || !name.trim()}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {t('save')}
             </button>
           </div>
-        </div>
+        </footer>
       </div>
     </div>
   );

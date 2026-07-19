@@ -12,7 +12,7 @@ import {
   Trash2,
   Folder,
 } from "lucide-react";
-import { ChatSession } from "@sdkwork/agents-pc-chat";
+import { ChatSession, type ChatProject } from "@sdkwork/agents-pc-chat";
 
 interface SidebarSessionContextMenuProps {
   session: ChatSession;
@@ -22,8 +22,8 @@ interface SidebarSessionContextMenuProps {
   onTogglePin: (e: React.MouseEvent, id: string) => void;
   onDeleteSession: (e: React.MouseEvent, id: string) => void;
   onRename?: () => void;
-  projectsList: string[];
-  onMoveToProject: (project: string) => void;
+  projectsList: ChatProject[];
+  onMoveToProject: (project: ChatProject) => void;
   canDelete: boolean;
 }
 
@@ -89,7 +89,7 @@ export const SidebarSessionContextMenu: React.FC<
           <div className="max-h-[220px] overflow-y-auto custom-scrollbar px-1.5 space-y-0.5">
             {projectsList.map((project) => (
               <button
-                key={project}
+                key={project.projectId}
                 className="w-full flex items-center gap-2.5 px-2.5 py-2 text-[13px] text-zinc-300 hover:text-white hover:bg-indigo-500/10 hover:border-indigo-500/20 border border-transparent rounded-lg transition-colors text-left group/item"
                 onClick={() => {
                   onClose();
@@ -100,7 +100,7 @@ export const SidebarSessionContextMenu: React.FC<
                   size={14}
                   className="text-zinc-400 group-hover/item:text-indigo-400 transition-colors"
                 />
-                <span className="truncate">{project}</span>
+                <span className="truncate">{project.name}</span>
               </button>
             ))}
           </div>

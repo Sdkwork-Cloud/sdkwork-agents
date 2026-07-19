@@ -689,6 +689,379 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/projects:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: List commercial chat projects for the current user
+      operationId: agents.projects.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: agent.business.project.list
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: q
+        in: query
+        schema:
+          type: string
+          maxLength: 255
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/AgentProjectStatus'
+      - name: includeDeleted
+        in: query
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Paginated project list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Create a commercial chat project
+      operationId: agents.projects.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: agent.business.project.create
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentProjectRequest'
+      responses:
+        '201':
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/projects/{projectId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Retrieve a commercial chat project
+      operationId: agents.projects.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: agent.business.project.retrieve
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Update a commercial chat project
+      operationId: agents.projects.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: agent.business.project.update
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_updated
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentProjectRequest'
+      responses:
+        '200':
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Soft-delete a commercial chat project
+      operationId: agents.projects.delete
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: agent.business.project.delete
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_deleted
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      responses:
+        '204':
+          description: Project deleted
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/projects/{projectId}/archive:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Archive a commercial chat project
+      operationId: agents.projects.archive
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: agent.business.project.archive
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_archived
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentProjectMutationRequest'
+      responses:
+        '200':
+          description: Archived project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/projects/{projectId}/composition_slots:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: List composition slots for a commercial chat project
+      operationId: agents.projectCompositionSlots.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projectCompositionSlots
+      x-sdkwork-permission: agent.business.project.composition_slot.list
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: slotKind
+        in: query
+        schema:
+          $ref: '#/components/schemas/AgentCompositionSlotKind'
+      - name: enabled
+        in: query
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Paginated project composition slot list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectCompositionSlotListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Add a composition slot to a commercial chat project
+      operationId: agents.projectCompositionSlots.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projectCompositionSlots
+      x-sdkwork-permission: agent.business.project.composition_slot.create
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_composition_slot_created
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentProjectCompositionSlotRequest'
+      responses:
+        '201':
+          description: Created project composition slot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/projects/{projectId}/composition_slots/{slotId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Retrieve a project composition slot
+      operationId: agents.projectCompositionSlots.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projectCompositionSlots
+      x-sdkwork-permission: agent.business.project.composition_slot.retrieve
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/SlotIdPath'
+      responses:
+        '200':
+          description: Project composition slot details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Update a project composition slot
+      operationId: agents.projectCompositionSlots.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projectCompositionSlots
+      x-sdkwork-permission: agent.business.project.composition_slot.update
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_composition_slot_updated
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/SlotIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentProjectCompositionSlotRequest'
+      responses:
+        '200':
+          description: Updated project composition slot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Soft-delete a project composition slot
+      operationId: agents.projectCompositionSlots.delete
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projectCompositionSlots
+      x-sdkwork-permission: agent.business.project.composition_slot.delete
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_composition_slot_deleted
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/SlotIdPath'
+      - name: expected_version
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/Int64String'
+      responses:
+        '204':
+          description: Project composition slot deleted
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions:
     get:
       x-sdkwork-owner: sdkwork-agents
@@ -708,6 +1081,12 @@ paths:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
+      - name: projectId
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
       responses:
         '200':
           description: Managed agent session list response
@@ -757,6 +1136,49 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/user_states:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: List per-user state for chat sessions owned by the authenticated user
+      operationId: agents.sessionUserStates.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionUserStates
+      x-sdkwork-permission: agent.business.session.user_state.list
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: pinnedOnly
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      - name: includeHidden
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Paginated per-user chat session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResourceUserStateListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}:
     get:
       x-sdkwork-owner: sdkwork-agents
@@ -782,6 +1204,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Rename or move one chat session
+      operationId: agents.sessions.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: agent.business.session.update
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.session_updated
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppUpdateAgentSessionRequest'
+      responses:
+        '200':
+          description: Updated managed agent session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Soft delete one chat session
+      operationId: agents.sessions.delete
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: agent.business.session.delete
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.session_deleted
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '204':
+          description: Session deleted
         default:
           description: RFC 9457 problem detail response
           content:
@@ -820,6 +1306,103 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/user_state:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Retrieve the authenticated user's state for one chat session
+      operationId: agents.sessionUserStates.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionUserStates
+      x-sdkwork-permission: agent.business.session.user_state.retrieve
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Per-user chat session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResourceUserStateResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Update the authenticated user's state for one chat session
+      operationId: agents.sessionUserStates.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionUserStates
+      x-sdkwork-permission: agent.business.session.user_state.update
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentSessionUserStateRequest'
+      responses:
+        '200':
+          description: Updated per-user chat session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResourceUserStateResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/message_feedback:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: List the authenticated user's feedback for assistant messages in a session
+      operationId: agents.messageFeedback.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.messageFeedback
+      x-sdkwork-permission: agent.business.message.feedback.list
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated assistant message feedback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMessageFeedbackListResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -928,6 +1511,150 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentMessageResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}/feedback:
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Submit, change, or clear assistant message feedback
+      operationId: agents.messageFeedback.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.messageFeedback
+      x-sdkwork-permission: agent.business.message.feedback.update
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.message_feedback_changed
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/MessageIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentMessageFeedbackRequest'
+      responses:
+        '200':
+          description: Updated assistant message feedback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMessageFeedbackResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Retrieve one durable chat turn
+      operationId: agents.chatTurns.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.chatTurns
+      x-sdkwork-permission: agent.business.chat_turn.retrieve
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/TurnIdPath'
+      responses:
+        '200':
+          description: Durable chat turn state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentChatTurnResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Cancel one requested or running chat turn
+      operationId: agents.chatTurns.cancel
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.chatTurns
+      x-sdkwork-permission: agent.business.chat_turn.cancel
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.turn_cancelled
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/TurnIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAgentChatTurnRequest'
+      responses:
+        '200':
+          description: Cancelled chat turn state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentChatTurnResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/complete:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Send a chat message and return one complete JSON response
+      operationId: agents.messages.complete
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.messages
+      x-sdkwork-permission: agent.business.message.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.message_created
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppSendAgentChatMessageRequest'
+      responses:
+        '200':
+          description: Complete chat turn with user and assistant messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentChatCompletionResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -1623,6 +2350,15 @@ components:
       in: header
       name: Access-Token
   parameters:
+    ProjectIdPath:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     IncludeDeleted:
       name: include_deleted
       in: query
@@ -1729,6 +2465,15 @@ components:
         minLength: 1
         maxLength: 128
         pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+    TurnIdPath:
+      name: turnId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     TaskIdPath:
       name: taskId
       in: path
@@ -2361,6 +3106,7 @@ components:
       - prompt
       - drive
       - tool
+      - mcp
     AgentCompositionTargetModule:
       type: string
       enum:
@@ -2369,6 +3115,8 @@ components:
       - skills
       - prompts
       - drive
+      - mcp
+      - tools
     AgentCompositionSlotRecord:
       type: object
       additionalProperties: false
@@ -2813,6 +3561,311 @@ components:
         requestedAt:
           type: string
           format: date-time
+    AgentProjectVisibility:
+      type: string
+      enum: [private, organization, shared]
+    AgentProjectStatus:
+      type: string
+      enum: [active, archived, deleted]
+    AgentProjectDriveAccessMode:
+      type: string
+      enum: [disabled, owner_library, explicit_resources]
+    AgentProjectRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - projectId
+      - tenantId
+      - organizationId
+      - ownerUserId
+      - name
+      - visibility
+      - status
+      - driveAccessMode
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: [string, 'null']
+        visibility:
+          $ref: '#/components/schemas/AgentProjectVisibility'
+        status:
+          $ref: '#/components/schemas/AgentProjectStatus'
+        driveAccessMode:
+          $ref: '#/components/schemas/AgentProjectDriveAccessMode'
+        defaultAgentId:
+          type: [string, 'null']
+        defaultModelId:
+          type: [string, 'null']
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+    AgentProjectResponse:
+      description: Single project response following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentProjectRecord'
+    AgentProjectListResponse:
+      description: Paginated project response following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentProjectRecord'
+    CreateAgentProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/AgentProjectVisibility'
+        driveAccessMode:
+          $ref: '#/components/schemas/AgentProjectDriveAccessMode'
+        defaultAgentId:
+          type: string
+        defaultModelId:
+          type: string
+    UpdateAgentProjectRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: [string, 'null']
+        visibility:
+          $ref: '#/components/schemas/AgentProjectVisibility'
+        driveAccessMode:
+          $ref: '#/components/schemas/AgentProjectDriveAccessMode'
+        defaultAgentId:
+          type: [string, 'null']
+        defaultModelId:
+          type: [string, 'null']
+    AgentProjectMutationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+    AgentProjectCompositionSlotRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - tenantId
+      - organizationId
+      - projectId
+      - slotId
+      - slotKind
+      - targetModule
+      - targetRef
+      - priority
+      - enabled
+      - policyJson
+      - createdBy
+      - updatedBy
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        slotId:
+          type: string
+          pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        slotKind:
+          $ref: '#/components/schemas/AgentCompositionSlotKind'
+        targetModule:
+          $ref: '#/components/schemas/AgentCompositionTargetModule'
+        targetRef:
+          type: string
+          minLength: 1
+          maxLength: 256
+        targetVersionRef:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+        priority:
+          type: integer
+          minimum: -10000
+          maximum: 10000
+        enabled:
+          type: boolean
+        policyJson:
+          type: string
+          maxLength: 16384
+        createdBy:
+          $ref: '#/components/schemas/Int64String'
+        updatedBy:
+          $ref: '#/components/schemas/Int64String'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AgentProjectCompositionSlotResponse:
+      description: Single project composition slot response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentProjectCompositionSlotRecord'
+    AgentProjectCompositionSlotListResponse:
+      description: Paginated project composition slot response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentProjectCompositionSlotRecord'
+    CreateAgentProjectCompositionSlotRequest:
+      type: object
+      additionalProperties: false
+      required: [slotId, slotKind, targetModule, targetRef]
+      properties:
+        slotId:
+          type: string
+          pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        slotKind:
+          $ref: '#/components/schemas/AgentCompositionSlotKind'
+        targetModule:
+          $ref: '#/components/schemas/AgentCompositionTargetModule'
+        targetRef:
+          type: string
+          minLength: 1
+          maxLength: 256
+        targetVersionRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+        priority:
+          type: integer
+          minimum: -10000
+          maximum: 10000
+          default: 0
+        enabled:
+          type: boolean
+          default: true
+        policyJson:
+          type: string
+          maxLength: 16384
+          default: '{}'
+    UpdateAgentProjectCompositionSlotRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        slotKind:
+          $ref: '#/components/schemas/AgentCompositionSlotKind'
+        targetModule:
+          $ref: '#/components/schemas/AgentCompositionTargetModule'
+        targetRef:
+          type: string
+          minLength: 1
+          maxLength: 256
+        targetVersionRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+        clearTargetVersionRef:
+          type: boolean
+          default: false
+        priority:
+          type: integer
+          minimum: -10000
+          maximum: 10000
+        enabled:
+          type: boolean
+        policyJson:
+          type: string
+          maxLength: 16384
     AgentSessionRecord:
       type: object
       additionalProperties: false
@@ -2822,6 +3875,7 @@ components:
       - tenantId
       - status
       - messageCount
+      - lastMessageSequence
       - version
       - createdAt
       - updatedAt
@@ -2837,6 +3891,8 @@ components:
           $ref: '#/components/schemas/Int64String'
         ownerUserId:
           $ref: '#/components/schemas/Int64String'
+        projectId:
+          type: [string, 'null']
         title:
           type: string
         status:
@@ -2851,6 +3907,8 @@ components:
         modelId:
           type: string
         messageCount:
+          $ref: '#/components/schemas/Int64String'
+        lastMessageSequence:
           $ref: '#/components/schemas/Int64String'
         totalInputTokens:
           $ref: '#/components/schemas/Int64String'
@@ -2870,6 +3928,9 @@ components:
           type: string
           format: date-time
         closedAt:
+          type: string
+          format: date-time
+        archivedAt:
           type: string
           format: date-time
     AgentSessionResponse:
@@ -2909,6 +3970,211 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentSessionRecord'
+    AgentResourceUserStateRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - tenantId
+      - organizationId
+      - userId
+      - resourceType
+      - resourceId
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        userId:
+          $ref: '#/components/schemas/Int64String'
+        resourceType:
+          type: string
+          enum: [session, project]
+        resourceId:
+          type: string
+        pinnedAt:
+          type: string
+          format: date-time
+        hiddenAt:
+          type: string
+          format: date-time
+        lastOpenedAt:
+          type: string
+          format: date-time
+        lastReadMessageSequence:
+          type: string
+          pattern: ^[0-9]+$
+        customTitle:
+          type: string
+          maxLength: 512
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AgentResourceUserStateResponse:
+      description: Single per-user resource state following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentResourceUserStateRecord'
+    AgentResourceUserStateListResponse:
+      description: Paginated per-user resource state following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentResourceUserStateRecord'
+    UpdateAgentSessionUserStateRequest:
+      type: object
+      additionalProperties: false
+      description: At least one state mutation field other than expectedVersion is required.
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        pinned:
+          type: boolean
+        hidden:
+          type: boolean
+        markOpened:
+          type: boolean
+          default: false
+        lastReadMessageSequence:
+          $ref: '#/components/schemas/Int64String'
+        customTitle:
+          type: string
+          minLength: 1
+          maxLength: 512
+        clearCustomTitle:
+          type: boolean
+          default: false
+    AgentMessageFeedbackRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - tenantId
+      - organizationId
+      - messageId
+      - userId
+      - rating
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        messageId:
+          type: string
+          pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        userId:
+          $ref: '#/components/schemas/Int64String'
+        rating:
+          type: string
+          enum: [up, down]
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+    AgentMessageFeedbackResponse:
+      description: Single assistant message feedback following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentMessageFeedbackRecord'
+    AgentMessageFeedbackListResponse:
+      description: Paginated assistant message feedback following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentMessageFeedbackRecord'
+    UpdateAgentMessageFeedbackRequest:
+      type: object
+      additionalProperties: false
+      description: Supply rating to create or update feedback, or clearFeedback to remove it.
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        rating:
+          type: string
+          enum: [up, down]
+        clearFeedback:
+          type: boolean
+          default: false
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 1024
     AgentTaskRecord:
       type: object
       additionalProperties: false
@@ -3226,6 +4492,98 @@ components:
         requestedAt:
           type: string
           format: date-time
+    MediaKind:
+      type: string
+      enum: [image, video, audio, voice, document, archive, model, other]
+    MediaSource:
+      type: string
+      enum: [drive]
+    MediaChecksum:
+      type: object
+      additionalProperties: false
+      required: [algorithm, value]
+      properties:
+        algorithm:
+          type: string
+          enum: [sha256, md5, etag]
+        value:
+          type: string
+          minLength: 1
+          maxLength: 256
+    MediaAccess:
+      type: object
+      additionalProperties: false
+      required: [visibility]
+      properties:
+        visibility:
+          type: string
+          enum: [private, tenant, organization, public, signed]
+        expiresAt:
+          type: string
+          format: date-time
+    MediaResource:
+      type: object
+      additionalProperties: false
+      required: [id, kind, source, uri]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        kind:
+          $ref: '#/components/schemas/MediaKind'
+        source:
+          $ref: '#/components/schemas/MediaSource'
+        uri:
+          type: string
+          maxLength: 512
+          pattern: ^drive://spaces/[^/?#]+/nodes/[^/?#]+$
+        url:
+          type: [string, 'null']
+          format: uri
+          description: Transient Drive delivery hint; never persisted by Agents.
+        publicUrl:
+          type: [string, 'null']
+          format: uri
+          description: Transient Drive delivery hint; never persisted by Agents.
+        objectBlobId:
+          type: [string, 'null']
+          maxLength: 128
+        fileName:
+          type: [string, 'null']
+          maxLength: 512
+        mimeType:
+          type: [string, 'null']
+          maxLength: 256
+        sizeBytes:
+          type: [string, 'null']
+          pattern: ^[0-9]+$
+        checksum:
+          oneOf:
+          - $ref: '#/components/schemas/MediaChecksum'
+          - type: 'null'
+        width:
+          type: [integer, 'null']
+          minimum: 0
+        height:
+          type: [integer, 'null']
+          minimum: 0
+        durationSeconds:
+          type: [number, 'null']
+          minimum: 0
+        altText:
+          type: [string, 'null']
+          maxLength: 512
+        title:
+          type: [string, 'null']
+          maxLength: 255
+        access:
+          oneOf:
+          - $ref: '#/components/schemas/MediaAccess'
+          - type: 'null'
+        metadata:
+          type: object
+          additionalProperties: true
     AgentMessageRecord:
       type: object
       additionalProperties: false
@@ -3237,6 +4595,7 @@ components:
       - content
       - status
       - sequence
+      - mediaResources
       - createdAt
       - updatedAt
       properties:
@@ -3278,6 +4637,14 @@ components:
           type: string
         parentMessageId:
           type: string
+        turnId:
+          type: [string, 'null']
+          pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        mediaResources:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/MediaResource'
         createdAt:
           type: string
           format: date-time
@@ -3338,6 +4705,11 @@ components:
           type: string
         metadataJson:
           type: string
+        mediaResources:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/MediaResource'
         modelId:
           type: string
         requestedAt:
@@ -3373,6 +4745,120 @@ components:
                       $ref: '#/components/schemas/AgentMessageRecord'
                     assistantMessage:
                       $ref: '#/components/schemas/AgentMessageRecord'
+    AgentChatTurnStatus:
+      type: string
+      enum: [requested, running, completed, failed, cancelled]
+    AgentChatTurnRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - turnId
+      - tenantId
+      - organizationId
+      - sessionId
+      - agentId
+      - ownerUserId
+      - idempotencyKey
+      - requestMessageId
+      - status
+      - inputTokens
+      - outputTokens
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
+        turnId:
+          type: string
+          pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+        agentId:
+          type: string
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        clientRequestId:
+          type: [string, 'null']
+        idempotencyKey:
+          type: string
+        requestMessageId:
+          type: string
+        responseMessageId:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/AgentChatTurnStatus'
+        requestedModelId:
+          type: [string, 'null']
+        providerBindingId:
+          type: [string, 'null']
+        modelId:
+          type: [string, 'null']
+        providerId:
+          type: [string, 'null']
+        inputTokens:
+          $ref: '#/components/schemas/Int64String'
+        outputTokens:
+          $ref: '#/components/schemas/Int64String'
+        finishReason:
+          type: [string, 'null']
+        errorCode:
+          type: [string, 'null']
+        errorDetail:
+          type: [string, 'null']
+          maxLength: 2048
+        traceId:
+          type: [string, 'null']
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelRequestedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledAt:
+          type: [string, 'null']
+          format: date-time
+    AgentChatTurnResponse:
+      description: Single durable chat turn response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentChatTurnRecord'
+    CancelAgentChatTurnRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
     AppCreateAgentSessionRequest:
       type: object
       additionalProperties: false
@@ -3382,6 +4868,9 @@ components:
         sessionId:
           type: string
           pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         title:
           type: string
         providerBindingId:
@@ -3393,12 +4882,28 @@ components:
         requestedAt:
           type: string
           format: date-time
+    AppUpdateAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 512
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        clearProject:
+          type: boolean
     AppSendAgentChatMessageRequest:
       type: object
       additionalProperties: false
       required:
       - content
       - requestedAt
+      - idempotencyKey
       properties:
         content:
           type: string
@@ -3407,8 +4912,21 @@ components:
           type: string
         metadataJson:
           type: string
+        mediaResources:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/MediaResource'
         modelId:
           type: string
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        clientRequestId:
+          type: string
+          minLength: 1
+          maxLength: 128
         requestedAt:
           type: string
           format: date-time

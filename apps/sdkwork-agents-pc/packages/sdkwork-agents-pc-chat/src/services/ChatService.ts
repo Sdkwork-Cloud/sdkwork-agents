@@ -2,16 +2,16 @@ import type { ChatMessage } from '../types';
 import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk';
 
 export interface ChatServiceOptions {
+  sessionId: string;
   model: string;
   messages: ChatMessage[];
   signal?: AbortSignal;
   onMessageUpdate: (text: string) => void;
-  onComplete?: () => void;
+  onComplete?: (message?: { id: string }) => void;
   onError?: (error: string) => void;
 }
 
 const DEFAULT_CHAT_AGENT_ID = 'agent.chat.default';
-let chatSessionId: string | null = null;
 let chatAgentPort: ChatAgentPort | null = null;
 
 export interface ChatAgentConfig {
@@ -28,19 +28,62 @@ export interface ChatAgentPort {
   getAgent(agentId: string): Promise<{ model?: string } | null>;
   createAgent(agent: ChatAgentConfig): Promise<unknown>;
   updateAgent(agentId: string, patch: { model: string }): Promise<unknown>;
-  resolveOrCreateSession(agentId: string, title: string): Promise<string>;
+  resolveOrCreateSession(agentId: string, sessionId: string, title: string): Promise<string>;
+  listSessions(agentId: string): Promise<Array<{
+    id: string;
+    title: string;
+    updatedAt: string;
+    version: string;
+    projectId?: string;
+  }>>;
+  updateSession(
+    agentId: string,
+    sessionId: string,
+    patch: { title?: string; projectId?: string; clearProject?: boolean; expectedVersion?: string },
+  ): Promise<{ id: string; title: string; updatedAt: string; version: string; projectId?: string }>;
+  deleteSession(agentId: string, sessionId: string): Promise<void>;
+  listSessionUserStates(agentId: string, pinnedOnly?: boolean): Promise<Array<{
+    sessionId: string;
+    pinned: boolean;
+    version: string;
+  }>>;
+  updateSessionUserState(
+    agentId: string,
+    sessionId: string,
+    patch: { pinned: boolean; expectedVersion?: string },
+  ): Promise<{ sessionId: string; pinned: boolean; version: string }>;
+  listMessageFeedback(agentId: string, sessionId: string): Promise<Array<{
+    messageId: string;
+    rating?: 'up' | 'down';
+    version: string;
+  }>>;
+  updateMessageFeedback(
+    agentId: string,
+    sessionId: string,
+    messageId: string,
+    patch: { rating?: 'up' | 'down'; clearFeedback?: boolean; expectedVersion?: string },
+  ): Promise<{ messageId: string; rating?: 'up' | 'down'; version: string }>;
+  listMessages(
+    agentId: string,
+    sessionId: string,
+  ): Promise<Array<{
+    id: string;
+    role: 'user' | 'assistant' | 'system' | 'tool';
+    content: string;
+    mediaResources?: AgentsDriveMediaResource[];
+  }>>;
+  resolveMediaPreviewUrl(driveUri: string): Promise<string>;
   sendMessage(
     agentId: string,
     sessionId: string,
     content: string,
     model: string,
     media?: AgentsDriveMediaResource[],
-  ): Promise<{ content: string }>;
+  ): Promise<{ id: string; content: string }>;
 }
 
 export function configureChatAgentPort(port: ChatAgentPort): void {
   chatAgentPort = port;
-  chatSessionId = null;
 }
 
 function requireChatAgentPort(): ChatAgentPort {
@@ -74,18 +117,130 @@ async function ensureChatAgent(model: string): Promise<void> {
   }
 }
 
-async function resolveSession(model: string): Promise<string> {
+function canonicalSessionId(sessionId: string): string {
+  const normalized = sessionId.trim().toLowerCase().replace(/[^a-z0-9_-]/gu, '-');
+  return sessionId.startsWith('session.') ? sessionId : `session.${normalized}`;
+}
+
+async function resolveSession(model: string, localSessionId: string): Promise<string> {
   await ensureChatAgent(model);
-  if (!chatSessionId) {
-    chatSessionId = await requireChatAgentPort().resolveOrCreateSession(
-      DEFAULT_CHAT_AGENT_ID,
-      'SDKWork Agents',
-    );
-  }
-  return chatSessionId;
+  return requireChatAgentPort().resolveOrCreateSession(
+    DEFAULT_CHAT_AGENT_ID,
+    canonicalSessionId(localSessionId),
+    'SDKWork Agents',
+  );
 }
 
 export class ChatService {
+  static async loadSessions(model: string): Promise<Array<{
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: string;
+    projectId?: string;
+    messages: ChatMessage[];
+  }>> {
+    await ensureChatAgent(model);
+    const port = requireChatAgentPort();
+    const [sessions, userStates] = await Promise.all([
+      port.listSessions(DEFAULT_CHAT_AGENT_ID),
+      port.listSessionUserStates(DEFAULT_CHAT_AGENT_ID, true),
+    ]);
+    const userStateBySessionId = new Map(
+      userStates.map((state) => [state.sessionId, state]),
+    );
+    return Promise.all(
+      sessions.map(async (session) => {
+        const userState = userStateBySessionId.get(session.id);
+        const [messages, feedbackItems] = await Promise.all([
+          port.listMessages(DEFAULT_CHAT_AGENT_ID, session.id),
+          port.listMessageFeedback(DEFAULT_CHAT_AGENT_ID, session.id),
+        ]);
+        const feedbackByMessageId = new Map(
+          feedbackItems.map((feedback) => [feedback.messageId, feedback]),
+        );
+        return {
+          id: session.id,
+          title: session.title,
+          updatedAt: Date.parse(session.updatedAt) || 0,
+          version: session.version,
+          projectId: session.projectId,
+          pinned: userState?.pinned ?? false,
+          userStateVersion: userState?.version,
+          messages: await Promise.all(messages.map(async (message) => {
+            const feedback = feedbackByMessageId.get(message.id);
+            const mediaResources = await Promise.all(
+              (message.mediaResources ?? []).map(async (resource) => {
+                try {
+                  const url = await port.resolveMediaPreviewUrl(resource.uri);
+                  return { ...resource, url };
+                } catch {
+                  return resource;
+                }
+              }),
+            );
+            return {
+              id: message.id,
+              role: message.role === 'assistant' ? 'model' : 'user',
+              text: message.content,
+              images: mediaResources
+                .filter((resource) => resource.kind === 'image' && resource.url)
+                .map((resource) => resource.url as string),
+              mediaResources,
+              feedback: feedback?.rating,
+              feedbackVersion: feedback?.version,
+            };
+          })),
+        };
+      }),
+    );
+  }
+
+  static async setSessionPinned(sessionId: string, pinned: boolean, version?: string) {
+    return requireChatAgentPort().updateSessionUserState(
+      DEFAULT_CHAT_AGENT_ID,
+      canonicalSessionId(sessionId),
+      {
+        pinned,
+        ...(version ? { expectedVersion: version } : {}),
+      },
+    );
+  }
+
+  static async setMessageFeedback(
+    sessionId: string,
+    messageId: string,
+    rating: 'up' | 'down' | undefined,
+    version?: string,
+  ) {
+    return requireChatAgentPort().updateMessageFeedback(
+      DEFAULT_CHAT_AGENT_ID,
+      canonicalSessionId(sessionId),
+      messageId,
+      rating
+        ? { rating, ...(version ? { expectedVersion: version } : {}) }
+        : { clearFeedback: true, ...(version ? { expectedVersion: version } : {}) },
+    );
+  }
+
+  static async renameSession(sessionId: string, title: string, version: string) {
+    return requireChatAgentPort().updateSession(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId), {
+      title,
+      ...(version ? { expectedVersion: version } : {}),
+    });
+  }
+
+  static async moveSession(sessionId: string, projectId: string, version: string) {
+    return requireChatAgentPort().updateSession(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId), {
+      projectId,
+      ...(version ? { expectedVersion: version } : {}),
+    });
+  }
+
+  static async deleteSession(sessionId: string): Promise<void> {
+    await requireChatAgentPort().deleteSession(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId));
+  }
+
   static async streamChat(options: ChatServiceOptions): Promise<void> {
     if (options.signal?.aborted) {
       options.onError?.('AbortError');
@@ -99,7 +254,7 @@ export class ChatService {
     }
 
     try {
-      const sessionId = await resolveSession(options.model);
+      const sessionId = await resolveSession(options.model, options.sessionId);
       if (options.signal?.aborted) {
         options.onError?.('AbortError');
         return;
@@ -107,7 +262,9 @@ export class ChatService {
       const response = await requireChatAgentPort().sendMessage(
         DEFAULT_CHAT_AGENT_ID,
         sessionId,
-        latest.text || latest.mediaResources?.map((item) => item.fileName).join(', ') || 'Attachment',
+        latest.text
+          || latest.mediaResources?.map((item) => item.fileName ?? item.id).join(', ')
+          || 'Attachment',
         options.model,
         latest.mediaResources,
       );
@@ -116,7 +273,7 @@ export class ChatService {
         return;
       }
       options.onMessageUpdate(response.content);
-      options.onComplete?.();
+      options.onComplete?.({ id: response.id });
     } catch (error) {
       console.error('Agents chat request failed', error);
       options.onError?.('Agents chat request failed.');
