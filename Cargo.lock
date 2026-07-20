@@ -2494,34 +2494,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdkwork-agents-gateway-assembly"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum 0.8.9",
- "sdkwork-agent-server",
- "sdkwork-agents-database-host",
- "sdkwork-agents-kernel-bridge",
- "sdkwork-agents-runtime-facade",
- "sdkwork-iam-database-host",
- "sdkwork-iam-embedded-application-bootstrap",
- "sdkwork-routes-agents-app-api",
- "sdkwork-routes-agents-backend-api",
- "sdkwork-routes-agents-http-shared",
- "sdkwork-routes-agents-open-api",
- "sdkwork-routes-iam-app-api",
- "tokio",
-]
-
-[[package]]
 name = "sdkwork-agents-integration-tests"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.9",
  "http",
  "sdkwork-agents-contract",
- "sdkwork-agents-gateway-assembly",
- "sdkwork-agents-standalone-gateway",
+ "sdkwork-api-agents-assembly",
+ "sdkwork-api-agents-standalone-gateway",
  "tokio",
  "tower 0.5.3",
 ]
@@ -2560,7 +2540,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdkwork-agents-standalone-gateway"
+name = "sdkwork-api-agents-assembly"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "sdkwork-agent-server",
+ "sdkwork-agents-database-host",
+ "sdkwork-agents-kernel-bridge",
+ "sdkwork-agents-runtime-facade",
+ "sdkwork-iam-database-host",
+ "sdkwork-iam-embedded-application-bootstrap",
+ "sdkwork-routes-agents-app-api",
+ "sdkwork-routes-agents-backend-api",
+ "sdkwork-routes-agents-http-shared",
+ "sdkwork-routes-agents-open-api",
+ "sdkwork-routes-iam-app-api",
+ "tokio",
+]
+
+[[package]]
+name = "sdkwork-api-agents-standalone-gateway"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2568,7 +2568,7 @@ dependencies = [
  "if-addrs",
  "sdkwork-agent-server",
  "sdkwork-agents-database-host",
- "sdkwork-agents-gateway-assembly",
+ "sdkwork-api-agents-assembly",
  "tokio",
  "tracing",
  "tracing-subscriber",
