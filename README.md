@@ -37,15 +37,15 @@ pnpm verify
 | `sdkwork-agents-contract` | Runtime env helpers (`SDKWORK_AGENTS_*`, dev auth gating) |
 | `sdkwork-agents-kernel-bridge` | Composes kernel operational router + agents HTTP router |
 | `sdkwork-agents-database-host` | Application `agents_*` registry database lifecycle |
-| `sdkwork-agents-gateway-assembly` | Gateway router assembly |
-| `sdkwork-agents-standalone-gateway` | Runnable binary (`sdkwork-agents-standalone-gateway`) |
+| `sdkwork-api-agents-assembly` | Gateway router assembly |
+| `sdkwork-api-agents-standalone-gateway` | Runnable binary (`sdkwork-api-agents-standalone-gateway`) |
 | `sdkwork-agents-integration-tests` | API bootstrap, gateway, and database smoke tests |
 
 ## Database & Migration
 
 ```powershell
 pnpm db:materialize:contract
-cargo run -p sdkwork-agents-standalone-gateway -- db-migrate
+cargo run -p sdkwork-api-agents-standalone-gateway -- db-migrate
 ```
 
 Application metadata uses `SDKWORK_AGENTS_DATABASE_*`. Kernel agents managed store persistence uses `SDKWORK_AGENTS_STORE_DATABASE_*`.

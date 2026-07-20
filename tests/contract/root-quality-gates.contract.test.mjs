@@ -143,7 +143,7 @@ test("server release artifact includes immutable runtime and deployment assets",
   }
   assert.ok(
     serverTarget.outputGlobs.some((glob) =>
-      glob.startsWith("target/release/sdkwork-agents-standalone-gateway"),
+      glob.startsWith("target/release/sdkwork-api-agents-standalone-gateway"),
     ),
     "server artifact must include the release gateway binary",
   );

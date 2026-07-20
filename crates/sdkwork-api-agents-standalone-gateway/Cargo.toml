@@ -1,20 +1,20 @@
 [package]
-name = "sdkwork-agents-standalone-gateway"
+name = "sdkwork-api-agents-standalone-gateway"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "SDKWork Agents runnable HTTP API server"
 
 [lib]
-name = "sdkwork_agents_standalone_gateway"
+name = "sdkwork_api_agents_standalone_gateway"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sdkwork-agents-standalone-gateway"
+name = "sdkwork-api-agents-standalone-gateway"
 path = "src/main.rs"
 
 [dependencies]
-sdkwork-agents-gateway-assembly.workspace = true
+sdkwork-api-agents-assembly.workspace = true
 sdkwork-agents-database-host.workspace = true
 sdkwork-agent-server.workspace = true
 axum.workspace = true

@@ -46,9 +46,9 @@ test('root dev runner registers the application root and supplies private bootst
 
 test('standalone gateway provisions and mounts IAM before credential entry', () => {
   const workspaceCargo = read('Cargo.toml');
-  const assemblyCargo = read('crates/sdkwork-agents-gateway-assembly/Cargo.toml');
-  const assemblyBootstrap = read('crates/sdkwork-agents-gateway-assembly/src/bootstrap.rs');
-  const iamBootstrap = read('crates/sdkwork-agents-gateway-assembly/src/bootstrap/iam.rs');
+  const assemblyCargo = read('crates/sdkwork-api-agents-assembly/Cargo.toml');
+  const assemblyBootstrap = read('crates/sdkwork-api-agents-assembly/src/bootstrap.rs');
+  const iamBootstrap = read('crates/sdkwork-api-agents-assembly/src/bootstrap/iam.rs');
 
   assert.match(workspaceCargo, /sdkwork-iam-embedded-application-bootstrap/);
   assert.match(workspaceCargo, /sdkwork-iam-database-host/);

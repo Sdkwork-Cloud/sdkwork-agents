@@ -1,5 +1,5 @@
 use anyhow::Context;
-use sdkwork_agents_standalone_gateway::{
+use sdkwork_api_agents_standalone_gateway::{
     build_router, init_tracing, log_access_urls, run_agents_app_database_migrate_only,
     run_kernel_database_migrate_only, shutdown_signal,
 };
@@ -39,19 +39,19 @@ async fn main() -> anyhow::Result<()> {
 
     let app = build_router()
         .await
-        .context("sdkwork-agents-standalone-gateway bootstrap failed")?;
+        .context("sdkwork-api-agents-standalone-gateway bootstrap failed")?;
 
     let listener = tokio::net::TcpListener::bind(&bind_address)
         .await
-        .with_context(|| format!("bind sdkwork-agents-standalone-gateway on {bind_address}"))?;
+        .with_context(|| format!("bind sdkwork-api-agents-standalone-gateway on {bind_address}"))?;
 
     let local_address = listener
         .local_addr()
-        .context("resolve sdkwork-agents-standalone-gateway listener address")?;
+        .context("resolve sdkwork-api-agents-standalone-gateway listener address")?;
     log_access_urls(local_address);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .context("serve sdkwork-agents-standalone-gateway")?;
+        .context("serve sdkwork-api-agents-standalone-gateway")?;
     Ok(())
 }

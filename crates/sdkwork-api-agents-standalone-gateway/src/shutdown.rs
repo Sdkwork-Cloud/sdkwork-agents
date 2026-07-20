@@ -12,14 +12,14 @@ pub async fn shutdown_signal() {
         () = terminate => {},
     }
 
-    tracing::info!("sdkwork-agents-standalone-gateway shutdown signal received");
+    tracing::info!("sdkwork-api-agents-standalone-gateway shutdown signal received");
 }
 
 async fn wait_for_ctrl_c() {
     if let Err(error) = signal::ctrl_c().await {
         tracing::warn!(
             error = %error,
-            "sdkwork-agents-standalone-gateway failed to install Ctrl+C shutdown handler"
+            "sdkwork-api-agents-standalone-gateway failed to install Ctrl+C shutdown handler"
         );
         std::future::pending::<()>().await;
     }
@@ -32,7 +32,7 @@ async fn wait_for_sigterm() {
         Err(error) => {
             tracing::warn!(
                 error = %error,
-                "sdkwork-agents-standalone-gateway failed to install SIGTERM shutdown handler"
+                "sdkwork-api-agents-standalone-gateway failed to install SIGTERM shutdown handler"
             );
             std::future::pending::<()>().await;
             return;

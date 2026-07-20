@@ -3,10 +3,10 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-api-agents-assembly",
-    "displayName": "SDKWork agents API Assembly",
+    "displayName": "SDKWork agents Gateway Assembly",
     "version": "0.1.0",
     "type": "rust-api-assembly",
-    "root": "sdkwork-agents/crates/sdkwork-api-agents-assembly",
+    "root": "crates/sdkwork-api-agents-assembly",
     "domain": "application",
     "capability": "api-assembly",
     "surface": "api-assembly",
@@ -21,14 +21,9 @@
   },
   "canonicalSpecs": [
     {
-      "file": "API_ASSEMBLY_SPEC.md",
-      "path": "../../../sdkwork-specs/API_ASSEMBLY_SPEC.md",
-      "purpose": "API ownership, host-neutral composition, and verification rules."
-    },
-    {
       "file": "APPLICATION_GATEWAY_SPEC.md",
       "path": "../../../sdkwork-specs/APPLICATION_GATEWAY_SPEC.md",
-      "purpose": "Standalone and cloud gateway host boundaries."
+      "purpose": "Gateway assembly discovery, business-only mounting, and verification rules."
     },
     {
       "file": "WEB_FRAMEWORK_SPEC.md",
@@ -39,25 +34,60 @@
       "file": "DATABASE_FRAMEWORK_SPEC.md",
       "path": "../../../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md",
       "purpose": "Database lifecycle bootstrap ownership for embedded assemblies."
+    },
+    {
+      "file": "IAM_LOGIN_INTEGRATION_SPEC.md",
+      "path": "../../../sdkwork-specs/IAM_LOGIN_INTEGRATION_SPEC.md",
+      "purpose": "Embedded IAM route and tenant application bootstrap contract."
     }
   ],
   "contracts": {
     "publicExports": [
       "."
     ],
-    "runtimeEntrypoints": [],
+    "runtimeEntrypoints": [
+      "src/bootstrap.rs#assemble_api_router",
+      "src/lib.rs#assemble_app_business_router",
+      "src/lib.rs#assemble_app_business_runtime",
+      "src/lib.rs#bootstrap_application_database_from_env",
+      "src/bootstrap/iam.rs#wire_iam_app_router"
+    ],
     "routeManifest": "assembly-manifest.json",
     "sdkClients": [],
-    "sdkDependencies": [],
+    "sdkDependencies": [
+      {
+        "workspace": "sdkwork-iam-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api",
+        "required": true
+      }
+    ],
     "dependencyApiExports": [],
-    "dependencyApiSurfaces": [],
+    "dependencyApiSurfaces": [
+      {
+        "workspace": "sdkwork-iam",
+        "sdkFamily": "sdkwork-iam-app-sdk",
+        "apiAuthority": "sdkwork-iam-app-api",
+        "surface": "app-api",
+        "apiPrefix": "/app/v3/api",
+        "runtimeMode": "same-origin-mounted",
+        "cargoDependency": "sdkwork-routes-iam-app-api",
+        "embeddedExecutableExport": "sdkwork_api_agents_assembly::assemble_api_router",
+        "coverageEvidence": [
+          "src/bootstrap/iam.rs#wire_iam_app_router",
+          "src/bootstrap.rs#assemble_api_router"
+        ]
+      }
+    ],
     "events": [],
-    "configKeys": []
+    "configKeys": [],
+    "layerRole": "runtime-composition"
   },
   "verification": {
     "commands": [
       "pnpm run api:assembly:validate",
-      "cargo check -p sdkwork-api-agents-assembly"
+      "cargo check -p sdkwork-api-agents-assembly",
+      "cargo test -p sdkwork-api-agents-assembly"
     ]
   }
 }

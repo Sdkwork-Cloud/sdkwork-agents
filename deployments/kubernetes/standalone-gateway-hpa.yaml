@@ -1,7 +1,7 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: sdkwork-agents-standalone-gateway
+  name: sdkwork-api-agents-standalone-gateway
   labels:
     app.kubernetes.io/name: sdkwork-agents
     app.kubernetes.io/component: standalone-gateway
@@ -9,7 +9,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: sdkwork-agents-standalone-gateway
+    name: sdkwork-api-agents-standalone-gateway
   minReplicas: 2
   maxReplicas: 20
   behavior:

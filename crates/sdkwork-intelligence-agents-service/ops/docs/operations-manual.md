@@ -42,9 +42,9 @@ kubectl apply -f deployments/kubernetes/standalone-gateway-hpa.yaml
 kubectl apply -f deployments/kubernetes/standalone-gateway-pdb.yaml
 
 # Verify deployment status
-kubectl get deployment sdkwork-agents-standalone-gateway
+kubectl get deployment sdkwork-api-agents-standalone-gateway
 kubectl get pods -l app.kubernetes.io/name=sdkwork-agents
-kubectl get hpa sdkwork-agents-standalone-gateway
+kubectl get hpa sdkwork-api-agents-standalone-gateway
 ```
 
 ### Health Check Endpoints
@@ -134,7 +134,7 @@ Horizontal Pod Autoscaler scales based on:
 
 Manual scaling:
 ```bash
-kubectl scale deployment sdkwork-agents-standalone-gateway --replicas=5
+kubectl scale deployment sdkwork-api-agents-standalone-gateway --replicas=5
 ```
 
 ### Database Maintenance
@@ -212,10 +212,10 @@ kubectl logs -l app.kubernetes.io/name=sdkwork-agents --tail=100
 kubectl describe pod -l app.kubernetes.io/name=sdkwork-agents
 
 # Check service endpoints
-kubectl get endpoints sdkwork-agents-standalone-gateway
+kubectl get endpoints sdkwork-api-agents-standalone-gateway
 
 # Check HPA status
-kubectl describe hpa sdkwork-agents-standalone-gateway
+kubectl describe hpa sdkwork-api-agents-standalone-gateway
 ```
 
 ### Common Issues

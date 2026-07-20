@@ -3,7 +3,7 @@ use axum::Router;
 use sdkwork_agent_server::config::ServerConfig;
 
 pub async fn build_router() -> anyhow::Result<Router> {
-    let assembly = sdkwork_agents_gateway_assembly::assemble_application_router()
+    let assembly = sdkwork_api_agents_assembly::assemble_api_router()
         .await
         .context("compose agents gateway assembly router")?;
     Ok(assembly.router)

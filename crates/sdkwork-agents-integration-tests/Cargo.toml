@@ -10,5 +10,5 @@ http.workspace = true
 tokio.workspace = true
 tower.workspace = true
 sdkwork-agents-contract.workspace = true
-sdkwork-agents-standalone-gateway.workspace = true
-sdkwork-agents-gateway-assembly.workspace = true
+sdkwork-api-agents-standalone-gateway.workspace = true
+sdkwork-api-agents-assembly.workspace = true

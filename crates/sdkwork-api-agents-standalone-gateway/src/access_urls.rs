@@ -35,7 +35,7 @@ pub fn log_access_urls(local_address: SocketAddr) {
     tracing::info!(
         bind = %local_address,
         count = access_urls.len(),
-        "sdkwork-agents-standalone-gateway started; accessible URLs"
+        "sdkwork-api-agents-standalone-gateway started; accessible URLs"
     );
     for access_url in access_urls {
         tracing::info!(

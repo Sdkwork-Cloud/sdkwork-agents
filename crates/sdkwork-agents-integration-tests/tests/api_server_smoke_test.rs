@@ -97,7 +97,7 @@ fn api_server_bootstrap_health_and_metrics_contracts() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("bootstrap-health");
     gateway_test_runtime().block_on(async {
-        let app = sdkwork_agents_standalone_gateway::build_router()
+        let app = sdkwork_api_agents_standalone_gateway::build_router()
             .await
             .expect("agents standalone-gateway bootstrap should succeed with dev inline auth");
 
@@ -139,7 +139,7 @@ fn gateway_assembly_composes_kernel_router() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("gateway-assembly");
     gateway_test_runtime().block_on(async {
-        let assembly = sdkwork_agents_gateway_assembly::assemble_application_router()
+        let assembly = sdkwork_api_agents_assembly::assemble_api_router()
             .await
             .expect("gateway assembly should compose kernel routes");
 

@@ -246,9 +246,9 @@ crates/
       lib.rs             # 环境检测函数 + env_test_lock 导出
       runtime_env.rs     # 测试环境互斥锁
   sdkwork-agents-kernel-bridge/               # kernel 组合边界
-  sdkwork-agents-standalone-gateway/          # 可运行 HTTP 服务器二进制
+  sdkwork-api-agents-standalone-gateway/          # 可运行 HTTP 服务器二进制
   sdkwork-agents-database-host/               # 数据库主机集成
-  sdkwork-agents-gateway-assembly/            # 网关装配
+  sdkwork-api-agents-assembly/            # 网关装配
   sdkwork-agents-runtime-facade/              # code-engine provider 门面 (bootstrap · catalog · turn)
   sdkwork-intelligence-agents-service/        # 核心服务 (domain + ports + persistence + http + 契约)
     src/

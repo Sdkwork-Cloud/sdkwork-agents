@@ -23,7 +23,7 @@ packages, SDK facades, tests, examples, and deployment assembly.
 
 `sdkwork-im` MAY consume Agents only through the public
 `sdkwork-agents-runtime-facade`, `@sdkwork/agents-app-sdk`,
-`@sdkwork/agents-backend-sdk`, `sdkwork-agents-gateway-assembly` for embedded
+`@sdkwork/agents-backend-sdk`, `sdkwork-api-agents-assembly` for embedded
 application host composition, or another explicitly declared public Agents
 surface. IM MUST NOT depend on provider crates, generated transport internals,
 Agents repositories, or Agents tables.

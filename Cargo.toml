@@ -11,8 +11,8 @@ members = [
     "crates/sdkwork-agents-runtime-facade",
     "crates/sdkwork-agents-kernel-bridge",
     "crates/sdkwork-agents-database-host",
-    "crates/sdkwork-agents-gateway-assembly",
-    "crates/sdkwork-agents-standalone-gateway",
+    "crates/sdkwork-api-agents-assembly",
+    "crates/sdkwork-api-agents-standalone-gateway",
     "crates/sdkwork-agents-integration-tests",
 ]
 
@@ -79,6 +79,6 @@ sdkwork-agents-contract = { path = "crates/sdkwork-agents-contract" }
 sdkwork-agents-runtime-facade = { path = "crates/sdkwork-agents-runtime-facade" }
 sdkwork-agents-kernel-bridge = { path = "crates/sdkwork-agents-kernel-bridge" }
 sdkwork-agents-database-host = { path = "crates/sdkwork-agents-database-host" }
-sdkwork-agents-gateway-assembly = { path = "crates/sdkwork-agents-gateway-assembly" }
-sdkwork-agents-standalone-gateway = { path = "crates/sdkwork-agents-standalone-gateway" }
+sdkwork-api-agents-assembly = { path = "crates/sdkwork-api-agents-assembly" }
+sdkwork-api-agents-standalone-gateway = { path = "crates/sdkwork-api-agents-standalone-gateway" }
 sdkwork-agents-integration-tests = { path = "crates/sdkwork-agents-integration-tests" }

@@ -71,7 +71,7 @@ test('root dev runner supports standalone gateway and remote cloud development p
   assert.match(runner, /await shutdown\(1,/u);
   assert.doesNotMatch(runner, /killer\.unref\(\)/u);
   assert.doesNotMatch(runner, /setTimeout\(\(\) => process\.exit/u);
-  assert.match(runner, /sdkwork-agents-standalone-gateway/u);
+  assert.match(runner, /sdkwork-api-agents-standalone-gateway/u);
   assert.match(runner, /applicationIngressProcess\.crate/u);
   assert.match(runner, /pcRendererProcess\.package/u);
   assert.match(runner, /pcRendererProcess\.script/u);
@@ -97,7 +97,7 @@ test('PC development server exposes LAN access and same-origin API proxying', ()
 
 test('gateway startup output distinguishes health links from authenticated API origins', () => {
   const accessUrls = read(
-    'crates/sdkwork-agents-standalone-gateway/src/access_urls.rs',
+    'crates/sdkwork-api-agents-standalone-gateway/src/access_urls.rs',
   );
 
   assert.match(accessUrls, /health URL/u);

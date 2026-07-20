@@ -89,7 +89,7 @@
       {
         "name": "Package Agents server artifact",
         "shell": "pwsh",
-        "run": "cargo build --release -p sdkwork-agents-standalone-gateway"
+        "run": "cargo build --release -p sdkwork-api-agents-standalone-gateway"
       }
     ],
     "validate": [
@@ -109,7 +109,7 @@
       "formats": ["tar.gz"],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
-        "target/release/sdkwork-agents-standalone-gateway*",
+        "target/release/sdkwork-api-agents-standalone-gateway*",
         "database/**",
         "etc/topology/*.production.env",
         "deployments/**",

@@ -157,16 +157,16 @@ assert(
 );
 
 assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-database-host/src/lib.rs')), 'sdkwork-agents-database-host crate must exist');
-assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-gateway-assembly/src/lib.rs')), 'sdkwork-agents-gateway-assembly crate must exist');
+assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-api-agents-assembly/src/lib.rs')), 'sdkwork-api-agents-assembly crate must exist');
 assert(fs.existsSync(path.join(repoRoot, 'crates/sdkwork-agents-integration-tests/Cargo.toml')), 'integration-tests crate must exist');
 assert(fs.existsSync(path.join(repoRoot, 'deployments/deploy.yaml')), 'deployments/deploy.yaml must exist per SDKWORK_DEPLOY_SPEC.md');
 assert(fs.existsSync(path.join(repoRoot, 'deployments/docker/Dockerfile')), 'deployments/docker/Dockerfile must exist');
 assert(fs.existsSync(path.join(repoRoot, '.env.example')), '.env.example must exist');
 
-const apiServerCargo = readText('crates/sdkwork-agents-standalone-gateway/Cargo.toml');
+const apiServerCargo = readText('crates/sdkwork-api-agents-standalone-gateway/Cargo.toml');
 assert(
-  apiServerCargo.includes('sdkwork-agents-standalone-gateway'),
-  'standalone-gateway must expose sdkwork-agents-standalone-gateway binary alias',
+  apiServerCargo.includes('sdkwork-api-agents-standalone-gateway'),
+  'standalone-gateway must expose sdkwork-api-agents-standalone-gateway binary alias',
 );
 
 const topologySpec = readJson('specs/topology.spec.json');

@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sdkwork-agents-standalone-gateway
+  name: sdkwork-api-agents-standalone-gateway
   labels:
     app.kubernetes.io/name: sdkwork-agents
     app.kubernetes.io/component: standalone-gateway

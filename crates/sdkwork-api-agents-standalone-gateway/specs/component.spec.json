@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "kind": "sdkwork.component.spec",
   "component": {
-    "name": "sdkwork-agents-standalone-gateway",
+    "name": "sdkwork-api-agents-standalone-gateway",
     "displayName": "SDKWork Agents Standalone Gateway",
     "version": "0.1.0",
-    "type": "rust-standalone-gateway",
-    "root": "crates/sdkwork-agents-standalone-gateway",
+    "type": "rust-api-standalone-gateway",
+    "root": "crates/sdkwork-api-agents-standalone-gateway",
     "domain": "application",
-    "capability": "standalone-gateway",
+    "capability": "api-gateway",
     "surface": "gateway-api",
     "status": "ACTIVE",
     "languages": [
@@ -41,12 +41,12 @@
     "layerRole": "runtime-gateway",
     "publicExports": [
       ".",
-      "sdkwork_agents_standalone_gateway::build_router"
+      "sdkwork_api_agents_standalone_gateway::build_router"
     ],
     "runtimeEntrypoints": [
       "src/main.rs",
       "src/bootstrap.rs#build_router",
-      "Cargo.toml[[bin]].sdkwork-agents-standalone-gateway"
+      "Cargo.toml[[bin]].sdkwork-api-agents-standalone-gateway"
     ],
     "routeManifest": null,
     "sdkClients": [],
@@ -67,10 +67,10 @@
         "surface": "app-api",
         "apiPrefix": "/app/v3/api",
         "runtimeMode": "same-origin-mounted",
-        "cargoDependency": "sdkwork-agents-gateway-assembly",
-        "embeddedExecutableExport": "sdkwork_agents_standalone_gateway::build_router",
+        "cargoDependency": "sdkwork-api-agents-assembly",
+        "embeddedExecutableExport": "sdkwork_api_agents_standalone_gateway::build_router",
         "coverageEvidence": [
-          "../sdkwork-agents-gateway-assembly/src/bootstrap/iam.rs#wire_iam_app_router",
+          "../sdkwork-api-agents-assembly/src/bootstrap/iam.rs#wire_iam_app_router",
           "src/bootstrap.rs#build_router"
         ]
       }
@@ -89,8 +89,8 @@
   },
   "verification": {
     "commands": [
-      "cargo test -p sdkwork-agents-gateway-assembly",
-      "cargo check -p sdkwork-agents-standalone-gateway",
+      "cargo test -p sdkwork-api-agents-assembly",
+      "cargo check -p sdkwork-api-agents-standalone-gateway",
       "pnpm run api:assembly:validate"
     ]
   }

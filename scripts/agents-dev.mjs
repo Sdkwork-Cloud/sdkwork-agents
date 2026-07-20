@@ -49,7 +49,7 @@ const gatewayProfileMarker = runtimeEnv.SDKWORK_AGENTS_DEV_GATEWAY_PROFILE_MARKE
   ?? path.join(repoRoot, '.sdkwork', 'tmp', 'agents-dev-gateway-profile.json');
 const requiredSourceFiles = [
   'Cargo.toml',
-  'crates/sdkwork-agents-standalone-gateway/src/main.rs',
+  'crates/sdkwork-api-agents-standalone-gateway/src/main.rs',
   'apps/sdkwork-agents-pc/package.json',
   'apps/sdkwork-agents-pc/vite.config.ts',
 ];

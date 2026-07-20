@@ -142,7 +142,7 @@ test("production HTTP bootstrap uses IAM, Postgres, and runtime facade completio
 
 test("standalone gateway shutdown path does not panic on signal installation failure", () => {
   const source = readText(
-    "crates/sdkwork-agents-standalone-gateway/src/shutdown.rs",
+    "crates/sdkwork-api-agents-standalone-gateway/src/shutdown.rs",
   );
 
   assert.doesNotMatch(
