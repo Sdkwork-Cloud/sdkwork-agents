@@ -11,7 +11,11 @@
     "test:iam-contract": "tsx --test tests/iam-gateway.test.ts",
     "dev:standalone": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile standalone",
     "dev:cloud": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile cloud",
-    "stop": "pnpm exec sdkwork-app stop --root ../.."
+    "stop": "pnpm exec sdkwork-app stop --root ../..",
+    "test": "pnpm run test:iam-contract",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "verify": "pnpm check",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@sdkwork/agents-h5-agents": "workspace:*",

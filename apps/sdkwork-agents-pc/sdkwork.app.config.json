@@ -6,6 +6,7 @@
     "name": "SDKWork Agents PC",
     "displayName": "SDKWork Agents",
     "description": "SDKWork Agents PC workspace with the migrated product design and Agent system.",
+    "officialWebsiteUrl": "https://sdkwork.com/apps/agents-pc",
     "appType": "APP_REACT",
     "versionSource": "package.json"
   },
@@ -23,11 +24,33 @@
     "supportedDeploymentProfiles": ["standalone", "cloud"],
     "defaultDeploymentProfile": "standalone"
   },
+  "media": {
+    "icons": {
+      "primary": {
+        "id": "agents-pc-primary-icon",
+        "type": "ICON",
+        "purpose": "PRIMARY",
+        "platform": "WEB",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024,
+        "enabled": true,
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-agents/assets/icon-1024.png",
+        "metadata": { "generatedPlaceholder": true }
+      },
+      "platform": []
+    },
+    "screenshots": [],
+    "previews": []
+  },
   "publish": {
-    "status": "BETA",
+    "status": "DRAFT",
     "platforms": ["WEB"],
     "installPlatforms": ["WEB"],
     "installSkill": false
+  },
+  "artifacts": {
+    "installConfig": { "packages": [] }
   },
   "release": {
     "currentVersion": "0.0.0",
@@ -35,11 +58,23 @@
     "latest": {
       "BETA": "0.0.0"
     },
-    "notes": []
+    "notes": [
+      {
+        "version": "0.0.0",
+        "channel": "BETA",
+        "current": true,
+        "packageIds": []
+      }
+    ]
   },
   "security": {
     "checksumRequired": true,
     "signatureRequired": false,
     "sbomRequired": true
+  },
+  "metadata": {
+    "standardOwner": "sdkwork-agents",
+    "deploymentConfig": "etc/sdkwork.deployment.config.json",
+    "releaseAuthority": "../../sdkwork.workflow.json"
   }
 }

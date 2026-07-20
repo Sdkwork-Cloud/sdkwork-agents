@@ -66,6 +66,7 @@
         "height": 1024,
         "format": "PNG",
         "enabled": true,
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-agents/assets/icon-1024.png",
         "metadata": {
           "generatedPlaceholder": true
         }
@@ -83,7 +84,7 @@
     }
   },
   "publish": {
-    "status": "BETA",
+    "status": "DRAFT",
     "installSkill": false,
     "platforms": [
       "APP",
@@ -117,7 +118,14 @@
     "latest": {
       "BETA": "0.1.0"
     },
-    "notes": []
+    "notes": [
+      {
+        "version": "0.1.0",
+        "channel": "BETA",
+        "current": true,
+        "packageIds": []
+      }
+    ]
   },
   "security": {
     "checksumRequired": true,
@@ -132,6 +140,8 @@
   },
   "metadata": {
     "standardOwner": "sdkwork-agents",
-    "initializedAt": "2026-06-26T01:32:34.261Z"
+    "initializedAt": "2026-06-26T01:32:34.261Z",
+    "deploymentConfig": "etc/sdkwork.deployment.config.json",
+    "releaseAuthority": "../../sdkwork.workflow.json"
   }
 }

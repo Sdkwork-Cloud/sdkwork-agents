@@ -5,7 +5,7 @@ import test from 'node:test';
 import {
   AGENT_MARKET_CATEGORIES,
   filterMarketAgents,
-} from '../src/agents/agentCatalog';
+} from '../packages/sdkwork-agents-pc-agents/src/pages/agentCatalog';
 
 const agents = [
   { name: 'Developer', description: '', type: 'normal' as const, categoryId: 'tech' },
@@ -31,8 +31,17 @@ test('filters only matching market agents while all preserves the page', () => {
 });
 
 test('Agent workspace renders and applies the market category controls', () => {
-  const source = readFileSync(new URL('../src/agents/AgentWorkspace.tsx', import.meta.url), 'utf8');
+  const source = readFileSync(
+    new URL('../packages/sdkwork-agents-pc-agents/src/pages/AgentsHomePage.tsx', import.meta.url),
+    'utf8',
+  );
+  const publicExport = readFileSync(
+    new URL('../packages/sdkwork-agents-pc-agents/src/index.ts', import.meta.url),
+    'utf8',
+  );
   assert.match(source, /AGENT_MARKET_CATEGORIES\.map/);
   assert.match(source, /filterMarketAgents\(catalog\.items, marketCategory\)/);
   assert.match(source, /scope === 'market'/);
+  assert.match(publicExport, /export \{ AgentsHomePage \}/);
+  assert.match(publicExport, /configureAgentsHomeRuntime/);
 });

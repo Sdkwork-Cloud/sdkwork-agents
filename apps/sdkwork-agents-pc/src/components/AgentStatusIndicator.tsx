@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Wifi, Activity, Clock, Settings, List } from 'lucide-react';
 import { cn } from '@sdkwork/agents-pc-commons';
-import { useAgentState } from '@/src/contexts/AgentStateContext';
+import { useAgentState } from '../contexts/AgentStateContext';
 import { AgentConfigModal } from './AgentConfigModal';
 import { AgentHistoryLog } from './AgentHistoryLog';
 

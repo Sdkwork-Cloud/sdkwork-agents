@@ -14,7 +14,7 @@ import { ModelDropdown, IMAGE_MODELS, VIDEO_MODELS, MUSIC_MODELS, VOICE_MODELS, 
 import {
   agentsDriveUploadService,
   type AgentsDriveMediaResource,
-} from '@sdkwork/agents-pc-core/sdk';
+} from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 import { uuid } from '@sdkwork/utils';
 
 interface CreativeInputBoxProps {

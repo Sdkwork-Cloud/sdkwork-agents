@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, ChevronLeft, Save, Bot, Brain, Database, Settings2, Sparkles, Edit2, RotateCcw, Copy, Check, Trash2, Mic, Plug, Wand2, MessageSquare, AlertCircle, RefreshCw, ChevronDown, Wrench, Layers, TerminalSquare, Brackets, FileText, PlayCircle } from 'lucide-react';
 import { Avatar, IconButton } from '@sdkwork/agents-pc-commons';
 import { LazyMessageInput } from '../components/LazyMessageInput';
-import { agentsDriveUploadService } from '@sdkwork/agents-pc-core/sdk';
+import { agentsDriveUploadService } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 import { toast } from '../components/Toast';
 import { agentService, type AgentConfig } from '../services/AgentService';
 import { EditBasicInfoModal } from '../components/EditBasicInfoModal';

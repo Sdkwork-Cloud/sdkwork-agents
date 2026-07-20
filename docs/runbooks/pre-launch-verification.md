@@ -53,7 +53,7 @@ Confirm `etc/topology/*.env` uses canonical subject IDs (`SDKWORK_AGENTS_TENANT_
 
 ```powershell
 pnpm check:deploy
-pnpm gateway:validate:cloud
+pnpm deploy:validate:cloud
 ```
 
 Authoritative file: [deployments/deploy.yaml](../../../deployments/deploy.yaml).
@@ -131,4 +131,4 @@ Before cutover, run `pnpm --filter @sdkwork/agents-pc test:drive-contract`. Conf
 | `pnpm verify` | Exit code 0 |
 | Topology | `sdkwork-topology validate` ok |
 | Database | `db:validate` + no drift on target env |
-| Deploy | `check-deploy-standard` and `gateway:validate:cloud` ok for target profile |
+| Deploy | `check-deploy-standard` and `deploy:validate:cloud` ok for target profile |

@@ -17,7 +17,10 @@
     "test:agent-contracts": "pnpm run test:agent-contract && pnpm run test:iam-contract && pnpm run test:drive-contract",
     "dev:standalone": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile standalone",
     "dev:cloud": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile cloud",
-    "stop": "pnpm exec sdkwork-app stop --root ../.."
+    "stop": "pnpm exec sdkwork-app stop --root ../..",
+    "test": "pnpm run test:agent-contracts",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "verify": "pnpm check"
   },
   "dependencies": {
     "@sdkwork/auth-pc-react": "workspace:*",
@@ -79,6 +82,11 @@
       "types": "./src/agents/index.ts",
       "import": "./src/agents/index.ts",
       "default": "./src/agents/index.ts"
+    },
+    "./workbench": {
+      "types": "./src/workbench/index.ts",
+      "import": "./src/workbench/index.ts",
+      "default": "./src/workbench/index.ts"
     }
   }
 }

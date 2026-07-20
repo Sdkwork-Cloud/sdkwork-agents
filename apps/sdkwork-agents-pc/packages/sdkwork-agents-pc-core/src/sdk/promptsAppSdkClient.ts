@@ -23,6 +23,13 @@ export type SdkworkAgentsPromptsAppClientConfig = SdkworkAppConfig & {
 
 const APP_API_SUFFIX = "/app/v3/api";
 let promptsAppSdkClient: SdkworkAgentsPromptsAppClient | null = null;
+let promptsAppSdkClientProvider: (() => SdkworkAgentsPromptsAppClient) | null = null;
+
+export function configurePromptsAppSdkClientProvider(
+  provider: () => SdkworkAgentsPromptsAppClient,
+): void {
+  promptsAppSdkClientProvider = provider;
+}
 
 function transportBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.replace(/\/+$/u, "");
@@ -63,9 +70,13 @@ export function initPromptsAppSdkClient(
 export function getPromptsAppSdkClientWithSession(
   session = readAppSdkSessionTokens(),
 ): SdkworkAgentsPromptsAppClient {
+  if (promptsAppSdkClientProvider) {
+    return promptsAppSdkClientProvider();
+  }
   return initPromptsAppSdkClient(createPromptsAppSdkClientConfig(session));
 }
 
 export function resetPromptsAppSdkClient(): void {
   promptsAppSdkClient = null;
+  promptsAppSdkClientProvider = null;
 }

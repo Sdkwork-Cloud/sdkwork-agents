@@ -241,7 +241,7 @@
       "pnpm check:composition-resolver",
       "pnpm check:rust-backend-composition",
       "pnpm check:production-security",
-      "pnpm gateway:validate:cloud",
+      "pnpm deploy:validate:cloud",
       "cargo test -p sdkwork-intelligence-agents-service",
       "cargo test -p sdkwork-routes-agents-http-shared"
     ]

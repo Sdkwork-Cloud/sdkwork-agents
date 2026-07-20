@@ -4,7 +4,7 @@ import { GlobalSidebar } from './GlobalSidebar';
 import { AgentStatusIndicator } from './AgentStatusIndicator';
 import { DEFAULT_WORKBENCH_TAB, isWorkbenchTab, type WorkbenchTab } from './workbenchTabs';
 
-const AgentWorkspace = lazy(() => import('@/src/agents').then((module) => ({ default: module.AgentWorkspace })));
+const AgentWorkspace = lazy(() => import('../agents').then((module) => ({ default: module.AgentWorkspace })));
 const ChatView = lazy(() => import('@sdkwork/agents-pc-chat').then((module) => ({ default: module.ChatView })));
 const InspirationView = lazy(() => import('@sdkwork/agents-pc-inspiration').then((module) => ({ default: module.InspirationView })));
 const CreativeView = lazy(() => import('@sdkwork/agents-pc-creative').then((module) => ({ default: module.CreativeView })));
@@ -31,7 +31,13 @@ const AVATAR_COLOR_TEMPLATES = [
   'bg-zinc-800 border border-zinc-700 text-white'
 ];
 
-export const WorkbenchLayout = () => {
+export type WorkbenchViewportMode = 'embedded' | 'fixed';
+
+interface WorkbenchLayoutProps {
+  viewportMode?: WorkbenchViewportMode;
+}
+
+export const WorkbenchLayout = ({ viewportMode = 'fixed' }: WorkbenchLayoutProps) => {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>(DEFAULT_WORKBENCH_TAB);
   const { t: tCommon } = useTranslation('common');
 
@@ -63,7 +69,7 @@ export const WorkbenchLayout = () => {
   const ActiveWorkspace = WORKBENCH_VIEW_BY_TAB[activeTab];
 
   return (
-    <div className="flex h-[100dvh] w-full bg-[#f5f5f5] dark:bg-[#191919] font-sans text-gray-900 dark:text-gray-100 overflow-hidden">
+    <div className={`flex min-h-0 w-full bg-[#f5f5f5] font-sans text-gray-900 dark:bg-[#191919] dark:text-gray-100 overflow-hidden ${viewportMode === 'fixed' ? 'h-[100dvh]' : 'h-full'}`}>
       <AgentStatusIndicator />
       <GlobalSidebar 
         activeTab={activeTab} 

@@ -23,6 +23,13 @@ export type SdkworkAgentsMemoryAppClientConfig = SdkworkAppConfig & {
 
 const APP_API_SUFFIX = "/app/v3/api";
 let memoryAppSdkClient: SdkworkAgentsMemoryAppClient | null = null;
+let memoryAppSdkClientProvider: (() => SdkworkAgentsMemoryAppClient) | null = null;
+
+export function configureMemoryAppSdkClientProvider(
+  provider: () => SdkworkAgentsMemoryAppClient,
+): void {
+  memoryAppSdkClientProvider = provider;
+}
 
 function transportBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.replace(/\/+$/u, "");
@@ -63,9 +70,13 @@ export function initMemoryAppSdkClient(
 export function getMemoryAppSdkClientWithSession(
   session = readAppSdkSessionTokens(),
 ): SdkworkAgentsMemoryAppClient {
+  if (memoryAppSdkClientProvider) {
+    return memoryAppSdkClientProvider();
+  }
   return initMemoryAppSdkClient(createMemoryAppSdkClientConfig(session));
 }
 
 export function resetMemoryAppSdkClient(): void {
   memoryAppSdkClient = null;
+  memoryAppSdkClientProvider = null;
 }

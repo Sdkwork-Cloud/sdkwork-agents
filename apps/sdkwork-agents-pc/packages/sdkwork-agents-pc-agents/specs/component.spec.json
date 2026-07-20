@@ -22,9 +22,10 @@
   ],
   "contracts": {
     "layerRole": "frontend-feature",
-    "publicExports": [".", "./services"],
-    "providedPorts": ["agents.workspace"],
-    "requiredPorts": ["agents.sdk", "agents.commons"],
+    "publicExports": [".", "./home", "./services"],
+    "providedPorts": ["agents.workspace", "agents.home"],
+    "requiredPorts": ["agents.sdk", "agents.drive", "agents.commons"],
+    "runtimeEntrypoints": ["src/services/AgentsHomeRuntime.ts"],
     "sdkClients": [],
     "sdkDependencies": [],
     "dependencyApiExports": [],

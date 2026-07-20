@@ -108,8 +108,9 @@ test('Vite hands private development bootstrap tokens to IAM credential entry wi
 
 test('standalone PC dev uses the canonical IAM renderer bootstrap runner', () => {
   const packageManifest = JSON.parse(read('apps/sdkwork-agents-pc/package.json'));
-  assert.match(packageManifest.scripts.dev, /sdkwork-iam\/scripts\/dev\/run-pc-renderer-dev-with-bootstrap\.mjs/u);
-  assert.doesNotMatch(packageManifest.scripts.dev, /agents-dev-env/u);
+  assert.equal(packageManifest.scripts.dev, 'pnpm dev:standalone');
+  assert.match(packageManifest.scripts['dev:standalone'], /sdkwork-app dev[\s\S]*--deployment-profile standalone/u);
+  assert.doesNotMatch(packageManifest.scripts['dev:standalone'], /agents-dev-env/u);
 });
 
 test('the mini-program SDK accepts a bootstrap token through its host runtime boundary', () => {

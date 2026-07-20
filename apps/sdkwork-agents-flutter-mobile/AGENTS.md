@@ -16,6 +16,8 @@ Read `sdkwork.app.config.json` only for application identity, SDK/API inventory,
 
 Use `AGENTS.md` as the application routing entrypoint. Read `.sdkwork/`, `specs/`, application source, tests, and documentation only when the current task reaches the contract each location governs.
 
+`etc/` is this deployable root's source configuration and parent topology delegation authority.
+
 ## Spec Resolution Order
 
 Use dynamic progressive loading: read this file and `../../AGENTS.md`, then applicable local contracts, then the relevant task route in `../../../sdkwork-specs/README.md`, and only afterward inspect implementation files. Language-specific specs load on demand only.

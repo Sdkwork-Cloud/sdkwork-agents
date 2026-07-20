@@ -15,6 +15,7 @@ Read `sdkwork.app.config.json` for application identity, SDK/API inventory, rele
 ## Local Dictionary Structure
 
 - `specs/` and nearest package `specs/component.spec.json`: application and component contracts.
+- `etc/`: deployable-root source configuration and parent topology delegation authority.
 - `packages/`: feature, core, composed service, and desktop packages.
 - `src/`: application composition root and runtime bootstrap.
 - `config/`: desktop and server runtime adapters.

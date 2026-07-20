@@ -86,6 +86,6 @@ pnpm check:permission-composition
 pnpm check:composition-resolver
 pnpm check:rust-backend-composition
 pnpm check:production-security
-pnpm gateway:validate:cloud
+pnpm deploy:validate:cloud
 node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
 ```

@@ -14,7 +14,7 @@ import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
 import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
 import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import vscDarkPlus from 'react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus.js';
 import { Play, Code, Copy, Check, ExternalLink, PanelRightOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 

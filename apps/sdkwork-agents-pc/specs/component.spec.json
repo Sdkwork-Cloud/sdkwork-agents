@@ -42,13 +42,28 @@
     }
   ],
   "contracts": {
-    "publicExports": ["src/index.ts", "src/agents/index.ts"],
+    "layerRole": "frontend-shell",
+    "publicExports": ["src/index.ts", "src/agents/index.ts", "src/workbench/index.ts"],
+    "providedPorts": ["agents.workbench"],
+    "requiredPorts": [
+      "agents.home",
+      "agents.assets.view",
+      "agents.canvas.view",
+      "agents.chat.view",
+      "agents.commons",
+      "agents.creative.view",
+      "agents.inspiration.view",
+      "agents.presentation.view",
+      "agents.sdk"
+    ],
     "runtimeEntrypoints": ["src/main.tsx", "package.json#scripts.dev"],
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
       "@sdkwork/drive-app-sdk",
       "@sdkwork/iam-app-sdk",
       "@sdkwork/knowledgebase-app-sdk",
+      "@sdkwork/memory-app-sdk",
+      "@sdkwork/prompts-app-sdk",
       "@sdkwork/skills-app-sdk",
       "@sdkwork/voice-app-sdk"
     ],
@@ -57,6 +72,8 @@
       "sdkwork-drive-app-sdk",
       "sdkwork-iam-app-sdk",
       "sdkwork-knowledgebase-app-sdk",
+      "sdkwork-memory-app-sdk",
+      "sdkwork-prompts-app-sdk",
       "sdkwork-skills-app-sdk",
       "sdkwork-voice-app-sdk"
     ],

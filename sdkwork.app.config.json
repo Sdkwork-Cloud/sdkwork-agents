@@ -6,7 +6,7 @@
     "name": "sdkwork-agents",
     "displayName": "SDKWork Agents",
     "officialWebsiteUrl": "https://sdkwork.com",
-    "appType": "APP_API",
+    "appType": "NONE",
     "description": "SDKWork hosted agent product application composed from sdkwork-kernel.",
     "identifiers": {
       "containerImage": "sdkwork-agents"
@@ -43,7 +43,9 @@
         "format": "PNG",
         "width": 1024,
         "height": 1024,
-        "enabled": true
+        "enabled": true,
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-agents/assets/icon-1024.png",
+        "metadata": { "generatedPlaceholder": true }
       },
       "platform": []
     },
@@ -51,24 +53,55 @@
     "previews": []
   },
   "publish": {
-    "status": "BETA",
+    "status": "DRAFT",
     "platforms": ["API", "WEB", "CLI"],
     "installPlatforms": ["API"],
-    "installSkill": false
+    "installSkill": false,
+    "defaultPackageId": "linux-x64-standalone-server-tar-gz"
   },
   "artifacts": {
     "installConfig": {
+      "defaultPackageId": "linux-x64-standalone-server-tar-gz",
       "packages": [
         {
-          "id": "linux-x64-cloud-server-tar-gz",
-          "name": "SDKWork Agents Linux x64 Server",
+          "id": "linux-x64-standalone-server-tar-gz",
+          "name": "SDKWork Agents Linux x64 Standalone Server",
           "sourceType": "BINARY_URL",
           "packageFormat": "TAR_GZ",
           "platform": "API",
           "architecture": "x64",
-          "deploymentProfile": "cloud",
+          "profileBinding": "fixed",
+          "deploymentProfile": "standalone",
           "runtimeTarget": "server",
-          "enabled": true
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-agents/BETA/0.1.0/sdkwork-agents-linux-x64-standalone-server-tar-gz-0.1.0.tar.gz",
+          "enabled": false,
+          "checksumAlgorithm": "SHA-256",
+          "metadata": {
+            "packageProfile": "server",
+            "releaseBuildDeferred": true,
+            "releaseAuthority": "sdkwork-agents"
+          }
+        },
+        {
+          "id": "container-x64-cloud-container-kubernetes-tar-gz",
+          "name": "SDKWork Agents Cloud Kubernetes Bundle",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "TAR_GZ",
+          "platform": "API",
+          "architecture": "x64",
+          "profileBinding": "fixed",
+          "deploymentProfile": "cloud",
+          "runtimeTarget": "container",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-agents/BETA/0.1.0/sdkwork-agents-container-x64-cloud-container-kubernetes-tar-gz-0.1.0.tar.gz",
+          "enabled": false,
+          "checksumAlgorithm": "SHA-256",
+          "metadata": {
+            "packageProfile": "container",
+            "packageVariant": "kubernetes",
+            "releaseBuildDeferred": true,
+            "requiresImmutableImageLock": true,
+            "releaseAuthority": "sdkwork-agents"
+          }
         }
       ]
     }
@@ -84,13 +117,16 @@
         "version": "0.1.0",
         "channel": "BETA",
         "current": true,
-        "packageIds": ["linux-x64-cloud-server-tar-gz"]
+        "packageIds": [
+          "linux-x64-standalone-server-tar-gz",
+          "container-x64-cloud-container-kubernetes-tar-gz"
+        ]
       }
     ]
   },
   "security": {
     "checksumRequired": true,
-    "signatureRequired": false,
+    "signatureRequired": true,
     "sbomRequired": true
   },
   "metadata": {

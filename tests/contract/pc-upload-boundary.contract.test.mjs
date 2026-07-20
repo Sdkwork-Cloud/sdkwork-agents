@@ -63,6 +63,10 @@ test('PC production composition exposes every SDK-backed workbench package', () 
   const sidebar = read('src/components/GlobalSidebar.tsx');
   const tabs = read('src/components/workbenchTabs.ts');
   const workspace = read('src/agents/AgentWorkspace.tsx');
+  const agentsHomeEntry = read('packages/sdkwork-agents-pc-agents/src/home.ts');
+  const agentsHomePage = read('packages/sdkwork-agents-pc-agents/src/pages/AgentsHomePage.tsx');
+  const homeConversation = read('packages/sdkwork-agents-pc-agents/src/pages/HomeAgentConversation.tsx');
+  const homeRuntime = read('packages/sdkwork-agents-pc-agents/src/services/AgentsHomeRuntime.ts');
 
   for (const packageName of [
     '@sdkwork/agents-pc-assets',
@@ -79,8 +83,14 @@ test('PC production composition exposes every SDK-backed workbench package', () 
     assert.match(sidebar, new RegExp(`${tab}:|id:\\s*['\"]${tab}['\"]`, 'u'), tab);
   }
   assert.doesNotMatch(workbench, /@\/packages\//u);
-  assert.match(workspace, /AgentConversation/u);
-  assert.match(workspace, /@sdkwork\/agents-pc-agents\/services/u);
+  assert.match(workspace, /AgentsHomePage/u);
+  assert.match(workspace, /@sdkwork\/agents-pc-agents\/home/u);
+  assert.match(agentsHomeEntry, /AgentsHomeRuntime/u);
+  assert.match(agentsHomePage, /HomeAgentConversation/u);
+  assert.match(agentsHomePage, /\.\.\/services\/AgentService/u);
+  assert.match(homeConversation, /\.\.\/services\/AgentChatService/u);
+  assert.match(homeRuntime, /@sdkwork\/agents-pc-core\/sdk\/agentsAppSdkClient/u);
+  assert.match(homeRuntime, /@sdkwork\/agents-pc-core\/sdk\/driveAppSdkClient/u);
 });
 
 test('Blob and data URLs remain limited to explicit local-only rendering or export files', () => {

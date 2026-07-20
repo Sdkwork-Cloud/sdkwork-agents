@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import {
   agentsDriveUploadService,
   type AgentsDriveMediaResource,
-} from "@sdkwork/agents-pc-core/sdk";
+} from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 import { uuid } from "@sdkwork/utils";
 
 import { Sidebar } from "./components/Sidebar";

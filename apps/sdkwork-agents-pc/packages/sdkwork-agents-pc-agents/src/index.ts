@@ -1,4 +1,10 @@
 export { AgentView, type Agent } from "./pages/AgentView";
+export { AgentsHomePage } from "./pages/AgentsHomePage";
+export {
+  AGENT_MARKET_CATEGORIES,
+  filterMarketAgents,
+  type AgentMarketCategoryId,
+} from "./pages/agentCatalog";
 export { AgentChatView } from "./pages/AgentChatView";
 export { CreateAgentView } from "./pages/CreateAgentView";
 export { CreateAgentModal } from "./components/CreateAgentModal";
@@ -20,3 +26,4 @@ export type {
 export { DEFAULT_AGENT_CONFIG } from "./components/AgentDefaults";
 export { createDefaultAvatar } from "./services/DefaultAvatarService";
 export type { DefaultAvatarKind } from "./services/DefaultAvatarService";
+export { configureAgentsHomeRuntime, type AgentsHomeRuntime } from "./services/AgentsHomeRuntime";

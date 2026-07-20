@@ -5,7 +5,7 @@ export interface ChatMessage {
   role: MessageRole;
   text: string;
   images?: string[];
-  mediaResources?: import('@sdkwork/agents-pc-core/sdk').AgentsDriveMediaResource[];
+  mediaResources?: import('@sdkwork/agents-pc-core/sdk/driveUploadService').AgentsDriveMediaResource[];
   feedback?: 'up' | 'down';
   feedbackVersion?: string;
 }

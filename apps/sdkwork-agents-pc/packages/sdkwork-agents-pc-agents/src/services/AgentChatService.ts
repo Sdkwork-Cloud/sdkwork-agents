@@ -4,7 +4,7 @@ import {
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import { extractOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
-import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk";
+import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 import { uuid } from "@sdkwork/utils";
 
 import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";

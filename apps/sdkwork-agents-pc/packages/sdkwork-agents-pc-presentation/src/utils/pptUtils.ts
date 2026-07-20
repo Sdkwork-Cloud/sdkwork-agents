@@ -30,7 +30,7 @@ export const getPresentationHtml = (mdRaw: string, theme: string) => {
   <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/plugin/highlight/highlight.js"></script>
   <script>
     Reveal.initialize({
-      hash: true,
+      hash: window.location.protocol !== 'about:',
       plugins: [ RevealMarkdown, RevealHighlight ]
     });
   </script>

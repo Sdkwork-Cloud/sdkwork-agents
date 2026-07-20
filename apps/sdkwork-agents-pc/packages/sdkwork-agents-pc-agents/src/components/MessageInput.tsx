@@ -10,7 +10,7 @@ import {
   agentsDriveUploadService,
   type AgentsDriveMediaResource,
   type AgentsDriveUploadPurpose,
-} from '@sdkwork/agents-pc-core/sdk';
+} from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 import { EmojiPicker } from './EmojiPicker';
 import { translateMessageInput as t } from './messageInputI18n';
 

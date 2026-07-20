@@ -52,6 +52,15 @@ impl GatewayTestEnvironment {
         environment.set("SDKWORK_KERNEL_METRICS_AUTH_MODE", "open");
         environment.set("SDKWORK_AGENT_RUNTIME_DATABASE_ENGINE", "sqlite");
         environment.set("SDKWORK_DATABASE_PATH", database_path.to_string_lossy());
+        let iam_database_url = format!(
+            "sqlite://{}?mode=rwc",
+            database_path.to_string_lossy().replace('\\', "/")
+        );
+        environment.set("SDKWORK_IAM_DATABASE_URL", iam_database_url);
+        environment.set("SDKWORK_IAM_DATABASE_ENGINE", "sqlite");
+        environment.set("SDKWORK_IAM_DATABASE_MAX_CONNECTIONS", "1");
+        environment.set("SDKWORK_IAM_DATABASE_MIN_CONNECTIONS", "0");
+        environment.set("SDKWORK_IAM_DATABASE_ACQUIRE_TIMEOUT", "60");
         environment.remove("SDKWORK_AGENT_RUNTIME_DATABASE_URL");
         environment.remove("SDKWORK_AGENT_RUNTIME_POSTGRES_URI");
 

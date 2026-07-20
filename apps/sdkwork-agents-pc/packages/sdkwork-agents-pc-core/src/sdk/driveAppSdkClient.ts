@@ -23,6 +23,14 @@ export type SdkworkAgentsDriveAppClientConfig = SdkworkAppConfig & {
 const DEFAULT_DRIVE_APP_API_BASE_URL = "http://127.0.0.1:3900/app/v3/api";
 
 let driveAppSdkClient: SdkworkAgentsDriveAppClient | null = null;
+let driveAppSdkClientProvider: (() => SdkworkAgentsDriveAppClient) | null = null;
+
+export function configureDriveAppSdkClientProvider(
+  provider: () => SdkworkAgentsDriveAppClient,
+): void {
+  driveAppSdkClientProvider = provider;
+  driveAppSdkClient = null;
+}
 
 export function resolveDriveAppSdkBaseUrl(): string {
   return readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_DRIVE_APP_API_BASE_URL")
@@ -54,15 +62,22 @@ export function initDriveAppSdkClient(
 }
 
 export function getDriveAppSdkClient(): SdkworkAgentsDriveAppClient {
+  if (driveAppSdkClientProvider) {
+    return driveAppSdkClientProvider();
+  }
   return driveAppSdkClient ?? initDriveAppSdkClient();
 }
 
 export function getDriveAppSdkClientWithSession(
   session = readAppSdkSessionTokens(),
 ): SdkworkAgentsDriveAppClient {
+  if (driveAppSdkClientProvider) {
+    return driveAppSdkClientProvider();
+  }
   return initDriveAppSdkClient(createDriveAppSdkClientConfig(session));
 }
 
 export function resetDriveAppSdkClient(): void {
   driveAppSdkClient = null;
+  driveAppSdkClientProvider = null;
 }

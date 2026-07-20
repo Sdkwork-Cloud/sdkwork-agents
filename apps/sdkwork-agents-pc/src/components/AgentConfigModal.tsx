@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, Save } from 'lucide-react';
-import { useAgentState } from '@/src/contexts/AgentStateContext';
+import { useAgentState } from '../contexts/AgentStateContext';
 
 interface AgentConfigModalProps {
   isOpen: boolean;

@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types';
-import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk';
+import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 
 export interface ChatServiceOptions {
   sessionId: string;

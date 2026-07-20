@@ -9,7 +9,7 @@ import { toast } from "../components/Toast";
 import { agentService } from "../services/AgentService";
 import { agentChatService, type ChatMessage } from "../services/AgentChatService";
 import { createDefaultAvatar } from "../services/DefaultAvatarService";
-import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk";
+import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 
 export interface AgentChatViewProps {
   agentId: string;

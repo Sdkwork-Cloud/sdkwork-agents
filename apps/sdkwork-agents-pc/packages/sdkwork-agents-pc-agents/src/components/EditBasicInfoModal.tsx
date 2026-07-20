@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk';
+import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 
 import { toast } from './Toast';
 

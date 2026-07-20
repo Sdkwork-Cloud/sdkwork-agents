@@ -201,16 +201,10 @@ test('source topology profiles project exact CORS and IAM origins from etc', () 
     assert.equal(env.VITE_SDKWORK_AGENTS_H5_ENVIRONMENT, environment);
 
     if (deploymentProfile === 'cloud') {
-      const gatewayPath = `etc/sdkwork-api-cloud-gateway.agents.${environment}.toml`;
-      assert.equal(env.SDKWORK_API_CLOUD_GATEWAY_CONFIG, gatewayPath);
-      const gatewayConfig = read(gatewayPath);
-      assert.match(gatewayConfig, new RegExp(`environment = "${environment}"`));
-      assert.match(
-        gatewayConfig,
-        new RegExp(
-          `\\[cors\\][\\s\\S]*allowAnyOrigin = false[\\s\\S]*allowedOrigins = \\["${escapeRegex(origins[0])}"\\]`,
-        ),
-        `${profile} cloud gateway must match the profile's exact CORS origin`,
+      assert.equal(
+        env.SDKWORK_API_CLOUD_GATEWAY_CONFIG,
+        undefined,
+        `${profile} must not claim application-local cloud gateway configuration ownership`,
       );
     }
   }

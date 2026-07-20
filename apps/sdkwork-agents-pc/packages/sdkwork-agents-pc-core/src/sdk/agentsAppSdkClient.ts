@@ -22,6 +22,14 @@ export type SdkworkAgentsAppClientConfig = SdkworkAppConfig & {
 };
 
 let agentsAppSdkClient: SdkworkAgentsAppClient | null = null;
+let agentsAppSdkClientProvider: (() => SdkworkAgentsAppClient) | null = null;
+
+export function configureAgentsAppSdkClientProvider(
+  provider: () => SdkworkAgentsAppClient,
+): void {
+  agentsAppSdkClientProvider = provider;
+  agentsAppSdkClient = null;
+}
 
 function resolveDefaultPublicHttpUrl(): string {
   return typeof window === "undefined" ? "http://127.0.0.1:8095" : window.location.origin;
@@ -62,17 +70,24 @@ export function initAgentsAppSdkClient(
 }
 
 export function getAgentsAppSdkClient(): SdkworkAgentsAppClient {
+  if (agentsAppSdkClientProvider) {
+    return agentsAppSdkClientProvider();
+  }
   return agentsAppSdkClient ?? initAgentsAppSdkClient();
 }
 
 export function getAgentsAppSdkClientWithSession(
   session = readAppSdkSessionTokens(),
 ): SdkworkAgentsAppClient {
+  if (agentsAppSdkClientProvider) {
+    return agentsAppSdkClientProvider();
+  }
   return initAgentsAppSdkClient(createAgentsAppSdkClientConfig(session));
 }
 
 export function resetAgentsAppSdkClient(): void {
   agentsAppSdkClient = null;
+  agentsAppSdkClientProvider = null;
 }
 
 export function useAgentsAppSdkClient(): SdkworkAgentsAppClient {

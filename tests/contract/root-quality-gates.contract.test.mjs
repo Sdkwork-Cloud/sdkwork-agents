@@ -21,7 +21,7 @@ const requiredCheckScripts = [
   "check:rust-backend-composition",
   "check:production-security",
   "check:source-config-standard",
-  "gateway:validate:cloud",
+  "deploy:validate:cloud",
 ];
 
 test("root check command includes production readiness quality gates", () => {
@@ -29,7 +29,8 @@ test("root check command includes production readiness quality gates", () => {
     readFileSync(path.join(repoRoot, "package.json"), "utf8"),
   );
   const scripts = packageJson.scripts ?? {};
-  const checkCommand = scripts.check ?? "";
+  assert.equal(scripts.check, 'pnpm exec sdkwork-app check');
+  const checkCommand = scripts['_sdkwork:check'] ?? '';
 
   for (const script of requiredCheckScripts) {
     assert.ok(scripts[script], `package.json must expose ${script}`);
@@ -47,14 +48,14 @@ const launchGateDocumentationFiles = [
   "docs/product/prd/PRD.md",
 ];
 
-test("launch documentation includes cloud gateway bundle validation gate", () => {
+test("launch documentation includes cloud deployment profile validation gate", () => {
   for (const relativePath of launchGateDocumentationFiles) {
     const content = readFileSync(path.join(repoRoot, relativePath), "utf8");
 
     assert.match(
       content,
-      /gateway:validate:cloud/u,
-      `${relativePath} must document gateway:validate:cloud as a cloud launch gate`,
+      /deploy:validate:cloud/u,
+      `${relativePath} must document deploy:validate:cloud as a cloud launch gate`,
     );
   }
 });
@@ -64,14 +65,14 @@ const rootVerificationContractFiles = [
   "specs/component.spec.json",
 ];
 
-test("root specs expose cloud gateway validation as a production verification command", () => {
+test("root specs expose cloud deployment validation as a production verification command", () => {
   for (const relativePath of rootVerificationContractFiles) {
     const content = readFileSync(path.join(repoRoot, relativePath), "utf8");
 
     assert.match(
       content,
-      /gateway:validate:cloud/u,
-      `${relativePath} must expose gateway:validate:cloud in root verification evidence`,
+      /deploy:validate:cloud/u,
+      `${relativePath} must expose deploy:validate:cloud in root verification evidence`,
     );
   }
 });

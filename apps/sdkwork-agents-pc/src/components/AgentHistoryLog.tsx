@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { X, Trash2, Info, CheckCircle2, AlertTriangle, AlertCircle, Clock } from 'lucide-react';
-import { useAgentState } from '@/src/contexts/AgentStateContext';
+import { useAgentState } from '../contexts/AgentStateContext';
 import { cn } from '@sdkwork/agents-pc-commons';
 
 interface AgentHistoryLogProps {

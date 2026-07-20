@@ -13,6 +13,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./home": {
+      "types": "./src/home.ts",
+      "import": "./src/home.ts",
+      "default": "./src/home.ts"
+    },
     "./services": {
       "types": "./src/services/index.ts",
       "import": "./src/services/index.ts",
@@ -23,6 +28,7 @@
     "@sdkwork/agents-pc-commons": "workspace:*",
     "@sdkwork/agents-pc-core": "workspace:*",
     "@sdkwork/utils": "workspace:*",
+    "@tiptap/core": "catalog:",
     "@tiptap/extension-placeholder": "catalog:",
     "@tiptap/pm": "catalog:",
     "@tiptap/react": "catalog:",
@@ -30,6 +36,7 @@
     "emoji-picker-react": "catalog:",
     "lucide-react": "catalog:",
     "motion": "catalog:",
-    "react": "catalog:"
+    "react": "catalog:",
+    "react-dom": "catalog:"
   }
 }

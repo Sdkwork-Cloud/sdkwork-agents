@@ -179,8 +179,8 @@ assert(
   'topology.spec.json must not retain llm stale script references',
 );
 assert(
-  topologySpec.components?.cloudGateway?.configGlob?.includes('agents'),
-  'topology.spec.json cloud gateway configGlob must reference agents profiles',
+  topologySpec.components?.cloudGateway === undefined,
+  'topology.spec.json must not declare an application-local cloud gateway component',
 );
 
 for (const profileFile of Object.values(topologySpec.profileFiles ?? {})) {
@@ -270,8 +270,8 @@ assert(
   'sdkwork.app.config.json must declare kernel dependency',
 );
 assert(
-  appManifest.app?.appType === 'APP_API',
-  'sdkwork.app.config.json appType must be APP_API for rust HTTP service',
+  appManifest.app?.appType === 'NONE',
+  'sdkwork.app.config.json appType must use canonical PlusProjectType NONE for a server-only application',
 );
 
 const workspaceYaml = readText('pnpm-workspace.yaml');

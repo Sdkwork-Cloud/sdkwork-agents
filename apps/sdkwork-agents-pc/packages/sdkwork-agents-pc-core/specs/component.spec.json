@@ -57,6 +57,16 @@
         "credentialMode": "authenticated-app-api"
       },
       {
+        "workspace": "sdkwork-memory-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
+        "workspace": "sdkwork-prompts-app-sdk",
+        "surface": "app-api",
+        "credentialMode": "authenticated-app-api"
+      },
+      {
         "workspace": "sdkwork-knowledgebase-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api"
@@ -75,6 +85,8 @@
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
       "@sdkwork/drive-app-sdk",
+      "@sdkwork/memory-app-sdk",
+      "@sdkwork/prompts-app-sdk",
       "@sdkwork/knowledgebase-app-sdk",
       "@sdkwork/skills-app-sdk",
       "@sdkwork/voice-app-sdk"
@@ -91,6 +103,18 @@
         {
           "moduleId": "drive",
           "manifestRef": "../../../../../../sdkwork-iam/iam/modules/drive/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        },
+        {
+          "moduleId": "memory",
+          "manifestRef": "../../../../../../sdkwork-memory/specs/iam.module.manifest.json",
+          "inheritPermissions": true,
+          "inheritRoles": true
+        },
+        {
+          "moduleId": "prompts",
+          "manifestRef": "../../../../../../sdkwork-prompts/specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         },
