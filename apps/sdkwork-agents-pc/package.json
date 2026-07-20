@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../../../sdkwork-iam/scripts/dev/run-pc-renderer-dev-with-bootstrap.mjs -- vite",
+    "dev": "pnpm dev:standalone",
     "build": "vite build && pnpm run check:bundle-budget",
     "preview": "vite preview",
     "clean": "node scripts/clean.mjs",
@@ -14,7 +14,10 @@
     "test:iam-contract": "node --test tests/iam-integration.contract.test.mjs && tsx --test tests/auth-routing.test.ts tests/runtime-config.test.ts",
     "test:drive-contract": "tsx --test tests/drive-upload.contract.test.ts",
     "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
-    "test:agent-contracts": "pnpm run test:agent-contract && pnpm run test:iam-contract && pnpm run test:drive-contract"
+    "test:agent-contracts": "pnpm run test:agent-contract && pnpm run test:iam-contract && pnpm run test:drive-contract",
+    "dev:standalone": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile standalone",
+    "dev:cloud": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile cloud",
+    "stop": "pnpm exec sdkwork-app stop --root ../.."
   },
   "dependencies": {
     "@sdkwork/auth-pc-react": "workspace:*",

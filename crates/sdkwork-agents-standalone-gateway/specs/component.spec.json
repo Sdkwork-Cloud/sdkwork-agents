@@ -11,10 +11,14 @@
     "capability": "standalone-gateway",
     "surface": "gateway-api",
     "status": "ACTIVE",
-    "languages": ["rust"],
+    "languages": [
+      "rust"
+    ],
     "generated": false,
     "private": true,
-    "manifests": ["Cargo.toml"]
+    "manifests": [
+      "Cargo.toml"
+    ]
   },
   "canonicalSpecs": [
     {
@@ -87,7 +91,7 @@
     "commands": [
       "cargo test -p sdkwork-agents-gateway-assembly",
       "cargo check -p sdkwork-agents-standalone-gateway",
-      "pnpm run gateway:assembly:validate"
+      "pnpm run api:assembly:validate"
     ]
   }
 }

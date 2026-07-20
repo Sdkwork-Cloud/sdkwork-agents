@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-runtime.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "pnpm dev:standalone",
+    "dev:standalone": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile standalone",
+    "dev:cloud": "pnpm exec sdkwork-app dev --root ../.. --deployment-profile cloud",
+    "stop": "pnpm exec sdkwork-app stop --root ../.."
   },
   "dependencies": {
     "@sdkwork/agents-mp-core": "workspace:*",
