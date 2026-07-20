@@ -1,0 +1,43 @@
+{
+  "kind": "sdkwork.api.assembly",
+  "schemaVersion": 1,
+  "applicationCode": "agents",
+  "apiMode": "served",
+  "packageName": "sdkwork-api-agents-assembly",
+  "crateDir": "crates/sdkwork-api-agents-assembly",
+  "routeCrates": [
+    {
+      "packageName": "sdkwork-routes-agents-app-api",
+      "memberDir": "crates/sdkwork-routes-agents-app-api",
+      "libName": "sdkwork_routes_agents_app_api",
+      "surface": "app-api",
+      "pathPrefix": null,
+      "mountOrder": 0,
+      "componentRef": "crates/sdkwork-routes-agents-app-api/specs/component.spec.json",
+      "routeManifestRef": "crates/sdkwork-routes-agents-app-api/sdks/_route-manifests/app-api/sdkwork-routes-agents-app-api.route-manifest.json",
+      "sourceRef": "crates/sdkwork-routes-agents-app-api/Cargo.toml"
+    },
+    {
+      "packageName": "sdkwork-routes-agents-backend-api",
+      "memberDir": "crates/sdkwork-routes-agents-backend-api",
+      "libName": "sdkwork_routes_agents_backend_api",
+      "surface": "backend-api",
+      "pathPrefix": null,
+      "mountOrder": 1,
+      "componentRef": "crates/sdkwork-routes-agents-backend-api/specs/component.spec.json",
+      "routeManifestRef": "crates/sdkwork-routes-agents-backend-api/sdks/_route-manifests/backend-api/sdkwork-routes-agents-backend-api.route-manifest.json",
+      "sourceRef": "crates/sdkwork-routes-agents-backend-api/Cargo.toml"
+    },
+    {
+      "packageName": "sdkwork-routes-agents-open-api",
+      "memberDir": "crates/sdkwork-routes-agents-open-api",
+      "libName": "sdkwork_routes_agents_open_api",
+      "surface": "open-api",
+      "pathPrefix": null,
+      "mountOrder": 2,
+      "componentRef": "crates/sdkwork-routes-agents-open-api/specs/component.spec.json",
+      "routeManifestRef": "crates/sdkwork-routes-agents-open-api/sdks/_route-manifests/open-api/sdkwork-routes-agents-open-api.route-manifest.json",
+      "sourceRef": "crates/sdkwork-routes-agents-open-api/Cargo.toml"
+    }
+  ]
+}

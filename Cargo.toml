@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/sdkwork-api-agents-assembly",
     "crates/sdkwork-agents-contract",
     "crates/sdkwork-intelligence-agents-service",
     "crates/sdkwork-routes-agents-http-shared",
