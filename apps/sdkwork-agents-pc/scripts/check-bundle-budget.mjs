@@ -17,7 +17,8 @@ const initialBytes = initialScripts.reduce((total, assetPath) => {
   return total + gzipSync(readFileSync(absolutePath)).byteLength;
 }, 0);
 
-const maxInitialGzipBytes = 260 * 1024;
+// The lazy Token Plan entry adds only its navigation/runtime handshake to the shell.
+const maxInitialGzipBytes = 262 * 1024;
 assert.ok(
   initialBytes <= maxInitialGzipBytes,
   `PC initial JavaScript is ${Math.ceil(initialBytes / 1024)} KiB gzip; budget is ${maxInitialGzipBytes / 1024} KiB.`,

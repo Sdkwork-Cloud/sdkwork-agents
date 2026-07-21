@@ -11,6 +11,7 @@ const CreativeView = lazy(() => import('@sdkwork/agents-pc-creative').then((modu
 const AssetsView = lazy(() => import('@sdkwork/agents-pc-assets').then((module) => ({ default: module.AssetsView })));
 const PresentationView = lazy(() => import('@sdkwork/agents-pc-presentation').then((module) => ({ default: module.PresentationView })));
 const CanvasView = lazy(() => import('@sdkwork/agents-pc-canvas').then((module) => ({ default: module.CanvasView })));
+const AgentsTokenPlanView = lazy(() => import('@sdkwork/agents-pc-membership').then((module) => ({ default: module.AgentsTokenPlanView })));
 
 const WORKBENCH_VIEW_BY_TAB: Record<WorkbenchTab, LazyExoticComponent<ComponentType>> = {
   agents: AgentWorkspace,
@@ -34,11 +35,16 @@ const AVATAR_COLOR_TEMPLATES = [
 export type WorkbenchViewportMode = 'embedded' | 'fixed';
 
 interface WorkbenchLayoutProps {
+  showSidebarLogo?: boolean;
   viewportMode?: WorkbenchViewportMode;
 }
 
-export const WorkbenchLayout = ({ viewportMode = 'fixed' }: WorkbenchLayoutProps) => {
+export const WorkbenchLayout = ({
+  showSidebarLogo = true,
+  viewportMode = 'fixed',
+}: WorkbenchLayoutProps) => {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>(DEFAULT_WORKBENCH_TAB);
+  const [isTokenPlanOpen, setIsTokenPlanOpen] = useState(false);
   const { t: tCommon } = useTranslation('common');
 
   const [username, setUsername] = useState(() => localStorage.getItem('profile_username') || tCommon('mockUserName'));
@@ -52,6 +58,7 @@ export const WorkbenchLayout = ({ viewportMode = 'fixed' }: WorkbenchLayoutProps
     const handleSwitchTab = (e: Event) => {
       const customEvent = e as CustomEvent<{ tab?: unknown }>;
       if (isWorkbenchTab(customEvent.detail?.tab)) {
+        setIsTokenPlanOpen(false);
         setActiveTab(customEvent.detail.tab);
       }
     };
@@ -69,19 +76,30 @@ export const WorkbenchLayout = ({ viewportMode = 'fixed' }: WorkbenchLayoutProps
   const ActiveWorkspace = WORKBENCH_VIEW_BY_TAB[activeTab];
 
   return (
-    <div className={`flex min-h-0 w-full bg-[#f5f5f5] font-sans text-gray-900 dark:bg-[#191919] dark:text-gray-100 overflow-hidden ${viewportMode === 'fixed' ? 'h-[100dvh]' : 'h-full'}`}>
+    <div className={`sdkwork-agents-workbench flex min-h-0 w-full bg-[#f5f5f5] font-sans text-gray-900 dark:bg-[#191919] dark:text-gray-100 overflow-hidden ${viewportMode === 'fixed' ? 'h-[100dvh]' : 'h-full'}`}>
       <AgentStatusIndicator />
       <GlobalSidebar 
         activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
         avatarBg={avatarBg} 
+        isTokenPlanOpen={isTokenPlanOpen}
+        onOpenTokenPlan={() => {
+          void import('../bootstrap/tokenPlanRuntime').then(({ initializeAgentsTokenPlanRuntime }) => {
+            initializeAgentsTokenPlanRuntime();
+            setIsTokenPlanOpen(true);
+          });
+        }}
+        setActiveTab={(tab) => {
+          setIsTokenPlanOpen(false);
+          setActiveTab(tab);
+        }}
+        showSidebarLogo={showSidebarLogo}
         username={username} 
       />
 
       {/* Main Content Area */}
       <div className="flex-1 w-0 flex flex-col relative overflow-hidden bg-[#f5f5f5] dark:bg-[#191919]">
         <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">正在加载工作台…</div>}>
-          <ActiveWorkspace />
+          {isTokenPlanOpen ? <AgentsTokenPlanView /> : <ActiveWorkspace />}
         </Suspense>
       </div>
     </div>

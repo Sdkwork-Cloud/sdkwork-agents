@@ -31,7 +31,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Listen for system theme changes if set to system
   useEffect(() => {
-    if (theme !== 'system') return;
+    if (theme !== 'system') {
+      return undefined;
+    }
     
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {

@@ -1,6 +1,9 @@
 import type { AssetItem } from '../components/AssetDetailModal';
 
-const lobsterImg = '/src/assets/images/cartoon_lobster_1783657276541.jpg';
+const lobsterImg = new URL(
+  '../assets/images/cartoon_lobster_1783657276541.jpg',
+  import.meta.url,
+).href;
 
 // Enriched Mock data generator for interactive assets
 const LOBSTER_PROMPT = '龙虾的卡通形象，扁平风格，卡通形象，';

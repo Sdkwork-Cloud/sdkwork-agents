@@ -14,7 +14,7 @@ import {
 } from '@sdkwork/agents-pc-core/sdk';
 import type { SdkworkAppbasePcAuthRuntimeSdkClient } from '@sdkwork/auth-runtime-pc-react';
 
-import { configureAgentsWorkbenchPorts } from '../workbench/runtime';
+import { configureAgentsWorkbenchPorts } from '../workbench/ports';
 import { initializeAgentsPcIamRuntime } from './iamRuntime';
 
 let initialized = false;

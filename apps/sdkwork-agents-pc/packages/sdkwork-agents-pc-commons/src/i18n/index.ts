@@ -1,5 +1,6 @@
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
+import { createInstance } from 'i18next';
+import { createElement, type ReactNode } from 'react';
+import { I18nextProvider, initReactI18next } from 'react-i18next';
 import enChat from './en-US/agents/workbench/chat.json';
 import enSettings from './en-US/agents/workbench/settings.json';
 import enCommon from './en-US/agents/workbench/shell.json';
@@ -9,7 +10,9 @@ import zhSettings from './zh-CN/agents/workbench/settings.json';
 import zhCommon from './zh-CN/agents/workbench/shell.json';
 import zhPpt from './zh-CN/agents/workbench/presentation.json';
 
-i18n
+const agentsWorkbenchI18n = createInstance();
+
+void agentsWorkbenchI18n
   .use(initReactI18next)
   .init({
     resources: {
@@ -28,9 +31,14 @@ i18n
     },
     lng: 'en-US',
     fallbackLng: 'en-US',
+    initAsync: false,
     interpolation: {
       escapeValue: false // react already safes from xss
     }
   });
 
-export default i18n;
+export function AgentsWorkbenchI18nProvider({ children }: { children: ReactNode }) {
+  return createElement(I18nextProvider, { i18n: agentsWorkbenchI18n }, children);
+}
+
+export default agentsWorkbenchI18n;

@@ -38,7 +38,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   if (messages.length === 0) {
     return (
-      <div className="h-[calc(100vh-200px)] flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500 ease-out">
+      <div className="h-[calc(100cqh-200px)] flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500 ease-out">
         <div className="w-16 h-16 bg-gradient-to-tr from-[#1890ff] to-[#096dd9] text-white rounded-2xl flex items-center justify-center mb-6 shadow-[#1890ff]/20 shadow-xl border border-[#1890ff]/30 ring-4 ring-[#1890ff]/10">
           <Sparkles size={32} className="text-white drop-shadow-md" />
         </div>

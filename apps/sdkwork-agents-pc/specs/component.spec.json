@@ -53,6 +53,8 @@
       "agents.commons",
       "agents.creative.view",
       "agents.inspiration.view",
+      "agents.membership.view",
+      "agents.membership.runtime",
       "agents.presentation.view",
       "agents.sdk"
     ],
@@ -63,6 +65,8 @@
       "@sdkwork/iam-app-sdk",
       "@sdkwork/knowledgebase-app-sdk",
       "@sdkwork/memory-app-sdk",
+      "@sdkwork/membership-app-sdk",
+      "@sdkwork/order-app-sdk",
       "@sdkwork/prompts-app-sdk",
       "@sdkwork/skills-app-sdk",
       "@sdkwork/voice-app-sdk"
@@ -73,6 +77,8 @@
       "sdkwork-iam-app-sdk",
       "sdkwork-knowledgebase-app-sdk",
       "sdkwork-memory-app-sdk",
+      "sdkwork-membership-app-sdk",
+      "sdkwork-order-app-sdk",
       "sdkwork-prompts-app-sdk",
       "sdkwork-skills-app-sdk",
       "sdkwork-voice-app-sdk"

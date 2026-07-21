@@ -25,7 +25,7 @@ export function createKnowledgebaseSelectionAdapter(
 ): KnowledgeSelectionAdapter {
   return {
     async getBasesPage(params?: { cursor?: string; pageSize?: number }): Promise<KnowledgeBasesPage> {
-      const response = await client.knowledge.market.listings.list({
+      const response = await client.knowledge.marketListingsList({
         cursor: params?.cursor,
         pageSize: params?.pageSize ?? DEFAULT_LIST_PAGE_SIZE,
       });

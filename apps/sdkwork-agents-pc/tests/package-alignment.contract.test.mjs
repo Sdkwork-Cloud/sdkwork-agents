@@ -25,6 +25,7 @@ const EXPECTED_PACKAGES = [
   'sdkwork-agents-pc-creative',
   'sdkwork-agents-pc-desktop',
   'sdkwork-agents-pc-inspiration',
+  'sdkwork-agents-pc-membership',
   'sdkwork-agents-pc-presentation',
 ];
 

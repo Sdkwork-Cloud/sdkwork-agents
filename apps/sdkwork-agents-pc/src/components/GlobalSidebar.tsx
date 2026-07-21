@@ -7,7 +7,6 @@ import {
   Home,
   LayoutGrid,
   MessageSquare,
-  Presentation,
   SlidersHorizontal,
   Sparkles,
   Terminal,
@@ -21,12 +20,15 @@ export type { WorkbenchTab } from './workbenchTabs';
 interface GlobalSidebarProps {
   activeTab: WorkbenchTab;
   avatarBg: string;
+  isTokenPlanOpen: boolean;
+  onOpenTokenPlan: () => void;
   setActiveTab: (tab: WorkbenchTab) => void;
+  showSidebarLogo: boolean;
   username: string;
 }
 
 interface SidebarItem {
-  icon: LucideIcon;
+  icon?: LucideIcon;
   id: SidebarTab;
   label: string;
 }
@@ -37,7 +39,7 @@ const SIDEBAR_ITEM_BY_TAB: Record<SidebarTab, Omit<SidebarItem, 'id'>> = {
   inspiration: { icon: Home, label: '灵感' },
   creative: { icon: Sparkles, label: '生成' },
   assets: { icon: Folder, label: '资产' },
-  presentation: { icon: Presentation, label: '演示' },
+  presentation: { label: '演示' },
   canvas: { icon: LayoutGrid, label: '画布' },
 };
 
@@ -46,11 +48,21 @@ const SIDEBAR_ITEMS: SidebarItem[] = SIDEBAR_TABS.map((id) => ({
   ...SIDEBAR_ITEM_BY_TAB[id],
 }));
 
-export const GlobalSidebar: FC<GlobalSidebarProps> = ({ activeTab, setActiveTab, avatarBg, username }) => (
+export const GlobalSidebar: FC<GlobalSidebarProps> = ({
+  activeTab,
+  avatarBg,
+  isTokenPlanOpen,
+  onOpenTokenPlan,
+  setActiveTab,
+  showSidebarLogo,
+  username,
+}) => (
   <div className="relative z-50 flex h-full w-[68px] shrink-0 flex-col items-center border-r border-white/5 bg-[#18181A] py-4">
-    <div className="mb-6 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 shadow-sm">
-      <Sparkles className="fill-white text-white" size={16} />
-    </div>
+    {showSidebarLogo && (
+      <div className="mb-6 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 shadow-sm">
+        <Sparkles className="fill-white text-white" size={16} />
+      </div>
+    )}
 
     <nav aria-label="工作区" className="flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto px-2">
       {SIDEBAR_ITEMS.map(({ id, icon: Icon, label }) => {
@@ -68,14 +80,18 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({ activeTab, setActiveTab,
             onClick={() => setActiveTab(id)}
             type="button"
           >
-            <Icon
-              className={cn(
-                'transition-all duration-300',
-                active ? 'scale-105 text-cyan-400' : 'text-zinc-500 group-hover:scale-105',
-              )}
-              fill={active ? 'currentColor' : 'none'}
-              size={20}
-            />
+            {Icon ? (
+              <Icon
+                className={cn(
+                  'transition-all duration-300',
+                  active ? 'scale-105 text-cyan-400' : 'text-zinc-500 group-hover:scale-105',
+                )}
+                fill={active ? 'currentColor' : 'none'}
+                size={20}
+              />
+            ) : (
+              <span aria-hidden="true" className="h-5 w-5" />
+            )}
             <span className={cn('mt-1.5 text-[10px] font-medium tracking-wide transition-colors duration-300', active ? 'text-zinc-200' : 'text-zinc-500')}>
               {label}
             </span>
@@ -86,10 +102,19 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({ activeTab, setActiveTab,
     </nav>
 
     <div className="mt-auto flex w-full flex-col items-center gap-3 px-2">
-      <button className="group flex w-full flex-col items-center justify-center rounded-xl py-2 text-cyan-500 transition-colors hover:bg-white/5" type="button">
-        <Gem className="mb-1 group-hover:text-cyan-400" size={16} />
+      <button
+        aria-current={isTokenPlanOpen ? 'page' : undefined}
+        className={cn(
+          'group relative flex w-full flex-col items-center justify-center rounded-xl py-2 text-cyan-500 transition-colors hover:bg-white/5',
+          isTokenPlanOpen && 'bg-white/[0.05] text-cyan-300',
+        )}
+        onClick={onOpenTokenPlan}
+        type="button"
+      >
+        <Gem className="mb-1 group-hover:text-cyan-400" fill={isTokenPlanOpen ? 'currentColor' : 'none'} size={16} />
         <span className="text-[10px] font-bold">60</span>
         <span className="text-[9px]">开会员</span>
+        {isTokenPlanOpen && <div className="absolute bottom-[25%] left-0 top-[25%] w-[3px] rounded-r-sm bg-cyan-400" />}
       </button>
 
       <button className="group relative my-2" type="button">
