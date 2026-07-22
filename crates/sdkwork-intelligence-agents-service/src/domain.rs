@@ -1759,7 +1759,8 @@ pub struct AgentInteractionRecord {
     /// The user's resolution payload (JSON: approved/answer/reason).
     pub resolution_json: Option<String>,
     pub claim_owner: Option<String>,
-    pub claim_token: Option<String>,
+    /// SHA-256 hash of the short-lived claim credential; raw tokens are never persisted.
+    pub claim_token_hash: Option<String>,
     pub claim_expires_at: Option<String>,
     pub fencing_token: u64,
     pub version: u64,
@@ -1819,7 +1820,7 @@ impl AgentInteractionRecord {
         occurred_at: impl Into<String>,
     ) {
         self.claim_owner = Some(claim_owner.into());
-        self.claim_token = Some(claim_token_hash.into());
+        self.claim_token_hash = Some(claim_token_hash.into());
         self.claim_expires_at = Some(claim_expires_at.into());
         self.fencing_token = self.fencing_token.saturating_add(1);
         self.updated_at = occurred_at.into();
@@ -1837,7 +1838,7 @@ impl AgentInteractionRecord {
         self.status = status;
         self.resolution_json = Some(resolution_json.into());
         self.claim_owner = None;
-        self.claim_token = None;
+        self.claim_token_hash = None;
         self.claim_expires_at = None;
         self.resolved_at = Some(ts.clone());
         self.updated_at = ts;

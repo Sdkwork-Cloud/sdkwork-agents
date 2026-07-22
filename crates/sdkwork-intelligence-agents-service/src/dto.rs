@@ -1834,10 +1834,21 @@ impl ListSessionItemsRequestDto {
     }
 }
 
+fn parse_optional_json_object(
+    raw: Option<&str>,
+    field_name: &str,
+) -> KernelResult<Option<Map<String, Value>>> {
+    raw.map(|value| {
+        serde_json::from_str::<Map<String, Value>>(value).map_err(|_| KernelError::Internal {
+            message: format!("stored {field_name} is not a valid JSON object"),
+        })
+    })
+    .transpose()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionItemRecordDto {
-    pub id: String,
     pub item_id: String,
     pub tenant_id: String,
     pub organization_id: String,
@@ -1857,9 +1868,9 @@ pub struct AgentSessionItemRecordDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_arguments_json: Option<String>,
+    pub tool_arguments: Option<Map<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_result_json: Option<String>,
+    pub tool_result: Option<Map<String, Value>>,
     pub drive_refs: Vec<AgentItemDriveRefRecordDto>,
     pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
@@ -1928,9 +1939,8 @@ impl AgentItemDriveRefRecordDto {
 }
 
 impl AgentSessionItemRecordDto {
-    pub fn from_record(record: &AgentSessionItemRecord) -> Self {
-        Self {
-            id: record.id.to_string(),
+    pub fn from_record(record: &AgentSessionItemRecord) -> KernelResult<Self> {
+        Ok(Self {
             item_id: record.item_id.clone(),
             tenant_id: record.tenant_id.to_string(),
             organization_id: record.organization_id.to_string(),
@@ -1946,8 +1956,14 @@ impl AgentSessionItemRecordDto {
             provider_id: record.provider_id.clone(),
             tool_name: record.tool_name.clone(),
             tool_call_id: record.tool_call_id.clone(),
-            tool_arguments_json: record.tool_arguments_json.clone(),
-            tool_result_json: record.tool_result_json.clone(),
+            tool_arguments: parse_optional_json_object(
+                record.tool_arguments_json.as_deref(),
+                "toolArguments",
+            )?,
+            tool_result: parse_optional_json_object(
+                record.tool_result_json.as_deref(),
+                "toolResult",
+            )?,
             drive_refs: Vec::new(),
             parent_item_id: record.parent_item_id.clone(),
             turn_id: record.turn_id.clone(),
@@ -1959,14 +1975,14 @@ impl AgentSessionItemRecordDto {
             redacted_at: record.redacted_at.clone(),
             redacted_by: record.redacted_by.map(|value| value.to_string()),
             retention_until: record.retention_until.clone(),
-        }
+        })
     }
 
     pub fn from_record_with_drive_refs(
         record: &AgentSessionItemRecord,
         drive_refs: &[AgentItemDriveRefRecord],
     ) -> KernelResult<Self> {
-        let mut dto = Self::from_record(record);
+        let mut dto = Self::from_record(record)?;
         dto.drive_refs = drive_refs
             .iter()
             .map(AgentItemDriveRefRecordDto::from_record)
@@ -1982,10 +1998,10 @@ pub struct AgentSessionItemResponseDto {
 }
 
 impl AgentSessionItemResponseDto {
-    pub fn from_record(record: &AgentSessionItemRecord) -> Self {
-        Self {
-            data: AgentSessionItemRecordDto::from_record(record),
-        }
+    pub fn from_record(record: &AgentSessionItemRecord) -> KernelResult<Self> {
+        Ok(Self {
+            data: AgentSessionItemRecordDto::from_record(record)?,
+        })
     }
 }
 
@@ -2002,15 +2018,15 @@ pub struct AgentSessionItemListResponseDto {
 }
 
 impl AgentSessionItemListResponseDto {
-    pub fn from_records(records: &[AgentSessionItemRecord]) -> Self {
-        Self {
+    pub fn from_records(records: &[AgentSessionItemRecord]) -> KernelResult<Self> {
+        Ok(Self {
             data: AgentSessionItemListDataDto {
                 items: records
                     .iter()
                     .map(AgentSessionItemRecordDto::from_record)
-                    .collect(),
+                    .collect::<KernelResult<Vec<_>>>()?,
             },
-        }
+        })
     }
 }
 
@@ -2128,7 +2144,7 @@ impl AgentTurnExecutionDto {
                     &result.user_input_item,
                     &result.user_item_drive_refs,
                 )?,
-                AgentSessionItemRecordDto::from_record(&result.assistant_output_item),
+                AgentSessionItemRecordDto::from_record(&result.assistant_output_item)?,
             ],
         })
     }

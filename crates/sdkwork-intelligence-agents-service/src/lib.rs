@@ -159,8 +159,8 @@ pub use ports::{
     CompositionSlotListQuery, InteractionListQuery, McpMarketplaceListQuery,
     ItemFeedbackListQuery, SessionItemListQuery, SessionItemListSort, PaginatedResult, PaginationParams,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionListQuery, CHAT_CONTEXT_MESSAGE_LIMIT, DEFAULT_PAGE_SIZE,
-    MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,
+    ResourceUserStateListQuery, SessionListQuery, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE,
+    MAX_TURN_INPUT_CONTENT_BYTES, TURN_CONTEXT_ITEM_LIMIT,
 };
 pub use project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,

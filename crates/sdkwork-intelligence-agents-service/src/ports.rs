@@ -21,10 +21,10 @@ pub const MAX_PAGE_SIZE: usize = 200;
 /// Default page size for list operations when not specified.
 pub const DEFAULT_PAGE_SIZE: usize = 20;
 
-/// Maximum number of prior session items loaded into LLM chat context.
-pub const CHAT_CONTEXT_MESSAGE_LIMIT: usize = 50;
+/// Maximum number of prior session items loaded into one turn context.
+pub const TURN_CONTEXT_ITEM_LIMIT: usize = 50;
 /// Maximum user-input payload accepted on turn and task prompt surfaces.
-pub const MAX_CHAT_USER_CONTENT_BYTES: usize = 256 * 1024;
+pub const MAX_TURN_INPUT_CONTENT_BYTES: usize = 256 * 1024;
 
 /// Build offset-mode pagination metadata from a repository page and total count.
 pub fn offset_paginated_result<T>(
@@ -346,7 +346,7 @@ impl McpMarketplaceListQuery {
 pub enum SessionItemListSort {
     #[default]
     SequenceAsc,
-    /// Recent context window for chat completion (descending sequence, bounded limit).
+    /// Recent context window for turn execution (descending sequence, bounded limit).
     RecentContextDesc,
 }
 
@@ -909,7 +909,7 @@ pub trait AgentRepository: Send + Sync {
     ///
     /// Implementations SHOULD override this with a dedicated indexed query
     /// (`WHERE active = TRUE LIMIT 1`) to avoid paginated full scans on hot
-    /// paths such as chat completion and task execution. The default
+    /// paths such as turn execution and task execution. The default
     /// implementation falls back to a paginated scan for backward compatibility.
     fn get_active_provider_binding(
         &self,

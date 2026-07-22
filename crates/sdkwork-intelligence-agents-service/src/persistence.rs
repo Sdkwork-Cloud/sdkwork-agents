@@ -1367,7 +1367,7 @@ pub struct AgentInteractionRow {
     pub options_json: String,
     pub resolution_json: Option<String>,
     pub claim_owner: Option<String>,
-    pub claim_token: Option<String>,
+    pub claim_token_hash: Option<String>,
     pub claim_expires_at: Option<String>,
     pub fencing_token: u64,
     pub version: u64,
@@ -1399,7 +1399,7 @@ impl AgentInteractionRow {
             options_json: record.options_json.clone(),
             resolution_json: record.resolution_json.clone(),
             claim_owner: record.claim_owner.clone(),
-            claim_token: record.claim_token.clone(),
+            claim_token_hash: record.claim_token_hash.clone(),
             claim_expires_at: record.claim_expires_at.clone(),
             fencing_token: record.fencing_token,
             version: record.version,
@@ -1435,7 +1435,7 @@ impl AgentInteractionRow {
             options_json: self.options_json,
             resolution_json: self.resolution_json,
             claim_owner: self.claim_owner,
-            claim_token: self.claim_token,
+            claim_token_hash: self.claim_token_hash,
             claim_expires_at: self.claim_expires_at,
             fencing_token: self.fencing_token,
             version: self.version,
@@ -5490,7 +5490,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 turn.retention_until
             )?;
             if affected == 0 {
-                return Err(KernelError::conflict("chat turn reservation conflict"));
+                return Err(KernelError::conflict("turn reservation conflict"));
             }
             Ok(())
         })
@@ -5553,7 +5553,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 expected_version
             )?;
             if affected == 0 {
-                return Err(KernelError::conflict("chat turn state update conflict"));
+                return Err(KernelError::conflict("turn state update conflict"));
             }
             Ok(turn)
         })
@@ -5971,7 +5971,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.options_json,
                 row.resolution_json,
                 row.claim_owner,
-                row.claim_token,
+                row.claim_token_hash,
                 row.claim_expires_at,
                 fencing_token,
                 version,
@@ -6002,7 +6002,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.options_json,
                 row.resolution_json,
                 row.claim_owner,
-                row.claim_token,
+                row.claim_token_hash,
                 row.claim_expires_at,
                 fencing_token,
                 version,
@@ -7370,7 +7370,7 @@ fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionR
         options_json: row.try_get("options_json").map_err(map_sqlx_error)?,
         resolution_json: row.try_get("resolution_json").map_err(map_sqlx_error)?,
         claim_owner: row.try_get("claim_owner").map_err(map_sqlx_error)?,
-        claim_token: row.try_get("claim_token").map_err(map_sqlx_error)?,
+        claim_token_hash: row.try_get("claim_token_hash").map_err(map_sqlx_error)?,
         claim_expires_at: row.try_get("claim_expires_at").map_err(map_sqlx_error)?,
         fencing_token: int64_to_u64(
             row.try_get("fencing_token").map_err(map_sqlx_error)?,

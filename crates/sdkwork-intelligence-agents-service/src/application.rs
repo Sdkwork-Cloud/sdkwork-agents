@@ -8,7 +8,7 @@ use crate::turn_runtime::{
     complete_with_timeout, is_capacity_error, is_inference_error, TurnExecutor,
     TurnExecutionInput, ContractTurnExecutor, TURN_EXECUTION_TIMEOUT,
 };
-use crate::agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
+use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
@@ -27,8 +27,8 @@ use crate::domain::{
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{
     offset_paginated_result, AgentAuditSink, AgentRepository, PaginatedResult, PaginationParams,
-    ProviderBindingListQuery, SessionItemListQuery, CHAT_CONTEXT_MESSAGE_LIMIT,
-    MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,
+    ProviderBindingListQuery, SessionItemListQuery, MAX_PAGE_SIZE, MAX_TURN_INPUT_CONTENT_BYTES,
+    TURN_CONTEXT_ITEM_LIMIT,
 };
 use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
@@ -52,7 +52,6 @@ use sdkwork_utils_rust::{sha256_hash, trim};
 use time::OffsetDateTime;
 
 const MAX_TURN_DRIVE_REFS: usize = 64;
-const DEFAULT_INTERACTION_LEASE_SECONDS: u32 = 60;
 const MAX_INTERACTION_LEASE_SECONDS: u32 = 300;
 
 fn validate_runtime_token(value: &str, field_name: &str, max_bytes: usize) -> KernelResult<()> {
@@ -151,7 +150,7 @@ fn validate_interaction_claim(
         return Err(KernelError::conflict("interaction fencing token mismatch"));
     }
     let expected_hash = record
-        .claim_token
+        .claim_token_hash
         .as_deref()
         .ok_or_else(|| KernelError::conflict("interaction must be claimed before resolution"))?;
     if sha256_hash(claim_token.as_bytes()) != expected_hash {
@@ -2557,9 +2556,9 @@ where
 
         require_non_blank(command.prompt.as_str(), "prompt")?;
         reject_secret_material(command.prompt.as_str(), "prompt")?;
-        if command.prompt.len() > MAX_CHAT_USER_CONTENT_BYTES {
+        if command.prompt.len() > MAX_TURN_INPUT_CONTENT_BYTES {
             return Err(KernelError::validation(format!(
-                "prompt exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+                "prompt exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
 
@@ -3597,9 +3596,9 @@ where
         }
 
         require_non_blank(command.content.as_str(), "content")?;
-        if command.content.len() > MAX_CHAT_USER_CONTENT_BYTES {
+        if command.content.len() > MAX_TURN_INPUT_CONTENT_BYTES {
             return Err(KernelError::validation(format!(
-                "content exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+                "content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
         reject_secret_material(command.content.as_str(), "content")?;
@@ -3911,14 +3910,14 @@ where
         })?;
         if let Some(expected_version) = command.expected_version {
             if expected_version != turn.version {
-                return Err(KernelError::conflict("chat turn version mismatch"));
+                return Err(KernelError::conflict("turn version mismatch"));
             }
         }
         if !matches!(
             turn.status,
             AgentTurnStatus::Requested | AgentTurnStatus::Running
         ) {
-            return Err(KernelError::validation("chat turn cannot be cancelled"));
+            return Err(KernelError::validation("turn cannot be cancelled"));
         }
         let expected_version = turn.version;
         turn.mark_cancelled(command.requested_at.clone());
@@ -3961,7 +3960,7 @@ where
             let expected_version = turn.version;
             turn.mark_failed(
                 "turn_reconciliation_timeout",
-                "chat turn did not reach a terminal state before the reconciliation deadline",
+                "turn did not reach a terminal state before the reconciliation deadline",
                 occurred_at,
             );
             match self
@@ -4037,9 +4036,9 @@ where
         }
 
         require_non_blank(command.content.as_str(), "content")?;
-        if command.content.len() > MAX_CHAT_USER_CONTENT_BYTES {
+        if command.content.len() > MAX_TURN_INPUT_CONTENT_BYTES {
             return Err(KernelError::validation(format!(
-                "content exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+                "content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
         reject_secret_material(command.content.as_str(), "content")?;
@@ -4224,7 +4223,7 @@ where
                     command.tenant_id,
                     command.organization_id,
                     command.session_id.clone(),
-                    CHAT_CONTEXT_MESSAGE_LIMIT,
+                    TURN_CONTEXT_ITEM_LIMIT,
                 ))?;
         let history = history_items
             .iter()
@@ -4918,9 +4917,9 @@ where
 
         require_non_blank(command.prompt.as_str(), "prompt")?;
         reject_secret_material(command.prompt.as_str(), "prompt")?;
-        if command.prompt.len() > MAX_CHAT_USER_CONTENT_BYTES {
+        if command.prompt.len() > MAX_TURN_INPUT_CONTENT_BYTES {
             return Err(KernelError::validation(format!(
-                "prompt exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
+                "prompt exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
         let options_json = default_json_array_if_blank(command.options_json.as_str());
@@ -5007,7 +5006,7 @@ where
             options_json,
             resolution_json: None,
             claim_owner: None,
-            claim_token: None,
+            claim_token_hash: None,
             claim_expires_at: None,
             fencing_token: 0,
             version: 0,

@@ -844,7 +844,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_interaction (
     options_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     resolution_json JSONB,
     claim_owner VARCHAR(128),
-    claim_token VARCHAR(128),
+    claim_token_hash VARCHAR(128),
     claim_expires_at TIMESTAMPTZ,
     fencing_token BIGINT NOT NULL DEFAULT 0,
     version BIGINT NOT NULL DEFAULT 0,
@@ -866,8 +866,8 @@ CREATE TABLE IF NOT EXISTS ai_agent_interaction (
         OR (jsonb_typeof(resolution_json) = 'object' AND octet_length(resolution_json::text) <= 65536)
     ),
     CONSTRAINT ck_ai_agent_interaction_claim CHECK (
-        (claim_owner IS NULL AND claim_token IS NULL AND claim_expires_at IS NULL)
-        OR (claim_owner IS NOT NULL AND claim_token IS NOT NULL AND claim_expires_at IS NOT NULL)
+        (claim_owner IS NULL AND claim_token_hash IS NULL AND claim_expires_at IS NULL)
+        OR (claim_owner IS NOT NULL AND claim_token_hash IS NOT NULL AND claim_expires_at IS NOT NULL)
     ),
     CONSTRAINT ck_ai_agent_interaction_provider_scope CHECK (
         provider_interaction_id IS NULL OR runtime_binding_id IS NOT NULL
