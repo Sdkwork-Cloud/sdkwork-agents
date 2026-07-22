@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type CSSProperties, type LazyExoticComponent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSidebar } from './GlobalSidebar';
 import { AgentStatusIndicator } from './AgentStatusIndicator';
@@ -9,7 +9,6 @@ const ChatView = lazy(() => import('@sdkwork/agents-pc-chat').then((module) => (
 const InspirationView = lazy(() => import('@sdkwork/agents-pc-inspiration').then((module) => ({ default: module.InspirationView })));
 const CreativeView = lazy(() => import('@sdkwork/agents-pc-creative').then((module) => ({ default: module.CreativeView })));
 const AssetsView = lazy(() => import('@sdkwork/agents-pc-assets').then((module) => ({ default: module.AssetsView })));
-const PresentationView = lazy(() => import('@sdkwork/agents-pc-presentation').then((module) => ({ default: module.PresentationView })));
 const CanvasView = lazy(() => import('@sdkwork/agents-pc-canvas').then((module) => ({ default: module.CanvasView })));
 const AgentsTokenPlanView = lazy(() => import('@sdkwork/agents-pc-membership').then((module) => ({ default: module.AgentsTokenPlanView })));
 
@@ -19,7 +18,6 @@ const WORKBENCH_VIEW_BY_TAB: Record<WorkbenchTab, LazyExoticComponent<ComponentT
   inspiration: InspirationView,
   creative: CreativeView,
   assets: AssetsView,
-  presentation: PresentationView,
   canvas: CanvasView,
 };
 
@@ -34,12 +32,18 @@ const AVATAR_COLOR_TEMPLATES = [
 
 export type WorkbenchViewportMode = 'embedded' | 'fixed';
 
+type WorkbenchLayoutStyle = CSSProperties & {
+  '--sdkwork-agents-overlay-top-inset': string;
+};
+
 interface WorkbenchLayoutProps {
+  overlayTopInset?: string;
   showSidebarLogo?: boolean;
   viewportMode?: WorkbenchViewportMode;
 }
 
 export const WorkbenchLayout = ({
+  overlayTopInset = '0px',
   showSidebarLogo = true,
   viewportMode = 'fixed',
 }: WorkbenchLayoutProps) => {
@@ -74,9 +78,15 @@ export const WorkbenchLayout = ({
 
   const avatarBg = AVATAR_COLOR_TEMPLATES[avatarIndex] || AVATAR_COLOR_TEMPLATES[0];
   const ActiveWorkspace = WORKBENCH_VIEW_BY_TAB[activeTab];
+  const workbenchLayoutStyle: WorkbenchLayoutStyle = {
+    '--sdkwork-agents-overlay-top-inset': overlayTopInset,
+  };
 
   return (
-    <div className={`sdkwork-agents-workbench flex min-h-0 w-full bg-[#f5f5f5] font-sans text-gray-900 dark:bg-[#191919] dark:text-gray-100 overflow-hidden ${viewportMode === 'fixed' ? 'h-[100dvh]' : 'h-full'}`}>
+    <div
+      className={`sdkwork-agents-workbench flex min-h-0 w-full bg-[#f5f5f5] font-sans text-gray-900 dark:bg-[#191919] dark:text-gray-100 overflow-hidden ${viewportMode === 'fixed' ? 'h-[100dvh]' : 'h-full'}`}
+      style={workbenchLayoutStyle}
+    >
       <AgentStatusIndicator />
       <GlobalSidebar 
         activeTab={activeTab} 

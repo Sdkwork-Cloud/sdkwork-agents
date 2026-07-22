@@ -1,11 +1,10 @@
-# SQLite Managed-Store Status
+# SQLite Development Subset
 
-SDKWork Agents provides a native eight-table SQLite baseline at
-`0001_agents_baseline.sql`. The baseline executes on SQLite with foreign keys enabled and avoids
-PostgreSQL-only types, casts, extensions, and index methods. The service also provides a validated
-SQLite pool facade behind the `sqlite-sync` feature.
+This directory contains a four-table agent control-plane subset for local
+development. It intentionally excludes projects, sessions, turns, items,
+interactions, checkpoints, tasks, sharing, and outbox state.
 
-SQLite is not yet an advertised managed-store engine because repository and audit adapters,
-transaction coverage, lifecycle integration, server-side pagination, and parity tests against
-PostgreSQL remain required. Do not add SQLite to `database.manifest.json#engines` before those
-runtime artifacts and tests exist.
+SQLite is not declared in `database/database.manifest.json#engines` and must not
+be reported as managed-store parity with PostgreSQL. Business IDs are explicit
+`BIGINT` values supplied by the same application ID provider; no SQLite rowid or
+auto-increment allocation is permitted.

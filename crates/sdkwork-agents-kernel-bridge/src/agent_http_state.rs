@@ -6,7 +6,7 @@ use sdkwork_agents_contract::{
 };
 use sdkwork_intelligence_agents_service::{
     AgentBusinessIdGenerator, AgentHttpState, AllowAllPolicyProvider, IamGatedPolicyProvider,
-    InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeChatCompleter, SqlAgentAuditSink,
+    InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink,
     SqlAgentRepository, SyncPostgresAdapter, AUDIT_SINK_NODE_ID,
 };
 use std::sync::Arc;
@@ -85,10 +85,10 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     let repository = SqlAgentRepository::new(repository_adapter);
     let audit_sink = SqlAgentAuditSink::new_global(audit_adapter);
 
-    Ok(AgentHttpState::with_chat_completer(
+    Ok(AgentHttpState::with_turn_executor(
         repository,
         audit_sink,
         IamGatedPolicyProvider::default(),
-        Arc::new(RuntimeFacadeChatCompleter),
+        Arc::new(RuntimeFacadeTurnExecutor),
     ))
 }

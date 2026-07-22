@@ -4,27 +4,30 @@ use std::sync::Arc;
 mod commands;
 pub use commands::*;
 
-use crate::chat_runtime::{
-    complete_with_timeout, is_capacity_error, is_inference_error, ChatCompleter,
-    ChatCompletionInput, ContractChatCompleter, CHAT_COMPLETION_TIMEOUT,
+use crate::turn_runtime::{
+    complete_with_timeout, is_capacity_error, is_inference_error, TurnExecutor,
+    TurnExecutionInput, ContractTurnExecutor, TURN_EXECUTION_TIMEOUT,
 };
-use crate::chat_turn::{AgentChatTurnRecord, AgentChatTurnStatus};
+use crate::agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
     AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentMessageDriveRefRecord, AgentMessageFeedbackRecord, AgentMessageMediaRole,
-    AgentMessageRecord, AgentMessageRole, AgentMessageStatus, AgentProviderBindingRecord,
+    AgentItemDriveRefRecord, AgentItemFeedbackRecord, AgentItemResourceRole,
+    AgentSessionCheckpointRecord, AgentSessionCheckpointStatus, AgentSessionItemRecord,
+    AgentSessionItemKind, AgentSessionItemStatus, AgentProviderBindingRecord,
     AgentResourceType, AgentResourceUserStateRecord, AgentRuntimeExecutionOperation,
-    AgentRuntimeExecutionRecord, AgentRuntimeExecutionStatus, AgentSessionRecord,
-    AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility, MarketplaceAuditPayload,
-    MessageAuditPayload, ProviderBindingAuditPayload, RuntimeExecutionAuditPayload,
+    AgentRuntimeExecutionRecord, AgentRuntimeExecutionStatus, AgentSessionEntrySurface,
+    AgentSessionKind, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus,
+    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentVisibility,
+    MarketplaceAuditPayload,
+    ProviderBindingAuditPayload, RuntimeExecutionAuditPayload, SessionItemAuditPayload,
     SessionAuditPayload, TaskAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{
-    offset_paginated_result, AgentAuditSink, AgentRepository, MessageListQuery, PaginatedResult,
-    PaginationParams, ProviderBindingListQuery, CHAT_CONTEXT_MESSAGE_LIMIT,
+    offset_paginated_result, AgentAuditSink, AgentRepository, PaginatedResult, PaginationParams,
+    ProviderBindingListQuery, SessionItemListQuery, CHAT_CONTEXT_MESSAGE_LIMIT,
     MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,
 };
 use crate::project::{
@@ -36,7 +39,8 @@ use crate::runtime_facade_bridge::{
 };
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
-    is_trimmed_blank, require_non_blank, validate_capabilities, validate_standard_id,
+    is_trimmed_blank, parse_optional_rfc3339_datetime, parse_rfc3339_datetime,
+    require_non_blank, validate_capabilities, validate_requested_at, validate_standard_id,
 };
 use sdkwork_agent_kernel::{
     KernelError, KernelErrorKind, KernelEvent, KernelEventRedaction, KernelEventSeverity,
@@ -45,352 +49,165 @@ use sdkwork_agent_kernel::{
 };
 use sdkwork_agents_contract::agents_allow_contract_runtime_fallback;
 use sdkwork_utils_rust::{sha256_hash, trim};
+use time::OffsetDateTime;
 
-const MAX_CHAT_MEDIA_RESOURCES: usize = 10;
-const MAX_CHAT_MEDIA_SNAPSHOT_BYTES: usize = 16 * 1024;
-const MAX_CHAT_MEDIA_SNAPSHOTS_TOTAL_BYTES: usize = 64 * 1024;
+const MAX_TURN_DRIVE_REFS: usize = 64;
+const DEFAULT_INTERACTION_LEASE_SECONDS: u32 = 60;
+const MAX_INTERACTION_LEASE_SECONDS: u32 = 300;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct NormalizedMessageDriveResource {
-    media_role: AgentMessageMediaRole,
-    drive_space_id: String,
-    drive_node_id: String,
-    drive_uri: String,
-    media_resource_id: String,
-    object_blob_id: Option<String>,
-    resource_snapshot_json: String,
-    resource_hash: String,
-    alt_text: Option<String>,
-    sort_order: u32,
-}
-
-fn bounded_optional_media_string(
-    value: &Option<String>,
-    field_name: &str,
-    max_bytes: usize,
-) -> KernelResult<Option<String>> {
-    let Some(value) = value
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(None);
-    };
-    if value.len() > max_bytes {
-        return Err(KernelError::validation(format!(
-            "{field_name} exceeds {max_bytes} bytes"
-        )));
-    }
-    Ok(Some(value.to_string()))
-}
-
-fn reject_forbidden_media_metadata(value: &serde_json::Value) -> KernelResult<()> {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, child) in map {
-                let normalized_key = key
-                    .chars()
-                    .filter(|value| value.is_ascii_alphanumeric())
-                    .flat_map(char::to_lowercase)
-                    .collect::<String>();
-                if matches!(
-                    normalized_key.as_str(),
-                    "bucketid"
-                        | "bucketname"
-                        | "objectkey"
-                        | "presignedurl"
-                        | "signedurl"
-                        | "downloadurl"
-                        | "uploadurl"
-                ) {
-                    return Err(KernelError::validation(format!(
-                        "media metadata field {key} is forbidden"
-                    )));
-                }
-                reject_forbidden_media_metadata(child)?;
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                reject_forbidden_media_metadata(item)?;
-            }
-        }
-        _ => {}
+fn validate_runtime_token(value: &str, field_name: &str, max_bytes: usize) -> KernelResult<()> {
+    require_non_blank(value, field_name)?;
+    if value.len() > max_bytes
+        || !value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| match byte {
+                b'a'..=b'z' => true,
+                b'0'..=b'9' | b'_' | b'-' => index > 0,
+                _ => false,
+            })
+    {
+        return Err(KernelError::validation(format!("{field_name} is invalid")));
     }
     Ok(())
 }
 
-fn parse_drive_uri(uri: &str) -> KernelResult<(String, String)> {
-    const PREFIX: &str = "drive://spaces/";
-    let remainder = uri.strip_prefix(PREFIX).ok_or_else(|| {
-        KernelError::validation(
-            "mediaResources.uri must use drive://spaces/{spaceId}/nodes/{nodeId}",
-        )
-    })?;
-    let (space_id, node_id) = remainder.split_once("/nodes/").ok_or_else(|| {
-        KernelError::validation(
-            "mediaResources.uri must use drive://spaces/{spaceId}/nodes/{nodeId}",
-        )
-    })?;
-    if space_id.is_empty()
-        || node_id.is_empty()
-        || space_id.len() > 128
-        || node_id.len() > 128
-        || space_id.contains(['/', '?', '#'])
-        || node_id.contains(['/', '?', '#'])
-    {
-        return Err(KernelError::validation(
-            "mediaResources.uri contains an invalid Drive space or node id",
-        ));
+fn validate_optional_bounded(
+    value: &Option<String>,
+    field_name: &str,
+    max_bytes: usize,
+) -> KernelResult<()> {
+    if let Some(value) = value {
+        require_non_blank(value, field_name)?;
+        if value.len() > max_bytes {
+            return Err(KernelError::validation(format!(
+                "{field_name} exceeds {max_bytes} bytes"
+            )));
+        }
     }
-    Ok((space_id.to_string(), node_id.to_string()))
+    Ok(())
 }
 
-fn metadata_drive_value<'a>(
-    metadata: &'a serde_json::Map<String, serde_json::Value>,
-    flat_key: &str,
-    nested_key: &str,
-) -> Option<&'a str> {
-    metadata
-        .get(flat_key)
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            metadata
-                .get("drive")
-                .and_then(serde_json::Value::as_object)
-                .and_then(|drive| drive.get(nested_key))
-                .and_then(serde_json::Value::as_str)
-        })
+fn format_utc_seconds(value: OffsetDateTime) -> String {
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        value.year(),
+        u8::from(value.month()),
+        value.day(),
+        value.hour(),
+        value.minute(),
+        value.second()
+    )
 }
 
-fn normalize_message_drive_resources(
-    resources: &[AgentMessageMediaResourceInput],
-) -> KernelResult<Vec<NormalizedMessageDriveResource>> {
-    if resources.len() > MAX_CHAT_MEDIA_RESOURCES {
+fn validate_interaction_options(value: &serde_json::Value) -> KernelResult<()> {
+    let options = value
+        .as_array()
+        .ok_or_else(|| KernelError::validation("options must be an array"))?;
+    if options.len() > 128 {
+        return Err(KernelError::validation("options exceeds 128 items"));
+    }
+    let mut values = std::collections::HashSet::with_capacity(options.len());
+    for option in options {
+        let object = option
+            .as_object()
+            .ok_or_else(|| KernelError::validation("each option must be an object"))?;
+        if object.keys().any(|key| key != "value" && key != "label") {
+            return Err(KernelError::validation(
+                "options contains an unsupported field",
+            ));
+        }
+        let option_value = object
+            .get("value")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| KernelError::validation("options.value is required"))?;
+        let label = object
+            .get("label")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| KernelError::validation("options.label is required"))?;
+        require_non_blank(option_value, "options.value")?;
+        require_non_blank(label, "options.label")?;
+        if option_value.len() > 256 || label.len() > 512 {
+            return Err(KernelError::validation("interaction option is too long"));
+        }
+        if !values.insert(option_value) {
+            return Err(KernelError::conflict(
+                "interaction option values must be unique",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_interaction_claim(
+    record: &AgentInteractionRecord,
+    claim_token: &str,
+    fencing_token: u64,
+) -> KernelResult<()> {
+    if !(32..=256).contains(&claim_token.len()) {
+        return Err(KernelError::validation("claimToken is invalid"));
+    }
+    if record.fencing_token != fencing_token {
+        return Err(KernelError::conflict("interaction fencing token mismatch"));
+    }
+    let expected_hash = record
+        .claim_token
+        .as_deref()
+        .ok_or_else(|| KernelError::conflict("interaction must be claimed before resolution"))?;
+    if sha256_hash(claim_token.as_bytes()) != expected_hash {
+        return Err(KernelError::conflict("interaction claim token mismatch"));
+    }
+    let expires_at = record
+        .claim_expires_at
+        .as_deref()
+        .ok_or_else(|| KernelError::conflict("interaction claim has no expiration"))?;
+    if parse_rfc3339_datetime(expires_at, "claimExpiresAt")? <= OffsetDateTime::now_utc() {
+        return Err(KernelError::conflict("interaction claim has expired"));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedItemDriveRef {
+    resource_role: AgentItemResourceRole,
+    drive_space_id: String,
+    drive_node_id: String,
+    sort_order: u32,
+}
+
+fn normalize_item_drive_resources(
+    resources: &[AgentItemDriveRefInput],
+) -> KernelResult<Vec<NormalizedItemDriveRef>> {
+    if resources.len() > MAX_TURN_DRIVE_REFS {
         return Err(KernelError::validation(format!(
-            "mediaResources exceeds maximum item count of {MAX_CHAT_MEDIA_RESOURCES}"
+            "driveRefs exceeds maximum item count of {MAX_TURN_DRIVE_REFS}"
         )));
     }
 
     let mut normalized = Vec::with_capacity(resources.len());
     let mut uniqueness = std::collections::HashSet::with_capacity(resources.len());
-    let mut total_snapshot_bytes = 0usize;
     for (sort_order, resource) in resources.iter().enumerate() {
-        let kind = resource.kind.trim();
-        if !matches!(
-            kind,
-            "image" | "video" | "audio" | "voice" | "document" | "archive" | "model" | "other"
-        ) {
-            return Err(KernelError::validation("mediaResources.kind is invalid"));
+        let drive_space_id = resource.drive_space_id.trim();
+        let drive_node_id = resource.drive_node_id.trim();
+        if drive_space_id.is_empty() || drive_space_id.len() > 128 {
+            return Err(KernelError::validation("driveRefs.driveSpaceId is invalid"));
         }
-        if resource.source.trim() != "drive" {
-            return Err(KernelError::validation(
-                "mediaResources.source must be drive",
-            ));
+        if drive_node_id.is_empty() || drive_node_id.len() > 128 {
+            return Err(KernelError::validation("driveRefs.driveNodeId is invalid"));
         }
-        if resource.uri.len() > 512 {
-            return Err(KernelError::validation(
-                "mediaResources.uri exceeds 512 bytes",
-            ));
+        if !uniqueness.insert((
+            drive_space_id.to_string(),
+            drive_node_id.to_string(),
+            resource.resource_role.as_str(),
+        )) {
+            return Err(KernelError::conflict("duplicate session-item Drive reference"));
         }
-        let (drive_space_id, drive_node_id) = parse_drive_uri(resource.uri.trim())?;
-        if resource.id.trim() != drive_node_id {
-            return Err(KernelError::validation(
-                "mediaResources.id must equal the Drive node id",
-            ));
-        }
-
-        let media_role = match kind {
-            "image" => AgentMessageMediaRole::Image,
-            "voice" => AgentMessageMediaRole::Voice,
-            _ => AgentMessageMediaRole::Attachment,
-        };
-        if !uniqueness.insert((drive_node_id.clone(), media_role.as_str())) {
-            return Err(KernelError::conflict("duplicate message Drive reference"));
-        }
-
-        let object_blob_id =
-            bounded_optional_media_string(&resource.object_blob_id, "objectBlobId", 128)?;
-        let file_name = bounded_optional_media_string(&resource.file_name, "fileName", 512)?;
-        let mime_type = bounded_optional_media_string(&resource.mime_type, "mimeType", 256)?;
-        let size_bytes = bounded_optional_media_string(&resource.size_bytes, "sizeBytes", 32)?;
-        if let Some(value) = size_bytes.as_deref() {
-            if !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(KernelError::validation(
-                    "mediaResources.sizeBytes must contain decimal digits",
-                ));
-            }
-        }
-        let alt_text = bounded_optional_media_string(&resource.alt_text, "altText", 512)?;
-        let title = bounded_optional_media_string(&resource.title, "title", 255)?;
-        if let Some(duration) = resource.duration_seconds {
-            if !duration.is_finite() || duration < 0.0 {
-                return Err(KernelError::validation(
-                    "mediaResources.durationSeconds must be finite and non-negative",
-                ));
-            }
-        }
-
-        let checksum = resource
-            .checksum
-            .as_ref()
-            .map(|value| -> KernelResult<serde_json::Value> {
-                let object = value.as_object().ok_or_else(|| {
-                    KernelError::validation("mediaResources.checksum must be an object")
-                })?;
-                let algorithm = object
-                    .get("algorithm")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| {
-                        KernelError::validation("mediaResources.checksum.algorithm is required")
-                    })?;
-                if !matches!(algorithm, "sha256" | "md5" | "etag") {
-                    return Err(KernelError::validation(
-                        "mediaResources.checksum.algorithm is invalid",
-                    ));
-                }
-                let value = object
-                    .get("value")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|value| !value.is_empty() && value.len() <= 256)
-                    .ok_or_else(|| {
-                        KernelError::validation("mediaResources.checksum.value is invalid")
-                    })?;
-                Ok(serde_json::json!({"algorithm": algorithm, "value": value}))
-            })
-            .transpose()?;
-
-        let access = resource
-            .access
-            .as_ref()
-            .map(|value| -> KernelResult<serde_json::Value> {
-                let object = value.as_object().ok_or_else(|| {
-                    KernelError::validation("mediaResources.access must be an object")
-                })?;
-                let visibility = object
-                    .get("visibility")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| {
-                        KernelError::validation("mediaResources.access.visibility is required")
-                    })?;
-                if !matches!(
-                    visibility,
-                    "private" | "tenant" | "organization" | "public" | "signed"
-                ) {
-                    return Err(KernelError::validation(
-                        "mediaResources.access.visibility is invalid",
-                    ));
-                }
-                let mut sanitized = serde_json::Map::new();
-                sanitized.insert("visibility".to_string(), visibility.into());
-                if let Some(expires_at) = object
-                    .get("expiresAt")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|value| value.len() <= 64)
-                {
-                    sanitized.insert("expiresAt".to_string(), expires_at.into());
-                }
-                Ok(serde_json::Value::Object(sanitized))
-            })
-            .transpose()?;
-
-        let metadata = resource
-            .metadata
-            .as_ref()
-            .map(|value| -> KernelResult<serde_json::Value> {
-                reject_forbidden_media_metadata(value)?;
-                let object = value.as_object().ok_or_else(|| {
-                    KernelError::validation("mediaResources.metadata must be an object")
-                })?;
-                if metadata_drive_value(object, "driveSpaceId", "spaceId")
-                    .is_some_and(|value| value != drive_space_id)
-                    || metadata_drive_value(object, "driveNodeId", "nodeId")
-                        .is_some_and(|value| value != drive_node_id)
-                {
-                    return Err(KernelError::validation(
-                        "mediaResources.metadata Drive identity does not match uri",
-                    ));
-                }
-                let mut drive = serde_json::Map::new();
-                drive.insert("spaceId".to_string(), drive_space_id.clone().into());
-                drive.insert("nodeId".to_string(), drive_node_id.clone().into());
-                for key in ["spaceType", "nodeVersion"] {
-                    if let Some(value) = metadata_drive_value(object, key, key)
-                        .filter(|value| !value.is_empty() && value.len() <= 128)
-                    {
-                        drive.insert(key.to_string(), value.into());
-                    }
-                }
-                Ok(serde_json::json!({"drive": drive}))
-            })
-            .transpose()?
-            .unwrap_or_else(|| {
-                serde_json::json!({
-                    "drive": {
-                        "spaceId": drive_space_id,
-                        "nodeId": drive_node_id,
-                    }
-                })
-            });
-
-        let mut snapshot = serde_json::Map::new();
-        snapshot.insert("id".to_string(), drive_node_id.clone().into());
-        snapshot.insert("kind".to_string(), kind.into());
-        snapshot.insert("source".to_string(), "drive".into());
-        snapshot.insert("uri".to_string(), resource.uri.trim().into());
-        for (key, value) in [
-            ("objectBlobId", object_blob_id.as_ref()),
-            ("fileName", file_name.as_ref()),
-            ("mimeType", mime_type.as_ref()),
-            ("sizeBytes", size_bytes.as_ref()),
-            ("altText", alt_text.as_ref()),
-            ("title", title.as_ref()),
-        ] {
-            if let Some(value) = value {
-                snapshot.insert(key.to_string(), value.clone().into());
-            }
-        }
-        if let Some(value) = checksum {
-            snapshot.insert("checksum".to_string(), value);
-        }
-        if let Some(value) = resource.width {
-            snapshot.insert("width".to_string(), value.into());
-        }
-        if let Some(value) = resource.height {
-            snapshot.insert("height".to_string(), value.into());
-        }
-        if let Some(value) = resource.duration_seconds {
-            snapshot.insert("durationSeconds".to_string(), serde_json::json!(value));
-        }
-        if let Some(value) = access {
-            snapshot.insert("access".to_string(), value);
-        }
-        snapshot.insert("metadata".to_string(), metadata);
-
-        let resource_snapshot_json = serde_json::Value::Object(snapshot).to_string();
-        if resource_snapshot_json.len() > MAX_CHAT_MEDIA_SNAPSHOT_BYTES {
-            return Err(KernelError::validation(format!(
-                "mediaResources snapshot exceeds {MAX_CHAT_MEDIA_SNAPSHOT_BYTES} bytes"
-            )));
-        }
-        total_snapshot_bytes = total_snapshot_bytes.saturating_add(resource_snapshot_json.len());
-        if total_snapshot_bytes > MAX_CHAT_MEDIA_SNAPSHOTS_TOTAL_BYTES {
-            return Err(KernelError::validation(format!(
-                "mediaResources snapshots exceed {MAX_CHAT_MEDIA_SNAPSHOTS_TOTAL_BYTES} bytes"
-            )));
-        }
-        normalized.push(NormalizedMessageDriveResource {
-            media_role,
-            drive_space_id,
-            drive_node_id: drive_node_id.clone(),
-            drive_uri: resource.uri.trim().to_string(),
-            media_resource_id: drive_node_id,
-            object_blob_id,
-            resource_hash: sha256_hash(resource_snapshot_json.as_bytes()),
-            resource_snapshot_json,
-            alt_text,
+        normalized.push(NormalizedItemDriveRef {
+            resource_role: resource.resource_role,
+            drive_space_id: drive_space_id.to_string(),
+            drive_node_id: drive_node_id.to_string(),
             sort_order: u32::try_from(sort_order)
-                .map_err(|_| KernelError::validation("mediaResources sort order overflow"))?,
+                .map_err(|_| KernelError::validation("driveRefs sort order overflow"))?,
         });
     }
     Ok(normalized)
@@ -411,7 +228,7 @@ where
     repository: R,
     audit_sink: A,
     policy_provider: P,
-    chat_completer: Arc<dyn ChatCompleter>,
+    turn_executor: Arc<dyn TurnExecutor>,
 }
 
 impl<R, A, P> AgentsService<R, A, P>
@@ -425,14 +242,14 @@ where
             repository,
             audit_sink,
             policy_provider,
-            chat_completer: Arc::new(ContractChatCompleter),
+            turn_executor: Arc::new(ContractTurnExecutor),
         }
     }
 
     /// Replace the default contract completer with a kernel-backed implementation
     /// at gateway bootstrap (production) without changing HTTP handlers.
-    pub fn with_chat_completer(mut self, chat_completer: Arc<dyn ChatCompleter>) -> Self {
-        self.chat_completer = chat_completer;
+    pub fn with_turn_executor(mut self, turn_executor: Arc<dyn TurnExecutor>) -> Self {
+        self.turn_executor = turn_executor;
         self
     }
 
@@ -507,13 +324,14 @@ where
     fn load_session_for_nested_route(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         path_agent_id: &str,
         owner_scope: Option<u64>,
     ) -> KernelResult<AgentSessionRecord> {
         let session = self
             .repository
-            .get_session(tenant_id, session_id)?
+            .get_session(tenant_id, organization_id, session_id)?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, owner_scope)?;
         Self::ensure_nested_agent_id(&session.agent_id, path_agent_id, "session")?;
@@ -800,9 +618,9 @@ where
     pub fn update_session_metadata(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         title: Option<String>,
-        model_id: Option<String>,
         requested_at: String,
         requested_by: PolicySubject,
     ) -> KernelResult<AgentSessionRecord> {
@@ -814,13 +632,10 @@ where
         )?;
         let mut record = self
             .repository
-            .get_session(tenant_id, session_id)?
+            .get_session(tenant_id, organization_id, session_id)?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         if let Some(title) = title {
             record.title = Some(title);
-        }
-        if let Some(model_id) = model_id {
-            record.model_id = Some(model_id);
         }
         record.mark_updated(requested_at.as_str());
         self.repository.update_session(record.clone())?;
@@ -2018,20 +1833,73 @@ where
         // Ensure session does not already exist
         if self
             .repository
-            .get_session(command.tenant_id, session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                session_id.as_str(),
+            )?
             .is_some()
         {
             return Err(KernelError::conflict("session already exists"));
         }
 
-        // Validate metadata_json if non-empty
-        if !is_trimmed_blank(command.metadata_json.as_str()) {
-            validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
-        } else {
-            // default to empty object
+        if command.source_module.is_some()
+            || command.source_context_kind.is_some()
+            || command.source_context_id.is_some()
+        {
+            for (value, field) in [
+                (command.source_module.as_deref(), "sourceModule"),
+                (command.source_context_kind.as_deref(), "sourceContextKind"),
+                (command.source_context_id.as_deref(), "sourceContextId"),
+            ] {
+                require_non_blank(
+                    value.ok_or_else(|| {
+                        KernelError::validation(
+                            "sourceModule, sourceContextKind and sourceContextId must be supplied together",
+                        )
+                    })?,
+                    field,
+                )?;
+            }
         }
-
-        let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
+        if command.parent_session_id.is_some() != command.forked_from_turn_id.is_some() {
+            return Err(KernelError::validation(
+                "parentSessionId and forkedFromTurnId must be supplied together",
+            ));
+        }
+        if let (Some(parent_session_id), Some(forked_from_turn_id)) = (
+            command.parent_session_id.as_deref(),
+            command.forked_from_turn_id.as_deref(),
+        ) {
+            if parent_session_id == session_id {
+                return Err(KernelError::validation(
+                    "parentSessionId must differ from sessionId",
+                ));
+            }
+            let parent = self
+                .repository
+                .get_session(command.tenant_id, command.organization_id, parent_session_id)?
+                .ok_or_else(|| KernelError::validation("parent session not found"))?;
+            if parent.organization_id != command.organization_id
+                || parent.owner_user_id != command.owner_user_id
+            {
+                return Err(KernelError::validation("parent session scope mismatch"));
+            }
+            let fork_turn = self
+                .repository
+                .get_turn(command.tenant_id, command.organization_id, forked_from_turn_id)?
+                .ok_or_else(|| KernelError::validation("fork turn not found"))?;
+            if fork_turn.session_id != parent_session_id {
+                return Err(KernelError::validation(
+                    "forkedFromTurnId does not belong to parentSessionId",
+                ));
+            }
+        }
+        if command.idempotency_key.is_some() != command.payload_hash.is_some() {
+            return Err(KernelError::validation(
+                "idempotencyKey and payloadHash must be supplied together",
+            ));
+        }
 
         if let Some(project_id) = command.project_id.as_deref() {
             validate_standard_id(project_id, "projectId", Some("project."))?;
@@ -2053,22 +1921,33 @@ where
             agent_id: command.agent_id,
             owner_user_id: command.owner_user_id,
             project_id: command.project_id,
+            session_kind: command.session_kind,
+            entry_surface: command.entry_surface,
+            source_module: command.source_module,
+            source_context_kind: command.source_context_kind,
+            source_context_id: command.source_context_id,
+            parent_session_id: command.parent_session_id,
+            forked_from_turn_id: command.forked_from_turn_id,
             title: command.title,
             status: AgentSessionStatus::Active,
-            provider_binding_id: command.provider_binding_id,
-            model_id: command.model_id,
-            message_count: 0,
-            last_message_sequence: 0,
+            item_count: 0,
+            last_item_sequence: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
-            metadata_json,
+            idempotency_key: command.idempotency_key,
+            payload_hash: command.payload_hash,
+            created_by: command.owner_user_id,
+            updated_by: command.owner_user_id,
             version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
-            last_message_at: None,
+            last_item_at: None,
             closed_at: None,
             archived_at: None,
+            archived_by: None,
             deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
         };
 
         self.repository.insert_session(record.clone())?;
@@ -2094,7 +1973,11 @@ where
         )?;
         let mut record = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         if record.organization_id != command.organization_id {
@@ -2154,7 +2037,11 @@ where
         )?;
         let mut record = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         if record.organization_id != command.organization_id {
@@ -2182,7 +2069,11 @@ where
 
         let mut record = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
@@ -2218,7 +2109,11 @@ where
 
         let mut record = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
@@ -2254,7 +2149,11 @@ where
         )?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))
             .and_then(|record| {
                 Self::ensure_session_owner_scope(&record, command.owner_scope)?;
@@ -2326,6 +2225,7 @@ where
         )?;
         let session = self.load_session_for_nested_route(
             command.tenant_id,
+            command.organization_id,
             command.session_id.as_str(),
             command.path_agent_id.as_str(),
             Some(command.user_id),
@@ -2353,7 +2253,7 @@ where
         if command.pinned.is_none()
             && command.hidden.is_none()
             && !command.mark_opened
-            && command.last_read_message_sequence.is_none()
+            && command.last_read_item_sequence.is_none()
             && command.custom_title.is_none()
         {
             return Err(KernelError::validation(
@@ -2368,6 +2268,7 @@ where
         )?;
         let session = self.load_session_for_nested_route(
             command.tenant_id,
+            command.organization_id,
             command.session_id.as_str(),
             command.path_agent_id.as_str(),
             Some(command.user_id),
@@ -2406,7 +2307,7 @@ where
                     pinned_at: None,
                     hidden_at: None,
                     last_opened_at: None,
-                    last_read_message_sequence: None,
+                    last_read_item_sequence: None,
                     custom_title: None,
                     version: 0,
                     created_at: command.requested_at.clone(),
@@ -2424,21 +2325,21 @@ where
         if command.mark_opened {
             record.last_opened_at = Some(command.requested_at.clone());
         }
-        if let Some(sequence) = command.last_read_message_sequence {
-            if sequence > session.last_message_sequence {
+        if let Some(sequence) = command.last_read_item_sequence {
+            if sequence > session.last_item_sequence {
                 return Err(KernelError::validation(
                     "lastReadMessageSequence exceeds the session message sequence",
                 ));
             }
             if record
-                .last_read_message_sequence
+                .last_read_item_sequence
                 .is_some_and(|current| sequence < current)
             {
                 return Err(KernelError::conflict(
                     "lastReadMessageSequence cannot move backwards",
                 ));
             }
-            record.last_read_message_sequence = Some(sequence);
+            record.last_read_item_sequence = Some(sequence);
         }
         if let Some(custom_title) = command.custom_title {
             record.custom_title = custom_title
@@ -2463,10 +2364,10 @@ where
             .upsert_resource_user_state(record, command.expected_version)
     }
 
-    pub fn list_message_feedback(
+    pub fn list_item_feedback(
         &self,
-        command: ListMessageFeedbackCommand,
-    ) -> KernelResult<PaginatedResult<AgentMessageFeedbackRecord>> {
+        command: ListItemFeedbackCommand,
+    ) -> KernelResult<PaginatedResult<AgentItemFeedbackRecord>> {
         validate_agent_id(command.path_agent_id.as_str())?;
         validate_standard_id(
             command.query.session_id.as_str(),
@@ -2484,6 +2385,7 @@ where
         )?;
         let session = self.load_session_for_nested_route(
             command.query.tenant_id,
+            command.query.organization_id,
             command.query.session_id.as_str(),
             command.path_agent_id.as_str(),
             Some(command.query.user_id),
@@ -2491,8 +2393,8 @@ where
         if session.organization_id != command.query.organization_id {
             return Err(KernelError::validation("session not found"));
         }
-        let total_count = self.repository.count_message_feedback(&command.query)?;
-        let items = self.repository.list_message_feedback(&command.query)?;
+        let total_count = self.repository.count_item_feedback(&command.query)?;
+        let items = self.repository.list_item_feedback(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -2500,40 +2402,41 @@ where
         ))
     }
 
-    pub fn update_message_feedback(
+    pub fn update_item_feedback(
         &self,
-        command: UpdateMessageFeedbackCommand,
-    ) -> KernelResult<MessageFeedbackResult> {
+        command: UpdateItemFeedbackCommand,
+    ) -> KernelResult<ItemFeedbackResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
-        validate_standard_id(command.message_id.as_str(), "messageId", Some("msg."))?;
+        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
         self.authorize(
-            "agent.business.message.feedback.update",
+            "agent.business.item_feedback.update",
             command.requested_by.clone(),
-            format!("agent.business.message.{}.feedback", command.message_id),
-            "message.feedback.update",
+            format!("agent.business.session_item.{}.feedback", command.item_id),
+            "item_feedback.update",
         )?;
         let session = self.load_session_for_nested_route(
             command.tenant_id,
+            command.organization_id,
             command.session_id.as_str(),
             command.path_agent_id.as_str(),
             Some(command.user_id),
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("message not found"));
+            return Err(KernelError::validation("session item not found"));
         }
-        let message = self
+        let item = self
             .repository
-            .get_message(
+            .get_session_item(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
-                command.message_id.as_str(),
+                command.item_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("message not found"))?;
-        Self::ensure_nested_agent_id(&message.agent_id, command.path_agent_id.as_str(), "message")?;
-        if message.role != AgentMessageRole::Assistant {
+            .ok_or_else(|| KernelError::validation("session item not found"))?;
+        if item.kind != AgentSessionItemKind::AssistantOutput {
             return Err(KernelError::validation(
-                "feedback is only supported for assistant messages",
+                "feedback is only supported for assistant items",
             ));
         }
         if let Some(reason_code) = command.reason_code.as_deref() {
@@ -2557,10 +2460,10 @@ where
             ));
         }
 
-        let existing = self.repository.get_message_feedback(
+        let existing = self.repository.get_item_feedback(
             command.tenant_id,
             command.organization_id,
-            command.message_id.as_str(),
+            command.item_id.as_str(),
             command.user_id,
             true,
         )?;
@@ -2588,11 +2491,11 @@ where
                     if command.expected_version.is_some() {
                         return Err(KernelError::conflict("message feedback version mismatch"));
                     }
-                    AgentMessageFeedbackRecord {
+                    AgentItemFeedbackRecord {
                         id: self.repository.next_id()?,
                         tenant_id: command.tenant_id,
                         organization_id: command.organization_id,
-                        message_id: command.message_id.clone(),
+                        item_id: command.item_id.clone(),
                         user_id: command.user_id,
                         rating,
                         reason_code: command.reason_code.as_deref().map(trim),
@@ -2623,10 +2526,10 @@ where
         record.updated_at = command.requested_at.clone();
         let record = self
             .repository
-            .upsert_message_feedback(record, command.expected_version)?;
-        self.emit_message_audit_event(
-            AgentAuditAction::MessageFeedbackChanged,
-            &message,
+            .upsert_item_feedback(record, command.expected_version)?;
+        self.emit_session_item_audit_event(
+            AgentAuditAction::ItemFeedbackChanged,
+            &item,
             command.requested_by,
             command.requested_at,
         )?;
@@ -2781,30 +2684,39 @@ where
             agent_id: record.agent_id.clone(),
             owner_user_id: record.owner_user_id,
             project_id: None,
+            session_kind: AgentSessionKind::Automation,
+            entry_surface: AgentSessionEntrySurface::Automation,
+            source_module: Some("sdkwork-agents".to_string()),
+            source_context_kind: Some("agent_task".to_string()),
+            source_context_id: Some(record.task_id.clone()),
+            parent_session_id: None,
+            forked_from_turn_id: None,
             title: record.title.clone(),
             status: AgentSessionStatus::Active,
-            provider_binding_id: active_binding
-                .as_ref()
-                .map(|binding| binding.binding_id.clone()),
-            model_id: None,
-            message_count: 0,
-            last_message_sequence: 0,
+            item_count: 0,
+            last_item_sequence: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
-            metadata_json: "{}".to_string(),
+            idempotency_key: None,
+            payload_hash: None,
+            created_by: record.owner_user_id,
+            updated_by: record.owner_user_id,
             version: 0,
             created_at: requested_at.clone(),
             updated_at: requested_at.clone(),
-            last_message_at: None,
+            last_item_at: None,
             closed_at: None,
             archived_at: None,
+            archived_by: None,
             deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
         };
 
         let prompt = record.prompt.clone();
         let completion = complete_with_timeout(
-            Arc::clone(&self.chat_completer),
-            &ChatCompletionInput {
+            Arc::clone(&self.turn_executor),
+            &TurnExecutionInput {
                 agent_display_name: agent.display_name.clone(),
                 welcome_message: None,
                 session: session_stub,
@@ -2820,7 +2732,7 @@ where
                 provider_has_model_chat,
             },
             false,
-            CHAT_COMPLETION_TIMEOUT,
+            TURN_EXECUTION_TIMEOUT,
         );
 
         if is_capacity_error(completion.runtime_mode) {
@@ -2961,46 +2873,727 @@ where
     }
 
     // -----------------------------------------------------------------------
-    // Message management
+    // Session runtime bindings
     // -----------------------------------------------------------------------
 
-    /// Low-level message insert for tests and internal tooling. HTTP surfaces use
-    /// [`Self::send_chat_message`] which persists user + assistant messages atomically.
-    pub fn create_message(
+    pub fn create_session_runtime_binding(
         &self,
-        command: CreateMessageCommand,
-    ) -> KernelResult<AgentMessageRecord> {
-        validate_standard_id(command.message_id.as_str(), "messageId", Some("msg."))?;
+        command: CreateSessionRuntimeBindingCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        validate_requested_at(&command.requested_at)?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        if !session.status.is_active() {
+            return Err(KernelError::validation(
+                "session is not active, cannot create a runtime binding",
+            ));
+        }
         self.authorize(
-            "agent.business.message.create",
+            "agent.business.session_runtime_binding.create",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}.runtime_binding", command.session_id),
+            "session_runtime_binding.create",
+        )?;
+        validate_runtime_token(&command.host_mode, "hostMode", 32)?;
+        validate_runtime_token(&command.transport_kind, "transportKind", 64)?;
+        require_non_blank(&command.model_id, "modelId")?;
+        if command.model_id.len() > 128 {
+            return Err(KernelError::validation("modelId exceeds 128 bytes"));
+        }
+        validate_standard_id(&command.provider_id, "providerId", Some("provider."))?;
+        let provider_binding = self
+            .repository
+            .get_provider_binding(
+                command.tenant_id,
+                &command.path_agent_id,
+                &command.provider_binding_id,
+            )?
+            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+        if provider_binding.provider_id != command.provider_id || !provider_binding.active {
+            return Err(KernelError::validation(
+                "agent provider binding is not active for providerId",
+            ));
+        }
+        let runtime_binding_id = match command.runtime_binding_id {
+            Some(value) => value,
+            None => format!("runtime_binding.{}", self.repository.next_id()?),
+        };
+        validate_standard_id(
+            &runtime_binding_id,
+            "runtimeBindingId",
+            Some("runtime_binding."),
+        )?;
+        if self
+            .repository
+            .get_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &runtime_binding_id,
+            )?
+            .is_some()
+        {
+            return Err(KernelError::conflict("session runtime binding already exists"));
+        }
+        if self
+            .repository
+            .get_current_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+            )?
+            .is_some()
+        {
+            return Err(KernelError::conflict(
+                "session already has a current runtime binding; update or activate an existing binding",
+            ));
+        }
+        validate_optional_bounded(&command.runtime_location_id, "runtimeLocationId", 256)?;
+        validate_optional_bounded(&command.native_session_id, "nativeSessionId", 256)?;
+        validate_optional_bounded(
+            &command.native_session_tree_id,
+            "nativeSessionTreeId",
+            256,
+        )?;
+        validate_optional_bounded(
+            &command.native_parent_session_id,
+            "nativeParentSessionId",
+            256,
+        )?;
+        validate_optional_bounded(
+            &command.native_forked_from_session_id,
+            "nativeForkedFromSessionId",
+            256,
+        )?;
+        let record = AgentSessionRuntimeBindingRecord {
+            id: self.repository.next_id()?,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            session_id: command.session_id,
+            runtime_binding_id,
+            runtime_location_id: command.runtime_location_id,
+            host_mode: command.host_mode,
+            transport_kind: command.transport_kind,
+            provider_binding_id: command.provider_binding_id,
+            model_id: command.model_id,
+            provider_id: command.provider_id,
+            native_session_id: command.native_session_id,
+            native_session_tree_id: command.native_session_tree_id,
+            native_parent_session_id: command.native_parent_session_id,
+            native_forked_from_session_id: command.native_forked_from_session_id,
+            status: AgentSessionRuntimeBindingStatus::Active,
+            is_current: true,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            activated_at: Some(command.requested_at.clone()),
+            deactivated_at: None,
+        };
+        self.repository
+            .insert_session_runtime_binding(record.clone())?;
+        self.emit_session_resource_audit_event(
+            AgentAuditAction::SessionRuntimeBindingCreated,
+            "runtime_binding",
+            &record.runtime_binding_id,
+            &record.session_id,
+            record.tenant_id,
+            record.organization_id,
+            record.version,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn list_session_runtime_bindings(
+        &self,
+        command: ListSessionRuntimeBindingsCommand,
+    ) -> KernelResult<PaginatedResult<SessionRuntimeBindingResult>> {
+        self.authorize(
+            "agent.business.session_runtime_binding.list",
+            command.requested_by,
+            format!(
+                "agent.business.session.{}.runtime_binding",
+                command.query.session_id
+            ),
+            "session_runtime_binding.list",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.query.tenant_id,
+            command.query.organization_id,
+            &command.query.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.query.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        let total_count = self
+            .repository
+            .count_session_runtime_bindings(&command.query)?;
+        let items = self
+            .repository
+            .list_session_runtime_bindings(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn get_session_runtime_binding(
+        &self,
+        command: GetSessionRuntimeBindingCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        validate_standard_id(
+            &command.runtime_binding_id,
+            "runtimeBindingId",
+            Some("runtime_binding."),
+        )?;
+        self.authorize(
+            "agent.business.session_runtime_binding.retrieve",
+            command.requested_by,
+            format!(
+                "agent.business.session.{}.runtime_binding.{}",
+                command.session_id, command.runtime_binding_id
+            ),
+            "session_runtime_binding.retrieve",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session runtime binding not found"));
+        }
+        self.repository
+            .get_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &command.runtime_binding_id,
+            )?
+            .ok_or_else(|| KernelError::validation("session runtime binding not found"))
+    }
+
+    pub fn update_session_runtime_binding(
+        &self,
+        command: UpdateSessionRuntimeBindingCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        validate_requested_at(&command.requested_at)?;
+        self.authorize(
+            "agent.business.session_runtime_binding.update",
+            command.requested_by.clone(),
+            format!(
+                "agent.business.session.{}.runtime_binding.{}",
+                command.session_id, command.runtime_binding_id
+            ),
+            "session_runtime_binding.update",
+        )?;
+        let mut record = self.get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            path_agent_id: command.path_agent_id.clone(),
+            session_id: command.session_id.clone(),
+            runtime_binding_id: command.runtime_binding_id.clone(),
+            owner_scope: command.owner_scope,
+            requested_by: command.requested_by.clone(),
+        })?;
+        ensure_expected_version(record.version, Some(command.expected_version), "session runtime binding")?;
+        if let Some(runtime_location_id) = command.runtime_location_id {
+            validate_optional_bounded(&runtime_location_id, "runtimeLocationId", 256)?;
+            record.runtime_location_id = runtime_location_id;
+        }
+        if let Some(host_mode) = command.host_mode {
+            validate_runtime_token(&host_mode, "hostMode", 32)?;
+            record.host_mode = host_mode;
+        }
+        if let Some(transport_kind) = command.transport_kind {
+            validate_runtime_token(&transport_kind, "transportKind", 64)?;
+            record.transport_kind = transport_kind;
+        }
+        let provider_binding_id = command
+            .provider_binding_id
+            .unwrap_or_else(|| record.provider_binding_id.clone());
+        let provider_id = command
+            .provider_id
+            .unwrap_or_else(|| record.provider_id.clone());
+        validate_standard_id(&provider_id, "providerId", Some("provider."))?;
+        let provider_binding = self
+            .repository
+            .get_provider_binding(command.tenant_id, &command.path_agent_id, &provider_binding_id)?
+            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+        if provider_binding.provider_id != provider_id || !provider_binding.active {
+            return Err(KernelError::validation(
+                "agent provider binding is not active for providerId",
+            ));
+        }
+        record.provider_binding_id = provider_binding_id;
+        record.provider_id = provider_id;
+        if let Some(model_id) = command.model_id {
+            require_non_blank(&model_id, "modelId")?;
+            if model_id.len() > 128 {
+                return Err(KernelError::validation("modelId exceeds 128 bytes"));
+            }
+            record.model_id = model_id;
+        }
+        for (target, value, field) in [
+            (&mut record.native_session_id, command.native_session_id, "nativeSessionId"),
+            (
+                &mut record.native_session_tree_id,
+                command.native_session_tree_id,
+                "nativeSessionTreeId",
+            ),
+            (
+                &mut record.native_parent_session_id,
+                command.native_parent_session_id,
+                "nativeParentSessionId",
+            ),
+            (
+                &mut record.native_forked_from_session_id,
+                command.native_forked_from_session_id,
+                "nativeForkedFromSessionId",
+            ),
+        ] {
+            if let Some(value) = value {
+                validate_optional_bounded(&Some(value.clone()), field, 256)?;
+                *target = Some(value);
+            }
+        }
+        record.mark_updated(command.requested_at.clone());
+        self.repository
+            .update_session_runtime_binding(record.clone())?;
+        self.emit_session_resource_audit_event(
+            AgentAuditAction::SessionRuntimeBindingUpdated,
+            "runtime_binding",
+            &record.runtime_binding_id,
+            &record.session_id,
+            record.tenant_id,
+            record.organization_id,
+            record.version,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn activate_session_runtime_binding(
+        &self,
+        command: ChangeSessionRuntimeBindingStatusCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        self.change_session_runtime_binding_status(command, true)
+    }
+
+    pub fn deactivate_session_runtime_binding(
+        &self,
+        command: ChangeSessionRuntimeBindingStatusCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        self.change_session_runtime_binding_status(command, false)
+    }
+
+    fn change_session_runtime_binding_status(
+        &self,
+        command: ChangeSessionRuntimeBindingStatusCommand,
+        activate: bool,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        validate_requested_at(&command.requested_at)?;
+        let action = if activate { "activate" } else { "deactivate" };
+        self.authorize(
+            format!("agent.business.session_runtime_binding.{action}"),
+            command.requested_by.clone(),
+            format!(
+                "agent.business.session.{}.runtime_binding.{}",
+                command.session_id, command.runtime_binding_id
+            ),
+            format!("session_runtime_binding.{action}"),
+        )?;
+        let mut record = self.get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            path_agent_id: command.path_agent_id,
+            session_id: command.session_id,
+            runtime_binding_id: command.runtime_binding_id,
+            owner_scope: command.owner_scope,
+            requested_by: command.requested_by.clone(),
+        })?;
+        ensure_expected_version(record.version, Some(command.expected_version), "session runtime binding")?;
+        if activate {
+            if record.is_current && record.status == AgentSessionRuntimeBindingStatus::Active {
+                return Ok(record);
+            }
+            record = self.repository.activate_session_runtime_binding_atomic(
+                record.tenant_id,
+                record.organization_id,
+                &record.session_id,
+                &record.runtime_binding_id,
+                command.expected_version,
+                command.requested_at.clone(),
+            )?;
+        } else {
+            if !record.is_current || record.status != AgentSessionRuntimeBindingStatus::Active {
+                return Err(KernelError::validation(
+                    "session runtime binding is not active",
+                ));
+            }
+            record.deactivate(
+                AgentSessionRuntimeBindingStatus::Deactivated,
+                command.requested_at.clone(),
+            );
+            self.repository
+                .update_session_runtime_binding(record.clone())?;
+        }
+        self.emit_session_resource_audit_event(
+            if activate {
+                AgentAuditAction::SessionRuntimeBindingActivated
+            } else {
+                AgentAuditAction::SessionRuntimeBindingDeactivated
+            },
+            "runtime_binding",
+            &record.runtime_binding_id,
+            &record.session_id,
+            record.tenant_id,
+            record.organization_id,
+            record.version,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    // -----------------------------------------------------------------------
+    // Session checkpoints
+    // -----------------------------------------------------------------------
+
+    pub fn create_session_checkpoint(
+        &self,
+        command: CreateSessionCheckpointCommand,
+    ) -> KernelResult<SessionCheckpointResult> {
+        validate_requested_at(&command.requested_at)?;
+        parse_optional_rfc3339_datetime(command.retention_until.as_deref(), "retentionUntil")?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        if !session.status.is_active() {
+            return Err(KernelError::validation(
+                "session is not active, cannot create a checkpoint",
+            ));
+        }
+        self.authorize(
+            "agent.business.checkpoint.create",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}.checkpoint", command.session_id),
+            "checkpoint.create",
+        )?;
+        validate_runtime_token(&command.checkpoint_kind, "checkpointKind", 64)?;
+        let has_provider = command.runtime_binding_id.is_some()
+            || command.provider_checkpoint_ref.is_some();
+        let has_drive = command.drive_space_id.is_some() || command.drive_node_id.is_some();
+        if has_provider == has_drive {
+            return Err(KernelError::validation(
+                "checkpoint must use exactly one provider or Drive reference",
+            ));
+        }
+        if has_provider {
+            let runtime_binding_id = command.runtime_binding_id.as_deref().ok_or_else(|| {
+                KernelError::validation(
+                    "runtimeBindingId and providerCheckpointRef must be supplied together",
+                )
+            })?;
+            require_non_blank(
+                command.provider_checkpoint_ref.as_deref().ok_or_else(|| {
+                    KernelError::validation(
+                        "runtimeBindingId and providerCheckpointRef must be supplied together",
+                    )
+                })?,
+                "providerCheckpointRef",
+            )?;
+            self.repository
+                .get_session_runtime_binding(
+                    command.tenant_id,
+                    command.organization_id,
+                    &command.session_id,
+                    runtime_binding_id,
+                )?
+                .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+        } else {
+            require_non_blank(
+                command.drive_space_id.as_deref().ok_or_else(|| {
+                    KernelError::validation(
+                        "driveSpaceId and driveNodeId must be supplied together",
+                    )
+                })?,
+                "driveSpaceId",
+            )?;
+            require_non_blank(
+                command.drive_node_id.as_deref().ok_or_else(|| {
+                    KernelError::validation(
+                        "driveSpaceId and driveNodeId must be supplied together",
+                    )
+                })?,
+                "driveNodeId",
+            )?;
+        }
+        if let Some(turn_id) = command.turn_id.as_deref() {
+            validate_standard_id(turn_id, "turnId", Some("turn."))?;
+            let turn = self
+                .repository
+                .get_turn(command.tenant_id, command.organization_id, turn_id)?
+                .ok_or_else(|| KernelError::validation("turn not found"))?;
+            if turn.session_id != command.session_id {
+                return Err(KernelError::validation("turn not found"));
+            }
+        }
+        let checkpoint_id = match command.checkpoint_id {
+            Some(value) => value,
+            None => format!("checkpoint.{}", self.repository.next_id()?),
+        };
+        validate_standard_id(&checkpoint_id, "checkpointId", Some("checkpoint."))?;
+        if self
+            .repository
+            .get_session_checkpoint(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &checkpoint_id,
+            )?
+            .is_some()
+        {
+            return Err(KernelError::conflict("session checkpoint already exists"));
+        }
+        let record = AgentSessionCheckpointRecord {
+            id: self.repository.next_id()?,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            session_id: command.session_id,
+            checkpoint_id,
+            turn_id: command.turn_id,
+            runtime_binding_id: command.runtime_binding_id,
+            checkpoint_kind: command.checkpoint_kind,
+            provider_checkpoint_ref: command.provider_checkpoint_ref,
+            drive_space_id: command.drive_space_id,
+            drive_node_id: command.drive_node_id,
+            resumable: command.resumable,
+            status: AgentSessionCheckpointStatus::Active,
+            created_by: session.owner_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            restored_at: None,
+            invalidated_at: None,
+            retention_until: command.retention_until,
+        };
+        self.repository.insert_session_checkpoint(record.clone())?;
+        self.emit_session_resource_audit_event(
+            AgentAuditAction::SessionCheckpointCreated,
+            "checkpoint",
+            &record.checkpoint_id,
+            &record.session_id,
+            record.tenant_id,
+            record.organization_id,
+            record.version,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn list_session_checkpoints(
+        &self,
+        command: ListSessionCheckpointsCommand,
+    ) -> KernelResult<PaginatedResult<SessionCheckpointResult>> {
+        self.authorize(
+            "agent.business.checkpoint.list",
+            command.requested_by,
+            format!("agent.business.session.{}.checkpoint", command.query.session_id),
+            "checkpoint.list",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.query.tenant_id,
+            command.query.organization_id,
+            &command.query.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.query.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        let total_count = self.repository.count_session_checkpoints(&command.query)?;
+        let items = self.repository.list_session_checkpoints(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn get_session_checkpoint(
+        &self,
+        command: GetSessionCheckpointCommand,
+    ) -> KernelResult<SessionCheckpointResult> {
+        validate_standard_id(&command.checkpoint_id, "checkpointId", Some("checkpoint."))?;
+        self.authorize(
+            "agent.business.checkpoint.retrieve",
+            command.requested_by,
+            format!(
+                "agent.business.session.{}.checkpoint.{}",
+                command.session_id, command.checkpoint_id
+            ),
+            "checkpoint.retrieve",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session checkpoint not found"));
+        }
+        self.repository
+            .get_session_checkpoint(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &command.checkpoint_id,
+            )?
+            .ok_or_else(|| KernelError::validation("session checkpoint not found"))
+    }
+
+    pub fn restore_session_checkpoint(
+        &self,
+        command: ChangeSessionCheckpointStatusCommand,
+    ) -> KernelResult<SessionCheckpointResult> {
+        self.change_session_checkpoint_status(command, true)
+    }
+
+    pub fn invalidate_session_checkpoint(
+        &self,
+        command: ChangeSessionCheckpointStatusCommand,
+    ) -> KernelResult<SessionCheckpointResult> {
+        self.change_session_checkpoint_status(command, false)
+    }
+
+    fn change_session_checkpoint_status(
+        &self,
+        command: ChangeSessionCheckpointStatusCommand,
+        restore: bool,
+    ) -> KernelResult<SessionCheckpointResult> {
+        validate_requested_at(&command.requested_at)?;
+        let action = if restore { "restore" } else { "invalidate" };
+        self.authorize(
+            format!("agent.business.checkpoint.{action}"),
+            command.requested_by.clone(),
+            format!(
+                "agent.business.session.{}.checkpoint.{}",
+                command.session_id, command.checkpoint_id
+            ),
+            format!("checkpoint.{action}"),
+        )?;
+        let mut record = self.get_session_checkpoint(GetSessionCheckpointCommand {
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            path_agent_id: command.path_agent_id,
+            session_id: command.session_id,
+            checkpoint_id: command.checkpoint_id,
+            owner_scope: command.owner_scope,
+            requested_by: command.requested_by.clone(),
+        })?;
+        ensure_expected_version(record.version, Some(command.expected_version), "session checkpoint")?;
+        if record.status != AgentSessionCheckpointStatus::Active {
+            return Err(KernelError::validation("session checkpoint is not active"));
+        }
+        if restore {
+            if !record.resumable {
+                return Err(KernelError::validation("session checkpoint is not resumable"));
+            }
+            record.mark_restored(command.requested_at.clone());
+        } else {
+            record.invalidate(command.requested_at.clone());
+        }
+        self.repository.update_session_checkpoint(record.clone())?;
+        self.emit_session_resource_audit_event(
+            if restore {
+                AgentAuditAction::SessionCheckpointRestored
+            } else {
+                AgentAuditAction::SessionCheckpointInvalidated
+            },
+            "checkpoint",
+            &record.checkpoint_id,
+            &record.session_id,
+            record.tenant_id,
+            record.organization_id,
+            record.version,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    // -----------------------------------------------------------------------
+    // Session item and turn management
+    // -----------------------------------------------------------------------
+
+    /// Low-level item insert for tests and internal tooling. HTTP surfaces use
+    /// [`Self::execute_turn`] which persists input and output items atomically.
+    pub fn create_session_item(
+        &self,
+        command: CreateSessionItemCommand,
+    ) -> KernelResult<AgentSessionItemRecord> {
+        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
+        self.authorize(
+            "agent.business.session_item.create",
             command.requested_by.clone(),
             format!("agent.business.session.{}", command.session_id),
-            "message.create",
+            "session_item.create",
         )?;
 
         // Ensure session exists and is active
         let mut session = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         if !session.status.is_active() {
             return Err(KernelError::validation(
-                "session is not active, cannot create message",
+                "session is not active, cannot create an item",
             ));
         }
 
-        // Ensure message does not already exist
+        // Ensure the item does not already exist.
         if self
             .repository
-            .get_message(
+            .get_session_item(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
-                command.message_id.as_str(),
+                command.item_id.as_str(),
             )?
             .is_some()
         {
-            return Err(KernelError::conflict("message already exists"));
+            return Err(KernelError::conflict("session item already exists"));
         }
 
         require_non_blank(command.content.as_str(), "content")?;
@@ -3011,56 +3604,57 @@ where
         }
         reject_secret_material(command.content.as_str(), "content")?;
 
-        // Validate JSON fields
-        if !is_trimmed_blank(command.artifacts_json.as_str()) {
-            validate_json_payload(command.artifacts_json.as_str(), "artifactsJson")?;
-        }
-        if !is_trimmed_blank(command.metadata_json.as_str()) {
-            validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
-        }
-
         let sequence = self
             .repository
-            .next_message_sequence(command.tenant_id, command.session_id.as_str())?;
+            .next_item_sequence(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?;
 
-        let artifacts_json = default_json_array_if_blank(command.artifacts_json.as_str());
-        let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
-
-        let record = AgentMessageRecord {
+        let record = AgentSessionItemRecord {
             id: self.repository.next_id()?,
-            message_id: command.message_id,
+            item_id: command.item_id,
             tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
             session_id: command.session_id.clone(),
-            agent_id: session.agent_id.clone(),
-            role: command.role,
-            content: command.content,
+            kind: command.kind,
+            content: Some(command.content),
             content_type: default_plain_text_if_blank(command.content_type.as_str()),
-            status: AgentMessageStatus::Sent,
+            status: AgentSessionItemStatus::Completed,
             sequence,
             input_tokens: command.input_tokens,
             output_tokens: command.output_tokens,
             model_id: command.model_id,
             provider_id: command.provider_id,
-            artifacts_json,
-            metadata_json,
-            parent_message_id: command.parent_message_id,
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            parent_item_id: command.parent_item_id,
             turn_id: None,
+            created_by: session.owner_user_id,
+            version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
+            completed_at: Some(command.requested_at.clone()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
         };
 
-        self.repository.insert_message(record.clone())?;
+        self.repository.insert_session_item(record.clone())?;
 
         // Update session counters
-        session.record_message(
+        session.record_item(
             command.input_tokens,
             command.output_tokens,
             command.requested_at.clone(),
         );
         self.repository.update_session(session)?;
 
-        self.emit_message_audit_event(
-            AgentAuditAction::MessageCreated,
+        self.emit_session_item_audit_event(
+            AgentAuditAction::SessionItemCreated,
             &record,
             command.requested_by,
             command.requested_at,
@@ -3068,54 +3662,55 @@ where
         Ok(record)
     }
 
-    pub fn get_message(&self, command: GetMessageCommand) -> KernelResult<AgentMessageRecord> {
+    pub fn get_session_item(&self, command: GetSessionItemCommand) -> KernelResult<AgentSessionItemRecord> {
         self.authorize(
-            "agent.business.message.retrieve",
+            "agent.business.session_item.retrieve",
             command.requested_by,
             format!("agent.business.session.{}", command.session_id),
-            "message.retrieve",
+            "session_item.retrieve",
         )?;
-        validate_standard_id(command.message_id.as_str(), "messageId", Some("msg."))?;
+        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
         let session = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
         Self::ensure_nested_agent_id(&session.agent_id, command.path_agent_id.as_str(), "session")?;
         self.repository
-            .get_message(
+            .get_session_item(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
-                command.message_id.as_str(),
+                command.item_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("message not found"))
-            .and_then(|record| {
-                Self::ensure_nested_agent_id(
-                    &record.agent_id,
-                    command.path_agent_id.as_str(),
-                    "message",
-                )?;
-                Ok(record)
-            })
+            .ok_or_else(|| KernelError::validation("session item not found"))
     }
 
-    pub fn list_messages(
+    pub fn list_session_items(
         &self,
-        command: ListMessagesCommand,
-    ) -> KernelResult<PaginatedResult<AgentMessageRecord>> {
+        command: ListSessionItemsCommand,
+    ) -> KernelResult<PaginatedResult<AgentSessionItemRecord>> {
         self.authorize(
-            "agent.business.message.list",
+            "agent.business.session_item.list",
             command.requested_by,
             format!("agent.business.session.{}", command.query.session_id),
-            "message.list",
+            "session_item.list",
         )?;
         let session = self
             .repository
-            .get_session(command.query.tenant_id, command.query.session_id.as_str())?
+            .get_session(
+                command.query.tenant_id,
+                command.query.organization_id,
+                command.query.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
-        let total_count = self.repository.count_messages(&command.query)?;
-        let items = self.repository.list_messages(&command.query)?;
+        let total_count = self.repository.count_session_items(&command.query)?;
+        let items = self.repository.list_session_items(&command.query)?;
         Ok(offset_paginated_result(
             items,
             &command.query.pagination,
@@ -3123,42 +3718,38 @@ where
         ))
     }
 
-    pub fn list_messages_with_drive_refs(
+    pub fn list_session_items_with_drive_refs(
         &self,
-        command: ListMessagesCommand,
-    ) -> KernelResult<PaginatedResult<AgentMessageWithDriveRefs>> {
+        command: ListSessionItemsCommand,
+    ) -> KernelResult<PaginatedResult<AgentSessionItemWithDriveRefs>> {
         let tenant_id = command.query.tenant_id;
+        let organization_id = command.query.organization_id;
         let session_id = command.query.session_id.clone();
-        let page = self.list_messages(command)?;
-        let organization_id = self
-            .repository
-            .get_session(tenant_id, &session_id)?
-            .ok_or_else(|| KernelError::validation("session not found"))?
-            .organization_id;
-        let message_ids = page
+        let page = self.list_session_items(command)?;
+        let item_ids = page
             .items
             .iter()
-            .map(|message| message.message_id.clone())
+            .map(|item| item.item_id.clone())
             .collect::<Vec<_>>();
-        let mut refs_by_message = HashMap::<String, Vec<AgentMessageDriveRefRecord>>::new();
-        for drive_ref in self.repository.list_message_drive_refs_batch(
+        let mut refs_by_item = HashMap::<String, Vec<AgentItemDriveRefRecord>>::new();
+        for drive_ref in self.repository.list_item_drive_refs_batch(
             tenant_id,
             organization_id,
-            &message_ids,
+            &item_ids,
         )? {
-            refs_by_message
-                .entry(drive_ref.message_id.clone())
+            refs_by_item
+                .entry(drive_ref.item_id.clone())
                 .or_default()
                 .push(drive_ref);
         }
         let items = page
             .items
             .into_iter()
-            .map(|message| AgentMessageWithDriveRefs {
-                drive_refs: refs_by_message
-                    .remove(&message.message_id)
+            .map(|item| AgentSessionItemWithDriveRefs {
+                drive_refs: refs_by_item
+                    .remove(&item.item_id)
                     .unwrap_or_default(),
-                message,
+                item,
             })
             .collect();
         Ok(PaginatedResult {
@@ -3169,63 +3760,92 @@ where
         })
     }
 
-    pub fn get_message_with_drive_refs(
+    pub fn get_session_item_with_drive_refs(
         &self,
-        command: GetMessageCommand,
-    ) -> KernelResult<AgentMessageWithDriveRefs> {
+        command: GetSessionItemCommand,
+    ) -> KernelResult<AgentSessionItemWithDriveRefs> {
         let tenant_id = command.tenant_id;
+        let organization_id = command.organization_id;
         let session_id = command.session_id.clone();
-        let message = self.get_message(command)?;
-        let organization_id = self
-            .repository
-            .get_session(tenant_id, &session_id)?
-            .ok_or_else(|| KernelError::validation("session not found"))?
-            .organization_id;
-        let drive_refs = self.repository.list_message_drive_refs(
+        let item = self.get_session_item(command)?;
+        let drive_refs = self.repository.list_item_drive_refs(
             tenant_id,
             organization_id,
-            &message.message_id,
+            &item.item_id,
         )?;
-        Ok(AgentMessageWithDriveRefs {
-            message,
+        Ok(AgentSessionItemWithDriveRefs {
+            item,
             drive_refs,
         })
     }
 
-    pub fn get_chat_turn(&self, command: GetChatTurnCommand) -> KernelResult<AgentChatTurnRecord> {
+    pub fn get_turn(&self, command: GetTurnCommand) -> KernelResult<AgentTurnRecord> {
         validate_agent_id(&command.path_agent_id)?;
         validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
         validate_standard_id(&command.turn_id, "turnId", Some("turn."))?;
         self.authorize(
-            "agent.business.chat_turn.retrieve",
+            "agent.business.turn.retrieve",
             command.requested_by,
-            format!("agent.business.chat_turn.{}", command.turn_id),
-            "chat_turn.retrieve",
+            format!("agent.business.turn.{}", command.turn_id),
+            "turn.retrieve",
         )?;
         let session = self
             .repository
-            .get_session(command.tenant_id, &command.session_id)?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
         if session.organization_id != command.organization_id
             || session.agent_id != command.path_agent_id
         {
-            return Err(KernelError::validation("chat turn not found"));
+            return Err(KernelError::validation("turn not found"));
         }
         let turn = self
             .repository
-            .get_chat_turn(command.tenant_id, command.organization_id, &command.turn_id)?
-            .ok_or_else(|| KernelError::validation("chat turn not found"))?;
+            .get_turn(command.tenant_id, command.organization_id, &command.turn_id)?
+            .ok_or_else(|| KernelError::validation("turn not found"))?;
         if turn.session_id != command.session_id || turn.agent_id != command.path_agent_id {
-            return Err(KernelError::validation("chat turn not found"));
+            return Err(KernelError::validation("turn not found"));
         }
         Ok(turn)
     }
 
-    pub fn get_chat_turn_by_idempotency(
+    pub fn list_turns(
         &self,
-        command: GetChatTurnByIdempotencyCommand,
-    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+        command: ListTurnsCommand,
+    ) -> KernelResult<PaginatedResult<AgentTurnRecord>> {
+        self.authorize(
+            "agent.business.turn.list",
+            command.requested_by,
+            format!("agent.business.session.{}.turn", command.query.session_id),
+            "turn.list",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.query.tenant_id,
+            command.query.organization_id,
+            &command.query.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.query.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+        let total_count = self.repository.count_turns(&command.query)?;
+        let items = self.repository.list_turns(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
+    pub fn get_turn_by_idempotency(
+        &self,
+        command: GetTurnByIdempotencyCommand,
+    ) -> KernelResult<Option<AgentTurnRecord>> {
         validate_agent_id(&command.path_agent_id)?;
         validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
         require_non_blank(&command.idempotency_key, "idempotencyKey")?;
@@ -3233,25 +3853,29 @@ where
             return Err(KernelError::validation("idempotencyKey exceeds 256 bytes"));
         }
         self.authorize(
-            "agent.business.chat_turn.retrieve",
+            "agent.business.turn.retrieve",
             command.requested_by,
             format!(
-                "agent.business.chat_turn.idempotency.{}",
+                "agent.business.turn.idempotency.{}",
                 command.idempotency_key
             ),
-            "chat_turn.retrieve",
+            "turn.retrieve",
         )?;
         let session = self
             .repository
-            .get_session(command.tenant_id, &command.session_id)?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&session, Some(command.owner_user_id))?;
         if session.organization_id != command.organization_id
             || session.agent_id != command.path_agent_id
         {
-            return Err(KernelError::validation("chat turn not found"));
+            return Err(KernelError::validation("turn not found"));
         }
-        let turn = self.repository.get_chat_turn_by_idempotency(
+        let turn = self.repository.get_turn_by_idempotency(
             command.tenant_id,
             command.organization_id,
             command.owner_user_id,
@@ -3259,24 +3883,24 @@ where
         )?;
         if let Some(turn) = turn.as_ref() {
             if turn.session_id != command.session_id || turn.agent_id != command.path_agent_id {
-                return Err(KernelError::validation("chat turn not found"));
+                return Err(KernelError::validation("turn not found"));
             }
         }
         Ok(turn)
     }
 
-    pub fn cancel_chat_turn(
+    pub fn cancel_turn(
         &self,
-        command: CancelChatTurnCommand,
-    ) -> KernelResult<AgentChatTurnRecord> {
+        command: CancelTurnCommand,
+    ) -> KernelResult<AgentTurnRecord> {
         let audit_subject = command.requested_by.clone();
         self.authorize(
-            "agent.business.chat_turn.cancel",
+            "agent.business.turn.cancel",
             command.requested_by.clone(),
-            format!("agent.business.chat_turn.{}", command.turn_id),
-            "chat_turn.cancel",
+            format!("agent.business.turn.{}", command.turn_id),
+            "turn.cancel",
         )?;
-        let mut turn = self.get_chat_turn(GetChatTurnCommand {
+        let mut turn = self.get_turn(GetTurnCommand {
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
             path_agent_id: command.path_agent_id,
@@ -3292,7 +3916,7 @@ where
         }
         if !matches!(
             turn.status,
-            AgentChatTurnStatus::Requested | AgentChatTurnStatus::Running
+            AgentTurnStatus::Requested | AgentTurnStatus::Running
         ) {
             return Err(KernelError::validation("chat turn cannot be cancelled"));
         }
@@ -3300,14 +3924,14 @@ where
         turn.mark_cancelled(command.requested_at.clone());
         let turn = self
             .repository
-            .update_chat_turn_state(turn, expected_version)?;
-        self.emit_chat_turn_audit_event(
+            .update_turn_state(turn, expected_version)?;
+        self.emit_turn_audit_event(
             AgentAuditAction::TurnCancelRequested,
             &turn,
             audit_subject.clone(),
             command.requested_at.clone(),
         )?;
-        self.emit_chat_turn_audit_event(
+        self.emit_turn_audit_event(
             AgentAuditAction::TurnCancelled,
             &turn,
             audit_subject,
@@ -3316,12 +3940,12 @@ where
         Ok(turn)
     }
 
-    pub fn reconcile_stale_chat_turns(
+    pub fn reconcile_stale_turns(
         &self,
         stale_before: &str,
         occurred_at: &str,
         limit: usize,
-    ) -> KernelResult<ChatTurnReconciliationResult> {
+    ) -> KernelResult<TurnReconciliationResult> {
         if is_trimmed_blank(stale_before) || is_trimmed_blank(occurred_at) {
             return Err(KernelError::validation(
                 "stale_before and occurred_at are required",
@@ -3329,23 +3953,23 @@ where
         }
         let turns = self
             .repository
-            .list_reconcilable_chat_turns(stale_before, limit.clamp(1, 200))?;
+            .list_reconcilable_turns(stale_before, limit.clamp(1, 200))?;
         let examined = turns.len();
         let mut failed = Vec::with_capacity(examined);
         let mut skipped_conflicts = 0usize;
         for mut turn in turns {
             let expected_version = turn.version;
             turn.mark_failed(
-                "chat_turn_reconciliation_timeout",
+                "turn_reconciliation_timeout",
                 "chat turn did not reach a terminal state before the reconciliation deadline",
                 occurred_at,
             );
             match self
                 .repository
-                .update_chat_turn_state(turn, expected_version)
+                .update_turn_state(turn, expected_version)
             {
                 Ok(record) => {
-                    self.emit_chat_turn_audit_event(
+                    self.emit_turn_audit_event(
                         AgentAuditAction::TurnFailed,
                         &record,
                         PolicySubject::new(
@@ -3362,26 +3986,25 @@ where
                 Err(error) => return Err(error),
             }
         }
-        Ok(ChatTurnReconciliationResult {
+        Ok(TurnReconciliationResult {
             examined,
             failed,
             skipped_conflicts,
         })
     }
 
-    /// Send one user message, persist it, run managed chat completion, and persist
-    /// the assistant reply. This is the canonical chat turn for app/open/backend APIs.
-    pub fn send_chat_message(
+    /// Execute one turn and atomically persist its input, output and session counters.
+    pub fn execute_turn(
         &self,
-        command: SendChatMessageCommand,
-    ) -> KernelResult<ChatCompletionResult> {
+        command: CreateTurnCommand,
+    ) -> KernelResult<TurnExecutionResult> {
         validate_agent_id(command.agent_id.as_str())?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.authorize(
-            "agent.business.message.create",
+            "agent.business.turn.create",
             command.requested_by.clone(),
             format!("agent.business.session.{}", command.session_id),
-            "message.create",
+            "turn.create",
         )?;
 
         let agent = self
@@ -3391,19 +4014,25 @@ where
 
         let mut session = self
             .repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
 
-        if session.agent_id != command.agent_id {
+        if session.agent_id != command.agent_id
+            || session.organization_id != command.organization_id
+        {
             return Err(KernelError::validation(
-                "session does not belong to the requested agent",
+                "session not found",
             ));
         }
         if !session.status.is_active() {
             return Err(KernelError::validation(
-                "session is not active, cannot send chat message",
+                "session is not active, cannot execute a turn",
             ));
         }
 
@@ -3414,53 +4043,18 @@ where
             )));
         }
         reject_secret_material(command.content.as_str(), "content")?;
-        if !is_trimmed_blank(command.metadata_json.as_str()) {
-            validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
-            if serde_json::from_str::<serde_json::Value>(&command.metadata_json)
-                .ok()
-                .and_then(|value| value.as_object().cloned())
-                .is_some_and(|object| object.contains_key("mediaResources"))
-            {
-                return Err(KernelError::validation(
-                    "metadataJson.mediaResources is not supported; use mediaResources",
-                ));
-            }
-        }
-        let normalized_media_resources =
-            normalize_message_drive_resources(&command.media_resources)?;
-
-        let payload_hash = sha256_hash(
-            serde_json::json!({
-                "agentId": &command.agent_id,
-                "sessionId": &command.session_id,
-                "content": &command.content,
-                "contentType": &command.content_type,
-                "metadataJson": &command.metadata_json,
-                "mediaResources": normalized_media_resources
-                    .iter()
-                    .map(|resource| resource.resource_snapshot_json.as_str())
-                    .collect::<Vec<_>>(),
-                "modelId": &command.model_id,
-            })
-            .to_string()
-            .as_bytes(),
-        );
-        let idempotency_key = command
-            .idempotency_key
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
-            .unwrap_or_else(|| {
-                format!(
-                    "legacy:{}",
-                    sha256_hash(format!("{}:{}", command.requested_at, payload_hash).as_bytes(),)
-                )
-            });
+        let normalized_drive_refs = normalize_item_drive_resources(&command.drive_refs)?;
+        let idempotency_key = command.idempotency_key.trim().to_string();
+        require_non_blank(&idempotency_key, "idempotencyKey")?;
         if idempotency_key.len() > 256 {
             return Err(KernelError::validation("idempotencyKey exceeds 256 bytes"));
         }
-        if let Some(existing_turn) = self.repository.get_chat_turn_by_idempotency(
+        let payload_hash = command.payload_hash.trim().to_string();
+        require_non_blank(&payload_hash, "payloadHash")?;
+        if payload_hash.len() > 128 {
+            return Err(KernelError::validation("payloadHash exceeds 128 bytes"));
+        }
+        if let Some(existing_turn) = self.repository.get_turn_by_idempotency(
             command.tenant_id,
             session.organization_id,
             session.owner_user_id,
@@ -3471,53 +4065,106 @@ where
                     "idempotency key was already used with a different payload",
                 ));
             }
-            if existing_turn.status != AgentChatTurnStatus::Completed {
-                return Err(KernelError::conflict("chat turn is not completed"));
+            if existing_turn.status != AgentTurnStatus::Completed {
+                return Err(KernelError::conflict("turn is not completed"));
             }
-            let response_message_id =
+            let response_item_id =
                 existing_turn
-                    .response_message_id
+                    .response_item_id
                     .as_deref()
                     .ok_or_else(|| KernelError::Internal {
-                        message: "completed chat turn is missing response_message_id".to_string(),
+                        message: "completed turn is missing response_item_id".to_string(),
                     })?;
-            let user_message = self
+            let user_input_item = self
                 .repository
-                .get_message(
+                .get_session_item(
                     command.tenant_id,
+                    command.organization_id,
                     &command.session_id,
-                    &existing_turn.request_message_id,
+                    &existing_turn.request_item_id,
                 )?
                 .ok_or_else(|| KernelError::Internal {
-                    message: "completed chat turn is missing request message".to_string(),
+                    message: "completed turn is missing request item".to_string(),
                 })?;
-            let assistant_message = self
+            let assistant_output_item = self
                 .repository
-                .get_message(command.tenant_id, &command.session_id, response_message_id)?
+                .get_session_item(
+                    command.tenant_id,
+                    command.organization_id,
+                    &command.session_id,
+                    response_item_id,
+                )?
                 .ok_or_else(|| KernelError::Internal {
-                    message: "completed chat turn is missing response message".to_string(),
+                    message: "completed turn is missing response item".to_string(),
                 })?;
-            let user_message_drive_refs = self.repository.list_message_drive_refs(
+            let user_item_drive_refs = self.repository.list_item_drive_refs(
                 command.tenant_id,
                 session.organization_id,
-                &user_message.message_id,
+                &user_input_item.item_id,
             )?;
-            return Ok(ChatCompletionResult {
+            return Ok(TurnExecutionResult {
                 session,
-                user_message,
-                assistant_message,
-                user_message_drive_refs,
+                turn: existing_turn,
+                user_input_item,
+                assistant_output_item,
+                user_item_drive_refs,
                 stream_deltas: Vec::new(),
             });
         }
 
-        let active_binding = self
+        let session_runtime_binding = match command.runtime_binding_id.as_deref() {
+            Some(runtime_binding_id) => self.repository.get_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                runtime_binding_id,
+            )?,
+            None => self.repository.get_current_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+            )?,
+        }
+        .ok_or_else(|| KernelError::validation("active session runtime binding not found"))?;
+        if !session_runtime_binding.is_current
+            || session_runtime_binding.status != AgentSessionRuntimeBindingStatus::Active
+        {
+            return Err(KernelError::validation(
+                "session runtime binding is not active",
+            ));
+        }
+        if let Some(requested_model_id) = command.requested_model_id.as_deref() {
+            if requested_model_id != session_runtime_binding.model_id {
+                return Err(KernelError::validation(
+                    "requestedModelId does not match the active session runtime binding",
+                ));
+            }
+        }
+        let provider_binding = self
             .repository
-            .get_active_provider_binding(command.tenant_id, command.agent_id.as_str())?;
-        let turn_id = format!("turn.{}", self.repository.next_id()?);
-        let user_message_id = format!("msg.{}", self.repository.next_id()?);
-        let assistant_message_id = format!("msg.{}", self.repository.next_id()?);
-        let mut turn = AgentChatTurnRecord {
+            .get_provider_binding(
+                command.tenant_id,
+                command.agent_id.as_str(),
+                &session_runtime_binding.provider_binding_id,
+            )?
+            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+        if !provider_binding.active
+            || provider_binding.provider_id != session_runtime_binding.provider_id
+        {
+            return Err(KernelError::validation(
+                "session runtime binding references an inactive provider binding",
+            ));
+        }
+        let turn_id = match command.turn_id.as_deref() {
+            Some(turn_id) => {
+                validate_standard_id(turn_id, "turnId", Some("turn."))?;
+                turn_id.to_string()
+            }
+            None => format!("turn.{}", self.repository.next_id()?),
+        };
+        let user_input_item_id = format!("item.{}", self.repository.next_id()?);
+        let assistant_output_item_id = format!("item.{}", self.repository.next_id()?);
+        let mut turn = AgentTurnRecord {
             id: self.repository.next_id()?,
             turn_id: turn_id.clone(),
             tenant_id: command.tenant_id,
@@ -3525,24 +4172,33 @@ where
             session_id: command.session_id.clone(),
             agent_id: command.agent_id.clone(),
             owner_user_id: session.owner_user_id,
+            runtime_binding_id: Some(session_runtime_binding.runtime_binding_id.clone()),
             client_request_id: command.client_request_id.clone(),
             idempotency_key: idempotency_key.clone(),
             payload_hash: payload_hash.clone(),
-            request_message_id: user_message_id.clone(),
-            response_message_id: None,
-            status: AgentChatTurnStatus::Requested,
-            requested_model_id: command.model_id.clone(),
-            provider_binding_id: active_binding
-                .as_ref()
-                .map(|binding| binding.binding_id.clone()),
-            model_id: None,
-            provider_id: None,
+            request_item_id: user_input_item_id.clone(),
+            response_item_id: None,
+            turn_mode: command.turn_mode,
+            status: AgentTurnStatus::Requested,
+            requested_model_id: command.requested_model_id.clone(),
+            provider_binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
+            model_id: Some(session_runtime_binding.model_id.clone()),
+            provider_id: Some(session_runtime_binding.provider_id.clone()),
             input_tokens: 0,
             output_tokens: 0,
+            cached_tokens: 0,
             finish_reason: None,
             error_code: None,
             error_detail: None,
             trace_id: command.client_request_id.clone(),
+            attempt_count: 0,
+            max_attempts: 3,
+            next_retry_at: None,
+            available_at: command.requested_at.clone(),
+            lease_owner: None,
+            lease_token: None,
+            lease_expires_at: None,
+            fencing_token: 0,
             version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
@@ -3552,117 +4208,119 @@ where
             cancelled_at: None,
             retention_until: None,
         };
-        self.repository.insert_chat_turn_reservation(turn.clone())?;
-        self.emit_chat_turn_audit_event(
+        self.repository.insert_turn_reservation(turn.clone())?;
+        self.emit_turn_audit_event(
             AgentAuditAction::TurnRequested,
             &turn,
             command.requested_by.clone(),
             command.requested_at.clone(),
         )?;
         turn.mark_running(command.requested_at.clone());
-        turn = self.repository.update_chat_turn_state(turn, 0)?;
+        turn = self.repository.update_turn_state(turn, 0)?;
 
-        let history_messages =
+        let history_items =
             self.repository
-                .list_messages(&MessageListQuery::for_recent_chat_context(
+                .list_session_items(&SessionItemListQuery::for_recent_turn_context(
                     command.tenant_id,
+                    command.organization_id,
                     command.session_id.clone(),
                     CHAT_CONTEXT_MESSAGE_LIMIT,
                 ))?;
-        let history = history_messages
+        let history = history_items
             .iter()
-            .map(|record| (record.role, record.content.clone()))
+            .filter_map(|record| record.content.clone().map(|content| (record.kind, content)))
             .collect::<Vec<_>>();
 
         let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
             agent.default_code_task_intent.as_ref(),
         )
         .and_then(|profile| profile.welcome_message);
-        let provider_has_model_chat = active_binding
-            .as_ref()
-            .map(|binding| binding.capabilities.iter().any(|cap| cap == "model.chat"))
-            .unwrap_or(false);
+        let provider_has_model_chat = provider_binding
+            .capabilities
+            .iter()
+            .any(|capability| capability == "model.chat");
 
         let user_content = command.content.clone();
         let completion = complete_with_timeout(
-            Arc::clone(&self.chat_completer),
-            &ChatCompletionInput {
+            Arc::clone(&self.turn_executor),
+            &TurnExecutionInput {
                 agent_display_name: agent.display_name.clone(),
                 welcome_message,
                 session: session.clone(),
                 history,
                 user_content: user_content.clone(),
-                model_id: command.model_id.clone(),
-                provider_id: active_binding
-                    .as_ref()
-                    .map(|binding| binding.provider_id.clone()),
-                binding_id: active_binding
-                    .as_ref()
-                    .map(|binding| binding.binding_id.clone()),
+                model_id: Some(session_runtime_binding.model_id.clone()),
+                provider_id: Some(session_runtime_binding.provider_id.clone()),
+                binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
                 provider_has_model_chat,
             },
             command.prefer_stream,
-            CHAT_COMPLETION_TIMEOUT,
+            TURN_EXECUTION_TIMEOUT,
         );
         if is_inference_error(completion.runtime_mode) {
             turn.mark_failed(
-                "chat_inference_failed",
-                "managed chat inference failed",
+                "turn_inference_failed",
+                "managed turn inference failed",
                 command.requested_at.clone(),
             );
-            let failed_turn = self.repository.update_chat_turn_state(turn, 1)?;
-            self.emit_chat_turn_audit_event(
+            let failed_turn = self.repository.update_turn_state(turn, 1)?;
+            self.emit_turn_audit_event(
                 AgentAuditAction::TurnFailed,
                 &failed_turn,
                 command.requested_by,
                 command.requested_at,
             )?;
             return Err(KernelError::provider_error(
-                "chat_inference_failed",
+                "turn_inference_failed",
                 completion.content,
             ));
         }
 
-        let user_metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
-        let user_message = AgentMessageRecord {
+        let user_input_item = AgentSessionItemRecord {
             id: self.repository.next_id()?,
-            message_id: user_message_id,
+            item_id: user_input_item_id,
             tenant_id: command.tenant_id,
+            organization_id: session.organization_id,
             session_id: command.session_id.clone(),
-            agent_id: command.agent_id.clone(),
-            role: AgentMessageRole::User,
-            content: user_content,
+            kind: AgentSessionItemKind::UserInput,
+            content: Some(user_content),
             content_type: default_plain_text_if_blank(command.content_type.as_str()),
-            status: AgentMessageStatus::Sent,
+            status: AgentSessionItemStatus::Completed,
             sequence: 0,
             input_tokens: 0,
             output_tokens: 0,
-            model_id: command.model_id.clone(),
+            model_id: None,
             provider_id: None,
-            artifacts_json: "[]".to_string(),
-            metadata_json: user_metadata_json,
-            parent_message_id: None,
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            parent_item_id: None,
             turn_id: Some(turn_id.clone()),
+            created_by: session.owner_user_id,
+            version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
+            completed_at: Some(command.requested_at.clone()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
         };
-        let user_message_drive_refs = normalized_media_resources
+        let user_item_drive_refs = normalized_drive_refs
             .into_iter()
             .map(|resource| {
-                Ok(AgentMessageDriveRefRecord {
+                Ok(AgentItemDriveRefRecord {
                     id: self.repository.next_id()?,
                     tenant_id: command.tenant_id,
                     organization_id: session.organization_id,
-                    message_id: user_message.message_id.clone(),
-                    media_role: resource.media_role,
+                    item_id: user_input_item.item_id.clone(),
+                    resource_role: resource.resource_role,
                     drive_space_id: resource.drive_space_id,
                     drive_node_id: resource.drive_node_id,
-                    drive_uri: resource.drive_uri,
-                    media_resource_id: Some(resource.media_resource_id),
-                    object_blob_id: resource.object_blob_id,
-                    resource_snapshot_json: resource.resource_snapshot_json,
-                    resource_hash: resource.resource_hash,
-                    alt_text: resource.alt_text,
+                    media_resource_id: None,
+                    object_blob_id: None,
+                    resource_hash: None,
+                    alt_text: None,
                     sort_order: resource.sort_order,
                     status: 0,
                     created_by: session.owner_user_id,
@@ -3674,81 +4332,96 @@ where
             })
             .collect::<KernelResult<Vec<_>>>()?;
 
-        let assistant_metadata_json = serde_json::json!({
-            "runtimeMode": completion.runtime_mode,
-        })
-        .to_string();
-        let assistant_message = AgentMessageRecord {
+        let assistant_output_item = AgentSessionItemRecord {
             id: self.repository.next_id()?,
-            message_id: assistant_message_id,
+            item_id: assistant_output_item_id,
             tenant_id: command.tenant_id,
+            organization_id: session.organization_id,
             session_id: command.session_id.clone(),
-            agent_id: command.agent_id.clone(),
-            role: AgentMessageRole::Assistant,
-            content: completion.content,
+            kind: AgentSessionItemKind::AssistantOutput,
+            content: Some(completion.content),
             content_type: "text/plain".to_string(),
-            status: AgentMessageStatus::Delivered,
+            status: AgentSessionItemStatus::Completed,
             sequence: 0,
             input_tokens: completion.input_tokens,
             output_tokens: completion.output_tokens,
-            model_id: completion.model_id.clone(),
-            provider_id: completion.provider_id.clone(),
-            artifacts_json: "[]".to_string(),
-            metadata_json: assistant_metadata_json,
-            parent_message_id: Some(user_message.message_id.clone()),
+            model_id: Some(
+                completion
+                    .model_id
+                    .clone()
+                    .unwrap_or_else(|| session_runtime_binding.model_id.clone()),
+            ),
+            provider_id: Some(
+                completion
+                    .provider_id
+                    .clone()
+                    .unwrap_or_else(|| session_runtime_binding.provider_id.clone()),
+            ),
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            parent_item_id: Some(user_input_item.item_id.clone()),
             turn_id: Some(turn_id.clone()),
+            created_by: session.owner_user_id,
+            version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
+            completed_at: Some(command.requested_at.clone()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
         };
 
-        session.record_chat_turn(
+        session.record_turn(
             completion.input_tokens,
             completion.output_tokens,
             command.requested_at.clone(),
         );
 
-        turn.response_message_id = Some(assistant_message.message_id.clone());
-        turn.model_id = completion.model_id.clone();
-        turn.provider_id = completion.provider_id.clone();
+        turn.response_item_id = Some(assistant_output_item.item_id.clone());
+        turn.model_id = assistant_output_item.model_id.clone();
+        turn.provider_id = assistant_output_item.provider_id.clone();
         turn.input_tokens = completion.input_tokens;
         turn.output_tokens = completion.output_tokens;
         turn.mark_completed(command.requested_at.clone());
         let completed_turn = turn.clone();
 
-        let (session, user_message, assistant_message) =
-            self.repository.insert_chat_turn_with_drive_refs(
+        let (session, user_input_item, assistant_output_item) =
+            self.repository.insert_turn_with_drive_refs(
                 turn,
                 session,
-                user_message,
-                assistant_message,
-                user_message_drive_refs.clone(),
+                user_input_item,
+                assistant_output_item,
+                user_item_drive_refs.clone(),
             )?;
 
-        self.emit_chat_turn_audit_event(
+        self.emit_turn_audit_event(
             AgentAuditAction::TurnCompleted,
             &completed_turn,
             command.requested_by.clone(),
             command.requested_at.clone(),
         )?;
 
-        self.emit_message_audit_event(
-            AgentAuditAction::MessageCreated,
-            &user_message,
+        self.emit_session_item_audit_event(
+            AgentAuditAction::SessionItemCreated,
+            &user_input_item,
             command.requested_by.clone(),
             command.requested_at.clone(),
         )?;
-        self.emit_message_audit_event(
-            AgentAuditAction::MessageCreated,
-            &assistant_message,
+        self.emit_session_item_audit_event(
+            AgentAuditAction::SessionItemCreated,
+            &assistant_output_item,
             command.requested_by,
             command.requested_at,
         )?;
 
-        Ok(ChatCompletionResult {
+        Ok(TurnExecutionResult {
             session,
-            user_message,
-            assistant_message,
-            user_message_drive_refs,
+            turn: completed_turn,
+            user_input_item,
+            assistant_output_item,
+            user_item_drive_refs,
             stream_deltas: completion.stream_deltas,
         })
     }
@@ -3811,8 +4484,11 @@ where
         .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
-        .with_context("agent_id", record.agent_id.as_str())
         .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
         .with_context(
             "organization_id",
             record.organization_id.to_string().as_str(),
@@ -3929,10 +4605,10 @@ where
         self.audit_sink.record(event)
     }
 
-    fn emit_chat_turn_audit_event(
+    fn emit_turn_audit_event(
         &self,
         action: AgentAuditAction,
-        record: &AgentChatTurnRecord,
+        record: &AgentTurnRecord,
         subject: PolicySubject,
         occurred_at: String,
     ) -> KernelResult<()> {
@@ -3948,7 +4624,7 @@ where
         .to_string();
         let event = KernelEvent::new(
             format!(
-                "agent_chat_turn_{}_{}_{}",
+                "agent_turn_{}_{}_{}",
                 record.turn_id,
                 action.action_code(),
                 record.version
@@ -3961,7 +4637,7 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", "v1")
         .with_context("audit_action", action.action_code())
-        .with_context("aggregate_type", "chat_turn")
+        .with_context("aggregate_type", "turn")
         .with_context("aggregate_id", record.turn_id.as_str())
         .with_context("session_id", record.session_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -4137,36 +4813,39 @@ where
         self.audit_sink.record(event)
     }
 
-    fn emit_message_audit_event(
+    fn emit_session_item_audit_event(
         &self,
         action: AgentAuditAction,
-        record: &AgentMessageRecord,
+        record: &AgentSessionItemRecord,
         subject: PolicySubject,
         occurred_at: String,
     ) -> KernelResult<()> {
-        let audit_payload = MessageAuditPayload::new(action, record);
+        let audit_payload = SessionItemAuditPayload::new(action, record);
         let payload_json = audit_payload.to_json().map_err(|error| {
-            KernelError::validation(format!("message audit payload serialization: {error}"))
+            KernelError::validation(format!("session-item audit payload serialization: {error}"))
         })?;
 
         let event = KernelEvent::new(
-            format!("agent_message_{}_{}", record.message_id, record.sequence),
+            format!("agent_session_item_{}_{}", record.item_id, record.sequence),
             action.event_type(),
             KernelEventSeverity::Info,
             payload_json,
         )
         .from_source(KernelEventSource::Runtime)
         .with_redaction(KernelEventRedaction::TenantSensitive)
-        .with_context("schema_version", MessageAuditPayload::SCHEMA_VERSION)
+        .with_context("schema_version", SessionItemAuditPayload::SCHEMA_VERSION)
         .with_context("audit_action", action.action_code())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
-        .with_context("message_id", record.message_id.as_str())
+        .with_context("item_id", record.item_id.as_str())
         .with_context("session_id", record.session_id.as_str())
-        .with_context("agent_id", record.agent_id.as_str())
         .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
         .occurred_at(occurred_at)
-        .with_payload_schema("sdkwork.agent.business.message.v1");
+        .with_payload_schema("sdkwork.agent.business.session_item.v1");
 
         self.audit_sink.record(event)
     }
@@ -4216,8 +4895,10 @@ where
         &self,
         command: CreateInteractionCommand,
     ) -> KernelResult<AgentInteractionRecord> {
+        validate_requested_at(&command.requested_at)?;
+        parse_optional_rfc3339_datetime(command.retention_until.as_deref(), "retentionUntil")?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
-        validate_agent_id(command.agent_id.as_str())?;
+        validate_agent_id(command.path_agent_id.as_str())?;
         let interaction_id = if is_trimmed_blank(command.interaction_id.as_str()) {
             format!("interaction.{}", self.repository.next_id()?)
         } else {
@@ -4242,21 +4923,43 @@ where
                 "prompt exceeds maximum size of {MAX_CHAT_USER_CONTENT_BYTES} bytes"
             )));
         }
-        require_non_blank(command.engine_key.as_str(), "engineKey")?;
-        if !is_trimmed_blank(command.options_json.as_str()) {
-            validate_json_payload(command.options_json.as_str(), "optionsJson")?;
+        let options_json = default_json_array_if_blank(command.options_json.as_str());
+        let options_value: serde_json::Value = serde_json::from_str(&options_json)
+            .map_err(|error| KernelError::validation(format!("options is invalid: {error}")))?;
+        validate_interaction_options(&options_value)?;
+        if command.provider_interaction_id.is_some() && command.runtime_binding_id.is_none() {
+            return Err(KernelError::validation(
+                "runtimeBindingId is required with providerInteractionId",
+            ));
+        }
+        if let Some(runtime_binding_id) = command.runtime_binding_id.as_deref() {
+            self.repository
+                .get_session_runtime_binding(
+                    command.tenant_id,
+                    command.organization_id,
+                    &command.session_id,
+                    runtime_binding_id,
+                )?
+                .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
         }
 
         self.repository
-            .get_session(command.tenant_id, command.session_id.as_str())?
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("session not found"))
             .and_then(|session| {
                 Self::ensure_session_owner_scope(&session, command.owner_scope)?;
                 Self::ensure_nested_agent_id(
                     &session.agent_id,
-                    command.agent_id.as_str(),
+                    command.path_agent_id.as_str(),
                     "session",
                 )?;
+                if session.organization_id != command.organization_id {
+                    return Err(KernelError::validation("session not found"));
+                }
                 if !session.status.is_active() {
                     return Err(KernelError::validation(
                         "session is not active, cannot create interaction",
@@ -4265,10 +4968,22 @@ where
                 Ok(session)
             })?;
 
+        if let Some(turn_id) = command.turn_id.as_deref() {
+            validate_standard_id(turn_id, "turnId", Some("turn."))?;
+            let turn = self
+                .repository
+                .get_turn(command.tenant_id, command.organization_id, turn_id)?
+                .ok_or_else(|| KernelError::validation("turn not found"))?;
+            if turn.session_id != command.session_id {
+                return Err(KernelError::validation("turn not found"));
+            }
+        }
+
         if self
             .repository
             .get_interaction(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
                 interaction_id.as_str(),
             )?
@@ -4283,17 +4998,23 @@ where
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
             session_id: command.session_id,
-            agent_id: command.agent_id,
-            engine_key: command.engine_key,
+            turn_id: command.turn_id,
+            runtime_binding_id: command.runtime_binding_id,
+            provider_interaction_id: command.provider_interaction_id,
             kind: command.kind,
             status: AgentInteractionStatus::Pending,
             prompt: command.prompt,
-            options_json: default_json_array_if_blank(command.options_json.as_str()),
-            resolution_json: "{}".to_string(),
+            options_json,
+            resolution_json: None,
+            claim_owner: None,
+            claim_token: None,
+            claim_expires_at: None,
+            fencing_token: 0,
             version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
             resolved_at: None,
+            retention_until: command.retention_until,
         };
 
         self.repository.insert_interaction(record.clone())?;
@@ -4316,12 +5037,16 @@ where
             format!("agent.business.session.{}", command.query.session_id),
             "interaction.list",
         )?;
-        self.load_session_for_nested_route(
+        let session = self.load_session_for_nested_route(
             command.query.tenant_id,
+            command.query.organization_id,
             command.query.session_id.as_str(),
             command.path_agent_id.as_str(),
             command.owner_scope,
         )?;
+        if session.organization_id != command.query.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
         let total_count = self.repository.count_interactions(&command.query)?;
         let items = self.repository.list_interactions(&command.query)?;
         Ok(offset_paginated_result(
@@ -4341,27 +5066,112 @@ where
             format!("agent.business.session.{}", command.session_id),
             "interaction.retrieve",
         )?;
-        self.load_session_for_nested_route(
+        let session = self.load_session_for_nested_route(
             command.tenant_id,
+            command.organization_id,
             command.session_id.as_str(),
             command.path_agent_id.as_str(),
             command.owner_scope,
         )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("interaction not found"));
+        }
         self.repository
             .get_interaction(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
             .ok_or_else(|| KernelError::validation("interaction not found"))
-            .and_then(|record| {
-                Self::ensure_nested_agent_id(
-                    &record.agent_id,
-                    command.path_agent_id.as_str(),
-                    "interaction",
-                )?;
-                Ok(record)
-            })
+    }
+
+    pub fn claim_interaction(
+        &self,
+        command: ClaimInteractionCommand,
+    ) -> KernelResult<InteractionClaimResult> {
+        validate_requested_at(&command.requested_at)?;
+        validate_standard_id(
+            &command.interaction_id,
+            "interactionId",
+            Some("interaction."),
+        )?;
+        require_non_blank(&command.claim_owner, "claimOwner")?;
+        if command.claim_owner.len() > 128 {
+            return Err(KernelError::validation("claimOwner exceeds 128 bytes"));
+        }
+        if !(1..=MAX_INTERACTION_LEASE_SECONDS).contains(&command.lease_seconds) {
+            return Err(KernelError::validation(
+                "leaseSeconds must be between 1 and 300",
+            ));
+        }
+        self.authorize(
+            "agent.business.interaction.claim",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}", command.session_id),
+            "interaction.claim",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &command.path_agent_id,
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("interaction not found"));
+        }
+        let mut record = self
+            .repository
+            .get_interaction(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &command.interaction_id,
+            )?
+            .ok_or_else(|| KernelError::validation("interaction not found"))?;
+        if !record.is_pending() {
+            return Err(KernelError::validation(
+                "interaction is no longer pending and cannot be claimed",
+            ));
+        }
+        ensure_expected_version(record.version, Some(command.expected_version), "interaction")?;
+        let now = OffsetDateTime::now_utc();
+        if let (Some(existing_owner), Some(expires_at)) =
+            (record.claim_owner.as_deref(), record.claim_expires_at.as_deref())
+        {
+            if parse_rfc3339_datetime(expires_at, "claimExpiresAt")? > now
+                && existing_owner != command.claim_owner
+            {
+                return Err(KernelError::conflict(
+                    "interaction is already claimed by another owner",
+                ));
+            }
+        }
+        let raw_claim_token = sdkwork_utils_rust::id::random_string(48);
+        let claim_token_hash = sha256_hash(raw_claim_token.as_bytes());
+        let claim_expires_at = format_utc_seconds(
+            now + time::Duration::seconds(i64::from(command.lease_seconds)),
+        );
+        record.claim(
+            command.claim_owner,
+            claim_token_hash,
+            claim_expires_at.clone(),
+            format_utc_seconds(now),
+        );
+        self.repository.update_interaction(record.clone())?;
+        self.emit_interaction_audit_event(
+            AgentAuditAction::InteractionClaimed,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(InteractionClaimResult {
+            fencing_token: record.fencing_token,
+            interaction: record,
+            claim_token: raw_claim_token,
+            claim_expires_at,
+        })
     }
 
     pub fn approve_interaction(
@@ -4380,16 +5190,21 @@ where
             "interaction.approve",
         )?;
 
-        self.load_session_for_nested_route(
+        let session = self.load_session_for_nested_route(
             command.tenant_id,
+            command.organization_id,
             command.session_id.as_str(),
             command.path_agent_id.as_str(),
             command.owner_scope,
         )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("interaction not found"));
+        }
         let mut record = self
             .repository
             .get_interaction(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
@@ -4412,9 +5227,14 @@ where
             Some(command.expected_version),
             "interaction",
         )?;
+        validate_interaction_claim(
+            &record,
+            &command.claim_token,
+            command.fencing_token,
+        )?;
 
         let resolution = serde_json::json!({
-            "approved": command.approved,
+            "outcome": if command.approved { "approved" } else { "rejected" },
             "reason": command.reason,
         });
 
@@ -4466,16 +5286,21 @@ where
             "interaction.answer",
         )?;
 
-        self.load_session_for_nested_route(
+        let session = self.load_session_for_nested_route(
             command.tenant_id,
+            command.organization_id,
             command.session_id.as_str(),
             command.path_agent_id.as_str(),
             command.owner_scope,
         )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("interaction not found"));
+        }
         let mut record = self
             .repository
             .get_interaction(
                 command.tenant_id,
+                command.organization_id,
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
@@ -4498,11 +5323,16 @@ where
             Some(command.expected_version),
             "interaction",
         )?;
+        validate_interaction_claim(
+            &record,
+            &command.claim_token,
+            command.fencing_token,
+        )?;
 
         let resolution = serde_json::json!({
+            "outcome": if command.rejected { "rejected" } else { "answered" },
             "answer": command.answer,
-            "option_label": command.option_label,
-            "rejected": command.rejected,
+            "selectedOptionValue": command.selected_option_value,
         });
 
         let new_status = if command.rejected {
@@ -4546,8 +5376,8 @@ where
             "action": action.action_code(),
             "interaction_id": record.interaction_id,
             "session_id": record.session_id,
-            "agent_id": record.agent_id,
             "tenant_id": record.tenant_id,
+            "organization_id": record.organization_id,
             "kind": record.kind.as_str(),
             "status": record.status.as_str(),
             "version": record.version,
@@ -4571,11 +5401,60 @@ where
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("interaction_id", record.interaction_id.as_str())
         .with_context("session_id", record.session_id.as_str())
-        .with_context("agent_id", record.agent_id.as_str())
         .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.interaction.v1");
 
+        self.audit_sink.record(event)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_session_resource_audit_event(
+        &self,
+        action: AgentAuditAction,
+        resource_kind: &str,
+        resource_id: &str,
+        session_id: &str,
+        tenant_id: u64,
+        organization_id: u64,
+        version: u64,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let payload_json = serde_json::json!({
+            "schema_version": "v1",
+            "action": action.action_code(),
+            "resource_kind": resource_kind,
+            "resource_id": resource_id,
+            "session_id": session_id,
+            "tenant_id": tenant_id,
+            "organization_id": organization_id,
+            "version": version,
+        })
+        .to_string();
+        let event = KernelEvent::new(
+            format!("agent_{resource_kind}_{resource_id}_{version}"),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("resource_kind", resource_kind)
+        .with_context("resource_id", resource_id)
+        .with_context("session_id", session_id)
+        .with_context("tenant_id", tenant_id.to_string().as_str())
+        .with_context("organization_id", organization_id.to_string().as_str())
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.session-resource.v1");
         self.audit_sink.record(event)
     }
 }

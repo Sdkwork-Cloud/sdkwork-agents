@@ -1,18 +1,22 @@
-use crate::chat_turn::{AgentChatTurnRecord, AgentChatTurnStatus};
+use crate::agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
     AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentMessageDriveRefRecord, AgentMessageFeedbackRating, AgentMessageFeedbackRecord,
-    AgentMessageMediaRole, AgentMessageRecord, AgentMessageRole, AgentMessageStatus,
-    AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
-    AgentSessionRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
+    AgentItemDriveRefRecord, AgentItemFeedbackRating, AgentItemFeedbackRecord,
+    AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
+    AgentSessionCheckpointRecord, AgentSessionCheckpointStatus, AgentSessionEntrySurface,
+    AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind,
+    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
+    AgentSessionStatus,
+    AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, McpMarketplaceListQuery, MessageFeedbackListQuery, MessageListQuery,
-    MessageListSort, ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionListQuery, TaskListQuery,
+    InteractionListQuery, McpMarketplaceListQuery, ItemFeedbackListQuery, SessionItemListQuery,
+    SessionItemListSort, ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
+    ResourceUserStateListQuery, SessionListQuery, TaskListQuery, TurnListQuery,
+    SessionCheckpointListQuery, SessionRuntimeBindingListQuery,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
@@ -121,26 +125,38 @@ pub use sql::{
 };
 #[cfg(feature = "postgres-sync")]
 pub use sql::{
-    SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_MESSAGES, SQL_COUNT_AGENT_MESSAGE_FEEDBACK,
+    SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING, SQL_COUNT_AGENT_INTERACTIONS,
+    SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_TURNS,
+    SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
+    SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS,
     SQL_COUNT_AGENT_PROJECTS, SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS,
     SQL_COUNT_AGENT_RESOURCE_USER_STATES, SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_TASKS,
-    SQL_INSERT_AGENT_CHAT_TURN, SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_MESSAGE,
-    SQL_INSERT_AGENT_MESSAGE_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
-    SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION, SQL_INSERT_AGENT_TASK,
-    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_MESSAGES, SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT,
-    SQL_LIST_AGENT_MESSAGE_DRIVE_REFS, SQL_LIST_AGENT_MESSAGE_DRIVE_REFS_BATCH,
-    SQL_LIST_AGENT_MESSAGE_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
+    SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
+    SQL_INSERT_AGENT_SESSION_CHECKPOINT, SQL_INSERT_AGENT_SESSION_ITEM,
+    SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
+    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS, SQL_LIST_AGENT_TURNS,
+    SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK,
+    SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
+    SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS,
     SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
-    SQL_LIST_RECONCILABLE_AGENT_CHAT_TURNS, SQL_LOCK_AGENT_SESSION_FOR_UPDATE,
-    SQL_NEXT_MESSAGE_SEQUENCE, SQL_SELECT_AGENT_CHAT_TURN,
-    SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_INTERACTION,
-    SQL_SELECT_AGENT_MESSAGE, SQL_SELECT_AGENT_MESSAGE_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
+    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LOCK_AGENT_SESSION_FOR_UPDATE,
+    SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_NEXT_SESSION_ITEM_SEQUENCE, SQL_SELECT_AGENT_INTERACTION,
+    SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
-    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_TASK, SQL_UPDATE_AGENT_CHAT_TURN_STATE,
-    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_MESSAGE, SQL_UPDATE_AGENT_PROJECT,
-    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION, SQL_UPDATE_AGENT_TASK,
-    SQL_UPSERT_AGENT_MESSAGE_FEEDBACK, SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
+    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_CHECKPOINT,
+    SQL_SELECT_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_SELECT_AGENT_TASK, SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY,
+    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
+    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
+    SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
+    SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
+    SQL_UPSERT_AGENT_ITEM_FEEDBACK, SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -576,22 +592,33 @@ pub struct AgentSessionRow {
     pub session_id: String,
     pub owner_user_id: u64,
     pub project_id: Option<String>,
+    pub session_kind: i16,
+    pub entry_surface: i16,
+    pub source_module: Option<String>,
+    pub source_context_kind: Option<String>,
+    pub source_context_id: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
     pub status: i16,
-    pub provider_binding_id: Option<String>,
-    pub model_id: Option<String>,
-    pub message_count: u64,
-    pub last_message_sequence: u64,
+    pub item_count: u64,
+    pub last_item_sequence: u64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
-    pub metadata_json: String,
+    pub idempotency_key: Option<String>,
+    pub payload_hash: Option<String>,
+    pub created_by: u64,
+    pub updated_by: u64,
     pub version: u64,
     pub created_at: String,
     pub updated_at: String,
-    pub last_message_at: Option<String>,
+    pub last_item_at: Option<String>,
     pub closed_at: Option<String>,
     pub archived_at: Option<String>,
+    pub archived_by: Option<u64>,
     pub deleted_at: Option<String>,
+    pub deleted_by: Option<u64>,
+    pub retention_until: Option<String>,
 }
 
 impl AgentSessionRow {
@@ -605,22 +632,33 @@ impl AgentSessionRow {
             session_id: record.session_id.clone(),
             owner_user_id: record.owner_user_id,
             project_id: record.project_id.clone(),
+            session_kind: record.session_kind.as_db_code(),
+            entry_surface: record.entry_surface.as_db_code(),
+            source_module: record.source_module.clone(),
+            source_context_kind: record.source_context_kind.clone(),
+            source_context_id: record.source_context_id.clone(),
+            parent_session_id: record.parent_session_id.clone(),
+            forked_from_turn_id: record.forked_from_turn_id.clone(),
             title: record.title.clone(),
             status: record.status.as_db_code(),
-            provider_binding_id: record.provider_binding_id.clone(),
-            model_id: record.model_id.clone(),
-            message_count: record.message_count,
-            last_message_sequence: record.last_message_sequence,
+            item_count: record.item_count,
+            last_item_sequence: record.last_item_sequence,
             total_input_tokens: record.total_input_tokens,
             total_output_tokens: record.total_output_tokens,
-            metadata_json: record.metadata_json.clone(),
+            idempotency_key: record.idempotency_key.clone(),
+            payload_hash: record.payload_hash.clone(),
+            created_by: record.created_by,
+            updated_by: record.updated_by,
             version: record.version,
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
-            last_message_at: record.last_message_at.clone(),
+            last_item_at: record.last_item_at.clone(),
             closed_at: record.closed_at.clone(),
             archived_at: record.archived_at.clone(),
+            archived_by: record.archived_by,
             deleted_at: record.deleted_at.clone(),
+            deleted_by: record.deleted_by,
+            retention_until: record.retention_until.clone(),
         })
     }
 
@@ -628,6 +666,19 @@ impl AgentSessionRow {
         let status = AgentSessionStatus::from_db_code(self.status).ok_or_else(|| {
             KernelError::validation(format!("invalid session status db code: {}", self.status))
         })?;
+        let session_kind = AgentSessionKind::from_db_code(self.session_kind).ok_or_else(|| {
+            KernelError::validation(format!(
+                "invalid session kind db code: {}",
+                self.session_kind
+            ))
+        })?;
+        let entry_surface =
+            AgentSessionEntrySurface::from_db_code(self.entry_surface).ok_or_else(|| {
+                KernelError::validation(format!(
+                    "invalid session entry surface db code: {}",
+                    self.entry_surface
+                ))
+            })?;
         Ok(AgentSessionRecord {
             id: self.id,
             session_id: self.session_id,
@@ -636,22 +687,207 @@ impl AgentSessionRow {
             agent_id: self.agent_id,
             owner_user_id: self.owner_user_id,
             project_id: self.project_id,
+            session_kind,
+            entry_surface,
+            source_module: self.source_module,
+            source_context_kind: self.source_context_kind,
+            source_context_id: self.source_context_id,
+            parent_session_id: self.parent_session_id,
+            forked_from_turn_id: self.forked_from_turn_id,
             title: self.title,
             status,
-            provider_binding_id: self.provider_binding_id,
-            model_id: self.model_id,
-            message_count: self.message_count,
-            last_message_sequence: self.last_message_sequence,
+            item_count: self.item_count,
+            last_item_sequence: self.last_item_sequence,
             total_input_tokens: self.total_input_tokens,
             total_output_tokens: self.total_output_tokens,
-            metadata_json: self.metadata_json,
+            idempotency_key: self.idempotency_key,
+            payload_hash: self.payload_hash,
+            created_by: self.created_by,
+            updated_by: self.updated_by,
             version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            last_message_at: self.last_message_at,
+            last_item_at: self.last_item_at,
             closed_at: self.closed_at,
             archived_at: self.archived_at,
+            archived_by: self.archived_by,
             deleted_at: self.deleted_at,
+            deleted_by: self.deleted_by,
+            retention_until: self.retention_until,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionRuntimeBindingRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub runtime_binding_id: String,
+    pub runtime_location_id: Option<String>,
+    pub host_mode: String,
+    pub transport_kind: String,
+    pub provider_binding_id: String,
+    pub model_id: String,
+    pub provider_id: String,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub status: i16,
+    pub is_current: bool,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub activated_at: Option<String>,
+    pub deactivated_at: Option<String>,
+}
+
+impl AgentSessionRuntimeBindingRow {
+    pub fn from_record(record: &AgentSessionRuntimeBindingRecord) -> Self {
+        Self {
+            id: record.id,
+            uuid: build_session_runtime_binding_uuid(
+                record.tenant_id,
+                record.organization_id,
+                &record.session_id,
+                &record.runtime_binding_id,
+            ),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            session_id: record.session_id.clone(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            runtime_location_id: record.runtime_location_id.clone(),
+            host_mode: record.host_mode.clone(),
+            transport_kind: record.transport_kind.clone(),
+            provider_binding_id: record.provider_binding_id.clone(),
+            model_id: record.model_id.clone(),
+            provider_id: record.provider_id.clone(),
+            native_session_id: record.native_session_id.clone(),
+            native_session_tree_id: record.native_session_tree_id.clone(),
+            native_parent_session_id: record.native_parent_session_id.clone(),
+            native_forked_from_session_id: record.native_forked_from_session_id.clone(),
+            status: record.status.as_db_code(),
+            is_current: record.is_current,
+            version: record.version,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            activated_at: record.activated_at.clone(),
+            deactivated_at: record.deactivated_at.clone(),
+        }
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentSessionRuntimeBindingRecord> {
+        Ok(AgentSessionRuntimeBindingRecord {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            session_id: self.session_id,
+            runtime_binding_id: self.runtime_binding_id,
+            runtime_location_id: self.runtime_location_id,
+            host_mode: self.host_mode,
+            transport_kind: self.transport_kind,
+            provider_binding_id: self.provider_binding_id,
+            model_id: self.model_id,
+            provider_id: self.provider_id,
+            native_session_id: self.native_session_id,
+            native_session_tree_id: self.native_session_tree_id,
+            native_parent_session_id: self.native_parent_session_id,
+            native_forked_from_session_id: self.native_forked_from_session_id,
+            status: AgentSessionRuntimeBindingStatus::from_db_code(self.status)
+                .ok_or_else(|| KernelError::validation("invalid session runtime binding status"))?,
+            is_current: self.is_current,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            activated_at: self.activated_at,
+            deactivated_at: self.deactivated_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionCheckpointRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub checkpoint_id: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub checkpoint_kind: String,
+    pub provider_checkpoint_ref: Option<String>,
+    pub drive_space_id: Option<String>,
+    pub drive_node_id: Option<String>,
+    pub resumable: bool,
+    pub status: i16,
+    pub created_by: u64,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub restored_at: Option<String>,
+    pub invalidated_at: Option<String>,
+    pub retention_until: Option<String>,
+}
+
+impl AgentSessionCheckpointRow {
+    pub fn from_record(record: &AgentSessionCheckpointRecord) -> Self {
+        Self {
+            id: record.id,
+            uuid: build_session_checkpoint_uuid(
+                record.tenant_id,
+                record.organization_id,
+                &record.session_id,
+                &record.checkpoint_id,
+            ),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            session_id: record.session_id.clone(),
+            checkpoint_id: record.checkpoint_id.clone(),
+            turn_id: record.turn_id.clone(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            checkpoint_kind: record.checkpoint_kind.clone(),
+            provider_checkpoint_ref: record.provider_checkpoint_ref.clone(),
+            drive_space_id: record.drive_space_id.clone(),
+            drive_node_id: record.drive_node_id.clone(),
+            resumable: record.resumable,
+            status: record.status.as_db_code(),
+            created_by: record.created_by,
+            version: record.version,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            restored_at: record.restored_at.clone(),
+            invalidated_at: record.invalidated_at.clone(),
+            retention_until: record.retention_until.clone(),
+        }
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentSessionCheckpointRecord> {
+        Ok(AgentSessionCheckpointRecord {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            session_id: self.session_id,
+            checkpoint_id: self.checkpoint_id,
+            turn_id: self.turn_id,
+            runtime_binding_id: self.runtime_binding_id,
+            checkpoint_kind: self.checkpoint_kind,
+            provider_checkpoint_ref: self.provider_checkpoint_ref,
+            drive_space_id: self.drive_space_id,
+            drive_node_id: self.drive_node_id,
+            resumable: self.resumable,
+            status: AgentSessionCheckpointStatus::from_db_code(self.status)
+                .ok_or_else(|| KernelError::validation("invalid session checkpoint status"))?,
+            created_by: self.created_by,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            restored_at: self.restored_at,
+            invalidated_at: self.invalidated_at,
+            retention_until: self.retention_until,
         })
     }
 }
@@ -668,7 +904,7 @@ pub struct AgentResourceUserStateRow {
     pub pinned_at: Option<String>,
     pub hidden_at: Option<String>,
     pub last_opened_at: Option<String>,
-    pub last_read_message_sequence: Option<u64>,
+    pub last_read_item_sequence: Option<u64>,
     pub custom_title: Option<String>,
     pub version: u64,
     pub created_at: String,
@@ -688,7 +924,7 @@ impl AgentResourceUserStateRow {
             pinned_at: record.pinned_at.clone(),
             hidden_at: record.hidden_at.clone(),
             last_opened_at: record.last_opened_at.clone(),
-            last_read_message_sequence: record.last_read_message_sequence,
+            last_read_item_sequence: record.last_read_item_sequence,
             custom_title: record.custom_title.clone(),
             version: record.version,
             created_at: record.created_at.clone(),
@@ -708,7 +944,7 @@ impl AgentResourceUserStateRow {
             pinned_at: self.pinned_at,
             hidden_at: self.hidden_at,
             last_opened_at: self.last_opened_at,
-            last_read_message_sequence: self.last_read_message_sequence,
+            last_read_item_sequence: self.last_read_item_sequence,
             custom_title: self.custom_title,
             version: self.version,
             created_at: self.created_at,
@@ -718,12 +954,12 @@ impl AgentResourceUserStateRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageFeedbackRow {
+pub struct AgentItemFeedbackRow {
     pub id: u64,
     pub uuid: String,
     pub tenant_id: u64,
     pub organization_id: u64,
-    pub message_id: String,
+    pub item_id: String,
     pub user_id: u64,
     pub rating: i16,
     pub reason_code: Option<String>,
@@ -734,14 +970,14 @@ pub struct AgentMessageFeedbackRow {
     pub deleted_at: Option<String>,
 }
 
-impl AgentMessageFeedbackRow {
-    pub fn from_record(record: &AgentMessageFeedbackRecord) -> Self {
+impl AgentItemFeedbackRow {
+    pub fn from_record(record: &AgentItemFeedbackRecord) -> Self {
         Self {
             id: record.id,
-            uuid: format!("agents-message-feedback-{}", record.id),
+            uuid: format!("agents-item-feedback-{}", record.id),
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
-            message_id: record.message_id.clone(),
+            item_id: record.item_id.clone(),
             user_id: record.user_id,
             rating: record.rating.as_db_code(),
             reason_code: record.reason_code.clone(),
@@ -753,15 +989,15 @@ impl AgentMessageFeedbackRow {
         }
     }
 
-    pub fn into_record(self) -> KernelResult<AgentMessageFeedbackRecord> {
-        Ok(AgentMessageFeedbackRecord {
+    pub fn into_record(self) -> KernelResult<AgentItemFeedbackRecord> {
+        Ok(AgentItemFeedbackRecord {
             id: self.id,
             tenant_id: self.tenant_id,
             organization_id: self.organization_id,
-            message_id: self.message_id,
+            item_id: self.item_id,
             user_id: self.user_id,
-            rating: AgentMessageFeedbackRating::from_db_code(self.rating)
-                .ok_or_else(|| KernelError::validation("invalid message feedback rating"))?,
+            rating: AgentItemFeedbackRating::from_db_code(self.rating)
+                .ok_or_else(|| KernelError::validation("invalid item feedback rating"))?,
             reason_code: self.reason_code,
             comment: self.comment,
             version: self.version,
@@ -773,20 +1009,18 @@ impl AgentMessageFeedbackRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageDriveRefRow {
+pub struct AgentItemDriveRefRow {
     pub id: u64,
     pub uuid: String,
     pub tenant_id: u64,
     pub organization_id: u64,
-    pub message_id: String,
-    pub media_role: String,
+    pub item_id: String,
+    pub resource_role: String,
     pub drive_space_id: String,
     pub drive_node_id: String,
-    pub drive_uri: String,
     pub media_resource_id: Option<String>,
     pub object_blob_id: Option<String>,
-    pub resource_snapshot_json: String,
-    pub resource_hash: String,
+    pub resource_hash: Option<String>,
     pub alt_text: Option<String>,
     pub sort_order: u32,
     pub status: i16,
@@ -797,21 +1031,19 @@ pub struct AgentMessageDriveRefRow {
     pub retention_until: Option<String>,
 }
 
-impl AgentMessageDriveRefRow {
-    pub fn from_record(record: &AgentMessageDriveRefRecord) -> Self {
+impl AgentItemDriveRefRow {
+    pub fn from_record(record: &AgentItemDriveRefRecord) -> Self {
         Self {
             id: record.id,
-            uuid: format!("agents-message-drive-ref-{}", record.id),
+            uuid: format!("agents-item-drive-ref-{}", record.id),
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
-            message_id: record.message_id.clone(),
-            media_role: record.media_role.as_str().to_string(),
+            item_id: record.item_id.clone(),
+            resource_role: record.resource_role.as_str().to_string(),
             drive_space_id: record.drive_space_id.clone(),
             drive_node_id: record.drive_node_id.clone(),
-            drive_uri: record.drive_uri.clone(),
             media_resource_id: record.media_resource_id.clone(),
             object_blob_id: record.object_blob_id.clone(),
-            resource_snapshot_json: record.resource_snapshot_json.clone(),
             resource_hash: record.resource_hash.clone(),
             alt_text: record.alt_text.clone(),
             sort_order: record.sort_order,
@@ -824,27 +1056,25 @@ impl AgentMessageDriveRefRow {
         }
     }
 
-    pub fn into_record(self) -> KernelResult<AgentMessageDriveRefRecord> {
-        let media_role = match self.media_role.as_str() {
-            "attachment" => AgentMessageMediaRole::Attachment,
-            "image" => AgentMessageMediaRole::Image,
-            "voice" => AgentMessageMediaRole::Voice,
-            "generated_output" => AgentMessageMediaRole::GeneratedOutput,
-            "artifact" => AgentMessageMediaRole::Artifact,
-            _ => return Err(KernelError::validation("invalid message media role")),
+    pub fn into_record(self) -> KernelResult<AgentItemDriveRefRecord> {
+        let resource_role = match self.resource_role.as_str() {
+            "attachment" => AgentItemResourceRole::Attachment,
+            "image" => AgentItemResourceRole::Image,
+            "audio" => AgentItemResourceRole::Audio,
+            "generated_output" => AgentItemResourceRole::GeneratedOutput,
+            "artifact" => AgentItemResourceRole::Artifact,
+            _ => return Err(KernelError::validation("invalid session-item resource role")),
         };
-        Ok(AgentMessageDriveRefRecord {
+        Ok(AgentItemDriveRefRecord {
             id: self.id,
             tenant_id: self.tenant_id,
             organization_id: self.organization_id,
-            message_id: self.message_id,
-            media_role,
+            item_id: self.item_id,
+            resource_role,
             drive_space_id: self.drive_space_id,
             drive_node_id: self.drive_node_id,
-            drive_uri: self.drive_uri,
             media_resource_id: self.media_resource_id,
             object_blob_id: self.object_blob_id,
-            resource_snapshot_json: self.resource_snapshot_json,
             resource_hash: self.resource_hash,
             alt_text: self.alt_text,
             sort_order: self.sort_order,
@@ -859,19 +1089,19 @@ impl AgentMessageDriveRefRow {
 }
 
 // ============================================================================
-// AgentMessageRow — persistence row for ai_agent_message
+// AgentSessionItemRow - persistence row for ai_agent_session_item
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageRow {
+pub struct AgentSessionItemRow {
     pub id: u64,
     pub uuid: String,
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
-    pub agent_id: String,
-    pub message_id: String,
-    pub role: i16,
-    pub content: String,
+    pub item_id: String,
+    pub kind: i16,
+    pub content: Option<String>,
     pub content_type: String,
     pub status: i16,
     pub sequence: u64,
@@ -879,24 +1109,32 @@ pub struct AgentMessageRow {
     pub output_tokens: u64,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub artifacts_json: String,
-    pub metadata_json: String,
-    pub parent_message_id: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub tool_arguments_json: Option<String>,
+    pub tool_result_json: Option<String>,
+    pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
+    pub created_by: u64,
+    pub version: u64,
     pub created_at: String,
     pub updated_at: String,
+    pub completed_at: Option<String>,
+    pub redacted_at: Option<String>,
+    pub redacted_by: Option<u64>,
+    pub retention_until: Option<String>,
 }
 
-impl AgentMessageRow {
-    pub fn from_record(record: &AgentMessageRecord) -> KernelResult<Self> {
+impl AgentSessionItemRow {
+    pub fn from_record(record: &AgentSessionItemRecord) -> KernelResult<Self> {
         Ok(Self {
             id: record.id,
-            uuid: build_message_uuid(record.tenant_id, &record.session_id, &record.message_id),
+            uuid: build_session_item_uuid(record.tenant_id, &record.session_id, &record.item_id),
             tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
             session_id: record.session_id.clone(),
-            agent_id: record.agent_id.clone(),
-            message_id: record.message_id.clone(),
-            role: record.role.as_db_code(),
+            item_id: record.item_id.clone(),
+            kind: record.kind.as_db_code(),
             content: record.content.clone(),
             content_type: record.content_type.clone(),
             status: record.status.as_db_code(),
@@ -905,29 +1143,37 @@ impl AgentMessageRow {
             output_tokens: record.output_tokens,
             model_id: record.model_id.clone(),
             provider_id: record.provider_id.clone(),
-            artifacts_json: record.artifacts_json.clone(),
-            metadata_json: record.metadata_json.clone(),
-            parent_message_id: record.parent_message_id.clone(),
+            tool_name: record.tool_name.clone(),
+            tool_call_id: record.tool_call_id.clone(),
+            tool_arguments_json: record.tool_arguments_json.clone(),
+            tool_result_json: record.tool_result_json.clone(),
+            parent_item_id: record.parent_item_id.clone(),
             turn_id: record.turn_id.clone(),
+            created_by: record.created_by,
+            version: record.version,
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
+            completed_at: record.completed_at.clone(),
+            redacted_at: record.redacted_at.clone(),
+            redacted_by: record.redacted_by,
+            retention_until: record.retention_until.clone(),
         })
     }
 
-    pub fn into_record(self) -> KernelResult<AgentMessageRecord> {
-        let role = AgentMessageRole::from_db_code(self.role).ok_or_else(|| {
-            KernelError::validation(format!("invalid message role db code: {}", self.role))
+    pub fn into_record(self) -> KernelResult<AgentSessionItemRecord> {
+        let kind = AgentSessionItemKind::from_db_code(self.kind).ok_or_else(|| {
+            KernelError::validation(format!("invalid session item kind db code: {}", self.kind))
         })?;
-        let status = AgentMessageStatus::from_db_code(self.status).ok_or_else(|| {
-            KernelError::validation(format!("invalid message status db code: {}", self.status))
+        let status = AgentSessionItemStatus::from_db_code(self.status).ok_or_else(|| {
+            KernelError::validation(format!("invalid session item status db code: {}", self.status))
         })?;
-        Ok(AgentMessageRecord {
+        Ok(AgentSessionItemRecord {
             id: self.id,
-            message_id: self.message_id,
+            item_id: self.item_id,
             tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
             session_id: self.session_id,
-            agent_id: self.agent_id,
-            role,
+            kind,
             content: self.content,
             content_type: self.content_type,
             status,
@@ -936,12 +1182,20 @@ impl AgentMessageRow {
             output_tokens: self.output_tokens,
             model_id: self.model_id,
             provider_id: self.provider_id,
-            artifacts_json: self.artifacts_json,
-            metadata_json: self.metadata_json,
-            parent_message_id: self.parent_message_id,
+            tool_name: self.tool_name,
+            tool_call_id: self.tool_call_id,
+            tool_arguments_json: self.tool_arguments_json,
+            tool_result_json: self.tool_result_json,
+            parent_item_id: self.parent_item_id,
             turn_id: self.turn_id,
+            created_by: self.created_by,
+            version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            completed_at: self.completed_at,
+            redacted_at: self.redacted_at,
+            redacted_by: self.redacted_by,
+            retention_until: self.retention_until,
         })
     }
 }
@@ -951,7 +1205,7 @@ impl AgentMessageRow {
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentChatTurnRow {
+pub struct AgentTurnRow {
     pub id: u64,
     pub uuid: String,
     pub tenant_id: u64,
@@ -960,11 +1214,13 @@ pub struct AgentChatTurnRow {
     pub session_id: String,
     pub agent_id: String,
     pub owner_user_id: u64,
+    pub runtime_binding_id: Option<String>,
     pub client_request_id: Option<String>,
     pub idempotency_key: String,
     pub payload_hash: String,
-    pub request_message_id: String,
-    pub response_message_id: Option<String>,
+    pub request_item_id: String,
+    pub response_item_id: Option<String>,
+    pub turn_mode: i16,
     pub status: i16,
     pub requested_model_id: Option<String>,
     pub provider_binding_id: Option<String>,
@@ -972,10 +1228,19 @@ pub struct AgentChatTurnRow {
     pub provider_id: Option<String>,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cached_tokens: u64,
     pub finish_reason: Option<String>,
     pub error_code: Option<String>,
     pub error_detail: Option<String>,
     pub trace_id: Option<String>,
+    pub attempt_count: u32,
+    pub max_attempts: u32,
+    pub next_retry_at: Option<String>,
+    pub available_at: String,
+    pub lease_owner: Option<String>,
+    pub lease_token: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub fencing_token: u64,
     pub version: u64,
     pub created_at: String,
     pub updated_at: String,
@@ -986,22 +1251,24 @@ pub struct AgentChatTurnRow {
     pub retention_until: Option<String>,
 }
 
-impl AgentChatTurnRow {
-    pub fn from_record(record: &AgentChatTurnRecord) -> Self {
+impl AgentTurnRow {
+    pub fn from_record(record: &AgentTurnRecord) -> Self {
         Self {
             id: record.id,
-            uuid: build_chat_turn_uuid(record.tenant_id, record.organization_id, &record.turn_id),
+            uuid: build_turn_uuid(record.tenant_id, record.organization_id, &record.turn_id),
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
             turn_id: record.turn_id.clone(),
             session_id: record.session_id.clone(),
             agent_id: record.agent_id.clone(),
             owner_user_id: record.owner_user_id,
+            runtime_binding_id: record.runtime_binding_id.clone(),
             client_request_id: record.client_request_id.clone(),
             idempotency_key: record.idempotency_key.clone(),
             payload_hash: record.payload_hash.clone(),
-            request_message_id: record.request_message_id.clone(),
-            response_message_id: record.response_message_id.clone(),
+            request_item_id: record.request_item_id.clone(),
+            response_item_id: record.response_item_id.clone(),
+            turn_mode: record.turn_mode.as_db_code(),
             status: record.status.as_db_code(),
             requested_model_id: record.requested_model_id.clone(),
             provider_binding_id: record.provider_binding_id.clone(),
@@ -1009,10 +1276,19 @@ impl AgentChatTurnRow {
             provider_id: record.provider_id.clone(),
             input_tokens: record.input_tokens,
             output_tokens: record.output_tokens,
+            cached_tokens: record.cached_tokens,
             finish_reason: record.finish_reason.clone(),
             error_code: record.error_code.clone(),
             error_detail: record.error_detail.clone(),
             trace_id: record.trace_id.clone(),
+            attempt_count: record.attempt_count,
+            max_attempts: record.max_attempts,
+            next_retry_at: record.next_retry_at.clone(),
+            available_at: record.available_at.clone(),
+            lease_owner: record.lease_owner.clone(),
+            lease_token: record.lease_token.clone(),
+            lease_expires_at: record.lease_expires_at.clone(),
+            fencing_token: record.fencing_token,
             version: record.version,
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
@@ -1024,8 +1300,8 @@ impl AgentChatTurnRow {
         }
     }
 
-    pub fn into_record(self) -> KernelResult<AgentChatTurnRecord> {
-        Ok(AgentChatTurnRecord {
+    pub fn into_record(self) -> KernelResult<AgentTurnRecord> {
+        Ok(AgentTurnRecord {
             id: self.id,
             turn_id: self.turn_id,
             tenant_id: self.tenant_id,
@@ -1033,23 +1309,35 @@ impl AgentChatTurnRow {
             session_id: self.session_id,
             agent_id: self.agent_id,
             owner_user_id: self.owner_user_id,
+            runtime_binding_id: self.runtime_binding_id,
             client_request_id: self.client_request_id,
             idempotency_key: self.idempotency_key,
             payload_hash: self.payload_hash,
-            request_message_id: self.request_message_id,
-            response_message_id: self.response_message_id,
-            status: AgentChatTurnStatus::from_db_code(self.status)
-                .ok_or_else(|| KernelError::validation("invalid chat turn status"))?,
+            request_item_id: self.request_item_id,
+            response_item_id: self.response_item_id,
+            turn_mode: AgentTurnMode::from_db_code(self.turn_mode)
+                .ok_or_else(|| KernelError::validation("invalid turn mode"))?,
+            status: AgentTurnStatus::from_db_code(self.status)
+                .ok_or_else(|| KernelError::validation("invalid turn status"))?,
             requested_model_id: self.requested_model_id,
             provider_binding_id: self.provider_binding_id,
             model_id: self.model_id,
             provider_id: self.provider_id,
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            cached_tokens: self.cached_tokens,
             finish_reason: self.finish_reason,
             error_code: self.error_code,
             error_detail: self.error_detail,
             trace_id: self.trace_id,
+            attempt_count: self.attempt_count,
+            max_attempts: self.max_attempts,
+            next_retry_at: self.next_retry_at,
+            available_at: self.available_at,
+            lease_owner: self.lease_owner,
+            lease_token: self.lease_token,
+            lease_expires_at: self.lease_expires_at,
+            fencing_token: self.fencing_token,
             version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -1069,18 +1357,24 @@ pub struct AgentInteractionRow {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub session_id: String,
-    pub agent_id: String,
-    pub engine_key: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
     pub interaction_id: String,
+    pub provider_interaction_id: Option<String>,
     pub kind: i16,
     pub status: i16,
     pub prompt: String,
     pub options_json: String,
-    pub resolution_json: String,
+    pub resolution_json: Option<String>,
+    pub claim_owner: Option<String>,
+    pub claim_token: Option<String>,
+    pub claim_expires_at: Option<String>,
+    pub fencing_token: u64,
     pub version: u64,
     pub created_at: String,
     pub updated_at: String,
     pub resolved_at: Option<String>,
+    pub retention_until: Option<String>,
 }
 
 impl AgentInteractionRow {
@@ -1095,18 +1389,24 @@ impl AgentInteractionRow {
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
             session_id: record.session_id.clone(),
-            agent_id: record.agent_id.clone(),
-            engine_key: record.engine_key.clone(),
+            turn_id: record.turn_id.clone(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
             interaction_id: record.interaction_id.clone(),
+            provider_interaction_id: record.provider_interaction_id.clone(),
             kind: record.kind.as_db_code(),
             status: record.status.as_db_code(),
             prompt: record.prompt.clone(),
             options_json: record.options_json.clone(),
             resolution_json: record.resolution_json.clone(),
+            claim_owner: record.claim_owner.clone(),
+            claim_token: record.claim_token.clone(),
+            claim_expires_at: record.claim_expires_at.clone(),
+            fencing_token: record.fencing_token,
             version: record.version,
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
             resolved_at: record.resolved_at.clone(),
+            retention_until: record.retention_until.clone(),
         })
     }
 
@@ -1126,17 +1426,23 @@ impl AgentInteractionRow {
             tenant_id: self.tenant_id,
             organization_id: self.organization_id,
             session_id: self.session_id,
-            agent_id: self.agent_id,
-            engine_key: self.engine_key,
+            turn_id: self.turn_id,
+            runtime_binding_id: self.runtime_binding_id,
             kind,
             status,
+            provider_interaction_id: self.provider_interaction_id,
             prompt: self.prompt,
             options_json: self.options_json,
             resolution_json: self.resolution_json,
+            claim_owner: self.claim_owner,
+            claim_token: self.claim_token,
+            claim_expires_at: self.claim_expires_at,
+            fencing_token: self.fencing_token,
             version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,
             resolved_at: self.resolved_at,
+            retention_until: self.retention_until,
         })
     }
 }
@@ -1221,8 +1527,38 @@ fn build_session_uuid(tenant_id: u64, session_id: &str) -> String {
     build_storage_uuid("session", tenant_id, &[session_id])
 }
 
-fn build_message_uuid(tenant_id: u64, session_id: &str, message_id: &str) -> String {
-    build_storage_uuid("message", tenant_id, &[session_id, message_id])
+fn build_session_runtime_binding_uuid(
+    tenant_id: u64,
+    organization_id: u64,
+    session_id: &str,
+    runtime_binding_id: &str,
+) -> String {
+    build_storage_uuid(
+        "session-runtime-binding",
+        tenant_id,
+        &[
+            &organization_id.to_string(),
+            session_id,
+            runtime_binding_id,
+        ],
+    )
+}
+
+fn build_session_checkpoint_uuid(
+    tenant_id: u64,
+    organization_id: u64,
+    session_id: &str,
+    checkpoint_id: &str,
+) -> String {
+    build_storage_uuid(
+        "session-checkpoint",
+        tenant_id,
+        &[&organization_id.to_string(), session_id, checkpoint_id],
+    )
+}
+
+fn build_session_item_uuid(tenant_id: u64, session_id: &str, item_id: &str) -> String {
+    build_storage_uuid("session-item", tenant_id, &[session_id, item_id])
 }
 
 fn build_interaction_uuid(tenant_id: u64, session_id: &str, interaction_id: &str) -> String {
@@ -1252,7 +1588,7 @@ fn build_project_composition_slot_uuid(
     )
 }
 
-fn build_chat_turn_uuid(tenant_id: u64, organization_id: u64, turn_id: &str) -> String {
+fn build_turn_uuid(tenant_id: u64, organization_id: u64, turn_id: &str) -> String {
     let organization_id = organization_id.to_string();
     build_storage_uuid("chat-turn", tenant_id, &[&organization_id, turn_id])
 }
@@ -1544,10 +1880,66 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     fn get_session_row(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRow>>;
     fn list_session_rows(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRow>>;
     fn count_session_rows(&self, query: &SessionListQuery) -> KernelResult<u64>;
+    fn insert_session_runtime_binding_row(
+        &self,
+        row: AgentSessionRuntimeBindingRow,
+    ) -> KernelResult<()>;
+    fn update_session_runtime_binding_row(
+        &self,
+        row: AgentSessionRuntimeBindingRow,
+    ) -> KernelResult<()>;
+    fn get_session_runtime_binding_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>>;
+    fn get_current_session_runtime_binding_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>>;
+    fn list_session_runtime_binding_rows(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<Vec<AgentSessionRuntimeBindingRow>>;
+    fn count_session_runtime_binding_rows(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<u64>;
+    fn activate_session_runtime_binding_row_atomic(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+        expected_version: u64,
+        updated_at: String,
+    ) -> KernelResult<AgentSessionRuntimeBindingRow>;
+    fn insert_session_checkpoint_row(&self, row: AgentSessionCheckpointRow) -> KernelResult<()>;
+    fn update_session_checkpoint_row(&self, row: AgentSessionCheckpointRow) -> KernelResult<()>;
+    fn get_session_checkpoint_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        checkpoint_id: &str,
+    ) -> KernelResult<Option<AgentSessionCheckpointRow>>;
+    fn list_session_checkpoint_rows(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<Vec<AgentSessionCheckpointRow>>;
+    fn count_session_checkpoint_rows(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<u64>;
     fn upsert_resource_user_state_row(
         &self,
         row: AgentResourceUserStateRow,
@@ -1570,119 +1962,139 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         query: &ResourceUserStateListQuery,
     ) -> KernelResult<u64>;
 
-    // Message operations
-    fn insert_message_row(&self, row: AgentMessageRow) -> KernelResult<()>;
-    fn update_message_row(&self, row: AgentMessageRow) -> KernelResult<()>;
-    fn get_message_row(
-        &self,
-        tenant_id: u64,
-        session_id: &str,
-        message_id: &str,
-    ) -> KernelResult<Option<AgentMessageRow>>;
-    fn list_message_rows(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRow>>;
-    fn count_message_rows(&self, query: &MessageListQuery) -> KernelResult<u64>;
-    fn upsert_message_feedback_row(
-        &self,
-        row: AgentMessageFeedbackRow,
-        expected_version: Option<u64>,
-    ) -> KernelResult<AgentMessageFeedbackRow>;
-    fn get_message_feedback_row(
+    // Session-item operations
+    fn insert_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()>;
+    fn update_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()>;
+    fn get_session_item_row(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
+        session_id: &str,
+        item_id: &str,
+    ) -> KernelResult<Option<AgentSessionItemRow>>;
+    fn list_session_item_rows(
+        &self,
+        query: &SessionItemListQuery,
+    ) -> KernelResult<Vec<AgentSessionItemRow>>;
+    fn count_session_item_rows(&self, query: &SessionItemListQuery) -> KernelResult<u64>;
+    fn upsert_item_feedback_row(
+        &self,
+        row: AgentItemFeedbackRow,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentItemFeedbackRow>;
+    fn get_item_feedback_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        item_id: &str,
         user_id: u64,
         include_deleted: bool,
-    ) -> KernelResult<Option<AgentMessageFeedbackRow>>;
-    fn list_message_feedback_rows(
+    ) -> KernelResult<Option<AgentItemFeedbackRow>>;
+    fn list_item_feedback_rows(
         &self,
-        query: &MessageFeedbackListQuery,
-    ) -> KernelResult<Vec<AgentMessageFeedbackRow>>;
-    fn count_message_feedback_rows(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64>;
-    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64>;
-    fn get_chat_turn_row_by_idempotency(
+        query: &ItemFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentItemFeedbackRow>>;
+    fn count_item_feedback_rows(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64>;
+    fn next_item_sequence(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<u64>;
+    fn get_turn_row_by_idempotency(
         &self,
         tenant_id: u64,
         organization_id: u64,
         owner_user_id: u64,
         idempotency_key: &str,
-    ) -> KernelResult<Option<AgentChatTurnRow>>;
-    fn get_chat_turn_row(
+    ) -> KernelResult<Option<AgentTurnRow>>;
+    fn get_turn_row(
         &self,
         _tenant_id: u64,
         _organization_id: u64,
         _turn_id: &str,
-    ) -> KernelResult<Option<AgentChatTurnRow>> {
+    ) -> KernelResult<Option<AgentTurnRow>> {
         Err(KernelError::Internal {
-            message: "get_chat_turn_row requires an adapter override".to_string(),
+            message: "get_turn_row requires an adapter override".to_string(),
         })
     }
-    fn list_reconcilable_chat_turn_rows(
+
+    fn list_turn_rows(&self, _query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRow>> {
+        Err(KernelError::Internal {
+            message: "list_turn_rows requires an adapter override".to_string(),
+        })
+    }
+    fn count_turn_rows(&self, _query: &TurnListQuery) -> KernelResult<u64> {
+        Err(KernelError::Internal {
+            message: "count_turn_rows requires an adapter override".to_string(),
+        })
+    }
+    fn list_reconcilable_turn_rows(
         &self,
         _stale_before: &str,
         _limit: usize,
-    ) -> KernelResult<Vec<AgentChatTurnRow>> {
+    ) -> KernelResult<Vec<AgentTurnRow>> {
         Err(KernelError::Internal {
-            message: "list_reconcilable_chat_turn_rows requires an adapter override".to_string(),
+            message: "list_reconcilable_turn_rows requires an adapter override".to_string(),
         })
     }
-    fn insert_chat_turn_reservation_row(&self, _turn: AgentChatTurnRow) -> KernelResult<()> {
+    fn insert_turn_reservation_row(&self, _turn: AgentTurnRow) -> KernelResult<()> {
         Err(KernelError::Internal {
-            message: "insert_chat_turn_reservation_row requires an adapter override".to_string(),
+            message: "insert_turn_reservation_row requires an adapter override".to_string(),
         })
     }
-    fn update_chat_turn_state_row(
+    fn update_turn_state_row(
         &self,
-        _turn: AgentChatTurnRow,
+        _turn: AgentTurnRow,
         _expected_version: u64,
-    ) -> KernelResult<AgentChatTurnRow> {
+    ) -> KernelResult<AgentTurnRow> {
         Err(KernelError::Internal {
-            message: "update_chat_turn_state_row requires an adapter override".to_string(),
+            message: "update_turn_state_row requires an adapter override".to_string(),
         })
     }
-    fn insert_chat_turn_rows(
+    fn insert_turn_rows(
         &self,
-        turn: AgentChatTurnRow,
+        turn: AgentTurnRow,
         session: AgentSessionRow,
-        user: AgentMessageRow,
-        assistant: AgentMessageRow,
-    ) -> KernelResult<(AgentSessionRow, AgentMessageRow, AgentMessageRow)>;
-    fn insert_chat_turn_with_drive_ref_rows(
+        user: AgentSessionItemRow,
+        assistant: AgentSessionItemRow,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)>;
+    fn insert_turn_with_drive_ref_rows(
         &self,
-        _turn: AgentChatTurnRow,
+        _turn: AgentTurnRow,
         _session: AgentSessionRow,
-        _user: AgentMessageRow,
-        _assistant: AgentMessageRow,
-        _drive_refs: Vec<AgentMessageDriveRefRow>,
-    ) -> KernelResult<(AgentSessionRow, AgentMessageRow, AgentMessageRow)> {
+        _user: AgentSessionItemRow,
+        _assistant: AgentSessionItemRow,
+        _drive_refs: Vec<AgentItemDriveRefRow>,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
         Err(KernelError::Internal {
             message:
-                "insert_chat_turn_with_drive_ref_rows requires a transactional adapter override"
+                "insert_turn_with_drive_ref_rows requires a transactional adapter override"
                     .to_string(),
         })
     }
-    fn list_message_drive_ref_rows(
+    fn list_item_drive_ref_rows(
         &self,
         _tenant_id: u64,
         _organization_id: u64,
-        _message_id: &str,
-    ) -> KernelResult<Vec<AgentMessageDriveRefRow>> {
+        _item_id: &str,
+    ) -> KernelResult<Vec<AgentItemDriveRefRow>> {
         Err(KernelError::Internal {
-            message: "list_message_drive_ref_rows requires an adapter override".to_string(),
+            message: "list_item_drive_ref_rows requires an adapter override".to_string(),
         })
     }
-    fn list_message_drive_ref_rows_batch(
+    fn list_item_drive_ref_rows_batch(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_ids: &[String],
-    ) -> KernelResult<Vec<AgentMessageDriveRefRow>> {
+        item_ids: &[String],
+    ) -> KernelResult<Vec<AgentItemDriveRefRow>> {
         let mut rows = Vec::new();
-        for message_id in message_ids {
-            rows.extend(self.list_message_drive_ref_rows(
+        for item_id in item_ids {
+            rows.extend(self.list_item_drive_ref_rows(
                 tenant_id,
                 organization_id,
-                message_id,
+                item_id,
             )?);
         }
         Ok(rows)
@@ -1694,6 +2106,7 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     fn get_interaction_row(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         interaction_id: &str,
     ) -> KernelResult<Option<AgentInteractionRow>>;
@@ -1976,10 +2389,11 @@ where
     fn get_session(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRecord>> {
         self.adapter
-            .get_session_row(tenant_id, session_id)?
+            .get_session_row(tenant_id, organization_id, session_id)?
             .map(AgentSessionRow::into_record)
             .transpose()
     }
@@ -1994,6 +2408,145 @@ where
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64> {
         self.adapter.count_session_rows(query)
+    }
+
+    fn insert_session_runtime_binding(
+        &self,
+        record: AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()> {
+        self.adapter.insert_session_runtime_binding_row(
+            AgentSessionRuntimeBindingRow::from_record(&record),
+        )
+    }
+
+    fn update_session_runtime_binding(
+        &self,
+        record: AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()> {
+        self.adapter.update_session_runtime_binding_row(
+            AgentSessionRuntimeBindingRow::from_record(&record),
+        )
+    }
+
+    fn get_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
+        self.adapter
+            .get_session_runtime_binding_row(
+                tenant_id,
+                organization_id,
+                session_id,
+                runtime_binding_id,
+            )?
+            .map(AgentSessionRuntimeBindingRow::into_record)
+            .transpose()
+    }
+
+    fn get_current_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
+        self.adapter
+            .get_current_session_runtime_binding_row(tenant_id, organization_id, session_id)?
+            .map(AgentSessionRuntimeBindingRow::into_record)
+            .transpose()
+    }
+
+    fn list_session_runtime_bindings(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<Vec<AgentSessionRuntimeBindingRecord>> {
+        self.adapter
+            .list_session_runtime_binding_rows(query)?
+            .into_iter()
+            .map(AgentSessionRuntimeBindingRow::into_record)
+            .collect()
+    }
+
+    fn count_session_runtime_bindings(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<u64> {
+        self.adapter.count_session_runtime_binding_rows(query)
+    }
+
+    fn activate_session_runtime_binding_atomic(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+        expected_version: u64,
+        updated_at: String,
+    ) -> KernelResult<AgentSessionRuntimeBindingRecord> {
+        self.adapter
+            .activate_session_runtime_binding_row_atomic(
+                tenant_id,
+                organization_id,
+                session_id,
+                runtime_binding_id,
+                expected_version,
+                updated_at,
+            )?
+            .into_record()
+    }
+
+    fn insert_session_checkpoint(
+        &self,
+        record: AgentSessionCheckpointRecord,
+    ) -> KernelResult<()> {
+        self.adapter
+            .insert_session_checkpoint_row(AgentSessionCheckpointRow::from_record(&record))
+    }
+
+    fn update_session_checkpoint(
+        &self,
+        record: AgentSessionCheckpointRecord,
+    ) -> KernelResult<()> {
+        self.adapter
+            .update_session_checkpoint_row(AgentSessionCheckpointRow::from_record(&record))
+    }
+
+    fn get_session_checkpoint(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        checkpoint_id: &str,
+    ) -> KernelResult<Option<AgentSessionCheckpointRecord>> {
+        self.adapter
+            .get_session_checkpoint_row(
+                tenant_id,
+                organization_id,
+                session_id,
+                checkpoint_id,
+            )?
+            .map(AgentSessionCheckpointRow::into_record)
+            .transpose()
+    }
+
+    fn list_session_checkpoints(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<Vec<AgentSessionCheckpointRecord>> {
+        self.adapter
+            .list_session_checkpoint_rows(query)?
+            .into_iter()
+            .map(AgentSessionCheckpointRow::into_record)
+            .collect()
+    }
+
+    fn count_session_checkpoints(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<u64> {
+        self.adapter.count_session_checkpoint_rows(query)
     }
 
     fn upsert_resource_user_state(
@@ -2045,166 +2598,185 @@ where
     }
 
     // -----------------------------------------------------------------------
-    // Message persistence
+    // Session-item persistence
     // -----------------------------------------------------------------------
 
-    fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
+    fn insert_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
         self.adapter
-            .insert_message_row(AgentMessageRow::from_record(&record)?)
+            .insert_session_item_row(AgentSessionItemRow::from_record(&record)?)
     }
 
-    fn update_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
+    fn update_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
         self.adapter
-            .update_message_row(AgentMessageRow::from_record(&record)?)
+            .update_session_item_row(AgentSessionItemRow::from_record(&record)?)
     }
 
-    fn get_message(
+    fn get_session_item(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
-        message_id: &str,
-    ) -> KernelResult<Option<AgentMessageRecord>> {
+        item_id: &str,
+    ) -> KernelResult<Option<AgentSessionItemRecord>> {
         self.adapter
-            .get_message_row(tenant_id, session_id, message_id)?
-            .map(AgentMessageRow::into_record)
+            .get_session_item_row(tenant_id, organization_id, session_id, item_id)?
+            .map(AgentSessionItemRow::into_record)
             .transpose()
     }
 
-    fn list_messages(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRecord>> {
+    fn list_session_items(&self, query: &SessionItemListQuery) -> KernelResult<Vec<AgentSessionItemRecord>> {
         self.adapter
-            .list_message_rows(query)?
+            .list_session_item_rows(query)?
             .into_iter()
-            .map(AgentMessageRow::into_record)
+            .map(AgentSessionItemRow::into_record)
             .collect()
     }
 
-    fn count_messages(&self, query: &MessageListQuery) -> KernelResult<u64> {
-        self.adapter.count_message_rows(query)
+    fn count_session_items(&self, query: &SessionItemListQuery) -> KernelResult<u64> {
+        self.adapter.count_session_item_rows(query)
     }
 
-    fn upsert_message_feedback(
+    fn upsert_item_feedback(
         &self,
-        record: AgentMessageFeedbackRecord,
+        record: AgentItemFeedbackRecord,
         expected_version: Option<u64>,
-    ) -> KernelResult<AgentMessageFeedbackRecord> {
+    ) -> KernelResult<AgentItemFeedbackRecord> {
         self.adapter
-            .upsert_message_feedback_row(
-                AgentMessageFeedbackRow::from_record(&record),
+            .upsert_item_feedback_row(
+                AgentItemFeedbackRow::from_record(&record),
                 expected_version,
             )?
             .into_record()
     }
 
-    fn get_message_feedback(
+    fn get_item_feedback(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
+        item_id: &str,
         user_id: u64,
         include_deleted: bool,
-    ) -> KernelResult<Option<AgentMessageFeedbackRecord>> {
+    ) -> KernelResult<Option<AgentItemFeedbackRecord>> {
         self.adapter
-            .get_message_feedback_row(
+            .get_item_feedback_row(
                 tenant_id,
                 organization_id,
-                message_id,
+                item_id,
                 user_id,
                 include_deleted,
             )?
-            .map(AgentMessageFeedbackRow::into_record)
+            .map(AgentItemFeedbackRow::into_record)
             .transpose()
     }
 
-    fn list_message_feedback(
+    fn list_item_feedback(
         &self,
-        query: &MessageFeedbackListQuery,
-    ) -> KernelResult<Vec<AgentMessageFeedbackRecord>> {
+        query: &ItemFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentItemFeedbackRecord>> {
         self.adapter
-            .list_message_feedback_rows(query)?
+            .list_item_feedback_rows(query)?
             .into_iter()
-            .map(AgentMessageFeedbackRow::into_record)
+            .map(AgentItemFeedbackRow::into_record)
             .collect()
     }
 
-    fn count_message_feedback(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64> {
-        self.adapter.count_message_feedback_rows(query)
+    fn count_item_feedback(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64> {
+        self.adapter.count_item_feedback_rows(query)
     }
 
-    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
-        self.adapter.next_message_sequence(tenant_id, session_id)
+    fn next_item_sequence(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<u64> {
+        self.adapter
+            .next_item_sequence(tenant_id, organization_id, session_id)
     }
 
-    fn get_chat_turn_by_idempotency(
+    fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
         organization_id: u64,
         owner_user_id: u64,
         idempotency_key: &str,
-    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+    ) -> KernelResult<Option<AgentTurnRecord>> {
         self.adapter
-            .get_chat_turn_row_by_idempotency(
+            .get_turn_row_by_idempotency(
                 tenant_id,
                 organization_id,
                 owner_user_id,
                 idempotency_key,
             )?
-            .map(AgentChatTurnRow::into_record)
+            .map(AgentTurnRow::into_record)
             .transpose()
     }
 
-    fn get_chat_turn(
+    fn get_turn(
         &self,
         tenant_id: u64,
         organization_id: u64,
         turn_id: &str,
-    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+    ) -> KernelResult<Option<AgentTurnRecord>> {
         self.adapter
-            .get_chat_turn_row(tenant_id, organization_id, turn_id)?
-            .map(AgentChatTurnRow::into_record)
+            .get_turn_row(tenant_id, organization_id, turn_id)?
+            .map(AgentTurnRow::into_record)
             .transpose()
     }
 
-    fn list_reconcilable_chat_turns(
-        &self,
-        stale_before: &str,
-        limit: usize,
-    ) -> KernelResult<Vec<AgentChatTurnRecord>> {
+    fn list_turns(&self, query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRecord>> {
         self.adapter
-            .list_reconcilable_chat_turn_rows(stale_before, limit)?
+            .list_turn_rows(query)?
             .into_iter()
-            .map(AgentChatTurnRow::into_record)
+            .map(AgentTurnRow::into_record)
             .collect()
     }
 
-    fn insert_chat_turn_reservation(&self, turn: AgentChatTurnRecord) -> KernelResult<()> {
-        self.adapter
-            .insert_chat_turn_reservation_row(AgentChatTurnRow::from_record(&turn))
+    fn count_turns(&self, query: &TurnListQuery) -> KernelResult<u64> {
+        self.adapter.count_turn_rows(query)
     }
 
-    fn update_chat_turn_state(
+    fn list_reconcilable_turns(
         &self,
-        turn: AgentChatTurnRecord,
-        expected_version: u64,
-    ) -> KernelResult<AgentChatTurnRecord> {
+        stale_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentTurnRecord>> {
         self.adapter
-            .update_chat_turn_state_row(AgentChatTurnRow::from_record(&turn), expected_version)?
+            .list_reconcilable_turn_rows(stale_before, limit)?
+            .into_iter()
+            .map(AgentTurnRow::into_record)
+            .collect()
+    }
+
+    fn insert_turn_reservation(&self, turn: AgentTurnRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_turn_reservation_row(AgentTurnRow::from_record(&turn))
+    }
+
+    fn update_turn_state(
+        &self,
+        turn: AgentTurnRecord,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnRecord> {
+        self.adapter
+            .update_turn_state_row(AgentTurnRow::from_record(&turn), expected_version)?
             .into_record()
     }
 
-    fn insert_chat_turn(
+    fn insert_turn(
         &self,
-        turn: AgentChatTurnRecord,
+        turn: AgentTurnRecord,
         session: AgentSessionRecord,
-        user_message: AgentMessageRecord,
-        assistant_message: AgentMessageRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
-        let turn_row = AgentChatTurnRow::from_record(&turn);
+        user_input_item: AgentSessionItemRecord,
+        assistant_output_item: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+        let turn_row = AgentTurnRow::from_record(&turn);
         let session_row = AgentSessionRow::from_record(&session)?;
-        let user_row = AgentMessageRow::from_record(&user_message)?;
-        let assistant_row = AgentMessageRow::from_record(&assistant_message)?;
+        let user_row = AgentSessionItemRow::from_record(&user_input_item)?;
+        let assistant_row = AgentSessionItemRow::from_record(&assistant_output_item)?;
         let (session_row, user_row, assistant_row) =
             self.adapter
-                .insert_chat_turn_rows(turn_row, session_row, user_row, assistant_row)?;
+                .insert_turn_rows(turn_row, session_row, user_row, assistant_row)?;
         Ok((
             session_row.into_record()?,
             user_row.into_record()?,
@@ -2212,24 +2784,24 @@ where
         ))
     }
 
-    fn insert_chat_turn_with_drive_refs(
+    fn insert_turn_with_drive_refs(
         &self,
-        turn: AgentChatTurnRecord,
+        turn: AgentTurnRecord,
         session: AgentSessionRecord,
-        user_message: AgentMessageRecord,
-        assistant_message: AgentMessageRecord,
-        drive_refs: Vec<AgentMessageDriveRefRecord>,
-    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
-        let turn_row = AgentChatTurnRow::from_record(&turn);
+        user_input_item: AgentSessionItemRecord,
+        assistant_output_item: AgentSessionItemRecord,
+        drive_refs: Vec<AgentItemDriveRefRecord>,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+        let turn_row = AgentTurnRow::from_record(&turn);
         let session_row = AgentSessionRow::from_record(&session)?;
-        let user_row = AgentMessageRow::from_record(&user_message)?;
-        let assistant_row = AgentMessageRow::from_record(&assistant_message)?;
+        let user_row = AgentSessionItemRow::from_record(&user_input_item)?;
+        let assistant_row = AgentSessionItemRow::from_record(&assistant_output_item)?;
         let drive_ref_rows = drive_refs
             .iter()
-            .map(AgentMessageDriveRefRow::from_record)
+            .map(AgentItemDriveRefRow::from_record)
             .collect();
         let (session_row, user_row, assistant_row) =
-            self.adapter.insert_chat_turn_with_drive_ref_rows(
+            self.adapter.insert_turn_with_drive_ref_rows(
                 turn_row,
                 session_row,
                 user_row,
@@ -2243,29 +2815,29 @@ where
         ))
     }
 
-    fn list_message_drive_refs(
+    fn list_item_drive_refs(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
-    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        item_id: &str,
+    ) -> KernelResult<Vec<AgentItemDriveRefRecord>> {
         self.adapter
-            .list_message_drive_ref_rows(tenant_id, organization_id, message_id)?
+            .list_item_drive_ref_rows(tenant_id, organization_id, item_id)?
             .into_iter()
-            .map(AgentMessageDriveRefRow::into_record)
+            .map(AgentItemDriveRefRow::into_record)
             .collect()
     }
 
-    fn list_message_drive_refs_batch(
+    fn list_item_drive_refs_batch(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_ids: &[String],
-    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        item_ids: &[String],
+    ) -> KernelResult<Vec<AgentItemDriveRefRecord>> {
         self.adapter
-            .list_message_drive_ref_rows_batch(tenant_id, organization_id, message_ids)?
+            .list_item_drive_ref_rows_batch(tenant_id, organization_id, item_ids)?
             .into_iter()
-            .map(AgentMessageDriveRefRow::into_record)
+            .map(AgentItemDriveRefRow::into_record)
             .collect()
     }
 
@@ -2286,11 +2858,12 @@ where
     fn get_interaction(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         interaction_id: &str,
     ) -> KernelResult<Option<AgentInteractionRecord>> {
         self.adapter
-            .get_interaction_row(tenant_id, session_id, interaction_id)?
+            .get_interaction_row(tenant_id, organization_id, session_id, interaction_id)?
             .map(AgentInteractionRow::into_record)
             .transpose()
     }
@@ -3546,10 +4119,20 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
         let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let message_count = u64_to_i64(row.message_count, "message_count")?;
-        let last_message_sequence = u64_to_i64(row.last_message_sequence, "last_message_sequence")?;
+        let item_count = u64_to_i64(row.item_count, "item_count")?;
+        let last_item_sequence = u64_to_i64(row.last_item_sequence, "last_item_sequence")?;
         let total_input_tokens = u64_to_i64(row.total_input_tokens, "total_input_tokens")?;
         let total_output_tokens = u64_to_i64(row.total_output_tokens, "total_output_tokens")?;
+        let created_by = u64_to_i64(row.created_by, "created_by")?;
+        let updated_by = u64_to_i64(row.updated_by, "updated_by")?;
+        let archived_by = row
+            .archived_by
+            .map(|value| u64_to_i64(value, "archived_by"))
+            .transpose()?;
+        let deleted_by = row
+            .deleted_by
+            .map(|value| u64_to_i64(value, "deleted_by"))
+            .transpose()?;
         let version = u64_to_i64(row.version, "version")?;
 
         self.with_pool(|pool| {
@@ -3560,36 +4143,56 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.uuid,
                 tenant_id,
                 organization_id,
+                row.session_id,
                 row.agent_id,
                 owner_user_id,
-                row.session_id,
                 row.project_id,
+                row.session_kind,
+                row.entry_surface,
+                row.source_module,
+                row.source_context_kind,
+                row.source_context_id,
+                row.parent_session_id,
+                row.forked_from_turn_id,
                 row.title,
                 row.status,
-                row.provider_binding_id,
-                row.model_id,
-                message_count,
-                last_message_sequence,
+                item_count,
+                last_item_sequence,
                 total_input_tokens,
                 total_output_tokens,
-                row.metadata_json,
+                row.idempotency_key,
+                row.payload_hash,
+                created_by,
+                updated_by,
                 version,
                 row.created_at,
                 row.updated_at,
-                row.last_message_at,
+                row.last_item_at,
                 row.closed_at,
                 row.archived_at,
-                row.deleted_at
+                archived_by,
+                row.deleted_at,
+                deleted_by,
+                row.retention_until
             )?;
             Ok(())
         })
     }
 
     fn update_session_row(&self, row: AgentSessionRow) -> KernelResult<()> {
-        let message_count = u64_to_i64(row.message_count, "message_count")?;
-        let last_message_sequence = u64_to_i64(row.last_message_sequence, "last_message_sequence")?;
+        let item_count = u64_to_i64(row.item_count, "item_count")?;
+        let last_item_sequence = u64_to_i64(row.last_item_sequence, "last_item_sequence")?;
         let total_input_tokens = u64_to_i64(row.total_input_tokens, "total_input_tokens")?;
         let total_output_tokens = u64_to_i64(row.total_output_tokens, "total_output_tokens")?;
+        let updated_by = u64_to_i64(row.updated_by, "updated_by")?;
+        let archived_by = row
+            .archived_by
+            .map(|value| u64_to_i64(value, "archived_by"))
+            .transpose()?;
+        let deleted_by = row
+            .deleted_by
+            .map(|value| u64_to_i64(value, "deleted_by"))
+            .transpose()?;
         let version = u64_to_i64(row.version, "version")?;
         let previous_version =
             u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
@@ -3603,19 +4206,20 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.project_id,
                 row.title,
                 row.status,
-                row.provider_binding_id,
-                row.model_id,
-                message_count,
-                last_message_sequence,
+                item_count,
+                last_item_sequence,
                 total_input_tokens,
                 total_output_tokens,
-                row.metadata_json,
+                updated_by,
                 version,
                 row.updated_at,
-                row.last_message_at,
+                row.last_item_at,
                 row.closed_at,
                 row.archived_at,
+                archived_by,
                 row.deleted_at,
+                deleted_by,
+                row.retention_until,
                 tenant_id,
                 organization_id,
                 row.session_id,
@@ -3623,9 +4227,14 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             )?;
 
             if updated_rows == 0 {
-                let exists =
-                    pg_query_optional!(pool, SQL_SELECT_AGENT_SESSION, tenant_id, row.session_id)?
-                        .is_some();
+                let exists = pg_query_optional!(
+                    pool,
+                    SQL_SELECT_AGENT_SESSION,
+                    tenant_id,
+                    organization_id,
+                    row.session_id
+                )?
+                .is_some();
                 if exists {
                     return Err(KernelError::conflict("session version mismatch"));
                 }
@@ -3638,11 +4247,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_session_row(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
-            let row = pg_query_optional!(pool, SQL_SELECT_AGENT_SESSION, tenant_id, session_id)?;
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_SESSION,
+                tenant_id,
+                organization_id,
+                session_id
+            )?;
             row.map(pg_row_to_agent_session_row).transpose()
         })
     }
@@ -3717,6 +4334,462 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn insert_session_runtime_binding_row(
+        &self,
+        row: AgentSessionRuntimeBindingRow,
+    ) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.session_id,
+                row.runtime_binding_id,
+                row.runtime_location_id,
+                row.host_mode,
+                row.transport_kind,
+                row.provider_binding_id,
+                row.model_id,
+                row.provider_id,
+                row.native_session_id,
+                row.native_session_tree_id,
+                row.native_parent_session_id,
+                row.native_forked_from_session_id,
+                row.status,
+                row.is_current,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.activated_at,
+                row.deactivated_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_session_runtime_binding_row(
+        &self,
+        row: AgentSessionRuntimeBindingRow,
+    ) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        self.with_pool(|pool| {
+            let updated = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING,
+                row.runtime_location_id,
+                row.host_mode,
+                row.transport_kind,
+                row.provider_binding_id,
+                row.model_id,
+                row.provider_id,
+                row.native_session_id,
+                row.native_session_tree_id,
+                row.native_parent_session_id,
+                row.native_forked_from_session_id,
+                row.status,
+                row.is_current,
+                version,
+                row.updated_at,
+                row.activated_at,
+                row.deactivated_at,
+                tenant_id,
+                organization_id,
+                row.session_id,
+                row.runtime_binding_id,
+                previous_version
+            )?;
+            if updated == 0 {
+                return Err(KernelError::conflict(
+                    "session runtime binding version mismatch",
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_session_runtime_binding_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
+                tenant_id,
+                organization_id,
+                session_id,
+                runtime_binding_id
+            )?
+            .map(pg_row_to_agent_session_runtime_binding_row)
+            .transpose()
+        })
+    }
+
+    fn get_current_session_runtime_binding_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
+                tenant_id,
+                organization_id,
+                session_id
+            )?
+            .map(pg_row_to_agent_session_runtime_binding_row)
+            .transpose()
+        })
+    }
+
+    fn list_session_runtime_binding_rows(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<Vec<AgentSessionRuntimeBindingRow>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let status = query
+            .status
+            .as_deref()
+            .and_then(|value| match value {
+                "active" => Some(AgentSessionRuntimeBindingStatus::Active),
+                "deactivated" => Some(AgentSessionRuntimeBindingStatus::Deactivated),
+                "failed" => Some(AgentSessionRuntimeBindingStatus::Failed),
+                "deleted" => Some(AgentSessionRuntimeBindingStatus::Deleted),
+                _ => None,
+            })
+            .map(AgentSessionRuntimeBindingStatus::as_db_code);
+        let page_size = query.pagination.page_size as i64;
+        let offset = query.pagination.offset as i64;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                status,
+                query.current_only,
+                page_size,
+                offset
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_session_runtime_binding_row)
+            .collect()
+        })
+    }
+
+    fn count_session_runtime_binding_rows(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<u64> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let status = query
+            .status
+            .as_deref()
+            .and_then(|value| match value {
+                "active" => Some(AgentSessionRuntimeBindingStatus::Active),
+                "deactivated" => Some(AgentSessionRuntimeBindingStatus::Deactivated),
+                "failed" => Some(AgentSessionRuntimeBindingStatus::Failed),
+                "deleted" => Some(AgentSessionRuntimeBindingStatus::Deleted),
+                _ => None,
+            })
+            .map(AgentSessionRuntimeBindingStatus::as_db_code);
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                status,
+                query.current_only
+            )?;
+            let total = row
+                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .transpose()?
+                .unwrap_or(0);
+            int64_to_u64(total, "total_count")
+        })
+    }
+
+    fn activate_session_runtime_binding_row_atomic(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+        expected_version: u64,
+        updated_at: String,
+    ) -> KernelResult<AgentSessionRuntimeBindingRow> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let expected_version = u64_to_i64(expected_version, "expected_version")?;
+
+        fn kernel_err(error: KernelError) -> sqlx::Error {
+            sqlx::Error::Protocol(error.to_string())
+        }
+
+        self.with_pool(|pool| {
+            let pg_pool = pool.pool().clone();
+            let session_id = session_id.to_string();
+            let runtime_binding_id = runtime_binding_id.to_string();
+            pool.run_kernel(async move {
+                retry_on_deadlock(|| async {
+                    let session_id = session_id.clone();
+                    let runtime_binding_id = runtime_binding_id.clone();
+                    let updated_at = updated_at.clone();
+                    let mut tx = pg_pool.begin().await?;
+                    let target = sqlx::query(SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&session_id)
+                        .bind(&runtime_binding_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(pg_row_to_agent_session_runtime_binding_row)
+                        .transpose()
+                        .map_err(kernel_err)?
+                        .ok_or_else(|| {
+                            kernel_err(KernelError::validation(
+                                "session runtime binding not found",
+                            ))
+                        })?;
+                    let target_version = u64_to_i64(target.version, "version").map_err(kernel_err)?;
+                    if target_version != expected_version {
+                        return Err(kernel_err(KernelError::conflict(
+                            "session runtime binding version mismatch",
+                        )));
+                    }
+                    if target.is_current
+                        && target.status == AgentSessionRuntimeBindingStatus::Active.as_db_code()
+                    {
+                        tx.commit().await?;
+                        return Ok(target);
+                    }
+                    sqlx::query(SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&session_id)
+                        .bind(&runtime_binding_id)
+                        .bind(&updated_at)
+                        .execute(&mut *tx)
+                        .await?;
+                    let updated = sqlx::query(SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&session_id)
+                        .bind(&runtime_binding_id)
+                        .bind(expected_version)
+                        .bind(&updated_at)
+                        .execute(&mut *tx)
+                        .await?;
+                    if updated.rows_affected() != 1 {
+                        return Err(kernel_err(KernelError::conflict(
+                            "session runtime binding version mismatch",
+                        )));
+                    }
+                    let activated_row = sqlx::query(SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&session_id)
+                        .bind(&runtime_binding_id)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                    let activated = pg_row_to_agent_session_runtime_binding_row(activated_row)
+                        .map_err(kernel_err)?;
+                    tx.commit().await?;
+                    Ok(activated)
+                })
+                .await
+            })
+        })
+    }
+
+    fn insert_session_checkpoint_row(&self, row: AgentSessionCheckpointRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let created_by = u64_to_i64(row.created_by, "created_by")?;
+        let version = u64_to_i64(row.version, "version")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_SESSION_CHECKPOINT,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.session_id,
+                row.checkpoint_id,
+                row.turn_id,
+                row.runtime_binding_id,
+                row.checkpoint_kind,
+                row.provider_checkpoint_ref,
+                row.drive_space_id,
+                row.drive_node_id,
+                row.resumable,
+                row.status,
+                created_by,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.restored_at,
+                row.invalidated_at,
+                row.retention_until
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_session_checkpoint_row(&self, row: AgentSessionCheckpointRow) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        self.with_pool(|pool| {
+            let updated = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_SESSION_CHECKPOINT,
+                row.resumable,
+                row.status,
+                version,
+                row.updated_at,
+                row.restored_at,
+                row.invalidated_at,
+                row.retention_until,
+                tenant_id,
+                organization_id,
+                row.session_id,
+                row.checkpoint_id,
+                previous_version
+            )?;
+            if updated == 0 {
+                return Err(KernelError::conflict(
+                    "session checkpoint version mismatch",
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_session_checkpoint_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        checkpoint_id: &str,
+    ) -> KernelResult<Option<AgentSessionCheckpointRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_SESSION_CHECKPOINT,
+                tenant_id,
+                organization_id,
+                session_id,
+                checkpoint_id
+            )?
+            .map(pg_row_to_agent_session_checkpoint_row)
+            .transpose()
+        })
+    }
+
+    fn list_session_checkpoint_rows(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<Vec<AgentSessionCheckpointRow>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let status = query
+            .status
+            .as_deref()
+            .and_then(|value| match value {
+                "active" => Some(AgentSessionCheckpointStatus::Active),
+                "restored" => Some(AgentSessionCheckpointStatus::Restored),
+                "invalidated" => Some(AgentSessionCheckpointStatus::Invalidated),
+                "expired" => Some(AgentSessionCheckpointStatus::Expired),
+                "deleted" => Some(AgentSessionCheckpointStatus::Deleted),
+                _ => None,
+            })
+            .map(AgentSessionCheckpointStatus::as_db_code);
+        let page_size = query.pagination.page_size as i64;
+        let offset = query.pagination.offset as i64;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_SESSION_CHECKPOINTS,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                status,
+                page_size,
+                offset
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_session_checkpoint_row)
+            .collect()
+        })
+    }
+
+    fn count_session_checkpoint_rows(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<u64> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let status = query
+            .status
+            .as_deref()
+            .and_then(|value| match value {
+                "active" => Some(AgentSessionCheckpointStatus::Active),
+                "restored" => Some(AgentSessionCheckpointStatus::Restored),
+                "invalidated" => Some(AgentSessionCheckpointStatus::Invalidated),
+                "expired" => Some(AgentSessionCheckpointStatus::Expired),
+                "deleted" => Some(AgentSessionCheckpointStatus::Deleted),
+                _ => None,
+            })
+            .map(AgentSessionCheckpointStatus::as_db_code);
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_AGENT_SESSION_CHECKPOINTS,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                status
+            )?;
+            let total = row
+                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .transpose()?
+                .unwrap_or(0);
+            int64_to_u64(total, "total_count")
+        })
+    }
+
     fn upsert_resource_user_state_row(
         &self,
         row: AgentResourceUserStateRow,
@@ -3735,9 +4808,9 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
         let user_id = u64_to_i64(row.user_id, "user_id")?;
-        let last_read_message_sequence = row
-            .last_read_message_sequence
-            .map(|value| u64_to_i64(value, "last_read_message_sequence"))
+        let last_read_item_sequence = row
+            .last_read_item_sequence
+            .map(|value| u64_to_i64(value, "last_read_item_sequence"))
             .transpose()?;
         // -1 can never be a persisted version and therefore preserves create-only
         // semantics when the caller omits expectedVersion.
@@ -3760,7 +4833,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.pinned_at,
                 row.hidden_at,
                 row.last_opened_at,
-                last_read_message_sequence,
+                last_read_item_sequence,
                 row.custom_title,
                 row.created_at,
                 row.updated_at,
@@ -3860,27 +4933,34 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     }
 
     // -----------------------------------------------------------------------
-    // Message persistence
+    // Session-item persistence
     // -----------------------------------------------------------------------
 
-    fn insert_message_row(&self, row: AgentMessageRow) -> KernelResult<()> {
+    fn insert_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()> {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
         let sequence = u64_to_i64(row.sequence, "sequence")?;
         let input_tokens = u64_to_i64(row.input_tokens, "input_tokens")?;
         let output_tokens = u64_to_i64(row.output_tokens, "output_tokens")?;
+        let created_by = u64_to_i64(row.created_by, "created_by")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let redacted_by = row
+            .redacted_by
+            .map(|value| u64_to_i64(value, "redacted_by"))
+            .transpose()?;
 
         self.with_pool(|pool| {
             let inserted_rows = pg_execute!(
                 pool,
-                SQL_INSERT_AGENT_MESSAGE,
+                SQL_INSERT_AGENT_SESSION_ITEM,
                 id,
                 row.uuid,
                 tenant_id,
+                organization_id,
                 row.session_id,
-                row.agent_id,
-                row.role,
-                row.message_id,
+                row.item_id,
+                row.kind,
                 row.content,
                 row.content_type,
                 row.status,
@@ -3889,147 +4969,188 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 output_tokens,
                 row.model_id,
                 row.provider_id,
-                row.artifacts_json,
-                row.metadata_json,
-                row.parent_message_id,
+                row.tool_name,
+                row.tool_call_id,
+                row.tool_arguments_json,
+                row.tool_result_json,
+                row.parent_item_id,
+                row.turn_id,
+                created_by,
+                version,
                 row.created_at,
                 row.updated_at,
-                row.turn_id
+                row.completed_at,
+                row.redacted_at,
+                redacted_by,
+                row.retention_until
             )?;
             if inserted_rows == 0 {
-                return Err(KernelError::validation("message parent session not found"));
+                return Err(KernelError::validation(
+                    "session-item parent session not found",
+                ));
             }
             Ok(())
         })
     }
 
-    fn update_message_row(&self, row: AgentMessageRow) -> KernelResult<()> {
+    fn update_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()> {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        let redacted_by = row
+            .redacted_by
+            .map(|value| u64_to_i64(value, "redacted_by"))
+            .transpose()?;
 
         self.with_pool(|pool| {
             let updated_rows = pg_execute!(
                 pool,
-                SQL_UPDATE_AGENT_MESSAGE,
+                SQL_UPDATE_AGENT_SESSION_ITEM,
                 row.content,
                 row.content_type,
                 row.status,
                 row.model_id,
                 row.provider_id,
-                row.artifacts_json,
-                row.metadata_json,
+                row.tool_name,
+                row.tool_call_id,
+                row.tool_arguments_json,
+                row.tool_result_json,
+                row.parent_item_id,
+                row.turn_id,
+                version,
                 row.updated_at,
+                row.completed_at,
+                row.redacted_at,
+                redacted_by,
+                row.retention_until,
                 tenant_id,
+                organization_id,
                 row.session_id,
-                row.message_id
+                row.item_id,
+                previous_version
             )?;
 
             if updated_rows == 0 {
                 let exists = pg_query_optional!(
                     pool,
-                    SQL_SELECT_AGENT_MESSAGE,
+                    SQL_SELECT_AGENT_SESSION_ITEM,
                     tenant_id,
+                    organization_id,
                     row.session_id,
-                    row.message_id
+                    row.item_id
                 )?
                 .is_some();
                 if exists {
-                    return Err(KernelError::conflict("message update conflict"));
+                    return Err(KernelError::conflict("session-item update conflict"));
                 }
-                return Err(KernelError::validation("message not found"));
+                return Err(KernelError::validation("session item not found"));
             }
             Ok(())
         })
     }
 
-    fn get_message_row(
+    fn get_session_item_row(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
-        message_id: &str,
-    ) -> KernelResult<Option<AgentMessageRow>> {
+        item_id: &str,
+    ) -> KernelResult<Option<AgentSessionItemRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
                 pool,
-                SQL_SELECT_AGENT_MESSAGE,
+                SQL_SELECT_AGENT_SESSION_ITEM,
                 tenant_id,
+                organization_id,
                 session_id,
-                message_id
+                item_id
             )?;
-            row.map(pg_row_to_agent_message_row).transpose()
+            row.map(pg_row_to_agent_session_item_row).transpose()
         })
     }
 
-    fn list_message_rows(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRow>> {
+    fn list_session_item_rows(
+        &self,
+        query: &SessionItemListQuery,
+    ) -> KernelResult<Vec<AgentSessionItemRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let role_code: Option<i16> = query
-            .role
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let kind_code: Option<i16> = query
+            .kind
             .as_deref()
-            .and_then(AgentMessageRole::from_code)
+            .and_then(AgentSessionItemKind::from_code)
             .map(|r| r.as_db_code());
         let status_code: Option<i16> = query
             .status
             .as_deref()
-            .and_then(AgentMessageStatus::from_code)
+            .and_then(AgentSessionItemStatus::from_code)
             .map(|s| s.as_db_code());
         let page_size = query.pagination.page_size as i64;
 
         self.with_pool(|pool| {
             let rows = match query.sort {
-                MessageListSort::RecentContextDesc => pg_query!(
+                SessionItemListSort::RecentContextDesc => pg_query!(
                     pool,
-                    SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT,
+                    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
                     tenant_id,
+                    organization_id,
                     query.session_id,
-                    role_code,
+                    kind_code,
                     status_code,
                     page_size
                 )?,
-                MessageListSort::SequenceAsc => {
+                SessionItemListSort::SequenceAsc => {
                     let offset = query.pagination.offset as i64;
                     pg_query!(
                         pool,
-                        SQL_LIST_AGENT_MESSAGES,
+                        SQL_LIST_AGENT_SESSION_ITEMS,
                         tenant_id,
+                        organization_id,
                         query.session_id,
-                        role_code,
+                        kind_code,
                         status_code,
                         page_size,
                         offset
                     )?
                 }
             };
-            let mut rows: Vec<AgentMessageRow> = rows
+            let mut rows: Vec<AgentSessionItemRow> = rows
                 .into_iter()
-                .map(pg_row_to_agent_message_row)
+                .map(pg_row_to_agent_session_item_row)
                 .collect::<KernelResult<Vec<_>>>()?;
-            if matches!(query.sort, MessageListSort::RecentContextDesc) {
+            if matches!(query.sort, SessionItemListSort::RecentContextDesc) {
                 rows.reverse();
             }
             Ok(rows)
         })
     }
 
-    fn count_message_rows(&self, query: &MessageListQuery) -> KernelResult<u64> {
+    fn count_session_item_rows(&self, query: &SessionItemListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let role_code: Option<i16> = query
-            .role
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let kind_code: Option<i16> = query
+            .kind
             .as_deref()
-            .and_then(AgentMessageRole::from_code)
+            .and_then(AgentSessionItemKind::from_code)
             .map(|r| r.as_db_code());
         let status_code: Option<i16> = query
             .status
             .as_deref()
-            .and_then(AgentMessageStatus::from_code)
+            .and_then(AgentSessionItemStatus::from_code)
             .map(|s| s.as_db_code());
 
         self.with_pool(|pool| {
             let row = pg_query_optional!(
                 pool,
-                SQL_COUNT_AGENT_MESSAGES,
+                SQL_COUNT_AGENT_SESSION_ITEMS,
                 tenant_id,
+                organization_id,
                 query.session_id,
-                role_code,
+                kind_code,
                 status_code
             )?;
             let total: i64 = row
@@ -4044,14 +5165,14 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn upsert_message_feedback_row(
+    fn upsert_item_feedback_row(
         &self,
-        row: AgentMessageFeedbackRow,
+        row: AgentItemFeedbackRow,
         expected_version: Option<u64>,
-    ) -> KernelResult<AgentMessageFeedbackRow> {
+    ) -> KernelResult<AgentItemFeedbackRow> {
         if let Some(expected) = expected_version {
             if row.version != expected.saturating_add(1) {
-                return Err(KernelError::conflict("message feedback version mismatch"));
+                return Err(KernelError::conflict("item feedback version mismatch"));
             }
         }
         let id = u64_to_i64(row.id, "id")?;
@@ -4065,12 +5186,12 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             pg_query_optional!(
                 pool,
-                SQL_UPSERT_AGENT_MESSAGE_FEEDBACK,
+                SQL_UPSERT_AGENT_ITEM_FEEDBACK,
                 id,
                 row.uuid,
                 tenant_id,
                 organization_id,
-                row.message_id,
+                row.item_id,
                 user_id,
                 row.rating,
                 row.reason_code,
@@ -4080,42 +5201,42 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.deleted_at,
                 expected_version
             )?
-            .map(pg_row_to_agent_message_feedback_row)
+            .map(pg_row_to_agent_item_feedback_row)
             .transpose()?
-            .ok_or_else(|| KernelError::conflict("message feedback version mismatch"))
+            .ok_or_else(|| KernelError::conflict("item feedback version mismatch"))
         })
     }
 
-    fn get_message_feedback_row(
+    fn get_item_feedback_row(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
+        item_id: &str,
         user_id: u64,
         include_deleted: bool,
-    ) -> KernelResult<Option<AgentMessageFeedbackRow>> {
+    ) -> KernelResult<Option<AgentItemFeedbackRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(organization_id, "organization_id")?;
         let user_id = u64_to_i64(user_id, "user_id")?;
         self.with_pool(|pool| {
             pg_query_optional!(
                 pool,
-                SQL_SELECT_AGENT_MESSAGE_FEEDBACK,
+                SQL_SELECT_AGENT_ITEM_FEEDBACK,
                 tenant_id,
                 organization_id,
-                message_id,
+                item_id,
                 user_id,
                 include_deleted
             )?
-            .map(pg_row_to_agent_message_feedback_row)
+            .map(pg_row_to_agent_item_feedback_row)
             .transpose()
         })
     }
 
-    fn list_message_feedback_rows(
+    fn list_item_feedback_rows(
         &self,
-        query: &MessageFeedbackListQuery,
-    ) -> KernelResult<Vec<AgentMessageFeedbackRow>> {
+        query: &ItemFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentItemFeedbackRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let user_id = u64_to_i64(query.user_id, "user_id")?;
@@ -4124,7 +5245,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             pg_query!(
                 pool,
-                SQL_LIST_AGENT_MESSAGE_FEEDBACK,
+                SQL_LIST_AGENT_ITEM_FEEDBACK,
                 tenant_id,
                 organization_id,
                 user_id,
@@ -4133,19 +5254,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 offset
             )?
             .into_iter()
-            .map(pg_row_to_agent_message_feedback_row)
+            .map(pg_row_to_agent_item_feedback_row)
             .collect()
         })
     }
 
-    fn count_message_feedback_rows(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64> {
+    fn count_item_feedback_rows(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let user_id = u64_to_i64(query.user_id, "user_id")?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
                 pool,
-                SQL_COUNT_AGENT_MESSAGE_FEEDBACK,
+                SQL_COUNT_AGENT_ITEM_FEEDBACK,
                 tenant_id,
                 organization_id,
                 user_id,
@@ -4163,10 +5284,22 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
+    fn next_item_sequence(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
-            let row = pg_query_optional!(pool, SQL_NEXT_MESSAGE_SEQUENCE, tenant_id, session_id)?;
+            let row = pg_query_optional!(
+                pool,
+                SQL_NEXT_SESSION_ITEM_SEQUENCE,
+                tenant_id,
+                organization_id,
+                session_id
+            )?;
             let next: i64 = row
                 .map(|r| r.try_get::<i64, _>("next_sequence").map_err(map_sqlx_error))
                 .transpose()?
@@ -4175,83 +5308,143 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn get_chat_turn_row_by_idempotency(
+    fn get_turn_row_by_idempotency(
         &self,
         tenant_id: u64,
         organization_id: u64,
         owner_user_id: u64,
         idempotency_key: &str,
-    ) -> KernelResult<Option<AgentChatTurnRow>> {
+    ) -> KernelResult<Option<AgentTurnRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(organization_id, "organization_id")?;
         let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
         self.with_pool(|pool| {
             pg_query_optional!(
                 pool,
-                SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY,
+                SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY,
                 tenant_id,
                 organization_id,
                 owner_user_id,
                 idempotency_key
             )?
-            .map(pg_row_to_agent_chat_turn_row)
+            .map(pg_row_to_agent_turn_row)
             .transpose()
         })
     }
 
-    fn get_chat_turn_row(
+    fn get_turn_row(
         &self,
         tenant_id: u64,
         organization_id: u64,
         turn_id: &str,
-    ) -> KernelResult<Option<AgentChatTurnRow>> {
+    ) -> KernelResult<Option<AgentTurnRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
             pg_query_optional!(
                 pool,
-                SQL_SELECT_AGENT_CHAT_TURN,
+                SQL_SELECT_AGENT_TURN,
                 tenant_id,
                 organization_id,
                 turn_id
             )?
-            .map(pg_row_to_agent_chat_turn_row)
+            .map(pg_row_to_agent_turn_row)
             .transpose()
         })
     }
 
-    fn list_reconcilable_chat_turn_rows(
+    fn list_turn_rows(&self, query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRow>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let status_code = query
+            .status
+            .as_deref()
+            .and_then(AgentTurnStatus::from_code)
+            .map(AgentTurnStatus::as_db_code);
+        let page_size = i64::try_from(query.pagination.page_size)
+            .map_err(|_| KernelError::validation("page_size overflow"))?;
+        let offset = i64::try_from(query.pagination.offset)
+            .map_err(|_| KernelError::validation("pagination offset overflow"))?;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_TURNS,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                status_code,
+                page_size,
+                offset
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_turn_row)
+            .collect()
+        })
+    }
+
+    fn count_turn_rows(&self, query: &TurnListQuery) -> KernelResult<u64> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let status_code = query
+            .status
+            .as_deref()
+            .and_then(AgentTurnStatus::from_code)
+            .map(AgentTurnStatus::as_db_code);
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_AGENT_TURNS,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                status_code
+            )?;
+            let total = row
+                .map(|row| row.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .transpose()?
+                .unwrap_or(0);
+            int64_to_u64(total, "total_count")
+        })
+    }
+
+    fn list_reconcilable_turn_rows(
         &self,
         stale_before: &str,
         limit: usize,
-    ) -> KernelResult<Vec<AgentChatTurnRow>> {
+    ) -> KernelResult<Vec<AgentTurnRow>> {
         let limit = i64::try_from(limit.clamp(1, 200))
             .map_err(|_| KernelError::validation("reconciliation limit overflow"))?;
         self.with_pool(|pool| {
             pg_query!(
                 pool,
-                SQL_LIST_RECONCILABLE_AGENT_CHAT_TURNS,
+                SQL_LIST_RECONCILABLE_AGENT_TURNS,
                 stale_before,
                 limit
             )?
             .into_iter()
-            .map(pg_row_to_agent_chat_turn_row)
+            .map(pg_row_to_agent_turn_row)
             .collect()
         })
     }
 
-    fn insert_chat_turn_reservation_row(&self, turn: AgentChatTurnRow) -> KernelResult<()> {
+    fn insert_turn_reservation_row(&self, turn: AgentTurnRow) -> KernelResult<()> {
         let id = u64_to_i64(turn.id, "turn.id")?;
         let tenant_id = u64_to_i64(turn.tenant_id, "turn.tenant_id")?;
         let organization_id = u64_to_i64(turn.organization_id, "turn.organization_id")?;
         let owner_user_id = u64_to_i64(turn.owner_user_id, "turn.owner_user_id")?;
         let input_tokens = u64_to_i64(turn.input_tokens, "turn.input_tokens")?;
         let output_tokens = u64_to_i64(turn.output_tokens, "turn.output_tokens")?;
+        let cached_tokens = u64_to_i64(turn.cached_tokens, "turn.cached_tokens")?;
+        let attempt_count = i32::try_from(turn.attempt_count)
+            .map_err(|_| KernelError::validation("turn.attempt_count overflow"))?;
+        let max_attempts = i32::try_from(turn.max_attempts)
+            .map_err(|_| KernelError::validation("turn.max_attempts overflow"))?;
+        let fencing_token = u64_to_i64(turn.fencing_token, "turn.fencing_token")?;
         let version = u64_to_i64(turn.version, "turn.version")?;
         self.with_pool(|pool| {
             let affected = pg_execute!(
                 pool,
-                SQL_INSERT_AGENT_CHAT_TURN,
+                SQL_INSERT_AGENT_TURN,
                 id,
                 turn.uuid,
                 tenant_id,
@@ -4260,11 +5453,13 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 turn.session_id,
                 turn.agent_id,
                 owner_user_id,
+                turn.runtime_binding_id,
                 turn.client_request_id,
                 turn.idempotency_key,
                 turn.payload_hash,
-                turn.request_message_id,
-                &turn.response_message_id,
+                turn.request_item_id,
+                &turn.response_item_id,
+                turn.turn_mode,
                 turn.status,
                 &turn.requested_model_id,
                 &turn.provider_binding_id,
@@ -4272,10 +5467,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 &turn.provider_id,
                 input_tokens,
                 output_tokens,
+                cached_tokens,
                 turn.finish_reason,
                 turn.error_code,
                 turn.error_detail,
                 turn.trace_id,
+                attempt_count,
+                max_attempts,
+                turn.next_retry_at,
+                turn.available_at,
+                turn.lease_owner,
+                turn.lease_token,
+                turn.lease_expires_at,
+                fencing_token,
                 version,
                 turn.created_at,
                 turn.updated_at,
@@ -4292,13 +5496,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn update_chat_turn_state_row(
+    fn update_turn_state_row(
         &self,
-        turn: AgentChatTurnRow,
+        turn: AgentTurnRow,
         expected_version: u64,
-    ) -> KernelResult<AgentChatTurnRow> {
+    ) -> KernelResult<AgentTurnRow> {
         let input_tokens = u64_to_i64(turn.input_tokens, "turn.input_tokens")?;
         let output_tokens = u64_to_i64(turn.output_tokens, "turn.output_tokens")?;
+        let cached_tokens = u64_to_i64(turn.cached_tokens, "turn.cached_tokens")?;
+        let attempt_count = i32::try_from(turn.attempt_count)
+            .map_err(|_| KernelError::validation("turn.attempt_count overflow"))?;
+        let max_attempts = i32::try_from(turn.max_attempts)
+            .map_err(|_| KernelError::validation("turn.max_attempts overflow"))?;
+        let fencing_token = u64_to_i64(turn.fencing_token, "turn.fencing_token")?;
         let version = u64_to_i64(turn.version, "turn.version")?;
         let tenant_id = u64_to_i64(turn.tenant_id, "turn.tenant_id")?;
         let organization_id = u64_to_i64(turn.organization_id, "turn.organization_id")?;
@@ -4306,8 +5516,10 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             let affected = pg_execute!(
                 pool,
-                SQL_UPDATE_AGENT_CHAT_TURN_STATE,
-                &turn.response_message_id,
+                SQL_UPDATE_AGENT_TURN_STATE,
+                &turn.response_item_id,
+                &turn.runtime_binding_id,
+                turn.turn_mode,
                 turn.status,
                 &turn.requested_model_id,
                 &turn.provider_binding_id,
@@ -4315,10 +5527,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 &turn.provider_id,
                 input_tokens,
                 output_tokens,
+                cached_tokens,
                 &turn.finish_reason,
                 &turn.error_code,
                 &turn.error_detail,
                 &turn.trace_id,
+                attempt_count,
+                max_attempts,
+                &turn.next_retry_at,
+                &turn.available_at,
+                &turn.lease_owner,
+                &turn.lease_token,
+                &turn.lease_expires_at,
+                fencing_token,
                 version,
                 &turn.updated_at,
                 &turn.started_at,
@@ -4338,30 +5559,30 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn insert_chat_turn_rows(
+    fn insert_turn_rows(
         &self,
-        turn: AgentChatTurnRow,
+        turn: AgentTurnRow,
         session: AgentSessionRow,
-        user: AgentMessageRow,
-        assistant: AgentMessageRow,
-    ) -> KernelResult<(AgentSessionRow, AgentMessageRow, AgentMessageRow)> {
-        self.insert_chat_turn_with_drive_ref_rows(turn, session, user, assistant, Vec::new())
+        user: AgentSessionItemRow,
+        assistant: AgentSessionItemRow,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
+        self.insert_turn_with_drive_ref_rows(turn, session, user, assistant, Vec::new())
     }
 
-    fn insert_chat_turn_with_drive_ref_rows(
+    fn insert_turn_with_drive_ref_rows(
         &self,
-        turn: AgentChatTurnRow,
+        turn: AgentTurnRow,
         session: AgentSessionRow,
-        user: AgentMessageRow,
-        assistant: AgentMessageRow,
-        drive_refs: Vec<AgentMessageDriveRefRow>,
-    ) -> KernelResult<(AgentSessionRow, AgentMessageRow, AgentMessageRow)> {
+        user: AgentSessionItemRow,
+        assistant: AgentSessionItemRow,
+        drive_refs: Vec<AgentItemDriveRefRow>,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
         let tenant_id = u64_to_i64(session.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(session.organization_id, "organization_id")?;
         let session_id = session.session_id.clone();
-        let message_count = u64_to_i64(session.message_count, "message_count")?;
-        let last_message_sequence =
-            u64_to_i64(session.last_message_sequence, "last_message_sequence")?;
+        let item_count = u64_to_i64(session.item_count, "item_count")?;
+        let last_item_sequence =
+            u64_to_i64(session.last_item_sequence, "last_item_sequence")?;
         let total_input_tokens = u64_to_i64(session.total_input_tokens, "total_input_tokens")?;
         let total_output_tokens = u64_to_i64(session.total_output_tokens, "total_output_tokens")?;
         let version = u64_to_i64(session.version, "version")?;
@@ -4376,6 +5597,12 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let turn_owner_user_id = u64_to_i64(turn.owner_user_id, "owner_user_id")?;
         let turn_input_tokens = u64_to_i64(turn.input_tokens, "input_tokens")?;
         let turn_output_tokens = u64_to_i64(turn.output_tokens, "output_tokens")?;
+        let turn_cached_tokens = u64_to_i64(turn.cached_tokens, "cached_tokens")?;
+        let turn_attempt_count = i32::try_from(turn.attempt_count)
+            .map_err(|_| KernelError::validation("turn.attempt_count overflow"))?;
+        let turn_max_attempts = i32::try_from(turn.max_attempts)
+            .map_err(|_| KernelError::validation("turn.max_attempts overflow"))?;
+        let turn_fencing_token = u64_to_i64(turn.fencing_token, "fencing_token")?;
         let turn_version = u64_to_i64(turn.version, "version")?;
 
         fn kernel_err(error: KernelError) -> sqlx::Error {
@@ -4404,8 +5631,9 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         return Err(kernel_err(KernelError::validation("session not found")));
                     }
 
-                    let row = sqlx::query(SQL_NEXT_MESSAGE_SEQUENCE)
+                    let row = sqlx::query(SQL_NEXT_SESSION_ITEM_SEQUENCE)
                         .bind(tenant_id)
+                        .bind(organization_id)
                         .bind(&session_id)
                         .fetch_optional(&mut *tx)
                         .await?;
@@ -4431,8 +5659,38 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         u64_to_i64(assistant.input_tokens, "input_tokens").map_err(kernel_err)?;
                     let assistant_output_tokens =
                         u64_to_i64(assistant.output_tokens, "output_tokens").map_err(kernel_err)?;
+                    let user_created_by =
+                        u64_to_i64(user.created_by, "created_by").map_err(kernel_err)?;
+                    let user_version =
+                        u64_to_i64(user.version, "version").map_err(kernel_err)?;
+                    let user_redacted_by = user
+                        .redacted_by
+                        .map(|value| u64_to_i64(value, "redacted_by"))
+                        .transpose()
+                        .map_err(kernel_err)?;
+                    let assistant_created_by =
+                        u64_to_i64(assistant.created_by, "created_by").map_err(kernel_err)?;
+                    let assistant_version =
+                        u64_to_i64(assistant.version, "version").map_err(kernel_err)?;
+                    let assistant_redacted_by = assistant
+                        .redacted_by
+                        .map(|value| u64_to_i64(value, "redacted_by"))
+                        .transpose()
+                        .map_err(kernel_err)?;
+                    let session_updated_by =
+                        u64_to_i64(session.updated_by, "updated_by").map_err(kernel_err)?;
+                    let session_archived_by = session
+                        .archived_by
+                        .map(|value| u64_to_i64(value, "archived_by"))
+                        .transpose()
+                        .map_err(kernel_err)?;
+                    let session_deleted_by = session
+                        .deleted_by
+                        .map(|value| u64_to_i64(value, "deleted_by"))
+                        .transpose()
+                        .map_err(kernel_err)?;
 
-                    let turn_write = sqlx::query(SQL_INSERT_AGENT_CHAT_TURN)
+                    let turn_write = sqlx::query(SQL_INSERT_AGENT_TURN)
                         .bind(turn_internal_id)
                         .bind(&turn.uuid)
                         .bind(tenant_id)
@@ -4441,11 +5699,13 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .bind(&turn.session_id)
                         .bind(&turn.agent_id)
                         .bind(turn_owner_user_id)
+                        .bind(&turn.runtime_binding_id)
                         .bind(&turn.client_request_id)
                         .bind(&turn.idempotency_key)
                         .bind(&turn.payload_hash)
-                        .bind(&turn.request_message_id)
-                        .bind(&turn.response_message_id)
+                        .bind(&turn.request_item_id)
+                        .bind(&turn.response_item_id)
+                        .bind(turn.turn_mode)
                         .bind(turn.status)
                         .bind(&turn.requested_model_id)
                         .bind(&turn.provider_binding_id)
@@ -4453,10 +5713,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .bind(&turn.provider_id)
                         .bind(turn_input_tokens)
                         .bind(turn_output_tokens)
+                        .bind(turn_cached_tokens)
                         .bind(&turn.finish_reason)
                         .bind(&turn.error_code)
                         .bind(&turn.error_detail)
                         .bind(&turn.trace_id)
+                        .bind(turn_attempt_count)
+                        .bind(turn_max_attempts)
+                        .bind(&turn.next_retry_at)
+                        .bind(&turn.available_at)
+                        .bind(&turn.lease_owner)
+                        .bind(&turn.lease_token)
+                        .bind(&turn.lease_expires_at)
+                        .bind(turn_fencing_token)
                         .bind(turn_version)
                         .bind(&turn.created_at)
                         .bind(&turn.updated_at)
@@ -4469,18 +5738,18 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .await?;
                     if turn_write.rows_affected() == 0 {
                         return Err(kernel_err(KernelError::conflict(
-                            "chat turn completion conflict",
+                            "turn completion conflict",
                         )));
                     }
 
-                    sqlx::query(SQL_INSERT_AGENT_MESSAGE)
+                    sqlx::query(SQL_INSERT_AGENT_SESSION_ITEM)
                         .bind(user_id)
                         .bind(&user.uuid)
                         .bind(tenant_id)
+                        .bind(organization_id)
                         .bind(&user.session_id)
-                        .bind(&user.agent_id)
-                        .bind(user.role)
-                        .bind(&user.message_id)
+                        .bind(&user.item_id)
+                        .bind(user.kind)
                         .bind(&user.content)
                         .bind(&user.content_type)
                         .bind(user.status)
@@ -4489,22 +5758,30 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .bind(user_output_tokens)
                         .bind(&user.model_id)
                         .bind(&user.provider_id)
-                        .bind(&user.artifacts_json)
-                        .bind(&user.metadata_json)
-                        .bind(&user.parent_message_id)
+                        .bind(&user.tool_name)
+                        .bind(&user.tool_call_id)
+                        .bind(&user.tool_arguments_json)
+                        .bind(&user.tool_result_json)
+                        .bind(&user.parent_item_id)
+                        .bind(&user.turn_id)
+                        .bind(user_created_by)
+                        .bind(user_version)
                         .bind(&user.created_at)
                         .bind(&user.updated_at)
-                        .bind(&user.turn_id)
+                        .bind(&user.completed_at)
+                        .bind(&user.redacted_at)
+                        .bind(user_redacted_by)
+                        .bind(&user.retention_until)
                         .execute(&mut *tx)
                         .await?;
 
                     for drive_ref in drive_refs {
                         if drive_ref.tenant_id != session.tenant_id
                             || drive_ref.organization_id != session.organization_id
-                            || drive_ref.message_id != user.message_id
+                            || drive_ref.item_id != user.item_id
                         {
                             return Err(kernel_err(KernelError::validation(
-                                "message Drive reference scope mismatch",
+                                "session-item Drive reference scope mismatch",
                             )));
                         }
                         let drive_ref_id =
@@ -4524,19 +5801,17 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         let drive_ref_created_by =
                             u64_to_i64(drive_ref.created_by, "drive_ref.created_by")
                                 .map_err(kernel_err)?;
-                        sqlx::query(SQL_INSERT_AGENT_MESSAGE_DRIVE_REF)
+                        sqlx::query(SQL_INSERT_AGENT_ITEM_DRIVE_REF)
                             .bind(drive_ref_id)
                             .bind(&drive_ref.uuid)
                             .bind(drive_ref_tenant_id)
                             .bind(drive_ref_organization_id)
-                            .bind(&drive_ref.message_id)
-                            .bind(&drive_ref.media_role)
+                            .bind(&drive_ref.item_id)
+                            .bind(&drive_ref.resource_role)
                             .bind(&drive_ref.drive_space_id)
                             .bind(&drive_ref.drive_node_id)
-                            .bind(&drive_ref.drive_uri)
                             .bind(&drive_ref.media_resource_id)
                             .bind(&drive_ref.object_blob_id)
-                            .bind(&drive_ref.resource_snapshot_json)
                             .bind(&drive_ref.resource_hash)
                             .bind(&drive_ref.alt_text)
                             .bind(drive_ref_sort_order)
@@ -4550,14 +5825,14 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                             .await?;
                     }
 
-                    sqlx::query(SQL_INSERT_AGENT_MESSAGE)
+                    sqlx::query(SQL_INSERT_AGENT_SESSION_ITEM)
                         .bind(assistant_id)
                         .bind(&assistant.uuid)
                         .bind(tenant_id)
+                        .bind(organization_id)
                         .bind(&assistant.session_id)
-                        .bind(&assistant.agent_id)
-                        .bind(assistant.role)
-                        .bind(&assistant.message_id)
+                        .bind(&assistant.item_id)
+                        .bind(assistant.kind)
                         .bind(&assistant.content)
                         .bind(&assistant.content_type)
                         .bind(assistant.status)
@@ -4566,12 +5841,20 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .bind(assistant_output_tokens)
                         .bind(&assistant.model_id)
                         .bind(&assistant.provider_id)
-                        .bind(&assistant.artifacts_json)
-                        .bind(&assistant.metadata_json)
-                        .bind(&assistant.parent_message_id)
+                        .bind(&assistant.tool_name)
+                        .bind(&assistant.tool_call_id)
+                        .bind(&assistant.tool_arguments_json)
+                        .bind(&assistant.tool_result_json)
+                        .bind(&assistant.parent_item_id)
+                        .bind(&assistant.turn_id)
+                        .bind(assistant_created_by)
+                        .bind(assistant_version)
                         .bind(&assistant.created_at)
                         .bind(&assistant.updated_at)
-                        .bind(&assistant.turn_id)
+                        .bind(&assistant.completed_at)
+                        .bind(&assistant.redacted_at)
+                        .bind(assistant_redacted_by)
+                        .bind(&assistant.retention_until)
                         .execute(&mut *tx)
                         .await?;
 
@@ -4579,19 +5862,20 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .bind(&session.project_id)
                         .bind(&session.title)
                         .bind(session.status)
-                        .bind(&session.provider_binding_id)
-                        .bind(&session.model_id)
-                        .bind(message_count)
-                        .bind(last_message_sequence)
+                        .bind(item_count)
+                        .bind(last_item_sequence)
                         .bind(total_input_tokens)
                         .bind(total_output_tokens)
-                        .bind(&session.metadata_json)
+                        .bind(session_updated_by)
                         .bind(version)
                         .bind(&session.updated_at)
-                        .bind(&session.last_message_at)
+                        .bind(&session.last_item_at)
                         .bind(&session.closed_at)
                         .bind(&session.archived_at)
+                        .bind(session_archived_by)
                         .bind(&session.deleted_at)
+                        .bind(session_deleted_by)
+                        .bind(&session.retention_until)
                         .bind(tenant_id)
                         .bind(organization_id)
                         .bind(&session_id)
@@ -4610,35 +5894,35 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn list_message_drive_ref_rows(
+    fn list_item_drive_ref_rows(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
-    ) -> KernelResult<Vec<AgentMessageDriveRefRow>> {
+        item_id: &str,
+    ) -> KernelResult<Vec<AgentItemDriveRefRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
             pg_query!(
                 pool,
-                SQL_LIST_AGENT_MESSAGE_DRIVE_REFS,
+                SQL_LIST_AGENT_ITEM_DRIVE_REFS,
                 tenant_id,
                 organization_id,
-                message_id
+                item_id
             )?
             .into_iter()
-            .map(pg_row_to_agent_message_drive_ref_row)
+            .map(pg_row_to_agent_item_drive_ref_row)
             .collect()
         })
     }
 
-    fn list_message_drive_ref_rows_batch(
+    fn list_item_drive_ref_rows_batch(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_ids: &[String],
-    ) -> KernelResult<Vec<AgentMessageDriveRefRow>> {
-        if message_ids.is_empty() {
+        item_ids: &[String],
+    ) -> KernelResult<Vec<AgentItemDriveRefRow>> {
+        if item_ids.is_empty() {
             return Ok(Vec::new());
         }
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
@@ -4646,13 +5930,13 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         self.with_pool(|pool| {
             pg_query!(
                 pool,
-                SQL_LIST_AGENT_MESSAGE_DRIVE_REFS_BATCH,
+                SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH,
                 tenant_id,
                 organization_id,
-                message_ids
+                item_ids
             )?
             .into_iter()
-            .map(pg_row_to_agent_message_drive_ref_row)
+            .map(pg_row_to_agent_item_drive_ref_row)
             .collect()
         })
     }
@@ -4665,6 +5949,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let fencing_token = u64_to_i64(row.fencing_token, "fencing_token")?;
         let version = u64_to_i64(row.version, "version")?;
 
         self.with_pool(|pool| {
@@ -4676,18 +5961,24 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 row.session_id,
-                row.agent_id,
-                row.engine_key,
+                row.turn_id,
+                row.runtime_binding_id,
                 row.interaction_id,
+                row.provider_interaction_id,
                 row.kind,
                 row.status,
                 row.prompt,
                 row.options_json,
                 row.resolution_json,
+                row.claim_owner,
+                row.claim_token,
+                row.claim_expires_at,
+                fencing_token,
                 version,
                 row.created_at,
                 row.updated_at,
-                row.resolved_at
+                row.resolved_at,
+                row.retention_until
             )?;
             Ok(())
         })
@@ -4695,6 +5986,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn update_interaction_row(&self, row: AgentInteractionRow) -> KernelResult<()> {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let fencing_token = u64_to_i64(row.fencing_token, "fencing_token")?;
         let version = u64_to_i64(row.version, "version")?;
         let previous_version =
             u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
@@ -4708,10 +6001,16 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.prompt,
                 row.options_json,
                 row.resolution_json,
+                row.claim_owner,
+                row.claim_token,
+                row.claim_expires_at,
+                fencing_token,
                 version,
                 row.updated_at,
                 row.resolved_at,
+                row.retention_until,
                 tenant_id,
+                organization_id,
                 row.session_id,
                 row.interaction_id,
                 previous_version
@@ -4722,6 +6021,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                     pool,
                     SQL_SELECT_AGENT_INTERACTION,
                     tenant_id,
+                    organization_id,
                     row.session_id,
                     row.interaction_id
                 )?
@@ -4738,15 +6038,18 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     fn get_interaction_row(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         interaction_id: &str,
     ) -> KernelResult<Option<AgentInteractionRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
             let row = pg_query_optional!(
                 pool,
                 SQL_SELECT_AGENT_INTERACTION,
                 tenant_id,
+                organization_id,
                 session_id,
                 interaction_id
             )?;
@@ -4759,6 +6062,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         query: &InteractionListQuery,
     ) -> KernelResult<Vec<AgentInteractionRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let status_code: Option<i16> = query
             .status
             .as_deref()
@@ -4772,6 +6076,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 pool,
                 SQL_LIST_AGENT_INTERACTIONS,
                 tenant_id,
+                organization_id,
                 query.session_id,
                 status_code,
                 page_size,
@@ -4785,6 +6090,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn count_interaction_rows(&self, query: &InteractionListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let status_code: Option<i16> = query
             .status
             .as_deref()
@@ -4796,6 +6102,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 pool,
                 SQL_COUNT_AGENT_INTERACTIONS,
                 tenant_id,
+                organization_id,
                 query.session_id,
                 status_code
             )?;
@@ -5634,6 +6941,8 @@ fn pg_row_to_agent_provider_binding_row(row: PgRow) -> KernelResult<AgentProvide
 
 #[cfg(feature = "postgres-sync")]
 fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
+    let archived_by: Option<i64> = row.try_get("archived_by").map_err(map_sqlx_error)?;
+    let deleted_by: Option<i64> = row.try_get("deleted_by").map_err(map_sqlx_error)?;
     Ok(AgentSessionRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
         uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
@@ -5652,18 +6961,31 @@ fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
             "owner_user_id",
         )?,
         project_id: row.try_get("project_id").map_err(map_sqlx_error)?,
+        session_kind: row.try_get("session_kind").map_err(map_sqlx_error)?,
+        entry_surface: row.try_get("entry_surface").map_err(map_sqlx_error)?,
+        source_module: row.try_get("source_module").map_err(map_sqlx_error)?,
+        source_context_kind: row
+            .try_get("source_context_kind")
+            .map_err(map_sqlx_error)?,
+        source_context_id: row
+            .try_get("source_context_id")
+            .map_err(map_sqlx_error)?,
+        parent_session_id: row
+            .try_get("parent_session_id")
+            .map_err(map_sqlx_error)?,
+        forked_from_turn_id: row
+            .try_get("forked_from_turn_id")
+            .map_err(map_sqlx_error)?,
         title: row.try_get("title").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
-        provider_binding_id: row.try_get("provider_binding_id").map_err(map_sqlx_error)?,
-        model_id: row.try_get("model_id").map_err(map_sqlx_error)?,
-        message_count: int64_to_u64(
-            row.try_get("message_count").map_err(map_sqlx_error)?,
-            "message_count",
+        item_count: int64_to_u64(
+            row.try_get("item_count").map_err(map_sqlx_error)?,
+            "item_count",
         )?,
-        last_message_sequence: int64_to_u64(
-            row.try_get("last_message_sequence")
+        last_item_sequence: int64_to_u64(
+            row.try_get("last_item_sequence")
                 .map_err(map_sqlx_error)?,
-            "last_message_sequence",
+            "last_item_sequence",
         )?,
         total_input_tokens: int64_to_u64(
             row.try_get("total_input_tokens").map_err(map_sqlx_error)?,
@@ -5673,14 +6995,123 @@ fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
             row.try_get("total_output_tokens").map_err(map_sqlx_error)?,
             "total_output_tokens",
         )?,
-        metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
+        idempotency_key: row.try_get("idempotency_key").map_err(map_sqlx_error)?,
+        payload_hash: row.try_get("payload_hash").map_err(map_sqlx_error)?,
+        created_by: int64_to_u64(
+            row.try_get("created_by").map_err(map_sqlx_error)?,
+            "created_by",
+        )?,
+        updated_by: int64_to_u64(
+            row.try_get("updated_by").map_err(map_sqlx_error)?,
+            "updated_by",
+        )?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        last_message_at: row.try_get("last_message_at").map_err(map_sqlx_error)?,
+        last_item_at: row.try_get("last_item_at").map_err(map_sqlx_error)?,
         closed_at: row.try_get("closed_at").map_err(map_sqlx_error)?,
         archived_at: row.try_get("archived_at").map_err(map_sqlx_error)?,
+        archived_by: archived_by
+            .map(|value| int64_to_u64(value, "archived_by"))
+            .transpose()?,
         deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
+        deleted_by: deleted_by
+            .map(|value| int64_to_u64(value, "deleted_by"))
+            .transpose()?,
+        retention_until: row.try_get("retention_until").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_session_runtime_binding_row(
+    row: PgRow,
+) -> KernelResult<AgentSessionRuntimeBindingRow> {
+    Ok(AgentSessionRuntimeBindingRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
+        runtime_binding_id: row
+            .try_get("runtime_binding_id")
+            .map_err(map_sqlx_error)?,
+        runtime_location_id: row
+            .try_get("runtime_location_id")
+            .map_err(map_sqlx_error)?,
+        host_mode: row.try_get("host_mode").map_err(map_sqlx_error)?,
+        transport_kind: row.try_get("transport_kind").map_err(map_sqlx_error)?,
+        provider_binding_id: row
+            .try_get("provider_binding_id")
+            .map_err(map_sqlx_error)?,
+        model_id: row.try_get("model_id").map_err(map_sqlx_error)?,
+        provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
+        native_session_id: row
+            .try_get("native_session_id")
+            .map_err(map_sqlx_error)?,
+        native_session_tree_id: row
+            .try_get("native_session_tree_id")
+            .map_err(map_sqlx_error)?,
+        native_parent_session_id: row
+            .try_get("native_parent_session_id")
+            .map_err(map_sqlx_error)?,
+        native_forked_from_session_id: row
+            .try_get("native_forked_from_session_id")
+            .map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        is_current: row.try_get("is_current").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        activated_at: row.try_get("activated_at").map_err(map_sqlx_error)?,
+        deactivated_at: row.try_get("deactivated_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_session_checkpoint_row(
+    row: PgRow,
+) -> KernelResult<AgentSessionCheckpointRow> {
+    Ok(AgentSessionCheckpointRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
+        checkpoint_id: row.try_get("checkpoint_id").map_err(map_sqlx_error)?,
+        turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
+        runtime_binding_id: row
+            .try_get("runtime_binding_id")
+            .map_err(map_sqlx_error)?,
+        checkpoint_kind: row.try_get("checkpoint_kind").map_err(map_sqlx_error)?,
+        provider_checkpoint_ref: row
+            .try_get("provider_checkpoint_ref")
+            .map_err(map_sqlx_error)?,
+        drive_space_id: row.try_get("drive_space_id").map_err(map_sqlx_error)?,
+        drive_node_id: row.try_get("drive_node_id").map_err(map_sqlx_error)?,
+        resumable: row.try_get("resumable").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        created_by: int64_to_u64(
+            row.try_get("created_by").map_err(map_sqlx_error)?,
+            "created_by",
+        )?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        restored_at: row.try_get("restored_at").map_err(map_sqlx_error)?,
+        invalidated_at: row.try_get("invalidated_at").map_err(map_sqlx_error)?,
+        retention_until: row.try_get("retention_until").map_err(map_sqlx_error)?,
     })
 }
 
@@ -5703,10 +7134,10 @@ fn pg_row_to_agent_resource_user_state_row(row: PgRow) -> KernelResult<AgentReso
         pinned_at: row.try_get("pinned_at").map_err(map_sqlx_error)?,
         hidden_at: row.try_get("hidden_at").map_err(map_sqlx_error)?,
         last_opened_at: row.try_get("last_opened_at").map_err(map_sqlx_error)?,
-        last_read_message_sequence: row
-            .try_get::<Option<i64>, _>("last_read_message_sequence")
+        last_read_item_sequence: row
+            .try_get::<Option<i64>, _>("last_read_item_sequence")
             .map_err(map_sqlx_error)?
-            .map(|value| int64_to_u64(value, "last_read_message_sequence"))
+            .map(|value| int64_to_u64(value, "last_read_item_sequence"))
             .transpose()?,
         custom_title: row.try_get("custom_title").map_err(map_sqlx_error)?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
@@ -5716,8 +7147,8 @@ fn pg_row_to_agent_resource_user_state_row(row: PgRow) -> KernelResult<AgentReso
 }
 
 #[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_message_feedback_row(row: PgRow) -> KernelResult<AgentMessageFeedbackRow> {
-    Ok(AgentMessageFeedbackRow {
+fn pg_row_to_agent_item_feedback_row(row: PgRow) -> KernelResult<AgentItemFeedbackRow> {
+    Ok(AgentItemFeedbackRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
         uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
         tenant_id: int64_to_u64(
@@ -5728,7 +7159,7 @@ fn pg_row_to_agent_message_feedback_row(row: PgRow) -> KernelResult<AgentMessage
             row.try_get("organization_id").map_err(map_sqlx_error)?,
             "organization_id",
         )?,
-        message_id: row.try_get("message_id").map_err(map_sqlx_error)?,
+        item_id: row.try_get("item_id").map_err(map_sqlx_error)?,
         user_id: int64_to_u64(row.try_get("user_id").map_err(map_sqlx_error)?, "user_id")?,
         rating: row.try_get("rating").map_err(map_sqlx_error)?,
         reason_code: row.try_get("reason_code").map_err(map_sqlx_error)?,
@@ -5741,10 +7172,10 @@ fn pg_row_to_agent_message_feedback_row(row: PgRow) -> KernelResult<AgentMessage
 }
 
 #[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_message_drive_ref_row(row: PgRow) -> KernelResult<AgentMessageDriveRefRow> {
+fn pg_row_to_agent_item_drive_ref_row(row: PgRow) -> KernelResult<AgentItemDriveRefRow> {
     let sort_order: i32 = row.try_get("sort_order").map_err(map_sqlx_error)?;
     let created_by: i64 = row.try_get("created_by").map_err(map_sqlx_error)?;
-    Ok(AgentMessageDriveRefRow {
+    Ok(AgentItemDriveRefRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
         uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
         tenant_id: int64_to_u64(
@@ -5755,16 +7186,12 @@ fn pg_row_to_agent_message_drive_ref_row(row: PgRow) -> KernelResult<AgentMessag
             row.try_get("organization_id").map_err(map_sqlx_error)?,
             "organization_id",
         )?,
-        message_id: row.try_get("message_id").map_err(map_sqlx_error)?,
-        media_role: row.try_get("media_role").map_err(map_sqlx_error)?,
+        item_id: row.try_get("item_id").map_err(map_sqlx_error)?,
+        resource_role: row.try_get("resource_role").map_err(map_sqlx_error)?,
         drive_space_id: row.try_get("drive_space_id").map_err(map_sqlx_error)?,
         drive_node_id: row.try_get("drive_node_id").map_err(map_sqlx_error)?,
-        drive_uri: row.try_get("drive_uri").map_err(map_sqlx_error)?,
         media_resource_id: row.try_get("media_resource_id").map_err(map_sqlx_error)?,
         object_blob_id: row.try_get("object_blob_id").map_err(map_sqlx_error)?,
-        resource_snapshot_json: row
-            .try_get("resource_snapshot_json")
-            .map_err(map_sqlx_error)?,
         resource_hash: row.try_get("resource_hash").map_err(map_sqlx_error)?,
         alt_text: row.try_get("alt_text").map_err(map_sqlx_error)?,
         sort_order: u32::try_from(sort_order)
@@ -5779,18 +7206,22 @@ fn pg_row_to_agent_message_drive_ref_row(row: PgRow) -> KernelResult<AgentMessag
 }
 
 #[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_message_row(row: PgRow) -> KernelResult<AgentMessageRow> {
-    Ok(AgentMessageRow {
+fn pg_row_to_agent_session_item_row(row: PgRow) -> KernelResult<AgentSessionItemRow> {
+    let redacted_by: Option<i64> = row.try_get("redacted_by").map_err(map_sqlx_error)?;
+    Ok(AgentSessionItemRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
         uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
         tenant_id: int64_to_u64(
             row.try_get("tenant_id").map_err(map_sqlx_error)?,
             "tenant_id",
         )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        message_id: row.try_get("message_id").map_err(map_sqlx_error)?,
-        role: row.try_get("role").map_err(map_sqlx_error)?,
+        item_id: row.try_get("item_id").map_err(map_sqlx_error)?,
+        kind: row.try_get("kind").map_err(map_sqlx_error)?,
         content: row.try_get("content").map_err(map_sqlx_error)?,
         content_type: row.try_get("content_type").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
@@ -5805,18 +7236,35 @@ fn pg_row_to_agent_message_row(row: PgRow) -> KernelResult<AgentMessageRow> {
         )?,
         model_id: row.try_get("model_id").map_err(map_sqlx_error)?,
         provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
-        artifacts_json: row.try_get("artifacts_json").map_err(map_sqlx_error)?,
-        metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
-        parent_message_id: row.try_get("parent_message_id").map_err(map_sqlx_error)?,
+        tool_name: row.try_get("tool_name").map_err(map_sqlx_error)?,
+        tool_call_id: row.try_get("tool_call_id").map_err(map_sqlx_error)?,
+        tool_arguments_json: row
+            .try_get("tool_arguments_json")
+            .map_err(map_sqlx_error)?,
+        tool_result_json: row
+            .try_get("tool_result_json")
+            .map_err(map_sqlx_error)?,
+        parent_item_id: row.try_get("parent_item_id").map_err(map_sqlx_error)?,
         turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
+        created_by: int64_to_u64(
+            row.try_get("created_by").map_err(map_sqlx_error)?,
+            "created_by",
+        )?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        completed_at: row.try_get("completed_at").map_err(map_sqlx_error)?,
+        redacted_at: row.try_get("redacted_at").map_err(map_sqlx_error)?,
+        redacted_by: redacted_by
+            .map(|value| int64_to_u64(value, "redacted_by"))
+            .transpose()?,
+        retention_until: row.try_get("retention_until").map_err(map_sqlx_error)?,
     })
 }
 
 #[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_chat_turn_row(row: PgRow) -> KernelResult<AgentChatTurnRow> {
-    Ok(AgentChatTurnRow {
+fn pg_row_to_agent_turn_row(row: PgRow) -> KernelResult<AgentTurnRow> {
+    Ok(AgentTurnRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
         uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
         tenant_id: int64_to_u64(
@@ -5834,11 +7282,15 @@ fn pg_row_to_agent_chat_turn_row(row: PgRow) -> KernelResult<AgentChatTurnRow> {
             row.try_get("owner_user_id").map_err(map_sqlx_error)?,
             "owner_user_id",
         )?,
+        runtime_binding_id: row
+            .try_get("runtime_binding_id")
+            .map_err(map_sqlx_error)?,
         client_request_id: row.try_get("client_request_id").map_err(map_sqlx_error)?,
         idempotency_key: row.try_get("idempotency_key").map_err(map_sqlx_error)?,
         payload_hash: row.try_get("payload_hash").map_err(map_sqlx_error)?,
-        request_message_id: row.try_get("request_message_id").map_err(map_sqlx_error)?,
-        response_message_id: row.try_get("response_message_id").map_err(map_sqlx_error)?,
+        request_item_id: row.try_get("request_item_id").map_err(map_sqlx_error)?,
+        response_item_id: row.try_get("response_item_id").map_err(map_sqlx_error)?,
+        turn_mode: row.try_get("turn_mode").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
         requested_model_id: row.try_get("requested_model_id").map_err(map_sqlx_error)?,
         provider_binding_id: row.try_get("provider_binding_id").map_err(map_sqlx_error)?,
@@ -5852,10 +7304,33 @@ fn pg_row_to_agent_chat_turn_row(row: PgRow) -> KernelResult<AgentChatTurnRow> {
             row.try_get("output_tokens").map_err(map_sqlx_error)?,
             "output_tokens",
         )?,
+        cached_tokens: int64_to_u64(
+            row.try_get("cached_tokens").map_err(map_sqlx_error)?,
+            "cached_tokens",
+        )?,
         finish_reason: row.try_get("finish_reason").map_err(map_sqlx_error)?,
         error_code: row.try_get("error_code").map_err(map_sqlx_error)?,
         error_detail: row.try_get("error_detail").map_err(map_sqlx_error)?,
         trace_id: row.try_get("trace_id").map_err(map_sqlx_error)?,
+        attempt_count: u32::try_from(
+            row.try_get::<i32, _>("attempt_count")
+                .map_err(map_sqlx_error)?,
+        )
+        .map_err(|_| KernelError::validation("invalid turn attempt_count"))?,
+        max_attempts: u32::try_from(
+            row.try_get::<i32, _>("max_attempts")
+                .map_err(map_sqlx_error)?,
+        )
+        .map_err(|_| KernelError::validation("invalid turn max_attempts"))?,
+        next_retry_at: row.try_get("next_retry_at").map_err(map_sqlx_error)?,
+        available_at: row.try_get("available_at").map_err(map_sqlx_error)?,
+        lease_owner: row.try_get("lease_owner").map_err(map_sqlx_error)?,
+        lease_token: row.try_get("lease_token").map_err(map_sqlx_error)?,
+        lease_expires_at: row.try_get("lease_expires_at").map_err(map_sqlx_error)?,
+        fencing_token: int64_to_u64(
+            row.try_get("fencing_token").map_err(map_sqlx_error)?,
+            "fencing_token",
+        )?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
@@ -5881,18 +7356,31 @@ fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionR
             "organization_id",
         )?,
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
-        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
-        engine_key: row.try_get("engine_key").map_err(map_sqlx_error)?,
+        turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
+        runtime_binding_id: row
+            .try_get("runtime_binding_id")
+            .map_err(map_sqlx_error)?,
         interaction_id: row.try_get("interaction_id").map_err(map_sqlx_error)?,
+        provider_interaction_id: row
+            .try_get("provider_interaction_id")
+            .map_err(map_sqlx_error)?,
         kind: row.try_get("kind").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
         prompt: row.try_get("prompt").map_err(map_sqlx_error)?,
         options_json: row.try_get("options_json").map_err(map_sqlx_error)?,
         resolution_json: row.try_get("resolution_json").map_err(map_sqlx_error)?,
+        claim_owner: row.try_get("claim_owner").map_err(map_sqlx_error)?,
+        claim_token: row.try_get("claim_token").map_err(map_sqlx_error)?,
+        claim_expires_at: row.try_get("claim_expires_at").map_err(map_sqlx_error)?,
+        fencing_token: int64_to_u64(
+            row.try_get("fencing_token").map_err(map_sqlx_error)?,
+            "fencing_token",
+        )?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
         resolved_at: row.try_get("resolved_at").map_err(map_sqlx_error)?,
+        retention_until: row.try_get("retention_until").map_err(map_sqlx_error)?,
     })
 }
 
@@ -5933,7 +7421,7 @@ fn pg_row_to_agent_task_row(row: PgRow) -> KernelResult<AgentTaskRow> {
 mod tests {
     use super::{
         build_agent_business_uuid, build_agent_provider_binding_uuid, build_composition_slot_uuid,
-        build_interaction_uuid, build_message_uuid, build_session_uuid, build_task_uuid,
+        build_interaction_uuid, build_session_item_uuid, build_session_uuid, build_task_uuid,
         extract_event_context, AgentAuditEventRow,
     };
     use sdkwork_agent_kernel::{KernelEvent, KernelEventSeverity, KernelEventSource};
@@ -5943,7 +7431,7 @@ mod tests {
         let tenant_id = 4_096_123_456_789_012_345;
         let agent_id = format!("agent.pc.{}.123456789abc", "a".repeat(48));
         let session_id = format!("session.pc.{}", "s".repeat(100));
-        let message_id = format!("message.pc.{}", "m".repeat(100));
+        let item_id = format!("message.pc.{}", "m".repeat(100));
         let interaction_id = format!("interaction.pc.{}", "i".repeat(100));
         let task_id = format!("task.pc.{}", "t".repeat(100));
         let slot_id = format!("slot.pc.{}", "c".repeat(100));
@@ -5954,7 +7442,7 @@ mod tests {
             build_agent_provider_binding_uuid(tenant_id, &agent_id, &binding_id),
             build_composition_slot_uuid(tenant_id, &agent_id, &slot_id),
             build_session_uuid(tenant_id, &session_id),
-            build_message_uuid(tenant_id, &session_id, &message_id),
+            build_session_item_uuid(tenant_id, &session_id, &item_id),
             build_interaction_uuid(tenant_id, &session_id, &interaction_id),
             build_task_uuid(tenant_id, &task_id),
         ];

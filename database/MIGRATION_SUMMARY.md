@@ -1,36 +1,30 @@
 # Database Contract State
 
-Status: active
-Updated: 2026-07-14
+Status: active pre-launch baseline
 
-## Current State
+Updated: 2026-07-22
 
-- **Contract version:** 4.0.0 active (`database/contract/schema.yaml`)
-- **Implemented engine:** PostgreSQL
-- **DDL authority:** `database/ddl/baseline/postgres/0001_agents_baseline.sql`
-- **Migration authority:** `database/migrations/postgres/`
-- **Runtime bootstrap:** `sdkwork_agents_database_host::bootstrap_agents_database()` uses `LifecycleOrchestrator` (init + migrate)
-- **Strategy:** `baseline-plus-migrations` — baseline applied once on empty database, then versioned migrations applied incrementally
+## Current Contract
 
-SQLite has an eight-table compatibility baseline and a validated service pool
-facade, but it is not an active managed-store engine. The commercial contract is
-PostgreSQL-only. Runtime or kernel SQLite databases remain outside this module
-and must not be reported as Agents store parity.
+- Contract version: `5.0.0`
+- Managed engine: PostgreSQL
+- Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
+- Lifecycle strategy: `baseline-plus-migrations`
+- Active migrations: none
+- Active tables: 19
 
-The `3.1.0` baseline remains the immutable baseline authority. It includes native
-JSON columns, tenant-scoped foreign keys, uniqueness constraints, and the capability validation
-function. `0002_chat_project_commercial_expand`,
-`0003_scope_agents_outbox_dedupe`, `0004_audit_action_runtime_compatibility`,
-and `0005_generalize_agents_audit_aggregate` provide the active commercial
-contract without rewriting the baseline or its checksum history.
+The full current schema is installed from one baseline on an empty database.
+The migrations directory is intentionally reserved for changes made after the
+first production schema release. There is no pre-launch compatibility chain,
+dual-write path, projection store, or legacy session table.
 
-`ai_agent_task_run` remains outside the current product contract until the kernel `AgentRun` and
-`AgentStep` projection authority is approved. It must enter through a reviewed API contract and a
-new versioned migration rather than an undocumented table addition.
+SQLite remains a non-authoritative control-plane development subset and is not
+a managed engine for this contract.
 
-## Operations
+## Operational Checks
 
 ```powershell
-pnpm db:migrate
-pnpm db:materialize:contract
+pnpm db:validate
+pnpm db:plan
+pnpm db:drift:check
 ```

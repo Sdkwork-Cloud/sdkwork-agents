@@ -2,21 +2,21 @@ use crate::application::{
     ActivateAgentProviderBindingCommand, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AnswerInteractionCommand,
     ApproveInteractionCommand, ArchiveSessionCommand, CancelTaskCommand, ChangeAgentStatusCommand,
-    CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand, CreateMessageCommand,
+    CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand, CreateSessionItemCommand,
     CreateSessionCommand, CreateTaskCommand, DeleteAgentCommand, ExecuteTaskCommand,
-    GetAgentCommand, ListAgentsCommand, ListInteractionsCommand, ListMessagesCommand,
+    GetAgentCommand, ListAgentsCommand, ListInteractionsCommand, ListSessionItemsCommand,
     ListSessionsCommand, ListTasksCommand, RestoreAgentCommand, UpdateAgentCommand,
 };
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotRecord, AgentImplementationKind,
     AgentImplementationType, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentMessageDriveRefRecord, AgentMessageFeedbackRecord, AgentMessageRecord, AgentMessageRole,
-    AgentMessageStatus, AgentProviderBindingRecord, AgentResourceUserStateRecord,
-    AgentRuntimeExecutionRecord, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord,
-    AgentTaskStatus, AgentVisibility,
+    AgentItemDriveRefRecord, AgentItemFeedbackRecord, AgentProviderBindingRecord,
+    AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionEntrySurface,
+    AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind,
+    AgentSessionRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
-    AgentListQuery, InteractionListQuery, MessageListQuery, PaginationParams, SessionListQuery,
+    AgentListQuery, InteractionListQuery, SessionItemListQuery, PaginationParams, SessionListQuery,
     TaskListQuery,
 };
 use crate::validation::{
@@ -895,10 +895,16 @@ pub struct CreateSessionDataDto {
     #[serde(default)]
     pub session_id: Option<String>,
     pub project_id: Option<String>,
+    pub session_kind: Option<String>,
+    pub entry_surface: Option<String>,
+    pub source_module: Option<String>,
+    pub source_context_kind: Option<String>,
+    pub source_context_id: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
-    pub provider_binding_id: Option<String>,
-    pub model_id: Option<String>,
-    pub metadata_json: Option<String>,
+    pub idempotency_key: Option<String>,
+    pub payload_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -922,10 +928,20 @@ impl CreateSessionRequestDto {
             owner_user_id: parse_owner_user_id(&self.data.owner_user_id)?,
             session_id: self.data.session_id.unwrap_or_default(),
             project_id: self.data.project_id,
+            session_kind: parse_session_kind(
+                self.data.session_kind.as_deref().unwrap_or("assistant"),
+            )?,
+            entry_surface: parse_session_entry_surface(
+                self.data.entry_surface.as_deref().unwrap_or("api"),
+            )?,
+            source_module: self.data.source_module,
+            source_context_kind: self.data.source_context_kind,
+            source_context_id: self.data.source_context_id,
+            parent_session_id: self.data.parent_session_id,
+            forked_from_turn_id: self.data.forked_from_turn_id,
             title: self.data.title,
-            provider_binding_id: self.data.provider_binding_id,
-            model_id: self.data.model_id,
-            metadata_json: self.data.metadata_json.unwrap_or_else(|| "{}".to_string()),
+            idempotency_key: self.data.idempotency_key,
+            payload_hash: self.data.payload_hash,
             requested_by,
             requested_at: self.requested_at,
         })
@@ -933,9 +949,12 @@ impl CreateSessionRequestDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CloseSessionRequestDto {
+    #[serde(default)]
     pub tenant_id: String,
+    #[serde(default)]
+    pub organization_id: String,
     pub expected_version: Option<String>,
     pub requested_at: String,
 }
@@ -954,6 +973,7 @@ impl CloseSessionRequestDto {
             .transpose()?;
         Ok(CloseSessionCommand {
             tenant_id: parse_tenant_id(&self.tenant_id)?,
+            organization_id: parse_organization_id(&self.organization_id)?,
             session_id,
             expected_version,
             owner_scope: None,
@@ -964,9 +984,12 @@ impl CloseSessionRequestDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ArchiveSessionRequestDto {
+    #[serde(default)]
     pub tenant_id: String,
+    #[serde(default)]
+    pub organization_id: String,
     pub expected_version: Option<String>,
     pub requested_at: String,
 }
@@ -985,6 +1008,7 @@ impl ArchiveSessionRequestDto {
             .transpose()?;
         Ok(ArchiveSessionCommand {
             tenant_id: parse_tenant_id(&self.tenant_id)?,
+            organization_id: parse_organization_id(&self.organization_id)?,
             session_id,
             expected_version,
             owner_scope: None,
@@ -1031,21 +1055,29 @@ pub struct AgentSessionRecordDto {
     pub agent_id: String,
     pub owner_user_id: String,
     pub project_id: Option<String>,
+    pub session_kind: String,
+    pub entry_surface: String,
+    pub source_module: Option<String>,
+    pub source_context_kind: Option<String>,
+    pub source_context_id: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
     pub status: String,
-    pub provider_binding_id: Option<String>,
-    pub model_id: Option<String>,
-    pub message_count: String,
-    pub last_message_sequence: String,
+    pub item_count: String,
+    pub last_item_sequence: String,
     pub total_input_tokens: String,
     pub total_output_tokens: String,
-    pub metadata_json: String,
+    pub created_by: String,
+    pub updated_by: String,
     pub version: String,
     pub created_at: String,
     pub updated_at: String,
-    pub last_message_at: Option<String>,
+    pub last_item_at: Option<String>,
     pub closed_at: Option<String>,
     pub archived_at: Option<String>,
+    pub archived_by: Option<String>,
+    pub retention_until: Option<String>,
 }
 
 impl AgentSessionRecordDto {
@@ -1058,21 +1090,29 @@ impl AgentSessionRecordDto {
             agent_id: record.agent_id.clone(),
             owner_user_id: record.owner_user_id.to_string(),
             project_id: record.project_id.clone(),
+            session_kind: record.session_kind.as_str().to_string(),
+            entry_surface: record.entry_surface.as_str().to_string(),
+            source_module: record.source_module.clone(),
+            source_context_kind: record.source_context_kind.clone(),
+            source_context_id: record.source_context_id.clone(),
+            parent_session_id: record.parent_session_id.clone(),
+            forked_from_turn_id: record.forked_from_turn_id.clone(),
             title: record.title.clone(),
             status: record.status.as_str().to_string(),
-            provider_binding_id: record.provider_binding_id.clone(),
-            model_id: record.model_id.clone(),
-            message_count: record.message_count.to_string(),
-            last_message_sequence: record.last_message_sequence.to_string(),
+            item_count: record.item_count.to_string(),
+            last_item_sequence: record.last_item_sequence.to_string(),
             total_input_tokens: record.total_input_tokens.to_string(),
             total_output_tokens: record.total_output_tokens.to_string(),
-            metadata_json: record.metadata_json.clone(),
+            created_by: record.created_by.to_string(),
+            updated_by: record.updated_by.to_string(),
             version: record.version.to_string(),
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
-            last_message_at: record.last_message_at.clone(),
+            last_item_at: record.last_item_at.clone(),
             closed_at: record.closed_at.clone(),
             archived_at: record.archived_at.clone(),
+            archived_by: record.archived_by.map(|value| value.to_string()),
+            retention_until: record.retention_until.clone(),
         }
     }
 }
@@ -1132,7 +1172,7 @@ pub struct AgentResourceUserStateRecordDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_opened_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_read_message_sequence: Option<String>,
+    pub last_read_item_sequence: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_title: Option<String>,
     pub version: String,
@@ -1152,8 +1192,8 @@ impl AgentResourceUserStateRecordDto {
             pinned_at: record.pinned_at.clone(),
             hidden_at: record.hidden_at.clone(),
             last_opened_at: record.last_opened_at.clone(),
-            last_read_message_sequence: record
-                .last_read_message_sequence
+            last_read_item_sequence: record
+                .last_read_item_sequence
                 .map(|value| value.to_string()),
             custom_title: record.custom_title.clone(),
             version: record.version.to_string(),
@@ -1165,11 +1205,11 @@ impl AgentResourceUserStateRecordDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentMessageFeedbackRecordDto {
+pub struct AgentItemFeedbackRecordDto {
     pub id: String,
     pub tenant_id: String,
     pub organization_id: String,
-    pub message_id: String,
+    pub item_id: String,
     pub user_id: String,
     pub rating: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1183,13 +1223,13 @@ pub struct AgentMessageFeedbackRecordDto {
     pub deleted_at: Option<String>,
 }
 
-impl AgentMessageFeedbackRecordDto {
-    pub fn from_record(record: &AgentMessageFeedbackRecord) -> Self {
+impl AgentItemFeedbackRecordDto {
+    pub fn from_record(record: &AgentItemFeedbackRecord) -> Self {
         Self {
             id: record.id.to_string(),
             tenant_id: record.tenant_id.to_string(),
             organization_id: record.organization_id.to_string(),
-            message_id: record.message_id.clone(),
+            item_id: record.item_id.clone(),
             user_id: record.user_id.to_string(),
             rating: record.rating.as_str().to_string(),
             reason_code: record.reason_code.clone(),
@@ -1377,87 +1417,140 @@ impl AgentTaskRecordDto {
 // Interaction DTOs
 // ===========================================================================
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentInteractionOptionDto {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentInteractionResolutionDto {
+    pub outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_option_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInteractionRecordDto {
     pub interaction_id: String,
     pub session_id: String,
-    pub agent_id: String,
     pub tenant_id: String,
     pub organization_id: String,
-    pub engine_key: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub provider_interaction_id: Option<String>,
     pub kind: String,
     pub status: String,
     pub prompt: String,
-    pub options_json: String,
-    pub resolution_json: String,
+    pub options: Vec<AgentInteractionOptionDto>,
+    pub resolution: Option<AgentInteractionResolutionDto>,
+    pub claim_owner: Option<String>,
+    pub claim_expires_at: Option<String>,
+    pub fencing_token: String,
     pub version: String,
     pub created_at: String,
     pub updated_at: String,
     pub resolved_at: Option<String>,
+    pub retention_until: Option<String>,
 }
 
 impl AgentInteractionRecordDto {
-    pub fn from_record(record: &AgentInteractionRecord) -> Self {
-        Self {
+    pub fn from_record(record: &AgentInteractionRecord) -> KernelResult<Self> {
+        let options = serde_json::from_str(&record.options_json).map_err(|error| {
+            KernelError::Internal {
+                message: format!("stored interaction options are invalid: {error}"),
+            }
+        })?;
+        let resolution = record
+            .resolution_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|error| KernelError::Internal {
+                message: format!("stored interaction resolution is invalid: {error}"),
+            })?;
+        Ok(Self {
             interaction_id: record.interaction_id.clone(),
             session_id: record.session_id.clone(),
-            agent_id: record.agent_id.clone(),
             tenant_id: record.tenant_id.to_string(),
             organization_id: record.organization_id.to_string(),
-            engine_key: record.engine_key.clone(),
+            turn_id: record.turn_id.clone(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            provider_interaction_id: record.provider_interaction_id.clone(),
             kind: record.kind.as_str().to_string(),
             status: record.status.as_str().to_string(),
             prompt: record.prompt.clone(),
-            options_json: record.options_json.clone(),
-            resolution_json: record.resolution_json.clone(),
+            options,
+            resolution,
+            claim_owner: record.claim_owner.clone(),
+            claim_expires_at: record.claim_expires_at.clone(),
+            fencing_token: record.fencing_token.to_string(),
             version: record.version.to_string(),
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
             resolved_at: record.resolved_at.clone(),
-        }
+            retention_until: record.retention_until.clone(),
+        })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateInteractionDataDto {
-    pub tenant_id: String,
-    pub organization_id: String,
-    pub interaction_id: Option<String>,
-    pub engine_key: String,
-    pub kind: String,
-    pub prompt: String,
-    pub options_json: Option<String>,
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentInteractionOptionInputDto {
+    pub value: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateInteractionRequestDto {
-    pub data: CreateInteractionDataDto,
+    pub interaction_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub provider_interaction_id: Option<String>,
+    pub kind: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub options: Vec<AgentInteractionOptionInputDto>,
+    pub retention_until: Option<String>,
     pub requested_at: String,
 }
 
 impl CreateInteractionRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
         agent_id: String,
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<CreateInteractionCommand> {
         validate_requested_at(&self.requested_at)?;
-        let kind = AgentInteractionKind::from_code(self.data.kind.as_str())
+        let kind = AgentInteractionKind::from_code(self.kind.as_str())
             .ok_or_else(|| KernelError::validation("invalid interaction kind"))?;
+        let options_json = serde_json::to_string(&self.options).map_err(|error| {
+            KernelError::validation(format!("options serialization failed: {error}"))
+        })?;
         Ok(CreateInteractionCommand {
-            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
-            organization_id: parse_organization_id(&self.data.organization_id)?,
+            tenant_id,
+            organization_id,
             session_id,
-            agent_id,
-            interaction_id: self.data.interaction_id.unwrap_or_default(),
-            engine_key: self.data.engine_key,
+            path_agent_id: agent_id,
+            interaction_id: self.interaction_id.unwrap_or_default(),
+            turn_id: self.turn_id,
+            runtime_binding_id: self.runtime_binding_id,
+            provider_interaction_id: self.provider_interaction_id,
             kind,
-            prompt: self.data.prompt,
-            options_json: self.data.options_json.unwrap_or_else(|| "[]".to_string()),
+            prompt: self.prompt,
+            options_json,
+            retention_until: self.retention_until,
             owner_scope: None,
             requested_by,
             requested_at: self.requested_at,
@@ -1468,6 +1561,7 @@ impl CreateInteractionRequestDto {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListInteractionsRequestDto {
     pub tenant_id: String,
+    pub organization_id: String,
     pub status: Option<String>,
 }
 
@@ -1477,8 +1571,11 @@ impl ListInteractionsRequestDto {
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<ListInteractionsCommand> {
-        let mut query =
-            InteractionListQuery::for_session(parse_tenant_id(&self.tenant_id)?, session_id);
+        let mut query = InteractionListQuery::for_session(
+            parse_tenant_id(&self.tenant_id)?,
+            parse_organization_id(&self.organization_id)?,
+            session_id,
+        );
         if let Some(status) = self.status {
             query = query.with_status(parse_interaction_status(&status)?);
         }
@@ -1492,12 +1589,12 @@ impl ListInteractionsRequestDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApproveInteractionRequestDto {
-    #[serde(default)]
-    pub tenant_id: String,
     pub approved: bool,
     pub reason: Option<String>,
+    pub claim_token: String,
+    pub fencing_token: String,
     pub expected_version: String,
     pub requested_at: String,
 }
@@ -1505,6 +1602,8 @@ pub struct ApproveInteractionRequestDto {
 impl ApproveInteractionRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
         path_agent_id: String,
         session_id: String,
         interaction_id: String,
@@ -1512,12 +1611,15 @@ impl ApproveInteractionRequestDto {
     ) -> KernelResult<ApproveInteractionCommand> {
         validate_requested_at(&self.requested_at)?;
         Ok(ApproveInteractionCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            tenant_id,
+            organization_id,
             path_agent_id,
             session_id,
             interaction_id,
             approved: self.approved,
             reason: self.reason,
+            claim_token: self.claim_token,
+            fencing_token: parse_u64(&self.fencing_token, "fencingToken")?,
             expected_version: parse_expected_version(&self.expected_version)?,
             owner_scope: None,
             requested_by,
@@ -1527,13 +1629,13 @@ impl ApproveInteractionRequestDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnswerInteractionRequestDto {
-    #[serde(default)]
-    pub tenant_id: String,
     pub answer: String,
-    pub option_label: Option<String>,
+    pub selected_option_value: Option<String>,
     pub rejected: bool,
+    pub claim_token: String,
+    pub fencing_token: String,
     pub expected_version: String,
     pub requested_at: String,
 }
@@ -1541,6 +1643,8 @@ pub struct AnswerInteractionRequestDto {
 impl AnswerInteractionRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
         path_agent_id: String,
         session_id: String,
         interaction_id: String,
@@ -1548,13 +1652,16 @@ impl AnswerInteractionRequestDto {
     ) -> KernelResult<AnswerInteractionCommand> {
         validate_requested_at(&self.requested_at)?;
         Ok(AnswerInteractionCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            tenant_id,
+            organization_id,
             path_agent_id,
             session_id,
             interaction_id,
             answer: self.answer,
-            option_label: self.option_label,
+            selected_option_value: self.selected_option_value,
             rejected: self.rejected,
+            claim_token: self.claim_token,
+            fencing_token: parse_u64(&self.fencing_token, "fencingToken")?,
             expected_version: parse_expected_version(&self.expected_version)?,
             owner_scope: None,
             requested_by,
@@ -1563,40 +1670,100 @@ impl AnswerInteractionRequestDto {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClaimInteractionRequestDto {
+    pub claim_owner: String,
+    #[serde(default = "default_interaction_lease_seconds")]
+    pub lease_seconds: u32,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ClaimInteractionRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        interaction_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::ClaimInteractionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(crate::application::ClaimInteractionCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            interaction_id,
+            claim_owner: self.claim_owner,
+            lease_seconds: self.lease_seconds,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+const fn default_interaction_lease_seconds() -> u32 {
+    60
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionClaimResultDto {
+    pub interaction: AgentInteractionRecordDto,
+    pub claim_token: String,
+    pub claim_expires_at: String,
+    pub fencing_token: String,
+}
+
+impl InteractionClaimResultDto {
+    pub fn from_result(result: &crate::application::InteractionClaimResult) -> KernelResult<Self> {
+        Ok(Self {
+            interaction: AgentInteractionRecordDto::from_record(&result.interaction)?,
+            claim_token: result.claim_token.clone(),
+            claim_expires_at: result.claim_expires_at.clone(),
+            fencing_token: result.fencing_token.to_string(),
+        })
+    }
+}
+
 // ===========================================================================
-// Message DTOs
+// Session item DTOs
 // ===========================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateMessageDataDto {
+pub struct CreateSessionItemDataDto {
     pub tenant_id: String,
-    pub message_id: String,
-    pub role: String,
+    pub organization_id: String,
+    pub item_id: String,
+    pub kind: String,
     pub content: String,
     pub content_type: Option<String>,
     pub input_tokens: Option<String>,
     pub output_tokens: Option<String>,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub artifacts_json: Option<String>,
-    pub metadata_json: Option<String>,
-    pub parent_message_id: Option<String>,
+    pub parent_item_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateMessageRequestDto {
-    pub data: CreateMessageDataDto,
+pub struct CreateSessionItemRequestDto {
+    pub data: CreateSessionItemDataDto,
     pub requested_at: String,
 }
 
-impl CreateMessageRequestDto {
+impl CreateSessionItemRequestDto {
     pub fn into_command(
         self,
         session_id: String,
         requested_by: PolicySubject,
-    ) -> KernelResult<CreateMessageCommand> {
+    ) -> KernelResult<CreateSessionItemCommand> {
         validate_requested_at(&self.requested_at)?;
         let input_tokens = self
             .data
@@ -1612,11 +1779,12 @@ impl CreateMessageRequestDto {
             .map(|v| parse_u64(v, "outputTokens"))
             .transpose()?
             .unwrap_or(0);
-        Ok(CreateMessageCommand {
+        Ok(CreateSessionItemCommand {
             tenant_id: parse_tenant_id(&self.data.tenant_id)?,
+            organization_id: parse_organization_id(&self.data.organization_id)?,
             session_id,
-            message_id: self.data.message_id,
-            role: parse_message_role(&self.data.role)?,
+            item_id: self.data.item_id,
+            kind: parse_session_item_kind(&self.data.kind)?,
             content: self.data.content,
             content_type: self
                 .data
@@ -1626,9 +1794,7 @@ impl CreateMessageRequestDto {
             output_tokens,
             model_id: self.data.model_id,
             provider_id: self.data.provider_id,
-            artifacts_json: self.data.artifacts_json.unwrap_or_else(|| "[]".to_string()),
-            metadata_json: self.data.metadata_json.unwrap_or_else(|| "{}".to_string()),
-            parent_message_id: self.data.parent_message_id,
+            parent_item_id: self.data.parent_item_id,
             requested_by,
             requested_at: self.requested_at,
         })
@@ -1636,27 +1802,31 @@ impl CreateMessageRequestDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListMessagesRequestDto {
+pub struct ListSessionItemsRequestDto {
     pub tenant_id: String,
-    pub role: Option<String>,
+    pub organization_id: String,
+    pub kind: Option<String>,
     pub status: Option<String>,
 }
 
-impl ListMessagesRequestDto {
+impl ListSessionItemsRequestDto {
     pub fn into_command(
         self,
         session_id: String,
         requested_by: PolicySubject,
-    ) -> KernelResult<ListMessagesCommand> {
-        let mut query =
-            MessageListQuery::for_session(parse_tenant_id(&self.tenant_id)?, session_id);
-        if let Some(role) = self.role {
-            query = query.with_role(parse_message_role(&role)?.as_str());
+    ) -> KernelResult<ListSessionItemsCommand> {
+        let mut query = SessionItemListQuery::for_session(
+            parse_tenant_id(&self.tenant_id)?,
+            parse_organization_id(&self.organization_id)?,
+            session_id,
+        );
+        if let Some(kind) = self.kind {
+            query = query.with_kind(parse_session_item_kind(&kind)?.as_str());
         }
         if let Some(status) = self.status {
-            query = query.with_status(parse_message_status(&status)?);
+            query = query.with_status(parse_session_item_status(&status)?);
         }
-        Ok(ListMessagesCommand {
+        Ok(ListSessionItemsCommand {
             query,
             owner_scope: None,
             requested_by,
@@ -1666,14 +1836,15 @@ impl ListMessagesRequestDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentMessageRecordDto {
+pub struct AgentSessionItemRecordDto {
     pub id: String,
-    pub message_id: String,
+    pub item_id: String,
     pub tenant_id: String,
+    pub organization_id: String,
     pub session_id: String,
-    pub agent_id: String,
-    pub role: String,
-    pub content: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     pub content_type: String,
     pub status: String,
     pub sequence: String,
@@ -1681,24 +1852,90 @@ pub struct AgentMessageRecordDto {
     pub output_tokens: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub artifacts_json: String,
-    pub metadata_json: String,
-    pub media_resources: Vec<Value>,
-    pub parent_message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_arguments_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_result_json: Option<String>,
+    pub drive_refs: Vec<AgentItemDriveRefRecordDto>,
+    pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
+    pub created_by: String,
+    pub version: String,
     pub created_at: String,
     pub updated_at: String,
+    pub completed_at: Option<String>,
+    pub redacted_at: Option<String>,
+    pub redacted_by: Option<String>,
+    pub retention_until: Option<String>,
 }
 
-impl AgentMessageRecordDto {
-    pub fn from_record(record: &AgentMessageRecord) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentItemDriveRefRecordDto {
+    pub id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub item_id: String,
+    pub resource_role: String,
+    pub drive_space_id: String,
+    pub drive_node_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_resource_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_blob_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt_text: Option<String>,
+    pub sort_order: u32,
+    pub status: i16,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_until: Option<String>,
+}
+
+impl AgentItemDriveRefRecordDto {
+    fn from_record(record: &AgentItemDriveRefRecord) -> Self {
         Self {
             id: record.id.to_string(),
-            message_id: record.message_id.clone(),
             tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            item_id: record.item_id.clone(),
+            resource_role: record.resource_role.as_str().to_string(),
+            drive_space_id: record.drive_space_id.clone(),
+            drive_node_id: record.drive_node_id.clone(),
+            media_resource_id: record.media_resource_id.clone(),
+            object_blob_id: record.object_blob_id.clone(),
+            resource_hash: record.resource_hash.clone(),
+            alt_text: record.alt_text.clone(),
+            sort_order: record.sort_order,
+            status: record.status,
+            created_by: record.created_by.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            deleted_at: record.deleted_at.clone(),
+            retention_until: record.retention_until.clone(),
+        }
+    }
+}
+
+impl AgentSessionItemRecordDto {
+    pub fn from_record(record: &AgentSessionItemRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            item_id: record.item_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
             session_id: record.session_id.clone(),
-            agent_id: record.agent_id.clone(),
-            role: record.role.as_str().to_string(),
+            kind: record.kind.as_str().to_string(),
             content: record.content.clone(),
             content_type: record.content_type.clone(),
             status: record.status.as_str().to_string(),
@@ -1707,82 +1944,533 @@ impl AgentMessageRecordDto {
             output_tokens: record.output_tokens.to_string(),
             model_id: record.model_id.clone(),
             provider_id: record.provider_id.clone(),
-            artifacts_json: record.artifacts_json.clone(),
-            metadata_json: record.metadata_json.clone(),
-            media_resources: Vec::new(),
-            parent_message_id: record.parent_message_id.clone(),
+            tool_name: record.tool_name.clone(),
+            tool_call_id: record.tool_call_id.clone(),
+            tool_arguments_json: record.tool_arguments_json.clone(),
+            tool_result_json: record.tool_result_json.clone(),
+            drive_refs: Vec::new(),
+            parent_item_id: record.parent_item_id.clone(),
             turn_id: record.turn_id.clone(),
+            created_by: record.created_by.to_string(),
+            version: record.version.to_string(),
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
+            completed_at: record.completed_at.clone(),
+            redacted_at: record.redacted_at.clone(),
+            redacted_by: record.redacted_by.map(|value| value.to_string()),
+            retention_until: record.retention_until.clone(),
         }
     }
 
     pub fn from_record_with_drive_refs(
-        record: &AgentMessageRecord,
-        drive_refs: &[AgentMessageDriveRefRecord],
+        record: &AgentSessionItemRecord,
+        drive_refs: &[AgentItemDriveRefRecord],
     ) -> KernelResult<Self> {
         let mut dto = Self::from_record(record);
-        dto.media_resources = drive_refs
+        dto.drive_refs = drive_refs
             .iter()
-            .map(|drive_ref| {
-                let value = serde_json::from_str::<Value>(&drive_ref.resource_snapshot_json)
-                    .map_err(|error| KernelError::Internal {
-                        message: format!(
-                            "invalid persisted MediaResource snapshot for message {}: {error}",
-                            record.message_id
-                        ),
-                    })?;
-                if !value.is_object() {
-                    return Err(KernelError::Internal {
-                        message: format!(
-                            "persisted MediaResource snapshot for message {} is not an object",
-                            record.message_id
-                        ),
-                    });
-                }
-                Ok(value)
-            })
-            .collect::<KernelResult<Vec<_>>>()?;
+            .map(AgentItemDriveRefRecordDto::from_record)
+            .collect();
         Ok(dto)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentMessageResponseDto {
-    pub data: AgentMessageRecordDto,
+pub struct AgentSessionItemResponseDto {
+    pub data: AgentSessionItemRecordDto,
 }
 
-impl AgentMessageResponseDto {
-    pub fn from_record(record: &AgentMessageRecord) -> Self {
+impl AgentSessionItemResponseDto {
+    pub fn from_record(record: &AgentSessionItemRecord) -> Self {
         Self {
-            data: AgentMessageRecordDto::from_record(record),
+            data: AgentSessionItemRecordDto::from_record(record),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentMessageListDataDto {
-    pub items: Vec<AgentMessageRecordDto>,
+pub struct AgentSessionItemListDataDto {
+    pub items: Vec<AgentSessionItemRecordDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentMessageListResponseDto {
-    pub data: AgentMessageListDataDto,
+pub struct AgentSessionItemListResponseDto {
+    pub data: AgentSessionItemListDataDto,
 }
 
-impl AgentMessageListResponseDto {
-    pub fn from_records(records: &[AgentMessageRecord]) -> Self {
+impl AgentSessionItemListResponseDto {
+    pub fn from_records(records: &[AgentSessionItemRecord]) -> Self {
         Self {
-            data: AgentMessageListDataDto {
+            data: AgentSessionItemListDataDto {
                 items: records
                     .iter()
-                    .map(AgentMessageRecordDto::from_record)
+                    .map(AgentSessionItemRecordDto::from_record)
                     .collect(),
             },
         }
+    }
+}
+
+// ===========================================================================
+// Turn DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTurnRecordDto {
+    pub turn_id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub session_id: String,
+    pub agent_id: String,
+    pub owner_user_id: String,
+    pub runtime_binding_id: Option<String>,
+    pub client_request_id: Option<String>,
+    pub idempotency_key: String,
+    pub payload_hash: String,
+    pub request_item_id: String,
+    pub response_item_id: Option<String>,
+    pub turn_mode: String,
+    pub status: String,
+    pub requested_model_id: Option<String>,
+    pub provider_binding_id: Option<String>,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub input_tokens: String,
+    pub output_tokens: String,
+    pub cached_tokens: String,
+    pub finish_reason: Option<String>,
+    pub error_code: Option<String>,
+    pub error_detail: Option<String>,
+    pub trace_id: Option<String>,
+    pub attempt_count: u32,
+    pub max_attempts: u32,
+    pub next_retry_at: Option<String>,
+    pub available_at: String,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub fencing_token: String,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub cancel_requested_at: Option<String>,
+    pub cancelled_at: Option<String>,
+    pub retention_until: Option<String>,
+}
+
+impl AgentTurnRecordDto {
+    pub fn from_record(record: &crate::agent_turn::AgentTurnRecord) -> Self {
+        Self {
+            turn_id: record.turn_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            session_id: record.session_id.clone(),
+            agent_id: record.agent_id.clone(),
+            owner_user_id: record.owner_user_id.to_string(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            client_request_id: record.client_request_id.clone(),
+            idempotency_key: record.idempotency_key.clone(),
+            payload_hash: record.payload_hash.clone(),
+            request_item_id: record.request_item_id.clone(),
+            response_item_id: record.response_item_id.clone(),
+            turn_mode: record.turn_mode.as_str().to_string(),
+            status: record.status.as_str().to_string(),
+            requested_model_id: record.requested_model_id.clone(),
+            provider_binding_id: record.provider_binding_id.clone(),
+            model_id: record.model_id.clone(),
+            provider_id: record.provider_id.clone(),
+            input_tokens: record.input_tokens.to_string(),
+            output_tokens: record.output_tokens.to_string(),
+            cached_tokens: record.cached_tokens.to_string(),
+            finish_reason: record.finish_reason.clone(),
+            error_code: record.error_code.clone(),
+            error_detail: record.error_detail.clone(),
+            trace_id: record.trace_id.clone(),
+            attempt_count: record.attempt_count,
+            max_attempts: record.max_attempts,
+            next_retry_at: record.next_retry_at.clone(),
+            available_at: record.available_at.clone(),
+            lease_owner: record.lease_owner.clone(),
+            lease_expires_at: record.lease_expires_at.clone(),
+            fencing_token: record.fencing_token.to_string(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            started_at: record.started_at.clone(),
+            completed_at: record.completed_at.clone(),
+            cancel_requested_at: record.cancel_requested_at.clone(),
+            cancelled_at: record.cancelled_at.clone(),
+            retention_until: record.retention_until.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTurnExecutionDto {
+    pub session: AgentSessionRecordDto,
+    pub turn: AgentTurnRecordDto,
+    pub items: Vec<AgentSessionItemRecordDto>,
+}
+
+impl AgentTurnExecutionDto {
+    pub fn from_result(result: &crate::application::TurnExecutionResult) -> KernelResult<Self> {
+        Ok(Self {
+            session: AgentSessionRecordDto::from_record(&result.session),
+            turn: AgentTurnRecordDto::from_record(&result.turn),
+            items: vec![
+                AgentSessionItemRecordDto::from_record_with_drive_refs(
+                    &result.user_input_item,
+                    &result.user_item_drive_refs,
+                )?,
+                AgentSessionItemRecordDto::from_record(&result.assistant_output_item),
+            ],
+        })
+    }
+}
+
+// ===========================================================================
+// Checkpoint DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionCheckpointRecordDto {
+    pub checkpoint_id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub session_id: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub checkpoint_kind: String,
+    pub provider_checkpoint_ref: Option<String>,
+    pub drive_space_id: Option<String>,
+    pub drive_node_id: Option<String>,
+    pub resumable: bool,
+    pub status: String,
+    pub created_by: String,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub restored_at: Option<String>,
+    pub invalidated_at: Option<String>,
+    pub retention_until: Option<String>,
+}
+
+impl AgentSessionCheckpointRecordDto {
+    pub fn from_record(record: &crate::domain::AgentSessionCheckpointRecord) -> Self {
+        Self {
+            checkpoint_id: record.checkpoint_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            session_id: record.session_id.clone(),
+            turn_id: record.turn_id.clone(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            checkpoint_kind: record.checkpoint_kind.clone(),
+            provider_checkpoint_ref: record.provider_checkpoint_ref.clone(),
+            drive_space_id: record.drive_space_id.clone(),
+            drive_node_id: record.drive_node_id.clone(),
+            resumable: record.resumable,
+            status: record.status.as_str().to_string(),
+            created_by: record.created_by.to_string(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            restored_at: record.restored_at.clone(),
+            invalidated_at: record.invalidated_at.clone(),
+            retention_until: record.retention_until.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSessionCheckpointRequestDto {
+    pub checkpoint_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub checkpoint_kind: String,
+    pub provider_checkpoint_ref: Option<String>,
+    pub drive_space_id: Option<String>,
+    pub drive_node_id: Option<String>,
+    pub resumable: bool,
+    pub retention_until: Option<String>,
+    pub requested_at: String,
+}
+
+impl CreateSessionCheckpointRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::CreateSessionCheckpointCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(crate::application::CreateSessionCheckpointCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            checkpoint_id: self.checkpoint_id,
+            turn_id: self.turn_id,
+            runtime_binding_id: self.runtime_binding_id,
+            checkpoint_kind: self.checkpoint_kind,
+            provider_checkpoint_ref: self.provider_checkpoint_ref,
+            drive_space_id: self.drive_space_id,
+            drive_node_id: self.drive_node_id,
+            resumable: self.resumable,
+            retention_until: self.retention_until,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChangeSessionCheckpointStatusRequestDto {
+    pub reason: Option<String>,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ChangeSessionCheckpointStatusRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        checkpoint_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::ChangeSessionCheckpointStatusCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(crate::application::ChangeSessionCheckpointStatusCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            checkpoint_id,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            reason: self.reason,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+// ===========================================================================
+// Session runtime binding DTOs
+// ===========================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionRuntimeBindingRecordDto {
+    pub runtime_binding_id: String,
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub session_id: String,
+    pub runtime_location_id: Option<String>,
+    pub host_mode: String,
+    pub transport_kind: String,
+    pub provider_binding_id: String,
+    pub model_id: String,
+    pub provider_id: String,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub status: String,
+    pub is_current: bool,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub activated_at: Option<String>,
+    pub deactivated_at: Option<String>,
+}
+
+impl AgentSessionRuntimeBindingRecordDto {
+    pub fn from_record(record: &crate::domain::AgentSessionRuntimeBindingRecord) -> Self {
+        Self {
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            tenant_id: record.tenant_id.to_string(),
+            organization_id: record.organization_id.to_string(),
+            session_id: record.session_id.clone(),
+            runtime_location_id: record.runtime_location_id.clone(),
+            host_mode: record.host_mode.clone(),
+            transport_kind: record.transport_kind.clone(),
+            provider_binding_id: record.provider_binding_id.clone(),
+            model_id: record.model_id.clone(),
+            provider_id: record.provider_id.clone(),
+            native_session_id: record.native_session_id.clone(),
+            native_session_tree_id: record.native_session_tree_id.clone(),
+            native_parent_session_id: record.native_parent_session_id.clone(),
+            native_forked_from_session_id: record.native_forked_from_session_id.clone(),
+            status: record.status.as_str().to_string(),
+            is_current: record.is_current,
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            activated_at: record.activated_at.clone(),
+            deactivated_at: record.deactivated_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSessionRuntimeBindingRequestDto {
+    pub runtime_binding_id: Option<String>,
+    pub runtime_location_id: Option<String>,
+    pub host_mode: String,
+    pub transport_kind: String,
+    pub provider_binding_id: String,
+    pub model_id: String,
+    pub provider_id: String,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub requested_at: String,
+}
+
+impl CreateSessionRuntimeBindingRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::CreateSessionRuntimeBindingCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(crate::application::CreateSessionRuntimeBindingCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            runtime_binding_id: self.runtime_binding_id,
+            runtime_location_id: self.runtime_location_id,
+            host_mode: self.host_mode,
+            transport_kind: self.transport_kind,
+            provider_binding_id: self.provider_binding_id,
+            model_id: self.model_id,
+            provider_id: self.provider_id,
+            native_session_id: self.native_session_id,
+            native_session_tree_id: self.native_session_tree_id,
+            native_parent_session_id: self.native_parent_session_id,
+            native_forked_from_session_id: self.native_forked_from_session_id,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateSessionRuntimeBindingRequestDto {
+    pub runtime_location_id: Option<String>,
+    #[serde(default)]
+    pub clear_runtime_location: bool,
+    pub host_mode: Option<String>,
+    pub transport_kind: Option<String>,
+    pub provider_binding_id: Option<String>,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl UpdateSessionRuntimeBindingRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        runtime_binding_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::UpdateSessionRuntimeBindingCommand> {
+        validate_requested_at(&self.requested_at)?;
+        if self.clear_runtime_location && self.runtime_location_id.is_some() {
+            return Err(KernelError::validation(
+                "runtimeLocationId and clearRuntimeLocation cannot be supplied together",
+            ));
+        }
+        let runtime_location_id = if self.clear_runtime_location {
+            Some(None)
+        } else {
+            self.runtime_location_id.map(Some)
+        };
+        Ok(crate::application::UpdateSessionRuntimeBindingCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            runtime_binding_id,
+            runtime_location_id,
+            host_mode: self.host_mode,
+            transport_kind: self.transport_kind,
+            provider_binding_id: self.provider_binding_id,
+            model_id: self.model_id,
+            provider_id: self.provider_id,
+            native_session_id: self.native_session_id,
+            native_session_tree_id: self.native_session_tree_id,
+            native_parent_session_id: self.native_parent_session_id,
+            native_forked_from_session_id: self.native_forked_from_session_id,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChangeSessionRuntimeBindingStatusRequestDto {
+    pub reason: Option<String>,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ChangeSessionRuntimeBindingStatusRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        runtime_binding_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::ChangeSessionRuntimeBindingStatusCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(crate::application::ChangeSessionRuntimeBindingStatusCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            runtime_binding_id,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            reason: self.reason,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
     }
 }
 
@@ -1832,12 +2520,12 @@ fn parse_interaction_status(value: &str) -> KernelResult<String> {
         })
 }
 
-fn parse_message_status(value: &str) -> KernelResult<String> {
-    AgentMessageStatus::from_code(value)
+fn parse_session_item_status(value: &str) -> KernelResult<String> {
+    AgentSessionItemStatus::from_code(value)
         .map(|status| status.as_str().to_string())
         .ok_or_else(|| {
             KernelError::validation(format!(
-                "status must be one of sent, delivered, read, failed, cancelled: {value}"
+                "status must be one of pending, completed, failed, cancelled, redacted: {value}"
             ))
         })
 }
@@ -1855,10 +2543,26 @@ fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationTyp
     })
 }
 
-fn parse_message_role(value: &str) -> KernelResult<AgentMessageRole> {
-    AgentMessageRole::from_code(value).ok_or_else(|| {
+fn parse_session_item_kind(value: &str) -> KernelResult<AgentSessionItemKind> {
+    AgentSessionItemKind::from_code(value).ok_or_else(|| {
         KernelError::validation(format!(
-            "message role must be one of user, assistant, system, tool: {value}"
+            "kind must be one of user_input, system_instruction, assistant_output, reasoning, tool_call, tool_result, artifact_reference, status_notice, error_notice: {value}"
+        ))
+    })
+}
+
+fn parse_session_kind(value: &str) -> KernelResult<AgentSessionKind> {
+    AgentSessionKind::from_code(value).ok_or_else(|| {
+        KernelError::validation(format!(
+            "sessionKind must be one of assistant, coding, automation, im_dispatch: {value}"
+        ))
+    })
+}
+
+fn parse_session_entry_surface(value: &str) -> KernelResult<AgentSessionEntrySurface> {
+    AgentSessionEntrySurface::from_code(value).ok_or_else(|| {
+        KernelError::validation(format!(
+            "entrySurface must be one of pc, h5, flutter, mini_program, api, im_dispatch, automation: {value}"
         ))
     })
 }

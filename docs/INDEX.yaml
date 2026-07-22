@@ -9,6 +9,7 @@ canon:
   providerTaxonomy: specs/AGENTS_PROVIDER_TAXONOMY_SPEC.md
   kernelSpiGapAnalysis: specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md
   birdcoderAlignment: specs/agents-birdcoder-alignment.spec.json
+  agentSessionDomain: specs/AGENTS_SESSION_MODEL_SPEC.md
   preLaunchVerification: docs/runbooks/pre-launch-verification.md
   monitoring: docs/runbooks/monitoring.md
   smokeTest: docs/runbooks/smoke-test.md
@@ -42,6 +43,14 @@ entries:
   - id: kernel-boundary-spec
     title: Kernel vs agents boundary
     path: specs/AGENTS_KERNEL_BOUNDARY_SPEC.md
+    domain: architecture
+  - id: agent-session-domain-spec
+    title: Agent session domain model
+    path: specs/AGENTS_SESSION_MODEL_SPEC.md
+    domain: architecture
+  - id: agent-session-domain-decision
+    title: Agent session domain unification decision
+    path: docs/architecture/decisions/ADR-20260722-agent-session-domain-unification.md
     domain: architecture
   - id: provider-taxonomy-spec
     title: Agent provider taxonomy

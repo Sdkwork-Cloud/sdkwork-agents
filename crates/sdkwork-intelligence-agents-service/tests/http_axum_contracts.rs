@@ -3952,7 +3952,7 @@ async fn app_chat_complete_should_replay_same_idempotency_payload_and_reject_con
     )
     .await;
 
-    let uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages/complete");
+    let uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items/complete");
     let payload = json!({
         "content": "One commercial turn",
         "idempotencyKey": "idem.http.complete.1",
@@ -4094,7 +4094,7 @@ async fn app_chat_message_turn_should_return_completion() {
 
     let completion = post_json(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages"),
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items"),
         json!({
             "content": "Hello over HTTP",
             "requestedAt": "2026-06-28T12:00:01Z"
@@ -4147,7 +4147,7 @@ async fn open_api_chat_message_should_accept_body_tenant_id() {
 
     let completion = post_json(
         &app,
-        &format!("/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/messages"),
+        &format!("/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items"),
         json!({
             "tenantId": "100001",
             "content": "Open API hello",

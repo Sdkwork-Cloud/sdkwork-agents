@@ -1,15 +1,16 @@
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
 use sdkwork_intelligence_agents_service::{
-    AgentMessageFeedbackRating, AgentMessageRole, AgentRepository, AgentResourceType,
-    AgentResourceUserStateRecord, AgentSessionRecord, AgentSessionStatus, AgentVisibility,
-    AgentsService, CreateAgentCommand, CreateMessageCommand, CreateSessionCommand,
+    AgentItemFeedbackRating, AgentRepository, AgentResourceType, AgentResourceUserStateRecord,
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionKind, AgentSessionRecord,
+    AgentSessionStatus, AgentVisibility,
+    AgentsService, CreateAgentCommand, CreateSessionItemCommand, CreateSessionCommand,
     GetSessionUserStateCommand, IamGatedPolicyProvider, InMemoryAgentAuditSink,
-    InMemoryAgentRepository, ListMessageFeedbackCommand, ListSessionUserStatesCommand,
-    MessageFeedbackListQuery, PaginationParams, ResourceUserStateListQuery,
-    UpdateMessageFeedbackCommand, UpdateSessionUserStateCommand, SQL_COUNT_AGENT_MESSAGE_FEEDBACK,
-    SQL_COUNT_AGENT_RESOURCE_USER_STATES, SQL_LIST_AGENT_MESSAGE_FEEDBACK,
-    SQL_LIST_AGENT_RESOURCE_USER_STATES, SQL_SELECT_AGENT_MESSAGE_FEEDBACK,
-    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_UPSERT_AGENT_MESSAGE_FEEDBACK,
+    InMemoryAgentRepository, ListItemFeedbackCommand, ListSessionUserStatesCommand,
+    ItemFeedbackListQuery, PaginationParams, ResourceUserStateListQuery,
+    UpdateItemFeedbackCommand, UpdateSessionUserStateCommand, SQL_COUNT_AGENT_ITEM_FEEDBACK,
+    SQL_COUNT_AGENT_RESOURCE_USER_STATES, SQL_LIST_AGENT_ITEM_FEEDBACK,
+    SQL_LIST_AGENT_RESOURCE_USER_STATES, SQL_SELECT_AGENT_ITEM_FEEDBACK,
+    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
     SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
 
@@ -69,10 +70,16 @@ fn create_session(service: &TestService, agent_id: &str, session_id: &str) {
             owner_user_id: 100,
             session_id: session_id.to_string(),
             project_id: None,
+            session_kind: AgentSessionKind::Assistant,
+            entry_surface: AgentSessionEntrySurface::Api,
+            source_module: None,
+            source_context_kind: None,
+            source_context_id: None,
+            parent_session_id: None,
+            forked_from_turn_id: None,
             title: Some("Contract session".to_string()),
             provider_binding_id: None,
             model_id: None,
-            metadata_json: "{}".to_string(),
             requested_by: subject(),
             requested_at: "2026-07-19T00:01:00Z".to_string(),
         })
@@ -107,7 +114,7 @@ fn session_user_state_service_enforces_scope_versions_and_read_sequence() {
             pinned: Some(true),
             hidden: None,
             mark_opened: true,
-            last_read_message_sequence: Some(0),
+            last_read_item_sequence: Some(0),
             custom_title: Some(Some("Pinned contract".to_string())),
             expected_version: None,
             requested_by: subject(),
@@ -158,7 +165,7 @@ fn session_user_state_service_enforces_scope_versions_and_read_sequence() {
         pinned: None,
         hidden: None,
         mark_opened: false,
-        last_read_message_sequence: Some(1),
+        last_read_item_sequence: Some(1),
         custom_title: None,
         expected_version: Some(0),
         requested_by: subject(),
@@ -179,7 +186,7 @@ fn session_user_state_service_enforces_scope_versions_and_read_sequence() {
             pinned: Some(false),
             hidden: None,
             mark_opened: false,
-            last_read_message_sequence: None,
+            last_read_item_sequence: None,
             custom_title: None,
             expected_version: Some(0),
             requested_by: subject(),
@@ -200,7 +207,7 @@ fn session_user_state_service_enforces_scope_versions_and_read_sequence() {
         session_id: "session.alpha".to_string(),
         hidden: None,
         mark_opened: false,
-        last_read_message_sequence: None,
+        last_read_item_sequence: None,
         custom_title: None,
         requested_by: subject(),
     });
@@ -208,39 +215,37 @@ fn session_user_state_service_enforces_scope_versions_and_read_sequence() {
 }
 
 #[test]
-fn message_feedback_service_persists_changes_and_soft_delete() {
+fn item_feedback_service_persists_changes_and_soft_delete() {
     let service = service();
     create_agent(&service, "agent.feedback");
     create_session(&service, "agent.feedback", "session.feedback");
     service
-        .create_message(CreateMessageCommand {
+        .create_session_item(CreateSessionItemCommand {
             tenant_id: 100_001,
             session_id: "session.feedback".to_string(),
-            message_id: "msg.assistant".to_string(),
-            role: AgentMessageRole::Assistant,
+            item_id: "msg.assistant".to_string(),
+            kind: AgentSessionItemKind::AssistantOutput,
             content: "Answer".to_string(),
             content_type: "text/plain".to_string(),
             input_tokens: 0,
             output_tokens: 1,
             model_id: None,
             provider_id: None,
-            artifacts_json: "[]".to_string(),
-            metadata_json: "{}".to_string(),
-            parent_message_id: None,
+            parent_item_id: None,
             requested_by: subject(),
             requested_at: "2026-07-19T01:00:00Z".to_string(),
         })
         .unwrap();
 
     let created = service
-        .update_message_feedback(UpdateMessageFeedbackCommand {
+        .update_item_feedback(UpdateItemFeedbackCommand {
             tenant_id: 100_001,
             organization_id: 7,
             user_id: 100,
             path_agent_id: "agent.feedback".to_string(),
             session_id: "session.feedback".to_string(),
-            message_id: "msg.assistant".to_string(),
-            rating: Some(AgentMessageFeedbackRating::Up),
+            item_id: "msg.assistant".to_string(),
+            rating: Some(AgentItemFeedbackRating::Up),
             reason_code: Some("helpful".to_string()),
             comment: None,
             expected_version: None,
@@ -251,23 +256,23 @@ fn message_feedback_service_persists_changes_and_soft_delete() {
     assert_eq!(created.version, 0);
 
     let listed = service
-        .list_message_feedback(ListMessageFeedbackCommand {
-            query: MessageFeedbackListQuery::for_user_session(100_001, 7, 100, "session.feedback"),
+        .list_item_feedback(ListItemFeedbackCommand {
+            query: ItemFeedbackListQuery::for_user_session(100_001, 7, 100, "session.feedback"),
             path_agent_id: "agent.feedback".to_string(),
             requested_by: subject(),
         })
         .unwrap();
     assert_eq!(listed.items.len(), 1);
-    assert_eq!(listed.items[0].rating, AgentMessageFeedbackRating::Up);
+    assert_eq!(listed.items[0].rating, AgentItemFeedbackRating::Up);
 
     let removed = service
-        .update_message_feedback(UpdateMessageFeedbackCommand {
+        .update_item_feedback(UpdateItemFeedbackCommand {
             tenant_id: 100_001,
             organization_id: 7,
             user_id: 100,
             path_agent_id: "agent.feedback".to_string(),
             session_id: "session.feedback".to_string(),
-            message_id: "msg.assistant".to_string(),
+            item_id: "msg.assistant".to_string(),
             rating: None,
             reason_code: None,
             comment: None,
@@ -280,8 +285,8 @@ fn message_feedback_service_persists_changes_and_soft_delete() {
     assert!(removed.deleted_at.is_some());
 
     let after_remove = service
-        .list_message_feedback(ListMessageFeedbackCommand {
-            query: MessageFeedbackListQuery::for_user_session(100_001, 7, 100, "session.feedback"),
+        .list_item_feedback(ListItemFeedbackCommand {
+            query: ItemFeedbackListQuery::for_user_session(100_001, 7, 100, "session.feedback"),
             path_agent_id: "agent.feedback".to_string(),
             requested_by: subject(),
         })
@@ -289,14 +294,14 @@ fn message_feedback_service_persists_changes_and_soft_delete() {
     assert!(after_remove.items.is_empty());
 
     let revived = service
-        .update_message_feedback(UpdateMessageFeedbackCommand {
+        .update_item_feedback(UpdateItemFeedbackCommand {
             tenant_id: 100_001,
             organization_id: 7,
             user_id: 100,
             path_agent_id: "agent.feedback".to_string(),
             session_id: "session.feedback".to_string(),
-            message_id: "msg.assistant".to_string(),
-            rating: Some(AgentMessageFeedbackRating::Down),
+            item_id: "msg.assistant".to_string(),
+            rating: Some(AgentItemFeedbackRating::Down),
             reason_code: None,
             comment: Some("Incorrect".to_string()),
             expected_version: None,
@@ -305,7 +310,7 @@ fn message_feedback_service_persists_changes_and_soft_delete() {
         })
         .unwrap();
     assert_eq!(revived.version, 2);
-    assert_eq!(revived.rating, AgentMessageFeedbackRating::Down);
+    assert_eq!(revived.rating, AgentItemFeedbackRating::Down);
 }
 
 fn session(id: u64, agent_id: &str, session_id: &str, owner_user_id: u64) -> AgentSessionRecord {
@@ -317,19 +322,25 @@ fn session(id: u64, agent_id: &str, session_id: &str, owner_user_id: u64) -> Age
         agent_id: agent_id.to_string(),
         owner_user_id,
         project_id: None,
+        session_kind: AgentSessionKind::Assistant,
+        entry_surface: AgentSessionEntrySurface::Api,
+        source_module: None,
+        source_context_kind: None,
+        source_context_id: None,
+        parent_session_id: None,
+        forked_from_turn_id: None,
         title: None,
         status: AgentSessionStatus::Active,
         provider_binding_id: None,
         model_id: None,
-        message_count: 0,
-        last_message_sequence: 0,
+        item_count: 0,
+        last_item_sequence: 0,
         total_input_tokens: 0,
         total_output_tokens: 0,
-        metadata_json: "{}".to_string(),
         version: 0,
         created_at: "2026-07-19T00:00:00Z".to_string(),
         updated_at: "2026-07-19T00:00:00Z".to_string(),
-        last_message_at: None,
+        last_item_at: None,
         closed_at: None,
         archived_at: None,
         deleted_at: None,
@@ -347,7 +358,7 @@ fn user_state(id: u64, session_id: &str, user_id: u64) -> AgentResourceUserState
         pinned_at: Some("2026-07-19T00:01:00Z".to_string()),
         hidden_at: None,
         last_opened_at: None,
-        last_read_message_sequence: None,
+        last_read_item_sequence: None,
         custom_title: None,
         version: 0,
         created_at: "2026-07-19T00:01:00Z".to_string(),
@@ -406,13 +417,13 @@ fn postgres_user_state_sql_is_scoped_parameterized_and_versioned() {
 }
 
 #[test]
-fn postgres_message_feedback_sql_is_scoped_parameterized_and_versioned() {
-    assert!(SQL_UPSERT_AGENT_MESSAGE_FEEDBACK.contains("ON CONFLICT"));
-    assert!(SQL_UPSERT_AGENT_MESSAGE_FEEDBACK.contains("version = $13"));
-    assert!(SQL_UPSERT_AGENT_MESSAGE_FEEDBACK.contains("deleted_at IS NOT NULL"));
-    assert!(SQL_SELECT_AGENT_MESSAGE_FEEDBACK.contains("tenant_id = $1"));
-    assert!(SQL_SELECT_AGENT_MESSAGE_FEEDBACK.contains("organization_id = $2"));
-    assert!(SQL_LIST_AGENT_MESSAGE_FEEDBACK.contains("message.session_id = $4"));
-    assert!(SQL_LIST_AGENT_MESSAGE_FEEDBACK.contains("LIMIT $5 OFFSET $6"));
-    assert!(SQL_COUNT_AGENT_MESSAGE_FEEDBACK.contains("feedback.user_id = $3"));
+fn postgres_item_feedback_sql_is_scoped_parameterized_and_versioned() {
+    assert!(SQL_UPSERT_AGENT_ITEM_FEEDBACK.contains("ON CONFLICT"));
+    assert!(SQL_UPSERT_AGENT_ITEM_FEEDBACK.contains("version = $13"));
+    assert!(SQL_UPSERT_AGENT_ITEM_FEEDBACK.contains("deleted_at IS NOT NULL"));
+    assert!(SQL_SELECT_AGENT_ITEM_FEEDBACK.contains("tenant_id = $1"));
+    assert!(SQL_SELECT_AGENT_ITEM_FEEDBACK.contains("organization_id = $2"));
+    assert!(SQL_LIST_AGENT_ITEM_FEEDBACK.contains("item.session_id = $4"));
+    assert!(SQL_LIST_AGENT_ITEM_FEEDBACK.contains("LIMIT $5 OFFSET $6"));
+    assert!(SQL_COUNT_AGENT_ITEM_FEEDBACK.contains("feedback.user_id = $3"));
 }

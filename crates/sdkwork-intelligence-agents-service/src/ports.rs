@@ -1,9 +1,10 @@
-use crate::chat_turn::AgentChatTurnRecord;
+use crate::agent_turn::AgentTurnRecord;
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
-    AgentInteractionRecord, AgentMessageDriveRefRecord, AgentMessageFeedbackRecord,
-    AgentMessageRecord, AgentProviderBindingRecord, AgentResourceType,
-    AgentResourceUserStateRecord, AgentSessionRecord, AgentTaskRecord, AgentVisibility,
+    AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
+    AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
+    AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionRecord,
+    AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentVisibility,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::optional_non_blank;
@@ -20,9 +21,9 @@ pub const MAX_PAGE_SIZE: usize = 200;
 /// Default page size for list operations when not specified.
 pub const DEFAULT_PAGE_SIZE: usize = 20;
 
-/// Maximum number of prior session messages loaded into LLM chat context.
+/// Maximum number of prior session items loaded into LLM chat context.
 pub const CHAT_CONTEXT_MESSAGE_LIMIT: usize = 50;
-/// Maximum user message payload accepted on chat and task prompt surfaces.
+/// Maximum user-input payload accepted on turn and task prompt surfaces.
 pub const MAX_CHAT_USER_CONTENT_BYTES: usize = 256 * 1024;
 
 /// Build offset-mode pagination metadata from a repository page and total count.
@@ -342,7 +343,7 @@ impl McpMarketplaceListQuery {
 
 /// Message list sort order. Default API lists use ascending sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MessageListSort {
+pub enum SessionItemListSort {
     #[default]
     SequenceAsc,
     /// Recent context window for chat completion (descending sequence, bounded limit).
@@ -531,19 +532,20 @@ impl ResourceUserStateListQuery {
     }
 }
 
-/// Query parameters for listing agent messages within a session.
+/// Query parameters for listing agent items within a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MessageListQuery {
+pub struct SessionItemListQuery {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
-    pub role: Option<String>,
+    pub kind: Option<String>,
     pub status: Option<String>,
-    pub sort: MessageListSort,
+    pub sort: SessionItemListSort,
     pub pagination: PaginationParams,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MessageFeedbackListQuery {
+pub struct ItemFeedbackListQuery {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub user_id: u64,
@@ -551,7 +553,7 @@ pub struct MessageFeedbackListQuery {
     pub pagination: PaginationParams,
 }
 
-impl MessageFeedbackListQuery {
+impl ItemFeedbackListQuery {
     pub fn for_user_session(
         tenant_id: u64,
         organization_id: u64,
@@ -573,20 +575,25 @@ impl MessageFeedbackListQuery {
     }
 }
 
-impl MessageListQuery {
-    pub fn for_session(tenant_id: u64, session_id: impl Into<String>) -> Self {
+impl SessionItemListQuery {
+    pub fn for_session(
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: impl Into<String>,
+    ) -> Self {
         Self {
             tenant_id,
+            organization_id,
             session_id: session_id.into(),
-            role: None,
+            kind: None,
             status: None,
-            sort: MessageListSort::default(),
+            sort: SessionItemListSort::default(),
             pagination: PaginationParams::default(),
         }
     }
 
-    pub fn with_role(mut self, role: impl Into<String>) -> Self {
-        self.role = Some(role.into());
+    pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
+        self.kind = Some(kind.into());
         self
     }
 
@@ -600,18 +607,20 @@ impl MessageListQuery {
         self
     }
 
-    /// Load the most recent messages for chat completion context.
-    pub fn for_recent_chat_context(
+    /// Load the most recent items for turn execution context.
+    pub fn for_recent_turn_context(
         tenant_id: u64,
+        organization_id: u64,
         session_id: impl Into<String>,
         limit: usize,
     ) -> Self {
         Self {
             tenant_id,
+            organization_id,
             session_id: session_id.into(),
-            role: None,
+            kind: None,
             status: None,
-            sort: MessageListSort::RecentContextDesc,
+            sort: SessionItemListSort::RecentContextDesc,
             pagination: PaginationParams::default().with_page_size(limit),
         }
     }
@@ -621,15 +630,133 @@ impl MessageListQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InteractionListQuery {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
     pub status: Option<String>,
     pub pagination: PaginationParams,
 }
 
-impl InteractionListQuery {
-    pub fn for_session(tenant_id: u64, session_id: impl Into<String>) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRuntimeBindingListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub status: Option<String>,
+    pub current_only: bool,
+    pub pagination: PaginationParams,
+}
+
+impl SessionRuntimeBindingListQuery {
+    pub fn for_session(
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: impl Into<String>,
+    ) -> Self {
         Self {
             tenant_id,
+            organization_id,
+            session_id: session_id.into(),
+            status: None,
+            current_only: false,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_status(mut self, status: impl Into<String>) -> Self {
+        self.status = Some(status.into());
+        self
+    }
+
+    pub fn current_only(mut self) -> Self {
+        self.current_only = true;
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionCheckpointListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub status: Option<String>,
+    pub pagination: PaginationParams,
+}
+
+impl SessionCheckpointListQuery {
+    pub fn for_session(
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            session_id: session_id.into(),
+            status: None,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_status(mut self, status: impl Into<String>) -> Self {
+        self.status = Some(status.into());
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+impl InteractionListQuery {
+    pub fn for_session(
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            session_id: session_id.into(),
+            status: None,
+            pagination: PaginationParams::default(),
+        }
+    }
+
+    pub fn with_status(mut self, status: impl Into<String>) -> Self {
+        self.status = Some(status.into());
+        self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub status: Option<String>,
+    pub pagination: PaginationParams,
+}
+
+impl TurnListQuery {
+    pub fn for_session(
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
             session_id: session_id.into(),
             status: None,
             pagination: PaginationParams::default(),
@@ -881,12 +1008,87 @@ pub trait AgentRepository: Send + Sync {
     fn get_session(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRecord>>;
 
     fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>>;
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64>;
+
+    fn insert_session_runtime_binding(
+        &self,
+        record: AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()>;
+
+    fn update_session_runtime_binding(
+        &self,
+        record: AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()>;
+
+    fn get_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>>;
+
+    fn get_current_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>>;
+
+    fn list_session_runtime_bindings(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<Vec<AgentSessionRuntimeBindingRecord>>;
+
+    fn count_session_runtime_bindings(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<u64>;
+
+    /// Switches the current runtime binding under one repository transaction.
+    fn activate_session_runtime_binding_atomic(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+        expected_version: u64,
+        updated_at: String,
+    ) -> KernelResult<AgentSessionRuntimeBindingRecord>;
+
+    fn insert_session_checkpoint(
+        &self,
+        record: AgentSessionCheckpointRecord,
+    ) -> KernelResult<()>;
+
+    fn update_session_checkpoint(
+        &self,
+        record: AgentSessionCheckpointRecord,
+    ) -> KernelResult<()>;
+
+    fn get_session_checkpoint(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        checkpoint_id: &str,
+    ) -> KernelResult<Option<AgentSessionCheckpointRecord>>;
+
+    fn list_session_checkpoints(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<Vec<AgentSessionCheckpointRecord>>;
+
+    fn count_session_checkpoints(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<u64>;
 
     fn upsert_resource_user_state(
         &self,
@@ -911,132 +1113,142 @@ pub trait AgentRepository: Send + Sync {
     fn count_resource_user_states(&self, query: &ResourceUserStateListQuery) -> KernelResult<u64>;
 
     // -----------------------------------------------------------------------
-    // Message persistence
+    // Session-item persistence
     // -----------------------------------------------------------------------
 
-    fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()>;
+    fn insert_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()>;
 
-    fn update_message(&self, record: AgentMessageRecord) -> KernelResult<()>;
+    fn update_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()>;
 
-    fn get_message(
-        &self,
-        tenant_id: u64,
-        session_id: &str,
-        message_id: &str,
-    ) -> KernelResult<Option<AgentMessageRecord>>;
-
-    fn list_messages(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRecord>>;
-
-    fn count_messages(&self, query: &MessageListQuery) -> KernelResult<u64>;
-
-    fn upsert_message_feedback(
-        &self,
-        record: AgentMessageFeedbackRecord,
-        expected_version: Option<u64>,
-    ) -> KernelResult<AgentMessageFeedbackRecord>;
-
-    fn get_message_feedback(
+    fn get_session_item(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
+        session_id: &str,
+        item_id: &str,
+    ) -> KernelResult<Option<AgentSessionItemRecord>>;
+
+    fn list_session_items(&self, query: &SessionItemListQuery) -> KernelResult<Vec<AgentSessionItemRecord>>;
+
+    fn count_session_items(&self, query: &SessionItemListQuery) -> KernelResult<u64>;
+
+    fn upsert_item_feedback(
+        &self,
+        record: AgentItemFeedbackRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentItemFeedbackRecord>;
+
+    fn get_item_feedback(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        item_id: &str,
         user_id: u64,
         include_deleted: bool,
-    ) -> KernelResult<Option<AgentMessageFeedbackRecord>>;
+    ) -> KernelResult<Option<AgentItemFeedbackRecord>>;
 
-    fn list_message_feedback(
+    fn list_item_feedback(
         &self,
-        query: &MessageFeedbackListQuery,
-    ) -> KernelResult<Vec<AgentMessageFeedbackRecord>>;
+        query: &ItemFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentItemFeedbackRecord>>;
 
-    fn count_message_feedback(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64>;
+    fn count_item_feedback(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64>;
 
-    /// Next message sequence number for a session. Implementations should
-    /// return `message_count + 1` for the session, or `1` if no messages exist.
-    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64>;
+    /// Next item sequence number for a session. Implementations should
+    /// return `item_count + 1` for the session, or `1` if no items exist.
+    fn next_item_sequence(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<u64>;
 
-    fn get_chat_turn_by_idempotency(
+    fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
         organization_id: u64,
         owner_user_id: u64,
         idempotency_key: &str,
-    ) -> KernelResult<Option<AgentChatTurnRecord>>;
-    fn get_chat_turn(
+    ) -> KernelResult<Option<AgentTurnRecord>>;
+    fn get_turn(
         &self,
         tenant_id: u64,
         organization_id: u64,
         turn_id: &str,
-    ) -> KernelResult<Option<AgentChatTurnRecord>>;
-    fn list_reconcilable_chat_turns(
+    ) -> KernelResult<Option<AgentTurnRecord>>;
+
+    fn list_turns(&self, query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRecord>>;
+
+    fn count_turns(&self, query: &TurnListQuery) -> KernelResult<u64>;
+    fn list_reconcilable_turns(
         &self,
         stale_before: &str,
         limit: usize,
-    ) -> KernelResult<Vec<AgentChatTurnRecord>>;
+    ) -> KernelResult<Vec<AgentTurnRecord>>;
 
-    fn insert_chat_turn_reservation(&self, _turn: AgentChatTurnRecord) -> KernelResult<()> {
+    fn insert_turn_reservation(&self, _turn: AgentTurnRecord) -> KernelResult<()> {
         Err(KernelError::Internal {
-            message: "insert_chat_turn_reservation requires an adapter override".to_string(),
+            message: "insert_turn_reservation requires an adapter override".to_string(),
         })
     }
 
-    fn update_chat_turn_state(
+    fn update_turn_state(
         &self,
-        _turn: AgentChatTurnRecord,
+        _turn: AgentTurnRecord,
         _expected_version: u64,
-    ) -> KernelResult<AgentChatTurnRecord> {
+    ) -> KernelResult<AgentTurnRecord> {
         Err(KernelError::Internal {
-            message: "update_chat_turn_state requires an adapter override".to_string(),
+            message: "update_turn_state requires an adapter override".to_string(),
         })
     }
 
-    /// Atomically persist one user + assistant chat turn and update session counters.
+    /// Atomically persist one user-input and assistant-output turn and update session counters.
     ///
     /// Adapters MUST override this method with a transactional implementation
     /// (e.g. SQL `BEGIN ... COMMIT` with `SELECT ... FOR UPDATE`). The default
     /// implementation is fail-closed to prevent non-atomic data corruption.
-    fn insert_chat_turn(
+    fn insert_turn(
         &self,
-        _turn: AgentChatTurnRecord,
+        _turn: AgentTurnRecord,
         _session: AgentSessionRecord,
-        _user_message: AgentMessageRecord,
-        _assistant_message: AgentMessageRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        _user_input_item: AgentSessionItemRecord,
+        _assistant_output_item: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
         Err(KernelError::Internal {
-            message: "insert_chat_turn requires a transactional adapter override".to_string(),
+            message: "insert_turn requires a transactional adapter override".to_string(),
         })
     }
 
-    fn insert_chat_turn_with_drive_refs(
+    fn insert_turn_with_drive_refs(
         &self,
-        _turn: AgentChatTurnRecord,
+        _turn: AgentTurnRecord,
         _session: AgentSessionRecord,
-        _user_message: AgentMessageRecord,
-        _assistant_message: AgentMessageRecord,
-        _drive_refs: Vec<AgentMessageDriveRefRecord>,
-    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        _user_input_item: AgentSessionItemRecord,
+        _assistant_output_item: AgentSessionItemRecord,
+        _drive_refs: Vec<AgentItemDriveRefRecord>,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
         Err(KernelError::Internal {
-            message: "insert_chat_turn_with_drive_refs requires a transactional adapter override"
+            message: "insert_turn_with_drive_refs requires a transactional adapter override"
                 .to_string(),
         })
     }
 
-    fn list_message_drive_refs(
+    fn list_item_drive_refs(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
-    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>>;
+        item_id: &str,
+    ) -> KernelResult<Vec<AgentItemDriveRefRecord>>;
 
-    fn list_message_drive_refs_batch(
+    fn list_item_drive_refs_batch(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_ids: &[String],
-    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        item_ids: &[String],
+    ) -> KernelResult<Vec<AgentItemDriveRefRecord>> {
         let mut records = Vec::new();
-        for message_id in message_ids {
-            records.extend(self.list_message_drive_refs(tenant_id, organization_id, message_id)?);
+        for item_id in item_ids {
+            records.extend(self.list_item_drive_refs(tenant_id, organization_id, item_id)?);
         }
         Ok(records)
     }
@@ -1052,6 +1264,7 @@ pub trait AgentRepository: Send + Sync {
     fn get_interaction(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         interaction_id: &str,
     ) -> KernelResult<Option<AgentInteractionRecord>>;

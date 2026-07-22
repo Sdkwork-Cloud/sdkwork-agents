@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import globalI18n from 'i18next';
-
-import agentsWorkbenchI18n from '../packages/sdkwork-agents-pc-commons/src/i18n';
+import {
+  agentsWorkbenchChatCatalog,
+  agentsWorkbenchI18nCatalogs,
+} from '../packages/sdkwork-agents-pc-commons/src/i18n';
 
 import {
   DEFAULT_WORKBENCH_TAB,
@@ -18,7 +19,6 @@ test('registers Chat first and places Agent immediately after Canvas', () => {
     'inspiration',
     'creative',
     'assets',
-    'presentation',
     'canvas',
     'agents',
   ]);
@@ -29,7 +29,7 @@ test('opens Chat by default', () => {
 });
 
 test('keeps every registered workbench module reachable from the sidebar', () => {
-  assert.equal(isWorkbenchTab('presentation'), true);
+  assert.equal(isWorkbenchTab('presentation'), false);
   assert.deepEqual(SIDEBAR_TABS, WORKBENCH_TABS);
 });
 
@@ -57,6 +57,19 @@ test('opens the Agents-owned Token Plan from the membership sidebar action', () 
   assert.match(sidebarSource, /aria-current=\{isTokenPlanOpen \? 'page' : undefined\}/);
   assert.match(tokenPlanSource, /SdkworkSubscriptionCatalogPage/);
   assert.match(tokenPlanSource, /checkoutPort=\{runtime\.checkoutService\}/);
+});
+
+test('keeps the sidebar footer free of unused actions and membership counts', () => {
+  const sidebarSource = readFileSync(
+    new URL('../src/components/GlobalSidebar.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(sidebarSource, /<Gem /);
+  assert.doesNotMatch(sidebarSource, />60<\/span>/);
+  assert.doesNotMatch(sidebarSource, /\bBell\b/);
+  assert.doesNotMatch(sidebarSource, /\bTerminal\b/);
+  assert.doesNotMatch(sidebarSource, /\bSlidersHorizontal\b/);
 });
 
 test('Token Plan uses public SDKWork services and the shared global TokenManager', () => {
@@ -119,13 +132,17 @@ test('exports the same complete workbench used by the standalone app', () => {
   );
 
   assert.equal(packageManifest.exports['./workbench']?.import, './src/workbench/index.ts');
+  assert.equal(packageManifest.exports['./workbench/i18n']?.import, './src/workbench/i18n.ts');
   assert.match(appSource, /<AgentsWorkbench viewportMode="fixed" \/>/);
   assert.match(workbenchSource, /import '\.\/embedded\.css';/);
-  assert.match(workbenchSource, /<AgentsWorkbenchI18nProvider>/);
+  assert.doesNotMatch(workbenchSource, /AgentsWorkbenchI18nProvider/);
+  assert.match(workbenchSource, /overlayTopInset = '0px'/);
+  assert.match(workbenchSource, /overlayTopInset=\{overlayTopInset\}/);
   assert.match(workbenchSource, /showSidebarLogo = true/);
   assert.match(workbenchSource, /showSidebarLogo=\{showSidebarLogo\}/);
   assert.match(workbenchSource, /viewportMode=\{viewportMode\}/);
   assert.match(layoutSource, /sdkwork-agents-workbench/);
+  assert.match(layoutSource, /--sdkwork-agents-overlay-top-inset/);
   assert.match(layoutSource, /showSidebarLogo=\{showSidebarLogo\}/);
   assert.match(sidebarSource, /\{showSidebarLogo && \(/);
   assert.match(runtimeSource, /configureAgentsWorkbenchPorts/);
@@ -133,13 +150,22 @@ test('exports the same complete workbench used by the standalone app', () => {
   assert.match(portsSource, /configureProjectPort/);
 });
 
-test('keeps Agents translations isolated from a composing host', () => {
-  assert.notEqual(agentsWorkbenchI18n, globalI18n);
-  assert.equal(agentsWorkbenchI18n.t('newChat', { ns: 'chat' }), 'New Chat');
+test('exports Agents catalogs without registering a global i18next instance', () => {
+  const i18nSource = readFileSync(
+    new URL('../packages/sdkwork-agents-pc-commons/src/i18n/index.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.deepEqual(
+    agentsWorkbenchI18nCatalogs.map((catalog) => catalog.namespace),
+    ['chat', 'settings', 'common'],
+  );
+  assert.equal(agentsWorkbenchChatCatalog.resolveMessages('en-US').newChat, 'New Chat');
   assert.equal(
-    agentsWorkbenchI18n.t('welcomeDescription', { ns: 'chat' }),
+    agentsWorkbenchChatCatalog.resolveMessages('en-US').welcomeDescription,
     'I can write code, answer questions, analyze images, and help you explore any topic.',
   );
+  assert.doesNotMatch(i18nSource, /initReactI18next|createInstance|I18nextProvider/);
 });
 
 test('sizes the empty Chat state from the workbench container', () => {
@@ -160,14 +186,56 @@ test('sizes the empty Chat state from the workbench container', () => {
   assert.doesNotMatch(messageListSource, /100vh-200px/);
 });
 
-test('keeps Presentation reachable without rendering a sidebar icon', () => {
+test('keeps full-screen workbench overlays below a configured host header', () => {
+  const embeddedStyles = readFileSync(
+    new URL('../src/workbench/embedded.css', import.meta.url),
+    'utf8',
+  );
+  const previewSources = [
+    '../packages/sdkwork-agents-pc-assets/src/components/AssetDetailModal.tsx',
+    '../packages/sdkwork-agents-pc-inspiration/src/components/ImageDetailModal.tsx',
+    '../packages/sdkwork-agents-pc-inspiration/src/components/VideoDetailModal.tsx',
+    '../packages/sdkwork-agents-pc-commons/src/components/creative/ImageLightbox.tsx',
+  ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'));
+
+  assert.match(embeddedStyles, /\.sdkwork-agents-workbench \.fixed\.inset-0/);
+  assert.match(
+    embeddedStyles,
+    /top: var\(--sdkwork-agents-overlay-top-inset, 0px\)/,
+  );
+  for (const previewSource of previewSources) {
+    assert.match(previewSource, /fixed inset-0/);
+  }
+});
+
+test('removes Presentation from the workbench application composition', () => {
   const sidebarSource = readFileSync(
     new URL('../src/components/GlobalSidebar.tsx', import.meta.url),
     'utf8',
   );
+  const layoutSource = readFileSync(
+    new URL('../src/components/WorkbenchLayout.tsx', import.meta.url),
+    'utf8',
+  );
+  const packageManifest = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  const componentSpec = JSON.parse(
+    readFileSync(new URL('../specs/component.spec.json', import.meta.url), 'utf8'),
+  );
+  const moduleRegistrySource = readFileSync(
+    new URL(
+      '../packages/sdkwork-agents-pc-core/src/composition/module-registry.ts',
+      import.meta.url,
+    ),
+    'utf8',
+  );
 
-  assert.match(sidebarSource, /presentation: \{ label: '演示' \}/);
-  assert.doesNotMatch(sidebarSource, /presentation: \{ icon:/);
+  assert.doesNotMatch(sidebarSource, /presentation/);
+  assert.doesNotMatch(layoutSource, /agents-pc-presentation|PresentationView/);
+  assert.equal(packageManifest.dependencies['@sdkwork/agents-pc-presentation'], undefined);
+  assert.equal(componentSpec.contracts.requiredPorts.includes('agents.presentation.view'), false);
+  assert.doesNotMatch(moduleRegistrySource, /agents-pc-presentation|presentation:/);
 });
 
 test('resolves packaged Assets media without depending on the host source root', () => {

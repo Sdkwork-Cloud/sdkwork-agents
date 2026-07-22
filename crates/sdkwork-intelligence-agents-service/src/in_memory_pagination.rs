@@ -1,4 +1,4 @@
-use crate::ports::{MessageListSort, PaginationParams};
+use crate::ports::{SessionItemListSort, PaginationParams};
 use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
 /// Bounded offset window over an ordered iterator (PAGINATION_SPEC §5.3 / §9).
@@ -9,7 +9,7 @@ where
     offset_limit_page_from_iter(iter, pagination.page_size, pagination.offset).items
 }
 
-/// Recent chat context: last N messages in sequence order without materializing the session.
+/// Recent chat context: last N items in sequence order without materializing the session.
 pub(crate) fn paginate_recent_context<I, T>(iter: I, page_size: usize) -> Vec<T>
 where
     I: DoubleEndedIterator<Item = T>,
@@ -26,16 +26,16 @@ where
     iter.count() as u64
 }
 
-pub(crate) fn paginate_messages<I, T>(
+pub(crate) fn paginate_items<I, T>(
     iter: I,
     pagination: &PaginationParams,
-    sort: MessageListSort,
+    sort: SessionItemListSort,
 ) -> Vec<T>
 where
     I: DoubleEndedIterator<Item = T>,
 {
     match sort {
-        MessageListSort::SequenceAsc => paginate_iterator(iter, pagination),
-        MessageListSort::RecentContextDesc => paginate_recent_context(iter, pagination.page_size),
+        SessionItemListSort::SequenceAsc => paginate_iterator(iter, pagination),
+        SessionItemListSort::RecentContextDesc => paginate_recent_context(iter, pagination.page_size),
     }
 }

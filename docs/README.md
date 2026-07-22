@@ -18,6 +18,7 @@
 | Product PRD | [product/prd/PRD.md](product/prd/PRD.md) |
 | Technical architecture | [architecture/tech/TECH_ARCHITECTURE.md](architecture/tech/TECH_ARCHITECTURE.md) |
 | HTTP API specification | [architecture/tech/TECH-api-specification.md](architecture/tech/TECH-api-specification.md) |
+| Agent session domain decision | [ADR-20260722-agent-session-domain-unification.md](architecture/decisions/ADR-20260722-agent-session-domain-unification.md) |
 | API reference index | [architecture/tech/TECH-api-reference.md](architecture/tech/TECH-api-reference.md) |
 | Pre-launch checklist | [pre-launch-verification.md](runbooks/pre-launch-verification.md) |
 | Monitoring / alerting | [runbooks/monitoring.md](runbooks/monitoring.md) |

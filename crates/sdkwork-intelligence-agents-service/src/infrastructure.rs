@@ -1,17 +1,20 @@
-use crate::chat_turn::AgentChatTurnRecord;
+use crate::agent_turn::AgentTurnRecord;
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
-    AgentInteractionRecord, AgentMessageDriveRefRecord, AgentMessageFeedbackRecord,
-    AgentMessageRecord, AgentProviderBindingRecord, AgentResourceType,
-    AgentResourceUserStateRecord, AgentSessionRecord, AgentTaskRecord,
+    AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
+    AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
+    AgentSessionCheckpointRecord, AgentSessionItemRecord,
+    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
+    AgentTaskRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
-use crate::in_memory_pagination::{count_iterator, paginate_iterator, paginate_messages};
+use crate::in_memory_pagination::{count_iterator, paginate_iterator, paginate_items};
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, McpMarketplaceListQuery, MessageFeedbackListQuery, MessageListQuery,
+    InteractionListQuery, McpMarketplaceListQuery, ItemFeedbackListQuery, SessionItemListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionListQuery, TaskListQuery,
+    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionListQuery,
+    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::parse_rfc3339_datetime;
@@ -314,17 +317,19 @@ type ProviderBindingPrimaryKey = (u64, String, String);
 type ProviderBindingIndexKey = (u64, String, Reverse<bool>, Reverse<String>, String);
 type CompositionSlotPrimaryKey = (u64, String, String);
 type CompositionSlotIndexKey = (u64, String, i32, String);
-type SessionPrimaryKey = (u64, String);
+type SessionPrimaryKey = (u64, u64, String);
+type SessionRuntimeBindingPrimaryKey = (u64, u64, String, String);
+type SessionCheckpointPrimaryKey = (u64, u64, String, String);
 type ResourceUserStatePrimaryKey = (u64, u64, u64, i16, String);
-type SessionIndexKey = (u64, Reverse<String>, String);
-type MessagePrimaryKey = (u64, String, String);
-type MessageFeedbackPrimaryKey = (u64, u64, String, u64);
-type MessageDriveRefPrimaryKey = (u64, u64, String, String, String);
-type MessageIndexKey = (u64, String, u64, String);
-type ChatTurnPrimaryKey = (u64, u64, String);
-type ChatTurnIdempotencyKey = (u64, u64, u64, String);
-type InteractionPrimaryKey = (u64, String, String);
-type InteractionIndexKey = (u64, String, Reverse<String>, String);
+type SessionIndexKey = (u64, u64, Reverse<String>, String);
+type SessionItemPrimaryKey = (u64, u64, String, String);
+type ItemFeedbackPrimaryKey = (u64, u64, String, u64);
+type ItemDriveRefPrimaryKey = (u64, u64, String, String, String);
+type SessionItemIndexKey = (u64, u64, String, u64, String);
+type TurnPrimaryKey = (u64, u64, String);
+type TurnIdempotencyKey = (u64, u64, u64, String);
+type InteractionPrimaryKey = (u64, u64, String, String);
+type InteractionIndexKey = (u64, u64, String, Reverse<String>, String);
 type TaskPrimaryKey = (u64, String);
 type TaskIndexKey = (u64, Reverse<String>, String);
 
@@ -391,14 +396,18 @@ pub struct InMemoryAgentRepository {
     composition_slot_index: RwLock<BTreeMap<CompositionSlotIndexKey, CompositionSlotPrimaryKey>>,
     sessions: RwLock<HashMap<SessionPrimaryKey, AgentSessionRecord>>,
     session_index: RwLock<BTreeMap<SessionIndexKey, SessionPrimaryKey>>,
+    session_runtime_bindings:
+        RwLock<HashMap<SessionRuntimeBindingPrimaryKey, AgentSessionRuntimeBindingRecord>>,
+    session_checkpoints:
+        RwLock<HashMap<SessionCheckpointPrimaryKey, AgentSessionCheckpointRecord>>,
     resource_user_states:
         RwLock<HashMap<ResourceUserStatePrimaryKey, AgentResourceUserStateRecord>>,
-    messages: RwLock<HashMap<MessagePrimaryKey, AgentMessageRecord>>,
-    message_feedback: RwLock<HashMap<MessageFeedbackPrimaryKey, AgentMessageFeedbackRecord>>,
-    message_drive_refs: RwLock<HashMap<MessageDriveRefPrimaryKey, AgentMessageDriveRefRecord>>,
-    message_index: RwLock<BTreeMap<MessageIndexKey, MessagePrimaryKey>>,
-    chat_turns: RwLock<HashMap<ChatTurnPrimaryKey, AgentChatTurnRecord>>,
-    chat_turn_idempotency: RwLock<HashMap<ChatTurnIdempotencyKey, ChatTurnPrimaryKey>>,
+    items: RwLock<HashMap<SessionItemPrimaryKey, AgentSessionItemRecord>>,
+    item_feedback: RwLock<HashMap<ItemFeedbackPrimaryKey, AgentItemFeedbackRecord>>,
+    item_drive_refs: RwLock<HashMap<ItemDriveRefPrimaryKey, AgentItemDriveRefRecord>>,
+    session_item_index: RwLock<BTreeMap<SessionItemIndexKey, SessionItemPrimaryKey>>,
+    turns: RwLock<HashMap<TurnPrimaryKey, AgentTurnRecord>>,
+    turn_idempotency: RwLock<HashMap<TurnIdempotencyKey, TurnPrimaryKey>>,
     interactions: RwLock<HashMap<InteractionPrimaryKey, AgentInteractionRecord>>,
     interaction_index: RwLock<BTreeMap<InteractionIndexKey, InteractionPrimaryKey>>,
     tasks: RwLock<HashMap<TaskPrimaryKey, AgentTaskRecord>>,
@@ -430,13 +439,15 @@ impl InMemoryAgentRepository {
             composition_slot_index: RwLock::new(BTreeMap::new()),
             sessions: RwLock::new(HashMap::new()),
             session_index: RwLock::new(BTreeMap::new()),
+            session_runtime_bindings: RwLock::new(HashMap::new()),
+            session_checkpoints: RwLock::new(HashMap::new()),
             resource_user_states: RwLock::new(HashMap::new()),
-            messages: RwLock::new(HashMap::new()),
-            message_feedback: RwLock::new(HashMap::new()),
-            message_drive_refs: RwLock::new(HashMap::new()),
-            message_index: RwLock::new(BTreeMap::new()),
-            chat_turns: RwLock::new(HashMap::new()),
-            chat_turn_idempotency: RwLock::new(HashMap::new()),
+            items: RwLock::new(HashMap::new()),
+            item_feedback: RwLock::new(HashMap::new()),
+            item_drive_refs: RwLock::new(HashMap::new()),
+            session_item_index: RwLock::new(BTreeMap::new()),
+            turns: RwLock::new(HashMap::new()),
+            turn_idempotency: RwLock::new(HashMap::new()),
             interactions: RwLock::new(HashMap::new()),
             interaction_index: RwLock::new(BTreeMap::new()),
             tasks: RwLock::new(HashMap::new()),
@@ -516,12 +527,17 @@ fn composition_slot_index_key(record: &AgentCompositionSlotRecord) -> Compositio
 }
 
 fn session_primary_key(record: &AgentSessionRecord) -> SessionPrimaryKey {
-    (record.tenant_id, record.session_id.clone())
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.session_id.clone(),
+    )
 }
 
 fn session_index_key(record: &AgentSessionRecord) -> SessionIndexKey {
     (
         record.tenant_id,
+        record.organization_id,
         Reverse(record.updated_at.clone()),
         record.session_id.clone(),
     )
@@ -551,7 +567,11 @@ fn resource_user_state_matches_agent(
         return false;
     }
     sessions
-        .get(&(record.tenant_id, record.resource_id.clone()))
+        .get(&(
+            record.tenant_id,
+            record.organization_id,
+            record.resource_id.clone(),
+        ))
         .is_some_and(|session| {
             session.organization_id == record.organization_id
                 && session.owner_user_id == record.user_id
@@ -560,35 +580,38 @@ fn resource_user_state_matches_agent(
         })
 }
 
-fn message_primary_key(record: &AgentMessageRecord) -> MessagePrimaryKey {
-    (
-        record.tenant_id,
-        record.session_id.clone(),
-        record.message_id.clone(),
-    )
-}
-
-fn message_feedback_primary_key(record: &AgentMessageFeedbackRecord) -> MessageFeedbackPrimaryKey {
+fn session_item_primary_key(record: &AgentSessionItemRecord) -> SessionItemPrimaryKey {
     (
         record.tenant_id,
         record.organization_id,
-        record.message_id.clone(),
+        record.session_id.clone(),
+        record.item_id.clone(),
+    )
+}
+
+fn item_feedback_primary_key(record: &AgentItemFeedbackRecord) -> ItemFeedbackPrimaryKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.item_id.clone(),
         record.user_id,
     )
 }
 
-fn message_index_key(record: &AgentMessageRecord) -> MessageIndexKey {
+fn session_item_index_key(record: &AgentSessionItemRecord) -> SessionItemIndexKey {
     (
         record.tenant_id,
+        record.organization_id,
         record.session_id.clone(),
         record.sequence,
-        record.message_id.clone(),
+        record.item_id.clone(),
     )
 }
 
 fn interaction_primary_key(record: &AgentInteractionRecord) -> InteractionPrimaryKey {
     (
         record.tenant_id,
+        record.organization_id,
         record.session_id.clone(),
         record.interaction_id.clone(),
     )
@@ -597,6 +620,7 @@ fn interaction_primary_key(record: &AgentInteractionRecord) -> InteractionPrimar
 fn interaction_index_key(record: &AgentInteractionRecord) -> InteractionIndexKey {
     (
         record.tenant_id,
+        record.organization_id,
         record.session_id.clone(),
         Reverse(record.created_at.clone()),
         record.interaction_id.clone(),
@@ -1203,12 +1227,13 @@ impl AgentRepository for InMemoryAgentRepository {
     fn get_session(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRecord>> {
         Ok(self
             .sessions
             .recovering_read()
-            .get(&(tenant_id, session_id.to_string()))
+            .get(&(tenant_id, organization_id, session_id.to_string()))
             .filter(|record| record.deleted_at.is_none())
             .cloned())
     }
@@ -1218,7 +1243,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let index = self.session_index.recovering_read();
         let iter = index
             .iter()
-            .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
+            .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
             .filter_map(|(_, primary_key)| sessions.get(primary_key))
             .filter(|record| session_matches_list_query(record, query))
             .cloned();
@@ -1231,9 +1256,322 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(count_iterator(
             index
                 .iter()
-                .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
+                .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
                 .filter_map(|(_, primary_key)| sessions.get(primary_key))
                 .filter(|record| session_matches_list_query(record, query)),
+        ))
+    }
+
+    fn insert_session_runtime_binding(
+        &self,
+        record: AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+            record.runtime_binding_id.clone(),
+        );
+        let mut bindings = self.session_runtime_bindings.recovering_write();
+        if bindings.contains_key(&key) {
+            return Err(KernelError::conflict("session runtime binding already exists"));
+        }
+        if record.is_current
+            && bindings.values().any(|candidate| {
+                candidate.tenant_id == record.tenant_id
+                    && candidate.organization_id == record.organization_id
+                    && candidate.session_id == record.session_id
+                    && candidate.is_current
+            })
+        {
+            return Err(KernelError::conflict(
+                "session already has a current runtime binding",
+            ));
+        }
+        bindings.insert(key, record);
+        Ok(())
+    }
+
+    fn update_session_runtime_binding(
+        &self,
+        record: AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+            record.runtime_binding_id.clone(),
+        );
+        let mut bindings = self.session_runtime_bindings.recovering_write();
+        let existing = bindings
+            .get(&key)
+            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+        if record.version != existing.version.saturating_add(1) {
+            return Err(KernelError::conflict(
+                "session runtime binding version mismatch",
+            ));
+        }
+        if record.is_current
+            && bindings.iter().any(|(candidate_key, candidate)| {
+                candidate_key != &key
+                    && candidate.tenant_id == record.tenant_id
+                    && candidate.organization_id == record.organization_id
+                    && candidate.session_id == record.session_id
+                    && candidate.is_current
+            })
+        {
+            return Err(KernelError::conflict(
+                "session already has a current runtime binding",
+            ));
+        }
+        bindings.insert(key, record);
+        Ok(())
+    }
+
+    fn get_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
+        Ok(self
+            .session_runtime_bindings
+            .recovering_read()
+            .get(&(
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                runtime_binding_id.to_string(),
+            ))
+            .cloned())
+    }
+
+    fn get_current_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
+        Ok(self
+            .session_runtime_bindings
+            .recovering_read()
+            .values()
+            .find(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && record.session_id == session_id
+                    && record.is_current
+                    && record.status == AgentSessionRuntimeBindingStatus::Active
+            })
+            .cloned())
+    }
+
+    fn list_session_runtime_bindings(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<Vec<AgentSessionRuntimeBindingRecord>> {
+        let mut records = self
+            .session_runtime_bindings
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.session_id == query.session_id
+                    && (!query.current_only || record.is_current)
+                    && query
+                        .status
+                        .as_deref()
+                        .map(|status| record.status.as_str() == status)
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            right
+                .is_current
+                .cmp(&left.is_current)
+                .then_with(|| right.updated_at.cmp(&left.updated_at))
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(paginate_iterator(records.into_iter(), &query.pagination))
+    }
+
+    fn count_session_runtime_bindings(
+        &self,
+        query: &SessionRuntimeBindingListQuery,
+    ) -> KernelResult<u64> {
+        Ok(count_iterator(
+            self.session_runtime_bindings
+                .recovering_read()
+                .values()
+                .filter(|record| {
+                    record.tenant_id == query.tenant_id
+                        && record.organization_id == query.organization_id
+                        && record.session_id == query.session_id
+                        && (!query.current_only || record.is_current)
+                        && query
+                            .status
+                            .as_deref()
+                            .map(|status| record.status.as_str() == status)
+                            .unwrap_or(true)
+                }),
+        ))
+    }
+
+    fn activate_session_runtime_binding_atomic(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+        expected_version: u64,
+        updated_at: String,
+    ) -> KernelResult<AgentSessionRuntimeBindingRecord> {
+        let target_key = (
+            tenant_id,
+            organization_id,
+            session_id.to_string(),
+            runtime_binding_id.to_string(),
+        );
+        let mut bindings = self.session_runtime_bindings.recovering_write();
+        let target = bindings
+            .get(&target_key)
+            .cloned()
+            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+        if target.version != expected_version {
+            return Err(KernelError::conflict(
+                "session runtime binding version mismatch",
+            ));
+        }
+        if target.is_current && target.status == AgentSessionRuntimeBindingStatus::Active {
+            return Ok(target);
+        }
+        for candidate in bindings.values_mut().filter(|candidate| {
+            candidate.tenant_id == tenant_id
+                && candidate.organization_id == organization_id
+                && candidate.session_id == session_id
+                && candidate.runtime_binding_id != runtime_binding_id
+                && candidate.is_current
+        }) {
+            candidate.deactivate(
+                AgentSessionRuntimeBindingStatus::Deactivated,
+                updated_at.clone(),
+            );
+        }
+        let target = bindings
+            .get_mut(&target_key)
+            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+        target.activate(updated_at);
+        Ok(target.clone())
+    }
+
+    fn insert_session_checkpoint(
+        &self,
+        record: AgentSessionCheckpointRecord,
+    ) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+            record.checkpoint_id.clone(),
+        );
+        let mut checkpoints = self.session_checkpoints.recovering_write();
+        if checkpoints.contains_key(&key) {
+            return Err(KernelError::conflict("session checkpoint already exists"));
+        }
+        checkpoints.insert(key, record);
+        Ok(())
+    }
+
+    fn update_session_checkpoint(
+        &self,
+        record: AgentSessionCheckpointRecord,
+    ) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+            record.checkpoint_id.clone(),
+        );
+        let mut checkpoints = self.session_checkpoints.recovering_write();
+        let existing = checkpoints
+            .get(&key)
+            .ok_or_else(|| KernelError::validation("session checkpoint not found"))?;
+        if record.version != existing.version.saturating_add(1) {
+            return Err(KernelError::conflict("session checkpoint version mismatch"));
+        }
+        checkpoints.insert(key, record);
+        Ok(())
+    }
+
+    fn get_session_checkpoint(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        checkpoint_id: &str,
+    ) -> KernelResult<Option<AgentSessionCheckpointRecord>> {
+        Ok(self
+            .session_checkpoints
+            .recovering_read()
+            .get(&(
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                checkpoint_id.to_string(),
+            ))
+            .cloned())
+    }
+
+    fn list_session_checkpoints(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<Vec<AgentSessionCheckpointRecord>> {
+        let mut records = self
+            .session_checkpoints
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == query.tenant_id
+                    && record.organization_id == query.organization_id
+                    && record.session_id == query.session_id
+                    && query
+                        .status
+                        .as_deref()
+                        .map(|status| record.status.as_str() == status)
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            right
+                .created_at
+                .cmp(&left.created_at)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(paginate_iterator(records.into_iter(), &query.pagination))
+    }
+
+    fn count_session_checkpoints(
+        &self,
+        query: &SessionCheckpointListQuery,
+    ) -> KernelResult<u64> {
+        Ok(count_iterator(
+            self.session_checkpoints
+                .recovering_read()
+                .values()
+                .filter(|record| {
+                    record.tenant_id == query.tenant_id
+                        && record.organization_id == query.organization_id
+                        && record.session_id == query.session_id
+                        && query
+                            .status
+                            .as_deref()
+                            .map(|status| record.status.as_str() == status)
+                            .unwrap_or(true)
+                }),
         ))
     }
 
@@ -1342,98 +1680,108 @@ impl AgentRepository for InMemoryAgentRepository {
             .count() as u64)
     }
 
-    fn insert_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
-        let primary_key = message_primary_key(&record);
-        let mut messages = self.messages.recovering_write();
-        if messages.contains_key(&primary_key) {
-            return Err(KernelError::conflict("message already exists"));
+    fn insert_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
+        let primary_key = session_item_primary_key(&record);
+        let mut items = self.items.recovering_write();
+        if items.contains_key(&primary_key) {
+            return Err(KernelError::conflict("session item already exists"));
         }
-        let index_key = message_index_key(&record);
-        messages.insert(primary_key.clone(), record);
-        self.message_index
+        let index_key = session_item_index_key(&record);
+        items.insert(primary_key.clone(), record);
+        self.session_item_index
             .recovering_write()
             .insert(index_key, primary_key);
         Ok(())
     }
 
-    fn update_message(&self, record: AgentMessageRecord) -> KernelResult<()> {
-        let primary_key = message_primary_key(&record);
-        let mut messages = self.messages.recovering_write();
-        let Some(existing) = messages.get(&primary_key) else {
-            return Err(KernelError::validation("message not found"));
+    fn update_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
+        let primary_key = session_item_primary_key(&record);
+        let mut items = self.items.recovering_write();
+        let Some(existing) = items.get(&primary_key) else {
+            return Err(KernelError::validation("session item not found"));
         };
-        let previous_index_key = message_index_key(existing);
-        let next_index_key = message_index_key(&record);
-        messages.insert(primary_key.clone(), record);
-        let mut index = self.message_index.recovering_write();
+        let previous_index_key = session_item_index_key(existing);
+        let next_index_key = session_item_index_key(&record);
+        items.insert(primary_key.clone(), record);
+        let mut index = self.session_item_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
         Ok(())
     }
 
-    fn get_message(
+    fn get_session_item(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
-        message_id: &str,
-    ) -> KernelResult<Option<AgentMessageRecord>> {
+        item_id: &str,
+    ) -> KernelResult<Option<AgentSessionItemRecord>> {
         Ok(self
-            .messages
+            .items
             .recovering_read()
-            .get(&(tenant_id, session_id.to_string(), message_id.to_string()))
+            .get(&(
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                item_id.to_string(),
+            ))
             .cloned())
     }
 
-    fn list_messages(&self, query: &MessageListQuery) -> KernelResult<Vec<AgentMessageRecord>> {
-        let messages = self.messages.recovering_read();
-        let index = self.message_index.recovering_read();
+    fn list_session_items(&self, query: &SessionItemListQuery) -> KernelResult<Vec<AgentSessionItemRecord>> {
+        let items = self.items.recovering_read();
+        let index = self.session_item_index.recovering_read();
         let iter = index
             .iter()
-            .filter(|((tenant_id, session_id, _, _), _)| {
-                *tenant_id == query.tenant_id && session_id == &query.session_id
+            .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
+                *tenant_id == query.tenant_id
+                    && *organization_id == query.organization_id
+                    && session_id == &query.session_id
             })
-            .filter_map(|(_, primary_key)| messages.get(primary_key))
+            .filter_map(|(_, primary_key)| items.get(primary_key))
             .filter(|record| message_matches_list_query(record, query))
             .cloned();
-        Ok(paginate_messages(iter, &query.pagination, query.sort))
+        Ok(paginate_items(iter, &query.pagination, query.sort))
     }
 
-    fn count_messages(&self, query: &MessageListQuery) -> KernelResult<u64> {
-        let messages = self.messages.recovering_read();
-        let index = self.message_index.recovering_read();
+    fn count_session_items(&self, query: &SessionItemListQuery) -> KernelResult<u64> {
+        let items = self.items.recovering_read();
+        let index = self.session_item_index.recovering_read();
         Ok(count_iterator(
             index
                 .iter()
-                .filter(|((tenant_id, session_id, _, _), _)| {
-                    *tenant_id == query.tenant_id && session_id == &query.session_id
+                .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
+                    *tenant_id == query.tenant_id
+                        && *organization_id == query.organization_id
+                        && session_id == &query.session_id
                 })
-                .filter_map(|(_, primary_key)| messages.get(primary_key))
+                .filter_map(|(_, primary_key)| items.get(primary_key))
                 .filter(|record| message_matches_list_query(record, query)),
         ))
     }
 
-    fn upsert_message_feedback(
+    fn upsert_item_feedback(
         &self,
-        record: AgentMessageFeedbackRecord,
+        record: AgentItemFeedbackRecord,
         expected_version: Option<u64>,
-    ) -> KernelResult<AgentMessageFeedbackRecord> {
-        let key = message_feedback_primary_key(&record);
-        let mut feedback = self.message_feedback.recovering_write();
+    ) -> KernelResult<AgentItemFeedbackRecord> {
+        let key = item_feedback_primary_key(&record);
+        let mut feedback = self.item_feedback.recovering_write();
         match feedback.get(&key) {
             Some(existing) => {
                 let reviving_without_version = existing.deleted_at.is_some()
                     && record.deleted_at.is_none()
                     && expected_version.is_none();
                 if !reviving_without_version && expected_version != Some(existing.version) {
-                    return Err(KernelError::conflict("message feedback version mismatch"));
+                    return Err(KernelError::conflict("item feedback version mismatch"));
                 }
                 if record.version != existing.version.saturating_add(1) {
-                    return Err(KernelError::conflict("message feedback version mismatch"));
+                    return Err(KernelError::conflict("item feedback version mismatch"));
                 }
             }
             None => {
                 if expected_version.is_some() || record.version != 0 {
-                    return Err(KernelError::conflict("message feedback version mismatch"));
+                    return Err(KernelError::conflict("item feedback version mismatch"));
                 }
             }
         }
@@ -1441,29 +1789,29 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(record)
     }
 
-    fn get_message_feedback(
+    fn get_item_feedback(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
+        item_id: &str,
         user_id: u64,
         include_deleted: bool,
-    ) -> KernelResult<Option<AgentMessageFeedbackRecord>> {
+    ) -> KernelResult<Option<AgentItemFeedbackRecord>> {
         Ok(self
-            .message_feedback
+            .item_feedback
             .recovering_read()
-            .get(&(tenant_id, organization_id, message_id.to_string(), user_id))
+            .get(&(tenant_id, organization_id, item_id.to_string(), user_id))
             .filter(|record| include_deleted || record.deleted_at.is_none())
             .cloned())
     }
 
-    fn list_message_feedback(
+    fn list_item_feedback(
         &self,
-        query: &MessageFeedbackListQuery,
-    ) -> KernelResult<Vec<AgentMessageFeedbackRecord>> {
-        let messages = self.messages.recovering_read();
+        query: &ItemFeedbackListQuery,
+    ) -> KernelResult<Vec<AgentItemFeedbackRecord>> {
+        let items = self.items.recovering_read();
         let mut records = self
-            .message_feedback
+            .item_feedback
             .recovering_read()
             .values()
             .filter(|record| {
@@ -1473,11 +1821,12 @@ impl AgentRepository for InMemoryAgentRepository {
                     && record.deleted_at.is_none()
             })
             .filter_map(|record| {
-                messages
+                items
                     .get(&(
                         query.tenant_id,
+                        query.organization_id,
                         query.session_id.clone(),
-                        record.message_id.clone(),
+                        record.item_id.clone(),
                     ))
                     .map(|message| (message.sequence, record.clone()))
             })
@@ -1491,10 +1840,10 @@ impl AgentRepository for InMemoryAgentRepository {
             .collect())
     }
 
-    fn count_message_feedback(&self, query: &MessageFeedbackListQuery) -> KernelResult<u64> {
-        let messages = self.messages.recovering_read();
+    fn count_item_feedback(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64> {
+        let items = self.items.recovering_read();
         Ok(self
-            .message_feedback
+            .item_feedback
             .recovering_read()
             .values()
             .filter(|record| {
@@ -1502,37 +1851,45 @@ impl AgentRepository for InMemoryAgentRepository {
                     && record.organization_id == query.organization_id
                     && record.user_id == query.user_id
                     && record.deleted_at.is_none()
-                    && messages.contains_key(&(
+                    && items.contains_key(&(
                         query.tenant_id,
+                        query.organization_id,
                         query.session_id.clone(),
-                        record.message_id.clone(),
+                        record.item_id.clone(),
                     ))
             })
             .count() as u64)
     }
 
-    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
-        let index = self.message_index.recovering_read();
+    fn next_item_sequence(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<u64> {
+        let index = self.session_item_index.recovering_read();
         let max_sequence = index
             .iter()
-            .filter(|((indexed_tenant_id, indexed_session_id, _, _), _)| {
-                *indexed_tenant_id == tenant_id && indexed_session_id == session_id
+            .filter(|((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
+                *indexed_tenant_id == tenant_id
+                    && *indexed_organization_id == organization_id
+                    && indexed_session_id == session_id
             })
-            .map(|((_, _, sequence, _), _)| *sequence)
+            .map(|((_, _, _, sequence, _), _)| *sequence)
             .max()
             .unwrap_or(0);
         Ok(max_sequence.saturating_add(1))
     }
 
-    fn get_chat_turn_by_idempotency(
+    fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
         organization_id: u64,
         owner_user_id: u64,
         idempotency_key: &str,
-    ) -> KernelResult<Option<AgentChatTurnRecord>> {
-        let index = self.chat_turn_idempotency.recovering_read();
-        let turns = self.chat_turns.recovering_read();
+    ) -> KernelResult<Option<AgentTurnRecord>> {
+        let index = self.turn_idempotency.recovering_read();
+        let turns = self.turns.recovering_read();
         Ok(index
             .get(&(
                 tenant_id,
@@ -1544,33 +1901,74 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned())
     }
 
-    fn get_chat_turn(
+    fn get_turn(
         &self,
         tenant_id: u64,
         organization_id: u64,
         turn_id: &str,
-    ) -> KernelResult<Option<AgentChatTurnRecord>> {
+    ) -> KernelResult<Option<AgentTurnRecord>> {
         Ok(self
-            .chat_turns
+            .turns
             .recovering_read()
             .get(&(tenant_id, organization_id, turn_id.to_string()))
             .cloned())
     }
 
-    fn list_reconcilable_chat_turns(
+    fn list_turns(&self, query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRecord>> {
+        let mut records = self
+            .turns
+            .recovering_read()
+            .values()
+            .filter(|turn| {
+                turn.tenant_id == query.tenant_id
+                    && turn.organization_id == query.organization_id
+                    && turn.session_id == query.session_id
+                    && query
+                        .status
+                        .as_deref()
+                        .map(|status| turn.status.as_str() == status)
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            right
+                .created_at
+                .cmp(&left.created_at)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(paginate_iterator(records.into_iter(), &query.pagination))
+    }
+
+    fn count_turns(&self, query: &TurnListQuery) -> KernelResult<u64> {
+        Ok(count_iterator(
+            self.turns.recovering_read().values().filter(|turn| {
+                turn.tenant_id == query.tenant_id
+                    && turn.organization_id == query.organization_id
+                    && turn.session_id == query.session_id
+                    && query
+                        .status
+                        .as_deref()
+                        .map(|status| turn.status.as_str() == status)
+                        .unwrap_or(true)
+            }),
+        ))
+    }
+
+    fn list_reconcilable_turns(
         &self,
         stale_before: &str,
         limit: usize,
-    ) -> KernelResult<Vec<AgentChatTurnRecord>> {
+    ) -> KernelResult<Vec<AgentTurnRecord>> {
         let mut turns = self
-            .chat_turns
+            .turns
             .recovering_read()
             .values()
             .filter(|turn| {
                 matches!(
                     turn.status,
-                    crate::chat_turn::AgentChatTurnStatus::Requested
-                        | crate::chat_turn::AgentChatTurnStatus::Running
+                    crate::agent_turn::AgentTurnStatus::Requested
+                        | crate::agent_turn::AgentTurnStatus::Running
                 ) && turn.updated_at.as_str() < stale_before
             })
             .cloned()
@@ -1584,7 +1982,7 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(turns)
     }
 
-    fn insert_chat_turn_reservation(&self, turn: AgentChatTurnRecord) -> KernelResult<()> {
+    fn insert_turn_reservation(&self, turn: AgentTurnRecord) -> KernelResult<()> {
         let primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
         let idempotency_key = (
             turn.tenant_id,
@@ -1592,30 +1990,30 @@ impl AgentRepository for InMemoryAgentRepository {
             turn.owner_user_id,
             turn.idempotency_key.clone(),
         );
-        let mut turns = self.chat_turns.recovering_write();
-        let mut index = self.chat_turn_idempotency.recovering_write();
+        let mut turns = self.turns.recovering_write();
+        let mut index = self.turn_idempotency.recovering_write();
         if turns.contains_key(&primary_key) || index.contains_key(&idempotency_key) {
-            return Err(KernelError::conflict("chat turn idempotency conflict"));
+            return Err(KernelError::conflict("turn idempotency conflict"));
         }
         turns.insert(primary_key.clone(), turn);
         index.insert(idempotency_key, primary_key);
         Ok(())
     }
 
-    fn update_chat_turn_state(
+    fn update_turn_state(
         &self,
-        turn: AgentChatTurnRecord,
+        turn: AgentTurnRecord,
         expected_version: u64,
-    ) -> KernelResult<AgentChatTurnRecord> {
+    ) -> KernelResult<AgentTurnRecord> {
         let primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
-        let mut turns = self.chat_turns.recovering_write();
+        let mut turns = self.turns.recovering_write();
         let existing = turns
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("chat turn not found"))?;
+            .ok_or_else(|| KernelError::validation("turn not found"))?;
         if existing.version != expected_version
             || turn.version != expected_version.saturating_add(1)
         {
-            return Err(KernelError::conflict("chat turn version mismatch"));
+            return Err(KernelError::conflict("turn version mismatch"));
         }
         if existing.idempotency_key != turn.idempotency_key
             || existing.payload_hash != turn.payload_hash
@@ -1624,28 +2022,29 @@ impl AgentRepository for InMemoryAgentRepository {
             || existing.owner_user_id != turn.owner_user_id
         {
             return Err(KernelError::validation(
-                "chat turn immutable scope mismatch",
+                "turn immutable scope mismatch",
             ));
         }
         turns.insert(primary_key, turn.clone());
         Ok(turn)
     }
 
-    fn insert_chat_turn(
+    fn insert_turn(
         &self,
-        turn: AgentChatTurnRecord,
+        turn: AgentTurnRecord,
         session: AgentSessionRecord,
-        mut user_message: AgentMessageRecord,
-        mut assistant_message: AgentMessageRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
+        mut user_input_item: AgentSessionItemRecord,
+        mut assistant_output_item: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
         // Atomic: acquire all relevant write locks in canonical order
-        // (sessions → session_index → messages → message_index) to prevent
-        // race conditions on message sequence and session counters.
-        let tenant_id = user_message.tenant_id;
-        let session_id = user_message.session_id.clone();
+        // (sessions -> session_index -> items -> session_item_index) to prevent
+        // races on item sequence and session counters.
+        let tenant_id = user_input_item.tenant_id;
+        let organization_id = user_input_item.organization_id;
+        let session_id = user_input_item.session_id.clone();
 
-        let mut turns = self.chat_turns.recovering_write();
-        let mut turn_idempotency = self.chat_turn_idempotency.recovering_write();
+        let mut turns = self.turns.recovering_write();
+        let mut turn_idempotency = self.turn_idempotency.recovering_write();
         let turn_primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
         let turn_idempotency_key = (
             turn.tenant_id,
@@ -1659,19 +2058,19 @@ impl AgentRepository for InMemoryAgentRepository {
                 || turn.version != existing.version.saturating_add(1)
                 || !matches!(
                     existing.status,
-                    crate::chat_turn::AgentChatTurnStatus::Requested
-                        | crate::chat_turn::AgentChatTurnStatus::Running
+                    crate::agent_turn::AgentTurnStatus::Requested
+                        | crate::agent_turn::AgentTurnStatus::Running
                 )
             {
-                return Err(KernelError::conflict("chat turn idempotency conflict"));
+                return Err(KernelError::conflict("turn idempotency conflict"));
             }
         } else if turn_idempotency.contains_key(&turn_idempotency_key) {
-            return Err(KernelError::conflict("chat turn idempotency conflict"));
+            return Err(KernelError::conflict("turn idempotency conflict"));
         }
         let mut sessions = self.sessions.recovering_write();
         let mut session_index = self.session_index.recovering_write();
-        let mut messages = self.messages.recovering_write();
-        let mut message_index = self.message_index.recovering_write();
+        let mut items = self.items.recovering_write();
+        let mut session_item_index = self.session_item_index.recovering_write();
 
         // Verify session exists and check optimistic version
         let session_primary_key = session_primary_key(&session);
@@ -1686,36 +2085,35 @@ impl AgentRepository for InMemoryAgentRepository {
             )));
         }
 
-        // Compute next sequence atomically from the currently held message index
-        let max_sequence = message_index
+        let max_sequence = session_item_index
             .iter()
-            .filter(|((indexed_tenant_id, indexed_session_id, _, _), _)| {
-                *indexed_tenant_id == tenant_id && indexed_session_id == &session_id
+            .filter(|((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
+                *indexed_tenant_id == tenant_id
+                    && *indexed_organization_id == organization_id
+                    && indexed_session_id == &session_id
             })
-            .map(|((_, _, sequence, _), _)| *sequence)
+            .map(|((_, _, _, sequence, _), _)| *sequence)
             .max()
             .unwrap_or(0);
         let user_sequence = max_sequence.saturating_add(1);
-        user_message.sequence = user_sequence;
-        assistant_message.sequence = user_sequence.saturating_add(1);
+        user_input_item.sequence = user_sequence;
+        assistant_output_item.sequence = user_sequence.saturating_add(1);
 
-        // Insert user message
-        let user_primary_key = message_primary_key(&user_message);
-        if messages.contains_key(&user_primary_key) {
-            return Err(KernelError::conflict("user message already exists"));
+        let user_primary_key = session_item_primary_key(&user_input_item);
+        if items.contains_key(&user_primary_key) {
+            return Err(KernelError::conflict("user input item already exists"));
         }
-        let user_index_key = message_index_key(&user_message);
-        messages.insert(user_primary_key.clone(), user_message.clone());
-        message_index.insert(user_index_key, user_primary_key);
+        let user_index_key = session_item_index_key(&user_input_item);
+        items.insert(user_primary_key.clone(), user_input_item.clone());
+        session_item_index.insert(user_index_key, user_primary_key);
 
-        // Insert assistant message
-        let assistant_primary_key = message_primary_key(&assistant_message);
-        if messages.contains_key(&assistant_primary_key) {
-            return Err(KernelError::conflict("assistant message already exists"));
+        let assistant_primary_key = session_item_primary_key(&assistant_output_item);
+        if items.contains_key(&assistant_primary_key) {
+            return Err(KernelError::conflict("assistant output item already exists"));
         }
-        let assistant_index_key = message_index_key(&assistant_message);
-        messages.insert(assistant_primary_key.clone(), assistant_message.clone());
-        message_index.insert(assistant_index_key, assistant_primary_key);
+        let assistant_index_key = session_item_index_key(&assistant_output_item);
+        items.insert(assistant_primary_key.clone(), assistant_output_item.clone());
+        session_item_index.insert(assistant_index_key, assistant_primary_key);
 
         // Update session (inline to preserve lock atomicity)
         let previous_session_index_key = session_index_key(existing_session);
@@ -1727,61 +2125,61 @@ impl AgentRepository for InMemoryAgentRepository {
         turns.insert(turn_primary_key.clone(), turn);
         turn_idempotency.insert(turn_idempotency_key, turn_primary_key);
 
-        Ok((session, user_message, assistant_message))
+        Ok((session, user_input_item, assistant_output_item))
     }
 
-    fn insert_chat_turn_with_drive_refs(
+    fn insert_turn_with_drive_refs(
         &self,
-        turn: AgentChatTurnRecord,
+        turn: AgentTurnRecord,
         session: AgentSessionRecord,
-        user_message: AgentMessageRecord,
-        assistant_message: AgentMessageRecord,
-        drive_refs: Vec<AgentMessageDriveRefRecord>,
-    ) -> KernelResult<(AgentSessionRecord, AgentMessageRecord, AgentMessageRecord)> {
-        let mut refs = self.message_drive_refs.recovering_write();
+        user_input_item: AgentSessionItemRecord,
+        assistant_output_item: AgentSessionItemRecord,
+        drive_refs: Vec<AgentItemDriveRefRecord>,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+        let mut refs = self.item_drive_refs.recovering_write();
         let mut pending = Vec::with_capacity(drive_refs.len());
         for record in drive_refs {
-            if record.tenant_id != user_message.tenant_id
+            if record.tenant_id != user_input_item.tenant_id
                 || record.organization_id != session.organization_id
-                || record.message_id != user_message.message_id
+                || record.item_id != user_input_item.item_id
             {
                 return Err(KernelError::validation(
-                    "message Drive reference scope mismatch",
+                    "session item Drive reference scope mismatch",
                 ));
             }
             let key = (
                 record.tenant_id,
                 record.organization_id,
-                record.message_id.clone(),
+                record.item_id.clone(),
                 record.drive_node_id.clone(),
-                record.media_role.as_str().to_string(),
+                record.resource_role.as_str().to_string(),
             );
             if refs.contains_key(&key) || pending.iter().any(|(candidate, _)| candidate == &key) {
-                return Err(KernelError::conflict("duplicate message Drive reference"));
+                return Err(KernelError::conflict("duplicate session item Drive reference"));
             }
             pending.push((key, record));
         }
-        let result = self.insert_chat_turn(turn, session, user_message, assistant_message)?;
+        let result = self.insert_turn(turn, session, user_input_item, assistant_output_item)?;
         for (key, record) in pending {
             refs.insert(key, record);
         }
         Ok(result)
     }
 
-    fn list_message_drive_refs(
+    fn list_item_drive_refs(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
-    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
+        item_id: &str,
+    ) -> KernelResult<Vec<AgentItemDriveRefRecord>> {
         let mut records = self
-            .message_drive_refs
+            .item_drive_refs
             .recovering_read()
             .values()
             .filter(|record| {
                 record.tenant_id == tenant_id
                     && record.organization_id == organization_id
-                    && record.message_id == message_id
+                    && record.item_id == item_id
                     && record.deleted_at.is_none()
                     && record.status == 0
             })
@@ -1791,32 +2189,32 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(records)
     }
 
-    fn list_message_drive_refs_batch(
+    fn list_item_drive_refs_batch(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_ids: &[String],
-    ) -> KernelResult<Vec<AgentMessageDriveRefRecord>> {
-        let message_ids = message_ids
+        item_ids: &[String],
+    ) -> KernelResult<Vec<AgentItemDriveRefRecord>> {
+        let item_ids = item_ids
             .iter()
             .map(String::as_str)
             .collect::<HashSet<_>>();
         let mut records = self
-            .message_drive_refs
+            .item_drive_refs
             .recovering_read()
             .values()
             .filter(|record| {
                 record.tenant_id == tenant_id
                     && record.organization_id == organization_id
-                    && message_ids.contains(record.message_id.as_str())
+                    && item_ids.contains(record.item_id.as_str())
                     && record.deleted_at.is_none()
                     && record.status == 0
             })
             .cloned()
             .collect::<Vec<_>>();
         records.sort_by(|left, right| {
-            left.message_id
-                .cmp(&right.message_id)
+            left.item_id
+                .cmp(&right.item_id)
                 .then(left.sort_order.cmp(&right.sort_order))
                 .then(left.id.cmp(&right.id))
         });
@@ -1868,6 +2266,7 @@ impl AgentRepository for InMemoryAgentRepository {
     fn get_interaction(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         interaction_id: &str,
     ) -> KernelResult<Option<AgentInteractionRecord>> {
@@ -1876,6 +2275,7 @@ impl AgentRepository for InMemoryAgentRepository {
             .recovering_read()
             .get(&(
                 tenant_id,
+                organization_id,
                 session_id.to_string(),
                 interaction_id.to_string(),
             ))
@@ -1890,8 +2290,10 @@ impl AgentRepository for InMemoryAgentRepository {
         let index = self.interaction_index.recovering_read();
         let iter = index
             .iter()
-            .filter(|((tenant_id, session_id, _, _), _)| {
-                *tenant_id == query.tenant_id && session_id == &query.session_id
+            .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
+                *tenant_id == query.tenant_id
+                    && *organization_id == query.organization_id
+                    && session_id == &query.session_id
             })
             .filter_map(|(_, primary_key)| interactions.get(primary_key))
             .filter(|record| interaction_matches_list_query(record, query))
@@ -1905,8 +2307,10 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(count_iterator(
             index
                 .iter()
-                .filter(|((tenant_id, session_id, _, _), _)| {
-                    *tenant_id == query.tenant_id && session_id == &query.session_id
+                .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
+                    *tenant_id == query.tenant_id
+                        && *organization_id == query.organization_id
+                        && session_id == &query.session_id
                 })
                 .filter_map(|(_, primary_key)| interactions.get(primary_key))
                 .filter(|record| interaction_matches_list_query(record, query)),
@@ -2531,12 +2935,15 @@ fn project_matches_list_query(record: &AgentProjectRecord, query: &ProjectListQu
     true
 }
 
-fn message_matches_list_query(record: &AgentMessageRecord, query: &MessageListQuery) -> bool {
-    if record.tenant_id != query.tenant_id || record.session_id != query.session_id {
+fn message_matches_list_query(record: &AgentSessionItemRecord, query: &SessionItemListQuery) -> bool {
+    if record.tenant_id != query.tenant_id
+        || record.organization_id != query.organization_id
+        || record.session_id != query.session_id
+    {
         return false;
     }
-    if let Some(role) = query.role.as_ref() {
-        if record.role.as_str() != role {
+    if let Some(kind) = query.kind.as_ref() {
+        if record.kind.as_str() != kind {
             return false;
         }
     }

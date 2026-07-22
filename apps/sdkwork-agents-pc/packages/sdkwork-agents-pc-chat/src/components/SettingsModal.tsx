@@ -16,7 +16,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const { settings, setSettings } = useModelSettings(activeTab);
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    i18n.changeLanguage(e.target.value);
+    window.localStorage.setItem('user_explicit_lang', e.target.value);
+    void i18n.changeLanguage(e.target.value);
   };
 
   const updateSetting = <K extends keyof ModelSettings>(key: K, value: ModelSettings[K]) => {
@@ -146,8 +147,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                     onChange={handleLanguageChange}
                     className="w-full bg-white dark:bg-[#333] border border-gray-200 dark:border-[#444] rounded-lg px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:ring-1 focus:ring-[#1890ff] outline-none appearance-none cursor-pointer focus:border-[#1890ff] transition-colors"
                   >
-                    <option value="en">English</option>
-                    <option value="zh">简体中文</option>
+                    <option value="en-US">English</option>
+                    <option value="zh-CN">简体中文</option>
                   </select>
                 </div>
               </div>

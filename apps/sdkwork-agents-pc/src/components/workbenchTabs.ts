@@ -3,7 +3,6 @@ export const WORKBENCH_TABS = [
   'inspiration',
   'creative',
   'assets',
-  'presentation',
   'canvas',
   'agents',
 ] as const;

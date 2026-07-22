@@ -11,43 +11,51 @@ use middleware::with_gateway_trusted_context;
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
-    AgentCompositionSlotUpdateCommand, AgentMessageMediaResourceInput, AgentsService,
-    CancelChatTurnCommand, ChatCompletionResult, CreateProjectCommand,
+    AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService,
+    CancelTurnCommand, CreateProjectCommand,
     CreateProjectCompositionSlotCommand, CreateSessionCommand, DeleteProjectCompositionSlotCommand,
-    DeleteSessionCommand, GetChatTurnByIdempotencyCommand, GetChatTurnCommand,
-    GetInteractionCommand, GetMessageCommand, GetProjectCommand, GetProjectCompositionSlotCommand,
-    GetSessionCommand, GetSessionUserStateCommand, GetTaskCommand, ListAgentAuditEventsCommand,
-    ListMcpMarketplaceCommand, ListMessageFeedbackCommand, ListProjectCompositionSlotsCommand,
-    ListProjectsCommand, ListSessionUserStatesCommand, ProjectMutationCommand,
-    ProviderBindingListCommand, SendChatMessageCommand, UpdateMessageFeedbackCommand,
-    UpdateProjectCommand, UpdateProjectCompositionSlotCommand, UpdateSessionCommand,
-    UpdateSessionUserStateCommand,
+    DeleteSessionCommand, GetInteractionCommand, GetProjectCommand,
+    GetProjectCompositionSlotCommand, GetSessionCheckpointCommand, GetSessionCommand,
+    GetSessionItemCommand, GetSessionRuntimeBindingCommand, GetSessionUserStateCommand,
+    GetTaskCommand, GetTurnByIdempotencyCommand, GetTurnCommand, ListAgentAuditEventsCommand,
+    ListItemFeedbackCommand, ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand,
+    ListProjectsCommand, ListSessionCheckpointsCommand, ListSessionRuntimeBindingsCommand,
+    ListSessionUserStatesCommand, ListTurnsCommand, ProjectMutationCommand,
+    ProviderBindingListCommand, CreateTurnCommand, UpdateItemFeedbackCommand, UpdateProjectCommand,
+    UpdateProjectCompositionSlotCommand, UpdateSessionCommand, UpdateSessionUserStateCommand,
 };
-use crate::chat_runtime::{ChatCompleter, ContractChatCompleter};
+use crate::turn_runtime::{TurnExecutor, ContractTurnExecutor};
 use crate::domain::{
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
-    AgentMessageFeedbackRating, AgentProviderBindingRecord,
+    AgentItemFeedbackRating, AgentItemResourceRole, AgentProviderBindingRecord,
+    AgentSessionEntrySurface, AgentSessionKind,
 };
 use crate::dto::{
     ActivateAgentProviderBindingRequestDto, AgentCompositionSlotCreateRequestDto,
     AgentCompositionSlotRecordDto, AgentCompositionSlotUpdateRequestDto, AgentInteractionRecordDto,
-    AgentManagementProfileDto, AgentMessageFeedbackRecordDto, AgentMessageRecordDto,
-    AgentPreviewResponseRequestDto, AgentPromptOptimizationRequestDto,
-    AgentProviderBindingRecordDto, AgentProviderBindingRequestDto, AgentRecordDto,
-    AgentResourceUserStateRecordDto, AgentRuntimeExecutionRecordDto, AgentSessionRecordDto,
-    AgentTaskRecordDto, AnswerInteractionRequestDto, ApproveInteractionRequestDto,
-    ArchiveSessionRequestDto, CancelTaskRequestDto, CloseSessionRequestDto, CreateAgentRequestDto,
-    CreateInteractionRequestDto, CreateSessionRequestDto, CreateTaskRequestDto,
-    DeleteAgentRequestDto, GetAgentRequestDto, ListAgentsRequestDto, ListInteractionsRequestDto,
-    ListMessagesRequestDto, ListSessionsRequestDto, ListTasksRequestDto, RestoreAgentRequestDto,
-    UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
+    AgentItemFeedbackRecordDto, AgentManagementProfileDto, AgentPreviewResponseRequestDto,
+    AgentPromptOptimizationRequestDto, AgentProviderBindingRecordDto,
+    AgentProviderBindingRequestDto, AgentRecordDto, AgentResourceUserStateRecordDto,
+    AgentRuntimeExecutionRecordDto, AgentSessionCheckpointRecordDto, AgentSessionItemRecordDto,
+    AgentSessionRecordDto, AgentSessionRuntimeBindingRecordDto, AgentTaskRecordDto,
+    AgentTurnExecutionDto, AgentTurnRecordDto, AnswerInteractionRequestDto,
+    ApproveInteractionRequestDto, ArchiveSessionRequestDto, CancelTaskRequestDto,
+    ChangeSessionCheckpointStatusRequestDto, ChangeSessionRuntimeBindingStatusRequestDto,
+    ClaimInteractionRequestDto, CloseSessionRequestDto, CreateAgentRequestDto,
+    CreateInteractionRequestDto, CreateSessionCheckpointRequestDto, CreateSessionRequestDto,
+    CreateSessionRuntimeBindingRequestDto, CreateTaskRequestDto, DeleteAgentRequestDto,
+    GetAgentRequestDto, InteractionClaimResultDto, ListAgentsRequestDto,
+    ListInteractionsRequestDto, ListSessionItemsRequestDto, ListSessionsRequestDto,
+    ListTasksRequestDto, RestoreAgentRequestDto, UpdateAgentRequestDto,
+    UpdateAgentStatusRequestDto, UpdateSessionRuntimeBindingRequestDto,
 };
 use crate::mcp_marketplace::McpServerMarketplaceRecord;
 use crate::ports::{
     AgentAuditSink, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    McpMarketplaceListQuery, MessageFeedbackListQuery, PaginationParams,
+    ItemFeedbackListQuery, McpMarketplaceListQuery, PaginationParams,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery,
+    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionRuntimeBindingListQuery,
+    TurnListQuery,
 };
 use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
@@ -352,9 +360,11 @@ impl AgentRepository for DynAgentRepository {
     fn get_session(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<crate::domain::AgentSessionRecord>> {
-        self.0.get_session(tenant_id, session_id)
+        self.0
+            .get_session(tenant_id, organization_id, session_id)
     }
 
     fn list_sessions(
@@ -366,6 +376,121 @@ impl AgentRepository for DynAgentRepository {
 
     fn count_sessions(&self, query: &crate::ports::SessionListQuery) -> KernelResult<u64> {
         self.0.count_sessions(query)
+    }
+
+    fn insert_session_runtime_binding(
+        &self,
+        record: crate::domain::AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()> {
+        self.0.insert_session_runtime_binding(record)
+    }
+
+    fn update_session_runtime_binding(
+        &self,
+        record: crate::domain::AgentSessionRuntimeBindingRecord,
+    ) -> KernelResult<()> {
+        self.0.update_session_runtime_binding(record)
+    }
+
+    fn get_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentSessionRuntimeBindingRecord>> {
+        self.0.get_session_runtime_binding(
+            tenant_id,
+            organization_id,
+            session_id,
+            runtime_binding_id,
+        )
+    }
+
+    fn get_current_session_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentSessionRuntimeBindingRecord>> {
+        self.0
+            .get_current_session_runtime_binding(tenant_id, organization_id, session_id)
+    }
+
+    fn list_session_runtime_bindings(
+        &self,
+        query: &crate::ports::SessionRuntimeBindingListQuery,
+    ) -> KernelResult<Vec<crate::domain::AgentSessionRuntimeBindingRecord>> {
+        self.0.list_session_runtime_bindings(query)
+    }
+
+    fn count_session_runtime_bindings(
+        &self,
+        query: &crate::ports::SessionRuntimeBindingListQuery,
+    ) -> KernelResult<u64> {
+        self.0.count_session_runtime_bindings(query)
+    }
+
+    fn activate_session_runtime_binding_atomic(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        runtime_binding_id: &str,
+        expected_version: u64,
+        updated_at: String,
+    ) -> KernelResult<crate::domain::AgentSessionRuntimeBindingRecord> {
+        self.0.activate_session_runtime_binding_atomic(
+            tenant_id,
+            organization_id,
+            session_id,
+            runtime_binding_id,
+            expected_version,
+            updated_at,
+        )
+    }
+
+    fn insert_session_checkpoint(
+        &self,
+        record: crate::domain::AgentSessionCheckpointRecord,
+    ) -> KernelResult<()> {
+        self.0.insert_session_checkpoint(record)
+    }
+
+    fn update_session_checkpoint(
+        &self,
+        record: crate::domain::AgentSessionCheckpointRecord,
+    ) -> KernelResult<()> {
+        self.0.update_session_checkpoint(record)
+    }
+
+    fn get_session_checkpoint(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        checkpoint_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentSessionCheckpointRecord>> {
+        self.0.get_session_checkpoint(
+            tenant_id,
+            organization_id,
+            session_id,
+            checkpoint_id,
+        )
+    }
+
+    fn list_session_checkpoints(
+        &self,
+        query: &crate::ports::SessionCheckpointListQuery,
+    ) -> KernelResult<Vec<crate::domain::AgentSessionCheckpointRecord>> {
+        self.0.list_session_checkpoints(query)
+    }
+
+    fn count_session_checkpoints(
+        &self,
+        query: &crate::ports::SessionCheckpointListQuery,
+    ) -> KernelResult<u64> {
+        self.0.count_session_checkpoints(query)
     }
 
     fn upsert_resource_user_state(
@@ -407,85 +532,93 @@ impl AgentRepository for DynAgentRepository {
         self.0.count_resource_user_states(query)
     }
 
-    fn insert_message(&self, record: crate::domain::AgentMessageRecord) -> KernelResult<()> {
-        self.0.insert_message(record)
+    fn insert_session_item(&self, record: crate::domain::AgentSessionItemRecord) -> KernelResult<()> {
+        self.0.insert_session_item(record)
     }
 
-    fn update_message(&self, record: crate::domain::AgentMessageRecord) -> KernelResult<()> {
-        self.0.update_message(record)
+    fn update_session_item(&self, record: crate::domain::AgentSessionItemRecord) -> KernelResult<()> {
+        self.0.update_session_item(record)
     }
 
-    fn get_message(
-        &self,
-        tenant_id: u64,
-        session_id: &str,
-        message_id: &str,
-    ) -> KernelResult<Option<crate::domain::AgentMessageRecord>> {
-        self.0.get_message(tenant_id, session_id, message_id)
-    }
-
-    fn list_messages(
-        &self,
-        query: &crate::ports::MessageListQuery,
-    ) -> KernelResult<Vec<crate::domain::AgentMessageRecord>> {
-        self.0.list_messages(query)
-    }
-
-    fn count_messages(&self, query: &crate::ports::MessageListQuery) -> KernelResult<u64> {
-        self.0.count_messages(query)
-    }
-
-    fn upsert_message_feedback(
-        &self,
-        record: crate::domain::AgentMessageFeedbackRecord,
-        expected_version: Option<u64>,
-    ) -> KernelResult<crate::domain::AgentMessageFeedbackRecord> {
-        self.0.upsert_message_feedback(record, expected_version)
-    }
-
-    fn get_message_feedback(
+    fn get_session_item(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
+        session_id: &str,
+        item_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentSessionItemRecord>> {
+        self.0
+            .get_session_item(tenant_id, organization_id, session_id, item_id)
+    }
+
+    fn list_session_items(
+        &self,
+        query: &crate::ports::SessionItemListQuery,
+    ) -> KernelResult<Vec<crate::domain::AgentSessionItemRecord>> {
+        self.0.list_session_items(query)
+    }
+
+    fn count_session_items(&self, query: &crate::ports::SessionItemListQuery) -> KernelResult<u64> {
+        self.0.count_session_items(query)
+    }
+
+    fn upsert_item_feedback(
+        &self,
+        record: crate::domain::AgentItemFeedbackRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<crate::domain::AgentItemFeedbackRecord> {
+        self.0.upsert_item_feedback(record, expected_version)
+    }
+
+    fn get_item_feedback(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        item_id: &str,
         user_id: u64,
         include_deleted: bool,
-    ) -> KernelResult<Option<crate::domain::AgentMessageFeedbackRecord>> {
-        self.0.get_message_feedback(
+    ) -> KernelResult<Option<crate::domain::AgentItemFeedbackRecord>> {
+        self.0.get_item_feedback(
             tenant_id,
             organization_id,
-            message_id,
+            item_id,
             user_id,
             include_deleted,
         )
     }
 
-    fn list_message_feedback(
+    fn list_item_feedback(
         &self,
-        query: &crate::ports::MessageFeedbackListQuery,
-    ) -> KernelResult<Vec<crate::domain::AgentMessageFeedbackRecord>> {
-        self.0.list_message_feedback(query)
+        query: &crate::ports::ItemFeedbackListQuery,
+    ) -> KernelResult<Vec<crate::domain::AgentItemFeedbackRecord>> {
+        self.0.list_item_feedback(query)
     }
 
-    fn count_message_feedback(
+    fn count_item_feedback(
         &self,
-        query: &crate::ports::MessageFeedbackListQuery,
+        query: &crate::ports::ItemFeedbackListQuery,
     ) -> KernelResult<u64> {
-        self.0.count_message_feedback(query)
+        self.0.count_item_feedback(query)
     }
 
-    fn next_message_sequence(&self, tenant_id: u64, session_id: &str) -> KernelResult<u64> {
-        self.0.next_message_sequence(tenant_id, session_id)
+    fn next_item_sequence(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> KernelResult<u64> {
+        self.0
+            .next_item_sequence(tenant_id, organization_id, session_id)
     }
 
-    fn get_chat_turn_by_idempotency(
+    fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
         organization_id: u64,
         owner_user_id: u64,
         idempotency_key: &str,
-    ) -> KernelResult<Option<crate::chat_turn::AgentChatTurnRecord>> {
-        self.0.get_chat_turn_by_idempotency(
+    ) -> KernelResult<Option<crate::agent_turn::AgentTurnRecord>> {
+        self.0.get_turn_by_idempotency(
             tenant_id,
             organization_id,
             owner_user_id,
@@ -493,92 +626,103 @@ impl AgentRepository for DynAgentRepository {
         )
     }
 
-    fn get_chat_turn(
+    fn get_turn(
         &self,
         tenant_id: u64,
         organization_id: u64,
         turn_id: &str,
-    ) -> KernelResult<Option<crate::chat_turn::AgentChatTurnRecord>> {
-        self.0.get_chat_turn(tenant_id, organization_id, turn_id)
+    ) -> KernelResult<Option<crate::agent_turn::AgentTurnRecord>> {
+        self.0.get_turn(tenant_id, organization_id, turn_id)
     }
 
-    fn list_reconcilable_chat_turns(
+    fn list_turns(
+        &self,
+        query: &crate::ports::TurnListQuery,
+    ) -> KernelResult<Vec<crate::agent_turn::AgentTurnRecord>> {
+        self.0.list_turns(query)
+    }
+
+    fn count_turns(&self, query: &crate::ports::TurnListQuery) -> KernelResult<u64> {
+        self.0.count_turns(query)
+    }
+
+    fn list_reconcilable_turns(
         &self,
         stale_before: &str,
         limit: usize,
-    ) -> KernelResult<Vec<crate::chat_turn::AgentChatTurnRecord>> {
-        self.0.list_reconcilable_chat_turns(stale_before, limit)
+    ) -> KernelResult<Vec<crate::agent_turn::AgentTurnRecord>> {
+        self.0.list_reconcilable_turns(stale_before, limit)
     }
 
-    fn insert_chat_turn_reservation(
+    fn insert_turn_reservation(
         &self,
-        turn: crate::chat_turn::AgentChatTurnRecord,
+        turn: crate::agent_turn::AgentTurnRecord,
     ) -> KernelResult<()> {
-        self.0.insert_chat_turn_reservation(turn)
+        self.0.insert_turn_reservation(turn)
     }
 
-    fn update_chat_turn_state(
+    fn update_turn_state(
         &self,
-        turn: crate::chat_turn::AgentChatTurnRecord,
+        turn: crate::agent_turn::AgentTurnRecord,
         expected_version: u64,
-    ) -> KernelResult<crate::chat_turn::AgentChatTurnRecord> {
-        self.0.update_chat_turn_state(turn, expected_version)
+    ) -> KernelResult<crate::agent_turn::AgentTurnRecord> {
+        self.0.update_turn_state(turn, expected_version)
     }
 
-    fn insert_chat_turn(
+    fn insert_turn(
         &self,
-        turn: crate::chat_turn::AgentChatTurnRecord,
+        turn: crate::agent_turn::AgentTurnRecord,
         session: crate::domain::AgentSessionRecord,
-        user_message: crate::domain::AgentMessageRecord,
-        assistant_message: crate::domain::AgentMessageRecord,
+        user_input_item: crate::domain::AgentSessionItemRecord,
+        assistant_output_item: crate::domain::AgentSessionItemRecord,
     ) -> KernelResult<(
         crate::domain::AgentSessionRecord,
-        crate::domain::AgentMessageRecord,
-        crate::domain::AgentMessageRecord,
+        crate::domain::AgentSessionItemRecord,
+        crate::domain::AgentSessionItemRecord,
     )> {
         self.0
-            .insert_chat_turn(turn, session, user_message, assistant_message)
+            .insert_turn(turn, session, user_input_item, assistant_output_item)
     }
 
-    fn insert_chat_turn_with_drive_refs(
+    fn insert_turn_with_drive_refs(
         &self,
-        turn: crate::chat_turn::AgentChatTurnRecord,
+        turn: crate::agent_turn::AgentTurnRecord,
         session: crate::domain::AgentSessionRecord,
-        user_message: crate::domain::AgentMessageRecord,
-        assistant_message: crate::domain::AgentMessageRecord,
-        drive_refs: Vec<crate::domain::AgentMessageDriveRefRecord>,
+        user_input_item: crate::domain::AgentSessionItemRecord,
+        assistant_output_item: crate::domain::AgentSessionItemRecord,
+        drive_refs: Vec<crate::domain::AgentItemDriveRefRecord>,
     ) -> KernelResult<(
         crate::domain::AgentSessionRecord,
-        crate::domain::AgentMessageRecord,
-        crate::domain::AgentMessageRecord,
+        crate::domain::AgentSessionItemRecord,
+        crate::domain::AgentSessionItemRecord,
     )> {
-        self.0.insert_chat_turn_with_drive_refs(
+        self.0.insert_turn_with_drive_refs(
             turn,
             session,
-            user_message,
-            assistant_message,
+            user_input_item,
+            assistant_output_item,
             drive_refs,
         )
     }
 
-    fn list_message_drive_refs(
+    fn list_item_drive_refs(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_id: &str,
-    ) -> KernelResult<Vec<crate::domain::AgentMessageDriveRefRecord>> {
+        item_id: &str,
+    ) -> KernelResult<Vec<crate::domain::AgentItemDriveRefRecord>> {
         self.0
-            .list_message_drive_refs(tenant_id, organization_id, message_id)
+            .list_item_drive_refs(tenant_id, organization_id, item_id)
     }
 
-    fn list_message_drive_refs_batch(
+    fn list_item_drive_refs_batch(
         &self,
         tenant_id: u64,
         organization_id: u64,
-        message_ids: &[String],
-    ) -> KernelResult<Vec<crate::domain::AgentMessageDriveRefRecord>> {
+        item_ids: &[String],
+    ) -> KernelResult<Vec<crate::domain::AgentItemDriveRefRecord>> {
         self.0
-            .list_message_drive_refs_batch(tenant_id, organization_id, message_ids)
+            .list_item_drive_refs_batch(tenant_id, organization_id, item_ids)
     }
 
     fn insert_task(&self, record: crate::domain::AgentTaskRecord) -> KernelResult<()> {
@@ -625,11 +769,12 @@ impl AgentRepository for DynAgentRepository {
     fn get_interaction(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         session_id: &str,
         interaction_id: &str,
     ) -> KernelResult<Option<crate::domain::AgentInteractionRecord>> {
         self.0
-            .get_interaction(tenant_id, session_id, interaction_id)
+            .get_interaction(tenant_id, organization_id, session_id, interaction_id)
     }
 
     fn list_interactions(
@@ -693,19 +838,19 @@ impl AgentHttpState {
         A: AgentAuditSink + Send + Sync + 'static,
         P: PolicyProvider + Send + Sync + 'static,
     {
-        Self::with_chat_completer(
+        Self::with_turn_executor(
             repository,
             audit_sink,
             policy_provider,
-            Arc::new(ContractChatCompleter),
+            Arc::new(ContractTurnExecutor),
         )
     }
 
-    pub fn with_chat_completer<R, A, P>(
+    pub fn with_turn_executor<R, A, P>(
         repository: R,
         audit_sink: A,
         policy_provider: P,
-        chat_completer: Arc<dyn ChatCompleter>,
+        turn_executor: Arc<dyn TurnExecutor>,
     ) -> Self
     where
         R: AgentRepository + Send + Sync + 'static,
@@ -717,19 +862,19 @@ impl AgentHttpState {
             DynAgentAuditSink::new(audit_sink),
             DynPolicyProvider::new(policy_provider),
         )
-        .with_chat_completer(chat_completer);
+        .with_turn_executor(turn_executor);
         Self {
             service: Arc::new(service),
         }
     }
 
-    pub fn chat_facade(&self) -> Arc<dyn sdkwork_agents_runtime_facade::AgentsChatFacade> {
-        Arc::new(HttpAgentsChatFacade {
+    pub fn session_facade(&self) -> Arc<dyn sdkwork_agents_runtime_facade::AgentsSessionFacade> {
+        Arc::new(HttpAgentsSessionFacade {
             service: self.service.clone(),
         })
     }
 
-    pub fn spawn_chat_turn_reconciliation_worker(&self) -> Option<tokio::task::JoinHandle<()>> {
+    pub fn spawn_turn_reconciliation_worker(&self) -> Option<tokio::task::JoinHandle<()>> {
         let interval_seconds =
             env_usize(ENV_CHAT_TURN_RECONCILIATION_INTERVAL_SECONDS, 30, 0, 3600);
         if interval_seconds == 0 {
@@ -750,7 +895,7 @@ impl AgentHttpState {
                 let stale_before = format_utc_seconds(stale_before);
                 let service = service.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    service.reconcile_stale_chat_turns(&stale_before, &occurred_at, batch_size)
+                    service.reconcile_stale_turns(&stale_before, &occurred_at, batch_size)
                 })
                 .await;
                 match result {
@@ -758,7 +903,7 @@ impl AgentHttpState {
                         if !summary.failed.is_empty() || summary.skipped_conflicts > 0 =>
                     {
                         tracing::info!(
-                            target: "sdkwork.agents.chat_turn.reconciliation",
+                            target: "sdkwork.agents.turn.reconciliation",
                             examined = summary.examined,
                             failed = summary.failed.len(),
                             skipped_conflicts = summary.skipped_conflicts,
@@ -767,12 +912,12 @@ impl AgentHttpState {
                     }
                     Ok(Ok(_)) => {}
                     Ok(Err(error)) => tracing::error!(
-                        target: "sdkwork.agents.chat_turn.reconciliation",
+                        target: "sdkwork.agents.turn.reconciliation",
                         error = %error,
                         "chat turn reconciliation failed"
                     ),
                     Err(error) => tracing::error!(
-                        target: "sdkwork.agents.chat_turn.reconciliation",
+                        target: "sdkwork.agents.turn.reconciliation",
                         error = %error,
                         "chat turn reconciliation worker join failed"
                     ),
@@ -782,18 +927,18 @@ impl AgentHttpState {
     }
 }
 
-struct HttpAgentsChatFacade {
+struct HttpAgentsSessionFacade {
     service: Arc<HttpService>,
 }
 
-impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
+impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFacade {
     fn resolve_or_create_session(
         &self,
-        request: sdkwork_agents_runtime_facade::ResolveAgentsChatSessionRequest,
+        request: sdkwork_agents_runtime_facade::ResolveAgentsSessionRequest,
     ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<
-        sdkwork_agents_runtime_facade::ResolvedAgentsChatSession,
+        sdkwork_agents_runtime_facade::ResolvedAgentsSession,
     > {
-        sdkwork_agents_runtime_facade::validate_chat_actor(&request.actor)?;
+        sdkwork_agents_runtime_facade::validate_session_actor(&request.actor)?;
         let subject = facade_policy_subject(
             request.tenant_id,
             &request.actor.subject_id,
@@ -801,6 +946,7 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
         );
         if let Ok(existing) = self.service.get_session(GetSessionCommand {
             tenant_id: request.tenant_id,
+            organization_id: request.organization_id,
             path_agent_id: request.agent_id.clone(),
             session_id: request.session_id.clone(),
             owner_scope: Some(request.owner_user_id),
@@ -813,7 +959,7 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
                     ),
                 );
             }
-            return Ok(sdkwork_agents_runtime_facade::ResolvedAgentsChatSession {
+            return Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
                 session_id: existing.session_id,
                 created: false,
                 version: existing.version,
@@ -828,17 +974,23 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
                 owner_user_id: request.owner_user_id,
                 session_id: request.session_id,
                 project_id: None,
+                session_kind: AgentSessionKind::Assistant,
+                entry_surface: AgentSessionEntrySurface::Api,
+                source_module: None,
+                source_context_kind: None,
+                source_context_id: None,
+                parent_session_id: None,
+                forked_from_turn_id: None,
                 title: Some(request.title),
-                provider_binding_id: None,
-                model_id: None,
-                metadata_json: "{}".into(),
+                idempotency_key: Some(request.idempotency_key),
+                payload_hash: Some(request.payload_hash),
                 requested_by: subject,
                 requested_at: request.requested_at,
             })
             .map_err(|error| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
             })?;
-        Ok(sdkwork_agents_runtime_facade::ResolvedAgentsChatSession {
+        Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
             session_id: created.session_id,
             created: true,
             version: created.version,
@@ -847,29 +999,34 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
 
     fn complete_turn(
         &self,
-        request: sdkwork_agents_runtime_facade::CompleteAgentsChatTurnRequest,
+        request: sdkwork_agents_runtime_facade::CompleteAgentsTurnRequest,
     ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<
-        sdkwork_agents_runtime_facade::CompletedAgentsChatTurn,
+        sdkwork_agents_runtime_facade::CompletedAgentsTurn,
     > {
-        sdkwork_agents_runtime_facade::validate_chat_actor(&request.actor)?;
+        sdkwork_agents_runtime_facade::validate_session_actor(&request.actor)?;
         let subject = facade_policy_subject(
             request.tenant_id,
             &request.actor.subject_id,
             &request.actor.roles,
         );
+        let payload_hash = sdkwork_utils_rust::sha256_hash(request.content.as_bytes());
         let result = self
             .service
-            .send_chat_message(SendChatMessageCommand {
+            .execute_turn(CreateTurnCommand {
                 tenant_id: request.tenant_id,
+                organization_id: request.organization_id,
                 agent_id: request.agent_id,
                 session_id: request.session_id,
+                turn_id: None,
                 content: request.content,
                 content_type: request.content_type,
-                metadata_json: "{}".into(),
-                media_resources: Vec::new(),
-                model_id: None,
-                idempotency_key: Some(request.idempotency_key),
+                turn_mode: crate::agent_turn::AgentTurnMode::Interactive,
+                runtime_binding_id: None,
+                requested_model_id: None,
+                idempotency_key: request.idempotency_key.clone(),
+                payload_hash,
                 client_request_id: Some(request.client_request_id),
+                drive_refs: Vec::new(),
                 owner_scope: Some(request.owner_user_id),
                 requested_by: subject,
                 requested_at: request.requested_at,
@@ -879,31 +1036,36 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
             })?;
         let turn_id = result
-            .user_message
+            .user_input_item
             .turn_id
             .clone()
-            .or(result.assistant_message.turn_id.clone())
+            .or(result.assistant_output_item.turn_id.clone())
             .ok_or_else(|| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
                     "completed Agents turn did not return turnId".into(),
                 )
             })?;
-        Ok(sdkwork_agents_runtime_facade::CompletedAgentsChatTurn {
+        let response_content = result.assistant_output_item.content.ok_or_else(|| {
+            sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                "completed Agents turn returned no assistant content".into(),
+            )
+        })?;
+        Ok(sdkwork_agents_runtime_facade::CompletedAgentsTurn {
             session_id: result.session.session_id,
             turn_id,
-            request_message_id: result.user_message.message_id,
-            response_message_id: result.assistant_message.message_id,
-            response_content: result.assistant_message.content,
+            request_item_id: result.user_input_item.item_id,
+            response_item_id: result.assistant_output_item.item_id,
+            response_content,
         })
     }
 
     fn get_turn_by_idempotency(
         &self,
-        request: sdkwork_agents_runtime_facade::GetAgentsChatTurnByIdempotencyRequest,
+        request: sdkwork_agents_runtime_facade::GetAgentsTurnByIdempotencyRequest,
     ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<
-        Option<sdkwork_agents_runtime_facade::AgentsChatTurnSnapshot>,
+        Option<sdkwork_agents_runtime_facade::AgentsTurnSnapshot>,
     > {
-        sdkwork_agents_runtime_facade::validate_chat_actor(&request.actor)?;
+        sdkwork_agents_runtime_facade::validate_session_actor(&request.actor)?;
         let subject = facade_policy_subject(
             request.tenant_id,
             &request.actor.subject_id,
@@ -911,7 +1073,7 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
         );
         let Some(turn) = self
             .service
-            .get_chat_turn_by_idempotency(GetChatTurnByIdempotencyCommand {
+            .get_turn_by_idempotency(GetTurnByIdempotencyCommand {
                 tenant_id: request.tenant_id,
                 organization_id: request.organization_id,
                 path_agent_id: request.agent_id.clone(),
@@ -926,14 +1088,14 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
         else {
             return Ok(None);
         };
-        let response_content = match turn.response_message_id.as_deref() {
-            Some(message_id) if turn.status == crate::AgentChatTurnStatus::Completed => Some(
-                self.service
-                    .get_message(GetMessageCommand {
+        let response_content = match turn.response_item_id.as_deref() {
+            Some(item_id) if turn.status == crate::AgentTurnStatus::Completed => self.service
+                    .get_session_item(GetSessionItemCommand {
                         tenant_id: request.tenant_id,
+                        organization_id: request.organization_id,
                         path_agent_id: request.agent_id,
                         session_id: request.session_id,
-                        message_id: message_id.to_owned(),
+                        item_id: item_id.to_owned(),
                         owner_scope: Some(request.owner_user_id),
                         requested_by: subject,
                     })
@@ -943,33 +1105,32 @@ impl sdkwork_agents_runtime_facade::AgentsChatFacade for HttpAgentsChatFacade {
                         )
                     })?
                     .content,
-            ),
             _ => None,
         };
         let status = match turn.status {
-            crate::AgentChatTurnStatus::Requested => {
-                sdkwork_agents_runtime_facade::AgentsChatTurnStatus::Requested
+            crate::AgentTurnStatus::Requested => {
+                sdkwork_agents_runtime_facade::AgentsTurnStatus::Requested
             }
-            crate::AgentChatTurnStatus::Running => {
-                sdkwork_agents_runtime_facade::AgentsChatTurnStatus::Running
+            crate::AgentTurnStatus::Running => {
+                sdkwork_agents_runtime_facade::AgentsTurnStatus::Running
             }
-            crate::AgentChatTurnStatus::Completed => {
-                sdkwork_agents_runtime_facade::AgentsChatTurnStatus::Completed
+            crate::AgentTurnStatus::Completed => {
+                sdkwork_agents_runtime_facade::AgentsTurnStatus::Completed
             }
-            crate::AgentChatTurnStatus::Failed => {
-                sdkwork_agents_runtime_facade::AgentsChatTurnStatus::Failed
+            crate::AgentTurnStatus::Failed => {
+                sdkwork_agents_runtime_facade::AgentsTurnStatus::Failed
             }
-            crate::AgentChatTurnStatus::Cancelled => {
-                sdkwork_agents_runtime_facade::AgentsChatTurnStatus::Cancelled
+            crate::AgentTurnStatus::Cancelled => {
+                sdkwork_agents_runtime_facade::AgentsTurnStatus::Cancelled
             }
         };
         Ok(Some(
-            sdkwork_agents_runtime_facade::AgentsChatTurnSnapshot {
+            sdkwork_agents_runtime_facade::AgentsTurnSnapshot {
                 session_id: turn.session_id,
                 turn_id: turn.turn_id,
                 status,
-                request_message_id: turn.request_message_id,
-                response_message_id: turn.response_message_id,
+                request_item_id: turn.request_item_id,
+                response_item_id: turn.response_item_id,
                 response_content,
                 error_code: turn.error_code,
             },
@@ -1078,32 +1239,32 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             get(app_get_session_user_state).patch(app_update_session_user_state),
         )
         .route(
-            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/message_feedback",
-            get(app_list_message_feedback),
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/item_feedback",
+            get(app_list_item_feedback),
         )
         .route(
-            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
-            get(app_list_messages).post(app_create_message),
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
+            get(app_list_session_items),
         )
         .route(
-            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/complete",
-            post(app_create_message),
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
+            get(app_get_session_item),
         )
         .route(
-            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
-            get(app_get_message),
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}/feedback",
+            axum::routing::patch(app_update_item_feedback),
         )
         .route(
-            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}/feedback",
-            axum::routing::patch(app_update_message_feedback),
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+            get(app_list_turns).post(app_create_turn),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
-            get(app_get_chat_turn),
+            get(app_get_turn),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
-            post(app_cancel_chat_turn),
+            post(app_cancel_turn),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
@@ -1114,12 +1275,48 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             get(app_get_interaction),
         )
         .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim",
+            post(app_claim_interaction),
+        )
+        .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
             post(app_approve_interaction),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
             post(app_answer_interaction),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+            get(app_list_session_checkpoints).post(app_create_session_checkpoint),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}",
+            get(app_get_session_checkpoint),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore",
+            post(app_restore_session_checkpoint),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate",
+            post(app_invalidate_session_checkpoint),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+            get(app_list_session_runtime_bindings).post(app_create_session_runtime_binding),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+            get(app_get_session_runtime_binding).patch(app_update_session_runtime_binding),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate",
+            post(app_activate_session_runtime_binding),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate",
+            post(app_deactivate_session_runtime_binding),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/tasks",
@@ -1203,12 +1400,24 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
             post(backend_close_session),
         )
         .route(
-            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
-            get(backend_list_messages).post(backend_create_message),
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
+            get(backend_list_session_items),
         )
         .route(
-            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
-            get(backend_get_message),
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
+            get(backend_get_session_item),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+            get(backend_list_turns).post(backend_create_turn),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
+            get(backend_get_turn),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
+            post(backend_cancel_turn),
         )
         .route(
             "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
@@ -1219,12 +1428,48 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
             get(backend_get_interaction),
         )
         .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim",
+            post(backend_claim_interaction),
+        )
+        .route(
             "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
             post(backend_approve_interaction),
         )
         .route(
             "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
             post(backend_answer_interaction),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+            get(backend_list_session_checkpoints).post(backend_create_session_checkpoint),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}",
+            get(backend_get_session_checkpoint),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore",
+            post(backend_restore_session_checkpoint),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate",
+            post(backend_invalidate_session_checkpoint),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+            get(backend_list_session_runtime_bindings).post(backend_create_session_runtime_binding),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+            get(backend_get_session_runtime_binding).patch(backend_update_session_runtime_binding),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate",
+            post(backend_activate_session_runtime_binding),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate",
+            post(backend_deactivate_session_runtime_binding),
         )
         .route(
             "/agent/v3/api/ai/agents/{agentId}/tasks",
@@ -1309,12 +1554,24 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
             post(backend_archive_session),
         )
         .route(
-            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
-            get(backend_list_messages).post(backend_create_message),
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
+            get(backend_list_session_items),
         )
         .route(
-            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
-            get(backend_get_message),
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
+            get(backend_get_session_item),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+            get(backend_list_turns).post(backend_create_turn),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
+            get(backend_get_turn),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
+            post(backend_cancel_turn),
         )
         .route(
             "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
@@ -1325,12 +1582,48 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
             get(backend_get_interaction),
         )
         .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim",
+            post(backend_claim_interaction),
+        )
+        .route(
             "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
             post(backend_approve_interaction),
         )
         .route(
             "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
             post(backend_answer_interaction),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+            get(backend_list_session_checkpoints).post(backend_create_session_checkpoint),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}",
+            get(backend_get_session_checkpoint),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore",
+            post(backend_restore_session_checkpoint),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate",
+            post(backend_invalidate_session_checkpoint),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+            get(backend_list_session_runtime_bindings).post(backend_create_session_runtime_binding),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+            get(backend_get_session_runtime_binding).patch(backend_update_session_runtime_binding),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate",
+            post(backend_activate_session_runtime_binding),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate",
+            post(backend_deactivate_session_runtime_binding),
         )
         .route(
             "/backend/v3/api/ai/agents/{agentId}/tasks",
@@ -1516,18 +1809,17 @@ struct AppDeleteProjectCompositionSlotQuery {
 struct AppCreateSessionBody {
     session_id: Option<String>,
     project_id: Option<String>,
+    session_kind: Option<String>,
+    entry_surface: Option<String>,
+    source_module: Option<String>,
+    source_context_kind: Option<String>,
+    source_context_id: Option<String>,
+    parent_session_id: Option<String>,
+    forked_from_turn_id: Option<String>,
     title: Option<String>,
-    provider_binding_id: Option<String>,
-    model_id: Option<String>,
-    metadata_json: Option<String>,
+    idempotency_key: Option<String>,
+    payload_hash: Option<String>,
     requested_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum AppCreateSessionRequestBody {
-    Flat(AppCreateSessionBody),
-    Legacy(CreateSessionRequestDto),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1546,14 +1838,14 @@ struct AppUpdateSessionUserStateBody {
     pinned: Option<bool>,
     hidden: Option<bool>,
     mark_opened: Option<bool>,
-    last_read_message_sequence: Option<String>,
+    last_read_item_sequence: Option<String>,
     custom_title: Option<String>,
     clear_custom_title: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AppUpdateMessageFeedbackBody {
+struct AppUpdateItemFeedbackBody {
     expected_version: Option<String>,
     rating: Option<String>,
     clear_feedback: Option<bool>,
@@ -1563,14 +1855,14 @@ struct AppUpdateMessageFeedbackBody {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AppCancelChatTurnBody {
+struct AppCancelTurnBody {
     expected_version: Option<String>,
     requested_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AgentChatTurnRecordResponse {
+struct AgentTurnRecordResponse {
     id: String,
     turn_id: String,
     tenant_id: String,
@@ -1580,8 +1872,8 @@ struct AgentChatTurnRecordResponse {
     owner_user_id: String,
     client_request_id: Option<String>,
     idempotency_key: String,
-    request_message_id: String,
-    response_message_id: Option<String>,
+    request_item_id: String,
+    response_item_id: Option<String>,
     status: String,
     requested_model_id: Option<String>,
     provider_binding_id: Option<String>,
@@ -1602,14 +1894,14 @@ struct AgentChatTurnRecordResponse {
     cancelled_at: Option<String>,
 }
 
-impl AgentChatTurnRecordResponse {
-    fn from_record(record: &crate::chat_turn::AgentChatTurnRecord) -> Self {
+impl AgentTurnRecordResponse {
+    fn from_record(record: &crate::agent_turn::AgentTurnRecord) -> Self {
         let status = match record.status {
-            crate::chat_turn::AgentChatTurnStatus::Requested => "requested",
-            crate::chat_turn::AgentChatTurnStatus::Running => "running",
-            crate::chat_turn::AgentChatTurnStatus::Completed => "completed",
-            crate::chat_turn::AgentChatTurnStatus::Failed => "failed",
-            crate::chat_turn::AgentChatTurnStatus::Cancelled => "cancelled",
+            crate::agent_turn::AgentTurnStatus::Requested => "requested",
+            crate::agent_turn::AgentTurnStatus::Running => "running",
+            crate::agent_turn::AgentTurnStatus::Completed => "completed",
+            crate::agent_turn::AgentTurnStatus::Failed => "failed",
+            crate::agent_turn::AgentTurnStatus::Cancelled => "cancelled",
         };
         Self {
             id: record.id.to_string(),
@@ -1621,8 +1913,8 @@ impl AgentChatTurnRecordResponse {
             owner_user_id: record.owner_user_id.to_string(),
             client_request_id: record.client_request_id.clone(),
             idempotency_key: record.idempotency_key.clone(),
-            request_message_id: record.request_message_id.clone(),
-            response_message_id: record.response_message_id.clone(),
+            request_item_id: record.request_item_id.clone(),
+            response_item_id: record.response_item_id.clone(),
             status: status.to_string(),
             requested_model_id: record.requested_model_id.clone(),
             provider_binding_id: record.provider_binding_id.clone(),
@@ -1689,13 +1981,13 @@ struct AgentProjectCompositionSlotRecordResponse {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-struct AppCreateMessageQueryParams {
+struct AppCreateTurnQueryParams {
     #[serde(default)]
     stream: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-pub(crate) struct BackendCreateMessageQueryParams {
+pub(crate) struct BackendCreateTurnQueryParams {
     #[serde(default)]
     pub(crate) tenant_id: String,
     #[serde(default)]
@@ -1716,6 +2008,14 @@ struct TenantListQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 struct AppListQueryParams {
+    page: Option<usize>,
+    page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TenantSessionResourceListQueryParams {
+    tenant_id: String,
     page: Option<usize>,
     page_size: Option<usize>,
 }
@@ -1777,7 +2077,7 @@ struct AppListSessionUserStatesQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AppListMessageFeedbackQueryParams {
+struct AppListItemFeedbackQueryParams {
     page: Option<usize>,
     #[serde(alias = "page_size")]
     page_size: Option<usize>,
@@ -1806,9 +2106,9 @@ pub(crate) struct AppListTasksQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ListMessagesQueryParams {
+pub(crate) struct ListItemsQueryParams {
     pub(crate) tenant_id: String,
-    pub(crate) role: Option<String>,
+    pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) page: Option<usize>,
     pub(crate) page_size: Option<usize>,
@@ -1816,8 +2116,8 @@ pub(crate) struct ListMessagesQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AppListMessagesQueryParams {
-    pub(crate) role: Option<String>,
+pub(crate) struct AppListItemsQueryParams {
+    pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) page: Option<usize>,
     pub(crate) page_size: Option<usize>,
@@ -2112,32 +2412,62 @@ struct AgentManagementProfileBody {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AppSendChatMessageBody {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppCreateTurnBody {
+    turn_id: Option<String>,
     content: String,
     content_type: Option<String>,
-    metadata_json: Option<String>,
-    #[serde(default)]
-    media_resources: Vec<AgentMessageMediaResourceInput>,
-    model_id: Option<String>,
-    idempotency_key: Option<String>,
+    turn_mode: String,
+    runtime_binding_id: Option<String>,
+    requested_model_id: Option<String>,
+    idempotency_key: String,
+    payload_hash: String,
     client_request_id: Option<String>,
+    #[serde(default)]
+    drive_refs: Vec<AgentItemDriveRefBody>,
     requested_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SendChatMessageBody {
-    tenant_id: String,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreateTurnBody {
+    turn_id: Option<String>,
     content: String,
     content_type: Option<String>,
-    metadata_json: Option<String>,
-    #[serde(default)]
-    media_resources: Vec<AgentMessageMediaResourceInput>,
-    model_id: Option<String>,
-    idempotency_key: Option<String>,
+    turn_mode: String,
+    runtime_binding_id: Option<String>,
+    requested_model_id: Option<String>,
+    idempotency_key: String,
+    payload_hash: String,
     client_request_id: Option<String>,
+    #[serde(default)]
+    drive_refs: Vec<AgentItemDriveRefBody>,
     requested_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentItemDriveRefBody {
+    resource_role: String,
+    drive_space_id: String,
+    drive_node_id: String,
+}
+
+impl AgentItemDriveRefBody {
+    fn into_input(self) -> Result<AgentItemDriveRefInput, ApiProblem> {
+        let resource_role = match self.resource_role.as_str() {
+            "attachment" => AgentItemResourceRole::Attachment,
+            "image" => AgentItemResourceRole::Image,
+            "audio" => AgentItemResourceRole::Audio,
+            "artifact" => AgentItemResourceRole::Artifact,
+            _ => return Err(ApiProblem::validation("invalid driveRefs.resourceRole")),
+        };
+        Ok(AgentItemDriveRefInput {
+            resource_role,
+            drive_space_id: self.drive_space_id,
+            drive_node_id: self.drive_node_id,
+        })
+    }
 }
 
 impl From<AgentManagementProfileBody> for AgentManagementProfileDto {
@@ -4197,8 +4527,8 @@ async fn app_update_session_user_state(
         } else {
             body.custom_title.map(Some)
         };
-        let last_read_message_sequence = body
-            .last_read_message_sequence
+        let last_read_item_sequence = body
+            .last_read_item_sequence
             .map(|value| {
                 value.parse::<u64>().map_err(|_| {
                     ApiProblem::validation("lastReadMessageSequence must be an unsigned integer")
@@ -4225,7 +4555,7 @@ async fn app_update_session_user_state(
             pinned: body.pinned,
             hidden: body.hidden,
             mark_opened: body.mark_opened.unwrap_or(false),
-            last_read_message_sequence,
+            last_read_item_sequence,
             custom_title,
             expected_version,
             requested_by: scope.subject,
@@ -4243,14 +4573,14 @@ async fn app_update_session_user_state(
     finish_api_json(&web_ctx, result)
 }
 
-async fn app_list_message_feedback(
+async fn app_list_item_feedback(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<AppListMessageFeedbackQueryParams>, QueryRejection>,
+    query: Result<Query<AppListItemFeedbackQueryParams>, QueryRejection>,
 ) -> Response {
-    let result: ApiResult<PageData<AgentMessageFeedbackRecordDto>> = async {
+    let result: ApiResult<PageData<AgentItemFeedbackRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
@@ -4258,7 +4588,7 @@ async fn app_list_message_feedback(
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-        let feedback_query = MessageFeedbackListQuery::for_user_session(
+        let feedback_query = ItemFeedbackListQuery::for_user_session(
             scope.tenant_id_u64()?,
             parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?,
             user_id,
@@ -4270,7 +4600,7 @@ async fn app_list_message_feedback(
                 .with_page(page),
         );
         let records = with_service(&state, move |service| {
-            service.list_message_feedback(ListMessageFeedbackCommand {
+            service.list_item_feedback(ListItemFeedbackCommand {
                 query: feedback_query,
                 path_agent_id: agent_id,
                 requested_by: scope.subject,
@@ -4281,7 +4611,7 @@ async fn app_list_message_feedback(
             items: records
                 .items
                 .iter()
-                .map(AgentMessageFeedbackRecordDto::from_record)
+                .map(AgentItemFeedbackRecordDto::from_record)
                 .collect(),
             page_info: offset_page_info(
                 page,
@@ -4295,15 +4625,15 @@ async fn app_list_message_feedback(
     finish_api_json(&web_ctx, result)
 }
 
-async fn app_update_message_feedback(
+async fn app_update_item_feedback(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
-    body: Result<Json<AppUpdateMessageFeedbackBody>, JsonRejection>,
+    body: Result<Json<AppUpdateItemFeedbackBody>, JsonRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentMessageFeedbackRecordDto>> = async {
-        let Path((agent_id, session_id, message_id)) =
+    let result: ApiResult<ResourceData<AgentItemFeedbackRecordDto>> = async {
+        let Path((agent_id, session_id, item_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let clear_feedback = body.clear_feedback.unwrap_or(false);
@@ -4316,8 +4646,8 @@ async fn app_update_message_feedback(
             None
         } else {
             match body.rating.as_deref() {
-                Some("up") => Some(AgentMessageFeedbackRating::Up),
-                Some("down") => Some(AgentMessageFeedbackRating::Down),
+                Some("up") => Some(AgentItemFeedbackRating::Up),
+                Some("down") => Some(AgentItemFeedbackRating::Down),
                 Some(_) => return Err(ApiProblem::validation("rating must be up or down")),
                 None => {
                     return Err(ApiProblem::validation(
@@ -4330,14 +4660,14 @@ async fn app_update_message_feedback(
         let user_id = scope
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
-        let command = UpdateMessageFeedbackCommand {
+        let command = UpdateItemFeedbackCommand {
             tenant_id: scope.tenant_id_u64()?,
             organization_id: parse_organization_id(&scope.organization_id)
                 .map_err(ApiProblem::from_kernel_error)?,
             user_id,
             path_agent_id: agent_id,
             session_id,
-            message_id,
+            item_id,
             rating,
             reason_code: body.reason_code,
             comment: body.comment,
@@ -4351,11 +4681,11 @@ async fn app_update_message_feedback(
             requested_at: server_requested_at(),
         };
         let record = with_service(&state, move |service| {
-            service.update_message_feedback(command)
+            service.update_item_feedback(command)
         })
         .await?;
         Ok(ResourceData {
-            item: AgentMessageFeedbackRecordDto::from_record(&record),
+            item: AgentItemFeedbackRecordDto::from_record(&record),
         })
     }
     .await;
@@ -4367,40 +4697,41 @@ async fn app_create_session(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     agent_id: Result<Path<String>, PathRejection>,
-    body: Result<Json<AppCreateSessionRequestBody>, JsonRejection>,
+    body: Result<Json<AppCreateSessionBody>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
-        let command = match body {
-            AppCreateSessionRequestBody::Flat(body) => {
-                validate_requested_at(&body.requested_at).map_err(ApiProblem::from_kernel_error)?;
-                CreateSessionCommand {
-                    tenant_id: scope.tenant_id_u64()?,
-                    organization_id: parse_organization_id(&scope.organization_id)
-                        .map_err(ApiProblem::from_kernel_error)?,
-                    agent_id,
-                    owner_user_id: scope
-                        .owner_scope()?
-                        .ok_or_else(|| ApiProblem::validation("owner user id is required"))?,
-                    session_id: body.session_id.unwrap_or_default(),
-                    project_id: body.project_id,
-                    title: body.title,
-                    provider_binding_id: body.provider_binding_id,
-                    model_id: body.model_id,
-                    metadata_json: body.metadata_json.unwrap_or_else(|| "{}".to_string()),
-                    requested_by: scope.subject,
-                    requested_at: body.requested_at,
-                }
-            }
-            AppCreateSessionRequestBody::Legacy(mut body) => {
-                body.data.tenant_id = scope.tenant_id.clone();
-                body.data.organization_id = scope.organization_id.clone();
-                body.data.owner_user_id = scope.owner_user_id.clone();
-                body.into_command(agent_id, scope.subject)
-                    .map_err(ApiProblem::from_kernel_error)?
-            }
+        validate_requested_at(&body.requested_at).map_err(ApiProblem::from_kernel_error)?;
+        let command = CreateSessionCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            agent_id,
+            owner_user_id: scope
+                .owner_scope()?
+                .ok_or_else(|| ApiProblem::validation("owner user id is required"))?,
+            session_id: body.session_id.unwrap_or_default(),
+            project_id: body.project_id,
+            session_kind: AgentSessionKind::from_code(
+                body.session_kind.as_deref().unwrap_or("assistant"),
+            )
+            .ok_or_else(|| ApiProblem::validation("invalid sessionKind"))?,
+            entry_surface: AgentSessionEntrySurface::from_code(
+                body.entry_surface.as_deref().unwrap_or("api"),
+            )
+            .ok_or_else(|| ApiProblem::validation("invalid entrySurface"))?,
+            source_module: body.source_module,
+            source_context_kind: body.source_context_kind,
+            source_context_id: body.source_context_id,
+            parent_session_id: body.parent_session_id,
+            forked_from_turn_id: body.forked_from_turn_id,
+            title: body.title,
+            idempotency_key: body.idempotency_key,
+            payload_hash: body.payload_hash,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
         };
         let record = with_service(&state, move |service| service.create_session(command)).await?;
         Ok(ResourceData {
@@ -4427,6 +4758,8 @@ async fn app_get_session(
         let owner_scope = scope.owner_scope()?;
         let command = GetSessionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             session_id,
             owner_scope,
@@ -4533,8 +4866,10 @@ async fn app_close_session(
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
-        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
+        body.tenant_id = scope.tenant_id.clone();
+        body.organization_id = scope.organization_id.clone();
         let owner_scope = scope.owner_scope()?;
         let mut command = body
             .into_command(session_id, scope.subject)
@@ -4726,6 +5061,7 @@ async fn app_list_interactions(
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListInteractionsRequestDto {
             tenant_id: scope.tenant_id,
+            organization_id: scope.organization_id,
             status: query.status,
         }
         .into_command(session_id, scope.subject)
@@ -4744,7 +5080,8 @@ async fn app_list_interactions(
                 .items
                 .iter()
                 .map(AgentInteractionRecordDto::from_record)
-                .collect(),
+                .collect::<KernelResult<Vec<_>>>()
+                .map_err(ApiProblem::from_kernel_error)?,
             page_info: offset_page_info(
                 page,
                 page_size,
@@ -4766,19 +5103,27 @@ async fn app_create_interaction(
 ) -> Response {
     let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
-        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
-        body.data.tenant_id = scope.tenant_id.clone();
-        body.data.organization_id = scope.organization_id.clone();
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_command(agent_id.clone(), session_id, scope.subject)
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record =
             with_service(&state, move |service| service.create_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -4802,6 +5147,8 @@ async fn app_get_interaction(
         let owner_scope = scope.owner_scope()?;
         let command = GetInteractionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             session_id,
             interaction_id,
@@ -4810,7 +5157,46 @@ async fn app_get_interaction(
         };
         let record = with_service(&state, move |service| service.get_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_claim_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<ClaimInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<InteractionClaimResultDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let claim =
+            with_service(&state, move |service| service.claim_interaction(command)).await?;
+        Ok(ResourceData {
+            item: InteractionClaimResultDto::from_result(&claim)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -4827,18 +5213,28 @@ async fn app_approve_interaction(
     let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
         let Path((agent_id, session_id, interaction_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
-        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
-        body.tenant_id = scope.tenant_id.clone();
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record =
             with_service(&state, move |service| service.approve_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -4855,18 +5251,28 @@ async fn app_answer_interaction(
     let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
         let Path((agent_id, session_id, interaction_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
-        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
-        body.tenant_id = scope.tenant_id.clone();
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record =
             with_service(&state, move |service| service.answer_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -4877,22 +5283,23 @@ async fn app_answer_interaction(
 // Message handlers  - App API
 // ===========================================================================
 
-async fn app_list_messages(
+async fn app_list_session_items(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<AppListMessagesQueryParams>, QueryRejection>,
+    query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
 ) -> Response {
-    let result: ApiResult<PageData<AgentMessageRecordDto>> = async {
+    let result: ApiResult<PageData<AgentSessionItemRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-        let mut command = ListMessagesRequestDto {
+        let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
-            role: query.role,
+            organization_id: scope.organization_id,
+            kind: query.kind,
             status: query.status,
         }
         .into_command(session_id, scope.subject)
@@ -4904,7 +5311,7 @@ async fn app_list_messages(
                 .with_page(page),
         );
         let records = with_service(&state, move |service| {
-            service.list_messages_with_drive_refs(command)
+            service.list_session_items_with_drive_refs(command)
         })
         .await?;
         Ok(PageData {
@@ -4912,8 +5319,8 @@ async fn app_list_messages(
                 .items
                 .iter()
                 .map(|item| {
-                    AgentMessageRecordDto::from_record_with_drive_refs(
-                        &item.message,
+                    AgentSessionItemRecordDto::from_record_with_drive_refs(
+                        &item.item,
                         &item.drive_refs,
                     )
                     .map_err(ApiProblem::from_kernel_error)
@@ -4937,7 +5344,7 @@ async fn app_create_message(
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<AppCreateMessageQueryParams>, QueryRejection>,
-    body: Result<Json<AppSendChatMessageBody>, JsonRejection>,
+    body: Result<Json<AppCreateTurnBody>, JsonRejection>,
 ) -> Response {
     let result: Result<Response, ApiProblem> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
@@ -4946,58 +5353,71 @@ async fn app_create_message(
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-        let command = SendChatMessageCommand {
+        let drive_refs = body
+            .drive_refs
+            .into_iter()
+            .map(AgentItemDriveRefBody::into_input)
+            .collect::<Result<Vec<_>, _>>()?;
+        let command = CreateTurnCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             agent_id,
             session_id,
+            turn_id: body.turn_id,
             content: body.content,
             content_type: body
                 .content_type
                 .unwrap_or_else(|| "text/plain".to_string()),
-            metadata_json: body.metadata_json.unwrap_or_else(|| "{}".to_string()),
-            media_resources: body.media_resources,
-            model_id: body.model_id,
+            turn_mode: crate::agent_turn::AgentTurnMode::from_code(&body.turn_mode)
+                .ok_or_else(|| ApiProblem::validation("invalid turnMode"))?,
+            runtime_binding_id: body.runtime_binding_id,
+            requested_model_id: body.requested_model_id,
             idempotency_key: body.idempotency_key,
+            payload_hash: body.payload_hash,
             client_request_id: body.client_request_id,
+            drive_refs,
             owner_scope,
             requested_by: scope.subject,
             requested_at: body.requested_at,
             prefer_stream: query.stream.unwrap_or(false),
         };
         let chat_result =
-            with_service(&state, move |service| service.send_chat_message(command)).await?;
+            with_service(&state, move |service| service.execute_turn(command)).await?;
         chat_completion_http_response(&web_ctx, &chat_result, query.stream.unwrap_or(false))
     }
     .await;
     crate::response::finish_api_response(&web_ctx, result)
 }
 
-async fn app_get_message(
+async fn app_get_session_item(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentMessageRecordDto>> = async {
-        let Path((agent_id, session_id, message_id)) =
+    let result: ApiResult<ResourceData<AgentSessionItemRecordDto>> = async {
+        let Path((agent_id, session_id, item_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
-        let command = GetMessageCommand {
+        let command = GetSessionItemCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             session_id,
-            message_id,
+            item_id,
             owner_scope,
             requested_by: scope.subject,
         };
         let record = with_service(&state, move |service| {
-            service.get_message_with_drive_refs(command)
+            service.get_session_item_with_drive_refs(command)
         })
         .await?;
         Ok(ResourceData {
-            item: AgentMessageRecordDto::from_record_with_drive_refs(
-                &record.message,
+            item: AgentSessionItemRecordDto::from_record_with_drive_refs(
+                &record.item,
                 &record.drive_refs,
             )
             .map_err(ApiProblem::from_kernel_error)?,
@@ -5007,17 +5427,17 @@ async fn app_get_message(
     finish_api_json(&web_ctx, result)
 }
 
-async fn app_get_chat_turn(
+async fn app_get_turn(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentChatTurnRecordResponse>> = async {
+    let result: ApiResult<ResourceData<AgentTurnRecordResponse>> = async {
         let Path((agent_id, session_id, turn_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
-        let command = GetChatTurnCommand {
+        let command = GetTurnCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
             organization_id: parse_organization_id(&scope.organization_id)
                 .map_err(ApiProblem::from_kernel_error)?,
@@ -5027,29 +5447,29 @@ async fn app_get_chat_turn(
             owner_scope: scope.owner_scope()?,
             requested_by: scope.subject,
         };
-        let record = with_service(&state, move |service| service.get_chat_turn(command)).await?;
+        let record = with_service(&state, move |service| service.get_turn(command)).await?;
         Ok(ResourceData {
-            item: AgentChatTurnRecordResponse::from_record(&record),
+            item: AgentTurnRecordResponse::from_record(&record),
         })
     }
     .await;
     finish_api_json(&web_ctx, result)
 }
 
-async fn app_cancel_chat_turn(
+async fn app_cancel_turn(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
-    body: Result<Json<AppCancelChatTurnBody>, JsonRejection>,
+    body: Result<Json<AppCancelTurnBody>, JsonRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentChatTurnRecordResponse>> = async {
+    let result: ApiResult<ResourceData<AgentTurnRecordResponse>> = async {
         let Path((agent_id, session_id, turn_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         validate_requested_at(&body.requested_at).map_err(ApiProblem::from_kernel_error)?;
         let scope = RequestScope::from_context(context);
-        let command = CancelChatTurnCommand {
+        let command = CancelTurnCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
             organization_id: parse_organization_id(&scope.organization_id)
                 .map_err(ApiProblem::from_kernel_error)?,
@@ -5066,9 +5486,9 @@ async fn app_cancel_chat_turn(
             requested_by: scope.subject,
             requested_at: body.requested_at,
         };
-        let record = with_service(&state, move |service| service.cancel_chat_turn(command)).await?;
+        let record = with_service(&state, move |service| service.cancel_turn(command)).await?;
         Ok(ResourceData {
-            item: AgentChatTurnRecordResponse::from_record(&record),
+            item: AgentTurnRecordResponse::from_record(&record),
         })
     }
     .await;
@@ -5179,6 +5599,8 @@ async fn backend_get_session(
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
         let command = GetSessionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             session_id,
             owner_scope: None,
@@ -5204,8 +5626,10 @@ async fn backend_close_session(
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        body.tenant_id = scope.tenant_id.clone();
+        body.organization_id = scope.organization_id.clone();
         let command = body
             .into_command(session_id, scope.subject)
             .map_err(ApiProblem::from_kernel_error)?;
@@ -5229,8 +5653,10 @@ async fn backend_archive_session(
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        body.tenant_id = scope.tenant_id.clone();
+        body.organization_id = scope.organization_id.clone();
         let command = body
             .into_command(session_id, scope.subject)
             .map_err(ApiProblem::from_kernel_error)?;
@@ -5247,22 +5673,23 @@ async fn backend_archive_session(
 // Message handlers  - Backend API
 // ===========================================================================
 
-async fn backend_list_messages(
+async fn backend_list_session_items(
     State(state): State<AgentHttpState>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<ListMessagesQueryParams>, QueryRejection>,
+    query: Result<Query<ListItemsQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
 ) -> Response {
-    let result: ApiResult<PageData<AgentMessageRecordDto>> = async {
+    let result: ApiResult<PageData<AgentSessionItemRecordDto>> = async {
         let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope =
             RequestScope::from_trusted_extension(context, query.tenant_id.clone(), None, None)?;
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
-        let mut command = ListMessagesRequestDto {
+        let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
-            role: query.role,
+            organization_id: scope.organization_id,
+            kind: query.kind,
             status: query.status,
         }
         .into_command(session_id, scope.subject)
@@ -5274,7 +5701,7 @@ async fn backend_list_messages(
                 .with_page(page),
         );
         let records = with_service(&state, move |service| {
-            service.list_messages_with_drive_refs(command)
+            service.list_session_items_with_drive_refs(command)
         })
         .await?;
         Ok(PageData {
@@ -5282,8 +5709,8 @@ async fn backend_list_messages(
                 .items
                 .iter()
                 .map(|item| {
-                    AgentMessageRecordDto::from_record_with_drive_refs(
-                        &item.message,
+                    AgentSessionItemRecordDto::from_record_with_drive_refs(
+                        &item.item,
                         &item.drive_refs,
                     )
                     .map_err(ApiProblem::from_kernel_error)
@@ -5307,69 +5734,80 @@ async fn backend_create_message(
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<BackendCreateMessageQueryParams>, QueryRejection>,
-    body: Result<Json<SendChatMessageBody>, JsonRejection>,
+    body: Result<Json<CreateTurnBody>, JsonRejection>,
 ) -> Response {
     let result: Result<Response, ApiProblem> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-        let tenant_id =
-            resolve_tenant_from_query_or_body(query.tenant_id.as_str(), body.tenant_id.as_str())?;
-        let scope = RequestScope::from_trusted_extension(context, tenant_id, None, None)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
-        let command = SendChatMessageCommand {
+        let drive_refs = body
+            .drive_refs
+            .into_iter()
+            .map(AgentItemDriveRefBody::into_input)
+            .collect::<Result<Vec<_>, _>>()?;
+        let command = CreateTurnCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             agent_id,
             session_id,
+            turn_id: body.turn_id,
             content: body.content,
             content_type: body
                 .content_type
                 .unwrap_or_else(|| "text/plain".to_string()),
-            metadata_json: body.metadata_json.unwrap_or_else(|| "{}".to_string()),
-            media_resources: body.media_resources,
-            model_id: body.model_id,
+            turn_mode: crate::agent_turn::AgentTurnMode::from_code(&body.turn_mode)
+                .ok_or_else(|| ApiProblem::validation("invalid turnMode"))?,
+            runtime_binding_id: body.runtime_binding_id,
+            requested_model_id: body.requested_model_id,
             idempotency_key: body.idempotency_key,
+            payload_hash: body.payload_hash,
             client_request_id: body.client_request_id,
+            drive_refs,
             owner_scope: None,
             requested_by: scope.subject,
             requested_at: body.requested_at,
             prefer_stream: query.stream.unwrap_or(false),
         };
         let chat_result =
-            with_service(&state, move |service| service.send_chat_message(command)).await?;
+            with_service(&state, move |service| service.execute_turn(command)).await?;
         chat_completion_http_response(&web_ctx, &chat_result, query.stream.unwrap_or(false))
     }
     .await;
     crate::response::finish_api_response(&web_ctx, result)
 }
 
-async fn backend_get_message(
+async fn backend_get_session_item(
     State(state): State<AgentHttpState>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
     Extension(context): Extension<AgentRequestContext>,
     query: Result<Query<TenantQueryParams>, QueryRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentMessageRecordDto>> = async {
-        let Path((agent_id, session_id, message_id)) =
+    let result: ApiResult<ResourceData<AgentSessionItemRecordDto>> = async {
+        let Path((agent_id, session_id, item_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
-        let command = GetMessageCommand {
+        let command = GetSessionItemCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             session_id,
-            message_id,
+            item_id,
             owner_scope: None,
             requested_by: scope.subject,
         };
         let record = with_service(&state, move |service| {
-            service.get_message_with_drive_refs(command)
+            service.get_session_item_with_drive_refs(command)
         })
         .await?;
         Ok(ResourceData {
-            item: AgentMessageRecordDto::from_record_with_drive_refs(
-                &record.message,
+            item: AgentSessionItemRecordDto::from_record_with_drive_refs(
+                &record.item,
                 &record.drive_refs,
             )
             .map_err(ApiProblem::from_kernel_error)?,
@@ -5560,6 +5998,7 @@ async fn backend_list_interactions(
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListInteractionsRequestDto {
             tenant_id: scope.tenant_id,
+            organization_id: scope.organization_id,
             status: query.status,
         }
         .into_command(session_id, scope.subject)
@@ -5577,7 +6016,8 @@ async fn backend_list_interactions(
                 .items
                 .iter()
                 .map(AgentInteractionRecordDto::from_record)
-                .collect(),
+                .collect::<KernelResult<Vec<_>>>()
+                .map_err(ApiProblem::from_kernel_error)?,
             page_info: offset_page_info(
                 page,
                 page_size,
@@ -5601,21 +6041,25 @@ async fn backend_create_interaction(
     let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
-        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
-        let scope = RequestScope::from_trusted_extension(
-            context,
-            query.tenant_id,
-            Some(body.data.organization_id.clone()),
-            None,
-        )?;
-        body.data.tenant_id = scope.tenant_id.clone();
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
         let command = body
-            .into_command(agent_id, session_id, scope.subject)
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         let record =
             with_service(&state, move |service| service.create_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -5640,6 +6084,8 @@ async fn backend_get_interaction(
         let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
         let command = GetInteractionCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             session_id,
             interaction_id,
@@ -5648,7 +6094,46 @@ async fn backend_get_interaction(
         };
         let record = with_service(&state, move |service| service.get_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn backend_claim_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    query: Result<Query<TenantQueryParams>, QueryRejection>,
+    body: Result<Json<ClaimInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<InteractionClaimResultDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
+        let command = body
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let claim =
+            with_service(&state, move |service| service.claim_interaction(command)).await?;
+        Ok(ResourceData {
+            item: InteractionClaimResultDto::from_result(&claim)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -5660,21 +6145,33 @@ async fn backend_approve_interaction(
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
     Extension(context): Extension<AgentRequestContext>,
+    query: Result<Query<TenantQueryParams>, QueryRejection>,
     body: Result<Json<ApproveInteractionRequestDto>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
         let Path((agent_id, session_id, interaction_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-        let scope =
-            RequestScope::from_trusted_extension(context, body.tenant_id.clone(), None, None)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
         let command = body
-            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         let record =
             with_service(&state, move |service| service.approve_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -5686,21 +6183,33 @@ async fn backend_answer_interaction(
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String, String)>, PathRejection>,
     Extension(context): Extension<AgentRequestContext>,
+    query: Result<Query<TenantQueryParams>, QueryRejection>,
     body: Result<Json<AnswerInteractionRequestDto>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
         let Path((agent_id, session_id, interaction_id)) =
             path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-        let scope =
-            RequestScope::from_trusted_extension(context, body.tenant_id.clone(), None, None)?;
+        let scope = RequestScope::from_trusted_extension(context, query.tenant_id, None, None)?;
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id = parse_organization_id(&scope.organization_id)
+            .map_err(ApiProblem::from_kernel_error)?;
         let command = body
-            .into_command(agent_id, session_id, interaction_id, scope.subject)
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         let record =
             with_service(&state, move |service| service.answer_interaction(command)).await?;
         Ok(ResourceData {
-            item: AgentInteractionRecordDto::from_record(&record),
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
         })
     }
     .await;
@@ -6359,19 +6868,19 @@ fn resolve_tenant_from_query_or_body(
 #[serde(rename_all = "camelCase")]
 struct ChatCompletionData {
     session: AgentSessionRecordDto,
-    user_message: AgentMessageRecordDto,
-    assistant_message: AgentMessageRecordDto,
+    user_input_item: AgentSessionItemRecordDto,
+    assistant_output_item: AgentSessionItemRecordDto,
 }
 
 impl ChatCompletionData {
-    fn from_result(result: &ChatCompletionResult) -> KernelResult<Self> {
+    fn from_result(result: &TurnExecutionResult) -> KernelResult<Self> {
         Ok(Self {
             session: AgentSessionRecordDto::from_record(&result.session),
-            user_message: AgentMessageRecordDto::from_record_with_drive_refs(
-                &result.user_message,
-                &result.user_message_drive_refs,
+            user_input_item: AgentSessionItemRecordDto::from_record_with_drive_refs(
+                &result.user_input_item,
+                &result.user_item_drive_refs,
             )?,
-            assistant_message: AgentMessageRecordDto::from_record(&result.assistant_message),
+            assistant_output_item: AgentSessionItemRecordDto::from_record(&result.assistant_output_item),
         })
     }
 }
@@ -6381,7 +6890,7 @@ impl ChatCompletionData {
 /// Streaming returns a single SSE `completion` event containing the same envelope.
 fn chat_completion_http_response(
     ctx: &sdkwork_web_core::WebRequestContext,
-    result: &ChatCompletionResult,
+    result: &TurnExecutionResult,
     stream_requested: bool,
 ) -> Result<Response, ApiProblem> {
     let chat_data =
@@ -6989,20 +7498,18 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         with_service(&state, |service| {
-            service.create_message(crate::application::CreateMessageCommand {
+            service.create_session_item(crate::application::CreateSessionItemCommand {
                 tenant_id: 100_001,
                 session_id: "session.user-state".to_string(),
-                message_id: "msg.assistant".to_string(),
-                role: crate::domain::AgentMessageRole::Assistant,
+                item_id: "msg.assistant".to_string(),
+                kind: crate::domain::AgentSessionItemKind::AssistantOutput,
                 content: "Assistant answer".to_string(),
                 content_type: "text/plain".to_string(),
                 input_tokens: 0,
                 output_tokens: 2,
                 model_id: None,
                 provider_id: None,
-                artifacts_json: "[]".to_string(),
-                metadata_json: "{}".to_string(),
-                parent_message_id: None,
+                parent_item_id: None,
                 requested_by: sdkwork_agent_kernel::PolicySubject::new("u-1", "100001")
                     .with_role("ai.agents.manage"),
                 requested_at: "2026-07-19T00:00:01Z".to_string(),
@@ -7067,7 +7574,7 @@ mod tests {
 
         let feedback = Request::builder()
             .method("PATCH")
-            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/session.user-state/messages/msg.assistant/feedback")
+            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/session.user-state/items/msg.assistant/feedback")
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(json!({ "rating": "up" }).to_string()))
             .unwrap();
@@ -7080,7 +7587,7 @@ mod tests {
 
         let feedback_list = Request::builder()
             .method("GET")
-            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/session.user-state/message_feedback")
+            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/session.user-state/item_feedback")
             .body(Body::empty())
             .unwrap();
         let response = app
@@ -7095,7 +7602,7 @@ mod tests {
 
         let clear_feedback = Request::builder()
             .method("PATCH")
-            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/session.user-state/messages/msg.assistant/feedback")
+            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/session.user-state/items/msg.assistant/feedback")
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(
                 json!({ "clearFeedback": true, "expectedVersion": "0" }).to_string(),

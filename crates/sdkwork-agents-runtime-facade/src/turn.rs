@@ -493,7 +493,7 @@ mod tests {
                 &request.capability_id,
                 serde_json::json!({
                     "ok": true,
-                    "messages": ["unexpected invoke"],
+                    "items": ["unexpected invoke"],
                 }),
             ))
         }

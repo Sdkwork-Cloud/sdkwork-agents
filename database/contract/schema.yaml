@@ -1,89 +1,120 @@
 schema_version: 1
 kind: sdkwork.database.schema
 module_id: agents
-contract_version: 4.0.0
+contract_version: 5.0.0
 owner_team: agents-platform
 compliance_level: L2
 engines:
   - postgres
 table_prefix: ai_
-# Composition-plane architecture:
-# - Core agent lifecycle tables owned by this module
-# - MCP, knowledge, memory, skills, prompts, drive content owned by sibling modules
-# - Cross-module references via ai_agent_composition_slot
+ddl_authority: ddl/baseline/postgres/0001_agents_baseline.sql
+write_owner: sdkwork-intelligence-agents-service
 tables:
   - name: ai_agent
+    profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Agent business entity with identity, manifest snapshot, and lifecycle state'
+    description: Managed agent identity, manifest, and lifecycle.
   - name: ai_agent_runtime_binding
+    profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Maps agents to provider runtime configurations with capability declarations'
+    description: Agent-level provider configuration binding.
   - name: ai_agent_composition_slot
+    profile: relation_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Binds agents to sibling module resources (memory, knowledge, skills, prompts, drive, mcp)'
+    description: Agent references to sibling-owned capability resources.
   - name: ai_agent_audit_event
+    profile: audit_event
     lifecycle_status: active
     owner: agents-platform
-    description: 'Immutable audit log for agent management operations'
-  - name: ai_agent_session
-    lifecycle_status: active
-    owner: agents-platform
-    description: 'Hosted chat sessions scoped by tenant, agent, and owner'
-  - name: ai_agent_message
-    lifecycle_status: active
-    owner: agents-platform
-    description: 'Session messages and chat turn persistence'
-  - name: ai_agent_interaction
-    lifecycle_status: active
-    owner: agents-platform
-    description: 'Live interaction state for code-engine approval and user-question flows'
-  - name: ai_agent_task
-    lifecycle_status: active
-    owner: agents-platform
-    description: 'Scheduled agent tasks projected from kernel AgentTask'
+    description: Immutable, sanitized Agents aggregate audit facts.
   - name: ai_agent_project
+    profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Agents chat project identity, lifecycle, ownership, and access policy'
+    description: Reusable orchestration project and access-policy aggregate.
   - name: ai_agent_project_composition_slot
+    profile: relation_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Project-scoped references to sibling-owned resources'
-  - name: ai_agent_chat_turn
+    description: Project references to sibling-owned capability resources.
+  - name: ai_agent_session
+    profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Idempotent inference command lifecycle, usage, error, and trace correlation'
-  - name: ai_agent_message_drive_ref
+    description: Single durable agent execution session system of record.
+  - name: ai_agent_session_runtime_binding
+    profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Typed message relation to Drive-backed MediaResource values'
-  - name: ai_agent_message_feedback
+    description: Selected runtime, provider-native lineage, and runtime-location reference for a session.
+  - name: ai_agent_turn
+    profile: operational_state
     lifecycle_status: active
     owner: agents-platform
-    description: 'Per-user assistant message quality feedback'
+    description: Idempotent turn execution, retry, lease, fencing, usage, and terminal state.
+  - name: ai_agent_session_item
+    profile: tenant_entity
+    lifecycle_status: active
+    owner: agents-platform
+    description: Ordered typed transcript or execution item owned by a session.
+  - name: ai_agent_item_drive_ref
+    profile: relation_entity
+    lifecycle_status: active
+    owner: agents-platform
+    description: Typed relation from a session item to Drive-owned resources.
+  - name: ai_agent_item_feedback
+    profile: user_entity
+    lifecycle_status: active
+    owner: agents-platform
+    description: Per-user quality feedback for an assistant-output item.
+  - name: ai_agent_interaction
+    profile: operational_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: Approval or user-question pause point with claim fencing.
+  - name: ai_agent_session_checkpoint
+    profile: operational_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: Resumable provider or Drive-backed execution checkpoint reference.
+  - name: ai_agent_task
+    profile: operational_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: Product-managed scheduled agent task.
   - name: ai_agent_resource_user_state
+    profile: user_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Per-user pinned, hidden, opened, read, and custom-title state'
+    description: Per-user view preferences for an Agents session or project.
   - name: ai_agent_project_member
+    profile: relation_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Agents project collaboration ACL; not IM membership'
+    description: Agents project collaboration ACL.
   - name: ai_agent_share_link
+    profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: 'Hashed, revocable, expiring Agents project/session grants'
+    description: Hashed, revocable, expiring project or session grant.
   - name: ai_agent_outbox_event
+    profile: outbox_event
     lifecycle_status: active
     owner: agents-platform
-    description: 'Reliable Agents aggregate event publication'
-# Cross-module references (owned by other modules):
-# - ai_agent_composition_slot.slot_kind IN ('memory') → sdkwork-memory
-# - ai_agent_composition_slot.slot_kind IN ('knowledge') → sdkwork-knowledgebase
-# - ai_agent_composition_slot.slot_kind IN ('skill') → sdkwork-skills
-# - ai_agent_composition_slot.slot_kind IN ('prompt') → sdkwork-prompts
-# - ai_agent_composition_slot.slot_kind IN ('drive') → sdkwork-drive
-# - ai_agent_composition_slot.slot_kind IN ('mcp') → sdkwork-mcp
+    description: Reliable Agents aggregate event publication.
+external_references:
+  - module: sdkwork-memory
+    columns: [target_ref, target_version_ref]
+  - module: sdkwork-knowledgebase
+    columns: [target_ref, target_version_ref]
+  - module: sdkwork-skills
+    columns: [target_ref, target_version_ref]
+  - module: sdkwork-prompts
+    columns: [target_ref, target_version_ref]
+  - module: sdkwork-mcp
+    columns: [target_ref, target_version_ref]
+  - module: sdkwork-drive
+    columns: [drive_space_id, drive_node_id, media_resource_id, object_blob_id]

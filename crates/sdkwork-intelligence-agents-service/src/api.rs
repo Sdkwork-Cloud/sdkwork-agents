@@ -24,12 +24,6 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.create",
     },
     ApiOperation {
-        method: "DELETE",
-        path: "/agent/v3/api/ai/agents/{agentId}",
-        tag: "ai",
-        operation_id: "agents.delete",
-    },
-    ApiOperation {
         method: "GET",
         path: "/agent/v3/api/ai/agents/{agentId}",
         tag: "ai",
@@ -42,46 +36,10 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.update",
     },
     ApiOperation {
-        method: "GET",
-        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.create",
-    },
-    ApiOperation {
         method: "DELETE",
-        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        path: "/agent/v3/api/ai/agents/{agentId}",
         tag: "ai",
-        operation_id: "agents.compositionSlots.delete",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.retrieve",
-    },
-    ApiOperation {
-        method: "PATCH",
-        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.update",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/agent/v3/api/ai/agents/{agentId}/preview_responses",
-        tag: "ai",
-        operation_id: "agents.previewResponses.create",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/agent/v3/api/ai/agents/{agentId}/prompt_optimizations",
-        tag: "ai",
-        operation_id: "agents.promptOptimizations.create",
+        operation_id: "agents.delete",
     },
     ApiOperation {
         method: "GET",
@@ -100,6 +58,18 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         path: "/agent/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
         tag: "ai",
         operation_id: "agents.providerBindings.activate",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/preview_responses",
+        tag: "ai",
+        operation_id: "agents.previewResponses.create",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/prompt_optimizations",
+        tag: "ai",
+        operation_id: "agents.promptOptimizations.create",
     },
     ApiOperation {
         method: "GET",
@@ -127,21 +97,141 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
-        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
         tag: "ai",
-        operation_id: "agents.messages.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
-        tag: "ai",
-        operation_id: "agents.messages.stream",
+        operation_id: "agents.sessionItems.list",
     },
     ApiOperation {
         method: "GET",
-        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
         tag: "ai",
-        operation_id: "agents.messages.retrieve",
+        operation_id: "agents.sessionItems.retrieve",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+        tag: "ai",
+        operation_id: "agents.turns.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+        tag: "ai",
+        operation_id: "agents.turns.stream",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
+        tag: "ai",
+        operation_id: "agents.turns.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
+        tag: "ai",
+        operation_id: "agents.turns.cancel",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+        tag: "ai",
+        operation_id: "agents.interactions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
+        tag: "ai",
+        operation_id: "agents.interactions.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}",
+        tag: "ai",
+        operation_id: "agents.interactions.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim",
+        tag: "ai",
+        operation_id: "agents.interactions.claim",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
+        tag: "ai",
+        operation_id: "agents.interactions.approve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
+        tag: "ai",
+        operation_id: "agents.interactions.answer",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+        tag: "ai",
+        operation_id: "agents.checkpoints.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+        tag: "ai",
+        operation_id: "agents.checkpoints.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}",
+        tag: "ai",
+        operation_id: "agents.checkpoints.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore",
+        tag: "ai",
+        operation_id: "agents.checkpoints.restore",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate",
+        tag: "ai",
+        operation_id: "agents.checkpoints.invalidate",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.update",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.activate",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.deactivate",
     },
     ApiOperation {
         method: "GET",
@@ -173,9 +263,105 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         tag: "ai",
         operation_id: "agents.tasks.execute",
     },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.delete",
+    },
 ];
 
 pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents",
+        tag: "ai",
+        operation_id: "agents.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents",
+        tag: "ai",
+        operation_id: "agents.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}",
+        tag: "ai",
+        operation_id: "agents.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}",
+        tag: "ai",
+        operation_id: "agents.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/agents/{agentId}",
+        tag: "ai",
+        operation_id: "agents.delete",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/restore",
+        tag: "ai",
+        operation_id: "agents.restore",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/provider_bindings",
+        tag: "ai",
+        operation_id: "agents.providerBindings.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/provider_bindings",
+        tag: "ai",
+        operation_id: "agents.providerBindings.create",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
+        tag: "ai",
+        operation_id: "agents.providerBindings.activate",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/preview_responses",
+        tag: "ai",
+        operation_id: "agents.previewResponses.create",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/prompt_optimizations",
+        tag: "ai",
+        operation_id: "agents.promptOptimizations.create",
+    },
     ApiOperation {
         method: "GET",
         path: "/app/v3/api/ai/projects",
@@ -244,96 +430,6 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
-        path: "/app/v3/api/ai/agents",
-        tag: "ai",
-        operation_id: "agents.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents",
-        tag: "ai",
-        operation_id: "agents.create",
-    },
-    ApiOperation {
-        method: "DELETE",
-        path: "/app/v3/api/ai/agents/{agentId}",
-        tag: "ai",
-        operation_id: "agents.delete",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}",
-        tag: "ai",
-        operation_id: "agents.retrieve",
-    },
-    ApiOperation {
-        method: "PATCH",
-        path: "/app/v3/api/ai/agents/{agentId}",
-        tag: "ai",
-        operation_id: "agents.update",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/composition_slots",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/composition_slots",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.create",
-    },
-    ApiOperation {
-        method: "DELETE",
-        path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.delete",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.retrieve",
-    },
-    ApiOperation {
-        method: "PATCH",
-        path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.update",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/preview_responses",
-        tag: "ai",
-        operation_id: "agents.previewResponses.create",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/prompt_optimizations",
-        tag: "ai",
-        operation_id: "agents.promptOptimizations.create",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/provider_bindings",
-        tag: "ai",
-        operation_id: "agents.providerBindings.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/provider_bindings",
-        tag: "ai",
-        operation_id: "agents.providerBindings.create",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate",
-        tag: "ai",
-        operation_id: "agents.providerBindings.activate",
-    },
-    ApiOperation {
-        method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions",
         tag: "ai",
         operation_id: "agents.sessions.list",
@@ -388,51 +484,51 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/message_feedback",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/item_feedback",
         tag: "ai",
-        operation_id: "agents.messageFeedback.list",
+        operation_id: "agents.itemFeedback.list",
     },
     ApiOperation {
         method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
         tag: "ai",
-        operation_id: "agents.messages.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
-        tag: "ai",
-        operation_id: "agents.messages.stream",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/complete",
-        tag: "ai",
-        operation_id: "agents.messages.complete",
+        operation_id: "agents.sessionItems.list",
     },
     ApiOperation {
         method: "GET",
-        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
         tag: "ai",
-        operation_id: "agents.messages.retrieve",
+        operation_id: "agents.sessionItems.retrieve",
     },
     ApiOperation {
         method: "PATCH",
-        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}/feedback",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}/feedback",
         tag: "ai",
-        operation_id: "agents.messageFeedback.update",
+        operation_id: "agents.itemFeedback.update",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+        tag: "ai",
+        operation_id: "agents.turns.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+        tag: "ai",
+        operation_id: "agents.turns.stream",
     },
     ApiOperation {
         method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
         tag: "ai",
-        operation_id: "agents.chatTurns.retrieve",
+        operation_id: "agents.turns.retrieve",
     },
     ApiOperation {
         method: "POST",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
         tag: "ai",
-        operation_id: "agents.chatTurns.cancel",
+        operation_id: "agents.turns.cancel",
     },
     ApiOperation {
         method: "GET",
@@ -454,6 +550,12 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim",
+        tag: "ai",
+        operation_id: "agents.interactions.claim",
+    },
+    ApiOperation {
+        method: "POST",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
         tag: "ai",
         operation_id: "agents.interactions.approve",
@@ -463,6 +565,72 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
         tag: "ai",
         operation_id: "agents.interactions.answer",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+        tag: "ai",
+        operation_id: "agents.checkpoints.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+        tag: "ai",
+        operation_id: "agents.checkpoints.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}",
+        tag: "ai",
+        operation_id: "agents.checkpoints.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore",
+        tag: "ai",
+        operation_id: "agents.checkpoints.restore",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate",
+        tag: "ai",
+        operation_id: "agents.checkpoints.invalidate",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.update",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.activate",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.deactivate",
     },
     ApiOperation {
         method: "GET",
@@ -495,10 +663,34 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.tasks.execute",
     },
     ApiOperation {
-        method: "POST",
-        path: "/app/v3/api/ai/agents/{agentId}/restore",
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/composition_slots",
         tag: "ai",
-        operation_id: "agents.restore",
+        operation_id: "agents.compositionSlots.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/composition_slots",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.delete",
     },
     ApiOperation {
         method: "GET",
@@ -540,40 +732,22 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.update",
     },
     ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/status",
+        tag: "ai",
+        operation_id: "agents.status.create",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/restore",
+        tag: "ai",
+        operation_id: "agents.restore",
+    },
+    ApiOperation {
         method: "GET",
         path: "/backend/v3/api/ai/agents/{agentId}/audit_events",
         tag: "ai",
         operation_id: "agents.auditEvents.list",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.create",
-    },
-    ApiOperation {
-        method: "DELETE",
-        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.delete",
-    },
-    ApiOperation {
-        method: "GET",
-        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.retrieve",
-    },
-    ApiOperation {
-        method: "PATCH",
-        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
-        tag: "ai",
-        operation_id: "agents.compositionSlots.update",
     },
     ApiOperation {
         method: "GET",
@@ -618,28 +792,40 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.sessions.close",
     },
     ApiOperation {
-        method: "POST",
-        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive",
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
         tag: "ai",
-        operation_id: "agents.sessions.archive",
+        operation_id: "agents.sessionItems.list",
     },
     ApiOperation {
         method: "GET",
-        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
         tag: "ai",
-        operation_id: "agents.messages.list",
-    },
-    ApiOperation {
-        method: "POST",
-        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages",
-        tag: "ai",
-        operation_id: "agents.messages.stream",
+        operation_id: "agents.sessionItems.retrieve",
     },
     ApiOperation {
         method: "GET",
-        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
         tag: "ai",
-        operation_id: "agents.messages.retrieve",
+        operation_id: "agents.turns.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns",
+        tag: "ai",
+        operation_id: "agents.turns.stream",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}",
+        tag: "ai",
+        operation_id: "agents.turns.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel",
+        tag: "ai",
+        operation_id: "agents.turns.cancel",
     },
     ApiOperation {
         method: "GET",
@@ -661,6 +847,12 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim",
+        tag: "ai",
+        operation_id: "agents.interactions.claim",
+    },
+    ApiOperation {
+        method: "POST",
         path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve",
         tag: "ai",
         operation_id: "agents.interactions.approve",
@@ -670,6 +862,72 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
         tag: "ai",
         operation_id: "agents.interactions.answer",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+        tag: "ai",
+        operation_id: "agents.checkpoints.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
+        tag: "ai",
+        operation_id: "agents.checkpoints.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}",
+        tag: "ai",
+        operation_id: "agents.checkpoints.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore",
+        tag: "ai",
+        operation_id: "agents.checkpoints.restore",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate",
+        tag: "ai",
+        operation_id: "agents.checkpoints.invalidate",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.update",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.activate",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate",
+        tag: "ai",
+        operation_id: "agents.sessionRuntimeBindings.deactivate",
     },
     ApiOperation {
         method: "GET",
@@ -703,15 +961,39 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "POST",
-        path: "/backend/v3/api/ai/agents/{agentId}/restore",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive",
         tag: "ai",
-        operation_id: "agents.restore",
+        operation_id: "agents.sessions.archive",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.list",
     },
     ApiOperation {
         method: "POST",
-        path: "/backend/v3/api/ai/agents/{agentId}/status",
+        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots",
         tag: "ai",
-        operation_id: "agents.status.create",
+        operation_id: "agents.compositionSlots.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
+        tag: "ai",
+        operation_id: "agents.compositionSlots.delete",
     },
 ];
 
@@ -906,31 +1188,41 @@ mod tests {
                 );
             }
 
-            if label == "open" || label == "app" || label == "backend" {
-                for required in [
-                    format!("{prefix}/ai/agents/{{agentId}}/sessions:"),
-                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}:"),
-                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/messages:"),
-                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/messages/{{messageId}}:"),
-                    format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/close:"),
-                    "operationId: agents.sessions.list".to_string(),
-                    "operationId: agents.sessions.create".to_string(),
-                    "operationId: agents.messages.stream".to_string(),
-                    "operationId: agents.messages.list".to_string(),
-                    "AgentChatCompletionResponse:".to_string(),
-                ] {
-                    assert!(
-                        openapi.contains(required.as_str()),
-                        "{label} OpenAPI must contain {required}"
-                    );
-                }
+            for required in [
+                format!("{prefix}/ai/agents/{{agentId}}/sessions:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/items:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/items/{{itemId}}:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/turns:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/interactions:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/checkpoints:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/runtime_bindings:"),
+                format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/close:"),
+                "operationId: agents.sessions.list".to_string(),
+                "operationId: agents.sessions.create".to_string(),
+                "operationId: agents.sessionItems.list".to_string(),
+                "operationId: agents.turns.stream".to_string(),
+                "operationId: agents.interactions.claim".to_string(),
+                "operationId: agents.checkpoints.restore".to_string(),
+                "operationId: agents.sessionRuntimeBindings.activate".to_string(),
+                "AgentSessionItemRecord:".to_string(),
+                "AgentTurnRecord:".to_string(),
+                "AgentInteractionRecord:".to_string(),
+                "AgentSessionCheckpointRecord:".to_string(),
+                "AgentSessionRuntimeBindingRecord:".to_string(),
+                "AgentTurnExecutionResponse:".to_string(),
+                "CreateAgentTurnRequest:".to_string(),
+                "CloseAgentSessionRequest:".to_string(),
+            ] {
+                assert!(
+                    openapi.contains(required.as_str()),
+                    "{label} OpenAPI must contain {required}"
+                );
             }
 
             if label == "app" {
                 for required in [
                     "AppCreateAgentSessionRequest:".to_string(),
-                    "AppSendAgentChatMessageRequest:".to_string(),
-                    "AppCloseAgentSessionRequest:".to_string(),
                     format!("{prefix}/ai/code_engines:"),
                     format!("{prefix}/ai/mcp_servers:"),
                     "operationId: agents.codeEngines.list".to_string(),
@@ -945,15 +1237,15 @@ mod tests {
                     "AgentResourceUserStateRecord:".to_string(),
                     "UpdateAgentSessionUserStateRequest:".to_string(),
                     format!(
-                        "{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/message_feedback:"
+                        "{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/item_feedback:"
                     ),
                     format!(
-                        "{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/messages/{{messageId}}/feedback:"
+                        "{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/items/{{itemId}}/feedback:"
                     ),
-                    "operationId: agents.messageFeedback.list".to_string(),
-                    "operationId: agents.messageFeedback.update".to_string(),
-                    "AgentMessageFeedbackRecord:".to_string(),
-                    "UpdateAgentMessageFeedbackRequest:".to_string(),
+                    "operationId: agents.itemFeedback.list".to_string(),
+                    "operationId: agents.itemFeedback.update".to_string(),
+                    "AgentItemFeedbackRecord:".to_string(),
+                    "UpdateAgentItemFeedbackRequest:".to_string(),
                 ] {
                     assert!(
                         openapi.contains(required.as_str()),
@@ -964,7 +1256,7 @@ mod tests {
 
             if label == "open" || label == "backend" {
                 for required in [
-                    "SendAgentChatMessageRequest:".to_string(),
+                    "CreateAgentTurnRequest:".to_string(),
                     "CreateAgentSessionRequest:".to_string(),
                     "CloseAgentSessionRequest:".to_string(),
                 ] {
@@ -993,6 +1285,13 @@ mod tests {
                 "/ai/memory_stores",
                 "operationId: knowledgeBases.",
                 "operationId: memoryStores.",
+                "/messages",
+                "{messageId}",
+                "operationId: agents.messages.",
+                "operationId: agents.chatTurns.",
+                "AgentMessage",
+                "AgentChatTurn",
+                "SendAgentChatMessage",
             ] {
                 assert!(
                     !openapi.contains(forbidden),
@@ -1066,9 +1365,9 @@ mod tests {
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
-        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 27);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 56);
-        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 33);
+        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 47);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 68);
+        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 48);
 
         assert_eq!(
             AGENT_OPEN_API_OPERATIONS.len(),

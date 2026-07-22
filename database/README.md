@@ -1,42 +1,64 @@
 # Agents Database Module
 
-Application-level metadata for the SDKWork Agents product. Agent runtime
-persistence for sessions, tasks, and run state remains owned by
-`sdkwork-kernel` through `sdkwork-agent-database`.
+Owner: `agents-platform`
 
-Managed per `DATABASE_FRAMEWORK_SPEC.md` and
-`database/database.manifest.json`.
+Canonical contract: `database/contract/schema.yaml` (`5.0.0`)
 
-## Initialization State
+Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 
-This module uses an immutable baseline plus versioned migrations:
+## Scope
 
-1. **Baseline** - `database/ddl/baseline/{engine}/0001_agents_baseline.sql` contains the immutable `3.1.0` schema snapshot.
-2. **Migrations** - PostgreSQL `0002` adds the commercial Chat/Project schema, `0003` scopes outbox deduplication, and `0004`/`0005` align audit persistence with runtime actions and project aggregates. The manifest exposes active contract `4.0.0`.
-3. **Drift** - run `pnpm db:drift:check` before release.
+This module is the single system of record for managed agents and durable agent
+execution:
 
-Contract `4.0.0` is active after repository, API, generated SDK, frontend, IM
-consumer, migration, isolated PostgreSQL, and release verification passed. IM
-contract `2.0.0` owns dispatch and visible reply correlation; Agents retains no
-IM table or identifier.
+```text
+AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+```
+
+The Session aggregate also owns one current runtime binding, resumable
+checkpoint references, typed Drive relations, retry/lease/fencing state, audit
+facts, and reliable outbox events. IM conversations, IM delivery state,
+runtime-location details, provider catalogs, capability content, and Drive bytes
+remain owned by their respective modules.
+
+## Engine And Lifecycle
+
+PostgreSQL is the only managed-store engine. The pre-launch contract is one
+greenfield baseline; `database/migrations/postgres/` is empty and reserved for
+future released-schema changes. `baseline-plus-migrations` remains the lifecycle
+strategy so the first post-launch change can be added without changing bootstrap
+semantics.
+
+The SQLite DDL is an explicitly non-authoritative four-table control-plane
+development subset. It does not implement the Session aggregate and is not
+listed in `database.manifest.json#engines`.
+
+All business `id` columns are application-allocated signed 64-bit values.
+Neither PostgreSQL nor SQLite uses sequences, identity columns, rowid aliases,
+or any other database-side business ID allocation.
 
 ## Commands
 
-```bash
-pnpm run db:validate
-pnpm run db:materialize:contract
-pnpm run db:plan
-pnpm run db:init
-pnpm run db:migrate
-pnpm run db:seed
-pnpm run db:status
-pnpm run db:drift:check
-pnpm run test:database:postgres-live
+```powershell
+pnpm db:validate
+pnpm db:materialize:contract
+pnpm db:plan
+pnpm db:init
+pnpm db:migrate
+pnpm db:seed
+pnpm db:status
+pnpm db:drift:check
+pnpm test:database:postgres-live
 ```
 
-The PostgreSQL live test requires `SDKWORK_AGENTS_TEST_POSTGRES_URL` with
-permission to create and drop schemas. It creates a unique schema, applies the
-canonical baseline and every migration through `sdkwork-agents-database-host`,
-executes commercial Chat/Project persistence and transaction scenarios, and
-removes the schema even when the test unwinds after a failure. Credentials stay
-in the operator/CI secret environment and are never written to tracked config.
+The live PostgreSQL test requires `SDKWORK_AGENTS_TEST_POSTGRES_URL` with
+permission to create and drop an isolated test schema. Credentials belong in
+operator or CI secret storage and must not be committed.
+
+Related authorities:
+
+- `../sdkwork-specs/DATABASE_SPEC.md`
+- `../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md`
+- `../sdkwork-specs/MIGRATION_SPEC.md`
+- `specs/AGENTS_DOMAIN_SPEC.md`
+- `specs/AGENTS_SESSION_MODEL_SPEC.md`

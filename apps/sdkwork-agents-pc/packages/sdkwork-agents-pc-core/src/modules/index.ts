@@ -4,7 +4,6 @@ export const AGENTS_PC_MODULES = [
   'inspiration',
   'creative',
   'assets',
-  'presentation',
   'canvas',
 ] as const;
 

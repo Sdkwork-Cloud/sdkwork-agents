@@ -5,19 +5,21 @@
 //! target entity, optional optimistic-concurrency version, the requesting
 //! subject, and the request timestamp.
 
-use crate::chat_turn::AgentChatTurnRecord;
+use crate::agent_turn::AgentTurnRecord;
 use crate::domain::{
     AgentAuditAction, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionTargetModule,
     AgentImplementationKind, AgentImplementationType, AgentInteractionKind,
-    AgentMessageDriveRefRecord, AgentMessageFeedbackRating, AgentMessageFeedbackRecord,
-    AgentMessageRecord, AgentMessageRole, AgentResourceUserStateRecord, AgentSessionRecord,
-    AgentVisibility,
+    AgentItemDriveRefRecord, AgentItemFeedbackRating, AgentItemFeedbackRecord,
+    AgentItemResourceRole, AgentResourceUserStateRecord, AgentSessionCheckpointRecord,
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionKind,
+    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentVisibility,
 };
 use crate::ports::{
     AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
-    McpMarketplaceListQuery, MessageFeedbackListQuery, MessageListQuery,
+    McpMarketplaceListQuery, ItemFeedbackListQuery, SessionItemListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionListQuery, TaskListQuery,
+    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionListQuery,
+    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectDriveAccessMode, AgentProjectVisibility};
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
@@ -405,10 +407,16 @@ pub struct CreateSessionCommand {
     pub owner_user_id: u64,
     pub project_id: Option<String>,
     pub session_id: String,
+    pub session_kind: AgentSessionKind,
+    pub entry_surface: AgentSessionEntrySurface,
+    pub source_module: Option<String>,
+    pub source_context_kind: Option<String>,
+    pub source_context_id: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
-    pub provider_binding_id: Option<String>,
-    pub model_id: Option<String>,
-    pub metadata_json: String,
+    pub idempotency_key: Option<String>,
+    pub payload_hash: Option<String>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
@@ -439,6 +447,7 @@ pub struct DeleteSessionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloseSessionCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
     pub expected_version: Option<u64>,
     /// When set, the session must belong to this owner (app-api scope).
@@ -450,6 +459,7 @@ pub struct CloseSessionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveSessionCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
     pub expected_version: Option<u64>,
     /// When set, the session must belong to this owner (app-api scope).
@@ -461,6 +471,7 @@ pub struct ArchiveSessionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetSessionCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     /// Agent id from the nested HTTP path; must match the loaded session.
     pub path_agent_id: String,
     pub session_id: String,
@@ -536,110 +547,99 @@ pub struct ListTasksCommand {
 }
 
 // ---------------------------------------------------------------------------
-// Message commands
+// Session item and turn commands
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateMessageCommand {
+pub struct CreateSessionItemCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
-    pub message_id: String,
-    pub role: AgentMessageRole,
+    pub item_id: String,
+    pub kind: AgentSessionItemKind,
     pub content: String,
     pub content_type: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub artifacts_json: String,
-    pub metadata_json: String,
-    pub parent_message_id: Option<String>,
+    pub parent_item_id: Option<String>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetMessageCommand {
+pub struct GetSessionItemCommand {
     pub tenant_id: u64,
-    /// Agent id from the nested HTTP path; must match the loaded message.
+    pub organization_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded item.
     pub path_agent_id: String,
     pub session_id: String,
-    pub message_id: String,
+    pub item_id: String,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListMessagesCommand {
-    pub query: MessageListQuery,
+pub struct ListSessionItemsCommand {
+    pub query: SessionItemListQuery,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AgentMessageMediaResourceInput {
-    pub id: String,
-    pub kind: String,
-    pub source: String,
-    pub uri: String,
-    pub url: Option<String>,
-    pub public_url: Option<String>,
-    pub object_blob_id: Option<String>,
-    pub file_name: Option<String>,
-    pub mime_type: Option<String>,
-    pub size_bytes: Option<String>,
-    pub checksum: Option<serde_json::Value>,
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub duration_seconds: Option<f64>,
-    pub alt_text: Option<String>,
-    pub title: Option<String>,
-    pub access: Option<serde_json::Value>,
-    pub metadata: Option<serde_json::Value>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentItemDriveRefInput {
+    pub resource_role: AgentItemResourceRole,
+    pub drive_space_id: String,
+    pub drive_node_id: String,
 }
 
-/// Send a user chat message and produce an assistant reply in one turn.
+/// Execute one user-input turn and produce an assistant-output item.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SendChatMessageCommand {
+pub struct CreateTurnCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub agent_id: String,
     pub session_id: String,
+    pub turn_id: Option<String>,
     pub content: String,
     pub content_type: String,
-    pub metadata_json: String,
-    pub media_resources: Vec<AgentMessageMediaResourceInput>,
-    pub model_id: Option<String>,
-    pub idempotency_key: Option<String>,
+    pub turn_mode: crate::agent_turn::AgentTurnMode,
+    pub runtime_binding_id: Option<String>,
+    pub requested_model_id: Option<String>,
+    pub idempotency_key: String,
+    pub payload_hash: String,
     pub client_request_id: Option<String>,
+    pub drive_refs: Vec<AgentItemDriveRefInput>,
     /// When set, the session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
-    /// When true, attempt provider stream chunks for SSE `message.delta` events.
+    /// When true, attempt provider stream chunks for SSE item delta events.
     pub prefer_stream: bool,
 }
 
-/// Result of a chat completion turn (user message + assistant reply + session).
+/// Result of one completed turn (user input + assistant output + session).
 #[derive(Debug, Clone, PartialEq)]
-pub struct ChatCompletionResult {
+pub struct TurnExecutionResult {
     pub session: AgentSessionRecord,
-    pub user_message: AgentMessageRecord,
-    pub assistant_message: AgentMessageRecord,
-    pub user_message_drive_refs: Vec<AgentMessageDriveRefRecord>,
+    pub turn: AgentTurnRecord,
+    pub user_input_item: AgentSessionItemRecord,
+    pub assistant_output_item: AgentSessionItemRecord,
+    pub user_item_drive_refs: Vec<AgentItemDriveRefRecord>,
     pub stream_deltas: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageWithDriveRefs {
-    pub message: AgentMessageRecord,
-    pub drive_refs: Vec<AgentMessageDriveRefRecord>,
+pub struct AgentSessionItemWithDriveRefs {
+    pub item: AgentSessionItemRecord,
+    pub drive_refs: Vec<AgentItemDriveRefRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetChatTurnCommand {
+pub struct GetTurnCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub path_agent_id: String,
@@ -650,7 +650,15 @@ pub struct GetChatTurnCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetChatTurnByIdempotencyCommand {
+pub struct ListTurnsCommand {
+    pub query: TurnListQuery,
+    pub path_agent_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetTurnByIdempotencyCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub path_agent_id: String,
@@ -661,7 +669,7 @@ pub struct GetChatTurnByIdempotencyCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CancelChatTurnCommand {
+pub struct CancelTurnCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub path_agent_id: String,
@@ -674,9 +682,9 @@ pub struct CancelChatTurnCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatTurnReconciliationResult {
+pub struct TurnReconciliationResult {
     pub examined: usize,
-    pub failed: Vec<AgentChatTurnRecord>,
+    pub failed: Vec<AgentTurnRecord>,
     pub skipped_conflicts: usize,
 }
 
@@ -707,7 +715,7 @@ pub struct UpdateSessionUserStateCommand {
     pub pinned: Option<bool>,
     pub hidden: Option<bool>,
     pub mark_opened: bool,
-    pub last_read_message_sequence: Option<u64>,
+    pub last_read_item_sequence: Option<u64>,
     pub custom_title: Option<Option<String>>,
     pub expected_version: Option<u64>,
     pub requested_by: PolicySubject,
@@ -717,21 +725,21 @@ pub struct UpdateSessionUserStateCommand {
 pub type SessionUserStateResult = AgentResourceUserStateRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListMessageFeedbackCommand {
-    pub query: MessageFeedbackListQuery,
+pub struct ListItemFeedbackCommand {
+    pub query: ItemFeedbackListQuery,
     pub path_agent_id: String,
     pub requested_by: PolicySubject,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateMessageFeedbackCommand {
+pub struct UpdateItemFeedbackCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub user_id: u64,
     pub path_agent_id: String,
     pub session_id: String,
-    pub message_id: String,
-    pub rating: Option<AgentMessageFeedbackRating>,
+    pub item_id: String,
+    pub rating: Option<AgentItemFeedbackRating>,
     pub reason_code: Option<String>,
     pub comment: Option<String>,
     pub expected_version: Option<u64>,
@@ -739,7 +747,7 @@ pub struct UpdateMessageFeedbackCommand {
     pub requested_at: String,
 }
 
-pub type MessageFeedbackResult = AgentMessageFeedbackRecord;
+pub type ItemFeedbackResult = AgentItemFeedbackRecord;
 
 // ---------------------------------------------------------------------------
 // Interaction commands
@@ -750,16 +758,42 @@ pub struct CreateInteractionCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub session_id: String,
-    pub agent_id: String,
+    pub path_agent_id: String,
     pub interaction_id: String,
-    pub engine_key: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub provider_interaction_id: Option<String>,
     pub kind: AgentInteractionKind,
     pub prompt: String,
     pub options_json: String,
+    pub retention_until: Option<String>,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimInteractionCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub interaction_id: String,
+    pub claim_owner: String,
+    pub lease_seconds: u32,
+    pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InteractionClaimResult {
+    pub interaction: crate::domain::AgentInteractionRecord,
+    pub claim_token: String,
+    pub claim_expires_at: String,
+    pub fencing_token: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -775,6 +809,7 @@ pub struct ListInteractionsCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetInteractionCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     /// Agent id from the nested HTTP path; must match the loaded interaction.
     pub path_agent_id: String,
     pub session_id: String,
@@ -787,12 +822,15 @@ pub struct GetInteractionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApproveInteractionCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     /// Agent id from the nested HTTP path; must match the parent session.
     pub path_agent_id: String,
     pub session_id: String,
     pub interaction_id: String,
     pub approved: bool,
     pub reason: Option<String>,
+    pub claim_token: String,
+    pub fencing_token: u64,
     pub expected_version: u64,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
@@ -803,16 +841,161 @@ pub struct ApproveInteractionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnswerInteractionCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     /// Agent id from the nested HTTP path; must match the parent session.
     pub path_agent_id: String,
     pub session_id: String,
     pub interaction_id: String,
     pub answer: String,
-    pub option_label: Option<String>,
+    pub selected_option_value: Option<String>,
     pub rejected: bool,
+    pub claim_token: String,
+    pub fencing_token: u64,
     pub expected_version: u64,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }
+
+// ---------------------------------------------------------------------------
+// Session runtime binding commands
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateSessionRuntimeBindingCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub runtime_binding_id: Option<String>,
+    pub runtime_location_id: Option<String>,
+    pub host_mode: String,
+    pub transport_kind: String,
+    pub provider_binding_id: String,
+    pub model_id: String,
+    pub provider_id: String,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListSessionRuntimeBindingsCommand {
+    pub query: SessionRuntimeBindingListQuery,
+    pub path_agent_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetSessionRuntimeBindingCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub runtime_binding_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateSessionRuntimeBindingCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub runtime_binding_id: String,
+    pub runtime_location_id: Option<Option<String>>,
+    pub host_mode: Option<String>,
+    pub transport_kind: Option<String>,
+    pub provider_binding_id: Option<String>,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeSessionRuntimeBindingStatusCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub runtime_binding_id: String,
+    pub expected_version: u64,
+    pub reason: Option<String>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+// ---------------------------------------------------------------------------
+// Session checkpoint commands
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateSessionCheckpointCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub checkpoint_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub checkpoint_kind: String,
+    pub provider_checkpoint_ref: Option<String>,
+    pub drive_space_id: Option<String>,
+    pub drive_node_id: Option<String>,
+    pub resumable: bool,
+    pub retention_until: Option<String>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListSessionCheckpointsCommand {
+    pub query: SessionCheckpointListQuery,
+    pub path_agent_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetSessionCheckpointCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub checkpoint_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeSessionCheckpointStatusCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub checkpoint_id: String,
+    pub expected_version: u64,
+    pub reason: Option<String>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+pub type SessionRuntimeBindingResult = AgentSessionRuntimeBindingRecord;
+pub type SessionCheckpointResult = AgentSessionCheckpointRecord;

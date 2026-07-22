@@ -5,5 +5,4 @@ export const moduleRegistry = {
   chat: "@sdkwork/agents-pc-chat",
   creative: "@sdkwork/agents-pc-creative",
   inspiration: "@sdkwork/agents-pc-inspiration",
-  presentation: "@sdkwork/agents-pc-presentation",
 } as const;

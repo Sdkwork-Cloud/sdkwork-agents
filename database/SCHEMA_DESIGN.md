@@ -1,54 +1,63 @@
 # Agents Database Schema
 
 Status: active
-Owner: agents-platform
-Contract: `database/contract/schema.yaml` (v4.0.0 active)
-DDL authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
-Migration authority: `database/migrations/postgres/`
 
-## Engine
+Contract: `5.0.0`
 
-PostgreSQL is the only supported managed-store engine. Schema lifecycle is
-managed by `sdkwork-database-lifecycle` (`LifecycleOrchestrator`) through the
-`baseline-plus-migrations` strategy: the baseline DDL is applied once on an
-empty database, then versioned migrations in `database/migrations/postgres/`
-are applied incrementally. Both runtime bootstrap
-(`bootstrap_agents_database`) and `pnpm db:migrate` use the same lifecycle
-orchestrator, ensuring migrations are tracked in `ops_schema_migration_history`
-with checksum verification.
+Managed engine: PostgreSQL
 
-## Tables
+## Ownership
+
+All 19 tables are authored and written by `sdkwork-intelligence-agents-service`.
+There are no imported tables, projections, shadow copies, compatibility tables,
+or cross-module foreign keys. External capabilities are represented only by
+stable reference columns.
+
+## Inventory
 
 | Table | Responsibility |
 | --- | --- |
-| `ai_agent` | Agent identity, manifest snapshot, lifecycle |
-| `ai_agent_runtime_binding` | Provider/runtime binding |
-| `ai_agent_composition_slot` | Cross-module composition references |
-| `ai_agent_audit_event` | Immutable management audit log |
-| `ai_agent_session` | Hosted chat sessions |
-| `ai_agent_message` | Session messages and chat turns |
-| `ai_agent_interaction` | Live interaction approval and user-question records |
-| `ai_agent_task` | Scheduled tasks projected from kernel `AgentTask` |
-| `ai_agent_project` | Chat project identity, ownership, lifecycle, and access policy |
-| `ai_agent_project_composition_slot` | Project composition references to sibling modules |
-| `ai_agent_chat_turn` | Idempotent inference command and terminal state |
-| `ai_agent_message_drive_ref` | Typed Drive-backed message resources |
-| `ai_agent_message_feedback` | Per-user assistant response feedback |
-| `ai_agent_resource_user_state` | Per-user session/project state |
-| `ai_agent_project_member` | Project ACL and collaboration lifecycle |
-| `ai_agent_share_link` | Hashed project/session share grants |
+| `ai_agent` | Managed agent identity and lifecycle |
+| `ai_agent_runtime_binding` | Agent-level provider configuration |
+| `ai_agent_composition_slot` | Agent references to sibling-owned capabilities |
+| `ai_agent_audit_event` | Immutable sanitized aggregate audit facts |
+| `ai_agent_project` | Reusable orchestration project and access policy |
+| `ai_agent_project_composition_slot` | Project references to sibling-owned capabilities |
+| `ai_agent_session` | Single durable execution session authority |
+| `ai_agent_session_runtime_binding` | Session runtime selection and provider-native lineage |
+| `ai_agent_turn` | Idempotent turn, retry, lease, fencing, usage, and terminal state |
+| `ai_agent_session_item` | Ordered typed transcript or execution item |
+| `ai_agent_item_drive_ref` | Typed relation to Drive-owned resources |
+| `ai_agent_item_feedback` | Per-user assistant-output quality feedback |
+| `ai_agent_interaction` | Approval or user-question pause point with claim fencing |
+| `ai_agent_session_checkpoint` | Provider or Drive-backed resumable checkpoint reference |
+| `ai_agent_task` | Product-managed scheduled task |
+| `ai_agent_resource_user_state` | Per-user session/project view preferences |
+| `ai_agent_project_member` | Project collaboration ACL |
+| `ai_agent_share_link` | Hashed, revocable, expiring grant |
 | `ai_agent_outbox_event` | Reliable aggregate event publication |
 
-The nine Chat/Project tables are active in contract `4.0.0`; their immutable
-migration provenance remains under `database/migrations/postgres/` rather than
-being folded into the historical baseline.
+## Session Aggregate
 
-Current database contract scope excludes `ai_agent_task_run`. Entry criteria
-require a stable kernel `AgentRun` / `AgentStep` projection, approved
-`agents.taskRuns.*` API authority, and a versioned migration from the active
-contract.
+`ai_agent_session` stores only stable business scope, lineage, lifecycle, and
+counters. Runtime/provider/model selection belongs to
+`ai_agent_session_runtime_binding`. Ordered results belong to
+`ai_agent_session_item`; artifacts are Drive references rather than copied
+resource snapshots. Turns own idempotency and worker concurrency state.
 
-## Cross-Module References
+Checkpoints store exactly one opaque provider checkpoint reference or one
+Drive space/node pair. They never store plaintext resume tokens or unconstrained
+provider state documents.
 
-Sibling-owned content for memory, knowledge, skills, prompts, drive, and MCP is
-referenced only through `ai_agent_composition_slot`.
+## Isolation And Concurrency
+
+Every session-aggregate unique key and foreign key includes tenant and
+organization scope. Application-allocated `BIGINT` primary keys are used on both
+engines. Mutating aggregates use optimistic versions. Turn workers, interaction
+claimers, and outbox publishers use bounded attempts, leases, opaque lease
+tokens, expirations, and monotonic fencing tokens.
+
+PostgreSQL list paths use tenant-leading indexes with stable `id` tie-breakers.
+Retention scans use partial indexes. There are no IM delivery/read columns in
+the execution aggregate; `last_seen_item_sequence` is only a local user-view
+preference.

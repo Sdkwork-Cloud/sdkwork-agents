@@ -56,6 +56,16 @@
       "purpose": "Agents-owned HTTP trust boundary for open/app/backend surfaces."
     },
     {
+      "file": "AGENTS_DOMAIN_SPEC.md",
+      "path": "specs/AGENTS_DOMAIN_SPEC.md",
+      "purpose": "Canonical Agents bounded context and domain vocabulary."
+    },
+    {
+      "file": "AGENTS_SESSION_MODEL_SPEC.md",
+      "path": "specs/AGENTS_SESSION_MODEL_SPEC.md",
+      "purpose": "Canonical Project, Session, Turn, Session Item, Interaction and Checkpoint aggregate."
+    },
+    {
       "file": "AGENTS_KERNEL_BOUNDARY_SPEC.md",
       "path": "specs/AGENTS_KERNEL_BOUNDARY_SPEC.md",
       "purpose": "Kernel vs agents vs product application responsibility boundary."

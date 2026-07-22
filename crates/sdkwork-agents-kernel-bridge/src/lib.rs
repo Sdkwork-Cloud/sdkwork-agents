@@ -39,7 +39,7 @@ pub async fn build_agents_served_router(config: Arc<ServerConfig>) -> Result<Rou
 
     let agent_http_state =
         build_agent_http_state().context("agents managed store HTTP state bootstrap")?;
-    let _reconciliation_worker = agent_http_state.spawn_chat_turn_reconciliation_worker();
+    let _reconciliation_worker = agent_http_state.spawn_turn_reconciliation_worker();
     let business_router = build_served_combined_router(agent_http_state).await;
 
     Ok(operational_router.merge(business_router))

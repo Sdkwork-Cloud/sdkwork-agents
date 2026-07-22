@@ -7,6 +7,8 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 
 | Document | Purpose |
 | --- | --- |
+| [AGENTS_DOMAIN_SPEC.md](./AGENTS_DOMAIN_SPEC.md) | Canonical Agents bounded context and Project/Session/Turn/Item/Interaction vocabulary |
+| [AGENTS_SESSION_MODEL_SPEC.md](./AGENTS_SESSION_MODEL_SPEC.md) | Durable session aggregate, runtime binding, item, interaction, and checkpoint contract |
 | [AGENTS_KERNEL_BOUNDARY_SPEC.md](./AGENTS_KERNEL_BOUNDARY_SPEC.md) | Kernel vs agents vs product boundary (frozen) |
 | [AGENTS_PROVIDER_TAXONOMY_SPEC.md](./AGENTS_PROVIDER_TAXONOMY_SPEC.md) | Code / autonomous / framework agent taxonomy |
 | [AGENTS_KERNEL_SPI_GAP_ANALYSIS.md](./AGENTS_KERNEL_SPI_GAP_ANALYSIS.md) | SPI gaps, commercial readiness, roadmap |

@@ -1,15 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
 import {
-  Bell,
   Bot,
   Folder,
   Gem,
   Home,
   LayoutGrid,
   MessageSquare,
-  SlidersHorizontal,
   Sparkles,
-  Terminal,
 } from 'lucide-react';
 import type { FC } from 'react';
 import { cn } from '@sdkwork/agents-pc-commons';
@@ -39,7 +36,6 @@ const SIDEBAR_ITEM_BY_TAB: Record<SidebarTab, Omit<SidebarItem, 'id'>> = {
   inspiration: { icon: Home, label: '灵感' },
   creative: { icon: Sparkles, label: '生成' },
   assets: { icon: Folder, label: '资产' },
-  presentation: { label: '演示' },
   canvas: { icon: LayoutGrid, label: '画布' },
 };
 
@@ -112,7 +108,6 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({
         type="button"
       >
         <Gem className="mb-1 group-hover:text-cyan-400" fill={isTokenPlanOpen ? 'currentColor' : 'none'} size={16} />
-        <span className="text-[10px] font-bold">60</span>
         <span className="text-[9px]">开会员</span>
         {isTokenPlanOpen && <div className="absolute bottom-[25%] left-0 top-[25%] w-[3px] rounded-r-sm bg-cyan-400" />}
       </button>
@@ -122,16 +117,6 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({
           {username.substring(0, 2).toUpperCase()}
         </div>
         <div className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-[2px] border-[#18181A] bg-cyan-500 text-[8px] font-bold text-black">1</div>
-      </button>
-
-      <button className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" type="button">
-        <Bell size={20} />
-      </button>
-      <button className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" type="button">
-        <Terminal size={20} />
-      </button>
-      <button className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" type="button">
-        <SlidersHorizontal size={20} />
       </button>
     </div>
   </div>

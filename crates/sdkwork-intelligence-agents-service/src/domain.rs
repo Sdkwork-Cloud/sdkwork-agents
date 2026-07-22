@@ -126,10 +126,11 @@ pub enum AgentAuditAction {
     SessionClosed,
     SessionArchived,
     SessionDeleted,
-    MessageCreated,
-    MessageFailed,
-    MessageFeedbackChanged,
+    SessionItemCreated,
+    SessionItemFailed,
+    ItemFeedbackChanged,
     InteractionCreated,
+    InteractionClaimed,
     InteractionResolved,
     InteractionRejected,
     InteractionExpired,
@@ -150,6 +151,13 @@ pub enum AgentAuditAction {
     TurnFailed,
     TurnCancelRequested,
     TurnCancelled,
+    SessionRuntimeBindingCreated,
+    SessionRuntimeBindingUpdated,
+    SessionRuntimeBindingActivated,
+    SessionRuntimeBindingDeactivated,
+    SessionCheckpointCreated,
+    SessionCheckpointRestored,
+    SessionCheckpointInvalidated,
 }
 
 impl AgentAuditAction {
@@ -175,10 +183,11 @@ impl AgentAuditAction {
             Self::SessionClosed => "agent.business.session.closed",
             Self::SessionArchived => "agent.business.session.archived",
             Self::SessionDeleted => "agent.business.session.deleted",
-            Self::MessageCreated => "agent.business.message.created",
-            Self::MessageFailed => "agent.business.message.failed",
-            Self::MessageFeedbackChanged => "agent.business.message.feedback_changed",
+            Self::SessionItemCreated => "agent.business.session_item.created",
+            Self::SessionItemFailed => "agent.business.session_item.failed",
+            Self::ItemFeedbackChanged => "agent.business.item_feedback.changed",
             Self::InteractionCreated => "agent.business.interaction.created",
+            Self::InteractionClaimed => "agent.business.interaction.claimed",
             Self::InteractionResolved => "agent.business.interaction.resolved",
             Self::InteractionRejected => "agent.business.interaction.rejected",
             Self::InteractionExpired => "agent.business.interaction.expired",
@@ -200,11 +209,26 @@ impl AgentAuditAction {
             Self::ProjectCompositionSlotDeleted => {
                 "agent.business.project.composition_slot.deleted"
             }
-            Self::TurnRequested => "agent.business.chat_turn.requested",
-            Self::TurnCompleted => "agent.business.chat_turn.completed",
-            Self::TurnFailed => "agent.business.chat_turn.failed",
-            Self::TurnCancelRequested => "agent.business.chat_turn.cancel_requested",
-            Self::TurnCancelled => "agent.business.chat_turn.cancelled",
+            Self::TurnRequested => "agent.business.turn.requested",
+            Self::TurnCompleted => "agent.business.turn.completed",
+            Self::TurnFailed => "agent.business.turn.failed",
+            Self::TurnCancelRequested => "agent.business.turn.cancel_requested",
+            Self::TurnCancelled => "agent.business.turn.cancelled",
+            Self::SessionRuntimeBindingCreated => {
+                "agent.business.session_runtime_binding.created"
+            }
+            Self::SessionRuntimeBindingUpdated => {
+                "agent.business.session_runtime_binding.updated"
+            }
+            Self::SessionRuntimeBindingActivated => {
+                "agent.business.session_runtime_binding.activated"
+            }
+            Self::SessionRuntimeBindingDeactivated => {
+                "agent.business.session_runtime_binding.deactivated"
+            }
+            Self::SessionCheckpointCreated => "agent.business.session_checkpoint.created",
+            Self::SessionCheckpointRestored => "agent.business.session_checkpoint.restored",
+            Self::SessionCheckpointInvalidated => "agent.business.session_checkpoint.invalidated",
         }
     }
 
@@ -230,10 +254,11 @@ impl AgentAuditAction {
             Self::SessionClosed => "session_closed",
             Self::SessionArchived => "session_archived",
             Self::SessionDeleted => "session_deleted",
-            Self::MessageCreated => "message_created",
-            Self::MessageFailed => "message_failed",
-            Self::MessageFeedbackChanged => "message_feedback_changed",
+            Self::SessionItemCreated => "session_item_created",
+            Self::SessionItemFailed => "session_item_failed",
+            Self::ItemFeedbackChanged => "item_feedback_changed",
             Self::InteractionCreated => "interaction_created",
+            Self::InteractionClaimed => "interaction_claimed",
             Self::InteractionResolved => "interaction_resolved",
             Self::InteractionRejected => "interaction_rejected",
             Self::InteractionExpired => "interaction_expired",
@@ -254,6 +279,13 @@ impl AgentAuditAction {
             Self::TurnFailed => "turn_failed",
             Self::TurnCancelRequested => "turn_cancel_requested",
             Self::TurnCancelled => "turn_cancelled",
+            Self::SessionRuntimeBindingCreated => "session_runtime_binding_created",
+            Self::SessionRuntimeBindingUpdated => "session_runtime_binding_updated",
+            Self::SessionRuntimeBindingActivated => "session_runtime_binding_activated",
+            Self::SessionRuntimeBindingDeactivated => "session_runtime_binding_deactivated",
+            Self::SessionCheckpointCreated => "session_checkpoint_created",
+            Self::SessionCheckpointRestored => "session_checkpoint_restored",
+            Self::SessionCheckpointInvalidated => "session_checkpoint_invalidated",
         }
     }
 }
@@ -458,7 +490,7 @@ pub struct SessionAuditPayload {
     pub organization_id: u64,
     pub owner_user_id: u64,
     pub status: String,
-    pub message_count: u64,
+    pub item_count: u64,
     pub version: u64,
 }
 
@@ -475,7 +507,7 @@ impl SessionAuditPayload {
             organization_id: record.organization_id,
             owner_user_id: record.owner_user_id,
             status: record.status.as_str().to_string(),
-            message_count: record.message_count,
+            item_count: record.item_count,
             version: record.version,
         }
     }
@@ -485,34 +517,34 @@ impl SessionAuditPayload {
     }
 }
 
-/// Structured audit payload for agent message operations.
+/// Structured audit payload for agent session-item operations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MessageAuditPayload {
+pub struct SessionItemAuditPayload {
     pub schema_version: String,
     pub action: String,
-    pub message_id: String,
+    pub item_id: String,
     pub session_id: String,
-    pub agent_id: String,
     pub tenant_id: u64,
-    pub role: String,
+    pub organization_id: u64,
+    pub kind: String,
     pub status: String,
     pub sequence: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }
 
-impl MessageAuditPayload {
+impl SessionItemAuditPayload {
     pub const SCHEMA_VERSION: &'static str = "v1";
 
-    pub fn new(action: AgentAuditAction, record: &AgentMessageRecord) -> Self {
+    pub fn new(action: AgentAuditAction, record: &AgentSessionItemRecord) -> Self {
         Self {
             schema_version: Self::SCHEMA_VERSION.to_string(),
             action: action.action_code().to_string(),
-            message_id: record.message_id.clone(),
+            item_id: record.item_id.clone(),
             session_id: record.session_id.clone(),
-            agent_id: record.agent_id.clone(),
             tenant_id: record.tenant_id,
-            role: record.role.as_str().to_string(),
+            organization_id: record.organization_id,
+            kind: record.kind.as_str().to_string(),
             status: record.status.as_str().to_string(),
             sequence: record.sequence,
             input_tokens: record.input_tokens,
@@ -835,7 +867,7 @@ impl AgentBusinessRecord {
 /// values suitable for database storage and API exposure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentSessionStatus {
-    /// Session is active and accepting messages
+    /// Session is active and accepting items
     Active,
     /// Session is idle (no recent activity, still resumable)
     Idle,
@@ -884,18 +916,124 @@ impl AgentSessionStatus {
         }
     }
 
-    /// Whether the session can accept new messages.
+    /// Whether the session can accept new items.
     pub fn is_active(&self) -> bool {
         matches!(self, Self::Active | Self::Idle)
     }
 }
 
-/// A chat session between a user and an agent.
-///
-/// This record maps to the kernel's `AgentSession` lifecycle SPI and
-/// provides the persistence boundary for conversation state. Each session
-/// belongs to a tenant and is scoped to a specific agent. Sessions track
-/// token usage, message count, and lifecycle timestamps for observability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentSessionKind {
+    Assistant,
+    Coding,
+    Automation,
+    ImDispatch,
+}
+
+impl AgentSessionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Assistant => "assistant",
+            Self::Coding => "coding",
+            Self::Automation => "automation",
+            Self::ImDispatch => "im_dispatch",
+        }
+    }
+
+    pub fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "assistant" => Some(Self::Assistant),
+            "coding" => Some(Self::Coding),
+            "automation" => Some(Self::Automation),
+            "im_dispatch" => Some(Self::ImDispatch),
+            _ => None,
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Assistant => 0,
+            Self::Coding => 1,
+            Self::Automation => 2,
+            Self::ImDispatch => 3,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Assistant),
+            1 => Some(Self::Coding),
+            2 => Some(Self::Automation),
+            3 => Some(Self::ImDispatch),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentSessionEntrySurface {
+    Pc,
+    H5,
+    Flutter,
+    MiniProgram,
+    Api,
+    ImDispatch,
+    Automation,
+}
+
+impl AgentSessionEntrySurface {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pc => "pc",
+            Self::H5 => "h5",
+            Self::Flutter => "flutter",
+            Self::MiniProgram => "mini_program",
+            Self::Api => "api",
+            Self::ImDispatch => "im_dispatch",
+            Self::Automation => "automation",
+        }
+    }
+
+    pub fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "pc" => Some(Self::Pc),
+            "h5" => Some(Self::H5),
+            "flutter" => Some(Self::Flutter),
+            "mini_program" => Some(Self::MiniProgram),
+            "api" => Some(Self::Api),
+            "im_dispatch" => Some(Self::ImDispatch),
+            "automation" => Some(Self::Automation),
+            _ => None,
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Pc => 0,
+            Self::H5 => 1,
+            Self::Flutter => 2,
+            Self::MiniProgram => 3,
+            Self::Api => 4,
+            Self::ImDispatch => 5,
+            Self::Automation => 6,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Pc),
+            1 => Some(Self::H5),
+            2 => Some(Self::Flutter),
+            3 => Some(Self::MiniProgram),
+            4 => Some(Self::Api),
+            5 => Some(Self::ImDispatch),
+            6 => Some(Self::Automation),
+            _ => None,
+        }
+    }
+}
+
+/// Durable execution context between an owner and one managed agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSessionRecord {
     pub id: u64,
@@ -905,22 +1043,33 @@ pub struct AgentSessionRecord {
     pub agent_id: String,
     pub owner_user_id: u64,
     pub project_id: Option<String>,
+    pub session_kind: AgentSessionKind,
+    pub entry_surface: AgentSessionEntrySurface,
+    pub source_module: Option<String>,
+    pub source_context_kind: Option<String>,
+    pub source_context_id: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
     pub status: AgentSessionStatus,
-    pub provider_binding_id: Option<String>,
-    pub model_id: Option<String>,
-    pub message_count: u64,
-    pub last_message_sequence: u64,
+    pub item_count: u64,
+    pub last_item_sequence: u64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
-    pub metadata_json: String,
+    pub idempotency_key: Option<String>,
+    pub payload_hash: Option<String>,
+    pub created_by: u64,
+    pub updated_by: u64,
     pub version: u64,
     pub created_at: String,
     pub updated_at: String,
-    pub last_message_at: Option<String>,
+    pub last_item_at: Option<String>,
     pub closed_at: Option<String>,
     pub archived_at: Option<String>,
+    pub archived_by: Option<u64>,
     pub deleted_at: Option<String>,
+    pub deleted_by: Option<u64>,
+    pub retention_until: Option<String>,
 }
 
 impl AgentSessionRecord {
@@ -929,38 +1078,38 @@ impl AgentSessionRecord {
         self.version = self.version.saturating_add(1);
     }
 
-    pub fn record_message(
+    pub fn record_item(
         &mut self,
         input_tokens: u64,
         output_tokens: u64,
         occurred_at: impl Into<String>,
     ) {
-        self.message_count = self.message_count.saturating_add(1);
-        self.last_message_sequence = self.last_message_sequence.saturating_add(1);
+        self.item_count = self.item_count.saturating_add(1);
+        self.last_item_sequence = self.last_item_sequence.saturating_add(1);
         self.total_input_tokens = self.total_input_tokens.saturating_add(input_tokens);
         self.total_output_tokens = self.total_output_tokens.saturating_add(output_tokens);
-        self.last_message_at = Some(occurred_at.into());
+        self.last_item_at = Some(occurred_at.into());
         self.updated_at = self
-            .last_message_at
+            .last_item_at
             .clone()
             .unwrap_or_else(|| self.updated_at.clone());
         self.version = self.version.saturating_add(1);
     }
 
-    /// Record one persisted user + assistant chat turn (single optimistic version bump).
-    pub fn record_chat_turn(
+    /// Record one persisted input + output turn with one optimistic version bump.
+    pub fn record_turn(
         &mut self,
         input_tokens: u64,
         output_tokens: u64,
         occurred_at: impl Into<String>,
     ) {
-        self.message_count = self.message_count.saturating_add(2);
-        self.last_message_sequence = self.last_message_sequence.saturating_add(2);
+        self.item_count = self.item_count.saturating_add(2);
+        self.last_item_sequence = self.last_item_sequence.saturating_add(2);
         self.total_input_tokens = self.total_input_tokens.saturating_add(input_tokens);
         self.total_output_tokens = self.total_output_tokens.saturating_add(output_tokens);
-        self.last_message_at = Some(occurred_at.into());
+        self.last_item_at = Some(occurred_at.into());
         self.updated_at = self
-            .last_message_at
+            .last_item_at
             .clone()
             .unwrap_or_else(|| self.updated_at.clone());
         self.version = self.version.saturating_add(1);
@@ -986,6 +1135,181 @@ impl AgentSessionRecord {
         let ts = deleted_at.into();
         self.deleted_at = Some(ts.clone());
         self.updated_at = ts;
+        self.version = self.version.saturating_add(1);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentSessionRuntimeBindingStatus {
+    Active,
+    Deactivated,
+    Failed,
+    Deleted,
+}
+
+impl AgentSessionRuntimeBindingStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Deactivated => "deactivated",
+            Self::Failed => "failed",
+            Self::Deleted => "deleted",
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Active => 0,
+            Self::Deactivated => 1,
+            Self::Failed => 2,
+            Self::Deleted => 3,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Active),
+            1 => Some(Self::Deactivated),
+            2 => Some(Self::Failed),
+            3 => Some(Self::Deleted),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionRuntimeBindingRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub runtime_binding_id: String,
+    pub runtime_location_id: Option<String>,
+    pub host_mode: String,
+    pub transport_kind: String,
+    pub provider_binding_id: String,
+    pub model_id: String,
+    pub provider_id: String,
+    pub native_session_id: Option<String>,
+    pub native_session_tree_id: Option<String>,
+    pub native_parent_session_id: Option<String>,
+    pub native_forked_from_session_id: Option<String>,
+    pub status: AgentSessionRuntimeBindingStatus,
+    pub is_current: bool,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub activated_at: Option<String>,
+    pub deactivated_at: Option<String>,
+}
+
+impl AgentSessionRuntimeBindingRecord {
+    pub fn mark_updated(&mut self, occurred_at: impl Into<String>) {
+        self.updated_at = occurred_at.into();
+        self.version = self.version.saturating_add(1);
+    }
+
+    pub fn activate(&mut self, occurred_at: impl Into<String>) {
+        let occurred_at = occurred_at.into();
+        self.status = AgentSessionRuntimeBindingStatus::Active;
+        self.is_current = true;
+        self.activated_at = Some(occurred_at.clone());
+        self.deactivated_at = None;
+        self.updated_at = occurred_at;
+        self.version = self.version.saturating_add(1);
+    }
+
+    pub fn deactivate(&mut self, status: AgentSessionRuntimeBindingStatus, occurred_at: impl Into<String>) {
+        let occurred_at = occurred_at.into();
+        self.status = status;
+        self.is_current = false;
+        self.deactivated_at = Some(occurred_at.clone());
+        self.updated_at = occurred_at;
+        self.version = self.version.saturating_add(1);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentSessionCheckpointStatus {
+    Active,
+    Restored,
+    Invalidated,
+    Expired,
+    Deleted,
+}
+
+impl AgentSessionCheckpointStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Restored => "restored",
+            Self::Invalidated => "invalidated",
+            Self::Expired => "expired",
+            Self::Deleted => "deleted",
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Active => 0,
+            Self::Restored => 1,
+            Self::Invalidated => 2,
+            Self::Expired => 3,
+            Self::Deleted => 4,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Active),
+            1 => Some(Self::Restored),
+            2 => Some(Self::Invalidated),
+            3 => Some(Self::Expired),
+            4 => Some(Self::Deleted),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionCheckpointRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub checkpoint_id: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub checkpoint_kind: String,
+    pub provider_checkpoint_ref: Option<String>,
+    pub drive_space_id: Option<String>,
+    pub drive_node_id: Option<String>,
+    pub resumable: bool,
+    pub status: AgentSessionCheckpointStatus,
+    pub created_by: u64,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub restored_at: Option<String>,
+    pub invalidated_at: Option<String>,
+    pub retention_until: Option<String>,
+}
+
+impl AgentSessionCheckpointRecord {
+    pub fn mark_restored(&mut self, occurred_at: impl Into<String>) {
+        let occurred_at = occurred_at.into();
+        self.status = AgentSessionCheckpointStatus::Restored;
+        self.restored_at = Some(occurred_at.clone());
+        self.updated_at = occurred_at;
+        self.version = self.version.saturating_add(1);
+    }
+
+    pub fn invalidate(&mut self, occurred_at: impl Into<String>) {
+        let occurred_at = occurred_at.into();
+        self.status = AgentSessionCheckpointStatus::Invalidated;
+        self.resumable = false;
+        self.invalidated_at = Some(occurred_at.clone());
+        self.updated_at = occurred_at;
         self.version = self.version.saturating_add(1);
     }
 }
@@ -1031,7 +1355,7 @@ pub struct AgentResourceUserStateRecord {
     pub pinned_at: Option<String>,
     pub hidden_at: Option<String>,
     pub last_opened_at: Option<String>,
-    pub last_read_message_sequence: Option<u64>,
+    pub last_read_item_sequence: Option<u64>,
     pub custom_title: Option<String>,
     pub version: u64,
     pub created_at: String,
@@ -1039,162 +1363,183 @@ pub struct AgentResourceUserStateRecord {
 }
 
 // ============================================================================
-// Agent Message Management — aligns with kernel message SPI (AgentMessage)
+// Agent session-item management. Kernel model messages remain an SPI detail.
 // ============================================================================
 
-/// Role of a message participant in a session.
-///
-/// Mirrors the kernel's `AgentMessageRole` enum.
+/// Semantic kind of one ordered Agents transcript or execution item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentMessageRole {
-    User,
-    Assistant,
-    System,
-    Tool,
+pub enum AgentSessionItemKind {
+    UserInput,
+    SystemInstruction,
+    AssistantOutput,
+    Reasoning,
+    ToolCall,
+    ToolResult,
+    ArtifactReference,
+    StatusNotice,
+    ErrorNotice,
 }
 
-impl AgentMessageRole {
+impl AgentSessionItemKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::User => "user",
-            Self::Assistant => "assistant",
-            Self::System => "system",
-            Self::Tool => "tool",
+            Self::UserInput => "user_input",
+            Self::SystemInstruction => "system_instruction",
+            Self::AssistantOutput => "assistant_output",
+            Self::Reasoning => "reasoning",
+            Self::ToolCall => "tool_call",
+            Self::ToolResult => "tool_result",
+            Self::ArtifactReference => "artifact_reference",
+            Self::StatusNotice => "status_notice",
+            Self::ErrorNotice => "error_notice",
         }
     }
 
     pub fn from_code(value: &str) -> Option<Self> {
         match value {
-            "user" => Some(Self::User),
-            "assistant" => Some(Self::Assistant),
-            "system" => Some(Self::System),
-            "tool" => Some(Self::Tool),
+            "user_input" => Some(Self::UserInput),
+            "system_instruction" => Some(Self::SystemInstruction),
+            "assistant_output" => Some(Self::AssistantOutput),
+            "reasoning" => Some(Self::Reasoning),
+            "tool_call" => Some(Self::ToolCall),
+            "tool_result" => Some(Self::ToolResult),
+            "artifact_reference" => Some(Self::ArtifactReference),
+            "status_notice" => Some(Self::StatusNotice),
+            "error_notice" => Some(Self::ErrorNotice),
             _ => None,
         }
     }
 
     pub fn as_db_code(&self) -> i16 {
         match self {
-            Self::User => 0,
-            Self::Assistant => 1,
-            Self::System => 2,
-            Self::Tool => 3,
+            Self::UserInput => 0,
+            Self::SystemInstruction => 1,
+            Self::AssistantOutput => 2,
+            Self::Reasoning => 3,
+            Self::ToolCall => 4,
+            Self::ToolResult => 5,
+            Self::ArtifactReference => 6,
+            Self::StatusNotice => 7,
+            Self::ErrorNotice => 8,
         }
     }
 
     pub fn from_db_code(value: i16) -> Option<Self> {
         match value {
-            0 => Some(Self::User),
-            1 => Some(Self::Assistant),
-            2 => Some(Self::System),
-            3 => Some(Self::Tool),
+            0 => Some(Self::UserInput),
+            1 => Some(Self::SystemInstruction),
+            2 => Some(Self::AssistantOutput),
+            3 => Some(Self::Reasoning),
+            4 => Some(Self::ToolCall),
+            5 => Some(Self::ToolResult),
+            6 => Some(Self::ArtifactReference),
+            7 => Some(Self::StatusNotice),
+            8 => Some(Self::ErrorNotice),
             _ => None,
         }
     }
 }
 
-/// Delivery status of a message in a session.
+/// Durable lifecycle of one session item. Delivery/read state belongs to IM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentMessageStatus {
-    /// Message has been sent but not yet processed
-    Sent,
-    /// Message has been delivered to the recipient
-    Delivered,
-    /// Message has been read by the recipient
-    Read,
-    /// Message processing failed
+pub enum AgentSessionItemStatus {
+    Pending,
+    Completed,
     Failed,
-    /// Message was cancelled before completion
     Cancelled,
+    Redacted,
 }
 
-impl AgentMessageStatus {
+impl AgentSessionItemStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Sent => "sent",
-            Self::Delivered => "delivered",
-            Self::Read => "read",
+            Self::Pending => "pending",
+            Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+            Self::Redacted => "redacted",
         }
     }
 
     pub fn from_code(value: &str) -> Option<Self> {
         match value {
-            "sent" => Some(Self::Sent),
-            "delivered" => Some(Self::Delivered),
-            "read" => Some(Self::Read),
+            "pending" => Some(Self::Pending),
+            "completed" => Some(Self::Completed),
             "failed" => Some(Self::Failed),
             "cancelled" => Some(Self::Cancelled),
+            "redacted" => Some(Self::Redacted),
             _ => None,
         }
     }
 
     pub fn as_db_code(&self) -> i16 {
         match self {
-            Self::Sent => 0,
-            Self::Delivered => 1,
-            Self::Read => 2,
+            Self::Pending => 0,
+            Self::Completed => 1,
+            Self::Cancelled => 2,
             Self::Failed => 3,
-            Self::Cancelled => 4,
+            Self::Redacted => 4,
         }
     }
 
     pub fn from_db_code(value: i16) -> Option<Self> {
         match value {
-            0 => Some(Self::Sent),
-            1 => Some(Self::Delivered),
-            2 => Some(Self::Read),
+            0 => Some(Self::Pending),
+            1 => Some(Self::Completed),
+            2 => Some(Self::Cancelled),
             3 => Some(Self::Failed),
-            4 => Some(Self::Cancelled),
+            4 => Some(Self::Redacted),
             _ => None,
         }
     }
 }
 
-/// A single message in an agent chat session.
-///
-/// This record maps to the kernel's `AgentMessage` SPI and provides
-/// the persistence boundary for individual messages. Messages track
-/// their role, content, status, token usage, and optional artifacts
-/// (file references, tool outputs, etc.).
+/// One immutable ordered transcript or execution item in an Agents session.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageRecord {
+pub struct AgentSessionItemRecord {
     pub id: u64,
-    pub message_id: String,
+    pub item_id: String,
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub session_id: String,
-    pub agent_id: String,
-    pub role: AgentMessageRole,
-    pub content: String,
+    pub kind: AgentSessionItemKind,
+    pub content: Option<String>,
     pub content_type: String,
-    pub status: AgentMessageStatus,
+    pub status: AgentSessionItemStatus,
     pub sequence: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub artifacts_json: String,
-    pub metadata_json: String,
-    pub parent_message_id: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub tool_arguments_json: Option<String>,
+    pub tool_result_json: Option<String>,
+    pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
+    pub created_by: u64,
+    pub version: u64,
     pub created_at: String,
     pub updated_at: String,
+    pub completed_at: Option<String>,
+    pub redacted_at: Option<String>,
+    pub redacted_by: Option<u64>,
+    pub retention_until: Option<String>,
 }
 
-impl AgentMessageRecord {
+impl AgentSessionItemRecord {
     pub fn mark_updated(&mut self, updated_at: impl Into<String>) {
         self.updated_at = updated_at.into();
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentMessageFeedbackRating {
+pub enum AgentItemFeedbackRating {
     Up,
     Down,
 }
 
-impl AgentMessageFeedbackRating {
+impl AgentItemFeedbackRating {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Up => "up",
@@ -1219,13 +1564,13 @@ impl AgentMessageFeedbackRating {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageFeedbackRecord {
+pub struct AgentItemFeedbackRecord {
     pub id: u64,
     pub tenant_id: u64,
     pub organization_id: u64,
-    pub message_id: String,
+    pub item_id: String,
     pub user_id: u64,
-    pub rating: AgentMessageFeedbackRating,
+    pub rating: AgentItemFeedbackRating,
     pub reason_code: Option<String>,
     pub comment: Option<String>,
     pub version: u64,
@@ -1235,20 +1580,20 @@ pub struct AgentMessageFeedbackRecord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentMessageMediaRole {
+pub enum AgentItemResourceRole {
     Attachment,
     Image,
-    Voice,
+    Audio,
     GeneratedOutput,
     Artifact,
 }
 
-impl AgentMessageMediaRole {
+impl AgentItemResourceRole {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Attachment => "attachment",
             Self::Image => "image",
-            Self::Voice => "voice",
+            Self::Audio => "audio",
             Self::GeneratedOutput => "generated_output",
             Self::Artifact => "artifact",
         }
@@ -1256,19 +1601,17 @@ impl AgentMessageMediaRole {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessageDriveRefRecord {
+pub struct AgentItemDriveRefRecord {
     pub id: u64,
     pub tenant_id: u64,
     pub organization_id: u64,
-    pub message_id: String,
-    pub media_role: AgentMessageMediaRole,
+    pub item_id: String,
+    pub resource_role: AgentItemResourceRole,
     pub drive_space_id: String,
     pub drive_node_id: String,
-    pub drive_uri: String,
     pub media_resource_id: Option<String>,
     pub object_blob_id: Option<String>,
-    pub resource_snapshot_json: String,
-    pub resource_hash: String,
+    pub resource_hash: Option<String>,
     pub alt_text: Option<String>,
     pub sort_order: u32,
     pub status: i16,
@@ -1404,8 +1747,9 @@ pub struct AgentInteractionRecord {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub session_id: String,
-    pub agent_id: String,
-    pub engine_key: String,
+    pub turn_id: Option<String>,
+    pub runtime_binding_id: Option<String>,
+    pub provider_interaction_id: Option<String>,
     pub kind: AgentInteractionKind,
     pub status: AgentInteractionStatus,
     /// The prompt text shown to the user (e.g. "Allow file write to /src/main.rs?").
@@ -1413,11 +1757,16 @@ pub struct AgentInteractionRecord {
     /// Selectable options for user-question interactions (JSON array of strings).
     pub options_json: String,
     /// The user's resolution payload (JSON: approved/answer/reason).
-    pub resolution_json: String,
+    pub resolution_json: Option<String>,
+    pub claim_owner: Option<String>,
+    pub claim_token: Option<String>,
+    pub claim_expires_at: Option<String>,
+    pub fencing_token: u64,
     pub version: u64,
     pub created_at: String,
     pub updated_at: String,
     pub resolved_at: Option<String>,
+    pub retention_until: Option<String>,
 }
 
 /// Structured audit payload for agent task operations.
@@ -1462,6 +1811,21 @@ impl AgentInteractionRecord {
         self.version = self.version.saturating_add(1);
     }
 
+    pub fn claim(
+        &mut self,
+        claim_owner: impl Into<String>,
+        claim_token_hash: impl Into<String>,
+        claim_expires_at: impl Into<String>,
+        occurred_at: impl Into<String>,
+    ) {
+        self.claim_owner = Some(claim_owner.into());
+        self.claim_token = Some(claim_token_hash.into());
+        self.claim_expires_at = Some(claim_expires_at.into());
+        self.fencing_token = self.fencing_token.saturating_add(1);
+        self.updated_at = occurred_at.into();
+        self.version = self.version.saturating_add(1);
+    }
+
     /// Resolve the interaction with the given resolution JSON.
     pub fn resolve(
         &mut self,
@@ -1471,7 +1835,10 @@ impl AgentInteractionRecord {
     ) {
         let ts = resolved_at.into();
         self.status = status;
-        self.resolution_json = resolution_json.into();
+        self.resolution_json = Some(resolution_json.into());
+        self.claim_owner = None;
+        self.claim_token = None;
+        self.claim_expires_at = None;
         self.resolved_at = Some(ts.clone());
         self.updated_at = ts;
         self.version = self.version.saturating_add(1);

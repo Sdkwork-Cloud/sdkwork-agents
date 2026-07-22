@@ -36,6 +36,11 @@
       "purpose": "Composed SDK and global TokenManager integration."
     },
     {
+      "file": "I18N_SPEC.md",
+      "path": "../../../sdkwork-specs/I18N_SPEC.md",
+      "purpose": "Runtime locale configuration, provider ownership, and message catalog rules."
+    },
+    {
       "file": "TEST_SPEC.md",
       "path": "../../../sdkwork-specs/TEST_SPEC.md",
       "purpose": "Frontend and IAM verification."
@@ -43,7 +48,11 @@
   ],
   "contracts": {
     "layerRole": "frontend-shell",
-    "publicExports": ["src/index.ts", "src/agents/index.ts", "src/workbench/index.ts"],
+    "publicExports": ["src/index.ts", "src/agents/index.ts", "src/workbench/index.ts", "src/workbench/i18n.ts"],
+    "configKeys": [
+      "src/i18n/runtime.ts#agentsI18nRuntimeConfig",
+      "src/workbench/AgentsWorkbench.tsx#AgentsWorkbenchProps.overlayTopInset"
+    ],
     "providedPorts": ["agents.workbench"],
     "requiredPorts": [
       "agents.home",
@@ -55,7 +64,6 @@
       "agents.inspiration.view",
       "agents.membership.view",
       "agents.membership.runtime",
-      "agents.presentation.view",
       "agents.sdk"
     ],
     "runtimeEntrypoints": ["src/main.tsx", "package.json#scripts.dev"],

@@ -1,5 +1,10 @@
 # ADR-20260719 Commercial Chat Persistence And IM Boundary
 
+> Status: superseded by
+> [ADR-20260722-agent-session-domain-unification.md](./ADR-20260722-agent-session-domain-unification.md).
+> This record is historical decision evidence and is not current architecture
+> authority.
+
 - Status: accepted
 - Date: 2026-07-19
 - Owner: agents-platform

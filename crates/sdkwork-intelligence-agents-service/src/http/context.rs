@@ -10,6 +10,7 @@ const HEADER_SUBJECT_ROLES: &str = "x-subject-roles";
 const HEADER_SDKWORK_USER_ID: &str = "x-sdkwork-user-id";
 const HEADER_SDKWORK_ACTOR_ID: &str = "x-sdkwork-actor-id";
 const HEADER_SDKWORK_TENANT_ID: &str = "x-sdkwork-tenant-id";
+const HEADER_SUBJECT_ORGANIZATION_ID: &str = "x-sdkwork-subject-organization-id";
 const HEADER_SDKWORK_PERMISSION_SCOPE: &str = "x-sdkwork-permission-scope";
 const HEADER_SDKWORK_TRACE_ID: &str = "x-sdkwork-trace-id";
 const HEADER_SDKWORK_REQUEST_ID: &str = "x-sdkwork-request-id";
@@ -79,6 +80,7 @@ impl AgentRequestContext {
             headers,
             &[HEADER_SUBJECT_TENANT_ID, HEADER_SDKWORK_TENANT_ID],
         )?;
+        let organization_id = optional_header_any(headers, &[HEADER_SUBJECT_ORGANIZATION_ID]);
         let mut roles = Vec::new();
         if let Some(roles_header) = optional_header_any(
             headers,
@@ -106,7 +108,7 @@ impl AgentRequestContext {
             .or_else(|| Some(request_id.clone()));
         Ok(Self {
             tenant_id,
-            organization_id: None,
+            organization_id,
             owner_user_id: subject_id.clone(),
             subject_id,
             roles,

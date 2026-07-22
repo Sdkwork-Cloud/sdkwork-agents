@@ -3,7 +3,9 @@
   "domain": "intelligence",
   "capability": "agents",
   "owner": "sdkwork-agents",
-  "description": "Authoritative OpenAPI contracts for SDKWork Agents managed-store HTTP surfaces.",
+  "description": "Authoritative OpenAPI contracts for the SDKWork Agents managed execution and durable session aggregate.",
+  "domainModelVersion": "5.0.0",
+  "aggregate": "AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction",
   "authorities": [
     {
       "surface": "open-api",

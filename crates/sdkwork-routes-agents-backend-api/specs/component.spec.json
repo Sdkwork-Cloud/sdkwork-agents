@@ -54,7 +54,7 @@
       "backend_route_manifest",
       "wrap_router_with_web_framework"
     ],
-    "routeManifest": "sdks/_route-manifests/backend-api/sdkwork-routes-agents-backend-api.route-manifest.json",
+    "routeManifest": "../sdkwork-routes-agents-http-shared/src/web_bootstrap.rs#backend_route_manifest",
     "authMode": "dual-token",
     "sdkClients": [],
     "events": [],

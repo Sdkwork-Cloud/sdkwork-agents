@@ -20,6 +20,10 @@
   }
 }
 
+.sdkwork-agents-workbench .fixed.inset-0 {
+  top: var(--sdkwork-agents-overlay-top-inset, 0px);
+}
+
 .sdkwork-agents-workbench ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

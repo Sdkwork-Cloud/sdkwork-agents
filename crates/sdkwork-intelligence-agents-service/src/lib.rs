@@ -1,7 +1,7 @@
 mod api;
 mod application;
-mod chat_runtime;
-mod chat_turn;
+mod turn_runtime;
+mod agent_turn;
 mod code_engine_catalog;
 mod domain;
 mod dto;
@@ -31,31 +31,38 @@ pub use application::{
     ActivateAgentProviderBindingCommand, AgentCompositionSlotCreateCommand,
     AgentCompositionSlotDeleteCommand, AgentCompositionSlotGetCommand,
     AgentCompositionSlotListCommand, AgentCompositionSlotUpdateCommand,
-    AgentMessageMediaResourceInput, AgentMessageWithDriveRefs, AgentPreviewResponseCommand,
+    AgentItemDriveRefInput, AgentSessionItemWithDriveRefs, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AgentsService,
     AnswerInteractionCommand, ApproveInteractionCommand, ArchiveSessionCommand,
-    CancelChatTurnCommand, ChangeAgentStatusCommand, ChatCompletionResult,
-    ChatTurnReconciliationResult, CloseSessionCommand, CreateAgentCommand,
-    CreateInteractionCommand, CreateMessageCommand, CreateProjectCommand,
+    ChangeSessionCheckpointStatusCommand, ChangeSessionRuntimeBindingStatusCommand,
+    ClaimInteractionCommand,
+    CancelTurnCommand, ChangeAgentStatusCommand, TurnExecutionResult,
+    TurnReconciliationResult, CloseSessionCommand, CreateAgentCommand,
+    CreateInteractionCommand, CreateSessionCheckpointCommand, CreateSessionItemCommand,
+    CreateSessionRuntimeBindingCommand, CreateProjectCommand,
     CreateProjectCompositionSlotCommand, CreateSessionCommand, DeleteAgentCommand,
-    DeleteProjectCompositionSlotCommand, GetAgentCommand, GetChatTurnByIdempotencyCommand,
-    GetChatTurnCommand, GetInteractionCommand, GetMessageCommand, GetProjectCommand,
+    DeleteProjectCompositionSlotCommand, GetAgentCommand, GetTurnByIdempotencyCommand,
+    GetTurnCommand, GetInteractionCommand, GetSessionCheckpointCommand, GetSessionItemCommand,
+    GetSessionRuntimeBindingCommand, GetProjectCommand,
     GetProjectCompositionSlotCommand, GetSessionCommand, GetSessionUserStateCommand,
-    ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand,
-    ListMcpMarketplaceCommand, ListMessageFeedbackCommand, ListMessagesCommand,
+    InteractionClaimResult, ListAgentAuditEventsCommand, ListAgentsCommand,
+    ListInteractionsCommand, ListSessionCheckpointsCommand,
+    ListMcpMarketplaceCommand, ListItemFeedbackCommand, ListSessionItemsCommand,
     ListProjectCompositionSlotsCommand, ListProjectsCommand, ListSessionUserStatesCommand,
-    ListSessionsCommand, MessageFeedbackResult, ProjectMutationCommand, ProviderBindingListCommand,
-    RestoreAgentCommand, SendChatMessageCommand, SessionUserStateResult, UpdateAgentCommand,
-    UpdateMessageFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
-    UpdateSessionUserStateCommand,
+    ListSessionRuntimeBindingsCommand, ListSessionsCommand, ListTurnsCommand,
+    ItemFeedbackResult, ProjectMutationCommand, ProviderBindingListCommand,
+    RestoreAgentCommand, CreateTurnCommand, SessionCheckpointResult,
+    SessionRuntimeBindingResult, SessionUserStateResult, UpdateAgentCommand,
+    UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
+    UpdateSessionRuntimeBindingCommand, UpdateSessionUserStateCommand,
 };
-pub use chat_runtime::{
-    complete_chat_turn, complete_with_timeout, is_inference_error, ChatCompleter,
-    ChatCompletionInput, ChatCompletionOutput, ContractChatCompleter, KernelModelChatCompleter,
-    RuntimeFacadeChatCompleter, CHAT_COMPLETION_TIMEOUT, RUNTIME_MODE_FACADE,
+pub use turn_runtime::{
+    execute_agent_turn, complete_with_timeout, is_inference_error, TurnExecutor,
+    TurnExecutionInput, TurnExecutionOutput, ContractTurnExecutor, KernelModelTurnExecutor,
+    RuntimeFacadeTurnExecutor, TURN_EXECUTION_TIMEOUT, RUNTIME_MODE_FACADE,
     RUNTIME_MODE_INFERENCE_ERROR,
 };
-pub use chat_turn::{AgentChatTurnRecord, AgentChatTurnStatus};
+pub use agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
 };
@@ -64,11 +71,14 @@ pub use domain::{
     AgentAuditAction, AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind,
     AgentCompositionSlotRecord, AgentCompositionTargetModule, AgentImplementationKind,
     AgentImplementationType, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentMessageDriveRefRecord, AgentMessageFeedbackRating, AgentMessageFeedbackRecord,
-    AgentMessageMediaRole, AgentMessageRecord, AgentMessageRole, AgentMessageStatus,
-    AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
+    AgentItemDriveRefRecord, AgentItemFeedbackRating, AgentItemFeedbackRecord,
+    AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
     AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord, AgentRuntimeExecutionStatus,
-    AgentSessionRecord, AgentSessionStatus, AgentVisibility,
+    AgentSessionCheckpointRecord, AgentSessionCheckpointStatus,
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord,
+    AgentSessionItemStatus, AgentSessionKind, AgentSessionRecord,
+    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentSessionStatus,
+    AgentVisibility,
     DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 pub use dto::{
@@ -76,15 +86,15 @@ pub use dto::{
     AgentCompositionSlotDeleteRequestDto, AgentCompositionSlotListResponseDto,
     AgentCompositionSlotRecordDto, AgentCompositionSlotResponseDto,
     AgentCompositionSlotUpdateRequestDto, AgentListResponseDto, AgentManagementProfileDto,
-    AgentMessageFeedbackRecordDto, AgentMessageListResponseDto, AgentMessageRecordDto,
-    AgentMessageResponseDto, AgentPreviewResponseRequestDto, AgentPromptOptimizationRequestDto,
+    AgentItemFeedbackRecordDto, AgentPreviewResponseRequestDto, AgentPromptOptimizationRequestDto,
+    AgentSessionItemListResponseDto, AgentSessionItemRecordDto, AgentSessionItemResponseDto,
     AgentProviderBindingListResponseDto, AgentProviderBindingRecordDto,
     AgentProviderBindingRequestDto, AgentProviderBindingResponseDto, AgentRecordDto,
     AgentResourceUserStateRecordDto, AgentResponseDto, AgentRuntimeExecutionRecordDto,
     AgentRuntimeExecutionResponseDto, AgentSessionListResponseDto, AgentSessionRecordDto,
     AgentSessionResponseDto, ArchiveSessionRequestDto, CloseSessionRequestDto,
-    CreateAgentRequestDto, CreateMessageRequestDto, CreateSessionRequestDto, DeleteAgentRequestDto,
-    GetAgentRequestDto, ListAgentsRequestDto, ListMessagesRequestDto, ListSessionsRequestDto,
+    CreateAgentRequestDto, CreateSessionItemRequestDto, CreateSessionRequestDto, DeleteAgentRequestDto,
+    GetAgentRequestDto, ListAgentsRequestDto, ListSessionItemsRequestDto, ListSessionsRequestDto,
     RestoreAgentRequestDto, UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
 };
 #[cfg(feature = "http-axum")]
@@ -117,32 +127,37 @@ pub use persistence::{
     SQL_SELECT_AGENT_COMPOSITION_SLOT, SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT,
     SQL_UPDATE_AGENT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_PROVIDER_BINDING,
 };
+pub use ports::{SessionCheckpointListQuery, SessionRuntimeBindingListQuery, TurnListQuery};
 #[cfg(feature = "postgres-sync")]
 pub use persistence::{SyncPostgresAdapter, AGENTS_MANAGED_STORE_DATABASE_SERVICE};
 #[cfg(feature = "postgres-sync")]
 pub use persistence::{
-    SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_MESSAGES, SQL_COUNT_AGENT_MESSAGE_FEEDBACK,
+    SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_ITEM_FEEDBACK,
+    SQL_COUNT_AGENT_SESSION_ITEMS,
     SQL_COUNT_AGENT_PROJECTS, SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS,
     SQL_COUNT_AGENT_RESOURCE_USER_STATES, SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_TASKS,
-    SQL_INSERT_AGENT_CHAT_TURN, SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_MESSAGE,
-    SQL_INSERT_AGENT_PROJECT, SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
-    SQL_INSERT_AGENT_TASK, SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_MESSAGES,
-    SQL_LIST_AGENT_MESSAGES_RECENT_CONTEXT, SQL_LIST_AGENT_MESSAGE_DRIVE_REFS,
-    SQL_LIST_AGENT_MESSAGE_DRIVE_REFS_BATCH, SQL_LIST_AGENT_MESSAGE_FEEDBACK,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
+    SQL_INSERT_AGENT_SESSION_ITEM, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
+    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
+    SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK,
     SQL_LIST_AGENT_PROJECTS, SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS,
-    SQL_LIST_AGENT_RESOURCE_USER_STATES, SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS,
-    SQL_NEXT_MESSAGE_SEQUENCE, SQL_SELECT_AGENT_CHAT_TURN_BY_IDEMPOTENCY,
-    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_MESSAGE, SQL_SELECT_AGENT_MESSAGE_FEEDBACK,
+    SQL_LIST_AGENT_RESOURCE_USER_STATES, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS,
+    SQL_NEXT_SESSION_ITEM_SEQUENCE, SQL_SELECT_AGENT_INTERACTION,
+    SQL_SELECT_AGENT_ITEM_FEEDBACK,
     SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
-    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_TASK,
-    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_MESSAGE, SQL_UPDATE_AGENT_PROJECT,
-    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION, SQL_UPDATE_AGENT_TASK,
-    SQL_UPSERT_AGENT_MESSAGE_FEEDBACK, SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
+    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM,
+    SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY,
+    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
+    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
+    SQL_UPDATE_AGENT_SESSION_ITEM, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
+    SQL_UPSERT_AGENT_ITEM_FEEDBACK, SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
 pub use ports::{
     offset_paginated_result, AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery,
     CompositionSlotListQuery, InteractionListQuery, McpMarketplaceListQuery,
-    MessageFeedbackListQuery, MessageListQuery, MessageListSort, PaginatedResult, PaginationParams,
+    ItemFeedbackListQuery, SessionItemListQuery, SessionItemListSort, PaginatedResult, PaginationParams,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionListQuery, CHAT_CONTEXT_MESSAGE_LIMIT, DEFAULT_PAGE_SIZE,
     MAX_CHAT_USER_CONTENT_BYTES, MAX_PAGE_SIZE,

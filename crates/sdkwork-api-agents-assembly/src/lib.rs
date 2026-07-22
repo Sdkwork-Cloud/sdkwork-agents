@@ -7,7 +7,7 @@ mod generated;
 
 use std::sync::Arc;
 
-use sdkwork_agents_runtime_facade::AgentsChatFacade;
+use sdkwork_agents_runtime_facade::AgentsSessionFacade;
 
 pub use bootstrap::{assemble_api_router, ApiAssembly};
 
@@ -18,7 +18,7 @@ pub async fn assemble_app_business_router() -> anyhow::Result<axum::Router> {
 
 pub struct AppBusinessRuntimeAssembly {
     pub router: axum::Router,
-    pub chat_facade: Arc<dyn AgentsChatFacade>,
+    pub session_facade: Arc<dyn AgentsSessionFacade>,
     pub reconciliation_worker: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -27,12 +27,12 @@ pub async fn assemble_app_business_runtime() -> anyhow::Result<AppBusinessRuntim
     let state = tokio::task::spawn_blocking(sdkwork_agents_kernel_bridge::build_agent_http_state)
         .await
         .map_err(|error| anyhow::anyhow!("agents state bootstrap worker failed: {error}"))??;
-    let chat_facade = state.chat_facade();
-    let reconciliation_worker = state.spawn_chat_turn_reconciliation_worker();
+    let session_facade = state.session_facade();
+    let reconciliation_worker = state.spawn_turn_reconciliation_worker();
     let router = sdkwork_routes_agents_app_api::build_served_router(state).await;
     Ok(AppBusinessRuntimeAssembly {
         router,
-        chat_facade,
+        session_facade,
         reconciliation_worker,
     })
 }

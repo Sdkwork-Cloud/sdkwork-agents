@@ -1,11 +1,11 @@
 //! Managed-agent chat completion for session message turns.
 //!
 //! Product HTTP APIs call this module to produce assistant replies after a user
-//! message is persisted. Inject a custom [`ChatCompleter`] at service bootstrap
-//! for live provider inference; the default [`ContractChatCompleter`] keeps HTTP
+//! message is persisted. Inject a custom [`TurnExecutor`] at service bootstrap
+//! for live provider inference; the default [`ContractTurnExecutor`] keeps HTTP
 //! contracts stable without a kernel provider registry in-process.
 
-use crate::domain::{AgentMessageRole, AgentSessionRecord};
+use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
 use sdkwork_agent_kernel::{KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus};
 use sdkwork_agents_runtime_facade::{
@@ -45,11 +45,11 @@ static PROVIDER_WORKER_LIMIT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
 
 /// Input for one chat completion turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatCompletionInput {
+pub struct TurnExecutionInput {
     pub agent_display_name: String,
     pub welcome_message: Option<String>,
     pub session: AgentSessionRecord,
-    pub history: Vec<(AgentMessageRole, String)>,
+    pub history: Vec<(AgentSessionItemKind, String)>,
     pub user_content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
@@ -62,7 +62,7 @@ pub struct ChatCompletionInput {
 
 /// Output from one chat completion turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatCompletionOutput {
+pub struct TurnExecutionOutput {
     pub content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
@@ -73,14 +73,14 @@ pub struct ChatCompletionOutput {
 }
 
 /// Pluggable chat completion strategy (Open/Closed: swap at service bootstrap).
-pub trait ChatCompleter: Send + Sync {
-    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput;
+pub trait TurnExecutor: Send + Sync {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput;
 
     fn complete_with_stream_preference(
         &self,
-        input: &ChatCompletionInput,
+        input: &TurnExecutionInput,
         prefer_stream: bool,
-    ) -> ChatCompletionOutput {
+    ) -> TurnExecutionOutput {
         let _ = prefer_stream;
         self.complete(input)
     }
@@ -88,7 +88,7 @@ pub trait ChatCompleter: Send + Sync {
 
 /// Default managed-agent contract completer used in tests and local deployments.
 /// Maximum wall-clock time for one managed chat completion turn.
-pub const CHAT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120);
+pub const TURN_EXECUTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Run a chat completion with a hard timeout.
 ///
@@ -101,11 +101,11 @@ pub const CHAT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120);
 /// When no tokio runtime is available (pure unit tests without a runtime
 /// context), falls back to inline execution without timeout isolation.
 pub fn complete_with_timeout(
-    completer: Arc<dyn ChatCompleter>,
-    input: &ChatCompletionInput,
+    completer: Arc<dyn TurnExecutor>,
+    input: &TurnExecutionInput,
     prefer_stream: bool,
     timeout: Duration,
-) -> ChatCompletionOutput {
+) -> TurnExecutionOutput {
     #[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
     {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -121,17 +121,17 @@ pub fn complete_with_timeout(
 #[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
 fn run_with_bounded_timeout(
     handle: &tokio::runtime::Handle,
-    completer: Arc<dyn ChatCompleter>,
-    input: &ChatCompletionInput,
+    completer: Arc<dyn TurnExecutor>,
+    input: &TurnExecutionInput,
     prefer_stream: bool,
     timeout: Duration,
-) -> ChatCompletionOutput {
+) -> TurnExecutionOutput {
     let permit = match PROVIDER_WORKER_LIMIT.clone().try_acquire_owned() {
         Ok(permit) => permit,
         Err(_) => {
             crate::infrastructure::AgentMetricsRegistry::global()
                 .record_provider_worker_rejection();
-            return ChatCompletionOutput {
+            return TurnExecutionOutput {
                 content: "provider concurrency limit reached".to_string(),
                 model_id: input.model_id.clone(),
                 provider_id: input.provider_id.clone(),
@@ -157,40 +157,40 @@ fn run_with_bounded_timeout(
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ContractChatCompleter;
+pub struct ContractTurnExecutor;
 
-impl ChatCompleter for ContractChatCompleter {
-    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
-        complete_chat_turn(input)
+impl TurnExecutor for ContractTurnExecutor {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+        execute_agent_turn(input)
     }
 }
 
 /// Kernel-backed chat completer for production gateway bootstrap.
 ///
 /// Invokes a mounted [`ModelProvider`] when `provider_has_model_chat` is true;
-/// otherwise falls back to [`ContractChatCompleter`] semantics.
-pub struct KernelModelChatCompleter<P> {
+/// otherwise falls back to [`ContractTurnExecutor`] semantics.
+pub struct KernelModelTurnExecutor<P> {
     provider: Arc<P>,
-    fallback: ContractChatCompleter,
+    fallback: ContractTurnExecutor,
 }
 
-impl<P> KernelModelChatCompleter<P>
+impl<P> KernelModelTurnExecutor<P>
 where
     P: ModelProvider + Send + Sync + 'static,
 {
     pub fn new(provider: Arc<P>) -> Self {
         Self {
             provider,
-            fallback: ContractChatCompleter,
+            fallback: ContractTurnExecutor,
         }
     }
 }
 
-impl<P> ChatCompleter for KernelModelChatCompleter<P>
+impl<P> TurnExecutor for KernelModelTurnExecutor<P>
 where
     P: ModelProvider + Send + Sync + 'static,
 {
-    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
         if !input.provider_has_model_chat {
             return self.fallback.complete(input);
         }
@@ -212,20 +212,20 @@ where
 /// agents runtime facade (canonical code engines). Never silently echoes user
 /// input when `model.chat` is configured.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct RuntimeFacadeChatCompleter;
+pub struct RuntimeFacadeTurnExecutor;
 
-impl ChatCompleter for RuntimeFacadeChatCompleter {
-    fn complete(&self, input: &ChatCompletionInput) -> ChatCompletionOutput {
+impl TurnExecutor for RuntimeFacadeTurnExecutor {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
         self.complete_with_stream_preference(input, false)
     }
 
     fn complete_with_stream_preference(
         &self,
-        input: &ChatCompletionInput,
+        input: &TurnExecutionInput,
         prefer_stream: bool,
-    ) -> ChatCompletionOutput {
+    ) -> TurnExecutionOutput {
         if !input.provider_has_model_chat {
-            return complete_chat_turn(input);
+            return execute_agent_turn(input);
         }
 
         let binding_id = input
@@ -265,7 +265,7 @@ impl ChatCompleter for RuntimeFacadeChatCompleter {
                 if content.is_empty() {
                     return inference_error("code engine returned empty assistant content");
                 }
-                ChatCompletionOutput {
+                TurnExecutionOutput {
                     content,
                     model_id: Some(model_id),
                     provider_id: input.provider_id.clone(),
@@ -281,18 +281,10 @@ impl ChatCompleter for RuntimeFacadeChatCompleter {
 }
 
 fn resolve_turn_model_id(
-    input: &ChatCompletionInput,
+    input: &TurnExecutionInput,
     slot: &sdkwork_agents_runtime_facade::CodeEngineSlot,
 ) -> String {
     if let Some(model_id) = input
-        .model_id
-        .as_deref()
-        .filter(|value| !is_blank(Some(*value)))
-    {
-        return model_id.to_string();
-    }
-    if let Some(model_id) = input
-        .session
         .model_id
         .as_deref()
         .filter(|value| !is_blank(Some(*value)))
@@ -305,7 +297,7 @@ fn resolve_turn_model_id(
         .unwrap_or_else(|| "default".to_string())
 }
 
-fn build_managed_chat_prompt(input: &ChatCompletionInput) -> String {
+fn build_managed_chat_prompt(input: &TurnExecutionInput) -> String {
     let mut lines = Vec::new();
     if let Some(welcome) = input
         .welcome_message
@@ -321,8 +313,8 @@ fn build_managed_chat_prompt(input: &ChatCompletionInput) -> String {
     lines.join("\n")
 }
 
-fn inference_error(message: impl Into<String>) -> ChatCompletionOutput {
-    ChatCompletionOutput {
+fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
+    TurnExecutionOutput {
         content: message.into(),
         model_id: None,
         provider_id: None,
@@ -333,36 +325,33 @@ fn inference_error(message: impl Into<String>) -> ChatCompletionOutput {
     }
 }
 
-fn build_model_messages(input: &ChatCompletionInput) -> Vec<String> {
-    let mut messages = Vec::new();
+fn build_model_items(input: &TurnExecutionInput) -> Vec<String> {
+    let mut items = Vec::new();
     if let Some(welcome) = input
         .welcome_message
         .as_deref()
         .filter(|value| !is_blank(Some(*value)))
     {
-        messages.push(format!("system: {welcome}"));
+        items.push(format!("system: {welcome}"));
     }
     for (role, content) in &input.history {
-        messages.push(format!("{}: {content}", role.as_str()));
+        items.push(format!("{}: {content}", role.as_str()));
     }
-    messages.push(format!("user: {}", input.user_content));
-    messages
+    items.push(format!("user: {}", input.user_content));
+    items
 }
 
 fn invoke_kernel_model(
     provider: &dyn ModelProvider,
-    input: &ChatCompletionInput,
-) -> KernelResult<ChatCompletionOutput> {
+    input: &TurnExecutionInput,
+) -> KernelResult<TurnExecutionOutput> {
     let model_request_id = format!(
         "managed-chat.{}.{}",
         input.session.session_id,
         input.history.len() + 1
     );
-    let model_id = input
-        .model_id
-        .clone()
-        .or_else(|| input.session.model_id.clone());
-    let mut request = ModelRequest::new(model_request_id.clone(), build_model_messages(input))
+    let model_id = input.model_id.clone();
+    let mut request = ModelRequest::new(model_request_id.clone(), build_model_items(input))
         .for_session(input.session.session_id.clone());
     if let Some(model_id) = model_id.clone() {
         request = request.with_model_id(model_id);
@@ -373,10 +362,10 @@ fn invoke_kernel_model(
 }
 
 fn map_model_response(
-    input: &ChatCompletionInput,
+    input: &TurnExecutionInput,
     model_id: Option<String>,
     response: ModelResponse,
-) -> KernelResult<ChatCompletionOutput> {
+) -> KernelResult<TurnExecutionOutput> {
     if response.status != ModelStatus::Succeeded {
         return Err(sdkwork_agent_kernel::KernelError::validation(format!(
             "model invoke returned status {:?}",
@@ -398,7 +387,7 @@ fn map_model_response(
                 estimate_tokens(content.as_str()),
             )
         });
-    Ok(ChatCompletionOutput {
+    Ok(TurnExecutionOutput {
         content,
         model_id,
         provider_id: Some(response.provider_id),
@@ -409,7 +398,7 @@ fn map_model_response(
     })
 }
 
-fn self_fallback_content(input: &ChatCompletionInput) -> String {
+fn self_fallback_content(input: &TurnExecutionInput) -> String {
     format!(
         "Hello! I'm {}. I received your message:\n\n> {}",
         input.agent_display_name, input.user_content
@@ -420,7 +409,7 @@ fn estimate_tokens(text: &str) -> u64 {
     (text.chars().count() as u64).div_ceil(4)
 }
 
-fn build_transcript(history: &[(AgentMessageRole, String)]) -> String {
+fn build_transcript(history: &[(AgentSessionItemKind, String)]) -> String {
     let mut transcript = String::new();
     for (role, message) in history {
         transcript.push_str(role.as_str());
@@ -431,7 +420,7 @@ fn build_transcript(history: &[(AgentMessageRole, String)]) -> String {
     transcript
 }
 
-fn runtime_mode_for(input: &ChatCompletionInput) -> &'static str {
+fn runtime_mode_for(input: &TurnExecutionInput) -> &'static str {
     if input.provider_has_model_chat {
         "managed-agent-provider-bound-v1"
     } else {
@@ -440,12 +429,9 @@ fn runtime_mode_for(input: &ChatCompletionInput) -> &'static str {
 }
 
 /// Complete one user turn using managed-agent contract semantics.
-pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
+pub fn execute_agent_turn(input: &TurnExecutionInput) -> TurnExecutionOutput {
     let input_tokens = estimate_tokens(input.user_content.as_str());
-    let model_id = input
-        .model_id
-        .clone()
-        .or_else(|| input.session.model_id.clone());
+    let model_id = input.model_id.clone();
     let provider_id = input.provider_id.clone();
     let runtime_mode = runtime_mode_for(input);
 
@@ -479,7 +465,7 @@ pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
     };
 
     let output_tokens = estimate_tokens(content.as_str());
-    ChatCompletionOutput {
+    TurnExecutionOutput {
         content,
         model_id,
         provider_id,
@@ -493,7 +479,9 @@ pub fn complete_chat_turn(input: &ChatCompletionInput) -> ChatCompletionOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{AgentSessionRecord, AgentSessionStatus};
+    use crate::domain::{
+        AgentSessionEntrySurface, AgentSessionKind, AgentSessionRecord, AgentSessionStatus,
+    };
 
     fn sample_session() -> AgentSessionRecord {
         AgentSessionRecord {
@@ -504,19 +492,25 @@ mod tests {
             agent_id: "agent.test".to_string(),
             owner_user_id: 42,
             project_id: None,
+            session_kind: AgentSessionKind::Assistant,
+            entry_surface: AgentSessionEntrySurface::Api,
+            source_module: None,
+            source_context_kind: None,
+            source_context_id: None,
+            parent_session_id: None,
+            forked_from_turn_id: None,
             title: Some("Test".to_string()),
             status: AgentSessionStatus::Active,
             provider_binding_id: None,
             model_id: Some("model.contract".to_string()),
-            message_count: 0,
-            last_message_sequence: 0,
+            item_count: 0,
+            last_item_sequence: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
-            metadata_json: "{}".to_string(),
             version: 0,
             created_at: "2026-06-28T00:00:00Z".to_string(),
             updated_at: "2026-06-28T00:00:00Z".to_string(),
-            last_message_at: None,
+            last_item_at: None,
             closed_at: None,
             archived_at: None,
             deleted_at: None,
@@ -524,8 +518,8 @@ mod tests {
     }
 
     #[test]
-    fn complete_chat_turn_returns_assistant_content() {
-        let output = complete_chat_turn(&ChatCompletionInput {
+    fn execute_agent_turn_returns_assistant_content() {
+        let output = execute_agent_turn(&TurnExecutionInput {
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: Some("Welcome".to_string()),
             session: sample_session(),
@@ -543,8 +537,8 @@ mod tests {
     }
 
     #[test]
-    fn complete_chat_turn_marks_provider_bound_runtime_mode() {
-        let output = complete_chat_turn(&ChatCompletionInput {
+    fn execute_agent_turn_marks_provider_bound_runtime_mode() {
+        let output = execute_agent_turn(&TurnExecutionInput {
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: None,
             session: sample_session(),
@@ -587,9 +581,9 @@ mod tests {
     }
 
     #[test]
-    fn kernel_model_chat_completer_invokes_provider() {
-        let completer = KernelModelChatCompleter::new(Arc::new(FakeKernelModelProvider));
-        let output = completer.complete(&ChatCompletionInput {
+    fn kernel_model_turn_executor_invokes_provider() {
+        let completer = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider));
+        let output = completer.complete(&TurnExecutionInput {
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: None,
             session: sample_session(),

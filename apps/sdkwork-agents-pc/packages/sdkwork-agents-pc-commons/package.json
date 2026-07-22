@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@sdkwork/agents-pc-core": "workspace:*",
+    "@sdkwork/i18n-pc-react": "workspace:*",
     "@sdkwork/utils": "workspace:*",
     "clsx": "catalog:",
     "i18next": "catalog:",
