@@ -78,6 +78,8 @@ fn create_session(service: &TestService, agent_id: &str, session_id: &str) {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Contract session".to_string()),
+            idempotency_key: None,
+            payload_hash: None,
             requested_by: subject(),
             requested_at: "2026-07-19T00:01:00Z".to_string(),
         })

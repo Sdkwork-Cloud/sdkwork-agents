@@ -28,7 +28,8 @@ use crate::turn_runtime::{TurnExecutor, ContractTurnExecutor};
 use crate::domain::{
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
     AgentItemFeedbackRating, AgentItemResourceRole, AgentProviderBindingRecord,
-    AgentSessionEntrySurface, AgentSessionKind,
+    AgentSessionEntrySurface, AgentSessionKind, AgentSessionRuntimeBindingRecord,
+    AgentSessionRuntimeBindingStatus,
 };
 use crate::dto::{
     ActivateAgentProviderBindingRequestDto, AgentCompositionSlotCreateRequestDto,
@@ -931,6 +932,147 @@ struct HttpAgentsSessionFacade {
     service: Arc<HttpService>,
 }
 
+impl HttpAgentsSessionFacade {
+    fn ensure_runtime_binding(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        agent_id: &str,
+        session_id: &str,
+        descriptor: Option<&sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor>,
+        subject: sdkwork_agent_kernel::PolicySubject,
+        requested_at: &str,
+    ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
+        let Some(descriptor) = descriptor else {
+            return Ok(());
+        };
+        let existing = self.service.get_session_runtime_binding(
+            GetSessionRuntimeBindingCommand {
+                tenant_id,
+                organization_id,
+                path_agent_id: agent_id.to_string(),
+                session_id: session_id.to_string(),
+                runtime_binding_id: descriptor.runtime_binding_id.clone(),
+                owner_scope: Some(owner_user_id),
+                requested_by: subject.clone(),
+            },
+        );
+        match existing {
+            Ok(existing) => {
+                if !runtime_binding_matches_descriptor(&existing, descriptor) {
+                    return Err(
+                        sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                            "runtime binding descriptor conflicts with the current session binding"
+                                .into(),
+                        ),
+                    );
+                }
+                return Ok(());
+            }
+            Err(KernelError::Validation { message })
+                if message == "session runtime binding not found" => {}
+            Err(error) => {
+                return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                    error.to_string(),
+                ));
+            }
+        }
+
+        self.service
+            .create_session_runtime_binding(
+                crate::application::CreateSessionRuntimeBindingCommand {
+                    tenant_id,
+                    organization_id,
+                    path_agent_id: agent_id.to_string(),
+                    session_id: session_id.to_string(),
+                    runtime_binding_id: Some(descriptor.runtime_binding_id.clone()),
+                    runtime_location_id: descriptor.runtime_location_id.clone(),
+                    host_mode: descriptor.host_mode.clone(),
+                    transport_kind: descriptor.transport_kind.clone(),
+                    provider_binding_id: descriptor.provider_binding_id.clone(),
+                    model_id: descriptor.model_id.clone(),
+                    provider_id: descriptor.provider_id.clone(),
+                    native_session_id: descriptor.native_session_id.clone(),
+                    native_session_tree_id: descriptor.native_session_tree_id.clone(),
+                    native_parent_session_id: descriptor.native_parent_session_id.clone(),
+                    native_forked_from_session_id: descriptor
+                        .native_forked_from_session_id
+                        .clone(),
+                    owner_scope: Some(owner_user_id),
+                    requested_by: subject,
+                    requested_at: requested_at.to_string(),
+                },
+            )
+            .map_err(|error| {
+                sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
+            })?;
+        Ok(())
+    }
+}
+
+fn runtime_binding_matches_descriptor(
+    record: &AgentSessionRuntimeBindingRecord,
+    descriptor: &sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor,
+) -> bool {
+    record.status == AgentSessionRuntimeBindingStatus::Active
+        && record.is_current
+        && record.runtime_binding_id == descriptor.runtime_binding_id
+        && record.runtime_location_id == descriptor.runtime_location_id
+        && record.host_mode == descriptor.host_mode
+        && record.transport_kind == descriptor.transport_kind
+        && record.provider_binding_id == descriptor.provider_binding_id
+        && record.model_id == descriptor.model_id
+        && record.provider_id == descriptor.provider_id
+        && record.native_session_id == descriptor.native_session_id
+        && record.native_session_tree_id == descriptor.native_session_tree_id
+        && record.native_parent_session_id == descriptor.native_parent_session_id
+        && record.native_forked_from_session_id == descriptor.native_forked_from_session_id
+}
+
+fn map_facade_session_kind(
+    kind: sdkwork_agents_runtime_facade::AgentsSessionKind,
+) -> AgentSessionKind {
+    match kind {
+        sdkwork_agents_runtime_facade::AgentsSessionKind::Assistant => AgentSessionKind::Assistant,
+        sdkwork_agents_runtime_facade::AgentsSessionKind::Coding => AgentSessionKind::Coding,
+        sdkwork_agents_runtime_facade::AgentsSessionKind::Automation => {
+            AgentSessionKind::Automation
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionKind::ImDispatch => {
+            AgentSessionKind::ImDispatch
+        }
+    }
+}
+
+fn map_facade_entry_surface(
+    surface: sdkwork_agents_runtime_facade::AgentsSessionEntrySurface,
+) -> AgentSessionEntrySurface {
+    match surface {
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::Pc => {
+            AgentSessionEntrySurface::Pc
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::H5 => {
+            AgentSessionEntrySurface::H5
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::Flutter => {
+            AgentSessionEntrySurface::Flutter
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::MiniProgram => {
+            AgentSessionEntrySurface::MiniProgram
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::Api => {
+            AgentSessionEntrySurface::Api
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::ImDispatch => {
+            AgentSessionEntrySurface::ImDispatch
+        }
+        sdkwork_agents_runtime_facade::AgentsSessionEntrySurface::Automation => {
+            AgentSessionEntrySurface::Automation
+        }
+    }
+}
+
 impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFacade {
     fn resolve_or_create_session(
         &self,
@@ -938,13 +1080,13 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
     ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<
         sdkwork_agents_runtime_facade::ResolvedAgentsSession,
     > {
-        sdkwork_agents_runtime_facade::validate_session_actor(&request.actor)?;
+        sdkwork_agents_runtime_facade::validate_resolve_agents_session_request(&request)?;
         let subject = facade_policy_subject(
             request.tenant_id,
             &request.actor.subject_id,
             &request.actor.roles,
         );
-        if let Ok(existing) = self.service.get_session(GetSessionCommand {
+        match self.service.get_session(GetSessionCommand {
             tenant_id: request.tenant_id,
             organization_id: request.organization_id,
             path_agent_id: request.agent_id.clone(),
@@ -952,44 +1094,86 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
             owner_scope: Some(request.owner_user_id),
             requested_by: subject.clone(),
         }) {
-            if existing.organization_id != request.organization_id {
+            Ok(existing) => {
+                if existing.organization_id != request.organization_id {
+                    return Err(
+                        sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                            "session organization mismatch".into(),
+                        ),
+                    );
+                }
+                if existing.idempotency_key.as_deref().is_some_and(|value| {
+                    value != request.idempotency_key
+                }) || existing
+                    .payload_hash
+                    .as_deref()
+                    .is_some_and(|value| value != request.payload_hash)
+                {
+                    return Err(
+                        sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                            "session resolution idempotency payload conflicts with the existing session"
+                                .into(),
+                        ),
+                    );
+                }
+                self.ensure_runtime_binding(
+                    request.tenant_id,
+                    request.organization_id,
+                    request.owner_user_id,
+                    &request.agent_id,
+                    &request.session_id,
+                    request.runtime_binding.as_ref(),
+                    subject,
+                    &request.requested_at,
+                )?;
+                return Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
+                    session_id: existing.session_id,
+                    created: false,
+                    version: existing.version,
+                });
+            }
+            Err(KernelError::Validation { message }) if message == "session not found" => {}
+            Err(error) => {
                 return Err(
-                    sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
-                        "session organization mismatch".into(),
-                    ),
+                    sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string()),
                 );
             }
-            return Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
-                session_id: existing.session_id,
-                created: false,
-                version: existing.version,
-            });
         }
         let created = self
             .service
             .create_session(CreateSessionCommand {
                 tenant_id: request.tenant_id,
                 organization_id: request.organization_id,
-                agent_id: request.agent_id,
+                agent_id: request.agent_id.clone(),
                 owner_user_id: request.owner_user_id,
-                session_id: request.session_id,
-                project_id: None,
-                session_kind: AgentSessionKind::Assistant,
-                entry_surface: AgentSessionEntrySurface::Api,
-                source_module: None,
-                source_context_kind: None,
-                source_context_id: None,
-                parent_session_id: None,
-                forked_from_turn_id: None,
-                title: Some(request.title),
-                idempotency_key: Some(request.idempotency_key),
-                payload_hash: Some(request.payload_hash),
-                requested_by: subject,
-                requested_at: request.requested_at,
+                session_id: request.session_id.clone(),
+                project_id: request.project_id.clone(),
+                session_kind: map_facade_session_kind(request.session_kind),
+                entry_surface: map_facade_entry_surface(request.entry_surface),
+                source_module: request.source_module.clone(),
+                source_context_kind: request.source_context_kind.clone(),
+                source_context_id: request.source_context_id.clone(),
+                parent_session_id: request.parent_session_id.clone(),
+                forked_from_turn_id: request.forked_from_turn_id.clone(),
+                title: Some(request.title.clone()),
+                idempotency_key: Some(request.idempotency_key.clone()),
+                payload_hash: Some(request.payload_hash.clone()),
+                requested_by: subject.clone(),
+                requested_at: request.requested_at.clone(),
             })
             .map_err(|error| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
             })?;
+        self.ensure_runtime_binding(
+            request.tenant_id,
+            request.organization_id,
+            request.owner_user_id,
+            &request.agent_id,
+            &created.session_id,
+            request.runtime_binding.as_ref(),
+            subject,
+            &request.requested_at,
+        )?;
         Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
             session_id: created.session_id,
             created: true,

@@ -1152,6 +1152,8 @@ fn execute_turn_persists_user_input_and_assistant_output() {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Support session".to_string()),
+            idempotency_key: None,
+            payload_hash: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:00Z".to_string(),
         })
@@ -1331,6 +1333,8 @@ fn get_session_rejects_foreign_owner_scope() {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Private session".to_string()),
+            idempotency_key: None,
+            payload_hash: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:00Z".to_string(),
         })
@@ -1383,6 +1387,8 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Interaction session".to_string()),
+            idempotency_key: None,
+            payload_hash: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:00Z".to_string(),
         })

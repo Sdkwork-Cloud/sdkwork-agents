@@ -321,7 +321,7 @@ mod tests {
             idempotency_key: "create-session-001".to_string(),
             payload_hash: "sha256:payload-001".to_string(),
             runtime_binding: Some(AgentsSessionRuntimeBindingDescriptor {
-                runtime_binding_id: "runtime-binding-001".to_string(),
+                runtime_binding_id: "runtime_binding.coding-001".to_string(),
                 runtime_location_id: Some("birdcoder-workspace-001".to_string()),
                 host_mode: "desktop".to_string(),
                 transport_kind: "process".to_string(),

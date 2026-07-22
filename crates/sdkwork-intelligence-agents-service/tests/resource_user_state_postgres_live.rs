@@ -5,19 +5,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
 use sdkwork_intelligence_agents_service::{
-    AgentTurnRecord, AgentTurnStatus, AgentCompositionSlotKind,
-    AgentCompositionTargetModule, AgentItemFeedbackRating, AgentItemMediaResourceInput,
-    AgentProjectDriveAccessMode, AgentProjectVisibility, AgentRepository,
-    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionKind, AgentVisibility,
-    AgentsService, CancelTurnCommand, TurnExecutor, TurnExecutionInput,
-    TurnExecutionOutput, CreateAgentCommand, CreateSessionItemCommand, CreateProjectCommand,
-    CreateProjectCompositionSlotCommand, CreateSessionCommand, DeleteProjectCompositionSlotCommand,
-    GetAgentCommand, IamGatedPolicyProvider, InMemoryAgentAuditSink, ListItemFeedbackCommand,
-    ListSessionItemsCommand, ListProjectCompositionSlotsCommand, ListSessionUserStatesCommand,
-    ItemFeedbackListQuery, SessionItemListQuery, ProjectCompositionSlotListQuery,
-    ResourceUserStateListQuery, CreateTurnCommand, SqlAgentRepository, SyncPostgresAdapter,
-    UpdateItemFeedbackCommand, UpdateProjectCompositionSlotCommand,
-    UpdateSessionUserStateCommand, RUNTIME_MODE_INFERENCE_ERROR,
+    AgentCompositionSlotKind, AgentCompositionTargetModule, AgentImplementationKind,
+    AgentItemDriveRefInput, AgentItemFeedbackRating, AgentItemResourceRole,
+    AgentProjectDriveAccessMode, AgentProjectVisibility, AgentProviderBindingCommand,
+    AgentRepository, AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionKind,
+    AgentTurnMode, AgentTurnRecord, AgentTurnStatus, AgentVisibility, AgentsService,
+    CancelTurnCommand, CreateAgentCommand, CreateProjectCommand,
+    CreateProjectCompositionSlotCommand, CreateSessionCommand, CreateSessionItemCommand,
+    CreateSessionRuntimeBindingCommand, CreateTurnCommand, DeleteProjectCompositionSlotCommand,
+    GetAgentCommand, IamGatedPolicyProvider, InMemoryAgentAuditSink, ItemFeedbackListQuery,
+    ListItemFeedbackCommand, ListProjectCompositionSlotsCommand, ListSessionItemsCommand,
+    ListSessionUserStatesCommand, ProjectCompositionSlotListQuery, ResourceUserStateListQuery,
+    RUNTIME_MODE_INFERENCE_ERROR, SessionItemListQuery, SqlAgentRepository,
+    SyncPostgresAdapter, TurnExecutionInput, TurnExecutionOutput, TurnExecutor,
+    UpdateItemFeedbackCommand, UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
 };
 
 struct FailingTurnExecutor;
@@ -281,10 +282,47 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: None,
-            provider_binding_id: None,
-            model_id: None,
+            idempotency_key: None,
+            payload_hash: None,
             requested_by: subject(),
             requested_at: "2026-07-19T00:01:00Z".to_string(),
+        })
+        .unwrap();
+
+    let provider_binding = service
+        .add_provider_binding(AgentProviderBindingCommand {
+            tenant_id: 700_001,
+            agent_id: agent_id.clone(),
+            binding_id: format!("binding.live.{suffix}"),
+            provider_id: format!("provider.live.{suffix}"),
+            implementation_kind: AgentImplementationKind::ManifestOnly,
+            configuration_profile_id: format!("profile.live.{suffix}"),
+            capabilities: Vec::new(),
+            make_default: true,
+            requested_by: subject(),
+            requested_at: "2026-07-19T00:01:10Z".to_string(),
+        })
+        .unwrap();
+    let runtime_binding = service
+        .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
+            tenant_id: 700_001,
+            organization_id: 0,
+            path_agent_id: agent_id.clone(),
+            session_id: session_id.clone(),
+            runtime_binding_id: Some(format!("runtime_binding.live.{suffix}")),
+            runtime_location_id: None,
+            host_mode: "managed".to_string(),
+            transport_kind: "in_process".to_string(),
+            provider_binding_id: provider_binding.binding_id,
+            model_id: format!("model.live.{suffix}"),
+            provider_id: provider_binding.provider_id,
+            native_session_id: None,
+            native_session_tree_id: None,
+            native_parent_session_id: None,
+            native_forked_from_session_id: None,
+            owner_scope: Some(700),
+            requested_by: subject(),
+            requested_at: "2026-07-19T00:01:20Z".to_string(),
         })
         .unwrap();
 
@@ -317,10 +355,11 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     assert_eq!(states.items.len(), 1);
     assert_eq!(states.items[0].resource_id, session_id);
 
-    let item_id = format!("msg.live.{suffix}");
+    let item_id = format!("item.live.{suffix}");
     service
         .create_session_item(CreateSessionItemCommand {
             tenant_id: 700_001,
+            organization_id: 0,
             session_id: session_id.clone(),
             item_id: item_id.clone(),
             kind: AgentSessionItemKind::AssistantOutput,
@@ -362,57 +401,40 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     assert_eq!(feedback_page.items.len(), 1);
     assert_eq!(feedback_page.items[0].item_id, item_id);
 
-    let media = AgentItemMediaResourceInput {
-        id: format!("node-live-{suffix}"),
-        kind: "image".to_string(),
-        source: "drive".to_string(),
-        uri: format!("drive://spaces/space-live-{suffix}/nodes/node-live-{suffix}"),
-        url: Some("https://drive.example.invalid/temporary-download".to_string()),
-        public_url: None,
-        object_blob_id: None,
-        file_name: Some("live.png".to_string()),
-        mime_type: Some("image/png".to_string()),
-        size_bytes: Some("128".to_string()),
-        checksum: Some(serde_json::json!({"algorithm": "sha256", "value": "abc123"})),
-        width: Some(64),
-        height: Some(64),
-        duration_seconds: None,
-        alt_text: None,
-        title: None,
-        access: Some(serde_json::json!({"visibility": "private"})),
-        metadata: Some(serde_json::json!({
-            "driveSpaceId": format!("space-live-{suffix}"),
-            "driveNodeId": format!("node-live-{suffix}"),
-            "uploadItemId": format!("upload-live-{suffix}")
-        })),
+    let drive_ref = AgentItemDriveRefInput {
+        resource_role: AgentItemResourceRole::Image,
+        drive_space_id: format!("space-live-{suffix}"),
+        drive_node_id: format!("node-live-{suffix}"),
     };
-    let chat = service
+    let turn = service
         .execute_turn(CreateTurnCommand {
             tenant_id: 700_001,
+            organization_id: 0,
             agent_id: agent_id.clone(),
             session_id: session_id.clone(),
+            turn_id: Some(format!("turn.live.{suffix}")),
             content: "Describe this image".to_string(),
             content_type: "image/png".to_string(),
-            media_resources: vec![media.clone()],
-            model_id: None,
-            idempotency_key: Some(format!("live-drive-{suffix}")),
+            turn_mode: AgentTurnMode::Interactive,
+            runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
+            requested_model_id: Some(runtime_binding.model_id.clone()),
+            idempotency_key: format!("live-drive-{suffix}"),
+            payload_hash: format!("sha256:live-drive-{suffix}"),
             client_request_id: Some(format!("request-live-drive-{suffix}")),
+            drive_refs: vec![drive_ref.clone()],
             owner_scope: Some(700),
             requested_by: subject(),
             requested_at: "2026-07-19T00:02:10Z".to_string(),
             prefer_stream: false,
         })
         .unwrap();
-    assert_eq!(chat.session.item_count, 3);
-    assert_eq!(chat.user_item_drive_refs.len(), 1);
-    assert_eq!(chat.user_item_drive_refs[0].drive_node_id, media.id);
-    assert!(!chat.user_item_drive_refs[0]
-        .resource_snapshot_json
-        .contains("temporary-download"));
+    assert_eq!(turn.session.item_count, 3);
+    assert_eq!(turn.user_item_drive_refs.len(), 1);
+    assert_eq!(turn.user_item_drive_refs[0].drive_node_id, drive_ref.drive_node_id);
 
     let page = service
         .list_session_items_with_drive_refs(ListSessionItemsCommand {
-            query: SessionItemListQuery::for_session(700_001, session_id.clone()),
+            query: SessionItemListQuery::for_session(700_001, 0, session_id.clone()),
             owner_scope: Some(700),
             requested_by: subject(),
         })
@@ -421,25 +443,30 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     assert_eq!(
         page.items
             .iter()
-            .find(|item| item.item.item_id == chat.user_input_item.item_id)
+            .find(|item| item.item.item_id == turn.user_input_item.item_id)
             .unwrap()
             .drive_refs
             .len(),
         1
     );
 
-    let mut invalid = media.clone();
-    invalid.uri = "https://example.invalid/not-drive".to_string();
+    let mut invalid = drive_ref.clone();
+    invalid.drive_node_id.clear();
     let invalid_result = service.execute_turn(CreateTurnCommand {
         tenant_id: 700_001,
+        organization_id: 0,
         agent_id: agent_id.clone(),
         session_id: session_id.clone(),
+        turn_id: None,
         content: "Invalid attachment".to_string(),
         content_type: "image/png".to_string(),
-        media_resources: vec![invalid],
-        model_id: None,
-        idempotency_key: Some(format!("live-drive-invalid-{suffix}")),
+        turn_mode: AgentTurnMode::Interactive,
+        runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
+        requested_model_id: Some(runtime_binding.model_id.clone()),
+        idempotency_key: format!("live-drive-invalid-{suffix}"),
+        payload_hash: format!("sha256:live-drive-invalid-{suffix}"),
         client_request_id: None,
+        drive_refs: vec![invalid],
         owner_scope: Some(700),
         requested_by: subject(),
         requested_at: "2026-07-19T00:02:11Z".to_string(),
@@ -449,14 +476,19 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
 
     let duplicate_result = service.execute_turn(CreateTurnCommand {
         tenant_id: 700_001,
+        organization_id: 0,
         agent_id: agent_id.clone(),
         session_id: session_id.clone(),
+        turn_id: None,
         content: "Duplicate attachment".to_string(),
         content_type: "image/png".to_string(),
-        media_resources: vec![media.clone(), media],
-        model_id: None,
-        idempotency_key: Some(format!("live-drive-duplicate-{suffix}")),
+        turn_mode: AgentTurnMode::Interactive,
+        runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
+        requested_model_id: Some(runtime_binding.model_id.clone()),
+        idempotency_key: format!("live-drive-duplicate-{suffix}"),
+        payload_hash: format!("sha256:live-drive-duplicate-{suffix}"),
         client_request_id: None,
+        drive_refs: vec![drive_ref.clone(), drive_ref],
         owner_scope: Some(700),
         requested_by: subject(),
         requested_at: "2026-07-19T00:02:12Z".to_string(),
@@ -465,32 +497,37 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     assert!(duplicate_result.is_err());
     let page_after_rejections = service
         .list_session_items_with_drive_refs(ListSessionItemsCommand {
-            query: SessionItemListQuery::for_session(700_001, session_id.clone()),
+            query: SessionItemListQuery::for_session(700_001, 0, session_id.clone()),
             owner_scope: Some(700),
             requested_by: subject(),
         })
         .unwrap();
     assert_eq!(page_after_rejections.items.len(), 3);
 
-    let failed_idempotency_key = format!("live-chat-failed-{suffix}");
+    let failed_idempotency_key = format!("live-turn-failed-{suffix}");
     let failure_service = AgentsService::new(
         SqlAgentRepository::new(
             SyncPostgresAdapter::connect(&database_url).expect("failure adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
-        IamGatedPolicyProvider::new("policy.agents.chat-turn-failure.postgres-live"),
+        IamGatedPolicyProvider::new("policy.agents.turn-failure.postgres-live"),
     )
     .with_turn_executor(Arc::new(FailingTurnExecutor));
     let failed_result = failure_service.execute_turn(CreateTurnCommand {
         tenant_id: 700_001,
+        organization_id: 0,
         agent_id: agent_id.clone(),
         session_id: session_id.clone(),
+        turn_id: None,
         content: "Persist this provider failure".to_string(),
         content_type: "text/plain".to_string(),
-        media_resources: Vec::new(),
-        model_id: None,
-        idempotency_key: Some(failed_idempotency_key.clone()),
+        turn_mode: AgentTurnMode::Interactive,
+        runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
+        requested_model_id: Some(runtime_binding.model_id.clone()),
+        idempotency_key: failed_idempotency_key.clone(),
+        payload_hash: format!("sha256:live-turn-failed-{suffix}"),
         client_request_id: None,
+        drive_refs: Vec::new(),
         owner_scope: Some(700),
         requested_by: subject(),
         requested_at: "2026-07-19T00:02:20Z".to_string(),
@@ -508,11 +545,11 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     assert_eq!(failed_turn.version, 2);
     assert_eq!(
         failed_turn.error_code.as_deref(),
-        Some("chat_inference_failed")
+        Some("turn_inference_failed")
     );
     assert_eq!(
         failed_turn.error_detail.as_deref(),
-        Some("managed chat inference failed")
+        Some("managed turn inference failed")
     );
 
     let base_id = u64::try_from(suffix).unwrap();
@@ -526,11 +563,13 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             session_id: session_id.clone(),
             agent_id: agent_id.clone(),
             owner_user_id: 700,
+            runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
             client_request_id: None,
             idempotency_key: format!("live-cancel-{suffix}"),
             payload_hash: format!("payload-cancel-{suffix}"),
-            request_item_id: format!("msg.cancel.{suffix}"),
+            request_item_id: format!("item.cancel.{suffix}"),
             response_item_id: None,
+            turn_mode: AgentTurnMode::Interactive,
             status: AgentTurnStatus::Requested,
             requested_model_id: None,
             provider_binding_id: None,
@@ -538,10 +577,19 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             provider_id: None,
             input_tokens: 0,
             output_tokens: 0,
+            cached_tokens: 0,
             finish_reason: None,
             error_code: None,
             error_detail: None,
             trace_id: None,
+            attempt_count: 0,
+            max_attempts: 3,
+            next_retry_at: None,
+            available_at: "2026-07-18T00:00:00Z".to_string(),
+            lease_owner: None,
+            lease_token: None,
+            lease_expires_at: None,
+            fencing_token: 0,
             version: 0,
             created_at: "2026-07-18T00:00:00Z".to_string(),
             updated_at: "2026-07-18T00:00:00Z".to_string(),
@@ -558,7 +606,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
                 .expect("cancellation adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
-        IamGatedPolicyProvider::new("policy.agents.chat-turn-cancel.postgres-live"),
+        IamGatedPolicyProvider::new("policy.agents.turn-cancel.postgres-live"),
     );
     let cancelled = cancellation_service
         .cancel_turn(CancelTurnCommand {
@@ -587,11 +635,13 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             session_id: session_id.clone(),
             agent_id: agent_id.clone(),
             owner_user_id: 700,
+            runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
             client_request_id: None,
             idempotency_key: format!("live-stale-{suffix}"),
             payload_hash: format!("payload-stale-{suffix}"),
-            request_item_id: format!("msg.stale.{suffix}"),
+            request_item_id: format!("item.stale.{suffix}"),
             response_item_id: None,
+            turn_mode: AgentTurnMode::Interactive,
             status: AgentTurnStatus::Requested,
             requested_model_id: None,
             provider_binding_id: None,
@@ -599,10 +649,19 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             provider_id: None,
             input_tokens: 0,
             output_tokens: 0,
+            cached_tokens: 0,
             finish_reason: None,
             error_code: None,
             error_detail: None,
             trace_id: None,
+            attempt_count: 0,
+            max_attempts: 3,
+            next_retry_at: None,
+            available_at: "2026-07-18T00:00:00Z".to_string(),
+            lease_owner: None,
+            lease_token: None,
+            lease_expires_at: None,
+            fencing_token: 0,
             version: 0,
             created_at: "2026-07-18T00:00:00Z".to_string(),
             updated_at: "2026-07-18T00:00:00Z".to_string(),
@@ -619,7 +678,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
                 .expect("reconciliation adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
-        IamGatedPolicyProvider::new("policy.agents.chat-turn-reconcile.postgres-live"),
+        IamGatedPolicyProvider::new("policy.agents.turn-reconcile.postgres-live"),
     );
     let reconciliation = reconciliation_service
         .reconcile_stale_turns("2026-07-19T00:00:00Z", "2026-07-19T00:02:40Z", 100)
