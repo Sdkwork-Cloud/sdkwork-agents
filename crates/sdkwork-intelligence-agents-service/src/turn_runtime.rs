@@ -1,7 +1,7 @@
-//! Managed-agent chat completion for session message turns.
+//! Managed-agent inference for durable session turns.
 //!
 //! Product HTTP APIs call this module to produce assistant replies after a user
-//! message is persisted. Inject a custom [`TurnExecutor`] at service bootstrap
+//! input item is accepted. Inject a custom [`TurnExecutor`] at service bootstrap
 //! for live provider inference; the default [`ContractTurnExecutor`] keeps HTTP
 //! contracts stable without a kernel provider registry in-process.
 
@@ -17,7 +17,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
-/// Runtime mode when managed chat inference succeeds through the code-engine facade.
+/// Runtime mode when managed turn inference succeeds through the code-engine facade.
 pub const RUNTIME_MODE_FACADE: &str = "agents-runtime-facade";
 /// Runtime mode when inference was attempted but failed (no silent contract fallback).
 pub const RUNTIME_MODE_INFERENCE_ERROR: &str = "managed-agent-inference-error";
@@ -43,7 +43,7 @@ static PROVIDER_WORKER_LIMIT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
     Arc::new(Semaphore::new(configured))
 });
 
-/// Input for one chat completion turn.
+/// Input for one durable turn execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnExecutionInput {
     pub agent_display_name: String,
@@ -60,7 +60,7 @@ pub struct TurnExecutionInput {
     pub provider_has_model_chat: bool,
 }
 
-/// Output from one chat completion turn.
+/// Output from one durable turn execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnExecutionOutput {
     pub content: String,
@@ -72,7 +72,7 @@ pub struct TurnExecutionOutput {
     pub stream_deltas: Vec<String>,
 }
 
-/// Pluggable chat completion strategy (Open/Closed: swap at service bootstrap).
+/// Pluggable turn execution strategy (Open/Closed: swap at service bootstrap).
 pub trait TurnExecutor: Send + Sync {
     fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput;
 
@@ -87,10 +87,10 @@ pub trait TurnExecutor: Send + Sync {
 }
 
 /// Default managed-agent contract completer used in tests and local deployments.
-/// Maximum wall-clock time for one managed chat completion turn.
+/// Maximum wall-clock time for one managed turn execution.
 pub const TURN_EXECUTION_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Run a chat completion with a hard timeout.
+/// Run turn inference with a hard timeout.
 ///
 /// Uses the tokio bounded blocking pool (when a runtime is available) instead
 /// of spawning an unbounded OS thread per request. This prevents thread
@@ -112,7 +112,7 @@ pub fn complete_with_timeout(
             return run_with_bounded_timeout(&handle, completer, input, prefer_stream, timeout);
         }
         tracing::warn!(
-            "no tokio runtime available; running chat completion inline without timeout isolation"
+            "no tokio runtime available; running turn inference inline without timeout isolation"
         );
     }
     completer.complete_with_stream_preference(input, prefer_stream)
@@ -151,8 +151,8 @@ fn run_with_bounded_timeout(
     // worker (see http.rs handler dispatch), not on an async executor thread.
     match handle.block_on(tokio::time::timeout(timeout, join_handle)) {
         Ok(Ok(output)) => output,
-        Ok(Err(_join_error)) => inference_error("chat completion task failed"),
-        Err(_elapsed) => inference_error("chat completion timed out"),
+        Ok(Err(_join_error)) => inference_error("turn inference task failed"),
+        Err(_elapsed) => inference_error("turn inference timed out"),
     }
 }
 
@@ -165,7 +165,7 @@ impl TurnExecutor for ContractTurnExecutor {
     }
 }
 
-/// Kernel-backed chat completer for production gateway bootstrap.
+/// Kernel-backed turn executor for production gateway bootstrap.
 ///
 /// Invokes a mounted [`ModelProvider`] when `provider_has_model_chat` is true;
 /// otherwise falls back to [`ContractTurnExecutor`] semantics.

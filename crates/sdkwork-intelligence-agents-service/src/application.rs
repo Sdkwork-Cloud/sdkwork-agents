@@ -2327,7 +2327,7 @@ where
         if let Some(sequence) = command.last_read_item_sequence {
             if sequence > session.last_item_sequence {
                 return Err(KernelError::validation(
-                    "lastReadMessageSequence exceeds the session message sequence",
+                    "lastReadItemSequence exceeds the session item sequence",
                 ));
             }
             if record
@@ -2335,7 +2335,7 @@ where
                 .is_some_and(|current| sequence < current)
             {
                 return Err(KernelError::conflict(
-                    "lastReadMessageSequence cannot move backwards",
+                    "lastReadItemSequence cannot move backwards",
                 ));
             }
             record.last_read_item_sequence = Some(sequence);
@@ -3723,7 +3723,6 @@ where
     ) -> KernelResult<PaginatedResult<AgentSessionItemWithDriveRefs>> {
         let tenant_id = command.query.tenant_id;
         let organization_id = command.query.organization_id;
-        let session_id = command.query.session_id.clone();
         let page = self.list_session_items(command)?;
         let item_ids = page
             .items
@@ -3765,7 +3764,6 @@ where
     ) -> KernelResult<AgentSessionItemWithDriveRefs> {
         let tenant_id = command.tenant_id;
         let organization_id = command.organization_id;
-        let session_id = command.session_id.clone();
         let item = self.get_session_item(command)?;
         let drive_refs = self.repository.list_item_drive_refs(
             tenant_id,

@@ -91,11 +91,11 @@ use tokio::sync::Semaphore;
 
 const MAX_PAGE_SIZE: usize = 200;
 const DEFAULT_SERVICE_WORKER_LIMIT: usize = 128;
-pub const ENV_CHAT_TURN_RECONCILIATION_INTERVAL_SECONDS: &str =
-    "SDKWORK_AGENTS_CHAT_TURN_RECONCILIATION_INTERVAL_SECONDS";
-pub const ENV_CHAT_TURN_STALE_AFTER_SECONDS: &str = "SDKWORK_AGENTS_CHAT_TURN_STALE_AFTER_SECONDS";
-pub const ENV_CHAT_TURN_RECONCILIATION_BATCH_SIZE: &str =
-    "SDKWORK_AGENTS_CHAT_TURN_RECONCILIATION_BATCH_SIZE";
+pub const ENV_TURN_RECONCILIATION_INTERVAL_SECONDS: &str =
+    "SDKWORK_AGENTS_TURN_RECONCILIATION_INTERVAL_SECONDS";
+pub const ENV_TURN_STALE_AFTER_SECONDS: &str = "SDKWORK_AGENTS_TURN_STALE_AFTER_SECONDS";
+pub const ENV_TURN_RECONCILIATION_BATCH_SIZE: &str =
+    "SDKWORK_AGENTS_TURN_RECONCILIATION_BATCH_SIZE";
 
 /// Bounds synchronous repository work before it enters Tokio's blocking pool.
 /// A bounded rejection is preferable to an unbounded blocking queue, which can
@@ -126,8 +126,8 @@ const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "session_created",
     "session_closed",
     "session_archived",
-    "message_created",
-    "message_failed",
+    "session_item_created",
+    "session_item_failed",
     "interaction_created",
     "interaction_resolved",
     "interaction_rejected",
@@ -876,12 +876,12 @@ impl AgentHttpState {
 
     pub fn spawn_turn_reconciliation_worker(&self) -> Option<tokio::task::JoinHandle<()>> {
         let interval_seconds =
-            env_usize(ENV_CHAT_TURN_RECONCILIATION_INTERVAL_SECONDS, 30, 0, 3600);
+            env_usize(ENV_TURN_RECONCILIATION_INTERVAL_SECONDS, 30, 0, 3600);
         if interval_seconds == 0 {
             return None;
         }
-        let stale_after_seconds = env_usize(ENV_CHAT_TURN_STALE_AFTER_SECONDS, 300, 30, 86_400);
-        let batch_size = env_usize(ENV_CHAT_TURN_RECONCILIATION_BATCH_SIZE, 100, 1, 200);
+        let stale_after_seconds = env_usize(ENV_TURN_STALE_AFTER_SECONDS, 300, 30, 86_400);
+        let batch_size = env_usize(ENV_TURN_RECONCILIATION_BATCH_SIZE, 100, 1, 200);
         let service = self.service.clone();
         Some(tokio::spawn(async move {
             let mut ticker =
@@ -907,19 +907,19 @@ impl AgentHttpState {
                             examined = summary.examined,
                             failed = summary.failed.len(),
                             skipped_conflicts = summary.skipped_conflicts,
-                            "chat turn reconciliation completed"
+                            "turn reconciliation completed"
                         );
                     }
                     Ok(Ok(_)) => {}
                     Ok(Err(error)) => tracing::error!(
                         target: "sdkwork.agents.turn.reconciliation",
                         error = %error,
-                        "chat turn reconciliation failed"
+                        "turn reconciliation failed"
                     ),
                     Err(error) => tracing::error!(
                         target: "sdkwork.agents.turn.reconciliation",
                         error = %error,
-                        "chat turn reconciliation worker join failed"
+                        "turn reconciliation worker join failed"
                     ),
                 }
             }
@@ -4454,7 +4454,7 @@ async fn app_update_session_user_state(
             .last_read_item_sequence
             .map(|value| {
                 value.parse::<u64>().map_err(|_| {
-                    ApiProblem::validation("lastReadMessageSequence must be an unsigned integer")
+                    ApiProblem::validation("lastReadItemSequence must be an unsigned integer")
                 })
             })
             .transpose()?;
@@ -7820,24 +7820,6 @@ pub(crate) fn normalized_pagination(
     Ok((params.page as usize, params.page_size as usize))
 }
 
-fn resolve_tenant_from_query_or_body(
-    query_tenant_id: &str,
-    body_tenant_id: &str,
-) -> Result<String, ApiProblem> {
-    let query_tenant_id = query_tenant_id.trim();
-    let body_tenant_id = body_tenant_id.trim();
-    match (query_tenant_id.is_empty(), body_tenant_id.is_empty()) {
-        (false, false) if query_tenant_id != body_tenant_id => Err(ApiProblem::validation(
-            "tenant_id mismatch between query and request body",
-        )),
-        (false, _) => Ok(query_tenant_id.to_string()),
-        (_, false) => Ok(body_tenant_id.to_string()),
-        (true, true) => Err(ApiProblem::validation(
-            "tenant_id is required in query or request body",
-        )),
-    }
-}
-
 /// Build the durable turn execution response.
 /// Non-streaming returns `200 OK` with the SDKWork response envelope.
 /// Streaming returns ordered delta events followed by a completion envelope.
@@ -8487,7 +8469,7 @@ mod tests {
             })
         })
         .await
-        .expect("assistant message fixture should be created");
+        .expect("assistant item fixture should be created");
 
         let pin = Request::builder()
             .method("PATCH")

@@ -4,13 +4,14 @@ use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelEvent, KernelResult
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_intelligence_agents_service::{
     extract_event_context, offset_paginated_result, ActivateAgentProviderBindingCommand,
-    AgentAuditSink, AgentBusinessStatus, AgentTurnStatus, AgentImplementationKind,
-    AgentImplementationType, AgentInteractionKind, AgentListQuery, AgentItemMediaResourceInput,
+    AgentAuditSink, AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
+    AgentInteractionKind, AgentItemDriveRefInput, AgentItemResourceRole, AgentListQuery,
     AgentPreviewResponseCommand, AgentPromptOptimizationCommand, AgentSessionEntrySurface,
-    AgentSessionItemKind, AgentSessionKind,
+    AgentSessionItemKind, AgentSessionKind, AgentTurnMode, AgentTurnStatus,
     AgentProviderBindingCommand, AgentVisibility, AgentsService, ApproveInteractionCommand,
-    AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand, CreateInteractionCommand,
-    CreateSessionCommand, DeleteAgentCommand, DenyAllPolicyProvider, GetAgentCommand,
+    AuditEventListQuery, ChangeAgentStatusCommand, ClaimInteractionCommand, CreateAgentCommand,
+    CreateInteractionCommand, CreateSessionCommand, CreateSessionRuntimeBindingCommand,
+    DeleteAgentCommand, DenyAllPolicyProvider, GetAgentCommand,
     GetTurnByIdempotencyCommand, GetTurnCommand, GetInteractionCommand, GetSessionCommand,
     IamGatedPolicyProvider, InMemoryAgentRepository, InteractionListQuery,
     ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand, PaginatedResult,
@@ -1150,66 +1151,91 @@ fn execute_turn_persists_user_input_and_assistant_output() {
             source_context_id: None,
             parent_session_id: None,
             forked_from_turn_id: None,
-            title: Some("Support chat".to_string()),
-            provider_binding_id: None,
-            model_id: None,
+            title: Some("Support session".to_string()),
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:00Z".to_string(),
         })
         .expect("create session should succeed");
 
-    let chat_command = CreateTurnCommand {
+    let provider_binding = service
+        .add_provider_binding(AgentProviderBindingCommand {
+            tenant_id: 100_001,
+            agent_id: created.agent_id.clone(),
+            binding_id: "binding.turn.contract".to_string(),
+            provider_id: "provider.turn.contract".to_string(),
+            implementation_kind: AgentImplementationKind::ManifestOnly,
+            configuration_profile_id: "profile.turn.contract".to_string(),
+            capabilities: Vec::new(),
+            make_default: true,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:01:10Z".to_string(),
+        })
+        .expect("provider binding should be created");
+    let runtime_binding = service
+        .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: created.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            runtime_binding_id: Some("runtime_binding.turn.contract".to_string()),
+            runtime_location_id: None,
+            host_mode: "managed".to_string(),
+            transport_kind: "in_process".to_string(),
+            provider_binding_id: provider_binding.binding_id,
+            model_id: "model.turn.contract".to_string(),
+            provider_id: provider_binding.provider_id,
+            native_session_id: None,
+            native_session_tree_id: None,
+            native_parent_session_id: None,
+            native_forked_from_session_id: None,
+            owner_scope: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:01:20Z".to_string(),
+        })
+        .expect("session runtime binding should be created");
+
+    let turn_command = CreateTurnCommand {
         tenant_id: 100_001,
-        agent_id: created.agent_id,
-        session_id: session.session_id,
+        organization_id: 0,
+        agent_id: created.agent_id.clone(),
+        session_id: session.session_id.clone(),
+        turn_id: Some("turn.contract.one".to_string()),
         content: "Hello, can you help?".to_string(),
         content_type: "text/plain".to_string(),
-        media_resources: vec![AgentItemMediaResourceInput {
-            id: "node-chat-1".to_string(),
-            kind: "image".to_string(),
-            source: "drive".to_string(),
-            uri: "drive://spaces/space-chat/nodes/node-chat-1".to_string(),
-            url: Some("https://drive.example.invalid/signed?secret=redacted".to_string()),
-            public_url: None,
-            object_blob_id: None,
-            file_name: Some("chat.png".to_string()),
-            mime_type: Some("image/png".to_string()),
-            size_bytes: Some("42".to_string()),
-            checksum: None,
-            width: Some(32),
-            height: Some(24),
-            duration_seconds: None,
-            alt_text: Some("Chat fixture".to_string()),
-            title: None,
-            access: Some(serde_json::json!({"visibility": "private"})),
-            metadata: Some(serde_json::json!({
-                "driveSpaceId": "space-chat",
-                "driveNodeId": "node-chat-1",
-                "uploadItemId": "upload-transient-1"
-            })),
+        turn_mode: AgentTurnMode::Interactive,
+        runtime_binding_id: Some(runtime_binding.runtime_binding_id),
+        requested_model_id: Some("model.turn.contract".to_string()),
+        idempotency_key: "turn-test-idempotency-1".to_string(),
+        payload_hash: "sha256:turn-test-payload-1".to_string(),
+        client_request_id: Some("request.turn.1".to_string()),
+        drive_refs: vec![AgentItemDriveRefInput {
+            resource_role: AgentItemResourceRole::Image,
+            drive_space_id: "space-turn".to_string(),
+            drive_node_id: "node-turn-1".to_string(),
         }],
-        model_id: None,
-        idempotency_key: Some("chat-test-idempotency-1".to_string()),
-        client_request_id: Some("request.chat.1".to_string()),
         owner_scope: None,
         requested_by: sample_subject(),
         requested_at: "2026-06-01T05:01:30Z".to_string(),
         prefer_stream: false,
     };
     let result = service
-        .execute_turn(chat_command.clone())
+        .execute_turn(turn_command.clone())
         .expect("turn execution should succeed");
 
     assert_eq!(result.user_input_item.kind, AgentSessionItemKind::UserInput);
-    assert_eq!(result.user_input_item.content, "Hello, can you help?");
+    assert_eq!(result.user_input_item.content.as_deref(), Some("Hello, can you help?"));
     assert_eq!(result.assistant_output_item.kind, AgentSessionItemKind::AssistantOutput);
-    assert!(!result.assistant_output_item.content.is_empty());
+    assert!(result
+        .assistant_output_item
+        .content
+        .as_deref()
+        .is_some_and(|content| !content.is_empty()));
     assert_eq!(result.session.item_count, 2);
     let completed_turn = service
         .get_turn(GetTurnCommand {
             tenant_id: 100_001,
             organization_id: 0,
-            path_agent_id: result.user_input_item.agent_id.clone(),
+            path_agent_id: result.turn.agent_id.clone(),
             session_id: result.user_input_item.session_id.clone(),
             turn_id: result.user_input_item.turn_id.clone().unwrap(),
             owner_scope: None,
@@ -1223,10 +1249,10 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         .get_turn_by_idempotency(GetTurnByIdempotencyCommand {
             tenant_id: 100_001,
             organization_id: 0,
-            path_agent_id: result.user_input_item.agent_id.clone(),
+            path_agent_id: result.turn.agent_id.clone(),
             session_id: result.user_input_item.session_id.clone(),
             owner_user_id: 100,
-            idempotency_key: "chat-test-idempotency-1".to_string(),
+            idempotency_key: "turn-test-idempotency-1".to_string(),
             requested_by: sample_subject(),
         })
         .expect("turn idempotency lookup should succeed")
@@ -1237,25 +1263,19 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         service.get_turn_by_idempotency(GetTurnByIdempotencyCommand {
             tenant_id: 100_001,
             organization_id: 0,
-            path_agent_id: result.user_input_item.agent_id.clone(),
+            path_agent_id: result.turn.agent_id.clone(),
             session_id: result.user_input_item.session_id.clone(),
             owner_user_id: 999,
-            idempotency_key: "chat-test-idempotency-1".to_string(),
+            idempotency_key: "turn-test-idempotency-1".to_string(),
             requested_by: sample_subject(),
         });
     assert!(hidden_from_foreign_owner.is_err());
     assert_eq!(result.user_item_drive_refs.len(), 1);
-    let snapshot: serde_json::Value =
-        serde_json::from_str(&result.user_item_drive_refs[0].resource_snapshot_json).unwrap();
-    assert!(snapshot.get("url").is_none());
-    assert!(snapshot.pointer("/metadata/uploadItemId").is_none());
-    assert_eq!(
-        snapshot.pointer("/metadata/drive/nodeId"),
-        Some(&serde_json::json!("node-chat-1"))
-    );
+    assert_eq!(result.user_item_drive_refs[0].drive_space_id, "space-turn");
+    assert_eq!(result.user_item_drive_refs[0].drive_node_id, "node-turn-1");
 
     let replay = service
-        .execute_turn(chat_command.clone())
+        .execute_turn(turn_command.clone())
         .expect("same idempotency key and payload should replay");
     assert_eq!(
         replay.user_input_item.item_id,
@@ -1271,7 +1291,7 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         result.user_item_drive_refs
     );
 
-    let mut conflicting = chat_command;
+    let mut conflicting = turn_command;
     conflicting.content = "Different payload".to_string();
     assert!(service.execute_turn(conflicting).is_err());
 }
@@ -1310,9 +1330,7 @@ fn get_session_rejects_foreign_owner_scope() {
             source_context_id: None,
             parent_session_id: None,
             forked_from_turn_id: None,
-            title: Some("Private chat".to_string()),
-            provider_binding_id: None,
-            model_id: None,
+            title: Some("Private session".to_string()),
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:00Z".to_string(),
         })
@@ -1321,6 +1339,7 @@ fn get_session_rejects_foreign_owner_scope() {
     let error = service
         .get_session(GetSessionCommand {
             tenant_id: 100_001,
+            organization_id: 0,
             path_agent_id: created.agent_id.clone(),
             session_id: session.session_id.clone(),
             owner_scope: Some(999),
@@ -1364,8 +1383,6 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Interaction session".to_string()),
-            provider_binding_id: None,
-            model_id: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:00Z".to_string(),
         })
@@ -1375,13 +1392,16 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
         .create_interaction(CreateInteractionCommand {
             tenant_id: 100_001,
             organization_id: 0,
-            agent_id: agent.agent_id.clone(),
+            path_agent_id: agent.agent_id.clone(),
             session_id: session.session_id.clone(),
             interaction_id: String::new(),
-            engine_key: "codex".to_string(),
+            turn_id: None,
+            runtime_binding_id: None,
+            provider_interaction_id: None,
             kind: AgentInteractionKind::Approval,
             prompt: "Approve write?".to_string(),
             options_json: "[]".to_string(),
+            retention_until: None,
             owner_scope: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:02:00Z".to_string(),
@@ -1391,7 +1411,7 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
 
     let listed = service
         .list_interactions(ListInteractionsCommand {
-            query: InteractionListQuery::for_session(100_001, session.session_id.clone()),
+            query: InteractionListQuery::for_session(100_001, 0, session.session_id.clone()),
             path_agent_id: agent.agent_id.clone(),
             owner_scope: None,
             requested_by: sample_subject(),
@@ -1399,15 +1419,34 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
         .expect("list interactions should succeed");
     assert_eq!(listed.items.len(), 1);
 
+    let claim = service
+        .claim_interaction(ClaimInteractionCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: agent.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            interaction_id: interaction.interaction_id.clone(),
+            claim_owner: "worker.contract".to_string(),
+            lease_seconds: 60,
+            expected_version: interaction.version,
+            owner_scope: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-06-01T05:02:30Z".to_string(),
+        })
+        .expect("claim interaction should succeed");
+
     let resolved = service
         .approve_interaction(ApproveInteractionCommand {
             tenant_id: 100_001,
+            organization_id: 0,
             path_agent_id: agent.agent_id.clone(),
             session_id: session.session_id.clone(),
             interaction_id: interaction.interaction_id.clone(),
             approved: true,
             reason: Some("ok".to_string()),
-            expected_version: interaction.version,
+            claim_token: claim.claim_token,
+            fencing_token: claim.fencing_token,
+            expected_version: claim.interaction.version,
             owner_scope: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:03:00Z".to_string(),
@@ -1418,6 +1457,7 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
     let retrieved = service
         .get_interaction(GetInteractionCommand {
             tenant_id: 100_001,
+            organization_id: 0,
             path_agent_id: agent.agent_id,
             session_id: session.session_id,
             interaction_id: interaction.interaction_id,
