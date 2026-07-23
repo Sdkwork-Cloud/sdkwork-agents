@@ -40,7 +40,7 @@ Goals:
 - idempotent Turn execution with typed ordered Session Items;
 - high-cohesion ownership of agent business state and public contracts;
 - generated Open, App and Backend SDKs with strict input/output contracts;
-- independent provider, skill, prompt, memory, knowledge, MCP, LLM and Drive
+- independent provider, skill, prompt, document, memory, knowledge, MCP, LLM and Drive
   capability modules;
 - tenant isolation, trusted context, auditability and operational recovery.
 
@@ -49,7 +49,7 @@ Non-goals:
 - generic IM conversations, delivery, read state, presence or reactions;
 - provider runtime SPI implementation inside the product service;
 - skill package content, installation records or marketplace ownership;
-- copied model catalogs, prompt bodies, memory records or Drive bytes;
+- copied model catalogs, prompt bodies, document content, memory records or Drive bytes;
 - product-specific workspaces, filesystem paths or UI state persistence.
 
 ## 4. Product Scope
@@ -112,6 +112,7 @@ runtime binding, lifecycle and expected version before provider invocation.
 | FR-8 | IM semantics remain independent | Mandatory `sdkwork-im -> sdkwork-agents` boundary check |
 | FR-9 | Skills remain independently owned | Agents stores stable skill/version references only |
 | FR-10 | Files use Drive references | No raw bytes, credentials or signed URLs in Agents rows |
+| FR-11 | Documents use canonical composition references | Only `document/documents` is accepted; content remains in `sdkwork-documents` |
 
 ## 7. API And SDK Product Surface
 

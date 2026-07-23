@@ -19,6 +19,26 @@ import {
 import { SDKWORK_SDKGEN_STANDARD } from '../_shared/sdkgen-standard.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const COMPOSITION_SLOT_KINDS = [
+  'memory',
+  'knowledge',
+  'skill',
+  'prompt',
+  'drive',
+  'document',
+  'tool',
+  'mcp'
+];
+const COMPOSITION_TARGET_MODULES = [
+  'memory',
+  'knowledgebase',
+  'skills',
+  'prompts',
+  'drive',
+  'documents',
+  'tools',
+  'mcp'
+];
 
 for (const family of AGENTS_SDK_FAMILIES) {
   verifyFamily(family);
@@ -68,6 +88,22 @@ function verifyFamily(family) {
     expectedSdkgen,
     `${family.familyDir} sdkgen OpenAPI drifted; rerun node sdks/materialize-agent-v3-openapi-boundaries.mjs`
   );
+  for (const [label, openapi] of [
+    ['source', readText(sourceOpenApiPath)],
+    ['authority', actualAuthority],
+    ['sdkgen', actualSdkgen]
+  ]) {
+    assert.deepEqual(
+      extractStringEnum(openapi, 'AgentCompositionSlotKind'),
+      COMPOSITION_SLOT_KINDS,
+      `${family.familyDir} ${label} composition slot kinds`
+    );
+    assert.deepEqual(
+      extractStringEnum(openapi, 'AgentCompositionTargetModule'),
+      COMPOSITION_TARGET_MODULES,
+      `${family.familyDir} ${label} composition target modules`
+    );
+  }
 
   const ownerOnlyOperationCount = countAgentOpenApiOperations(actualSdkgen);
   const sdkManifest = readJson(sdkManifestPath);
@@ -213,6 +249,16 @@ function readText(filePath) {
 
 function readJson(filePath) {
   return JSON.parse(readText(filePath));
+}
+
+function extractStringEnum(openapi, schemaName) {
+  const marker = `    ${schemaName}:`;
+  const schemaStart = openapi.indexOf(marker);
+  assert.notEqual(schemaStart, -1, `${schemaName} schema must exist`);
+  const remainder = openapi.slice(schemaStart + marker.length);
+  const nextSchemaOffset = remainder.search(/\r?\n    [A-Za-z0-9]+:\s*\r?\n/u);
+  const schema = nextSchemaOffset === -1 ? remainder : remainder.slice(0, nextSchemaOffset);
+  return Array.from(schema.matchAll(/^      - ([a-z0-9_-]+)\s*$/gmu), (match) => match[1]);
 }
 
 function assertFileExists(filePath, message) {

@@ -40,14 +40,35 @@ Agents owns:
 Agents does not own:
 
 - IM conversations, messages, members, read cursors, reactions or presence;
-- prompt library content, skill packages, model catalogs or Drive bytes;
+- prompt library content, skill packages, document content, model catalogs or Drive bytes;
 - product-local workspaces, runtime-location details or filesystem paths;
 - kernel provider mechanisms, transient token events, runs or steps.
 
 Cross-domain links are stable identifiers validated through public contracts.
 There are no cross-module SQL queries or foreign keys.
 
-## 3. Dependency Direction
+## 3. Composition Contract
+
+Agent-level and Project-level composition slots use the same canonical mapping:
+
+| `slotKind` | `targetModule` | External owner |
+| --- | --- | --- |
+| `memory` | `memory` | `sdkwork-memory` |
+| `knowledge` | `knowledgebase` | `sdkwork-knowledgebase` |
+| `skill` | `skills` | `sdkwork-skills` |
+| `prompt` | `prompts` | `sdkwork-prompts` |
+| `drive` | `drive` | `sdkwork-drive` |
+| `document` | `documents` | `sdkwork-documents` |
+| `tool` | `tools` | Agents tool orchestration contract |
+| `mcp` | `mcp` | `sdkwork-mcp` |
+
+Only the pair shown in each row is valid. In particular, `document` pairs only
+with `documents`; it cannot be represented as `drive`, `knowledgebase`, or a
+product-local alias. Agents stores the stable `targetRef`, optional
+`targetVersionRef`, ordering and bounded orchestration policy. The external
+owner retains resource content, versions, authorization and lifecycle.
+
+## 4. Dependency Direction
 
 ```text
 product applications -----> sdkwork-agents -----> sdkwork-kernel
@@ -64,7 +85,7 @@ sdkwork-im -> sdkwork-agents -> sdkwork-kernel
 Agents never imports IM packages, SDKs, repositories, routes or tables. IM owns
 any correlation between an IM message and an Agents session/turn.
 
-## 4. Stable External Context
+## 5. Stable External Context
 
 Consumers may supply these bounded references:
 
@@ -77,7 +98,7 @@ Agents stores no snapshot of the external resource and never resolves it with
 cross-domain SQL. The caller performs its own product authorization and Agents
 performs tenant, organization, owner, agent and session authorization.
 
-## 5. Canonical Naming
+## 6. Canonical Naming
 
 | Agents concept | Canonical identifier | Forbidden new identifier |
 | --- | --- | --- |
@@ -91,7 +112,7 @@ performs tenant, organization, owner, agent and session authorization.
 UI copy may use "conversation" or "message" where it improves usability. Those
 words do not become Agents business resource names.
 
-## 6. Completion Rules
+## 7. Completion Rules
 
 The domain is aligned only when:
 
@@ -102,4 +123,3 @@ The domain is aligned only when:
   `checkpoints`;
 - Agents has no dependency on `sdkwork-im`;
 - all input, output, database, SDK and documentation terms match this spec.
-

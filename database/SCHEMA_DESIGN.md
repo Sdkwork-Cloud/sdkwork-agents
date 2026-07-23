@@ -37,6 +37,15 @@ stable reference columns.
 | `ai_agent_share_link` | Hashed, revocable, expiring grant |
 | `ai_agent_outbox_event` | Reliable aggregate event publication |
 
+## Composition References
+
+`ai_agent_composition_slot` and `ai_agent_project_composition_slot` share the
+single mapping declared by `specs/AGENTS_DOMAIN_SPEC.md` section 3. PostgreSQL
+enforces both the enum allow-lists and the exact pair. A document binding is
+therefore `slot_kind=document`, `target_module=documents`; the row contains only
+stable external references and bounded orchestration policy. Document content,
+versions and lifecycle remain in `sdkwork-documents`.
+
 ## Session Aggregate
 
 `ai_agent_session` stores only stable business scope, lineage, lifecycle, and

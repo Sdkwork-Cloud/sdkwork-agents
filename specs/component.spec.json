@@ -141,6 +141,7 @@
         "dependencyMode": "independent-capability-module",
         "integrationMode": "composition-slot",
         "slotKind": "memory",
+        "targetModule": "memory",
         "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden",
         "packageByLanguage": {
@@ -154,6 +155,7 @@
         "dependencyMode": "independent-capability-module",
         "integrationMode": "composition-slot",
         "slotKind": "knowledge",
+        "targetModule": "knowledgebase",
         "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden",
         "packageByLanguage": {
@@ -167,6 +169,7 @@
         "dependencyMode": "independent-capability-module",
         "integrationMode": "composition-slot",
         "slotKind": "skill",
+        "targetModule": "skills",
         "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden",
         "packageByLanguage": {
@@ -180,10 +183,25 @@
         "dependencyMode": "independent-capability-module",
         "integrationMode": "composition-slot",
         "slotKind": "prompt",
+        "targetModule": "prompts",
         "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden",
         "packageByLanguage": {
           "typescript": "@sdkwork/prompts-app-sdk"
+        }
+      },
+      {
+        "workspace": "sdkwork-documents",
+        "role": "documents-capability-module",
+        "required": false,
+        "dependencyMode": "independent-capability-module",
+        "integrationMode": "composition-slot",
+        "slotKind": "document",
+        "targetModule": "documents",
+        "reverseDependencyPolicy": "forbidden",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/documents-app-sdk"
         }
       },
       {
@@ -193,6 +211,7 @@
         "dependencyMode": "independent-capability-module",
         "integrationMode": "composition-slot",
         "slotKind": "mcp",
+        "targetModule": "mcp",
         "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden"
       },
@@ -212,6 +231,7 @@
         "dependencyMode": "independent-capability-module",
         "integrationMode": "composition-slot",
         "slotKind": "drive",
+        "targetModule": "drive",
         "reverseDependencyPolicy": "forbidden",
         "generatedTransportImportPolicy": "forbidden",
         "packageByLanguage": {

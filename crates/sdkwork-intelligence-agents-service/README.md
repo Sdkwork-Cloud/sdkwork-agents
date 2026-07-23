@@ -68,6 +68,7 @@ sdkwork-intelligence-agents-service/
 - Backend API prefix: `/backend/v3/api`
 - Canonical resources:
   - `/app/v3/api/ai/agents`
+  - `/app/v3/api/ai/projects/{projectId}/composition_slots`
   - `/backend/v3/api/ai/agents`
 - Restore endpoints:
   - `/app/v3/api/ai/agents/{agentId}/restore`
@@ -103,6 +104,11 @@ SDK families:
 - `sdkwork-agents-backend-sdk`: `sdkwork-agents-backend-api`, `/backend/v3/api`, `@sdkwork/agents-backend-sdk`
 
 All SDK generator commands use `--standard-profile sdkwork-v3`.
+
+Composition slots use the canonical domain mapping. Document references are
+created with `slotKind=document` and `targetModule=documents`; the generated
+SDK exposes the existing Project composition CRUD surface and does not copy or
+re-export Documents API operations.
 
 ## Verification
 

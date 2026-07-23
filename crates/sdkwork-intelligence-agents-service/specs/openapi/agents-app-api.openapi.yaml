@@ -2948,6 +2948,7 @@ components:
       - skill
       - prompt
       - drive
+      - document
       - tool
       - mcp
     AgentCompositionTargetModule:
@@ -2958,6 +2959,7 @@ components:
       - skills
       - prompts
       - drive
+      - documents
       - mcp
       - tools
     AgentCompositionSlotRecord:

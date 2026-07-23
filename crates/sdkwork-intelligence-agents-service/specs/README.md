@@ -31,6 +31,15 @@ or document this component, but they must not contradict
 - Generated SDK language outputs are represented at their SDK family root
   instead of duplicating local specs in generated folders.
 
+## Composition Contract
+
+The service exposes one shared composition vocabulary for managed agents and
+Agent Projects. `document` is the slot kind and `documents` is its only valid
+target module. The service stores external references only; `sdkwork-documents`
+owns document content and versions. The complete mapping is defined in
+[AGENTS_DOMAIN_SPEC.md](../../../specs/AGENTS_DOMAIN_SPEC.md) section 3 and is
+enforced by Rust validation plus PostgreSQL CHECK constraints.
+
 ## Canonical Specs
 
 | Spec | Applies Because |

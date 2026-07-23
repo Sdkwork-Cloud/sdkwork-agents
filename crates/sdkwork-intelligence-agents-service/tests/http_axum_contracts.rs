@@ -1387,47 +1387,61 @@ async fn composition_slots_should_work_over_http() {
     let app = build_test_app(state);
     let agent_id = "agent.composition.http";
     create_agent(&app, agent_id, "Composition HTTP Agent").await;
+    let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots");
+
+    post_json(
+        &app,
+        create_uri.as_str(),
+        json!({
+            "slotId": "slot.document.invalid",
+            "slotKind": "document",
+            "targetModule": "drive",
+            "targetRef": "document.invalid",
+            "requestedAt": "2026-06-17T00:00:00Z"
+        }),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
 
     let create_body = json!({
-        "slotId": "slot.knowledge.product",
-        "slotKind": "knowledge",
-        "targetModule": "knowledgebase",
-        "targetRef": "kb.space.product",
+        "slotId": "slot.document.product",
+        "slotKind": "document",
+        "targetModule": "documents",
+        "targetRef": "document.product.specification",
         "priority": 1,
         "enabled": true,
         "policyJson": "{}",
-        "requestedAt": "2026-06-17T00:00:00Z"
+        "requestedAt": "2026-06-17T00:00:01Z"
     });
-    let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots");
     let create_response =
         post_json(&app, create_uri.as_str(), create_body, StatusCode::CREATED).await;
     assert_eq!(
         create_response["data"]["item"]["slotId"],
-        json!("slot.knowledge.product")
+        json!("slot.document.product")
     );
 
     let list_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots");
     let list_response = get_json(&app, list_uri.as_str(), StatusCode::OK).await;
     assert_eq!(list_response["data"]["items"].as_array().unwrap().len(), 1);
 
-    let slot_id = "slot.knowledge.product";
+    let slot_id = "slot.document.product";
     let get_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}");
     let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
     assert_eq!(
         get_response["data"]["item"]["targetRef"],
-        json!("kb.space.product")
+        json!("document.product.specification")
     );
 
     let update_body = json!({
         "expectedVersion": create_response["data"]["item"]["version"],
-        "targetRef": "kb.space.product.v2",
+        "targetRef": "document.product.specification.v2",
         "requestedAt": "2026-06-17T00:01:00Z"
     });
     let update_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}");
     let update_response = patch_json(&app, update_uri.as_str(), update_body, StatusCode::OK).await;
     assert_eq!(
         update_response["data"]["item"]["targetRef"],
-        json!("kb.space.product.v2")
+        json!("document.product.specification.v2")
     );
 
     let delete_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}");
@@ -3897,7 +3911,7 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
     );
     let app = build_test_app(state);
     let project_id = "project.http.composition";
-    let slot_id = "slot.instructions";
+    let slot_id = "slot.documents";
 
     post_json(
         &app,
@@ -3912,15 +3926,28 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
     )
     .await;
 
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}/composition_slots"),
+        json!({
+            "slotId": "slot.document.invalid",
+            "slotKind": "document",
+            "targetModule": "drive",
+            "targetRef": "document.invalid"
+        }),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
+
     let created = post_json(
         &app,
         &format!("/app/v3/api/ai/projects/{project_id}/composition_slots"),
         json!({
             "slotId": slot_id,
-            "slotKind": "prompt",
-            "targetModule": "prompts",
-            "targetRef": "prompt.project.instructions",
-            "targetVersionRef": "version.1",
+            "slotKind": "document",
+            "targetModule": "documents",
+            "targetRef": "document.project.specification",
+            "targetVersionRef": "document.version.1",
             "priority": 10,
             "enabled": true,
             "policyJson": "{\"mode\":\"system\"}"
@@ -3933,7 +3960,7 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
     let listed = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/projects/{project_id}/composition_slots?slot_kind=prompt&enabled=true&page=1&page_size=20"
+            "/app/v3/api/ai/projects/{project_id}/composition_slots?slot_kind=document&enabled=true&page=1&page_size=20"
         ),
         StatusCode::OK,
     )
@@ -3947,7 +3974,7 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
         StatusCode::OK,
     )
     .await;
-    assert_eq!(retrieved["data"]["item"]["targetModule"], "prompts");
+    assert_eq!(retrieved["data"]["item"]["targetModule"], "documents");
 
     let updated = patch_json(
         &app,

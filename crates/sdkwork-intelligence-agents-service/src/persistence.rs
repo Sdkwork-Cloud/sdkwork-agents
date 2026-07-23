@@ -7191,9 +7191,50 @@ mod tests {
     use super::{
         build_agent_business_uuid, build_agent_provider_binding_uuid, build_composition_slot_uuid,
         build_interaction_uuid, build_session_item_uuid, build_session_uuid, build_task_uuid,
-        extract_event_context, AgentAuditEventRow,
+        extract_event_context, AgentAuditEventRow, AgentProjectCompositionSlotRow,
+    };
+    use crate::{
+        AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProjectCompositionSlotRecord,
     };
     use sdkwork_agent_kernel::{KernelEvent, KernelEventSeverity, KernelEventSource};
+
+    #[test]
+    fn document_project_composition_slot_roundtrips_through_postgres_row_mapping() {
+        let record = AgentProjectCompositionSlotRecord {
+            id: 7,
+            tenant_id: 10,
+            organization_id: 20,
+            project_id: "project.alpha".to_string(),
+            slot_id: "slot.documents".to_string(),
+            slot_kind: AgentCompositionSlotKind::Document,
+            target_module: AgentCompositionTargetModule::Documents,
+            target_ref: "document.project.specification".to_string(),
+            target_version_ref: Some("document.version.1".to_string()),
+            priority: 0,
+            enabled: true,
+            policy_json: "{}".to_string(),
+            created_by: 30,
+            updated_by: 30,
+            version: 0,
+            created_at: "2026-07-19T00:00:00Z".to_string(),
+            updated_at: "2026-07-19T00:00:00Z".to_string(),
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+
+        let row = AgentProjectCompositionSlotRow::from_record(&record);
+        assert_eq!(row.slot_kind, "document");
+        assert_eq!(row.target_module, "documents");
+
+        let restored = row.into_record().unwrap();
+        assert_eq!(restored.slot_kind, AgentCompositionSlotKind::Document);
+        assert_eq!(
+            restored.target_module,
+            AgentCompositionTargetModule::Documents
+        );
+        assert_eq!(restored.target_ref, record.target_ref);
+    }
 
     #[test]
     fn storage_uuids_are_stable_bounded_and_resource_scoped() {

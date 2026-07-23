@@ -51,6 +51,7 @@ following data remains authoritative in its source module:
 | --- | --- | --- |
 | Runtime mechanics and provider SPI | `sdkwork-kernel` | Provider/runtime binding identifiers and bounded execution results |
 | Skill definitions, packages and installations | `sdkwork-skills` | Composition `target_ref` and optional `target_version_ref` |
+| Structured document content and versions | `sdkwork-documents` | `document/documents` composition references only |
 | Prompt content and versions | `sdkwork-prompts` | Composition references |
 | Memory content | `sdkwork-memory` | Composition references |
 | Knowledge and indexes | `sdkwork-knowledgebase` | Composition references |
@@ -93,6 +94,11 @@ foreign keys to it. Composition slot values are allow-listed by `slot_kind` and
 Project membership is an Agents collaboration ACL, not an IM group. Share-link
 rows persist only `token_hash` and a safe prefix; a raw token is returned once,
 is never logged, and is never included in audit or outbox payloads.
+
+Both composition tables enforce the canonical mapping in
+`specs/AGENTS_DOMAIN_SPEC.md` section 3. PostgreSQL allow-lists `document` and
+`documents`, requires that pair, and also includes the existing `tool/tools`
+pair. The application service applies the same rule before persistence.
 
 ### 4.3 Session aggregate
 

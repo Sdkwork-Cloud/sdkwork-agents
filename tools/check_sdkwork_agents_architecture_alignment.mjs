@@ -235,15 +235,16 @@ assert(driveDep, 'component.spec.json must declare sdkwork-drive for upload inte
 assert(!depIds.includes('sdkwork-discovery'), 'component.spec.json must not require sdkwork-discovery yet');
 
 const independentCapabilityModules = [
-  ['sdkwork-memory', 'composition-slot'],
-  ['sdkwork-knowledgebase', 'composition-slot'],
-  ['sdkwork-skills', 'composition-slot'],
-  ['sdkwork-prompts', 'composition-slot'],
-  ['sdkwork-mcp', 'composition-slot'],
-  ['sdkwork-llm', 'runtime-binding-provider-profile'],
-  ['sdkwork-drive', 'composition-slot'],
+  ['sdkwork-memory', 'composition-slot', 'memory', 'memory'],
+  ['sdkwork-knowledgebase', 'composition-slot', 'knowledge', 'knowledgebase'],
+  ['sdkwork-skills', 'composition-slot', 'skill', 'skills'],
+  ['sdkwork-prompts', 'composition-slot', 'prompt', 'prompts'],
+  ['sdkwork-documents', 'composition-slot', 'document', 'documents'],
+  ['sdkwork-mcp', 'composition-slot', 'mcp', 'mcp'],
+  ['sdkwork-llm', 'runtime-binding-provider-profile', null, null],
+  ['sdkwork-drive', 'composition-slot', 'drive', 'drive'],
 ];
-for (const [workspace, integrationMode] of independentCapabilityModules) {
+for (const [workspace, integrationMode, slotKind, targetModule] of independentCapabilityModules) {
   const dep = sdkDeps.find((entry) => entry.workspace === workspace);
   assert(dep, `component.spec.json must declare ${workspace} as an independent capability module`);
   assert(
@@ -258,6 +259,16 @@ for (const [workspace, integrationMode] of independentCapabilityModules) {
     dep?.reverseDependencyPolicy === 'forbidden',
     `component.spec.json ${workspace} reverseDependencyPolicy must be forbidden`,
   );
+  if (integrationMode === 'composition-slot') {
+    assert(
+      dep?.slotKind === slotKind,
+      `component.spec.json ${workspace} slotKind must be ${slotKind}`,
+    );
+    assert(
+      dep?.targetModule === targetModule,
+      `component.spec.json ${workspace} targetModule must be ${targetModule}`,
+    );
+  }
 }
 
 const appManifest = readJson('sdkwork.app.config.json');

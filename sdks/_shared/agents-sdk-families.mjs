@@ -66,6 +66,19 @@ const MEMORY_APP_DEPENDENCY = {
   },
 };
 
+const DOCUMENTS_APP_DEPENDENCY = {
+  workspace: 'sdkwork-documents-app-sdk',
+  role: 'project-document-selection-capability',
+  required: true,
+  dependencyMode: 'consumer-sdk',
+  apiPrefix: '/app/v3/api',
+  apiAuthority: 'sdkwork-documents-app-api',
+  generatedTransportImportPolicy: 'forbidden',
+  packageByLanguage: {
+    typescript: '@sdkwork/documents-app-sdk',
+  },
+};
+
 export const AGENTS_SDK_FAMILIES = [
   {
     key: 'open',
@@ -120,6 +133,7 @@ export const AGENTS_SDK_FAMILIES = [
       DRIVE_APP_DEPENDENCY,
       PROMPTS_APP_DEPENDENCY,
       MEMORY_APP_DEPENDENCY,
+      DOCUMENTS_APP_DEPENDENCY,
     ],
   },
   {

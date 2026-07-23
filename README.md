@@ -70,6 +70,7 @@ Pre-flight: `pnpm verify` and `pnpm topology:validate`. See [docs/runbooks/pre-l
 | `sdkwork-database` | Integrated for the canonical Agents PostgreSQL lifecycle |
 | `sdkwork-utils` | Integrated in contract, service response/validation, runtime-facade |
 | `sdkwork-drive` | Integrated through Drive Uploader; Agents persists canonical Drive references only |
+| `sdkwork-documents` | Integrated through `document/documents` composition references; document content remains externally owned |
 | `sdkwork-discovery` | Inactive because Agents currently exposes no RPC service |
 
 ## Application Roots

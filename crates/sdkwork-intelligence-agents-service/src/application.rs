@@ -836,6 +836,7 @@ where
         )?;
         validate_agent_id(command.agent_id.as_str())?;
         validate_standard_id(command.slot_id.as_str(), "slotId", Some("slot."))?;
+        validate_composition_slot_mapping(command.slot_kind, command.target_module)?;
         require_non_blank(command.target_ref.as_str(), "targetRef")?;
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
@@ -973,6 +974,7 @@ where
         if let Some(target_module) = command.target_module {
             record.target_module = target_module;
         }
+        validate_composition_slot_mapping(record.slot_kind, record.target_module)?;
         if let Some(target_ref) = command.target_ref {
             require_non_blank(target_ref.as_str(), "targetRef")?;
             record.target_ref = target_ref;
@@ -5554,36 +5556,7 @@ fn validate_project_composition_slot_fields(
     priority: i32,
     policy_json: &str,
 ) -> KernelResult<()> {
-    let module_matches_kind = matches!(
-        (slot_kind, target_module),
-        (
-            AgentCompositionSlotKind::Prompt,
-            AgentCompositionTargetModule::Prompts
-        ) | (
-            AgentCompositionSlotKind::Memory,
-            AgentCompositionTargetModule::Memory
-        ) | (
-            AgentCompositionSlotKind::Knowledge,
-            AgentCompositionTargetModule::Knowledgebase
-        ) | (
-            AgentCompositionSlotKind::Skill,
-            AgentCompositionTargetModule::Skills
-        ) | (
-            AgentCompositionSlotKind::Mcp,
-            AgentCompositionTargetModule::Mcp
-        ) | (
-            AgentCompositionSlotKind::Drive,
-            AgentCompositionTargetModule::Drive
-        ) | (
-            AgentCompositionSlotKind::Tool,
-            AgentCompositionTargetModule::Tools
-        )
-    );
-    if !module_matches_kind {
-        return Err(KernelError::validation(
-            "slotKind does not match targetModule",
-        ));
-    }
+    validate_composition_slot_mapping(slot_kind, target_module)?;
     require_non_blank(target_ref, "targetRef")?;
     if target_ref != trim(target_ref) {
         return Err(KernelError::validation(
@@ -5610,6 +5583,18 @@ fn validate_project_composition_slot_fields(
     })?;
     if !policy.is_object() {
         return Err(KernelError::validation("policyJson must be a JSON object"));
+    }
+    Ok(())
+}
+
+fn validate_composition_slot_mapping(
+    slot_kind: AgentCompositionSlotKind,
+    target_module: AgentCompositionTargetModule,
+) -> KernelResult<()> {
+    if !slot_kind.matches_target_module(target_module) {
+        return Err(KernelError::validation(
+            "slotKind does not match targetModule",
+        ));
     }
     Ok(())
 }

@@ -710,6 +710,7 @@ pub enum AgentCompositionSlotKind {
     Skill,
     Prompt,
     Drive,
+    Document,
     Tool,
     Mcp,
 }
@@ -722,6 +723,7 @@ impl AgentCompositionSlotKind {
             Self::Skill => "skill",
             Self::Prompt => "prompt",
             Self::Drive => "drive",
+            Self::Document => "document",
             Self::Tool => "tool",
             Self::Mcp => "mcp",
         }
@@ -734,10 +736,25 @@ impl AgentCompositionSlotKind {
             "skill" => Some(Self::Skill),
             "prompt" => Some(Self::Prompt),
             "drive" => Some(Self::Drive),
+            "document" => Some(Self::Document),
             "tool" => Some(Self::Tool),
             "mcp" => Some(Self::Mcp),
             _ => None,
         }
+    }
+
+    pub fn matches_target_module(self, target_module: AgentCompositionTargetModule) -> bool {
+        matches!(
+            (self, target_module),
+            (Self::Memory, AgentCompositionTargetModule::Memory)
+                | (Self::Knowledge, AgentCompositionTargetModule::Knowledgebase)
+                | (Self::Skill, AgentCompositionTargetModule::Skills)
+                | (Self::Prompt, AgentCompositionTargetModule::Prompts)
+                | (Self::Drive, AgentCompositionTargetModule::Drive)
+                | (Self::Document, AgentCompositionTargetModule::Documents)
+                | (Self::Tool, AgentCompositionTargetModule::Tools)
+                | (Self::Mcp, AgentCompositionTargetModule::Mcp)
+        )
     }
 }
 
@@ -748,6 +765,7 @@ pub enum AgentCompositionTargetModule {
     Skills,
     Prompts,
     Drive,
+    Documents,
     Mcp,
     Tools,
 }
@@ -760,6 +778,7 @@ impl AgentCompositionTargetModule {
             Self::Skills => "skills",
             Self::Prompts => "prompts",
             Self::Drive => "drive",
+            Self::Documents => "documents",
             Self::Mcp => "mcp",
             Self::Tools => "tools",
         }
@@ -772,6 +791,7 @@ impl AgentCompositionTargetModule {
             "skills" => Some(Self::Skills),
             "prompts" => Some(Self::Prompts),
             "drive" => Some(Self::Drive),
+            "documents" => Some(Self::Documents),
             "mcp" => Some(Self::Mcp),
             "tools" => Some(Self::Tools),
             _ => None,
@@ -1989,14 +2009,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn composition_slot_kind_roundtrips_all_variants_including_mcp() {
-        // 确保所有 slot_kind 变体（包括新增的 Mcp）能正确 roundtrip
+    fn composition_slot_kind_roundtrips_all_variants() {
         for kind in [
             AgentCompositionSlotKind::Memory,
             AgentCompositionSlotKind::Knowledge,
             AgentCompositionSlotKind::Skill,
             AgentCompositionSlotKind::Prompt,
             AgentCompositionSlotKind::Drive,
+            AgentCompositionSlotKind::Document,
             AgentCompositionSlotKind::Tool,
             AgentCompositionSlotKind::Mcp,
         ] {
@@ -2006,18 +2026,89 @@ mod tests {
     }
 
     #[test]
-    fn composition_target_module_roundtrips_all_variants_including_mcp() {
-        // 确保所有 target_module 变体（包括新增的 Mcp）能正确 roundtrip
+    fn composition_target_module_roundtrips_all_variants() {
         for module in [
             AgentCompositionTargetModule::Memory,
             AgentCompositionTargetModule::Knowledgebase,
             AgentCompositionTargetModule::Skills,
             AgentCompositionTargetModule::Prompts,
             AgentCompositionTargetModule::Drive,
+            AgentCompositionTargetModule::Documents,
             AgentCompositionTargetModule::Mcp,
+            AgentCompositionTargetModule::Tools,
         ] {
             let s = module.as_str();
             assert_eq!(AgentCompositionTargetModule::try_from_str(s), Some(module));
+        }
+    }
+
+    #[test]
+    fn composition_slot_kinds_match_only_their_canonical_target_modules() {
+        let kinds = [
+            AgentCompositionSlotKind::Memory,
+            AgentCompositionSlotKind::Knowledge,
+            AgentCompositionSlotKind::Skill,
+            AgentCompositionSlotKind::Prompt,
+            AgentCompositionSlotKind::Drive,
+            AgentCompositionSlotKind::Document,
+            AgentCompositionSlotKind::Tool,
+            AgentCompositionSlotKind::Mcp,
+        ];
+        let target_modules = [
+            AgentCompositionTargetModule::Memory,
+            AgentCompositionTargetModule::Knowledgebase,
+            AgentCompositionTargetModule::Skills,
+            AgentCompositionTargetModule::Prompts,
+            AgentCompositionTargetModule::Drive,
+            AgentCompositionTargetModule::Documents,
+            AgentCompositionTargetModule::Tools,
+            AgentCompositionTargetModule::Mcp,
+        ];
+        let pairs = [
+            (
+                AgentCompositionSlotKind::Memory,
+                AgentCompositionTargetModule::Memory,
+            ),
+            (
+                AgentCompositionSlotKind::Knowledge,
+                AgentCompositionTargetModule::Knowledgebase,
+            ),
+            (
+                AgentCompositionSlotKind::Skill,
+                AgentCompositionTargetModule::Skills,
+            ),
+            (
+                AgentCompositionSlotKind::Prompt,
+                AgentCompositionTargetModule::Prompts,
+            ),
+            (
+                AgentCompositionSlotKind::Drive,
+                AgentCompositionTargetModule::Drive,
+            ),
+            (
+                AgentCompositionSlotKind::Document,
+                AgentCompositionTargetModule::Documents,
+            ),
+            (
+                AgentCompositionSlotKind::Tool,
+                AgentCompositionTargetModule::Tools,
+            ),
+            (
+                AgentCompositionSlotKind::Mcp,
+                AgentCompositionTargetModule::Mcp,
+            ),
+        ];
+
+        for kind in kinds {
+            for target_module in target_modules {
+                assert_eq!(
+                    kind.matches_target_module(target_module),
+                    pairs.contains(&(kind, target_module)),
+                    "unexpected composition mapping: {}/{}",
+                    kind.as_str(),
+                    target_module.as_str()
+                );
+            }
         }
     }
 

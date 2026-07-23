@@ -25,6 +25,18 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: Agent references to sibling-owned capability resources.
+    composition_contract:
+      slot_kinds: [memory, knowledge, skill, prompt, drive, document, tool, mcp]
+      target_modules: [memory, knowledgebase, skills, prompts, drive, documents, tools, mcp]
+      canonical_pairs:
+        - [memory, memory]
+        - [knowledge, knowledgebase]
+        - [skill, skills]
+        - [prompt, prompts]
+        - [drive, drive]
+        - [document, documents]
+        - [tool, tools]
+        - [mcp, mcp]
   - name: ai_agent_audit_event
     profile: audit_event
     lifecycle_status: active
@@ -40,6 +52,18 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: Project references to sibling-owned capability resources.
+    composition_contract:
+      slot_kinds: [memory, knowledge, skill, prompt, drive, document, tool, mcp]
+      target_modules: [memory, knowledgebase, skills, prompts, drive, documents, tools, mcp]
+      canonical_pairs:
+        - [memory, memory]
+        - [knowledge, knowledgebase]
+        - [skill, skills]
+        - [prompt, prompts]
+        - [drive, drive]
+        - [document, documents]
+        - [tool, tools]
+        - [mcp, mcp]
   - name: ai_agent_session
     profile: tenant_entity
     lifecycle_status: active

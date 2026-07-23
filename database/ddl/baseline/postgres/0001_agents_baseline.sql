@@ -165,10 +165,27 @@ CREATE TABLE IF NOT EXISTS ai_agent_composition_slot (
     CONSTRAINT uk_ai_agent_composition_slot_uuid UNIQUE (uuid),
     CONSTRAINT uk_ai_agent_composition_slot_scope UNIQUE (tenant_id, agent_id, slot_id),
     CONSTRAINT ck_ai_agent_composition_slot_kind CHECK (
-        slot_kind IN ('memory', 'knowledge', 'skill', 'prompt', 'drive', 'tool', 'mcp')
+        slot_kind IN (
+            'memory', 'knowledge', 'skill', 'prompt', 'drive', 'document', 'tool', 'mcp'
+        )
     ),
     CONSTRAINT ck_ai_agent_composition_slot_module CHECK (
-        target_module IN ('memory', 'knowledgebase', 'skills', 'prompts', 'drive', 'mcp')
+        target_module IN (
+            'memory', 'knowledgebase', 'skills', 'prompts', 'drive', 'documents',
+            'tools', 'mcp'
+        )
+    ),
+    CONSTRAINT ck_ai_agent_composition_slot_pair CHECK (
+        (slot_kind, target_module) IN (
+            ('memory', 'memory'),
+            ('knowledge', 'knowledgebase'),
+            ('skill', 'skills'),
+            ('prompt', 'prompts'),
+            ('drive', 'drive'),
+            ('document', 'documents'),
+            ('tool', 'tools'),
+            ('mcp', 'mcp')
+        )
     ),
     CONSTRAINT ck_ai_agent_composition_slot_id CHECK (
         slot_id ~ '^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
@@ -335,10 +352,27 @@ CREATE TABLE IF NOT EXISTS ai_agent_project_composition_slot (
         tenant_id, organization_id, project_id, slot_id
     ),
     CONSTRAINT ck_ai_agent_project_slot_kind CHECK (
-        slot_kind IN ('prompt', 'memory', 'knowledge', 'skill', 'mcp', 'drive', 'tool')
+        slot_kind IN (
+            'prompt', 'memory', 'knowledge', 'skill', 'mcp', 'drive', 'document', 'tool'
+        )
     ),
     CONSTRAINT ck_ai_agent_project_slot_module CHECK (
-        target_module IN ('prompts', 'memory', 'knowledgebase', 'skills', 'mcp', 'drive')
+        target_module IN (
+            'prompts', 'memory', 'knowledgebase', 'skills', 'mcp', 'drive', 'documents',
+            'tools'
+        )
+    ),
+    CONSTRAINT ck_ai_agent_project_slot_pair CHECK (
+        (slot_kind, target_module) IN (
+            ('prompt', 'prompts'),
+            ('memory', 'memory'),
+            ('knowledge', 'knowledgebase'),
+            ('skill', 'skills'),
+            ('mcp', 'mcp'),
+            ('drive', 'drive'),
+            ('document', 'documents'),
+            ('tool', 'tools')
+        )
     ),
     CONSTRAINT ck_ai_agent_project_slot_policy CHECK (
         jsonb_typeof(policy_json) = 'object' AND octet_length(policy_json::text) <= 65536

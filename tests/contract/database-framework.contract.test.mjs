@@ -42,6 +42,11 @@ test("agents database contract is materialized without placeholders", () => {
   );
   assert.equal((schema.match(/lifecycle_status: expanding/gu) ?? []).length, 0);
   assert.equal((schema.match(/lifecycle_status: active/gu) ?? []).length, 19);
+  assert.equal(
+    (schema.match(/- \[document, documents\]/gu) ?? []).length,
+    2,
+    "agent and project composition contracts must both declare document/documents",
+  );
 
   const registry = JSON.parse(
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
@@ -77,6 +82,50 @@ test("PostgreSQL baseline exactly matches the 19-table contract registry", () =>
     /\bai_(?:coding_session|agent_message|agent_chat_turn|chat_conversation|chat_message)\b/iu,
   );
   assert.doesNotMatch(baseline, /\bim_[a-z_]+\b/iu);
+});
+
+test("composition slot enums and canonical module pairs stay aligned", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
+    "utf8",
+  );
+  const expectedPairs = [
+    ["memory", "memory"],
+    ["knowledge", "knowledgebase"],
+    ["skill", "skills"],
+    ["prompt", "prompts"],
+    ["drive", "drive"],
+    ["document", "documents"],
+    ["tool", "tools"],
+    ["mcp", "mcp"],
+  ];
+
+  for (const contract of [
+    {
+      table: "ai_agent_composition_slot",
+      kind: "ck_ai_agent_composition_slot_kind",
+      module: "ck_ai_agent_composition_slot_module",
+      pair: "ck_ai_agent_composition_slot_pair",
+    },
+    {
+      table: "ai_agent_project_composition_slot",
+      kind: "ck_ai_agent_project_slot_kind",
+      module: "ck_ai_agent_project_slot_module",
+      pair: "ck_ai_agent_project_slot_pair",
+    },
+  ]) {
+    const tableSql = extractCreateTableSql(baseline, contract.table);
+    const kindValues = extractSingleColumnCheckValues(tableSql, contract.kind);
+    const moduleValues = extractSingleColumnCheckValues(tableSql, contract.module);
+    const pairs = extractPairCheckValues(tableSql, contract.pair);
+
+    assert.deepEqual(new Set(kindValues), new Set(expectedPairs.map(([kind]) => kind)));
+    assert.deepEqual(
+      new Set(moduleValues),
+      new Set(expectedPairs.map(([, module]) => module)),
+    );
+    assert.deepEqual(new Set(pairs), new Set(expectedPairs.map((pair) => pair.join("/"))));
+  }
 });
 
 test("greenfield baseline structures are not replayed by incremental migrations", () => {
@@ -169,6 +218,37 @@ test("audit baseline supports non-agent aggregates without fabricated agent keys
   assert.match(baseline, /agent_id\s+VARCHAR\(128\),/iu);
   assert.match(baseline, /aggregate_type\s+<>\s+'agent'/iu);
 });
+
+function extractCreateTableSql(baseline, tableName) {
+  const start = baseline.indexOf(`CREATE TABLE IF NOT EXISTS ${tableName} (`);
+  assert.notEqual(start, -1, `${tableName} must exist in the PostgreSQL baseline`);
+  const end = baseline.indexOf("\n);", start);
+  assert.notEqual(end, -1, `${tableName} DDL must have a closing delimiter`);
+  return baseline.slice(start, end + 3);
+}
+
+function extractConstraintSql(tableSql, constraintName) {
+  const start = tableSql.indexOf(`CONSTRAINT ${constraintName} CHECK (`);
+  assert.notEqual(start, -1, `${constraintName} must exist`);
+  const nextConstraint = tableSql.indexOf("\n    CONSTRAINT ", start + 1);
+  return tableSql.slice(start, nextConstraint === -1 ? tableSql.length : nextConstraint);
+}
+
+function extractSingleColumnCheckValues(tableSql, constraintName) {
+  return Array.from(
+    extractConstraintSql(tableSql, constraintName).matchAll(/'([^']+)'/gu),
+    (match) => match[1],
+  );
+}
+
+function extractPairCheckValues(tableSql, constraintName) {
+  return Array.from(
+    extractConstraintSql(tableSql, constraintName).matchAll(
+      /\('([^']+)',\s*'([^']+)'\)/gu,
+    ),
+    (match) => `${match[1]}/${match[2]}`,
+  );
+}
 
 const databaseContractDocumentationFiles = [
   "database/README.md",

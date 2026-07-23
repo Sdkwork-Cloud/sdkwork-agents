@@ -129,10 +129,14 @@ outbox delivery have explicit constraints/indexes. The detailed authority is
 
 ### 5.4 Independent capabilities
 
-Skills, prompts, memory, knowledge, MCP, model/provider profiles and Drive own
-their package entities, tables and APIs. Agents stores stable references only.
+Skills, prompts, documents, memory, knowledge, MCP, model/provider profiles and
+Drive own their package entities, tables and APIs. Agents stores stable references only.
 This keeps module replacement and extension open without changing the Session
 aggregate.
+
+Agent and Project composition use the canonical mapping in
+`specs/AGENTS_DOMAIN_SPEC.md` section 3. `document/documents` is a reference to
+the Documents module, not a copied document table, Drive alias or read projection.
 
 ## 6. Execution And Consistency
 

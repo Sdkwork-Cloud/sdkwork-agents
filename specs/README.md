@@ -40,6 +40,7 @@ depend on `sdkwork-agents` for their core domain behavior.
 | `sdkwork-knowledgebase` | `slot_kind=knowledge`, `target_module=knowledgebase` | `@sdkwork/knowledgebase-app-sdk` |
 | `sdkwork-skills` | `slot_kind=skill`, `target_module=skills` | `@sdkwork/skills-app-sdk` |
 | `sdkwork-prompts` | `slot_kind=prompt`, `target_module=prompts` | `@sdkwork/prompts-app-sdk` |
+| `sdkwork-documents` | `slot_kind=document`, `target_module=documents` | `@sdkwork/documents-app-sdk` |
 | `sdkwork-mcp` | `slot_kind=mcp`, `target_module=mcp` | public SDK/runtime integration with stable MCP references |
 | `sdkwork-llm` | runtime binding / model provider profile | model catalog, provider profile, credential references |
 | `sdkwork-drive` | `slot_kind=drive`, `target_module=drive` | `@sdkwork/drive-app-sdk`; Drive Uploader only |
@@ -48,8 +49,8 @@ Search indexing and generated-media workflows remain independent capabilities.
 They integrate through approved public contracts and are not copied into the
 Agents database or SDK authorities.
 
-Do not reverse the dependency: memory, knowledgebase, skills, prompts, mcp, llm,
-and drive own their tables, APIs, SDKs, and runtime contracts. Agents stores only
+Do not reverse the dependency: memory, knowledgebase, skills, prompts, documents,
+mcp, llm, and drive own their tables, APIs, SDKs, and runtime contracts. Agents stores only
 references and orchestration policy. The root `specs/component.spec.json` declares
 these entries as `dependencyMode=independent-capability-module` with
 `reverseDependencyPolicy=forbidden`, and `pnpm check:architecture-alignment`
