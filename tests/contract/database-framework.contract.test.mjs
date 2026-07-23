@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -47,6 +56,11 @@ test("agents database contract is materialized without placeholders", () => {
     2,
     "agent and project composition contracts must both declare document/documents",
   );
+  assert.match(
+    schema,
+    /- module: sdkwork-documents\s+columns: \[target_ref, target_version_ref\]/u,
+    "Documents must be declared as an external reference owner",
+  );
 
   const registry = JSON.parse(
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
@@ -82,6 +96,70 @@ test("PostgreSQL baseline exactly matches the 19-table contract registry", () =>
     /\bai_(?:coding_session|agent_message|agent_chat_turn|chat_conversation|chat_message)\b/iu,
   );
   assert.doesNotMatch(baseline, /\bim_[a-z_]+\b/iu);
+});
+
+test("database materialization preserves authored semantic metadata and is stable", () => {
+  const tempBase = path.resolve(os.tmpdir());
+  const stagingRoot = mkdtempSync(
+    path.join(tempBase, "sdkwork-agents-db-materializer-test-"),
+  );
+  const databaseRoot = path.join(stagingRoot, "database");
+  const contractFiles = [
+    "database.manifest.json",
+    "contract/prefix-registry.json",
+    "contract/schema.yaml",
+    "contract/table-registry.json",
+  ];
+
+  try {
+    cpSync(path.join(repoRoot, "database"), databaseRoot, { recursive: true });
+    const before = Object.fromEntries(
+      contractFiles.map((relativePath) => [
+        relativePath,
+        readFileSync(path.join(databaseRoot, relativePath), "utf8"),
+      ]),
+    );
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = spawnSync(
+        process.execPath,
+        [
+          path.join(
+            repoRoot,
+            "tools/database/materialize-agents-database-contract.mjs",
+          ),
+          "--root",
+          stagingRoot,
+        ],
+        { cwd: repoRoot, encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    }
+
+    for (const relativePath of contractFiles) {
+      assert.equal(
+        readFileSync(path.join(databaseRoot, relativePath), "utf8"),
+        before[relativePath],
+        `${relativePath} must remain byte-stable after materialization`,
+      );
+    }
+
+    const registry = JSON.parse(before["contract/table-registry.json"]);
+    assert.ok(
+      registry.tables.every(
+        (entry) =>
+          entry.profile &&
+          entry.write_owner &&
+          entry.system_of_record === true &&
+          entry.compliance_level &&
+          entry.lifecycle_status,
+      ),
+      "materialization must preserve authored table ownership and profile metadata",
+    );
+  } finally {
+    assert.equal(path.dirname(stagingRoot), tempBase);
+    rmSync(stagingRoot, { recursive: true, force: true });
+  }
 });
 
 test("composition slot enums and canonical module pairs stay aligned", () => {

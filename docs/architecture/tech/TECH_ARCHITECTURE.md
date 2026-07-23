@@ -3,7 +3,9 @@
 - Version: `5.1.0`
 - Status: active
 - Owner: `agents-platform`
-- Updated: `2026-07-22`
+- Updated: `2026-07-23`
+- Specs: [ARCHITECTURE_DECISION_SPEC.md](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [DOCUMENTATION_SPEC.md](../../../../sdkwork-specs/DOCUMENTATION_SPEC.md)
+- API Reference: [TECH-api-reference.md](TECH-api-reference.md)
 
 ## 1. Architecture Overview
 

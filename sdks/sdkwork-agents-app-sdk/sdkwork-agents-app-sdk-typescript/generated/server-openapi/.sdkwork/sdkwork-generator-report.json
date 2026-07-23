@@ -12,7 +12,7 @@
   "mode": "apply",
   "hasChanges": true,
   "hasDestructiveChanges": false,
-  "changeFingerprint": "afd5d75814beff7ca253250f9e8a706fe6e59753e186e82c6f2bd107823e96be",
+  "changeFingerprint": "74f35740a983e3f04eef8b3dffe55d6fe38c323a704b4fcd861a712c10851470",
   "changeImpact": {
     "schemaVersion": 1,
     "areas": [
@@ -22,7 +22,6 @@
       {
         "area": "models",
         "paths": [
-          "src/types/agent-composition-slot-kind.ts",
           "src/types/agent-composition-target-module.ts"
         ]
       }
@@ -149,16 +148,15 @@
   "syncSummary": {
     "dryRun": false,
     "controlPlaneEnabled": true,
-    "writtenFiles": 2,
+    "writtenFiles": 1,
     "skippedScaffoldFiles": 2,
-    "skippedUnchangedGeneratedFiles": 137,
+    "skippedUnchangedGeneratedFiles": 138,
     "deletedGeneratedFiles": 0,
     "changeSummaryPath": ".sdkwork/sdkwork-generator-changes.json",
-    "changeFingerprint": "afd5d75814beff7ca253250f9e8a706fe6e59753e186e82c6f2bd107823e96be",
+    "changeFingerprint": "74f35740a983e3f04eef8b3dffe55d6fe38c323a704b4fcd861a712c10851470",
     "changes": {
       "createdGeneratedFiles": [],
       "updatedGeneratedFiles": [
-        "src/types/agent-composition-slot-kind.ts",
         "src/types/agent-composition-target-module.ts"
       ],
       "unchangedGeneratedFiles": [
@@ -182,6 +180,7 @@
         "src/index.ts",
         "src/sdk.ts",
         "src/types/activate-agent-provider-binding-request.ts",
+        "src/types/agent-composition-slot-kind.ts",
         "src/types/agent-composition-slot-list-response.ts",
         "src/types/agent-composition-slot-record.ts",
         "src/types/agent-composition-slot-response.ts",
@@ -317,7 +316,6 @@
         {
           "area": "models",
           "paths": [
-            "src/types/agent-composition-slot-kind.ts",
             "src/types/agent-composition-target-module.ts"
           ]
         }

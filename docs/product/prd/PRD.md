@@ -1,9 +1,11 @@
 # SDKWork Agents Product Requirements
 
 - Version: `5.1.0`
-- Status: pre-launch release candidate
+- Status: draft
+- Release Stage: pre-launch release candidate
 - Owner: `agents-platform`
-- Updated: `2026-07-22`
+- Updated: `2026-07-23`
+- Specs: [REQUIREMENTS_SPEC.md](../../../../sdkwork-specs/REQUIREMENTS_SPEC.md), [DOCUMENTATION_SPEC.md](../../../../sdkwork-specs/DOCUMENTATION_SPEC.md)
 
 ## 1. Background And Problem
 

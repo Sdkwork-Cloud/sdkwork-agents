@@ -766,8 +766,8 @@ pub enum AgentCompositionTargetModule {
     Prompts,
     Drive,
     Documents,
-    Mcp,
     Tools,
+    Mcp,
 }
 
 impl AgentCompositionTargetModule {
@@ -779,8 +779,8 @@ impl AgentCompositionTargetModule {
             Self::Prompts => "prompts",
             Self::Drive => "drive",
             Self::Documents => "documents",
-            Self::Mcp => "mcp",
             Self::Tools => "tools",
+            Self::Mcp => "mcp",
         }
     }
 
@@ -792,8 +792,8 @@ impl AgentCompositionTargetModule {
             "prompts" => Some(Self::Prompts),
             "drive" => Some(Self::Drive),
             "documents" => Some(Self::Documents),
-            "mcp" => Some(Self::Mcp),
             "tools" => Some(Self::Tools),
+            "mcp" => Some(Self::Mcp),
             _ => None,
         }
     }
@@ -2034,8 +2034,8 @@ mod tests {
             AgentCompositionTargetModule::Prompts,
             AgentCompositionTargetModule::Drive,
             AgentCompositionTargetModule::Documents,
-            AgentCompositionTargetModule::Mcp,
             AgentCompositionTargetModule::Tools,
+            AgentCompositionTargetModule::Mcp,
         ] {
             let s = module.as_str();
             assert_eq!(AgentCompositionTargetModule::try_from_str(s), Some(module));

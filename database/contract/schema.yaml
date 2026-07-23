@@ -138,6 +138,8 @@ external_references:
     columns: [target_ref, target_version_ref]
   - module: sdkwork-prompts
     columns: [target_ref, target_version_ref]
+  - module: sdkwork-documents
+    columns: [target_ref, target_version_ref]
   - module: sdkwork-mcp
     columns: [target_ref, target_version_ref]
   - module: sdkwork-drive

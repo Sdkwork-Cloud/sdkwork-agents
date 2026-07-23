@@ -108,7 +108,7 @@
     },
     {
       "path": "src/types/agent-composition-target-module.ts",
-      "sha256": "593682738388c4ed886a223ed5ce8839ba92193812814f899f70918f816a4589"
+      "sha256": "8a18aea05ad6f9ceb98f2eb0714e7b93dfb23c86c18e980129d0181ed80e8e41"
     },
     {
       "path": "src/types/agent-implementation-kind.ts",

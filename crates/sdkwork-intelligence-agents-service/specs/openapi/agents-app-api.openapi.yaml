@@ -2960,8 +2960,8 @@ components:
       - prompts
       - drive
       - documents
-      - mcp
       - tools
+      - mcp
     AgentCompositionSlotRecord:
       type: object
       additionalProperties: false
