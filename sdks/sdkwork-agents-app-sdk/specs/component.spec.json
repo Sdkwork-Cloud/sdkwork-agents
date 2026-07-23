@@ -129,6 +129,18 @@
         "packageByLanguage": {
           "typescript": "@sdkwork/memory-app-sdk"
         }
+      },
+      {
+        "workspace": "sdkwork-documents-app-sdk",
+        "role": "project-document-selection-capability",
+        "required": true,
+        "dependencyMode": "consumer-sdk",
+        "apiPrefix": "/app/v3/api",
+        "apiAuthority": "sdkwork-documents-app-api",
+        "generatedTransportImportPolicy": "forbidden",
+        "packageByLanguage": {
+          "typescript": "@sdkwork/documents-app-sdk"
+        }
       }
     ],
     "dependencyApiExports": [],

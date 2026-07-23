@@ -100,7 +100,7 @@
     },
     {
       "path": "src/types/agent-composition-slot-kind.ts",
-      "sha256": "29b10d763398cfd77c4cd5f27a8b4f93e69f314bad38becd62d9e41f15c6c302"
+      "sha256": "519b4c1ee367515009fe2ef1abf659788f6d4132c8ea1df19926348f801614bd"
     },
     {
       "path": "src/types/agent-composition-slot-list-response.ts",
@@ -116,7 +116,7 @@
     },
     {
       "path": "src/types/agent-composition-target-module.ts",
-      "sha256": "9735119a17adccdaad9151a29d84c6fda1728c0417381082f5d8f649e0c8e641"
+      "sha256": "8a18aea05ad6f9ceb98f2eb0714e7b93dfb23c86c18e980129d0181ed80e8e41"
     },
     {
       "path": "src/types/agent-implementation-kind.ts",

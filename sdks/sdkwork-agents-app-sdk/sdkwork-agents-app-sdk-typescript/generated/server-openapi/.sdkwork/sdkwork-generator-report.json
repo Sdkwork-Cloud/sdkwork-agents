@@ -12,22 +12,23 @@
   "mode": "apply",
   "hasChanges": true,
   "hasDestructiveChanges": false,
-  "changeFingerprint": "80e0b57f63909f8c943b5eae3cd5c77989ed89936c32aa5cac934996b6f56dfa",
+  "changeFingerprint": "afd5d75814beff7ca253250f9e8a706fe6e59753e186e82c6f2bd107823e96be",
   "changeImpact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface"
+      "models"
     ],
     "details": [
       {
-        "area": "api-surface",
+        "area": "models",
         "paths": [
-          "src/api/ai.ts"
+          "src/types/agent-composition-slot-kind.ts",
+          "src/types/agent-composition-target-module.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface. Verification is required."
+    "summary": "Detected impact areas: models. Verification is required."
   },
   "executionDecision": {
     "schemaVersion": 1,
@@ -48,7 +49,7 @@
         "id": "verify-check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -66,7 +67,7 @@
         "id": "verify-build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -85,13 +86,13 @@
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -109,7 +110,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -148,16 +149,17 @@
   "syncSummary": {
     "dryRun": false,
     "controlPlaneEnabled": true,
-    "writtenFiles": 1,
+    "writtenFiles": 2,
     "skippedScaffoldFiles": 2,
-    "skippedUnchangedGeneratedFiles": 138,
+    "skippedUnchangedGeneratedFiles": 137,
     "deletedGeneratedFiles": 0,
     "changeSummaryPath": ".sdkwork/sdkwork-generator-changes.json",
-    "changeFingerprint": "80e0b57f63909f8c943b5eae3cd5c77989ed89936c32aa5cac934996b6f56dfa",
+    "changeFingerprint": "afd5d75814beff7ca253250f9e8a706fe6e59753e186e82c6f2bd107823e96be",
     "changes": {
       "createdGeneratedFiles": [],
       "updatedGeneratedFiles": [
-        "src/api/ai.ts"
+        "src/types/agent-composition-slot-kind.ts",
+        "src/types/agent-composition-target-module.ts"
       ],
       "unchangedGeneratedFiles": [
         "bin/publish-core.mjs",
@@ -170,6 +172,7 @@
         "package.json",
         "README.md",
         "sdkwork-sdk.json",
+        "src/api/ai.ts",
         "src/api/base.ts",
         "src/api/index.ts",
         "src/api/paths.ts",
@@ -179,11 +182,9 @@
         "src/index.ts",
         "src/sdk.ts",
         "src/types/activate-agent-provider-binding-request.ts",
-        "src/types/agent-composition-slot-kind.ts",
         "src/types/agent-composition-slot-list-response.ts",
         "src/types/agent-composition-slot-record.ts",
         "src/types/agent-composition-slot-response.ts",
-        "src/types/agent-composition-target-module.ts",
         "src/types/agent-implementation-kind.ts",
         "src/types/agent-implementation-type.ts",
         "src/types/agent-interaction-claim-response.ts",
@@ -310,29 +311,30 @@
     "impact": {
       "schemaVersion": 1,
       "areas": [
-        "api-surface"
+        "models"
       ],
       "details": [
         {
-          "area": "api-surface",
+          "area": "models",
           "paths": [
-            "src/api/ai.ts"
+            "src/types/agent-composition-slot-kind.ts",
+            "src/types/agent-composition-target-module.ts"
           ]
         }
       ],
       "requiresVerification": true,
-      "summary": "Detected impact areas: api-surface. Verification is required."
+      "summary": "Detected impact areas: models. Verification is required."
     },
     "verificationPlan": {
       "shouldRun": true,
       "runPhase": "now",
-      "summary": "Detected impact areas: api-surface. Verification is required. Run the required verification commands now against the generated SDK output.",
+      "summary": "Detected impact areas: models. Verification is required. Run the required verification commands now against the generated SDK output.",
       "steps": [
         {
           "id": "check",
           "title": "Unified package check",
           "required": true,
-          "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
+          "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
           "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
           "command": "node",
           "args": [
@@ -350,7 +352,7 @@
           "id": "build",
           "title": "Unified package build",
           "required": true,
-          "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
+          "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
           "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
           "command": "node",
           "args": [

@@ -1,1 +1,1 @@
-export type AgentCompositionSlotKind = 'memory' | 'knowledge' | 'skill' | 'prompt' | 'drive' | 'tool' | 'mcp';
+export type AgentCompositionSlotKind = 'memory' | 'knowledge' | 'skill' | 'prompt' | 'drive' | 'document' | 'tool' | 'mcp';

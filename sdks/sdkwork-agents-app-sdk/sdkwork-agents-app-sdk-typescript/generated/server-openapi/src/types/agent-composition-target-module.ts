@@ -1,1 +1,1 @@
-export type AgentCompositionTargetModule = 'memory' | 'knowledgebase' | 'skills' | 'prompts' | 'drive' | 'mcp' | 'tools';
+export type AgentCompositionTargetModule = 'memory' | 'knowledgebase' | 'skills' | 'prompts' | 'drive' | 'documents' | 'mcp' | 'tools';

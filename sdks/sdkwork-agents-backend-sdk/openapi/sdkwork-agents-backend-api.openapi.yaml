@@ -2548,7 +2548,9 @@ components:
       - skill
       - prompt
       - drive
+      - document
       - tool
+      - mcp
     AgentCompositionTargetModule:
       type: string
       enum:
@@ -2557,6 +2559,9 @@ components:
       - skills
       - prompts
       - drive
+      - documents
+      - tools
+      - mcp
     AgentCompositionSlotRecord:
       type: object
       additionalProperties: false
