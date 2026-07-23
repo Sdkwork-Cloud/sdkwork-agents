@@ -98,6 +98,61 @@ test("PostgreSQL baseline exactly matches the 19-table contract registry", () =>
   assert.doesNotMatch(baseline, /\bim_[a-z_]+\b/iu);
 });
 
+test("agent project and execution table names close across every persistence authority", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
+    "utf8",
+  );
+  const schema = readFileSync(
+    path.join(repoRoot, "database/contract/schema.yaml"),
+    "utf8",
+  );
+  const persistence = [
+    "crates/sdkwork-intelligence-agents-service/src/persistence.rs",
+    "crates/sdkwork-intelligence-agents-service/src/persistence/sql.rs",
+  ]
+    .map((relativePath) => readFileSync(path.join(repoRoot, relativePath), "utf8"))
+    .join("\n");
+  const registry = JSON.parse(
+    readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
+  );
+  const registeredTables = new Set(
+    registry.tables.map((entry) => entry.table_name),
+  );
+  const aggregateTables = [
+    "ai_agent_project",
+    "ai_agent_project_composition_slot",
+    "ai_agent_session",
+    "ai_agent_session_runtime_binding",
+    "ai_agent_turn",
+    "ai_agent_session_item",
+    "ai_agent_interaction",
+    "ai_agent_session_checkpoint",
+    "ai_agent_composition_slot",
+  ];
+
+  assert.ok(
+    registry.tables.every(
+      (entry) =>
+        entry.table_name === "ai_agent" || entry.table_name.startsWith("ai_agent_"),
+    ),
+    "Agents registry must use only the registered ai_agent physical namespace",
+  );
+  for (const tableName of aggregateTables) {
+    assert.ok(registeredTables.has(tableName), `${tableName} must be registered`);
+    assert.match(
+      baseline,
+      new RegExp(`CREATE TABLE IF NOT EXISTS ${tableName}\\s*\\(`, "u"),
+    );
+    assert.match(schema, new RegExp(`^  - name: ${tableName}$`, "mu"));
+    assert.match(
+      persistence,
+      new RegExp(`\\b(?:FROM|INTO|UPDATE)\\s+${tableName}\\b`, "u"),
+      `${tableName} must be used by the Rust persistence authority`,
+    );
+  }
+});
+
 test("database materialization preserves authored semantic metadata and is stable", () => {
   const tempBase = path.resolve(os.tmpdir());
   const stagingRoot = mkdtempSync(
