@@ -1,10 +1,11 @@
 import type { Int64String } from './int64-string';
 
 export interface AnswerAgentInteractionRequest {
-  tenantId?: Int64String;
   answer: string;
-  optionLabel?: string;
+  selectedOptionValue?: string;
   rejected: boolean;
+  claimToken: string;
+  fencingToken: Int64String;
   expectedVersion: Int64String;
   requestedAt: string;
 }

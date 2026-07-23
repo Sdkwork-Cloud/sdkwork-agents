@@ -1,6 +1,7 @@
 {
   "agents": {
-    "apiBaseUrl": "http://127.0.0.1:8095/app/v3/api"
+    "appApiBaseUrl": "http://127.0.0.1:8095/app/v3/api",
+    "dartDefine": "SDKWORK_AGENTS_APP_API_BASE_URL"
   },
   "appbase": {
     "loginUrl": "http://127.0.0.1:8095"

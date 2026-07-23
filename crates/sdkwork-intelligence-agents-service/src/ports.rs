@@ -346,6 +346,8 @@ impl McpMarketplaceListQuery {
 pub enum SessionItemListSort {
     #[default]
     SequenceAsc,
+    /// Public list order for newest items first, with normal offset pagination.
+    SequenceDesc,
     /// Recent context window for turn execution (descending sequence, bounded limit).
     RecentContextDesc,
 }
@@ -607,6 +609,11 @@ impl SessionItemListQuery {
         self
     }
 
+    pub fn with_sort(mut self, sort: SessionItemListSort) -> Self {
+        self.sort = sort;
+        self
+    }
+
     /// Load the most recent items for turn execution context.
     pub fn for_recent_turn_context(
         tenant_id: u64,
@@ -632,6 +639,7 @@ pub struct InteractionListQuery {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub session_id: String,
+    pub kind: Option<String>,
     pub status: Option<String>,
     pub pagination: PaginationParams,
 }
@@ -723,9 +731,15 @@ impl InteractionListQuery {
             tenant_id,
             organization_id,
             session_id: session_id.into(),
+            kind: None,
             status: None,
             pagination: PaginationParams::default(),
         }
+    }
+
+    pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
+        self.kind = Some(kind.into());
+        self
     }
 
     pub fn with_status(mut self, status: impl Into<String>) -> Self {
@@ -1062,15 +1076,9 @@ pub trait AgentRepository: Send + Sync {
         updated_at: String,
     ) -> KernelResult<AgentSessionRuntimeBindingRecord>;
 
-    fn insert_session_checkpoint(
-        &self,
-        record: AgentSessionCheckpointRecord,
-    ) -> KernelResult<()>;
+    fn insert_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()>;
 
-    fn update_session_checkpoint(
-        &self,
-        record: AgentSessionCheckpointRecord,
-    ) -> KernelResult<()>;
+    fn update_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()>;
 
     fn get_session_checkpoint(
         &self,
@@ -1085,10 +1093,7 @@ pub trait AgentRepository: Send + Sync {
         query: &SessionCheckpointListQuery,
     ) -> KernelResult<Vec<AgentSessionCheckpointRecord>>;
 
-    fn count_session_checkpoints(
-        &self,
-        query: &SessionCheckpointListQuery,
-    ) -> KernelResult<u64>;
+    fn count_session_checkpoints(&self, query: &SessionCheckpointListQuery) -> KernelResult<u64>;
 
     fn upsert_resource_user_state(
         &self,
@@ -1128,7 +1133,10 @@ pub trait AgentRepository: Send + Sync {
         item_id: &str,
     ) -> KernelResult<Option<AgentSessionItemRecord>>;
 
-    fn list_session_items(&self, query: &SessionItemListQuery) -> KernelResult<Vec<AgentSessionItemRecord>>;
+    fn list_session_items(
+        &self,
+        query: &SessionItemListQuery,
+    ) -> KernelResult<Vec<AgentSessionItemRecord>>;
 
     fn count_session_items(&self, query: &SessionItemListQuery) -> KernelResult<u64>;
 
@@ -1213,7 +1221,11 @@ pub trait AgentRepository: Send + Sync {
         _session: AgentSessionRecord,
         _user_input_item: AgentSessionItemRecord,
         _assistant_output_item: AgentSessionItemRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+    ) -> KernelResult<(
+        AgentSessionRecord,
+        AgentSessionItemRecord,
+        AgentSessionItemRecord,
+    )> {
         Err(KernelError::Internal {
             message: "insert_turn requires a transactional adapter override".to_string(),
         })
@@ -1226,7 +1238,11 @@ pub trait AgentRepository: Send + Sync {
         _user_input_item: AgentSessionItemRecord,
         _assistant_output_item: AgentSessionItemRecord,
         _drive_refs: Vec<AgentItemDriveRefRecord>,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+    ) -> KernelResult<(
+        AgentSessionRecord,
+        AgentSessionItemRecord,
+        AgentSessionItemRecord,
+    )> {
         Err(KernelError::Internal {
             message: "insert_turn_with_drive_refs requires a transactional adapter override"
                 .to_string(),

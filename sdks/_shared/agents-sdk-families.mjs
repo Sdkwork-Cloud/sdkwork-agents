@@ -78,7 +78,7 @@ export const AGENTS_SDK_FAMILIES = [
     sdkName: 'sdkwork-agents-sdk',
     sdkType: 'custom',
     sdkSurface: 'open',
-    externalSdkgenProfileSupported: false,
+    externalSdkgenProfileSupported: true,
     packageName: '@sdkwork/agents-sdk',
     npmPackageName: '@sdkwork/agents-sdk',
     languagePackageDir: 'sdkwork-agents-sdk-typescript',
@@ -103,6 +103,15 @@ export const AGENTS_SDK_FAMILIES = [
     packageName: '@sdkwork/agents-app-sdk',
     npmPackageName: '@sdkwork/agents-app-sdk',
     languagePackageDir: 'sdkwork-agents-app-sdk-typescript',
+    additionalLanguageTargets: [
+      {
+        language: 'flutter',
+        workspace: 'sdkwork-agents-app-sdk-flutter',
+        packageName: 'sdkwork_agents_app_sdk',
+        manifestFile: 'pubspec.yaml',
+        entrypoint: 'lib/sdkwork_agents_app_sdk.dart',
+      },
+    ],
     audience: 'app, desktop, mobile, H5, and user-facing clients',
     capability: 'agents-app-sdk',
     sdkOwner: AGENTS_SDK_OWNER,
@@ -145,6 +154,20 @@ export function resolveAgentsSdkFamily(keyOrFamilyDir) {
     throw new Error(`Unknown agents SDK family: ${keyOrFamilyDir}`);
   }
   return family;
+}
+
+export function resolveAgentsSdkLanguageTargets(family) {
+  return [
+    {
+      language: 'typescript',
+      workspace: family.languagePackageDir,
+      packageName: family.packageName,
+      npmPackageName: family.npmPackageName,
+      manifestFile: 'package.json',
+      entrypoint: 'src/index.ts',
+    },
+    ...(family.additionalLanguageTargets ?? []),
+  ];
 }
 
 export function forbiddenAgentsApiPrefixesFor(family) {

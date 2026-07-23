@@ -1,7 +1,7 @@
-/// SDK client packages consumed by Flutter core once Dart SDK artifacts exist.
+/// SDK client packages consumed by Flutter core.
 /// Authority: specs/component.spec.json `contracts.sdkDependencies`.
 const List<String> sdkworkAgentsFlutterCoreSdkInventory = <String>[
-  // out-of-ga-scope: sdkwork-agents-app-sdk Dart facade is not shipped yet
+  'sdkwork-agents-app-sdk',
 ];
 
 List<String> listSdkworkCoreSdkInventory() => sdkworkAgentsFlutterCoreSdkInventory;

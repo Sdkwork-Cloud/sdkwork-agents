@@ -1,263 +1,165 @@
-# SDKWork Agents API Reference
+# SDKWork Agents API And SDK Reference
 
-Status: active
-Owner: agents-platform
-Updated: 2026-07-06
-Specs: API_SPEC.md, SDK_SPEC.md
-Canonical list: [TECH-api-specification.md](TECH-api-specification.md)
+- Version: `5.1.0`
+- Status: active
+- Complete operation inventory:
+  [TECH-api-specification.md](./TECH-api-specification.md)
 
-## 1. Overview
+## 1. Surface Selection
 
-sdkwork-agents exposes three HTTP API surfaces over OpenAPI 3.1.2. All operations
-are metadata-driven through `api.rs` `ApiOperation` entries and materialized into
-per-surface OpenAPI specifications.
-
-| Surface | Prefix | Audience | OpenAPI authority | Operations |
-| --- | --- | --- | --- | --- |
-| Open API | `/agent/v3/api` | Third-party integrators | `sdkwork-agents-open-api` | 27 |
-| App API | `/app/v3/api` | PC/H5/Flutter/Mini Program | `sdkwork-agents-app-api` | 35 |
-| Backend API | `/backend/v3/api` | Admin backend | `sdkwork-agents-backend-api` | 33 |
-
-**Grand total: 95 HTTP operations** across all surfaces. The authoritative
-operation matrix lives in [TECH-api-specification.md](TECH-api-specification.md).
-
-### 1.1 App-only runtime catalog APIs
-
-| Method | Path | operationId | Purpose |
+| Consumer | Surface | SDK | Authentication |
 | --- | --- | --- | --- |
-| GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | Canonical code-engine catalog (`sdkwork-agents-runtime-facade`) |
-| GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | MCP composition-slot marketplace projection (paginated; supports `q`) |
+| PC, H5, Flutter and product app | App API | `@sdkwork/agents-app-sdk` / `sdkwork_agents_app_sdk` | dual token |
+| Operator console and automation | Backend API | `@sdkwork/agents-backend-sdk` | dual token/operator context |
+| External integration | Open API | `@sdkwork/agents-sdk` | `X-API-Key` |
 
-### 1.2 Scheduled tasks
+Do not call Backend API from user-facing packages. Do not place Open API keys in
+the app/backend token manager. Do not deep-import generated transport files.
 
-| Method | Path suffix | operationId | Notes |
-| --- | --- | --- | --- |
-| GET | `/ai/agents/{agentId}/tasks` | `agents.tasks.list` | Paginated (`page`, `page_size`) |
-| POST | `/ai/agents/{agentId}/tasks` | `agents.tasks.create` | |
-| GET | `/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | |
-| POST | `/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Optimistic concurrency via `expectedVersion` |
-| POST | `/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Run deferred `pending` task |
+## 2. Resource Map
 
-### 1.3 Live interactions (App + Backend)
+| Resource | Purpose | Primary operation namespace |
+| --- | --- | --- |
+| Agents | Managed definitions and lifecycle | `agents.*` |
+| Provider bindings | Provider/model selection | `agents.providerBindings.*` |
+| Projects | Reusable orchestration context | `agents.projects.*` |
+| Sessions | Durable execution context | `agents.sessions.*` |
+| Turns | Idempotent execution lifecycle | `agents.turns.*` |
+| Session items | Ordered typed execution facts | `agents.sessionItems.*` |
+| Item feedback | Per-user item assessment | `agents.itemFeedback.*` |
+| Interactions | Approval and user-question pause points | `agents.interactions.*` |
+| Checkpoints | Resume points | `agents.checkpoints.*` |
+| Runtime bindings | Session runtime selection | `agents.sessionRuntimeBindings.*` |
+| Tasks | Scheduled/deferred commands | `agents.tasks.*` |
+| Composition slots | Independent capability references | `agents.compositionSlots.*` |
 
-Code-engine pause points (approval / user question) under a chat session. Not
-exposed on Open API.
+Surface-specific availability is authoritative in the generated inventory.
 
-| Method | Path suffix | operationId | Notes |
-| --- | --- | --- | --- |
-| GET | `.../sessions/{sessionId}/interactions` | `agents.interactions.list` | Paginated (`page`, `page_size`) |
-| POST | `.../sessions/{sessionId}/interactions` | `agents.interactions.create` | `kind`: `approval` \| `user_question` |
-| GET | `.../interactions/{interactionId}` | `agents.interactions.retrieve` | |
-| POST | `.../interactions/{interactionId}/approve` | `agents.interactions.approve` | Approval kind only; `expectedVersion` required |
-| POST | `.../interactions/{interactionId}/answer` | `agents.interactions.answer` | User-question kind only; `answer` required when not rejected |
+## 3. TypeScript App SDK
 
-**Authorization (App API):** nested session/task/message/interaction handlers resolve
-`owner_scope` from the authenticated app session and reject cross-owner access.
-`path_agent_id` from the URL must match the persisted resource `agent_id` (404 when
-mismatched). Interaction create/list/approve/answer follow the same owner-scope rules
-as messages.
+```typescript
+import {
+  completeAgentTurn,
+  createClient,
+  type CreateAgentSessionRequest,
+  type CreateAgentTurnRequest,
+} from '@sdkwork/agents-app-sdk';
 
-### 1.4 List filter validation
+const client = createClient({
+  baseUrl: 'https://agents.example.com/app/v3/api',
+  tokenManager,
+});
 
-Invalid `status` or `role` query values on list endpoints return HTTP `400` with
-`application/problem+json` (`code` `40001`) instead of silently ignoring the filter.
-Applies to sessions, messages, interactions, and tasks list APIs.
+const sessionInput: CreateAgentSessionRequest = {
+  sessionKind: 'coding',
+  entrySurface: 'pc',
+  idempotencyKey: sessionKey,
+  payloadHash: sessionPayloadHash,
+  requestedAt: new Date().toISOString(),
+};
 
-## 2. SDK Families
+const session = await client.ai.sessions.create(agentId, sessionInput);
 
-| SDK family | TypeScript package | API authority | Prefix |
-| --- | --- | --- | --- |
-| `sdkwork-agents-sdk` | `@sdkwork/agents-sdk` | `sdkwork-agents-open-api` | `/agent/v3/api` |
-| `sdkwork-agents-app-sdk` | `@sdkwork/agents-app-sdk` | `sdkwork-agents-app-api` | `/app/v3/api` |
-| `sdkwork-agents-backend-sdk` | `@sdkwork/agents-backend-sdk` | `sdkwork-agents-backend-api` | `/backend/v3/api` |
+const turnInput: CreateAgentTurnRequest = {
+  content: prompt,
+  turnMode: 'interactive',
+  idempotencyKey: turnKey,
+  payloadHash: turnPayloadHash,
+  requestedAt: new Date().toISOString(),
+};
 
-All SDK families are generated from the authority OpenAPI via `sdks/workspace-agent-sdkgen.mjs`.
-Source OpenAPI files are authored under
-`crates/sdkwork-intelligence-agents-service/specs/openapi/` and synced to
-`sdks/sdkwork-agents-*/openapi/`.
+const result = await completeAgentTurn(
+  client,
+  agentId,
+  session.item.sessionId,
+  turnInput,
+);
+```
 
-## 3. Chat API Design (Production Contract)
+`result` is `{ session, turn, items }`. List/retrieve operations use
+`client.ai.sessions`, `client.ai.turns`, `client.ai.sessionItems`,
+`client.ai.itemFeedback` and `client.ai.interactions`.
 
-Chat is a first-class agents-owned capability. Session and message persistence
-live in `ai_agent_session` and `ai_agent_message`. Runtime turns are orchestrated
-by `AgentsService::send_chat_message` through the pluggable `ChatCompleter` port
-(default: `ContractChatCompleter`; production: mount `RuntimeFacadeChatCompleter` via
-`AgentHttpState::with_chat_completer` at gateway bootstrap so code-engine turns flow
-through `sdkwork-agents-runtime-facade`).
+Streaming:
 
-### 3.1 Session lifecycle
-
-| Method | Path suffix | operationId | Notes |
-| --- | --- | --- | --- |
-| GET | `/ai/agents/{agentId}/sessions` | `agents.sessions.list` | Paginated list |
-| POST | `/ai/agents/{agentId}/sessions` | `agents.sessions.create` | Server may generate `session.{id}` |
-| GET | `/ai/agents/{agentId}/sessions/{sessionId}` | `agents.sessions.retrieve` | |
-| POST | `/ai/agents/{agentId}/sessions/{sessionId}/close` | `agents.sessions.close` | |
-| POST | `/ai/agents/{agentId}/sessions/{sessionId}/archive` | `agents.sessions.archive` | Backend only; session must be `closed` first (400 if still active); idempotent when already archived |
-
-Nested `GET` handlers for sessions, tasks, messages, and interactions validate that
-the path `{agentId}` matches the stored resource `agent_id`.
-
-### 3.2 Chat completion (send message)
-
-| Method | Path suffix | operationId | Semantics |
-| --- | --- | --- | --- |
-| POST | `.../sessions/{sessionId}/messages` | `agents.messages.stream` | User sends `content`; service persists user + assistant messages and returns `AgentChatCompletionResponse` as JSON or SSE |
-| GET | `.../sessions/{sessionId}/messages` | `agents.messages.list` | Paginated transcript (`page`, `page_size`); default sort ascending by sequence; clients load the last page for the newest window and page backward for history |
-| GET | `.../messages/{messageId}` | `agents.messages.retrieve` | Single message |
-
-**App surface request body** (`AppSendAgentChatMessageRequest`): only `content`,
-`requestedAt`, and optional `modelId` / `metadataJson`. IDs and roles are assigned
-server-side.
-
-**Open/Backend surface request body** (`SendAgentChatMessageRequest`): includes
-`tenantId` for trusted tenant reconciliation.
-
-### 3.3 Response shape
-
-Chat completion returns a single-resource payload wrapped in the
-`SdkWorkApiResponse` envelope (`ResourceData<AgentChatCompletionResponse>`):
-
-```json
-{
-  "code": 0,
-  "data": {
-    "item": {
-      "session": { "sessionId": "session.…", "messageCount": "2", … },
-      "userMessage": { "role": "user", "content": "…" },
-      "assistantMessage": { "role": "assistant", "content": "…" }
-    }
-  },
-  "traceId": "<server-uuid>"
+```typescript
+for await (const event of client.ai.turns.stream(
+  agentId,
+  sessionId,
+  turnInput,
+  { stream: true },
+)) {
+  if (event.eventType === 'delta') renderDelta(event.delta ?? '');
+  if (event.eventType === 'completion') commit(event.response);
 }
 ```
 
-SSE streaming responses carry one `SdkWorkApiResponse` envelope per event,
-keeping `code`/`traceId` consistent with the JSON path. Errors render as
-`application/problem+json` with numeric `code` per `API_SPEC.md` §15.3.
+## 4. Flutter App SDK
 
-### 3.4 Permissions
+Dependency package: `sdkwork_agents_app_sdk`.
 
-| operationId | Permission |
-| --- | --- |
-| `agents.sessions.list` | `agent.business.session.list` |
-| `agents.sessions.create` | `agent.business.session.create` |
-| `agents.sessions.retrieve` | `agent.business.session.retrieve` |
-| `agents.sessions.close` | `agent.business.session.close` |
-| `agents.sessions.archive` | `agent.business.session.archive` |
-| `agents.messages.list` | `agent.business.message.list` |
-| `agents.messages.stream` | `agent.business.message.create` |
-| `agents.messages.retrieve` | `agent.business.message.retrieve` |
+```dart
+import 'package:sdkwork_agents_app_sdk/sdkwork_agents_app_sdk.dart';
 
-## 4. Surface Comparison Matrix
+final client = SdkworkAppClient.withBaseUrl(
+  baseUrl: 'https://agents.example.com',
+  authToken: authToken,
+  accessToken: accessToken,
+);
 
-| Operation | Open | App | Backend |
-| --- | --- | --- | --- |
-| `agents.list` | ✓ | ✓ | ✓ |
-| `agents.create` | ✓ | ✓ | ✓ |
-| `agents.retrieve` | ✓ | ✓ | ✓ |
-| `agents.update` | ✓ | ✓ | ✓ |
-| `agents.delete` | ✓ | ✓ | — |
-| `agents.restore` | — | ✓ | ✓ |
-| `agents.status.create` | — | — | ✓ |
-| `agents.auditEvents.list` | — | — | ✓ |
-| `agents.providerBindings.*` | ✓ | ✓ | ✓ |
-| `agents.compositionSlots.*` | ✓ | ✓ | ✓ |
-| `agents.previewResponses.create` | ✓ | ✓ | — |
-| `agents.promptOptimizations.create` | ✓ | ✓ | — |
-| `agents.sessions.*` | ✓ | ✓ | ✓ |
-| `agents.sessions.archive` | — | — | ✓ |
-| `agents.messages.*` | ✓ | ✓ | ✓ |
-| `agents.interactions.*` | — | ✓ | ✓ |
-| `agents.tasks.*` | ✓ | ✓ | ✓ |
-| `agents.codeEngines.list` | — | ✓ | — |
-| `agents.mcpServers.list` | — | ✓ | — |
+final session = await client.ai.agentsSessionsCreate(
+  agentId,
+  CreateAgentSessionRequest(
+    sessionKind: 'coding',
+    entrySurface: 'flutter',
+    idempotencyKey: sessionKey,
+    payloadHash: sessionPayloadHash,
+    requestedAt: DateTime.now().toUtc().toIso8601String(),
+  ),
+);
 
-### 4.1 Catalog permissions
-
-| operationId | Permission |
-| --- | --- |
-| `agents.codeEngines.list` | `agent.business.code_engine.list` |
-| `agents.mcpServers.list` | `agent.business.mcp_server.list` |
-| `agents.interactions.list` | `agent.business.interaction.list` |
-| `agents.interactions.create` | `agent.business.interaction.create` |
-| `agents.interactions.retrieve` | `agent.business.interaction.retrieve` |
-| `agents.interactions.approve` | `agent.business.interaction.approve` |
-| `agents.interactions.answer` | `agent.business.interaction.answer` |
-| `agents.tasks.list` | `agent.business.task.list` |
-
-## 5. Runtime Facade API (Rust crate, not HTTP)
-
-`sdkwork-agents-runtime-facade` is the product-neutral Rust facade that product
-repositories (BirdCoder, IM PC, etc.) must depend on instead of importing
-`sdkwork-agent-provider-*` or `sdkwork-agent-kernel` directly.
-
-Code-engine bootstrap, catalog, turn execution, and live interaction are documented
-in [TECH_ARCHITECTURE.md](TECH_ARCHITECTURE.md). HTTP chat completion and code-engine
-turns are complementary: HTTP for managed session persistence and client SDKs; the
-facade for in-process multi-engine orchestration.
-
-## 6. Database Tables (8 tables, agents-owned chat + tasks + interactions)
-
-| Table | Responsibility |
-| --- | --- |
-| `ai_agent` | Agent identity, manifest, lifecycle |
-| `ai_agent_runtime_binding` | Provider/runtime binding |
-| `ai_agent_composition_slot` | Cross-module resource references |
-| `ai_agent_audit_event` | Immutable audit log |
-| `ai_agent_session` | Chat session lifecycle and counters |
-| `ai_agent_message` | Ordered session transcript |
-| `ai_agent_interaction` | Live interaction pause points (approval / user question) |
-| `ai_agent_task` | Scheduled/async agent tasks |
-
-## 7. Integration Boundary for Product Applications
-
-```text
-Product Application (e.g., sdkwork-birdcoder)
-    │
-    ├── Frontend ──→ @sdkwork/agents-app-sdk
-    │                POST .../sessions
-    │                POST .../sessions/{id}/messages  (chat completion)
-    │
-    ├── Rust server ──→ sdkwork-agents-runtime-facade (code engines only)
-    │
-    └── MUST NOT directly depend on:
-        ├── sdkwork-agent-kernel
-        ├── sdkwork-agent-provider-*
-        └── sdkwork-code-kernel
+final events = client.ai.agentsTurnsStream(
+  agentId,
+  sessionId,
+  CreateAgentTurnRequest(
+    content: prompt,
+    turnMode: 'interactive',
+    idempotencyKey: turnKey,
+    payloadHash: turnPayloadHash,
+    requestedAt: DateTime.now().toUtc().toIso8601String(),
+  ),
+  true,
+);
 ```
 
-### Verification
+The Agents Flutter mobile core accepts the canonical full App surface URL and
+normalizes it before constructing this generated client. Feature code receives
+the client through bootstrap injection.
+
+## 5. Contract Rules
+
+- Session creation requires `sessionKind`, `entrySurface`, `idempotencyKey`,
+  `payloadHash` and `requestedAt`.
+- Turn creation requires `content`, `turnMode`, `idempotencyKey`, `payloadHash`
+  and `requestedAt`.
+- Retry the same command with the same key and hash.
+- Treat a key/hash conflict as a client correctness error.
+- Use `expectedVersion` for optimistic commands.
+- Page with `page` and language-level `pageSize`; the SDK serializes
+  `page_size`.
+- Treat Session Items as execution facts, not IM communication resources.
+- Persist only stable Agents identifiers in a consuming product.
+
+## 6. Authorities And Verification
+
+- Authored OpenAPI:
+  `crates/sdkwork-intelligence-agents-service/specs/openapi/`
+- SDK family manifests: `sdks/sdkwork-agents-*-sdk/sdk-manifest.json`
+- Database:
+  `crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md`
 
 ```powershell
-# sdkwork-agents
-pnpm verify
-pnpm check
-pnpm check:api-envelope
-pnpm check:api-operation-patterns
-pnpm check:route-path-collisions
-pnpm check:pagination
-pnpm check:app-sdk-consumer-imports
-cargo test -p sdkwork-intelligence-agents-service --features http-axum
-
-# OpenAPI surface sync (after editing service specs)
-node crates/sdkwork-intelligence-agents-service/scripts/sync-chat-openapi-surfaces.mjs
-node sdks/workspace-agent-sdkgen.mjs --mode apply
-
-# sdkwork-birdcoder (consumer)
-cargo test --manifest-path ../sdkwork-birdcoder/Cargo.toml -p sdkwork-birdcoder-kernel-bridge
-cargo test -p sdkwork-agents-runtime-facade
+node scripts/generate-agents-api-docs.mjs --check
+node scripts/check-agent-sdk-workspace.mjs
+node sdks/workspace-agent-sdkgen.mjs --mode dry-run
 ```
-
-`sync-chat-openapi-surfaces.mjs` projects session/message paths and schemas from `agents-open-api.openapi.yaml`
-onto app/backend surfaces. It uses anchor insertion (not `String.replace` substitution strings) so regex
-patterns ending in `$` are not corrupted. Backend paths map `TenantIdQuery` → `TenantId`; app paths strip
-tenant query parameters.
-
-## 8. OpenAPI Source Files
-
-| Surface | Source OpenAPI | SDK OpenAPI |
-| --- | --- | --- |
-| Open API | `crates/sdkwork-intelligence-agents-service/specs/openapi/agents-open-api.openapi.yaml` | `sdks/sdkwork-agents-sdk/openapi/sdkwork-agents-open-api.openapi.yaml` |
-| App API | `crates/sdkwork-intelligence-agents-service/specs/openapi/agents-app-api.openapi.yaml` | `sdks/sdkwork-agents-app-sdk/openapi/sdkwork-agents-app-api.openapi.yaml` |
-| Backend API | `crates/sdkwork-intelligence-agents-service/specs/openapi/agents-backend-api.openapi.yaml` | `sdks/sdkwork-agents-backend-sdk/openapi/sdkwork-agents-backend-api.openapi.yaml` |

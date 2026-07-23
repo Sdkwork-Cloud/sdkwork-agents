@@ -18,5 +18,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+dependency_overrides:
+  sdkwork_common_flutter:
+    path: ../../../sdkwork-sdk-commons/sdkwork-sdk-common-flutter
+
 flutter:
   uses-material-design: true

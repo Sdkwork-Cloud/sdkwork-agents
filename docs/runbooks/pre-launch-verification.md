@@ -1,134 +1,136 @@
 # Pre-Launch Verification Runbook
 
-Use this checklist before staging or production cutover. Evidence replaces historical one-off readiness reports.
+Use this runbook before staging or production release. Record command, commit,
+profile, timestamp, exit code and important output in release evidence.
 
-## 1. Full workspace verification
+## 1. Preconditions
 
-From repository root:
+- Sibling `sdkwork-specs`, `sdkwork-kernel`, `sdkwork-web-framework`,
+  `sdkwork-database`, `sdkwork-utils` and SDK generator workspaces resolve.
+- Production uses PostgreSQL with TLS and a bounded connection pool.
+- `SDKWORK_AGENTS_DEV_AUTH_BYPASS` is absent or false.
+- App/Backend token providers and Open API key providers are configured
+  independently.
+- Required independent capability endpoints are explicit in the selected
+  source configuration.
+- No secret is stored in manifests, checked-in profiles, logs or SDK examples.
+
+## 2. Contract And Documentation Gates
 
 ```powershell
-pnpm install
-pnpm verify
+node scripts/generate-agents-api-docs.mjs --check
+node ../sdkwork-specs/tools/check-api-response-envelope.mjs --workspace .
+node ../sdkwork-specs/tools/check-api-operation-patterns.mjs --workspace .
+node ../sdkwork-specs/tools/check-route-path-collisions.mjs --workspace .
+node ../sdkwork-specs/tools/check-pagination.mjs --workspace .
+pnpm check:agents-im-boundary
+pnpm check:docs
 ```
 
-`pnpm verify` runs, in order:
+Pass criteria:
 
-| Step | Command / action |
-| --- | --- |
-| Spec gates | `pnpm check` (composition, component ports, frontend, permissions, Rust backend, API envelope, operation patterns, route collisions, pagination, SDK imports, agent SDK workspace, apps index, production security, deploy, cloud gateway bundle, docs, scripts, workflow, topology, database) |
-| App SDK build | `pnpm workflow:build-agents-app-sdk` (ensures generated TypeScript dist matches OpenAPI) |
-| Rust build | `cargo build --workspace` |
-| Rust tests | `cargo test --workspace --all-features` (includes HTTP + Postgres contract suites) |
-| Mini-program runtime | `pnpm --filter @sdkwork/agents-mini-program build` |
-| Node contracts | `pnpm check:contracts` (platform integration, database framework, root quality gates, production security, frontend service identity, Open SDK surface, mini-program runtime, client surface readiness) |
-| Client typecheck | PC / H5 / mini-program `tsc --noEmit` |
-| PC agent contracts | Agent catalog, IAM/auth routing, and Drive upload contracts |
-| Live smoke (manual) | [smoke-test.md](../runbooks/smoke-test.md) after deployment |
+- operation counts are App 68, Backend 48 and Open 47;
+- no client-writable tenant, organization or user selector exists;
+- all list operations use store-level pagination;
+- Session, Turn, SessionItem and Interaction naming is consistent;
+- IM reverse dependencies and IM-owned persistence are absent.
 
-Optional broader sweep:
+## 3. SDK Gates
 
 ```powershell
-pnpm test
-pnpm workflow:build-client-surfaces
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+node sdks/workspace-agent-sdkgen.mjs --mode dry-run
+node scripts/agents-open-sdk-surface-contract.test.mjs
+node scripts/check-agent-sdk-workspace.mjs
+pnpm --filter @sdkwork/agents-app-sdk test
+
+flutter analyze apps/sdkwork-agents-flutter-mobile
+flutter analyze apps/sdkwork-agents-flutter-mobile/packages/sdkwork_agents_flutter_mobile_core
+flutter test apps/sdkwork-agents-flutter-mobile/packages/sdkwork_agents_flutter_mobile_core
 ```
 
-On Windows, `cargo fmt --all -- --check` can exceed the process command-line
-limit when Cargo expands sibling path dependencies. In that environment, use
-`cargo metadata --no-deps --format-version 1` to enumerate this repository's
-workspace members and run `cargo fmt -p <package> -- --check` for each member.
+Pass criteria:
 
-## 2. Topology and database
+- dry run reports `hasChanges: false` for every family/language;
+- Open SDK exposes exactly its 47 API-key operations;
+- TypeScript consumers use scoped package roots;
+- Flutter package root contains `pubspec.yaml` and
+  `lib/sdkwork_agents_app_sdk.dart`;
+- Flutter mobile core consumes `sdkwork_agents_app_sdk` through its generated
+  package root and no raw HTTP transport.
+
+## 4. Database Gates
 
 ```powershell
-pnpm topology:validate
 pnpm db:validate
+pnpm db:status
 pnpm db:drift:check
 ```
 
-Confirm `etc/topology/*.env` uses canonical subject IDs (`SDKWORK_AGENTS_TENANT_ID=100001`, not legacy `1001`).
+Validate the target profile separately. The expected module contains 19
+Agents-owned PostgreSQL `ai_*` tables. Confirm migrations/checksums match the
+baseline and there are no extra session, item, interaction or dependency-owned
+tables.
 
-## 3. Deploy manifest
+For a configured integration environment:
 
 ```powershell
-pnpm check:deploy
-pnpm deploy:validate:cloud
+pnpm test:database:postgres-live
 ```
 
-Authoritative file: [deployments/deploy.yaml](../../../deployments/deploy.yaml).
-
-Validate the target profile id matches the release environment, for example
-`cloud.production` for hosted production and `standalone.production` for the
-single-ingress production package.
-
-Cloud profile cutover must also validate the generated cloud gateway bundle so
-gateway configuration and topology surfaces stay aligned before packaging or
-deployment approval.
-
-## 3.1 App manifest release channel
-
-All `sdkwork.app.config.json` files must keep `publish.status`, media readiness,
-and release channels aligned. While an application manifest still contains
-generated placeholder media assets, the release channel must remain `BETA`; do
-not expose `release.latest.STABLE`, `release.defaultChannel=STABLE`, or
-`STABLE` release notes until product media assets are governed and GA-ready.
-
-The root quality gate enforces this in `pnpm check:contracts`. Real GA cutover
-requires replacing placeholder media with governed Drive-backed or immutable
-public media resources before moving the channel to `STABLE`.
-
-## 4. API, SDK, pagination, and composition gates
+## 5. Rust Gates
 
 ```powershell
-pnpm check:api-envelope
-pnpm check:api-operation-patterns
-pnpm check:route-path-collisions
-pnpm check:pagination
-pnpm check:app-sdk-consumer-imports
-pnpm check:agent-sdk-workspace
-pnpm check:component-port-bindings
-pnpm check:frontend-composition
-pnpm check:frontend-service-identity
-pnpm check:permission-composition
-pnpm check:composition-resolver
-pnpm check:rust-backend-composition
+cargo check -p sdkwork-intelligence-agents-service --features http-axum
+cargo test -p sdkwork-intelligence-agents-service --features http-axum --lib
+cargo test -p sdkwork-intelligence-agents-service --features http-axum --test http_axum_contracts
+cargo test -p sdkwork-agents-runtime-facade
+cargo check -p sdkwork-agents-kernel-bridge
+cargo check -p sdkwork-api-agents-assembly
+```
+
+Pass criteria include trusted request context, cross-tenant denial, idempotency
+conflict, optimistic concurrency, Turn cancellation, typed SSE completion,
+Interaction claim, checkpoint lifecycle and repository pagination.
+
+## 6. Application And Deployment Gates
+
+```powershell
 pnpm check:production-security
+pnpm check:release-supply-chain
+pnpm topology:validate
+pnpm deploy:validate:standalone
+pnpm deploy:validate:cloud
+pnpm workflow:typecheck-client-surfaces
+pnpm workflow:build-client-surfaces
 ```
 
-All L2+ app/backend/open business operations must use `SdkWorkApiResponse` success bodies and `ProblemDetail` errors, follow the API operation matrix, avoid path collisions, expose standard pagination, consume composed SDK imports, preserve SDKWork composition boundaries, and prove production-like profiles reject dev inline auth and contract runtime fallback per [TECH-api-specification.md](../architecture/tech/TECH-api-specification.md) and [TECH_ARCHITECTURE.md](../architecture/tech/TECH_ARCHITECTURE.md).
+Run `pnpm verify` for the complete repository gate after all narrow checks pass.
 
-The frontend service identity gate must also pass before cutover. It verifies authored PC/H5 agents service source does not call `crypto.randomUUID()` directly, so request/trace identity remains server-owned and client-side business IDs go through approved SDKWork utility helpers. PC/H5 chat services must reject malformed SDK responses that omit `assistantMessage.messageId`; they must not synthesize local fallback message IDs for persisted server messages. Root quality gates also verify PC/H5 session bridges preserve IAM/AppContext fields from appbase or JWT claims and do not locally default `environment`, `deploymentMode`, or `authLevel`.
+## 7. Live Evidence
 
-The same production-security gate must also prove runtime resilience on panic-prone infrastructure paths: failure to install Ctrl+C or SIGTERM handlers is logged for operators and does not terminate the process, dev-only static policy construction rejects unsafe production-like bootstrap or falls back to deny-all instead of panicking, poisoned in-memory repository, audit, or metrics locks recover through centralized helpers instead of `expect` panics, managed-store repository and Postgres adapter constructors propagate default Snowflake ID initialization errors through `KernelResult`, route manifest build scripts return explicit OpenAPI/environment/file-system errors instead of panicking, and `AgentRepository` persistence methods remain required trait methods so incomplete adapters fail at compile time.
+Deploy the exact candidate artifact, then execute
+[smoke-test.md](./smoke-test.md). Confirm:
 
-## 5. Packaging (CI parity)
+- health and metrics;
+- App/Backend dual-token enforcement and Open API-key enforcement;
+- create/retrieve Session;
+- execute/retrieve/cancel Turn;
+- ordered Session Item pagination;
+- Interaction claim and resolution;
+- restart persistence and idempotent retry;
+- no secret or item content in logs/metrics.
 
-GitHub workflow: `.github/workflows/package.yml` → `sdkwork.workflow.json`.
+## 8. Sign-Off
 
-CI validate lifecycle mirrors local gates plus client typecheck. The server artifact must include
-the release gateway binary, `database/**` lifecycle assets, production topology templates,
-`deployments/**` including HPA/PDB manifests, and `sdkwork.app.config.json`. Packaging only the
-binary is invalid because managed-store initialization and cluster deployment would be incomplete.
-
-## 6. GA Scope Boundaries
-
-Documented in [TECH_ARCHITECTURE.md](../architecture/tech/TECH_ARCHITECTURE.md) §10:
-
-| Area | GA treatment | Owner |
-| --- | --- | --- |
-| Token-level SSE streaming | Excluded from the current GA evidence bundle; current SDKWork contract ships single completion SSE events | `sdkwork-kernel` provider stream SPI |
-| Rate limit / CORS middleware | Enforced by the shared web-framework adoption plan, not reimplemented locally | `sdkwork-web-framework` |
-| Flutter mobile app | Excluded from the current GA evidence bundle until an owned Dart app SDK is available | `sdkwork-agents` mobile track |
-| File upload | PC GA scope is included through `@sdkwork/drive-app-sdk` Drive Uploader; verify avatar and chat media persist only canonical `drive://` MediaResource references and never presigned URLs. Creative upload policies are governed but its UI remains outside production composition. | `sdkwork-drive` + PC core uploader facade |
-
-Before cutover, run `pnpm --filter @sdkwork/agents-pc test:drive-contract`. Confirm the deployment exposes the Drive App API Base URL, shares the IAM TokenManager, rejects unsupported MIME/oversized input before upload, and can resolve a canonical Drive URI to a short-lived preview URL. No browser provider secret, app-local `/upload` route, Node proxy, raw Drive HTTP, object-storage SDK, persisted Blob/Data URL, or fake-success fallback is permitted.
-
-## Sign-off
-
-| Gate | Pass criterion |
+| Gate | Required result |
 | --- | --- |
-| `pnpm verify` | Exit code 0 |
-| Topology | `sdkwork-topology validate` ok |
-| Database | `db:validate` + no drift on target env |
-| Deploy | `check-deploy-standard` and `deploy:validate:cloud` ok for target profile |
+| API/docs | exact inventory and all validators pass |
+| SDK | generation idempotent; TypeScript and Flutter checks pass |
+| Database | framework, status and drift checks pass on target |
+| Rust | service, facade, bridge and assembly checks pass |
+| Security | auth modes, trusted context and isolation tests pass |
+| Deployment | standalone/cloud profile validation passes |
+| Live | smoke sequence and restart reconciliation pass |
+
+Do not waive a failed gate by enabling an alternate store, compatibility
+adapter, raw transport or development auth path.

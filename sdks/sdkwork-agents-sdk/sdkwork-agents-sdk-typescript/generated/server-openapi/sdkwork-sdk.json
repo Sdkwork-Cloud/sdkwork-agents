@@ -3,7 +3,7 @@
   "name": "sdkwork-agents-sdk",
   "version": "0.1.0",
   "language": "typescript",
-  "sdkType": "app",
+  "sdkType": "custom",
   "packageName": "sdkwork-agents-sdk-generated-typescript",
   "transportPackageName": "sdkwork-agents-sdk-generated-typescript",
   "consumerPackageName": "@sdkwork/agents-sdk",

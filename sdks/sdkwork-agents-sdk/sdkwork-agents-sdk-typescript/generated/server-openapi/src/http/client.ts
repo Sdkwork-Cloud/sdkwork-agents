@@ -1,6 +1,5 @@
-import type { SdkworkAppConfig } from '../types/common';
+import type { SdkworkCustomConfig } from '../types/common';
 import type { RequestOptions, QueryParams } from '@sdkwork/sdk-common';
-import type { AuthTokenManager } from '@sdkwork/sdk-common';
 import { BaseHttpClient, withRetry } from '@sdkwork/sdk-common';
 
 type HttpRequestOptions = RequestOptions & {
@@ -11,10 +10,11 @@ type HttpRequestOptions = RequestOptions & {
 };
 
 export class HttpClient extends BaseHttpClient {
-  private static readonly ACCESS_TOKEN_HEADER: string = 'Access-Token';
+  private static readonly API_KEY_HEADER: string = 'X-API-Key';
+  private static readonly API_KEY_USE_BEARER = false;
   private static readonly SDKWORK_V3_UNWRAP = true;
 
-  constructor(config: SdkworkAppConfig) {
+  constructor(config: SdkworkCustomConfig) {
     super(config as any);
   }
 
@@ -23,14 +23,6 @@ export class HttpClient extends BaseHttpClient {
     self.authConfig = self.authConfig || {};
     return self.authConfig;
   }
-
-  private getInternalHeaders(): Record<string, string> {
-    const self = this as any;
-    self.config = self.config || {};
-    self.config.headers = self.config.headers || {};
-    return self.config.headers;
-  }
-
   private buildRequestHeaders(
     headers?: Record<string, string>,
     contentType?: string,
@@ -45,32 +37,18 @@ export class HttpClient extends BaseHttpClient {
 
     return Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined;
   }
-
   protected buildHeaders(config: any, skipAuth = false): Record<string, string> {
-    const headers = super.buildHeaders(config, skipAuth);
+    const headers = super.buildHeaders(config, true);
     if (!skipAuth && !config?.skipAuth) {
-      return headers;
+      const apiKey = this.getInternalAuthConfig().apiKey;
+      if (typeof apiKey === 'string' && apiKey.length > 0) {
+        headers[HttpClient.API_KEY_HEADER] = HttpClient.API_KEY_USE_BEARER
+          ? `Bearer ${apiKey}`
+          : apiKey;
+      }
     }
-
-    [
-      HttpClient.ACCESS_TOKEN_HEADER,
-      'Authorization',
-      'Access-Token',
-      ['X', 'API', 'Key'].join('-'),
-      'X-Tenant-Id',
-      'X-Organization-Id',
-      'X-Platform',
-      'X-User-Id',
-      'X-Sdkwork-Tenant-Id',
-      'X-Sdkwork-Organization-Id',
-      'X-Sdkwork-User-Id',
-    ].forEach((key) => {
-      delete headers[key];
-    });
-    this.applyCredentialEntryBootstrapAccessToken(headers);
     return headers;
   }
-
   private buildRequestBody(body: unknown, contentType?: string): unknown {
     if (body == null) {
       return body;
@@ -201,47 +179,9 @@ export class HttpClient extends BaseHttpClient {
     }
     params.append(key, String(value));
   }
-  setAuthToken(token: string): void {
-    super.setAuthToken(token);
+  setApiKey(apiKey: string): void {
+    this.getInternalAuthConfig().apiKey = apiKey;
   }
-  setAccessToken(token: string): void {
-    const headers = this.getInternalHeaders();
-    headers[HttpClient.ACCESS_TOKEN_HEADER] = token;
-    super.setAccessToken(token);
-  }
-
-  setTokenManager(manager: AuthTokenManager): void {
-    const baseProto = Object.getPrototypeOf(HttpClient.prototype) as { setTokenManager?: (this: HttpClient, m: AuthTokenManager) => void };
-    if (typeof baseProto.setTokenManager === 'function') {
-      baseProto.setTokenManager.call(this, manager);
-      return;
-    }
-    this.getInternalAuthConfig().tokenManager = manager;
-  }
-
-  private applyCredentialEntryBootstrapAccessToken(headers: Record<string, string>): void {
-    const authConfig = this.getInternalAuthConfig();
-    const tokenManager = authConfig.tokenManager;
-    const accessToken = tokenManager?.getAccessToken?.();
-    if (typeof accessToken === 'string' && accessToken.length > 0) {
-      headers[HttpClient.ACCESS_TOKEN_HEADER] = accessToken;
-    }
-  }
-
-  private applySdkworkAuthHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
-    const authConfig = this.getInternalAuthConfig();
-    const tokenManager = authConfig.tokenManager;
-    const accessToken = tokenManager?.getAccessToken?.();
-    if (!accessToken) {
-      return headers;
-    }
-
-    return {
-      ...(headers ?? {}),
-      [HttpClient.ACCESS_TOKEN_HEADER]: accessToken,
-    };
-  }
-
   private unwrapSdkworkV3Payload<T>(payload: unknown): T {
     if (!HttpClient.SDKWORK_V3_UNWRAP || payload == null || typeof payload !== 'object') {
       return payload as T;
@@ -277,7 +217,7 @@ export class HttpClient extends BaseHttpClient {
       throw new Error('BaseHttpClient execute method is not available');
     }
     const { body, headers, contentType, method = 'GET', skipAuth, ...rest } = options;
-    const requestHeaders = skipAuth ? headers : this.applySdkworkAuthHeaders(headers);
+    const requestHeaders = headers;
     const payload = await withRetry(
       () => execute.call(this, {
         url: path,
@@ -298,9 +238,8 @@ export class HttpClient extends BaseHttpClient {
       throw new Error('BaseHttpClient stream method is not available');
     }
     const { body, headers, contentType, method = 'GET', skipAuth, ...rest } = options;
-    const authHeaders = skipAuth ? headers : this.applySdkworkAuthHeaders(headers);
     const requestHeaders = this.buildRequestHeaders(
-      { Accept: 'text/event-stream', ...(authHeaders ?? {}) },
+      { Accept: 'text/event-stream', ...(headers ?? {}) },
       body == null ? undefined : contentType,
     );
 
@@ -360,6 +299,6 @@ export class HttpClient extends BaseHttpClient {
   }
 }
 
-export function createHttpClient(config: SdkworkAppConfig): HttpClient {
+export function createHttpClient(config: SdkworkCustomConfig): HttpClient {
   return new HttpClient(config);
 }

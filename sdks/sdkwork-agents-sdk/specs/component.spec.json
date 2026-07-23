@@ -56,8 +56,11 @@
     "sdkName": "sdkwork-agents-sdk",
     "sdkType": "custom",
     "sdkSurface": "open",
-    "externalSdkgenProfileSupported": false,
+    "externalSdkgenProfileSupported": true,
     "generatedOutput": "sdkwork-agents-sdk-typescript/generated/server-openapi",
+    "generatedOutputs": {
+      "typescript": "sdkwork-agents-sdk-typescript/generated/server-openapi"
+    },
     "standardProfile": "sdkwork-v3"
   },
   "contracts": {

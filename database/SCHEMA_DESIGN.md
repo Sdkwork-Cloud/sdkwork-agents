@@ -52,8 +52,8 @@ provider state documents.
 ## Isolation And Concurrency
 
 Every session-aggregate unique key and foreign key includes tenant and
-organization scope. Application-allocated `BIGINT` primary keys are used on both
-engines. Mutating aggregates use optimistic versions. Turn workers, interaction
+organization scope. Application-allocated `BIGINT` primary keys are used.
+Mutating aggregates use optimistic versions. Turn workers, interaction
 claimers, and outbox publishers use bounded attempts, leases, opaque lease
 tokens, expirations, and monotonic fencing tokens.
 

@@ -9,3 +9,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  sdkwork_agents_app_sdk:
+    path: ../../../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+dependency_overrides:
+  sdkwork_common_flutter:
+    path: ../../../../../sdkwork-sdk-commons/sdkwork-sdk-common-flutter

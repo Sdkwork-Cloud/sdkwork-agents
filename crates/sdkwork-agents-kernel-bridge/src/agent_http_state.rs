@@ -49,8 +49,8 @@ fn dev_agent_http_state() -> Result<AgentHttpState> {
 }
 
 fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
-    let repository_adapter = SyncPostgresAdapter::connect_from_agents_managed_store_env()
-        .context("connect agents managed store postgres adapter")?;
+    let repository_adapter = SyncPostgresAdapter::connect_from_agents_database_env()
+        .context("connect canonical Agents PostgreSQL database")?;
 
     // Apply schema via the sdkwork-database lifecycle orchestrator instead of
     // directly executing baseline SQL. This ensures:
@@ -66,7 +66,7 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
             database_pool,
         ))
         .map_err(anyhow::Error::msg)
-        .context("apply agents managed store schema via lifecycle orchestrator")?;
+        .context("apply canonical Agents schema via lifecycle orchestrator")?;
     }
 
     // The audit sink shares the same physical postgres pool as the repository

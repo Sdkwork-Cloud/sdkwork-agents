@@ -148,8 +148,8 @@ assert(
   'kernel-bridge must bootstrap agent HTTP state through dedicated module',
 );
 assert(
-  agentHttpStateSource.includes('connect_from_agents_managed_store_env'),
-  'agent_http_state must wire postgres managed-store repository in production path',
+  agentHttpStateSource.includes('connect_from_agents_database_env'),
+  'agent_http_state must wire the canonical Agents PostgreSQL database in production',
 );
 assert(
   agentHttpStateSource.includes('agents_use_dev_inline_auth_resolver'),
@@ -290,41 +290,56 @@ assert(
   'Agents IM boundary spec must declare sdkwork-im -> sdkwork-agents -> sdkwork-kernel',
 );
 assert(
-  agentsImBoundarySpec.includes('`sdkwork-agents` MUST NOT depend on `sdkwork-im`'),
+  agentsImBoundarySpec.includes('Agents never depends on IM'),
   'Agents IM boundary spec must forbid the reverse sdkwork-agents-to-sdkwork-im dependency',
 );
 
 const agentsDatabaseSpec = readText(
   'crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md',
 );
+const agentsTableRegistry = readJson('database/contract/table-registry.json');
+const agentTableNames = (agentsTableRegistry.tables ?? []).map((table) => table.table_name);
 for (const targetTable of [
   'ai_agent_project',
   'ai_agent_project_composition_slot',
-  'ai_agent_chat_turn',
-  'ai_agent_message_drive_ref',
-  'ai_agent_message_feedback',
+  'ai_agent_session',
+  'ai_agent_session_runtime_binding',
+  'ai_agent_turn',
+  'ai_agent_session_item',
+  'ai_agent_item_drive_ref',
+  'ai_agent_item_feedback',
+  'ai_agent_interaction',
+  'ai_agent_session_checkpoint',
   'ai_agent_resource_user_state',
   'ai_agent_project_member',
   'ai_agent_share_link',
   'ai_agent_outbox_event',
 ]) {
   assert(
-    agentsDatabaseSpec.includes(`\`${targetTable}\``),
-    `Agents database target design must define ${targetTable}`,
+    agentsDatabaseSpec.includes(`\`${targetTable}\``) && agentTableNames.includes(targetTable),
+    `Agents database specification and registry must define ${targetTable}`,
   );
 }
 assert(
-  agentsDatabaseSpec.includes('The active Agents inventory is 17 tables'),
-  'Agents database contract must declare the active 17-table inventory',
+  agentsTableRegistry.contractVersion === '5.0.0'
+    && agentTableNames.length === 19
+    && agentsDatabaseSpec.includes('owns exactly 19 tables'),
+  'Agents database contract 5.0 must declare the active 19-table inventory',
 );
+for (const retiredTable of [
+  'ai_agent_chat_turn',
+  'ai_agent_message_drive_ref',
+  'ai_agent_message_feedback',
+]) {
+  assert(
+    !agentTableNames.includes(retiredTable) && !agentsDatabaseSpec.includes(`\`${retiredTable}\``),
+    `Agents must not retain the retired parallel chat/message table ${retiredTable}`,
+  );
+}
 assert(
-  agentsDatabaseSpec.includes('Status: active commercial Chat/Project contract'),
-  'Agents database contract 4.0 must remain active after runtime and contract synchronization',
-);
-assert(
-  agentsDatabaseSpec.includes('Reuse `sdkwork-search`')
-    && agentsDatabaseSpec.includes('Reuse `sdkwork-generations`'),
-  'Agents chat database target must reuse Search and Generations authorities',
+  agentsDatabaseSpec.includes('There are no cross-module foreign keys')
+    && agentsDatabaseSpec.includes('Downstream search, notification and IM behavior consumes published events'),
+  'Agents must keep downstream indexing, generation and communication capabilities independent',
 );
 
 const forbiddenImDependencyPattern = /(?:@sdkwork\/im-|sdkwork[-_]im(?:[-_][a-z0-9_-]+)?|\.\.[\\/]sdkwork-im)(?:[\\/]|\b)/iu;

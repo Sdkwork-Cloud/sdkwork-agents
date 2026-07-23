@@ -13,12 +13,9 @@ import { syncAgentCompositionSlots } from './CompositionSlotSyncService';
 import { createAgentBusinessId, createAgentExecutionId } from './businessIdentifiers';
 import {
   DEFAULT_LIST_PAGE_SIZE,
-  extractArray,
-  extractOffsetPageInfo,
-  extractResourceRecord,
-  isRecord,
+  toOffsetPageInfo,
   type OffsetPageInfo,
-} from './sdkEnvelope';
+} from '@sdkwork/agents-pc-core/sdk/pagination';
 
 export interface AgentConfig {
   id?: string;
@@ -102,6 +99,10 @@ export class AgentRuntimeExecutionUnavailableError extends Error {
 
 type AgentCatalogScope = 'market' | 'mine';
 type RecordLike = Record<string, unknown>;
+
+function isRecord(value: unknown): value is RecordLike {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
 const DEFAULT_AGENT_BINDING_ID = 'binding.manifest.default';
 const DEFAULT_AGENT_PROVIDER_ID = 'provider.agent.manifest';
@@ -378,19 +379,6 @@ function normalizeAgentFromAgentRecord(record: AgentRecord): AgentConfig {
   };
 }
 
-function extractAgentRecordItems(value: unknown): AgentRecord[] {
-  const rawItems = extractArray(value);
-  return rawItems.filter((item): item is AgentRecord => isRecord(item) && Boolean(asString(item.agentId)));
-}
-
-function extractAgentRecord(value: unknown): AgentRecord {
-  const record = extractResourceRecord(value);
-  if (!isRecord(record) || !asString(record.agentId)) {
-    throw new Error('Agent API response did not include agentId.');
-  }
-  return record as unknown as AgentRecord;
-}
-
 function buildAgentManifest(config: Partial<AgentConfig>, agentId: string): Record<string, unknown> {
   return {
     schema_version: '1.0.0',
@@ -611,7 +599,11 @@ function collectAgentRecords(snapshot: unknown, keys: string[]): RecordLike[] {
 
   const result: RecordLike[] = [];
   for (const key of keys) {
-    for (const item of extractArray(snapshot[key])) {
+    const items = snapshot[key];
+    if (!Array.isArray(items)) {
+      continue;
+    }
+    for (const item of items) {
       if (isRecord(item)) {
         result.push(item);
       }
@@ -709,15 +701,15 @@ class SdkworkAgentService implements AgentService {
       ...(params.scope ? { scope: params.scope } : {}),
     });
     return {
-      items: extractAgentRecordItems(response).map(normalizeAgentFromAgentRecord),
-      pageInfo: extractOffsetPageInfo(response),
+      items: response.items.map(normalizeAgentFromAgentRecord),
+      pageInfo: toOffsetPageInfo(response.pageInfo),
     };
   }
 
   async getAgent(id: string): Promise<AgentConfig | null> {
     try {
       const response = await this.getAgentClient().ai.agents.retrieve(id);
-      return normalizeAgentFromAgentRecord(extractAgentRecord(response));
+      return normalizeAgentFromAgentRecord(response);
     } catch (error) {
       if (isAgentNotFoundError(error)) {
         return null;
@@ -731,7 +723,7 @@ class SdkworkAgentService implements AgentService {
     const response = await this.getAgentClient().ai.agents.create(
       buildCreateAgentRequest(config, agentId),
     );
-    const saved = normalizeAgentFromAgentRecord(extractAgentRecord(response));
+    const saved = normalizeAgentFromAgentRecord(response);
     await syncAgentCompositionSlots(this.getAgentClient(), saved.id ?? agentId, saved);
     return saved;
   }
@@ -739,7 +731,7 @@ class SdkworkAgentService implements AgentService {
   async updateAgent(id: string, config: Partial<AgentConfig>): Promise<AgentConfig> {
     const currentResponse = await this.getAgentClient().ai.agents.retrieve(id);
     const mergedConfig = mergeAgentConfig(
-      normalizeAgentFromAgentRecord(extractAgentRecord(currentResponse)),
+      normalizeAgentFromAgentRecord(currentResponse),
       config,
       id,
     );
@@ -747,7 +739,7 @@ class SdkworkAgentService implements AgentService {
       id,
       buildUpdateAgentRequest(id, mergedConfig),
     );
-    const saved = normalizeAgentFromAgentRecord(extractAgentRecord(response));
+    const saved = normalizeAgentFromAgentRecord(response);
     await syncAgentCompositionSlots(this.getAgentClient(), id, saved);
     return saved;
   }
@@ -792,7 +784,7 @@ class SdkworkAgentService implements AgentService {
         requestedAt: new Date().toISOString(),
       },
     );
-    const execution = extractResourceRecord(response);
+    const execution = response;
     const outputPayload = execution.outputPayload;
     const content = pickOutputString(outputPayload, [
       'reply',
@@ -832,7 +824,7 @@ class SdkworkAgentService implements AgentService {
         requestedAt: new Date().toISOString(),
       },
     );
-    const execution = extractResourceRecord(response);
+    const execution = response;
     const outputPayload = execution.outputPayload;
     const optimizedPrompt = pickOutputString(outputPayload, [
       'optimizedPrompt',

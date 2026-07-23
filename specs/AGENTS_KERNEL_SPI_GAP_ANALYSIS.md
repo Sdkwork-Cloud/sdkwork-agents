@@ -1,171 +1,97 @@
-# SDKWork Agents — Kernel SPI Gap Analysis
+# SDKWork Agents Kernel Capability Closure
 
-- Version: 1.0.0
+- Version: `1.1.0`
 - Status: active
-- Updated: 2026-07-07
-- Owner: agents-platform
-- Related: [`AGENTS_PROVIDER_TAXONOMY_SPEC.md`](./AGENTS_PROVIDER_TAXONOMY_SPEC.md), [`../../sdkwork-kernel/specs/AGENT_KERNEL_SPEC.md`](../../sdkwork-kernel/specs/AGENT_KERNEL_SPEC.md)
+- Updated: `2026-07-22`
+- Owner: `agents-platform`
+- Related:
+  - [`AGENTS_KERNEL_BOUNDARY_SPEC.md`](./AGENTS_KERNEL_BOUNDARY_SPEC.md)
+  - [`AGENTS_PROVIDER_TAXONOMY_SPEC.md`](./AGENTS_PROVIDER_TAXONOMY_SPEC.md)
+  - [`AGENTS_SESSION_MODEL_SPEC.md`](./AGENTS_SESSION_MODEL_SPEC.md)
 
-## 1. Executive Summary
+## 1. Current Closure
 
-`sdkwork-kernel` provides a Linux-kernel-style agent SPI with strong provider plugin
-architecture. `sdkwork-agents` correctly owns business persistence and HTTP/SDK surfaces.
-**sdkwork-birdcoder** correctly routes agent operations through `sdkwork-agents-runtime-facade`.
+The Agents business layer and kernel runtime mechanism have one integration
+boundary: `sdkwork-agents-runtime-facade`. Durable product execution uses the
+Agents Project, Session, Turn, SessionItem and Interaction model. Provider
+events remain kernel/runtime mechanisms and never become a parallel product
+model.
 
-Remaining gaps are concentrated in: token-level SSE streaming (G1), kernel-owned
-live-interaction SPI projection (G3), T2 autonomous default catalog opt-in (G4),
-and commercial GA client surfaces (Flutter / A2).
-
-Pre-launch agents-owned surfaces are complete: **95 HTTP operations** (27 Open / 35
-App / 33 Backend), **`ai_agent_task`** + **`ai_agent_interaction`** persistence,
-task auto-execution, interaction HTTP on App/Backend, atomic provider-binding
-activation, chat payload limits, and inference timeout guards.
-
-## 2. Strengths (Aligned)
-
-| Area | Evidence | Status |
+| Area | Current authority | Status |
 | --- | --- | --- |
-| Kernel SPI breadth | 20+ specs under `sdkwork-kernel/specs/` | Strong |
-| Provider plugins | codex, claude-code, opencode, gemini-cli, openclaw, hermes, rig | Implemented |
-| Agents composition plane | 8 `ai_*` tables (incl. task + interaction), composition slots | Complete |
-| HTTP + SDK | 95 operations (27/35/33), SdkWorkApiResponse envelope | Complete |
-| BirdCoder boundary | `sdkwork-birdcoder-kernel-bridge` → agents facade only | Enforced |
-| Independent modules | `sdkwork-memory`, `sdkwork-knowledgebase`, `sdkwork-skills`, `sdkwork-prompts`, `sdkwork-mcp` via composition slot; `sdkwork-llm` via runtime binding/profile; no table duplication | Correct |
-| Pagination | SQL LIMIT/OFFSET, PageInfo | Aligned |
-| Audit + IAM policy | Postgres audit, IAM-backed policy | Production |
+| Runtime invocation | `sdkwork-agents-runtime-facade` over kernel provider SPI | closed |
+| Durable execution | Agents Session aggregate | closed |
+| Public API | 47 Open, 68 App, 48 Backend operations | closed |
+| TypeScript SDKs | Open, App and Backend family package roots | closed |
+| Flutter SDK | `sdkwork_agents_app_sdk` package root | closed |
+| Typed streaming | `AgentTurnStreamEvent` delta and completion events | closed |
+| Human pause points | `AgentInteraction` claim and resolution | closed |
+| Persistence | 19-table PostgreSQL Agents module | closed |
+| IM boundary | IM-owned opaque Session/Turn correlation | closed |
 
-## 3. Kernel SPI Gaps
+## 2. Provider Capability Policy
 
-### G1 — Token-level streaming (P1)
+Provider availability is governed by manifest registration and conformance, not
+by alternative APIs or persistence:
 
-| Item | Current | Target |
+| Tier | Runtime policy | Product behavior |
 | --- | --- | --- |
-| `ModelProvider::stream` | Single SSE `completion` event wrapping full response | Chunked `message.delta` kernel events → agents SSE |
-| Spec | `AGENT_MODEL_PROVIDER_SPI_SPEC.md` | Implement stream path in all T1 providers |
-| Agents API | `?stream=true` returns one event | Multi-event stream aligned with kernel `KernelEvent` |
+| T1 code engines | bootstrapped and exposed in the default catalog | selectable |
+| T2 autonomous engines | registered on demand after conformance | opt-in |
+| T3 frameworks | selected by an approved implementation binding | fail closed when absent |
+| T4 orchestration frameworks | require an approved provider manifest | unavailable until registered |
 
-**Owner:** sdkwork-kernel providers → sdkwork-agents HTTP SSE adapter.
+An unavailable provider produces a typed runtime error. Agents does not add raw
+HTTP fallback code, provider-specific public resources or copied provider
+configuration.
 
-### G2 — Task scheduling persistence (P1) — **agents layer done**
+## 3. Streaming Contract
 
-| Item | Current | Target |
-| --- | --- | --- |
-| Kernel model | `AgentTask`, `AgentRun`, `AgentStep` defined | Complete |
-| Agents DB | `ai_agent_task` + Postgres sync | **Done** |
-| HTTP API | `agents.tasks.list/create/retrieve/cancel` (App + Backend) | **Done** |
-| Execution | `create_task` defers LLM by default; inline via `metadataJson.autoExecute: true` (legacy `deferExecution`) | **Done** |
-| Non-GA scope | `agents.taskRuns.*` projection APIs | Kernel run SPI |
+The public Turn command supports JSON completion and SSE. SSE emits:
 
-**Owner:** sdkwork-agents (persistence + API — complete); kernel (run/step execution SPI).
+```text
+AgentTurnStreamEvent(eventType=delta, index, delta)
+AgentTurnStreamEvent(eventType=completion, response=AgentTurnExecutionResponse)
+```
 
-### G3 — Live interaction SPI ownership (P1) — **product HTTP done; kernel SPI pending**
+`AgentTurnExecutionResponse.data.item` contains the canonical Session, Turn and
+ordered Session Items. Provider-specific chunk granularity may vary, but the
+public event schema and terminal completion semantics do not.
 
-| Item | Current | Target |
-| --- | --- | --- |
-| Agents HTTP | `agents.interactions.*` on App/Backend (Open API excluded) | **Done** |
-| Persistence | `ai_agent_interaction` Postgres + in-memory repository | **Done** |
-| OpenCode permission / Q&A | `sdkwork-agents-runtime-facade/live_interaction.rs` | Kernel `agent.live_interaction` SPI per `KERNEL_PRODUCT_PROJECTION_SPEC.md` |
-| BirdCoder bridge | delegates to agents facade | Unchanged consumer path |
+## 4. Independent Capability Integration
 
-### G4 — Extended autonomous engines in default catalog (P2)
+Memory, knowledge, skills, prompts, MCP, LLM profiles and Drive remain
+independent modules. Agents uses stable identifiers or their public SDKs. A
+deployment may enable additional capability modules without changing the
+Session schema or SDK resource model.
 
-| Item | Current | Target |
-| --- | --- | --- |
-| openclaw, hermes | Bootstrap in `code_engines.rs` but excluded from `CANONICAL_CODE_ENGINE_KEYS` | Opt-in bootstrap flag or tier-2 catalog section after CI conformance |
-| Catalog API | 4 engines | Document `tier` field; expose T2 when healthy |
+This is an open-closed extension point: new provider or composition bindings are
+registered through manifests and slots; core Session/Turn contracts stay
+unchanged.
 
-### G5 — Rig framework live backend (P2)
+## 5. Commercial Readiness Gates
 
-| Item | Current | Target |
-| --- | --- | --- |
-| `sdkwork-agent-provider-rig` | Fail-closed default backend | Feature-gated live backend mapping Rig APIs |
-| Agents | `implementation_type=rig-rust` enum exists | Provider binding activation path |
+| Gate | Required evidence |
+| --- | --- |
+| API contract | envelope, operation-pattern, collision and pagination checks |
+| SDK generation | TypeScript and Flutter outputs are idempotent and compile |
+| Persistence | database framework validation and Postgres contract tests |
+| Security | trusted request context, dual-token/App-Backend and API-key/Open checks |
+| Runtime | facade, bridge and HTTP contract tests |
+| Integration | no direct provider dependency and no IM reverse dependency |
+| Operations | health, metrics, release, deployment and rollback runbooks |
 
-### G6 — MCP federation HTTP (P2)
+No gate is satisfied by a compatibility layer, alternate session store,
+duplicated DTO, generated-output edit or raw transport fallback.
 
-| Item | Current | Target |
-| --- | --- | --- |
-| MCP marketplace | Agents projection from composition slots | Federated list from `sdkwork-mcp` mount |
-| Kernel MCP SPI | `AGENT_MCP_PROVIDER_SPI_SPEC.md` | Wire slot resolution to MCP sibling SDK |
-
-## 4. Agents Application Gaps
-
-### A1 — Task run projection APIs (non-GA scope)
-
-`agents.tasks.*` lifecycle is shipped. Non-GA scope is kernel-aligned
-`agents.taskRuns.*` list/retrieve for deep scheduler dashboards.
-
-### A2 — Flutter / Dart SDK (non-GA scope)
-
-PC/H5/MP are production-ready; Flutter remains scaffold-only until an owned Dart app SDK facade exists.
-
-### A3 — Token streaming UX
-
-Chat UI receives full assistant message at once; depends on G1.
-
-### A4 — Grafana / ops dashboards
-
-Metrics are exposed through `/metrics/agents`; dashboard wiring is owned by ops and is outside the current GA evidence bundle.
-
-## 5. BirdCoder Integration Gaps
-
-### B1 — Live interaction target owner
-
-Documented transition: bridge → kernel SPI; agents facade remains product entry.
-
-### B2 — Engine catalog parity
-
-BirdCoder workbench should read `agents.codeEngines.list` (done); T2 engines opt-in.
-
-### B3 — Task ↔ coding_session correlation
-
-Coding sessions are BirdCoder-owned; `ai_agent_task` carries optional `external_ref`
-for `coding_session_id` cross-link while deeper run/step views wait for
-`ai_agent_task_run`.
-
-## 6. Commercial Readiness Assessment
-
-| Criterion | Ready | Blocker / follow-up |
-| --- | --- | --- |
-| Multi-tenant agent CRUD | Yes | — |
-| IAM auth + audit | Yes | — |
-| Hosted chat (PC/H5) | Yes | Token streaming (G1) for premium UX |
-| Code-engine multi-provider | Yes (T1 ×4) | T2 opt-in (G4) |
-| Open/App/Backend SDK | Yes | Flutter Dart SDK (A2) |
-| BirdCoder unified management | Yes | Task run APIs (A1) for deep scheduler UI |
-| Independent module composition | Yes | Mount `sdkwork-memory`, `sdkwork-knowledgebase`, `sdkwork-skills`, `sdkwork-prompts`, `sdkwork-mcp`, `sdkwork-llm`, and `sdkwork-drive` SDK/runtime endpoints in deployment |
-| Security fail-closed | Yes | — |
-| Observability | Partial | Grafana (A4) |
-| App store GA metadata | No | PRD Phase 4 item |
-
-**Verdict:** Commercial MVP for PC/H5 + BirdCoder code-agent workflows is **ready**.
-Full GA requires Flutter SDK (A2), token streaming (G1), task-run projection APIs (A1),
-and store metadata.
-
-## 7. Improvement Roadmap
-
-| Phase | Items | Owner |
-| --- | --- | --- |
-| P0 (done) | Composition plane, 95 APIs, tasks + interactions HTTP, facade, BirdCoder boundary | agents + birdcoder |
-| P1 | G1 streaming, G3 kernel live-interaction SPI, task-run projection (A1) | kernel + agents |
-| P2 | G4 T2 catalog, G5 Rig live, G6 MCP federation, A2 Flutter SDK | kernel + agents + siblings |
-| P3 | Grafana, app store GA, cursor/keyset message pagination | ops + agents |
-
-## 8. Verification Loop
-
-Repeat until all gate tasks in `specs/agents-birdcoder-alignment.spec.json` pass:
+## 6. Verification Loop
 
 ```powershell
-# sdkwork-agents
-pnpm verify
 cargo test -p sdkwork-agents-runtime-facade
+cargo check -p sdkwork-agents-kernel-bridge
 cargo test -p sdkwork-intelligence-agents-service --features http-axum
-
-# sdkwork-birdcoder
-node ..\sdkwork-birdcoder\scripts\birdcoder-agents-integration-contract.test.mjs
-cargo test --manifest-path ..\sdkwork-birdcoder\Cargo.toml -p sdkwork-birdcoder-kernel-bridge
-
-# sdkwork-kernel
-cargo test --manifest-path ..\sdkwork-kernel\Cargo.toml -p sdkwork-agent-provider-codex
-cargo test --manifest-path ..\sdkwork-kernel\Cargo.toml -p sdkwork-agent-provider-rig
+node sdks/workspace-agent-sdkgen.mjs --mode dry-run
+node scripts/check-agent-sdk-workspace.mjs
+pnpm check:agents-im-boundary
+pnpm db:validate
 ```

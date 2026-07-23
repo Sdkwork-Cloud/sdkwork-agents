@@ -113,10 +113,6 @@ pub enum AgentAuditAction {
     ChangeStatus,
     RuntimeExecutionCompleted,
     ProviderBindingChanged,
-    SkillPackageCreated,
-    SkillPackageUpdated,
-    SkillPackageDeleted,
-    SkillPackageRestored,
     CompositionSlotCreated,
     CompositionSlotUpdated,
     CompositionSlotDeleted,
@@ -170,10 +166,6 @@ impl AgentAuditAction {
             Self::ChangeStatus => "agent.business.status_changed",
             Self::RuntimeExecutionCompleted => "agent.business.runtime.executed",
             Self::ProviderBindingChanged => "agent.business.provider_binding_changed",
-            Self::SkillPackageCreated => "agent.business.skill.created",
-            Self::SkillPackageUpdated => "agent.business.skill.updated",
-            Self::SkillPackageDeleted => "agent.business.skill.deleted",
-            Self::SkillPackageRestored => "agent.business.skill.restored",
             Self::CompositionSlotCreated => "agent.business.composition_slot.created",
             Self::CompositionSlotUpdated => "agent.business.composition_slot.updated",
             Self::CompositionSlotDeleted => "agent.business.composition_slot.deleted",
@@ -214,12 +206,8 @@ impl AgentAuditAction {
             Self::TurnFailed => "agent.business.turn.failed",
             Self::TurnCancelRequested => "agent.business.turn.cancel_requested",
             Self::TurnCancelled => "agent.business.turn.cancelled",
-            Self::SessionRuntimeBindingCreated => {
-                "agent.business.session_runtime_binding.created"
-            }
-            Self::SessionRuntimeBindingUpdated => {
-                "agent.business.session_runtime_binding.updated"
-            }
+            Self::SessionRuntimeBindingCreated => "agent.business.session_runtime_binding.created",
+            Self::SessionRuntimeBindingUpdated => "agent.business.session_runtime_binding.updated",
             Self::SessionRuntimeBindingActivated => {
                 "agent.business.session_runtime_binding.activated"
             }
@@ -241,10 +229,6 @@ impl AgentAuditAction {
             Self::ChangeStatus => "status_changed",
             Self::RuntimeExecutionCompleted => "runtime_executed",
             Self::ProviderBindingChanged => "provider_binding_changed",
-            Self::SkillPackageCreated => "skill_created",
-            Self::SkillPackageUpdated => "skill_updated",
-            Self::SkillPackageDeleted => "skill_deleted",
-            Self::SkillPackageRestored => "skill_restored",
             Self::CompositionSlotCreated => "composition_slot_created",
             Self::CompositionSlotUpdated => "composition_slot_updated",
             Self::CompositionSlotDeleted => "composition_slot_deleted",
@@ -1219,7 +1203,11 @@ impl AgentSessionRuntimeBindingRecord {
         self.version = self.version.saturating_add(1);
     }
 
-    pub fn deactivate(&mut self, status: AgentSessionRuntimeBindingStatus, occurred_at: impl Into<String>) {
+    pub fn deactivate(
+        &mut self,
+        status: AgentSessionRuntimeBindingStatus,
+        occurred_at: impl Into<String>,
+    ) {
         let occurred_at = occurred_at.into();
         self.status = status;
         self.is_current = false;

@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   AGENTS_SDK_OWNER,
-  AGENTS_SDK_OWNERSHIP_STANDARD_VERSION
+  AGENTS_SDK_OWNERSHIP_STANDARD_VERSION,
+  resolveAgentsSdkLanguageTargets
 } from './agents-sdk-families.mjs';
 import { SDKWORK_SDKGEN_STANDARD } from './sdkgen-standard.mjs';
 
@@ -94,6 +95,7 @@ export function countAgentOpenApiOperations(openapi) {
 export function buildAgentSdkAssembly(family, operationCount) {
   const input = `openapi/${family.authority}.sdkgen.yaml`;
   const authoritySpec = `openapi/${family.authority}.openapi.yaml`;
+  const languageTargets = resolveAgentsSdkLanguageTargets(family);
   return {
     workspace: family.familyDir,
     title: family.title,
@@ -102,7 +104,10 @@ export function buildAgentSdkAssembly(family, operationCount) {
     authoritySpec,
     generationInputSpec: input,
     derivedSpecs: {
-      default: input
+      default: input,
+      ...(languageTargets.some((target) => target.language === 'flutter')
+        ? { flutter: input }
+        : {})
     },
     apiAuthority: family.authority,
     discoverySurface: {
@@ -112,24 +117,26 @@ export function buildAgentSdkAssembly(family, operationCount) {
       generatedProtocols: ['http-openapi'],
       manualTransports: []
     },
-    languages: [
-      {
-        language: 'typescript',
-        workspace: family.languagePackageDir,
-        generationState: family.key === 'open' ? 'derived' : 'materialized',
+    languages: languageTargets.map((target) => {
+      const generatedPath = `${target.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`;
+      return {
+        language: target.language,
+        workspace: target.workspace,
+        generationState: 'materialized',
         releaseState: 'not_published',
-        generatedPath: `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
-        manifestPath: `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}/package.json`,
-        consumerPackageName: family.packageName,
-        name: family.packageName,
+        generatedPath,
+        packagePath: generatedPath,
+        manifestPath: `${generatedPath}/${target.manifestFile}`,
+        consumerPackageName: target.packageName,
+        name: target.packageName,
         version: '0.1.0',
-        description: `Generator-owned TypeScript transport SDK for ${family.title}.`,
+        description: `Generator-owned ${displayLanguage(target.language)} transport SDK for ${family.title}.`,
         consumerSurface: {
           primaryClient: primaryClientFor(family),
           apiPrefix: family.apiPrefix
         }
-      }
-    ],
+      };
+    }),
     sdkOwner: AGENTS_SDK_OWNER,
     sdkDependencies: cloneDependencies(family),
     metadata: {
@@ -141,6 +148,7 @@ export function buildAgentSdkAssembly(family, operationCount) {
 }
 
 export function buildAgentComponentSpec(family) {
+  const languageTargets = resolveAgentsSdkLanguageTargets(family);
   return {
     schemaVersion: 1,
     kind: 'sdkwork.component.spec',
@@ -154,7 +162,7 @@ export function buildAgentComponentSpec(family) {
       capability: family.capability,
       surface: componentSurfaceFor(family),
       status: 'standardized',
-      languages: ['typescript'],
+      languages: languageTargets.map((target) => target.language),
       generated: true,
       private: false,
       manifests: ['sdk-manifest.json']
@@ -172,6 +180,12 @@ export function buildAgentComponentSpec(family) {
       externalSdkgenProfileSupported: family.externalSdkgenProfileSupported,
       externalSdkgenProfileGap: family.externalSdkgenProfileGap,
       generatedOutput: `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
+      generatedOutputs: Object.fromEntries(
+        languageTargets.map((target) => [
+          target.language,
+          `${target.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
+        ]),
+      ),
       standardProfile: SDKWORK_SDKGEN_STANDARD.standardProfile
     },
     contracts: {
@@ -229,6 +243,9 @@ export function decoratePackageMetadata(packageJson, family) {
 }
 
 export function buildAgentSdkManifest(family, operationCount) {
+  const flutterTarget = resolveAgentsSdkLanguageTargets(family).find(
+    (target) => target.language === 'flutter',
+  );
   return {
     ...buildAgentSdkAssembly(family, operationCount),
     schemaVersion: 1,
@@ -239,7 +256,6 @@ export function buildAgentSdkManifest(family, operationCount) {
     sdkFamily: family.familyDir,
     sdkType: family.sdkType,
     sdkSurface: family.sdkSurface,
-    language: 'typescript',
     apiPrefix: family.apiPrefix,
     generationInputSpec: `openapi/${family.authority}.sdkgen.yaml`,
     generatedOutput: `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
@@ -252,6 +268,16 @@ export function buildAgentSdkManifest(family, operationCount) {
       transportRoot: `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
       transportEntry: `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}/src/index.ts`
     },
+    ...(flutterTarget
+      ? {
+          flutter: {
+            root: flutterTarget.workspace,
+            transportRoot: `${flutterTarget.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
+            transportEntry: `${flutterTarget.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}/${flutterTarget.entrypoint}`,
+            packageName: flutterTarget.packageName,
+          },
+        }
+      : {}),
     ownerOnlyOperationCount: operationCount,
     standardVersion: AGENTS_SDK_OWNERSHIP_STANDARD_VERSION,
     managedBy: 'sdks/_shared/agent-sdk-ownership.mjs'
@@ -348,6 +374,17 @@ function componentSurfaceFor(family) {
       return 'internal-api';
     default:
       return 'open-api';
+  }
+}
+
+function displayLanguage(language) {
+  switch (language) {
+    case 'typescript':
+      return 'TypeScript';
+    case 'flutter':
+      return 'Flutter';
+    default:
+      return language;
   }
 }
 

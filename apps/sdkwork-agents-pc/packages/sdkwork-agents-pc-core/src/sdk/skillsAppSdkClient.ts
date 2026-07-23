@@ -79,3 +79,5 @@ export function getSkillsAppSdkClient(): SdkworkSkillsAppClient {
 export function resetSkillsAppSdkClient(): void {
   skillsAppSdkClient = null;
 }
+
+export type { SkillPackageRecord, SkillRecord } from "@sdkwork/skills-app-sdk";

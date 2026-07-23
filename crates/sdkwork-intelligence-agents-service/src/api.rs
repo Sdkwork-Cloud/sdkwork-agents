@@ -1222,7 +1222,7 @@ mod tests {
 
             if label == "app" {
                 for required in [
-                    "AppCreateAgentSessionRequest:".to_string(),
+                    "CreateAgentSessionRequest:".to_string(),
                     format!("{prefix}/ai/code_engines:"),
                     format!("{prefix}/ai/mcp_servers:"),
                     "operationId: agents.codeEngines.list".to_string(),

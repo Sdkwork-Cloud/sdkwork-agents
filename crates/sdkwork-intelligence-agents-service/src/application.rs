@@ -4,25 +4,20 @@ use std::sync::Arc;
 mod commands;
 pub use commands::*;
 
-use crate::turn_runtime::{
-    complete_with_timeout, is_capacity_error, is_inference_error, TurnExecutor,
-    TurnExecutionInput, ContractTurnExecutor, TURN_EXECUTION_TIMEOUT,
-};
 use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
-    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentItemDriveRefRecord, AgentItemFeedbackRecord, AgentItemResourceRole,
-    AgentSessionCheckpointRecord, AgentSessionCheckpointStatus, AgentSessionItemRecord,
-    AgentSessionItemKind, AgentSessionItemStatus, AgentProviderBindingRecord,
-    AgentResourceType, AgentResourceUserStateRecord, AgentRuntimeExecutionOperation,
-    AgentRuntimeExecutionRecord, AgentRuntimeExecutionStatus, AgentSessionEntrySurface,
-    AgentSessionKind, AgentSessionRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus,
-    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentVisibility,
-    MarketplaceAuditPayload,
-    ProviderBindingAuditPayload, RuntimeExecutionAuditPayload, SessionItemAuditPayload,
-    SessionAuditPayload, TaskAuditPayload, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
+    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemDriveRefRecord,
+    AgentItemFeedbackRecord, AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType,
+    AgentResourceUserStateRecord, AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
+    AgentRuntimeExecutionStatus, AgentSessionCheckpointRecord, AgentSessionCheckpointStatus,
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus,
+    AgentSessionKind, AgentSessionRecord, AgentSessionRuntimeBindingRecord,
+    AgentSessionRuntimeBindingStatus, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus,
+    AgentVisibility, MarketplaceAuditPayload, ProviderBindingAuditPayload,
+    RuntimeExecutionAuditPayload, SessionAuditPayload, SessionItemAuditPayload, TaskAuditPayload,
+    DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{
@@ -37,10 +32,14 @@ use crate::project::{
 use crate::runtime_facade_bridge::{
     execute_preview_response, execute_prompt_optimization, RUNTIME_MODE_CONTRACT_FALLBACK,
 };
+use crate::turn_runtime::{
+    complete_with_timeout, is_capacity_error, is_inference_error, ContractTurnExecutor,
+    TurnExecutionInput, TurnExecutor, TURN_EXECUTION_TIMEOUT,
+};
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
-    is_trimmed_blank, parse_optional_rfc3339_datetime, parse_rfc3339_datetime,
-    require_non_blank, validate_capabilities, validate_requested_at, validate_standard_id,
+    is_trimmed_blank, parse_optional_rfc3339_datetime, parse_rfc3339_datetime, require_non_blank,
+    validate_capabilities, validate_requested_at, validate_standard_id,
 };
 use sdkwork_agent_kernel::{
     KernelError, KernelErrorKind, KernelEvent, KernelEventRedaction, KernelEventSeverity,
@@ -57,14 +56,11 @@ const MAX_INTERACTION_LEASE_SECONDS: u32 = 300;
 fn validate_runtime_token(value: &str, field_name: &str, max_bytes: usize) -> KernelResult<()> {
     require_non_blank(value, field_name)?;
     if value.len() > max_bytes
-        || !value
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| match byte {
-                b'a'..=b'z' => true,
-                b'0'..=b'9' | b'_' | b'-' => index > 0,
-                _ => false,
-            })
+        || !value.bytes().enumerate().all(|(index, byte)| match byte {
+            b'a'..=b'z' => true,
+            b'0'..=b'9' | b'_' | b'-' => index > 0,
+            _ => false,
+        })
     {
         return Err(KernelError::validation(format!("{field_name} is invalid")));
     }
@@ -199,7 +195,9 @@ fn normalize_item_drive_resources(
             drive_node_id.to_string(),
             resource.resource_role.as_str(),
         )) {
-            return Err(KernelError::conflict("duplicate session-item Drive reference"));
+            return Err(KernelError::conflict(
+                "duplicate session-item Drive reference",
+            ));
         }
         normalized.push(NormalizedItemDriveRef {
             resource_role: resource.resource_role,
@@ -1877,7 +1875,11 @@ where
             }
             let parent = self
                 .repository
-                .get_session(command.tenant_id, command.organization_id, parent_session_id)?
+                .get_session(
+                    command.tenant_id,
+                    command.organization_id,
+                    parent_session_id,
+                )?
                 .ok_or_else(|| KernelError::validation("parent session not found"))?;
             if parent.organization_id != command.organization_id
                 || parent.owner_user_id != command.owner_user_id
@@ -1886,7 +1888,11 @@ where
             }
             let fork_turn = self
                 .repository
-                .get_turn(command.tenant_id, command.organization_id, forked_from_turn_id)?
+                .get_turn(
+                    command.tenant_id,
+                    command.organization_id,
+                    forked_from_turn_id,
+                )?
                 .ok_or_else(|| KernelError::validation("fork turn not found"))?;
             if fork_turn.session_id != parent_session_id {
                 return Err(KernelError::validation(
@@ -2898,7 +2904,10 @@ where
         self.authorize(
             "agent.business.session_runtime_binding.create",
             command.requested_by.clone(),
-            format!("agent.business.session.{}.runtime_binding", command.session_id),
+            format!(
+                "agent.business.session.{}.runtime_binding",
+                command.session_id
+            ),
             "session_runtime_binding.create",
         )?;
         validate_runtime_token(&command.host_mode, "hostMode", 32)?;
@@ -2940,7 +2949,9 @@ where
             )?
             .is_some()
         {
-            return Err(KernelError::conflict("session runtime binding already exists"));
+            return Err(KernelError::conflict(
+                "session runtime binding already exists",
+            ));
         }
         if self
             .repository
@@ -2957,11 +2968,7 @@ where
         }
         validate_optional_bounded(&command.runtime_location_id, "runtimeLocationId", 256)?;
         validate_optional_bounded(&command.native_session_id, "nativeSessionId", 256)?;
-        validate_optional_bounded(
-            &command.native_session_tree_id,
-            "nativeSessionTreeId",
-            256,
-        )?;
+        validate_optional_bounded(&command.native_session_tree_id, "nativeSessionTreeId", 256)?;
         validate_optional_bounded(
             &command.native_parent_session_id,
             "nativeParentSessionId",
@@ -3109,7 +3116,11 @@ where
             owner_scope: command.owner_scope,
             requested_by: command.requested_by.clone(),
         })?;
-        ensure_expected_version(record.version, Some(command.expected_version), "session runtime binding")?;
+        ensure_expected_version(
+            record.version,
+            Some(command.expected_version),
+            "session runtime binding",
+        )?;
         if let Some(runtime_location_id) = command.runtime_location_id {
             validate_optional_bounded(&runtime_location_id, "runtimeLocationId", 256)?;
             record.runtime_location_id = runtime_location_id;
@@ -3131,7 +3142,11 @@ where
         validate_standard_id(&provider_id, "providerId", Some("provider."))?;
         let provider_binding = self
             .repository
-            .get_provider_binding(command.tenant_id, &command.path_agent_id, &provider_binding_id)?
+            .get_provider_binding(
+                command.tenant_id,
+                &command.path_agent_id,
+                &provider_binding_id,
+            )?
             .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
         if provider_binding.provider_id != provider_id || !provider_binding.active {
             return Err(KernelError::validation(
@@ -3148,7 +3163,11 @@ where
             record.model_id = model_id;
         }
         for (target, value, field) in [
-            (&mut record.native_session_id, command.native_session_id, "nativeSessionId"),
+            (
+                &mut record.native_session_id,
+                command.native_session_id,
+                "nativeSessionId",
+            ),
             (
                 &mut record.native_session_tree_id,
                 command.native_session_tree_id,
@@ -3226,7 +3245,11 @@ where
             owner_scope: command.owner_scope,
             requested_by: command.requested_by.clone(),
         })?;
-        ensure_expected_version(record.version, Some(command.expected_version), "session runtime binding")?;
+        ensure_expected_version(
+            record.version,
+            Some(command.expected_version),
+            "session runtime binding",
+        )?;
         if activate {
             if record.is_current && record.status == AgentSessionRuntimeBindingStatus::Active {
                 return Ok(record);
@@ -3302,8 +3325,8 @@ where
             "checkpoint.create",
         )?;
         validate_runtime_token(&command.checkpoint_kind, "checkpointKind", 64)?;
-        let has_provider = command.runtime_binding_id.is_some()
-            || command.provider_checkpoint_ref.is_some();
+        let has_provider =
+            command.runtime_binding_id.is_some() || command.provider_checkpoint_ref.is_some();
         let has_drive = command.drive_space_id.is_some() || command.drive_node_id.is_some();
         if has_provider == has_drive {
             return Err(KernelError::validation(
@@ -3421,7 +3444,10 @@ where
         self.authorize(
             "agent.business.checkpoint.list",
             command.requested_by,
-            format!("agent.business.session.{}.checkpoint", command.query.session_id),
+            format!(
+                "agent.business.session.{}.checkpoint",
+                command.query.session_id
+            ),
             "checkpoint.list",
         )?;
         let session = self.load_session_for_nested_route(
@@ -3516,13 +3542,19 @@ where
             owner_scope: command.owner_scope,
             requested_by: command.requested_by.clone(),
         })?;
-        ensure_expected_version(record.version, Some(command.expected_version), "session checkpoint")?;
+        ensure_expected_version(
+            record.version,
+            Some(command.expected_version),
+            "session checkpoint",
+        )?;
         if record.status != AgentSessionCheckpointStatus::Active {
             return Err(KernelError::validation("session checkpoint is not active"));
         }
         if restore {
             if !record.resumable {
-                return Err(KernelError::validation("session checkpoint is not resumable"));
+                return Err(KernelError::validation(
+                    "session checkpoint is not resumable",
+                ));
             }
             record.mark_restored(command.requested_at.clone());
         } else {
@@ -3603,13 +3635,11 @@ where
         }
         reject_secret_material(command.content.as_str(), "content")?;
 
-        let sequence = self
-            .repository
-            .next_item_sequence(
-                command.tenant_id,
-                command.organization_id,
-                command.session_id.as_str(),
-            )?;
+        let sequence = self.repository.next_item_sequence(
+            command.tenant_id,
+            command.organization_id,
+            command.session_id.as_str(),
+        )?;
 
         let record = AgentSessionItemRecord {
             id: self.repository.next_id()?,
@@ -3661,7 +3691,10 @@ where
         Ok(record)
     }
 
-    pub fn get_session_item(&self, command: GetSessionItemCommand) -> KernelResult<AgentSessionItemRecord> {
+    pub fn get_session_item(
+        &self,
+        command: GetSessionItemCommand,
+    ) -> KernelResult<AgentSessionItemRecord> {
         self.authorize(
             "agent.business.session_item.retrieve",
             command.requested_by,
@@ -3730,11 +3763,10 @@ where
             .map(|item| item.item_id.clone())
             .collect::<Vec<_>>();
         let mut refs_by_item = HashMap::<String, Vec<AgentItemDriveRefRecord>>::new();
-        for drive_ref in self.repository.list_item_drive_refs_batch(
-            tenant_id,
-            organization_id,
-            &item_ids,
-        )? {
+        for drive_ref in
+            self.repository
+                .list_item_drive_refs_batch(tenant_id, organization_id, &item_ids)?
+        {
             refs_by_item
                 .entry(drive_ref.item_id.clone())
                 .or_default()
@@ -3744,9 +3776,7 @@ where
             .items
             .into_iter()
             .map(|item| AgentSessionItemWithDriveRefs {
-                drive_refs: refs_by_item
-                    .remove(&item.item_id)
-                    .unwrap_or_default(),
+                drive_refs: refs_by_item.remove(&item.item_id).unwrap_or_default(),
                 item,
             })
             .collect();
@@ -3765,15 +3795,10 @@ where
         let tenant_id = command.tenant_id;
         let organization_id = command.organization_id;
         let item = self.get_session_item(command)?;
-        let drive_refs = self.repository.list_item_drive_refs(
-            tenant_id,
-            organization_id,
-            &item.item_id,
-        )?;
-        Ok(AgentSessionItemWithDriveRefs {
-            item,
-            drive_refs,
-        })
+        let drive_refs =
+            self.repository
+                .list_item_drive_refs(tenant_id, organization_id, &item.item_id)?;
+        Ok(AgentSessionItemWithDriveRefs { item, drive_refs })
     }
 
     pub fn get_turn(&self, command: GetTurnCommand) -> KernelResult<AgentTurnRecord> {
@@ -3886,10 +3911,7 @@ where
         Ok(turn)
     }
 
-    pub fn cancel_turn(
-        &self,
-        command: CancelTurnCommand,
-    ) -> KernelResult<AgentTurnRecord> {
+    pub fn cancel_turn(&self, command: CancelTurnCommand) -> KernelResult<AgentTurnRecord> {
         let audit_subject = command.requested_by.clone();
         self.authorize(
             "agent.business.turn.cancel",
@@ -3919,9 +3941,7 @@ where
         }
         let expected_version = turn.version;
         turn.mark_cancelled(command.requested_at.clone());
-        let turn = self
-            .repository
-            .update_turn_state(turn, expected_version)?;
+        let turn = self.repository.update_turn_state(turn, expected_version)?;
         self.emit_turn_audit_event(
             AgentAuditAction::TurnCancelRequested,
             &turn,
@@ -3961,10 +3981,7 @@ where
                 "turn did not reach a terminal state before the reconciliation deadline",
                 occurred_at,
             );
-            match self
-                .repository
-                .update_turn_state(turn, expected_version)
-            {
+            match self.repository.update_turn_state(turn, expected_version) {
                 Ok(record) => {
                     self.emit_turn_audit_event(
                         AgentAuditAction::TurnFailed,
@@ -3991,10 +4008,7 @@ where
     }
 
     /// Execute one turn and atomically persist its input, output and session counters.
-    pub fn execute_turn(
-        &self,
-        command: CreateTurnCommand,
-    ) -> KernelResult<TurnExecutionResult> {
+    pub fn execute_turn(&self, command: CreateTurnCommand) -> KernelResult<TurnExecutionResult> {
         validate_agent_id(command.agent_id.as_str())?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.authorize(
@@ -4023,9 +4037,7 @@ where
         if session.agent_id != command.agent_id
             || session.organization_id != command.organization_id
         {
-            return Err(KernelError::validation(
-                "session not found",
-            ));
+            return Err(KernelError::validation("session not found"));
         }
         if !session.status.is_active() {
             return Err(KernelError::validation(
@@ -5132,11 +5144,16 @@ where
                 "interaction is no longer pending and cannot be claimed",
             ));
         }
-        ensure_expected_version(record.version, Some(command.expected_version), "interaction")?;
+        ensure_expected_version(
+            record.version,
+            Some(command.expected_version),
+            "interaction",
+        )?;
         let now = OffsetDateTime::now_utc();
-        if let (Some(existing_owner), Some(expires_at)) =
-            (record.claim_owner.as_deref(), record.claim_expires_at.as_deref())
-        {
+        if let (Some(existing_owner), Some(expires_at)) = (
+            record.claim_owner.as_deref(),
+            record.claim_expires_at.as_deref(),
+        ) {
             if parse_rfc3339_datetime(expires_at, "claimExpiresAt")? > now
                 && existing_owner != command.claim_owner
             {
@@ -5147,9 +5164,8 @@ where
         }
         let raw_claim_token = sdkwork_utils_rust::id::random_string(48);
         let claim_token_hash = sha256_hash(raw_claim_token.as_bytes());
-        let claim_expires_at = format_utc_seconds(
-            now + time::Duration::seconds(i64::from(command.lease_seconds)),
-        );
+        let claim_expires_at =
+            format_utc_seconds(now + time::Duration::seconds(i64::from(command.lease_seconds)));
         record.claim(
             command.claim_owner,
             claim_token_hash,
@@ -5224,11 +5240,7 @@ where
             Some(command.expected_version),
             "interaction",
         )?;
-        validate_interaction_claim(
-            &record,
-            &command.claim_token,
-            command.fencing_token,
-        )?;
+        validate_interaction_claim(&record, &command.claim_token, command.fencing_token)?;
 
         let resolution = serde_json::json!({
             "outcome": if command.approved { "approved" } else { "rejected" },
@@ -5320,11 +5332,7 @@ where
             Some(command.expected_version),
             "interaction",
         )?;
-        validate_interaction_claim(
-            &record,
-            &command.claim_token,
-            command.fencing_token,
-        )?;
+        validate_interaction_claim(&record, &command.claim_token, command.fencing_token)?;
 
         let resolution = serde_json::json!({
             "outcome": if command.rejected { "rejected" } else { "answered" },

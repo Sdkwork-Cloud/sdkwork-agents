@@ -1,36 +1,25 @@
 #![cfg(feature = "http-axum")]
-//! Legacy gateway-trusted HTTP contract suite for managed agents managed store handlers.
+//! HTTP contract suite for Agents handlers with typed request context injection.
 //!
-//! Production mounts use `sdkwork-routes-agent-*-api::build_served_router` with
-//! `sdkwork-web-framework`. This file exercises handler contracts through
-//! `build_combined_router()` and gateway subject headers.
+//! Production mounts use `sdkwork-routes-agents-*-api::build_served_router` with
+//! `sdkwork-web-framework`. These tests inject the same domain and web context
+//! types at the raw route boundary.
 
 use axum::body::{to_bytes, Body};
 use axum::http::header::CONTENT_TYPE;
-use axum::http::{HeaderValue, Request, StatusCode};
+use axum::http::{Request, StatusCode};
 use axum::Extension;
 use sdkwork_intelligence_agents_service::{
-    build_combined_router, testing::test_web_context, AgentHttpState, AgentRequestContext,
+    build_combined_routes, testing::test_web_context, AgentHttpState, AgentRequestContext,
     DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-fn auth_headers(mut request: Request<Body>) -> Request<Body> {
-    let headers = request.headers_mut();
-    headers.insert("x-subject-id", HeaderValue::from_static("u-1"));
-    headers.insert("x-subject-tenant-id", HeaderValue::from_static("100001"));
-    headers.insert(
-        "x-subject-roles",
-        HeaderValue::from_static("ai.agents.manage"),
-    );
-    request
-}
-
 fn test_agent_context() -> AgentRequestContext {
     AgentRequestContext::new("100001", "100")
         .with_organization_id("0")
-        .with_subject_id("u-1")
+        .with_subject_id("100")
         .with_roles(["ai.agents.manage"])
 }
 
@@ -43,8 +32,16 @@ fn test_deny_policy_provider() -> DenyAllPolicyProvider {
 }
 
 fn build_test_app(state: AgentHttpState) -> axum::Router {
-    build_combined_router(state)
-        .layer(Extension(test_agent_context()))
+    build_test_app_with_context(state, test_agent_context())
+}
+
+fn build_test_app_with_context(
+    state: AgentHttpState,
+    context: AgentRequestContext,
+) -> axum::Router {
+    build_combined_routes()
+        .with_state(state)
+        .layer(Extension(context))
         .layer(Extension(test_web_context()))
 }
 
@@ -105,7 +102,7 @@ async fn create_agent_at(
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("create request should succeed");
     assert_eq!(response.status(), StatusCode::CREATED);
@@ -125,7 +122,7 @@ async fn post_json(
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should succeed");
     let status = response.status();
@@ -139,6 +136,73 @@ async fn post_json(
         String::from_utf8_lossy(&body_bytes)
     );
     serde_json::from_slice(&body_bytes).expect("response body should be valid json")
+}
+
+async fn create_app_session(
+    app: &axum::Router,
+    agent_id: &str,
+    session_id: &str,
+    title: &str,
+    requested_at: &str,
+) -> Value {
+    post_json(
+        app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
+        json!({
+            "sessionId": session_id,
+            "sessionKind": "assistant",
+            "entrySurface": "api",
+            "title": title,
+            "idempotencyKey": format!("create-{session_id}"),
+            "payloadHash": format!("sha256:create-{session_id}"),
+            "requestedAt": requested_at
+        }),
+        StatusCode::CREATED,
+    )
+    .await
+}
+
+async fn create_turn_runtime(
+    app: &axum::Router,
+    agent_id: &str,
+    session_id: &str,
+    suffix: &str,
+) -> String {
+    let binding_id = format!("binding.turn.{suffix}");
+    let provider_id = format!("provider.model.{suffix}");
+    post_json(
+        app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/provider_bindings"),
+        json!({
+            "bindingId": binding_id,
+            "providerId": provider_id,
+            "implementationKind": "typed-local-provider",
+            "configurationProfileId": format!("profile.turn.{suffix}"),
+            "capabilities": ["model.chat"],
+            "makeDefault": true,
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let runtime_binding_id = format!("runtime_binding.turn.{suffix}");
+    post_json(
+        app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/runtime_bindings"),
+        json!({
+            "runtimeBindingId": runtime_binding_id,
+            "hostMode": "managed",
+            "transportKind": "in_process",
+            "providerBindingId": binding_id,
+            "modelId": format!("model.turn.{suffix}"),
+            "providerId": provider_id,
+            "requestedAt": "2026-06-28T12:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    runtime_binding_id
 }
 
 async fn patch_json(
@@ -160,7 +224,7 @@ async fn patch_json(
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should succeed");
     let status = response.status();
@@ -184,7 +248,7 @@ async fn get_json(app: &axum::Router, uri: &str, expected_status: StatusCode) ->
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should succeed");
     let status = response.status();
@@ -213,7 +277,7 @@ async fn request_without_body(
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should succeed");
     let status = response.status();
@@ -290,7 +354,7 @@ async fn app_create_and_retrieve_agent_should_work() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("get request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -320,7 +384,7 @@ async fn app_code_engine_catalog_should_return_engines() {
         .expect("request should be built");
 
     let response = app
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("catalog request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -350,7 +414,7 @@ async fn app_mcp_marketplace_should_return_records_array() {
         .expect("request should be built");
 
     let response = app
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("mcp marketplace request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -366,7 +430,7 @@ async fn app_mcp_marketplace_should_return_records_array() {
 }
 
 #[tokio::test]
-async fn app_create_agent_should_derive_scope_from_request_context() {
+async fn app_create_agent_rejects_client_scope_query_selector() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
@@ -374,13 +438,11 @@ async fn app_create_agent_should_derive_scope_from_request_context() {
     );
     let app = build_test_app(state);
 
-    let response = post_json(
+    post_json(
         &app,
         "/app/v3/api/ai/agents?tenant_id=999",
         json!({
             "agentId": "agent.context.scope",
-            "organizationId": "999",
-            "ownerUserId": "999",
             "code": "agent.context.scope",
             "displayName": "Context Scope",
             "description": "scope should come from request context",
@@ -394,13 +456,38 @@ async fn app_create_agent_should_derive_scope_from_request_context() {
             "tags": ["scope"],
             "requestedAt": "2026-06-01T00:00:30Z"
         }),
-        StatusCode::CREATED,
+        StatusCode::BAD_REQUEST,
     )
     .await;
+}
 
-    assert_eq!(response["data"]["item"]["tenantId"], "100001");
-    assert_eq!(response["data"]["item"]["organizationId"], "0");
-    assert_eq!(response["data"]["item"]["ownerUserId"], "100");
+#[tokio::test]
+async fn app_create_agent_rejects_client_scope_body_selector() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+
+    post_json(
+        &app,
+        "/app/v3/api/ai/agents",
+        json!({
+            "agentId": "agent.context.body-scope",
+            "tenantId": "999",
+            "organizationId": "999",
+            "ownerUserId": "999",
+            "code": "agent.context.body-scope",
+            "displayName": "Body Scope",
+            "description": "scope selectors are forbidden",
+            "manifest": test_manifest("agent.context.body-scope", "Body Scope"),
+            "visibility": "organization",
+            "requestedAt": "2026-06-01T00:00:31Z"
+        }),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -451,7 +538,7 @@ async fn app_agent_response_should_expose_pc_management_profile() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("create request should succeed");
     assert_eq!(response.status(), StatusCode::CREATED);
@@ -835,7 +922,7 @@ async fn app_update_agent_management_profile_should_preserve_existing_intent_con
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("update request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -959,11 +1046,9 @@ async fn backend_agent_request_should_accept_management_profile_and_store_compat
 
     let response = post_json(
         &app,
-        "/backend/v3/api/ai/agents?tenant_id=100001",
+        "/backend/v3/api/ai/agents",
         json!({
             "agentId": "agent.pc.backend.structured",
-            "organizationId": "0",
-            "ownerUserId": "100",
             "code": "agent.pc.backend.structured",
             "displayName": "Backend Structured PC Agent",
             "description": "backend structured profile",
@@ -1131,11 +1216,9 @@ async fn backend_update_agent_management_profile_should_preserve_existing_intent
     });
     post_json(
         &app,
-        "/backend/v3/api/ai/agents?tenant_id=100001",
+        "/backend/v3/api/ai/agents",
         json!({
             "agentId": "agent.pc.backend.update.structured",
-            "organizationId": "0",
-            "ownerUserId": "100",
             "code": "agent.pc.backend.update.structured",
             "displayName": "Backend Structured Update PC Agent",
             "description": "backend structured update",
@@ -1162,7 +1245,7 @@ async fn backend_update_agent_management_profile_should_preserve_existing_intent
 
     let response = patch_json(
         &app,
-        "/backend/v3/api/ai/agents/agent.pc.backend.update.structured?tenant_id=100001",
+        "/backend/v3/api/ai/agents/agent.pc.backend.update.structured",
         json!({
             "managementProfile": {
                 "avatar": "robot",
@@ -1306,17 +1389,13 @@ async fn composition_slots_should_work_over_http() {
     create_agent(&app, agent_id, "Composition HTTP Agent").await;
 
     let create_body = json!({
-        "data": {
-            "tenantId": "100001",
-            "organizationId": "0",
-            "slotId": "slot.knowledge.product",
-            "slotKind": "knowledge",
-            "targetModule": "knowledgebase",
-            "targetRef": "kb.space.product",
-            "priority": "1",
-            "enabled": true,
-            "policyJson": "{}"
-        },
+        "slotId": "slot.knowledge.product",
+        "slotKind": "knowledge",
+        "targetModule": "knowledgebase",
+        "targetRef": "kb.space.product",
+        "priority": 1,
+        "enabled": true,
+        "policyJson": "{}",
         "requestedAt": "2026-06-17T00:00:00Z"
     });
     let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots");
@@ -1340,10 +1419,8 @@ async fn composition_slots_should_work_over_http() {
     );
 
     let update_body = json!({
-        "data": {
-            "tenantId": "100001",
-            "targetRef": "kb.space.product.v2"
-        },
+        "expectedVersion": create_response["data"]["item"]["version"],
+        "targetRef": "kb.space.product.v2",
         "requestedAt": "2026-06-17T00:01:00Z"
     });
     let update_uri = format!("/app/v3/api/ai/agents/{agent_id}/composition_slots/{slot_id}");
@@ -1361,7 +1438,7 @@ async fn composition_slots_should_work_over_http() {
         .expect("delete request should be built");
     let delete_response = app
         .clone()
-        .oneshot(auth_headers(delete_request))
+        .oneshot(delete_request)
         .await
         .expect("delete request should succeed");
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
@@ -1383,14 +1460,9 @@ async fn agent_tasks_should_work_over_http() {
     create_agent(&app, agent_id, "Task HTTP Agent").await;
 
     let create_body = json!({
-        "data": {
-            "tenantId": "100001",
-            "organizationId": "0",
-            "ownerUserId": "0",
-            "title": "Nightly sync",
-            "prompt": "Summarize tenant activity",
-            "metadataJson": "{\"deferExecution\":true}"
-        },
+        "title": "Nightly sync",
+        "prompt": "Summarize tenant activity",
+        "metadataJson": "{\"deferExecution\":true}",
         "requestedAt": "2026-06-17T00:00:00Z"
     });
     let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
@@ -1414,7 +1486,6 @@ async fn agent_tasks_should_work_over_http() {
     );
 
     let cancel_body = json!({
-        "tenantId": "100001",
         "expectedVersion": get_response["data"]["item"]["version"],
         "requestedAt": "2026-06-17T00:01:00Z"
     });
@@ -1438,14 +1509,9 @@ async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
     create_agent(&app, agent_id, "Task Execute HTTP Agent").await;
 
     let create_body = json!({
-        "data": {
-            "tenantId": "100001",
-            "organizationId": "0",
-            "ownerUserId": "0",
-            "title": "Deferred job",
-            "prompt": "Summarize tenant activity",
-            "metadataJson": "{\"deferExecution\":true}"
-        },
+        "title": "Deferred job",
+        "prompt": "Summarize tenant activity",
+        "metadataJson": "{\"deferExecution\":true}",
         "requestedAt": "2026-06-17T00:00:00Z"
     });
     let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
@@ -1461,7 +1527,6 @@ async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
     let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
 
     let execute_body = json!({
-        "tenantId": "100001",
         "expectedVersion": get_response["data"]["item"]["version"],
         "requestedAt": "2026-06-17T00:01:00Z"
     });
@@ -1486,31 +1551,18 @@ async fn agent_interactions_should_work_over_http() {
     create_agent(&app, agent_id, "Interaction HTTP Agent").await;
 
     let session_id = "session.interactions.http";
-    post_json(
+    create_app_session(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
-        json!({
-            "data": {
-                "tenantId": "100001",
-                "organizationId": "0",
-                "ownerUserId": "0",
-                "sessionId": session_id,
-                "title": "HTTP interaction test"
-            },
-            "requestedAt": "2026-06-17T00:00:00Z"
-        }),
-        StatusCode::CREATED,
+        agent_id,
+        session_id,
+        "HTTP interaction test",
+        "2026-06-17T00:00:00Z",
     )
     .await;
 
     let create_body = json!({
-        "data": {
-            "tenantId": "100001",
-            "organizationId": "0",
-            "engineKey": "codex",
-            "kind": "approval",
-            "prompt": "Allow file write to /tmp/demo.txt?"
-        },
+        "kind": "approval",
+        "prompt": "Allow file write to /tmp/demo.txt?",
         "requestedAt": "2026-06-17T00:00:01Z"
     });
     let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions");
@@ -1522,9 +1574,56 @@ async fn agent_interactions_should_work_over_http() {
         .to_string();
     assert_eq!(create_response["data"]["item"]["status"], json!("pending"));
 
-    let list_uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions");
+    post_json(
+        &app,
+        create_uri.as_str(),
+        json!({
+            "kind": "user_question",
+            "prompt": "Which implementation should be used?",
+            "options": [{ "value": "safe", "label": "Safe" }],
+            "requestedAt": "2026-06-17T00:00:01.500Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let list_uri = format!(
+        "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?kind=user_question&status=pending&page=1&page_size=1"
+    );
     let list_response = get_json(&app, list_uri.as_str(), StatusCode::OK).await;
     assert_eq!(list_response["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(list_response["data"]["items"][0]["kind"], "user_question");
+    assert_eq!(list_response["data"]["items"][0]["status"], "pending");
+    assert_eq!(list_response["data"]["pageInfo"]["page"], 1);
+    assert_eq!(list_response["data"]["pageInfo"]["pageSize"], 1);
+    assert_eq!(list_response["data"]["pageInfo"]["totalItems"], "1");
+
+    for forbidden_query in [
+        "pageSize=1",
+        "limit=1",
+        "page_no=1",
+        "pageNo=1",
+        "per_page=1",
+        "size=1",
+        "cursor=0",
+    ] {
+        get_json(
+            &app,
+            &format!(
+                "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?{forbidden_query}"
+            ),
+            StatusCode::BAD_REQUEST,
+        )
+        .await;
+    }
+    get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?page_size=201"
+        ),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
 
     let get_uri = format!(
         "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}"
@@ -1532,10 +1631,25 @@ async fn agent_interactions_should_work_over_http() {
     let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
     assert_eq!(get_response["data"]["item"]["kind"], json!("approval"));
 
+    let claim_response = post_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/claim"
+        ),
+        json!({
+            "claimOwner": "worker.http-contract",
+            "expectedVersion": get_response["data"]["item"]["version"],
+            "requestedAt": "2026-06-17T00:00:02Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
     let approve_body = json!({
         "approved": true,
-        "expectedVersion": get_response["data"]["item"]["version"],
-        "requestedAt": "2026-06-17T00:00:02Z"
+        "claimToken": claim_response["data"]["item"]["claimToken"],
+        "fencingToken": claim_response["data"]["item"]["fencingToken"],
+        "expectedVersion": claim_response["data"]["item"]["interaction"]["version"],
+        "requestedAt": "2026-06-17T00:00:03Z"
     });
     let approve_uri = format!(
         "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{interaction_id}/approve"
@@ -1545,6 +1659,21 @@ async fn agent_interactions_should_work_over_http() {
     assert_eq!(
         approve_response["data"]["item"]["status"],
         json!("resolved")
+    );
+
+    let pending_approval_response = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?kind=approval&status=pending&page=1&page_size=20"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        pending_approval_response["data"]["items"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
     );
 }
 
@@ -1578,7 +1707,7 @@ async fn provider_bindings_should_work_over_http() {
         .expect("request should be built");
     let add_binding_response = app
         .clone()
-        .oneshot(auth_headers(add_binding_request))
+        .oneshot(add_binding_request)
         .await
         .expect("add binding request should succeed");
     assert_eq!(add_binding_response.status(), StatusCode::CREATED);
@@ -1603,7 +1732,7 @@ async fn provider_bindings_should_work_over_http() {
 
     let activate_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.rig.http/provider_bindings/binding.rig.default/activate?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.rig.http/provider_bindings/binding.rig.default/activate")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -1615,7 +1744,7 @@ async fn provider_bindings_should_work_over_http() {
         .expect("request should be built");
     let activate_response = app
         .clone()
-        .oneshot(auth_headers(activate_request))
+        .oneshot(activate_request)
         .await
         .expect("activate request should succeed");
     assert_eq!(activate_response.status(), StatusCode::OK);
@@ -1627,7 +1756,7 @@ async fn provider_bindings_should_work_over_http() {
         .expect("request should be built");
     let list_bindings_response = app
         .clone()
-        .oneshot(auth_headers(list_bindings_request))
+        .oneshot(list_bindings_request)
         .await
         .expect("list bindings request should succeed");
     assert_eq!(list_bindings_response.status(), StatusCode::OK);
@@ -1693,7 +1822,7 @@ async fn backend_update_agent_should_change_implementation_type() {
 
     let response = patch_json(
         &app,
-        "/backend/v3/api/ai/agents/agent.implementation.http.update?tenant_id=100001",
+        "/backend/v3/api/ai/agents/agent.implementation.http.update",
         json!({
             "implementationProviderId": "provider.agent.openai",
             "implementationKind": "process-adapter",
@@ -1777,7 +1906,7 @@ async fn provider_bindings_should_apply_pagination_contract() {
             .expect("request should be built");
         let response = app
             .clone()
-            .oneshot(auth_headers(request))
+            .oneshot(request)
             .await
             .expect("add binding request should succeed");
         assert_eq!(response.status(), StatusCode::CREATED);
@@ -1790,7 +1919,7 @@ async fn provider_bindings_should_apply_pagination_contract() {
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("list bindings request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -1830,7 +1959,7 @@ async fn provider_binding_list_missing_agent_should_return_not_found() {
             .expect("request should be built");
         let response = app
             .clone()
-            .oneshot(auth_headers(request))
+            .oneshot(request)
             .await
             .expect("list request should succeed");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -2036,7 +2165,7 @@ async fn provider_binding_activation_missing_agent_should_return_not_found() {
 
     let request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.missing/provider_bindings/binding.rig.default/activate?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.missing/provider_bindings/binding.rig.default/activate")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2048,7 +2177,7 @@ async fn provider_binding_activation_missing_agent_should_return_not_found() {
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("activate request should return problem detail");
 
@@ -2098,7 +2227,7 @@ async fn provider_binding_conflicts_should_return_problem_detail() {
             .expect("request should be built");
         let response = app
             .clone()
-            .oneshot(auth_headers(request))
+            .oneshot(request)
             .await
             .expect("binding request should return response");
         assert_eq!(response.status(), expected_status);
@@ -2151,7 +2280,7 @@ async fn provider_binding_invalid_standard_ids_should_return_bad_request() {
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("binding request should return problem detail");
 
@@ -2210,7 +2339,7 @@ async fn provider_binding_invalid_capabilities_should_return_bad_request() {
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("binding request should return problem detail");
 
@@ -2241,13 +2370,13 @@ async fn list_should_apply_pagination_contract() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents?tenant_id=100001&page=1&page_size=1")
+        .uri("/backend/v3/api/ai/agents?page=1&page_size=1")
         .body(Body::empty())
         .expect("request should be built");
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("list request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -2282,13 +2411,13 @@ async fn list_should_apply_search_query_filter() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents?tenant_id=100001&q=beta")
+        .uri("/backend/v3/api/ai/agents?q=beta")
         .body(Body::empty())
         .expect("request should be built");
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("search list request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
@@ -2305,49 +2434,6 @@ async fn list_should_apply_search_query_filter() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["agentId"], "agent.search.beta");
     assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "1");
-}
-
-#[tokio::test]
-async fn missing_subject_header_should_return_problem_detail() {
-    let state = AgentHttpState::new(
-        InMemoryAgentRepository::new(),
-        InMemoryAgentAuditSink::default(),
-        test_policy_provider(),
-    );
-    let app = build_test_app(state);
-
-    let request = Request::builder()
-        .method("GET")
-        .uri("/backend/v3/api/ai/agents?tenant_id=100001")
-        .body(Body::empty())
-        .expect("request should be built");
-
-    let response = app
-        .clone()
-        .oneshot(request)
-        .await
-        .expect("request should return problem detail");
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok()),
-        Some("application/problem+json")
-    );
-
-    let body_bytes = to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("response body should be readable");
-    let body_json: Value =
-        serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["title"], "Validation failed");
-    assert_eq!(body_json["status"], 400);
-    assert_eq!(body_json["code"], 40001);
-    assert!(body_json["detail"]
-        .as_str()
-        .expect("detail should exist")
-        .contains("x-subject-id"));
 }
 
 #[tokio::test]
@@ -2369,7 +2455,7 @@ async fn delete_agent_without_body_should_return_no_content() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("delete request should succeed");
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
@@ -2400,7 +2486,7 @@ async fn create_with_invalid_requested_at_should_return_bad_request() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return validation error");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -2450,7 +2536,7 @@ async fn create_with_invalid_implementation_provider_id_should_return_bad_reques
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("create should return problem detail");
 
@@ -2497,7 +2583,7 @@ async fn create_duplicate_agent_should_return_conflict() {
 
     let duplicate_response = app
         .clone()
-        .oneshot(auth_headers(duplicate_request))
+        .oneshot(duplicate_request)
         .await
         .expect("duplicate create should return conflict");
     assert_eq!(duplicate_response.status(), StatusCode::CONFLICT);
@@ -2537,7 +2623,7 @@ async fn create_agent_with_non_standard_agent_id_should_return_bad_request() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("invalid agent id create should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -2576,14 +2662,14 @@ async fn restore_with_invalid_requested_at_should_return_bad_request() {
         .expect("request should be built");
     let delete_response = app
         .clone()
-        .oneshot(auth_headers(delete_request))
+        .oneshot(delete_request)
         .await
         .expect("delete request should succeed");
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let restore_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.restore.invalid-time/restore?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.restore.invalid-time/restore")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2595,7 +2681,7 @@ async fn restore_with_invalid_requested_at_should_return_bad_request() {
         .expect("request should be built");
     let restore_response = app
         .clone()
-        .oneshot(auth_headers(restore_request))
+        .oneshot(restore_request)
         .await
         .expect("restore request should return validation error");
     assert_eq!(restore_response.status(), StatusCode::BAD_REQUEST);
@@ -2626,7 +2712,7 @@ async fn app_restore_should_restore_deleted_agent() {
         .expect("request should be built");
     let delete_response = app
         .clone()
-        .oneshot(auth_headers(delete_request))
+        .oneshot(delete_request)
         .await
         .expect("delete request should succeed");
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
@@ -2645,7 +2731,7 @@ async fn app_restore_should_restore_deleted_agent() {
         .expect("request should be built");
     let restore_response = app
         .clone()
-        .oneshot(auth_headers(restore_request))
+        .oneshot(restore_request)
         .await
         .expect("restore request should succeed");
     assert_eq!(restore_response.status(), StatusCode::OK);
@@ -2676,14 +2762,14 @@ async fn backend_restore_should_restore_deleted_agent() {
         .expect("request should be built");
     let delete_response = app
         .clone()
-        .oneshot(auth_headers(delete_request))
+        .oneshot(delete_request)
         .await
         .expect("delete request should succeed");
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let restore_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.restore.backend/restore?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.restore.backend/restore")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2695,7 +2781,7 @@ async fn backend_restore_should_restore_deleted_agent() {
         .expect("request should be built");
     let restore_response = app
         .clone()
-        .oneshot(auth_headers(restore_request))
+        .oneshot(restore_request)
         .await
         .expect("restore request should succeed");
     assert_eq!(restore_response.status(), StatusCode::OK);
@@ -2721,7 +2807,7 @@ async fn update_with_matching_expected_version_should_succeed() {
 
     let update_request = Request::builder()
         .method("PATCH")
-        .uri("/backend/v3/api/ai/agents/agent.expected.update?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.expected.update")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2734,7 +2820,7 @@ async fn update_with_matching_expected_version_should_succeed() {
         .expect("request should be built");
     let update_response = app
         .clone()
-        .oneshot(auth_headers(update_request))
+        .oneshot(update_request)
         .await
         .expect("update request should succeed");
     assert_eq!(update_response.status(), StatusCode::OK);
@@ -2761,7 +2847,7 @@ async fn update_with_stale_expected_version_should_return_conflict() {
 
     let first_update = Request::builder()
         .method("PATCH")
-        .uri("/backend/v3/api/ai/agents/agent.expected.stale?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.expected.stale")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2774,14 +2860,14 @@ async fn update_with_stale_expected_version_should_return_conflict() {
         .expect("request should be built");
     let first_update_response = app
         .clone()
-        .oneshot(auth_headers(first_update))
+        .oneshot(first_update)
         .await
         .expect("first update should succeed");
     assert_eq!(first_update_response.status(), StatusCode::OK);
 
     let stale_update = Request::builder()
         .method("PATCH")
-        .uri("/backend/v3/api/ai/agents/agent.expected.stale?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.expected.stale")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2794,7 +2880,7 @@ async fn update_with_stale_expected_version_should_return_conflict() {
         .expect("request should be built");
     let stale_update_response = app
         .clone()
-        .oneshot(auth_headers(stale_update))
+        .oneshot(stale_update)
         .await
         .expect("stale update should return conflict");
     assert_eq!(stale_update_response.status(), StatusCode::CONFLICT);
@@ -2831,7 +2917,7 @@ async fn status_update_with_stale_expected_version_should_return_version_conflic
 
     let first_status_update = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.expected.status/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.expected.status/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2844,14 +2930,14 @@ async fn status_update_with_stale_expected_version_should_return_version_conflic
         .expect("request should be built");
     let first_status_response = app
         .clone()
-        .oneshot(auth_headers(first_status_update))
+        .oneshot(first_status_update)
         .await
         .expect("first status update should succeed");
     assert_eq!(first_status_response.status(), StatusCode::OK);
 
     let stale_status_update = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.expected.status/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.expected.status/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2864,7 +2950,7 @@ async fn status_update_with_stale_expected_version_should_return_version_conflic
         .expect("request should be built");
     let stale_status_response = app
         .clone()
-        .oneshot(auth_headers(stale_status_update))
+        .oneshot(stale_status_update)
         .await
         .expect("stale status update should return conflict");
     assert_eq!(stale_status_response.status(), StatusCode::CONFLICT);
@@ -2897,7 +2983,7 @@ async fn backend_audit_events_should_return_recorded_items() {
 
     let status_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.audit/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2910,19 +2996,19 @@ async fn backend_audit_events_should_return_recorded_items() {
         .expect("request should be built");
     let status_response = app
         .clone()
-        .oneshot(auth_headers(status_request))
+        .oneshot(status_request)
         .await
         .expect("status request should succeed");
     assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit/audit_events?tenant_id=100001&page=1&page_size=10")
+        .uri("/backend/v3/api/ai/agents/agent.audit/audit_events?page=1&page_size=10")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
         .clone()
-        .oneshot(auth_headers(list_request))
+        .oneshot(list_request)
         .await
         .expect("audit list should succeed");
     assert_eq!(list_response.status(), StatusCode::OK);
@@ -2952,7 +3038,7 @@ async fn backend_audit_events_action_filter_should_work() {
 
     let status_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.audit.filter/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.filter/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -2965,19 +3051,19 @@ async fn backend_audit_events_action_filter_should_work() {
         .expect("request should be built");
     let status_response = app
         .clone()
-        .oneshot(auth_headers(status_request))
+        .oneshot(status_request)
         .await
         .expect("status request should succeed");
     assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.filter/audit_events?tenant_id=100001&action=status_changed")
+        .uri("/backend/v3/api/ai/agents/agent.audit.filter/audit_events?action=status_changed")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
         .clone()
-        .oneshot(auth_headers(list_request))
+        .oneshot(list_request)
         .await
         .expect("audit filter list should succeed");
     assert_eq!(list_response.status(), StatusCode::OK);
@@ -3025,7 +3111,7 @@ async fn backend_audit_events_should_filter_provider_binding_actions() {
         .expect("request should be built");
     let binding_response = app
         .clone()
-        .oneshot(auth_headers(binding_request))
+        .oneshot(binding_request)
         .await
         .expect("binding request should succeed");
     assert_eq!(binding_response.status(), StatusCode::CREATED);
@@ -3038,13 +3124,13 @@ async fn backend_audit_events_should_filter_provider_binding_actions() {
         let list_request = Request::builder()
             .method("GET")
             .uri(format!(
-                "/backend/v3/api/ai/agents/agent.audit.rig/audit_events?tenant_id=100001&action={action}"
+                "/backend/v3/api/ai/agents/agent.audit.rig/audit_events?action={action}"
             ))
             .body(Body::empty())
             .expect("request should be built");
         let list_response = app
             .clone()
-            .oneshot(auth_headers(list_request))
+            .oneshot(list_request)
             .await
             .expect("audit filter list should succeed");
         assert_eq!(list_response.status(), StatusCode::OK);
@@ -3084,12 +3170,12 @@ async fn backend_audit_events_invalid_action_should_return_problem_detail() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.invalid/audit_events?tenant_id=100001&action=oops")
+        .uri("/backend/v3/api/ai/agents/agent.audit.invalid/audit_events?action=oops")
         .body(Body::empty())
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3115,7 +3201,7 @@ async fn backend_audit_events_time_range_filter_should_work() {
 
     let status_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.audit.time/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.time/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -3128,19 +3214,19 @@ async fn backend_audit_events_time_range_filter_should_work() {
         .expect("request should be built");
     let status_response = app
         .clone()
-        .oneshot(auth_headers(status_request))
+        .oneshot(status_request)
         .await
         .expect("status request should succeed");
     assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.time/audit_events?tenant_id=100001&from=2026-06-01T01:00:00Z&to=2026-06-01T03:00:00Z")
+        .uri("/backend/v3/api/ai/agents/agent.audit.time/audit_events?from=2026-06-01T01:00:00Z&to=2026-06-01T03:00:00Z")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
         .clone()
-        .oneshot(auth_headers(list_request))
+        .oneshot(list_request)
         .await
         .expect("audit range list should succeed");
     assert_eq!(list_response.status(), StatusCode::OK);
@@ -3170,12 +3256,12 @@ async fn backend_audit_events_invalid_from_should_return_problem_detail() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.badfrom/audit_events?tenant_id=100001&from=2026-06-01")
+        .uri("/backend/v3/api/ai/agents/agent.audit.badfrom/audit_events?from=2026-06-01")
         .body(Body::empty())
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3194,12 +3280,12 @@ async fn backend_audit_events_from_after_to_should_return_problem_detail() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.rangeerr/audit_events?tenant_id=100001&from=2026-06-01T03:00:00Z&to=2026-06-01T01:00:00Z")
+        .uri("/backend/v3/api/ai/agents/agent.audit.rangeerr/audit_events?from=2026-06-01T03:00:00Z&to=2026-06-01T01:00:00Z")
         .body(Body::empty())
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3218,12 +3304,12 @@ async fn backend_audit_events_page_zero_should_return_problem_detail() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.page.zero/audit_events?tenant_id=100001&page=0")
+        .uri("/backend/v3/api/ai/agents/agent.audit.page.zero/audit_events?page=0")
         .body(Body::empty())
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3249,12 +3335,12 @@ async fn backend_audit_events_page_size_above_max_should_return_problem_detail()
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.page.size/audit_events?tenant_id=100001&page_size=201")
+        .uri("/backend/v3/api/ai/agents/agent.audit.page.size/audit_events?page_size=201")
         .body(Body::empty())
         .expect("request should be built");
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3286,7 +3372,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
 
     let status_active_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.audit.combo/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.combo/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -3299,14 +3385,14 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
         .expect("request should be built");
     let status_active_response = app
         .clone()
-        .oneshot(auth_headers(status_active_request))
+        .oneshot(status_active_request)
         .await
         .expect("status request should succeed");
     assert_eq!(status_active_response.status(), StatusCode::OK);
 
     let status_disabled_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.audit.combo/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.combo/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -3319,19 +3405,19 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
         .expect("request should be built");
     let status_disabled_response = app
         .clone()
-        .oneshot(auth_headers(status_disabled_request))
+        .oneshot(status_disabled_request)
         .await
         .expect("status request should succeed");
     assert_eq!(status_disabled_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.combo/audit_events?tenant_id=100001&action=status_changed&from=2026-06-01T00:15:00Z&to=2026-06-01T00:35:00Z&page=1&page_size=1")
+        .uri("/backend/v3/api/ai/agents/agent.audit.combo/audit_events?action=status_changed&from=2026-06-01T00:15:00Z&to=2026-06-01T00:35:00Z&page=1&page_size=1")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
         .clone()
-        .oneshot(auth_headers(list_request))
+        .oneshot(list_request)
         .await
         .expect("audit filter list should succeed");
     assert_eq!(list_response.status(), StatusCode::OK);
@@ -3372,7 +3458,7 @@ async fn backend_audit_events_should_sort_by_instant_desc_across_timezones() {
 
     let status_request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.audit.offset/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.offset/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -3385,19 +3471,19 @@ async fn backend_audit_events_should_sort_by_instant_desc_across_timezones() {
         .expect("request should be built");
     let status_response = app
         .clone()
-        .oneshot(auth_headers(status_request))
+        .oneshot(status_request)
         .await
         .expect("status request should succeed");
     assert_eq!(status_response.status(), StatusCode::OK);
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.offset/audit_events?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.offset/audit_events")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
         .clone()
-        .oneshot(auth_headers(list_request))
+        .oneshot(list_request)
         .await
         .expect("audit list should succeed");
     assert_eq!(list_response.status(), StatusCode::OK);
@@ -3434,7 +3520,7 @@ async fn invalid_query_should_return_problem_detail() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3465,13 +3551,13 @@ async fn retrieve_missing_agent_should_return_not_found_problem_detail() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.missing?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.missing")
         .body(Body::empty())
         .expect("request should be built");
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -3508,7 +3594,7 @@ async fn permission_denied_should_return_permission_problem_detail() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -3552,7 +3638,7 @@ async fn delete_missing_agent_should_return_not_found_problem_detail() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -3576,7 +3662,7 @@ async fn status_missing_agent_should_return_not_found_problem_detail() {
 
     let request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.missing.status/status?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.missing.status/status")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -3590,7 +3676,7 @@ async fn status_missing_agent_should_return_not_found_problem_detail() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -3614,7 +3700,7 @@ async fn restore_missing_agent_should_return_not_found_problem_detail() {
 
     let request = Request::builder()
         .method("POST")
-        .uri("/backend/v3/api/ai/agents/agent.missing.restore/restore?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.missing.restore/restore")
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -3627,7 +3713,7 @@ async fn restore_missing_agent_should_return_not_found_problem_detail() {
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -3651,13 +3737,13 @@ async fn backend_audit_events_permission_denied_should_return_forbidden_problem_
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.denied/audit_events?tenant_id=100001")
+        .uri("/backend/v3/api/ai/agents/agent.audit.denied/audit_events")
         .body(Body::empty())
         .expect("request should be built");
 
     let response = app
         .clone()
-        .oneshot(auth_headers(request))
+        .oneshot(request)
         .await
         .expect("request should return problem detail");
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -3671,70 +3757,49 @@ async fn backend_audit_events_permission_denied_should_return_forbidden_problem_
 }
 
 #[tokio::test]
-async fn backend_route_should_reject_subject_tenant_mismatch() {
+async fn backend_route_should_isolate_reads_by_subject_tenant() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
         test_policy_provider(),
     );
-    let app = build_combined_router(state);
+    let tenant_one_app = build_test_app(state.clone());
+    create_agent(&tenant_one_app, "agent.tenant.one", "Tenant One").await;
+
+    let tenant_two_context = AgentRequestContext::new("2", "200")
+        .with_organization_id("0")
+        .with_subject_id("200")
+        .with_roles(["ai.agents.manage"]);
+    let tenant_two_app = build_test_app_with_context(state, tenant_two_context);
 
     let request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents?tenant_id=100001")
-        .header("x-subject-id", "u-1")
-        .header("x-subject-tenant-id", "2")
+        .uri("/backend/v3/api/ai/agents")
         .body(Body::empty())
         .expect("request should be built");
-    let response = app.oneshot(request).await.expect("request should succeed");
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = tenant_two_app
+        .oneshot(request)
+        .await
+        .expect("request should succeed");
+    assert_eq!(response.status(), StatusCode::OK);
     let body_bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body should be readable");
     let body_json: Value =
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["title"], "Permission required");
+    assert_eq!(body_json["data"]["items"], json!([]));
 }
 
 #[tokio::test]
-async fn backend_route_should_accept_matching_subject_tenant_header() {
+async fn backend_route_should_accept_trusted_subject_tenant_context() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
         test_policy_provider(),
     );
-    let app = build_combined_router(state);
+    let app = build_test_app(state);
 
-    get_json(
-        &app,
-        "/backend/v3/api/ai/agents?tenant_id=100001",
-        StatusCode::OK,
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn backend_route_should_reject_missing_subject_headers() {
-    let state = AgentHttpState::new(
-        InMemoryAgentRepository::new(),
-        InMemoryAgentAuditSink::default(),
-        test_policy_provider(),
-    );
-    let app = build_combined_router(state);
-
-    let request = Request::builder()
-        .method("GET")
-        .uri("/backend/v3/api/ai/agents?tenant_id=100001")
-        .body(Body::empty())
-        .expect("request should be built");
-    let response = app.oneshot(request).await.expect("request should succeed");
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body_bytes = to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("response body should be readable");
-    let body_json: Value =
-        serde_json::from_slice(&body_bytes).expect("response body should be valid json");
-    assert_eq!(body_json["title"], "Validation failed");
+    get_json(&app, "/backend/v3/api/ai/agents", StatusCode::OK).await;
 }
 
 #[tokio::test]
@@ -3789,7 +3854,7 @@ async fn app_project_crud_should_be_versioned_listed_archived_and_deleted() {
 
     let listed = get_json(
         &app,
-        "/app/v3/api/ai/projects?q=renamed&page=1&pageSize=20",
+        "/app/v3/api/ai/projects?q=renamed&page=1&page_size=20",
         StatusCode::OK,
     )
     .await;
@@ -3868,7 +3933,7 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
     let listed = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/projects/{project_id}/composition_slots?slotKind=prompt&enabled=true&page=1&page_size=20"
+            "/app/v3/api/ai/projects/{project_id}/composition_slots?slot_kind=prompt&enabled=true&page=1&page_size=20"
         ),
         StatusCode::OK,
     )
@@ -3908,7 +3973,7 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
         .expect("delete request should be built");
     let missing_version_response = app
         .clone()
-        .oneshot(auth_headers(missing_version_request))
+        .oneshot(missing_version_request)
         .await
         .expect("delete request should complete");
     assert_eq!(missing_version_response.status(), StatusCode::BAD_REQUEST);
@@ -3924,50 +3989,46 @@ async fn app_project_composition_slot_crud_should_match_generated_sdk_contract()
 }
 
 #[tokio::test]
-async fn app_chat_complete_should_replay_same_idempotency_payload_and_reject_conflicts() {
+async fn app_turn_should_replay_same_idempotency_payload_and_reject_conflicts() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
         test_policy_provider(),
     );
     let app = build_test_app(state);
-    let agent_id = "agent.chat.complete.http";
-    create_agent(&app, agent_id, "Complete Chat HTTP Agent").await;
+    let agent_id = "agent.turn.replay.http";
+    create_agent(&app, agent_id, "Replay Turn HTTP Agent").await;
 
-    let session_id = "session.chat.complete.http";
-    post_json(
+    let session_id = "session.turn.replay.http";
+    create_app_session(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
-        json!({
-            "data": {
-                "tenantId": "0",
-                "organizationId": "0",
-                "ownerUserId": "0",
-                "sessionId": session_id,
-                "title": "Idempotent HTTP chat"
-            },
-            "requestedAt": "2026-06-28T12:00:00Z"
-        }),
-        StatusCode::CREATED,
+        agent_id,
+        session_id,
+        "Idempotent HTTP turn",
+        "2026-06-28T12:00:00Z",
     )
     .await;
+    let runtime_binding_id = create_turn_runtime(&app, agent_id, session_id, "replay-http").await;
 
-    let uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items/complete");
+    let uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns");
     let payload = json!({
-        "content": "One commercial turn",
+        "content": "One agent turn",
+        "turnMode": "interactive",
+        "runtimeBindingId": runtime_binding_id,
         "idempotencyKey": "idem.http.complete.1",
+        "payloadHash": "sha256:http-complete-1",
         "clientRequestId": "client.http.complete.1",
         "requestedAt": "2026-06-28T12:00:01Z"
     });
-    let first = post_json(&app, &uri, payload.clone(), StatusCode::CREATED).await;
-    let replay = post_json(&app, &uri, payload, StatusCode::CREATED).await;
+    let first = post_json(&app, &uri, payload.clone(), StatusCode::OK).await;
+    let replay = post_json(&app, &uri, payload, StatusCode::OK).await;
     assert_eq!(
-        replay["data"]["item"]["userMessage"]["messageId"],
-        first["data"]["item"]["userMessage"]["messageId"]
+        replay["data"]["item"]["items"][0]["itemId"],
+        first["data"]["item"]["items"][0]["itemId"]
     );
     assert_eq!(
-        replay["data"]["item"]["assistantMessage"]["messageId"],
-        first["data"]["item"]["assistantMessage"]["messageId"]
+        replay["data"]["item"]["items"][1]["itemId"],
+        first["data"]["item"]["items"][1]["itemId"]
     );
 
     let conflict = post_json(
@@ -3975,7 +4036,10 @@ async fn app_chat_complete_should_replay_same_idempotency_payload_and_reject_con
         &uri,
         json!({
             "content": "A different payload",
+            "turnMode": "interactive",
+            "runtimeBindingId": runtime_binding_id,
             "idempotencyKey": "idem.http.complete.1",
+            "payloadHash": "sha256:http-complete-2",
             "clientRequestId": "client.http.complete.2",
             "requestedAt": "2026-06-28T12:00:02Z"
         }),
@@ -4013,33 +4077,37 @@ async fn app_session_should_support_flat_create_rename_project_move_filter_and_d
         &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
         json!({
             "sessionId": session_id,
-            "title": "Unsorted conversation",
+            "sessionKind": "assistant",
+            "entrySurface": "api",
+            "title": "Unsorted session",
+            "idempotencyKey": "create-session-commercial-http",
+            "payloadHash": "sha256:create-session-commercial-http",
             "requestedAt": "2026-06-28T12:00:00Z"
         }),
         StatusCode::CREATED,
     )
     .await;
     assert_eq!(created["data"]["item"]["sessionId"], session_id);
-    assert_eq!(created["data"]["item"]["lastMessageSequence"], "0");
+    assert_eq!(created["data"]["item"]["lastItemSequence"], "0");
 
     let moved = patch_json(
         &app,
         &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}"),
         json!({
             "expectedVersion": created["data"]["item"]["version"],
-            "title": "Project conversation",
+            "title": "Project session",
             "projectId": project_id
         }),
         StatusCode::OK,
     )
     .await;
     assert_eq!(moved["data"]["item"]["projectId"], project_id);
-    assert_eq!(moved["data"]["item"]["title"], "Project conversation");
+    assert_eq!(moved["data"]["item"]["title"], "Project session");
 
     let listed = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/agents/{agent_id}/sessions?projectId={project_id}&page=1&pageSize=20"
+            "/app/v3/api/ai/agents/{agent_id}/sessions?project_id={project_id}&page=1&page_size=20"
         ),
         StatusCode::OK,
     )
@@ -4063,102 +4131,202 @@ async fn app_session_should_support_flat_create_rename_project_move_filter_and_d
 }
 
 #[tokio::test]
-async fn app_chat_message_turn_should_return_completion() {
+async fn app_turn_should_return_ordered_session_items() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
         test_policy_provider(),
     );
     let app = build_test_app(state);
-    let agent_id = "agent.chat.http";
-    create_agent(&app, agent_id, "Chat HTTP Agent").await;
+    let agent_id = "agent.turn.http";
+    create_agent(&app, agent_id, "Turn HTTP Agent").await;
 
-    let session_id = "session.chat.http";
-    let session_response = post_json(
+    let session_id = "session.turn.http";
+    let session_response = create_app_session(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
-        json!({
-            "data": {
-                "tenantId": "0",
-                "organizationId": "0",
-                "ownerUserId": "0",
-                "sessionId": session_id,
-                "title": "HTTP chat test"
-            },
-            "requestedAt": "2026-06-28T12:00:00Z"
-        }),
-        StatusCode::CREATED,
+        agent_id,
+        session_id,
+        "HTTP turn test",
+        "2026-06-28T12:00:00Z",
     )
     .await;
     assert_eq!(session_response["data"]["item"]["sessionId"], session_id);
+    let runtime_binding_id = create_turn_runtime(&app, agent_id, session_id, "turn-http").await;
 
     let completion = post_json(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items"),
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns"),
         json!({
             "content": "Hello over HTTP",
+            "turnMode": "interactive",
+            "runtimeBindingId": runtime_binding_id,
+            "idempotencyKey": "turn-http-1",
+            "payloadHash": "sha256:turn-http-1",
             "requestedAt": "2026-06-28T12:00:01Z"
         }),
-        StatusCode::CREATED,
+        StatusCode::OK,
     )
     .await;
-    assert_eq!(completion["data"]["item"]["userMessage"]["role"], "user");
+    assert_eq!(completion["data"]["item"]["items"][0]["kind"], "user_input");
     assert_eq!(
-        completion["data"]["item"]["userMessage"]["content"],
+        completion["data"]["item"]["items"][0]["content"],
         "Hello over HTTP"
     );
     assert_eq!(
-        completion["data"]["item"]["assistantMessage"]["role"],
-        "assistant"
+        completion["data"]["item"]["items"][1]["kind"],
+        "assistant_output"
     );
-    assert!(completion["data"]["item"]["assistantMessage"]["content"]
+    assert!(completion["data"]["item"]["items"][1]["content"]
         .as_str()
         .unwrap_or("")
         .contains("Hello over HTTP"));
+
+    let newest_page = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page=1&page_size=1"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(newest_page["data"]["items"][0]["kind"], "assistant_output");
+    assert_eq!(newest_page["data"]["pageInfo"]["page"], 1);
+    assert_eq!(newest_page["data"]["pageInfo"]["pageSize"], 1);
+    assert_eq!(newest_page["data"]["pageInfo"]["totalItems"], "2");
+    assert_eq!(newest_page["data"]["pageInfo"]["hasMore"], true);
+
+    let filtered_page = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?kind=user_input&status=completed&sort=sequence&page=1&page_size=1"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(filtered_page["data"]["items"][0]["kind"], "user_input");
+    assert_eq!(filtered_page["data"]["pageInfo"]["totalItems"], "1");
+
+    get_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?sort=createdAt"),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
 }
 
 #[tokio::test]
-async fn open_api_chat_message_should_accept_body_tenant_id() {
+async fn app_turn_stream_should_return_typed_delta_and_completion_events() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
         test_policy_provider(),
     );
     let app = build_test_app(state);
-    let agent_id = "agent.chat.open";
-    create_agent(&app, agent_id, "Open Chat Agent").await;
+    let agent_id = "agent.turn.stream.http";
+    create_agent(&app, agent_id, "Stream Turn HTTP Agent").await;
 
-    let session_id = "session.chat.open";
-    post_json(
+    let session_id = "session.turn.stream.http";
+    create_app_session(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
-        json!({
-            "data": {
-                "tenantId": "0",
-                "organizationId": "0",
-                "ownerUserId": "0",
-                "sessionId": session_id
-            },
-            "requestedAt": "2026-06-28T12:00:00Z"
-        }),
-        StatusCode::CREATED,
+        agent_id,
+        session_id,
+        "HTTP stream turn test",
+        "2026-06-28T12:00:00Z",
     )
     .await;
+    let runtime_binding_id =
+        create_turn_runtime(&app, agent_id, session_id, "turn-stream-http").await;
+    let payload = json!({
+        "content": "Hello over SSE",
+        "turnMode": "interactive",
+        "runtimeBindingId": runtime_binding_id,
+        "idempotencyKey": "turn-stream-http-1",
+        "payloadHash": "sha256:turn-stream-http-1",
+        "requestedAt": "2026-06-28T12:00:01Z"
+    });
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns?stream=true"
+        ))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("stream turn request should be built");
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("stream turn request should complete");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("stream turn body should be readable");
+    let body = String::from_utf8(body.to_vec()).expect("stream turn body should be UTF-8");
+    let events = body
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|data| serde_json::from_str::<Value>(data).expect("SSE data must be JSON"))
+        .collect::<Vec<_>>();
+    assert!(!events.is_empty());
+    for (index, event) in events.iter().take(events.len() - 1).enumerate() {
+        assert_eq!(event["eventType"], "delta");
+        assert_eq!(event["index"], index);
+        assert!(event["delta"].is_string());
+    }
+    let completion = events.last().expect("completion event should exist");
+    assert_eq!(completion["eventType"], "completion");
+    assert_eq!(completion["response"]["code"], 0);
+    assert_eq!(
+        completion["response"]["data"]["item"]["turn"]["sessionId"],
+        session_id
+    );
+}
+
+#[tokio::test]
+async fn open_api_turn_should_use_trusted_tenant_scope() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.turn.open";
+    create_agent(&app, agent_id, "Open Turn Agent").await;
+
+    let session_id = "session.turn.open";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "Open API turn",
+        "2026-06-28T12:00:00Z",
+    )
+    .await;
+    let runtime_binding_id = create_turn_runtime(&app, agent_id, session_id, "turn-open").await;
 
     let completion = post_json(
         &app,
-        &format!("/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items"),
+        &format!("/agent/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns"),
         json!({
-            "tenantId": "100001",
             "content": "Open API hello",
+            "turnMode": "interactive",
+            "runtimeBindingId": runtime_binding_id,
+            "idempotencyKey": "turn-open-1",
+            "payloadHash": "sha256:turn-open-1",
             "requestedAt": "2026-06-28T12:00:01Z"
         }),
-        StatusCode::CREATED,
+        StatusCode::OK,
     )
     .await;
     assert_eq!(
-        completion["data"]["item"]["assistantMessage"]["role"],
-        "assistant"
+        completion["data"]["item"]["items"][1]["kind"],
+        "assistant_output"
     );
 }
 
@@ -4174,20 +4342,12 @@ async fn backend_archive_session_should_transition_status() {
     create_agent(&app, agent_id, "Archive Session Agent").await;
 
     let session_id = "session.archive.backend";
-    let session_response = post_json(
+    let session_response = create_app_session(
         &app,
-        &format!("/app/v3/api/ai/agents/{agent_id}/sessions"),
-        json!({
-            "data": {
-                "tenantId": "100001",
-                "organizationId": "0",
-                "ownerUserId": "1",
-                "sessionId": session_id,
-                "title": "Archive test session"
-            },
-            "requestedAt": "2026-06-28T12:00:00Z"
-        }),
-        StatusCode::CREATED,
+        agent_id,
+        session_id,
+        "Archive test session",
+        "2026-06-28T12:00:00Z",
     )
     .await;
     let expected_version = session_response["data"]["item"]["version"]
@@ -4196,11 +4356,8 @@ async fn backend_archive_session_should_transition_status() {
 
     let closed = post_json(
         &app,
-        &format!(
-            "/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/close?tenant_id=100001"
-        ),
+        &format!("/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/close"),
         json!({
-            "tenantId": "100001",
             "expectedVersion": expected_version,
             "requestedAt": "2026-06-28T12:00:00Z"
         }),
@@ -4213,11 +4370,8 @@ async fn backend_archive_session_should_transition_status() {
 
     let archived = post_json(
         &app,
-        &format!(
-            "/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/archive?tenant_id=100001"
-        ),
+        &format!("/backend/v3/api/ai/agents/{agent_id}/sessions/{session_id}/archive"),
         json!({
-            "tenantId": "100001",
             "expectedVersion": closed_version,
             "requestedAt": "2026-06-28T12:00:00Z"
         }),

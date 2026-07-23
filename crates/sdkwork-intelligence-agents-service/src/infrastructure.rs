@@ -3,17 +3,16 @@ use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
-    AgentSessionCheckpointRecord, AgentSessionItemRecord,
-    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
-    AgentTaskRecord,
+    AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionRecord,
+    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentTaskRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
-use crate::in_memory_pagination::{count_iterator, paginate_iterator, paginate_items};
+use crate::in_memory_pagination::{count_iterator, paginate_items, paginate_iterator};
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, McpMarketplaceListQuery, ItemFeedbackListQuery, SessionItemListQuery,
+    InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionListQuery,
+    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery, SessionListQuery,
     SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
@@ -398,8 +397,7 @@ pub struct InMemoryAgentRepository {
     session_index: RwLock<BTreeMap<SessionIndexKey, SessionPrimaryKey>>,
     session_runtime_bindings:
         RwLock<HashMap<SessionRuntimeBindingPrimaryKey, AgentSessionRuntimeBindingRecord>>,
-    session_checkpoints:
-        RwLock<HashMap<SessionCheckpointPrimaryKey, AgentSessionCheckpointRecord>>,
+    session_checkpoints: RwLock<HashMap<SessionCheckpointPrimaryKey, AgentSessionCheckpointRecord>>,
     resource_user_states:
         RwLock<HashMap<ResourceUserStatePrimaryKey, AgentResourceUserStateRecord>>,
     items: RwLock<HashMap<SessionItemPrimaryKey, AgentSessionItemRecord>>,
@@ -1274,7 +1272,9 @@ impl AgentRepository for InMemoryAgentRepository {
         );
         let mut bindings = self.session_runtime_bindings.recovering_write();
         if bindings.contains_key(&key) {
-            return Err(KernelError::conflict("session runtime binding already exists"));
+            return Err(KernelError::conflict(
+                "session runtime binding already exists",
+            ));
         }
         if record.is_current
             && bindings.values().any(|candidate| {
@@ -1467,10 +1467,7 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(target.clone())
     }
 
-    fn insert_session_checkpoint(
-        &self,
-        record: AgentSessionCheckpointRecord,
-    ) -> KernelResult<()> {
+    fn insert_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()> {
         let key = (
             record.tenant_id,
             record.organization_id,
@@ -1485,10 +1482,7 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(())
     }
 
-    fn update_session_checkpoint(
-        &self,
-        record: AgentSessionCheckpointRecord,
-    ) -> KernelResult<()> {
+    fn update_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()> {
         let key = (
             record.tenant_id,
             record.organization_id,
@@ -1554,10 +1548,7 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(paginate_iterator(records.into_iter(), &query.pagination))
     }
 
-    fn count_session_checkpoints(
-        &self,
-        query: &SessionCheckpointListQuery,
-    ) -> KernelResult<u64> {
+    fn count_session_checkpoints(&self, query: &SessionCheckpointListQuery) -> KernelResult<u64> {
         Ok(count_iterator(
             self.session_checkpoints
                 .recovering_read()
@@ -1728,7 +1719,10 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned())
     }
 
-    fn list_session_items(&self, query: &SessionItemListQuery) -> KernelResult<Vec<AgentSessionItemRecord>> {
+    fn list_session_items(
+        &self,
+        query: &SessionItemListQuery,
+    ) -> KernelResult<Vec<AgentSessionItemRecord>> {
         let items = self.items.recovering_read();
         let index = self.session_item_index.recovering_read();
         let iter = index
@@ -1870,11 +1864,13 @@ impl AgentRepository for InMemoryAgentRepository {
         let index = self.session_item_index.recovering_read();
         let max_sequence = index
             .iter()
-            .filter(|((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
-                *indexed_tenant_id == tenant_id
-                    && *indexed_organization_id == organization_id
-                    && indexed_session_id == session_id
-            })
+            .filter(
+                |((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
+                    *indexed_tenant_id == tenant_id
+                        && *indexed_organization_id == organization_id
+                        && indexed_session_id == session_id
+                },
+            )
             .map(|((_, _, _, sequence, _), _)| *sequence)
             .max()
             .unwrap_or(0);
@@ -2021,9 +2017,7 @@ impl AgentRepository for InMemoryAgentRepository {
             || existing.agent_id != turn.agent_id
             || existing.owner_user_id != turn.owner_user_id
         {
-            return Err(KernelError::validation(
-                "turn immutable scope mismatch",
-            ));
+            return Err(KernelError::validation("turn immutable scope mismatch"));
         }
         turns.insert(primary_key, turn.clone());
         Ok(turn)
@@ -2035,7 +2029,11 @@ impl AgentRepository for InMemoryAgentRepository {
         session: AgentSessionRecord,
         mut user_input_item: AgentSessionItemRecord,
         mut assistant_output_item: AgentSessionItemRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+    ) -> KernelResult<(
+        AgentSessionRecord,
+        AgentSessionItemRecord,
+        AgentSessionItemRecord,
+    )> {
         // Atomic: acquire all relevant write locks in canonical order
         // (sessions -> session_index -> items -> session_item_index) to prevent
         // races on item sequence and session counters.
@@ -2087,11 +2085,13 @@ impl AgentRepository for InMemoryAgentRepository {
 
         let max_sequence = session_item_index
             .iter()
-            .filter(|((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
-                *indexed_tenant_id == tenant_id
-                    && *indexed_organization_id == organization_id
-                    && indexed_session_id == &session_id
-            })
+            .filter(
+                |((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
+                    *indexed_tenant_id == tenant_id
+                        && *indexed_organization_id == organization_id
+                        && indexed_session_id == &session_id
+                },
+            )
             .map(|((_, _, _, sequence, _), _)| *sequence)
             .max()
             .unwrap_or(0);
@@ -2109,7 +2109,9 @@ impl AgentRepository for InMemoryAgentRepository {
 
         let assistant_primary_key = session_item_primary_key(&assistant_output_item);
         if items.contains_key(&assistant_primary_key) {
-            return Err(KernelError::conflict("assistant output item already exists"));
+            return Err(KernelError::conflict(
+                "assistant output item already exists",
+            ));
         }
         let assistant_index_key = session_item_index_key(&assistant_output_item);
         items.insert(assistant_primary_key.clone(), assistant_output_item.clone());
@@ -2135,7 +2137,11 @@ impl AgentRepository for InMemoryAgentRepository {
         user_input_item: AgentSessionItemRecord,
         assistant_output_item: AgentSessionItemRecord,
         drive_refs: Vec<AgentItemDriveRefRecord>,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+    ) -> KernelResult<(
+        AgentSessionRecord,
+        AgentSessionItemRecord,
+        AgentSessionItemRecord,
+    )> {
         let mut refs = self.item_drive_refs.recovering_write();
         let mut pending = Vec::with_capacity(drive_refs.len());
         for record in drive_refs {
@@ -2155,7 +2161,9 @@ impl AgentRepository for InMemoryAgentRepository {
                 record.resource_role.as_str().to_string(),
             );
             if refs.contains_key(&key) || pending.iter().any(|(candidate, _)| candidate == &key) {
-                return Err(KernelError::conflict("duplicate session item Drive reference"));
+                return Err(KernelError::conflict(
+                    "duplicate session item Drive reference",
+                ));
             }
             pending.push((key, record));
         }
@@ -2195,10 +2203,7 @@ impl AgentRepository for InMemoryAgentRepository {
         organization_id: u64,
         item_ids: &[String],
     ) -> KernelResult<Vec<AgentItemDriveRefRecord>> {
-        let item_ids = item_ids
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
+        let item_ids = item_ids.iter().map(String::as_str).collect::<HashSet<_>>();
         let mut records = self
             .item_drive_refs
             .recovering_read()
@@ -2935,7 +2940,10 @@ fn project_matches_list_query(record: &AgentProjectRecord, query: &ProjectListQu
     true
 }
 
-fn message_matches_list_query(record: &AgentSessionItemRecord, query: &SessionItemListQuery) -> bool {
+fn message_matches_list_query(
+    record: &AgentSessionItemRecord,
+    query: &SessionItemListQuery,
+) -> bool {
     if record.tenant_id != query.tenant_id
         || record.organization_id != query.organization_id
         || record.session_id != query.session_id
@@ -2959,8 +2967,16 @@ fn interaction_matches_list_query(
     record: &AgentInteractionRecord,
     query: &InteractionListQuery,
 ) -> bool {
-    if record.tenant_id != query.tenant_id || record.session_id != query.session_id {
+    if record.tenant_id != query.tenant_id
+        || record.organization_id != query.organization_id
+        || record.session_id != query.session_id
+    {
         return false;
+    }
+    if let Some(kind) = query.kind.as_ref() {
+        if record.kind.as_str() != kind {
+            return false;
+        }
     }
     if let Some(status) = query.status.as_ref() {
         if record.status.as_str() != status {

@@ -13,7 +13,7 @@
     "apiPrefix": "/agent/v3/api",
     "packageName": "@sdkwork/agents-sdk"
   },
-  "expectedOpenOperations": 27,
+  "expectedOpenOperations": 47,
   "strippedAppOnlyPaths": [
     "/restore",
     "/code_engines",

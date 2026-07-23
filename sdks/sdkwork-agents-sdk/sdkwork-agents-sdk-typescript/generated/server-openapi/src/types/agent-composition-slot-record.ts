@@ -13,7 +13,7 @@ export interface AgentCompositionSlotRecord {
   targetModule: AgentCompositionTargetModule;
   targetRef: string;
   targetVersionRef?: string | null;
-  priority: Int64String;
+  priority: number;
   enabled: boolean;
   policyJson: string;
   status: AgentStatus;

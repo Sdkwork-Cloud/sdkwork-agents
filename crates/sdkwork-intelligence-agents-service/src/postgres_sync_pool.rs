@@ -2,7 +2,6 @@
 
 use sdkwork_database_config::{DatabaseConfig, DatabaseEngine};
 use sdkwork_database_sqlx::{create_pool_from_config, DatabasePool, PoolError};
-use sdkwork_utils_rust::is_blank;
 use sqlx::PgPool;
 use std::future::Future;
 use std::mem::ManuallyDrop;
@@ -82,14 +81,6 @@ impl BlockingPostgresPool {
     pub fn connect_from_sdkwork_env(
         service_name: &str,
     ) -> Result<Self, sdkwork_agent_kernel::KernelError> {
-        let legacy_uri_key = format!("SDKWORK_{}_POSTGRES_URI", service_name.to_uppercase());
-        if let Ok(uri) = std::env::var(&legacy_uri_key) {
-            let trimmed = uri.trim();
-            if !is_blank(Some(trimmed)) {
-                return Self::connect(trimmed);
-            }
-        }
-
         let config = DatabaseConfig::from_env(service_name).map_err(map_database_config_error)?;
         match config.engine {
             DatabaseEngine::Postgres => Self::connect_from_config(config),

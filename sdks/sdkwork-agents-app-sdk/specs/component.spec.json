@@ -12,7 +12,8 @@
     "surface": "app-api",
     "status": "standardized",
     "languages": [
-      "typescript"
+      "typescript",
+      "flutter"
     ],
     "generated": true,
     "private": false,
@@ -58,6 +59,10 @@
     "sdkSurface": "app",
     "externalSdkgenProfileSupported": true,
     "generatedOutput": "sdkwork-agents-app-sdk-typescript/generated/server-openapi",
+    "generatedOutputs": {
+      "typescript": "sdkwork-agents-app-sdk-typescript/generated/server-openapi",
+      "flutter": "sdkwork-agents-app-sdk-flutter/generated/server-openapi"
+    },
     "standardProfile": "sdkwork-v3"
   },
   "contracts": {

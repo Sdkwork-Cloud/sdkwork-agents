@@ -3,17 +3,17 @@ import { createElement } from "react";
 
 import {
   getAgentsAppSdkClientWithSession,
-  type CodeEngineCatalog,
+  type CodeEngineCatalogEngine,
+  type CodeEngineModelCatalogEntry,
+  type McpServerMarketplaceRecord,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
 import {
   DEFAULT_LIST_PAGE_SIZE,
-  extractOffsetPageInfo,
+  toOffsetPageInfo,
 } from "@sdkwork/agents-h5-core/sdk/pagination";
 
 import type { ToolItem } from "../components/SelectToolsModal";
-
-import { extractArray, extractResourceRecord } from "./sdkEnvelope";
 
 export interface ModelCatalogItem {
   id: string;
@@ -31,106 +31,50 @@ export interface McpCatalogPage {
   hasMore: boolean;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
-}
-
-function pickString(record: Record<string, unknown> | undefined, keys: string[]): string | undefined {
-  if (!record) {
-    return undefined;
-  }
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return undefined;
-}
-
-function mapMcpRecord(record: Record<string, unknown>, index: number): ToolItem | undefined {
-  const id =
-    pickString(record, ["targetRef", "target_ref", "serverId", "server_id", "id"]) ??
-    `mcp.${index}`;
-  const name =
-    pickString(record, ["displayName", "display_name", "name", "title"]) ?? id;
-  const description =
-    pickString(record, ["description", "summary"]) ?? "MCP marketplace entry";
+function mapMcpRecord(record: McpServerMarketplaceRecord): ToolItem {
   return {
-    id,
-    name,
-    description,
+    id: record.targetRef,
+    name: record.serverId,
+    description: `MCP server ${record.serverId}`,
     provider: "MCP Marketplace",
     category: "mcp",
     icon: createElement(Globe, { size: 20, className: "text-gray-300" }),
   };
 }
 
-function mapCodeEngineRecord(record: Record<string, unknown>, index: number): ToolItem | undefined {
-  const id = pickString(record, ["engineKey", "engine_key", "id", "key"]) ?? `engine.${index}`;
-  const name = pickString(record, ["displayName", "display_name", "name", "label"]) ?? id;
-  const description =
-    pickString(record, ["description", "summary"]) ?? "Code engine runtime";
+function mapCodeEngineRecord(record: CodeEngineCatalogEngine): ToolItem {
   return {
-    id,
-    name,
-    description,
+    id: record.engineKey,
+    name: engineKeyToVendorLabel(record.engineKey),
+    description: "Code engine runtime",
     provider: "Code Engine",
     category: "official",
     icon: createElement(Code2, { size: 20, className: "text-emerald-500" }),
   };
 }
 
-function mapModelRecord(record: Record<string, unknown>): ModelCatalogItem | undefined {
-  const modelId = pickString(record, ["modelId", "model_id", "id"]);
-  if (!modelId) {
-    return undefined;
-  }
+function mapModelRecord(record: CodeEngineModelCatalogEntry): ModelCatalogItem {
   return {
-    id: modelId,
-    label: pickString(record, ["label", "name", "displayName", "display_name"]) ?? modelId,
-    description: pickString(record, ["description", "summary"]) ?? "",
-    providerId: pickString(record, ["providerId", "provider_id"]) ?? "",
-    engineKey: pickString(record, ["engineKey", "engine_key"]) ?? "",
-    bindingId: pickString(record, ["bindingId", "binding_id"]) ?? "",
-    defaultForEngine: Boolean(record.defaultForEngine ?? record.default_for_engine),
+    id: record.modelId,
+    label: record.label,
+    description: record.description,
+    providerId: record.providerId,
+    engineKey: record.engineKey,
+    bindingId: record.bindingId,
+    defaultForEngine: record.defaultForEngine,
   };
-}
-
-function extractItems(snapshot: unknown): Record<string, unknown>[] {
-  const root = asRecord(snapshot);
-  if (!root) {
-    return [];
-  }
-  const data = asRecord(root.data) ?? root;
-  for (const key of ["items", "engines", "servers", "catalog"]) {
-    const value = data[key];
-    if (Array.isArray(value)) {
-      return value.filter((item): item is Record<string, unknown> => Boolean(asRecord(item)));
-    }
-  }
-  return [];
 }
 
 /** Load model catalog from agents code-engine runtime (`GET /app/v3/api/ai/code_engines`). */
 export async function loadRuntimeModelCatalog(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
 ): Promise<ModelCatalogItem[]> {
-  const response = await client.ai.agents.codeEngines.list();
-  const catalog = extractResourceRecord(response) as unknown as CodeEngineCatalog | undefined;
-  if (!catalog?.engines?.length) {
+  const catalog = await client.ai.agents.codeEngines.list();
+  if (!catalog.engines.length) {
     return [];
   }
   return catalog.engines.flatMap((engine) =>
-    (engine.models ?? [])
-      .map((model) =>
-        mapModelRecord({
-          ...model,
-          engineKey: engine.engineKey,
-          bindingId: engine.bindingId,
-        } as unknown as Record<string, unknown>),
-      )
-      .filter((item): item is ModelCatalogItem => Boolean(item)),
+    engine.models.map(mapModelRecord),
   );
 }
 
@@ -146,14 +90,8 @@ export async function loadMcpCatalogPage(
     pageSize,
     ...(q?.trim() ? { q: q.trim() } : {}),
   });
-  const pageInfo = extractOffsetPageInfo(response);
-  const items = extractArray(response)
-    .map((record, index) =>
-      record && typeof record === "object"
-        ? mapMcpRecord(record as Record<string, unknown>, index)
-        : undefined,
-    )
-    .filter((item): item is ToolItem => Boolean(item));
+  const pageInfo = toOffsetPageInfo(response.pageInfo);
+  const items = response.items.map(mapMcpRecord);
   return { items, page: pageInfo.page, hasMore: pageInfo.hasMore };
 }
 
@@ -162,9 +100,7 @@ export async function loadCodeEngineToolItems(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
 ): Promise<ToolItem[]> {
   const codeEngines = await client.ai.agents.codeEngines.list();
-  return extractItems(codeEngines)
-    .map(mapCodeEngineRecord)
-    .filter((item): item is ToolItem => Boolean(item));
+  return codeEngines.engines.map(mapCodeEngineRecord);
 }
 
 export function engineKeyToVendorLabel(engineKey: string): string {

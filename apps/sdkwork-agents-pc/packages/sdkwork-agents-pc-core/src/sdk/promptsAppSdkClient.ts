@@ -80,3 +80,10 @@ export function resetPromptsAppSdkClient(): void {
   promptsAppSdkClient = null;
   promptsAppSdkClientProvider = null;
 }
+
+export type {
+  PromptTemplate,
+  PromptTemplatePage,
+  PromptTemplateVersion,
+  PromptTemplateVersionPage,
+} from "@sdkwork/prompts-app-sdk";

@@ -1,11 +1,18 @@
 import {
   getAgentsAppSdkClientWithSession,
+  type AgentProjectCompositionSlotRecord,
+  type AgentProjectRecord,
   type SdkworkAgentsAppClient,
 } from '@sdkwork/agents-pc-core/sdk/agentsAppSdkClient';
-import { getMemoryAppSdkClientWithSession } from '@sdkwork/agents-pc-core/sdk/memoryAppSdkClient';
-import { getPromptsAppSdkClientWithSession } from '@sdkwork/agents-pc-core/sdk/promptsAppSdkClient';
-
-import { extractArray, extractResourceRecord, isRecord } from './sdkEnvelope';
+import {
+  getMemoryAppSdkClientWithSession,
+  type MemorySpaceList,
+} from '@sdkwork/agents-pc-core/sdk/memoryAppSdkClient';
+import {
+  getPromptsAppSdkClientWithSession,
+  type PromptTemplatePage,
+  type PromptTemplateVersionPage,
+} from '@sdkwork/agents-pc-core/sdk/promptsAppSdkClient';
 
 export type ProjectVisibility = 'private' | 'organization' | 'shared';
 export type ProjectStatus = 'active' | 'archived' | 'deleted';
@@ -82,76 +89,44 @@ export interface ProjectCompositionSlotInput {
   policyJson?: string;
 }
 
-function optionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === 'string' && value.trim() ? value : undefined;
-}
-
-function projectFromRecord(record: Record<string, unknown>): AgentProject {
-  const projectId = optionalString(record, 'projectId');
-  const name = optionalString(record, 'name');
-  if (!projectId || !name) {
+function projectFromRecord(record: AgentProjectRecord): AgentProject {
+  if (!record.projectId || !record.name) {
     throw new Error('Project response is missing projectId or name.');
   }
   return {
-    id: optionalString(record, 'id') ?? projectId,
-    projectId,
-    name,
-    description: optionalString(record, 'description'),
-    visibility: (optionalString(record, 'visibility') as ProjectVisibility) ?? 'private',
-    status: (optionalString(record, 'status') as ProjectStatus) ?? 'active',
-    driveAccessMode:
-      (optionalString(record, 'driveAccessMode') as ProjectDriveAccessMode) ?? 'disabled',
-    defaultAgentId: optionalString(record, 'defaultAgentId'),
-    defaultModelId: optionalString(record, 'defaultModelId'),
-    version: optionalString(record, 'version') ?? '0',
-    updatedAt: optionalString(record, 'updatedAt') ?? new Date(0).toISOString(),
+    id: record.id,
+    projectId: record.projectId,
+    name: record.name,
+    description: record.description ?? undefined,
+    visibility: record.visibility,
+    status: record.status,
+    driveAccessMode: record.driveAccessMode,
+    defaultAgentId: record.defaultAgentId ?? undefined,
+    defaultModelId: record.defaultModelId ?? undefined,
+    version: record.version,
+    updatedAt: record.updatedAt,
   };
-}
-
-function numberValue(record: Record<string, unknown>, key: string, fallback = 0): number {
-  const value = record[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
-
-function booleanValue(record: Record<string, unknown>, key: string, fallback = false): boolean {
-  const value = record[key];
-  return typeof value === 'boolean' ? value : fallback;
 }
 
 function projectCompositionSlotFromRecord(
-  record: Record<string, unknown>,
+  record: AgentProjectCompositionSlotRecord,
 ): AgentProjectCompositionSlot {
-  const projectId = optionalString(record, 'projectId');
-  const slotId = optionalString(record, 'slotId');
-  const targetRef = optionalString(record, 'targetRef');
-  if (!projectId || !slotId || !targetRef) {
+  if (!record.projectId || !record.slotId || !record.targetRef) {
     throw new Error('Project composition slot response is incomplete.');
   }
   return {
-    id: optionalString(record, 'id') ?? slotId,
-    projectId,
-    slotId,
-    slotKind:
-      (optionalString(record, 'slotKind') as ProjectCompositionSlotKind) ?? 'prompt',
-    targetModule:
-      (optionalString(record, 'targetModule') as ProjectCompositionTargetModule) ?? 'prompts',
-    targetRef,
-    targetVersionRef: optionalString(record, 'targetVersionRef'),
-    priority: numberValue(record, 'priority'),
-    enabled: booleanValue(record, 'enabled', true),
-    policyJson: optionalString(record, 'policyJson') ?? '{}',
-    version: optionalString(record, 'version') ?? '0',
-    updatedAt: optionalString(record, 'updatedAt') ?? new Date(0).toISOString(),
-  };
-}
-
-function memorySpaceFromRecord(record: Record<string, unknown>): AgentMemorySpaceOption | null {
-  const spaceId = optionalString(record, 'spaceId');
-  if (!spaceId) return null;
-  return {
-    spaceId,
-    displayName: optionalString(record, 'displayName') ?? spaceId,
+    id: record.id,
+    projectId: record.projectId,
+    slotId: record.slotId,
+    slotKind: record.slotKind,
+    targetModule: record.targetModule,
+    targetRef: record.targetRef,
+    targetVersionRef: record.targetVersionRef ?? undefined,
+    priority: record.priority,
+    enabled: record.enabled,
+    policyJson: record.policyJson,
+    version: record.version,
+    updatedAt: record.updatedAt,
   };
 }
 
@@ -165,37 +140,27 @@ export class AgentProjectService {
 
   async list(page = 1, pageSize = 50): Promise<AgentProject[]> {
     const response = await this.getClient().ai.agents.projects.list({ page, pageSize });
-    return extractArray(response)
-      .filter(isRecord)
-      .map(projectFromRecord);
+    return response.items.map(projectFromRecord);
   }
 
   async retrieve(projectId: string): Promise<AgentProject> {
-    return projectFromRecord(
-      extractResourceRecord(await this.getClient().ai.agents.projects.retrieve(projectId)),
-    );
+    return projectFromRecord(await this.getClient().ai.agents.projects.retrieve(projectId));
   }
 
   async create(input: CreateAgentProjectInput): Promise<AgentProject> {
-    return projectFromRecord(
-      extractResourceRecord(await this.getClient().ai.agents.projects.create(input)),
-    );
+    return projectFromRecord(await this.getClient().ai.agents.projects.create(input));
   }
 
   async update(
     projectId: string,
     patch: Partial<CreateAgentProjectInput> & { expectedVersion: string },
   ): Promise<AgentProject> {
-    return projectFromRecord(
-      extractResourceRecord(await this.getClient().ai.agents.projects.update(projectId, patch)),
-    );
+    return projectFromRecord(await this.getClient().ai.agents.projects.update(projectId, patch));
   }
 
   async archive(projectId: string, expectedVersion: string): Promise<AgentProject> {
     return projectFromRecord(
-      extractResourceRecord(
-        await this.getClient().ai.agents.projects.archive(projectId, { expectedVersion }),
-      ),
+      await this.getClient().ai.agents.projects.archive(projectId, { expectedVersion }),
     );
   }
 
@@ -208,9 +173,7 @@ export class AgentProjectService {
       page: 1,
       pageSize: 200,
     });
-    return extractArray(response)
-      .filter(isRecord)
-      .map(projectCompositionSlotFromRecord);
+    return response.items.map(projectCompositionSlotFromRecord);
   }
 
   async createCompositionSlot(
@@ -218,9 +181,7 @@ export class AgentProjectService {
     input: ProjectCompositionSlotInput,
   ): Promise<AgentProjectCompositionSlot> {
     return projectCompositionSlotFromRecord(
-      extractResourceRecord(
-        await this.getClient().ai.agents.projectCompositionSlots.create(projectId, input),
-      ),
+      await this.getClient().ai.agents.projectCompositionSlots.create(projectId, input),
     );
   }
 
@@ -232,12 +193,10 @@ export class AgentProjectService {
     },
   ): Promise<AgentProjectCompositionSlot> {
     return projectCompositionSlotFromRecord(
-      extractResourceRecord(
-        await this.getClient().ai.agents.projectCompositionSlots.update(
-          projectId,
-          slot.slotId,
-          { ...patch, expectedVersion: slot.version },
-        ),
+      await this.getClient().ai.agents.projectCompositionSlots.update(
+        projectId,
+        slot.slotId,
+        { ...patch, expectedVersion: slot.version },
       ),
     );
   }
@@ -260,11 +219,11 @@ export class AgentProjectService {
     if (!slot) return '';
     const response = await getPromptsAppSdkClientWithSession()
       .prompts.templateVersions.list(slot.targetRef);
-    const versions = extractArray(response).filter(isRecord);
+    const versions = (response as unknown as PromptTemplateVersionPage).items;
     const selected = slot.targetVersionRef
-      ? versions.find((record) => optionalString(record, 'id') === slot.targetVersionRef)
+      ? versions.find((record) => record.id === slot.targetVersionRef)
       : versions[0];
-    return selected ? optionalString(selected, 'content') ?? '' : '';
+    return selected?.content ?? '';
   }
 
   async saveInstructions(
@@ -283,33 +242,34 @@ export class AgentProjectService {
 
     const prompts = getPromptsAppSdkClientWithSession().prompts;
     const templateKey = `agents.${project.projectId}.instructions`;
-    const templates = extractArray(await prompts.templates.list({ limit: 200 }))
-      .filter(isRecord);
-    let template = templates.find((record) => optionalString(record, 'key') === templateKey);
+    const templatePage = await prompts.templates.list({ limit: 200 });
+    const templates = (templatePage as unknown as PromptTemplatePage).items;
+    let template = templates.find((record) => record.key === templateKey);
     if (!template) {
-      template = promptsTemplateRecord(await prompts.templates.create({
+      template = await prompts.templates.create({
         key: templateKey,
         name: `${project.name} instructions`,
         description: `Managed instructions for ${project.projectId}`,
         tags: ['sdkwork-agents', 'project-instructions'],
-      }));
+      });
     }
-    const templateId = optionalString(template, 'id');
+    const templateId = template.id;
     if (!templateId) throw new Error('Prompt template creation did not return an id.');
 
     const versionLabel = `project-slot-v${existingSlot ? Number(existingSlot.version) + 1 : 0}`;
-    const versions = extractArray(await prompts.templateVersions.list(templateId)).filter(isRecord);
+    const versionPage = await prompts.templateVersions.list(templateId);
+    const versions = (versionPage as unknown as PromptTemplateVersionPage).items;
     let version = versions.find(
-      (record) => optionalString(record, 'version_label') === versionLabel,
+      (record) => record.version_label === versionLabel,
     );
     if (!version) {
-      version = promptsTemplateRecord(await prompts.templateVersions.create(templateId, {
+      version = await prompts.templateVersions.create(templateId, {
         version_label: versionLabel,
         content: normalizedContent,
         variables: [],
-      }));
+      });
     }
-    const versionId = optionalString(version, 'id');
+    const versionId = version.id;
     if (!versionId) throw new Error('Prompt template version creation did not return an id.');
 
     const savedSlot = existingSlot
@@ -340,10 +300,10 @@ export class AgentProjectService {
     const response = await getMemoryAppSdkClientWithSession().memory.spaces.list({
       pageSize: 200,
     });
-    return extractArray(response)
-      .filter(isRecord)
-      .map(memorySpaceFromRecord)
-      .filter((item): item is AgentMemorySpaceOption => item !== null);
+    return (response as unknown as MemorySpaceList).items.map((space) => ({
+      spaceId: space.spaceId,
+      displayName: space.displayName,
+    }));
   }
 
   async saveMemorySpace(
@@ -378,10 +338,6 @@ export class AgentProjectService {
       savedSlot,
     ];
   }
-}
-
-function promptsTemplateRecord(value: unknown): Record<string, unknown> {
-  return extractResourceRecord(value);
 }
 
 export const agentProjectService = new AgentProjectService();

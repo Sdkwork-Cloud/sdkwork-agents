@@ -58,6 +58,9 @@
     "sdkSurface": "backend",
     "externalSdkgenProfileSupported": true,
     "generatedOutput": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
+    "generatedOutputs": {
+      "typescript": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi"
+    },
     "standardProfile": "sdkwork-v3"
   },
   "contracts": {

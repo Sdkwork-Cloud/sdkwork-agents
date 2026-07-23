@@ -7,6 +7,7 @@ import { AGENTS_SDK_FAMILIES } from '../sdks/_shared/agents-sdk-families.mjs';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const commands = [
+  ['node', ['scripts/generate-agents-api-docs.mjs', '--check']],
   ['node', ['sdks/test/verify-agent-sdk-ownership-boundaries.test.mjs']],
   ...AGENTS_SDK_FAMILIES.map((family) => [
     'node',

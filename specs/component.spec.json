@@ -10,7 +10,7 @@
     "domain": "intelligence",
     "capability": "agents",
     "surface": "backend-service",
-    "languages": ["rust", "typescript"],
+    "languages": ["rust", "typescript", "dart"],
     "generated": false,
     "status": "active",
     "manifests": [
@@ -46,11 +46,6 @@
       "purpose": "Agent runtime kernel SPI (no application domain logic)."
     },
     {
-      "file": "AGENTS_MANAGED_STORE_DATABASE_SPEC.md",
-      "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_MANAGED_STORE_DATABASE_SPEC.md",
-      "purpose": "Agents-owned managed-store persistence contract."
-    },
-    {
       "file": "AGENTS_HTTP_TRUST_BOUNDARY.md",
       "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_HTTP_TRUST_BOUNDARY.md",
       "purpose": "Agents-owned HTTP trust boundary for open/app/backend surfaces."
@@ -78,7 +73,7 @@
     {
       "file": "AGENTS_KERNEL_SPI_GAP_ANALYSIS.md",
       "path": "specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md",
-      "purpose": "Kernel SPI gap analysis, commercial readiness, and improvement roadmap."
+      "purpose": "Kernel capability closure and commercial readiness gates."
     },
     {
       "file": "AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md",
@@ -88,7 +83,7 @@
     {
       "file": "AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
       "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
-      "purpose": "Active Agents database contract and inactive frontend-aligned chat/project target design."
+      "purpose": "Canonical 19-table Agents PostgreSQL contract."
     },
     {
       "file": "agents-birdcoder-alignment.spec.json",

@@ -6,9 +6,10 @@ Capability: `agents`
 Status: pre-launch (kernel-composed HTTP service; production postgres path wired)
 
 SDKWork Agents is the hosted agent product application. It owns the intelligence
-`agents` domain service, HTTP routes, SDKs, and managed-store persistence. It
-composes [`sdkwork-kernel`](../sdkwork-kernel/) for runtime SPI only (sessions,
-internal runtime API, operational HTTP). See [`docs/architecture/AGENTS_LAYERING.md`](docs/architecture/AGENTS_LAYERING.md).
+`agents` domain service, HTTP routes, SDKs, and PostgreSQL persistence. It
+composes [`sdkwork-kernel`](../sdkwork-kernel/) for runtime SPI, provider
+execution, internal runtime APIs, and operational HTTP. See
+[`docs/architecture/AGENTS_LAYERING.md`](docs/architecture/AGENTS_LAYERING.md).
 
 ## Canonical References
 
@@ -36,7 +37,7 @@ pnpm verify
 | `sdkwork-routes-agents-http-shared` | OpenAPI route manifests + web-framework bootstrap |
 | `sdkwork-agents-contract` | Runtime env helpers (`SDKWORK_AGENTS_*`, dev auth gating) |
 | `sdkwork-agents-kernel-bridge` | Composes kernel operational router + agents HTTP router |
-| `sdkwork-agents-database-host` | Application `agents_*` registry database lifecycle |
+| `sdkwork-agents-database-host` | Canonical `ai_*` database lifecycle |
 | `sdkwork-api-agents-assembly` | Gateway router assembly |
 | `sdkwork-api-agents-standalone-gateway` | Runnable binary (`sdkwork-api-agents-standalone-gateway`) |
 | `sdkwork-agents-integration-tests` | API bootstrap, gateway, and database smoke tests |
@@ -48,7 +49,8 @@ pnpm db:materialize:contract
 cargo run -p sdkwork-api-agents-standalone-gateway -- db-migrate
 ```
 
-Application metadata uses `SDKWORK_AGENTS_DATABASE_*`. Kernel agents managed store persistence uses `SDKWORK_AGENTS_STORE_DATABASE_*`.
+The complete Agents domain uses one `SDKWORK_AGENTS_DATABASE_*` profile. Kernel
+runtime persistence remains kernel-owned and uses its own configuration.
 
 ## Deployment
 
@@ -65,10 +67,10 @@ Pre-flight: `pnpm verify` and `pnpm topology:validate`. See [docs/runbooks/pre-l
 | Framework | Status |
 | --- | --- |
 | `sdkwork-web-framework` | Integrated via `sdkwork-routes-agents-*` route crates |
-| `sdkwork-database` | Integrated (app registry + agents managed store + kernel runtime DB) |
+| `sdkwork-database` | Integrated for the canonical Agents PostgreSQL lifecycle |
 | `sdkwork-utils` | Integrated in contract, service response/validation, runtime-facade |
-| `sdkwork-drive` | Integrated for PC uploads | PC core Drive Uploader facade + `@sdkwork/drive-app-sdk`; Agents persists canonical Drive references only |
-| `sdkwork-discovery` | Deferred until RPC services ship |
+| `sdkwork-drive` | Integrated through Drive Uploader; Agents persists canonical Drive references only |
+| `sdkwork-discovery` | Inactive because Agents currently exposes no RPC service |
 
 ## Application Roots
 

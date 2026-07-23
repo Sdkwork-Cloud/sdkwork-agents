@@ -917,7 +917,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AppCreateAgentSessionRequest'
+              $ref: '#/components/schemas/CreateAgentSessionRequest'
       responses:
         '201':
           description: Created managed agent session
@@ -1158,6 +1158,9 @@ paths:
       tags:
       - ai
       summary: List ordered items for one agent session
+      description: >-
+        P1 interactive offset list. Supports kind and status filters. The default
+        sort is sequence ascending; use -sequence to fetch the newest items first.
       operationId: agents.sessionItems.list
       security:
       - AuthToken: []
@@ -1171,6 +1174,24 @@ paths:
       - $ref: '#/components/parameters/SessionIdPath'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
+      - name: kind
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionItemKind'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionItemStatus'
+      - name: sort
+        in: query
+        required: false
+        description: Stable item sequence order.
+        schema:
+          type: string
+          enum: [sequence, '-sequence']
+          default: sequence
       responses:
         '200':
           description: Paginated agent session item list
@@ -1298,8 +1319,7 @@ paths:
                 $ref: '#/components/schemas/AgentTurnExecutionResponse'
             text/event-stream:
               schema:
-                type: string
-                description: SSE turn events ending with an AgentTurnExecutionResponse completion event.
+                $ref: '#/components/schemas/AgentTurnStreamEvent'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}:
@@ -1366,6 +1386,9 @@ paths:
       tags:
       - ai
       summary: List durable interactions for one agent session
+      description: >-
+        P1 interactive offset list. Supports kind and status filters and uses
+        createdAt descending with the interaction id as a stable tie-breaker.
       operationId: agents.interactions.list
       security:
       - AuthToken: []
@@ -1379,6 +1402,16 @@ paths:
       - $ref: '#/components/parameters/SessionIdPath'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
+      - name: kind
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentInteractionKind'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentInteractionStatus'
       responses:
         '200':
           description: Paginated agent interaction list
@@ -2309,21 +2342,6 @@ components:
         - published
         - mine
         - workspace
-    ExpectedVersion:
-      name: expected_version
-      in: query
-      required: false
-      description: Optimistic concurrency version in int64-string form.
-      schema:
-        $ref: '#/components/schemas/Int64String'
-    RequestedAt:
-      name: requested_at
-      in: query
-      required: true
-      description: RFC3339 mutation timestamp.
-      schema:
-        type: string
-        format: date-time
     AgentIdPath:
       name: agentId
       in: path
@@ -2414,57 +2432,6 @@ components:
         minLength: 1
         maxLength: 128
         pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-    Problem:
-      description: RFC 9457 problem detail response
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetail'
-          examples:
-            ValidationError:
-              summary: Validation failure
-              value:
-                type: https://sdkwork.dev/problems/validation_error
-                title: validation_error
-                status: 400
-                detail: requestedAt must be RFC3339 date-time
-                code: 40001
-                errorCategory: validation
-                retryable: false
-                traceId: 00000000-0000-0000-0000-000000000000
-            VersionConflict:
-              summary: Optimistic concurrency conflict
-              value:
-                type: https://sdkwork.dev/problems/version_conflict
-                title: version_conflict
-                status: 409
-                detail: 'agent version mismatch: expected=2, actual=3'
-                code: 40901
-                errorCategory: concurrency
-                retryable: true
-                traceId: 00000000-0000-0000-0000-000000000000
-            PermissionRequired:
-              summary: Permission denied
-              value:
-                type: https://sdkwork.dev/problems/permission_required
-                title: permission_required
-                status: 403
-                detail: agent management denied
-                code: 40301
-                errorCategory: permission
-                retryable: false
-                traceId: 00000000-0000-0000-0000-000000000000
-            NotFound:
-              summary: Resource not found
-              value:
-                type: https://sdkwork.dev/problems/not_found
-                title: not_found
-                status: 404
-                detail: agent not found
-                code: 40401
-                errorCategory: resource
-                retryable: false
-                traceId: 00000000-0000-0000-0000-000000000000
   schemas:
     SdkWorkApiResponse:
       type: object
@@ -2512,43 +2479,6 @@ components:
           items: {}
         pageInfo:
           $ref: '#/components/schemas/PageInfo'
-    SdkWorkCommandData:
-      type: object
-      additionalProperties: false
-      required:
-      - accepted
-      properties:
-        accepted:
-          type: boolean
-          const: true
-        resourceId:
-          type: string
-        status:
-          type: string
-    SdkWorkAsyncData:
-      type: object
-      additionalProperties: false
-      required:
-      - accepted
-      - operationId
-      - status
-      properties:
-        accepted:
-          type: boolean
-          const: true
-        operationId:
-          type: string
-        status:
-          type: string
-          enum:
-          - pending
-          - running
-          - succeeded
-          - failed
-          - cancelled
-        pollUrl:
-          type: string
-          format: uri-reference
     Int64String:
       type: string
       pattern: ^[0-9]+$
@@ -3034,28 +2964,28 @@ components:
       type: object
       additionalProperties: false
       required:
-      - id
-      - tenantId
-      - organizationId
-      - agentId
-      - slotId
-      - slotKind
-      - targetModule
-      - targetRef
-      - priority
-      - enabled
-      - policyJson
-      - status
-      - version
-      - createdAt
-      - updatedAt
+        - id
+        - tenantId
+        - organizationId
+        - agentId
+        - slotId
+        - slotKind
+        - targetModule
+        - targetRef
+        - priority
+        - enabled
+        - policyJson
+        - status
+        - version
+        - createdAt
+        - updatedAt
       properties:
         id:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         tenantId:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         organizationId:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         agentId:
           type: string
           minLength: 1
@@ -3067,28 +2997,30 @@ components:
           maxLength: 128
           pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotKind:
-          $ref: '#/components/schemas/AgentCompositionSlotKind'
+          $ref: "#/components/schemas/AgentCompositionSlotKind"
         targetModule:
-          $ref: '#/components/schemas/AgentCompositionTargetModule'
+          $ref: "#/components/schemas/AgentCompositionTargetModule"
         targetRef:
           type: string
           minLength: 1
           maxLength: 256
         targetVersionRef:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           maxLength: 128
         priority:
-          $ref: '#/components/schemas/Int64String'
+          type: integer
+          minimum: -10000
+          maximum: 10000
         enabled:
           type: boolean
         policyJson:
           type: string
         status:
-          $ref: '#/components/schemas/AgentStatus'
+          $ref: "#/components/schemas/AgentStatus"
         version:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         createdAt:
           type: string
           format: date-time
@@ -3097,8 +3029,8 @@ components:
           format: date-time
         deletedAt:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
     AgentCompositionSlotResponse:
       description: Single agent composition slot response following SdkWorkApiResponse
@@ -3138,97 +3070,76 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentCompositionSlotRecord'
-    AgentCompositionSlotCreateData:
+    CreateAgentCompositionSlotRequest:
       type: object
       additionalProperties: false
       required:
-      - tenantId
-      - organizationId
-      - slotId
-      - slotKind
-      - targetModule
-      - targetRef
+        - slotId
+        - slotKind
+        - targetModule
+        - targetRef
+        - requestedAt
       properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
         slotId:
           type: string
           minLength: 1
           maxLength: 128
           pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotKind:
-          $ref: '#/components/schemas/AgentCompositionSlotKind'
+          $ref: "#/components/schemas/AgentCompositionSlotKind"
         targetModule:
-          $ref: '#/components/schemas/AgentCompositionTargetModule'
+          $ref: "#/components/schemas/AgentCompositionTargetModule"
         targetRef:
           type: string
           minLength: 1
           maxLength: 256
         targetVersionRef:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           maxLength: 128
         priority:
-          $ref: '#/components/schemas/Int64String'
+          type: integer
+          minimum: -10000
+          maximum: 10000
         enabled:
           type: boolean
           default: true
         policyJson:
           type: string
-          default: '{}'
-    CreateAgentCompositionSlotRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - data
-      - requestedAt
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentCompositionSlotCreateData'
+          default: "{}"
         requestedAt:
           type: string
           format: date-time
-    UpdateAgentCompositionSlotData:
+    UpdateAgentCompositionSlotRequest:
       type: object
       additionalProperties: false
       required:
-      - tenantId
+        - requestedAt
       properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
         expectedVersion:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         slotKind:
-          $ref: '#/components/schemas/AgentCompositionSlotKind'
+          $ref: "#/components/schemas/AgentCompositionSlotKind"
         targetModule:
-          $ref: '#/components/schemas/AgentCompositionTargetModule'
+          $ref: "#/components/schemas/AgentCompositionTargetModule"
         targetRef:
           type: string
           minLength: 1
           maxLength: 256
         targetVersionRef:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           maxLength: 128
         priority:
-          $ref: '#/components/schemas/Int64String'
+          type: integer
+          minimum: -10000
+          maximum: 10000
         enabled:
           type: boolean
         policyJson:
           type: string
-    UpdateAgentCompositionSlotRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - data
-      - requestedAt
-      properties:
-        data:
-          $ref: '#/components/schemas/UpdateAgentCompositionSlotData'
         requestedAt:
           type: string
           format: date-time
@@ -4092,98 +4003,6 @@ components:
         requestedAt:
           type: string
           format: date-time
-    MediaKind:
-      type: string
-      enum: [image, video, audio, voice, document, archive, model, other]
-    MediaSource:
-      type: string
-      enum: [drive]
-    MediaChecksum:
-      type: object
-      additionalProperties: false
-      required: [algorithm, value]
-      properties:
-        algorithm:
-          type: string
-          enum: [sha256, md5, etag]
-        value:
-          type: string
-          minLength: 1
-          maxLength: 256
-    MediaAccess:
-      type: object
-      additionalProperties: false
-      required: [visibility]
-      properties:
-        visibility:
-          type: string
-          enum: [private, tenant, organization, public, signed]
-        expiresAt:
-          type: string
-          format: date-time
-    MediaResource:
-      type: object
-      additionalProperties: false
-      required: [id, kind, source, uri]
-      properties:
-        id:
-          type: string
-          minLength: 1
-          maxLength: 128
-        kind:
-          $ref: '#/components/schemas/MediaKind'
-        source:
-          $ref: '#/components/schemas/MediaSource'
-        uri:
-          type: string
-          maxLength: 512
-          pattern: ^drive://spaces/[^/?#]+/nodes/[^/?#]+$
-        url:
-          type: [string, 'null']
-          format: uri
-          description: Transient Drive delivery hint; never persisted by Agents.
-        publicUrl:
-          type: [string, 'null']
-          format: uri
-          description: Transient Drive delivery hint; never persisted by Agents.
-        objectBlobId:
-          type: [string, 'null']
-          maxLength: 128
-        fileName:
-          type: [string, 'null']
-          maxLength: 512
-        mimeType:
-          type: [string, 'null']
-          maxLength: 256
-        sizeBytes:
-          type: [string, 'null']
-          pattern: ^[0-9]+$
-        checksum:
-          oneOf:
-          - $ref: '#/components/schemas/MediaChecksum'
-          - type: 'null'
-        width:
-          type: [integer, 'null']
-          minimum: 0
-        height:
-          type: [integer, 'null']
-          minimum: 0
-        durationSeconds:
-          type: [number, 'null']
-          minimum: 0
-        altText:
-          type: [string, 'null']
-          maxLength: 512
-        title:
-          type: [string, 'null']
-          maxLength: 255
-        access:
-          oneOf:
-          - $ref: '#/components/schemas/MediaAccess'
-          - type: 'null'
-        metadata:
-          type: object
-          additionalProperties: true
     AppUpdateAgentSessionRequest:
       type: object
       additionalProperties: false
@@ -4199,20 +4018,6 @@ components:
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         clearProject:
           type: boolean
-    ArchiveAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - tenantId
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
     CodeEngineCatalogListResponse:
       description: Code engine catalog response following SdkWorkApiResponse envelope;
         the catalog is returned as a single composite resource under data.item.
@@ -4497,57 +4302,56 @@ components:
       type: object
       additionalProperties: false
       required:
-      - tenantId
-      - organizationId
-      - ownerUserId
-      - sessionKind
-      - entrySurface
-      - idempotencyKey
-      - payloadHash
-      - requestedAt
+        - sessionKind
+        - entrySurface
+        - idempotencyKey
+        - payloadHash
+        - requestedAt
       dependentRequired:
-        sourceModule: [sourceContextKind, sourceContextId]
-        sourceContextKind: [sourceModule, sourceContextId]
-        sourceContextId: [sourceModule, sourceContextKind]
-        parentSessionId: [forkedFromTurnId]
-        forkedFromTurnId: [parentSessionId]
+        sourceModule:
+          - sourceContextKind
+          - sourceContextId
+        sourceContextKind:
+          - sourceModule
+          - sourceContextId
+        sourceContextId:
+          - sourceModule
+          - sourceContextKind
+        parentSessionId:
+          - forkedFromTurnId
+        forkedFromTurnId:
+          - parentSessionId
       properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
-        ownerUserId:
-          $ref: '#/components/schemas/Int64String'
         sessionId:
           type: string
-          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         projectId:
           type: string
-          pattern: '^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         sessionKind:
-          $ref: '#/components/schemas/AgentSessionKind'
+          $ref: "#/components/schemas/AgentSessionKind"
         entrySurface:
-          $ref: '#/components/schemas/AgentSessionEntrySurface'
+          $ref: "#/components/schemas/AgentSessionEntrySurface"
         sourceModule:
           type: string
           minLength: 1
           maxLength: 64
-          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+          pattern: ^[a-z][a-z0-9_-]{0,63}$
         sourceContextKind:
           type: string
           minLength: 1
           maxLength: 64
-          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+          pattern: ^[a-z][a-z0-9_-]{0,63}$
         sourceContextId:
           type: string
           minLength: 1
           maxLength: 256
         parentSessionId:
           type: string
-          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         forkedFromTurnId:
           type: string
-          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+          pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         title:
           type: string
           minLength: 1
@@ -5042,6 +4846,23 @@ components:
                       type: array
                       items:
                         $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentTurnStreamEvent:
+      type: object
+      additionalProperties: false
+      description: Typed server-sent event data for one agent turn execution.
+      required: [eventType]
+      properties:
+        eventType:
+          type: string
+          enum: [delta, completion]
+        index:
+          type: integer
+          format: int32
+          minimum: 0
+        delta:
+          type: string
+        response:
+          $ref: '#/components/schemas/AgentTurnExecutionResponse'
     CancelAgentTurnRequest:
       type: object
       additionalProperties: false
@@ -5702,67 +5523,6 @@ components:
           maxLength: 2048
         expectedVersion:
           $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
-    AppCreateAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - sessionKind
-      - entrySurface
-      - idempotencyKey
-      - payloadHash
-      - requestedAt
-      dependentRequired:
-        sourceModule: [sourceContextKind, sourceContextId]
-        sourceContextKind: [sourceModule, sourceContextId]
-        sourceContextId: [sourceModule, sourceContextKind]
-        parentSessionId: [forkedFromTurnId]
-        forkedFromTurnId: [parentSessionId]
-      properties:
-        sessionId:
-          type: string
-          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        projectId:
-          type: string
-          pattern: '^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        sessionKind:
-          $ref: '#/components/schemas/AgentSessionKind'
-        entrySurface:
-          $ref: '#/components/schemas/AgentSessionEntrySurface'
-        sourceModule:
-          type: string
-          minLength: 1
-          maxLength: 64
-          pattern: '^[a-z][a-z0-9_-]{0,63}$'
-        sourceContextKind:
-          type: string
-          minLength: 1
-          maxLength: 64
-          pattern: '^[a-z][a-z0-9_-]{0,63}$'
-        sourceContextId:
-          type: string
-          minLength: 1
-          maxLength: 256
-        parentSessionId:
-          type: string
-          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        forkedFromTurnId:
-          type: string
-          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        title:
-          type: string
-          minLength: 1
-          maxLength: 512
-        idempotencyKey:
-          type: string
-          minLength: 1
-          maxLength: 256
-        payloadHash:
-          type: string
-          minLength: 1
-          maxLength: 128
         requestedAt:
           type: string
           format: date-time

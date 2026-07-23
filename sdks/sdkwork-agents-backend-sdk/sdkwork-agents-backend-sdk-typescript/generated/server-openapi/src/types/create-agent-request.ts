@@ -2,12 +2,9 @@ import type { AgentImplementationKind } from './agent-implementation-kind';
 import type { AgentImplementationType } from './agent-implementation-type';
 import type { AgentManagementProfile } from './agent-management-profile';
 import type { AgentVisibility } from './agent-visibility';
-import type { Int64String } from './int64-string';
 
 export interface CreateAgentRequest {
   agentId: string;
-  organizationId: Int64String;
-  ownerUserId: Int64String;
   code: string;
   displayName: string;
   description?: string | null;

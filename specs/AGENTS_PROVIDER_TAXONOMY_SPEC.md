@@ -1,107 +1,101 @@
-# SDKWork Agents — Provider Taxonomy Specification
+# SDKWork Agents Provider Taxonomy Specification
 
-- Version: 1.0.0
+- Version: `1.1.0`
 - Status: active
 - Domain: `intelligence`
 - Capability: `agents`
-- Owner: agents-platform
+- Owner: `agents-platform`
 - Related:
   - [`../../sdkwork-kernel/specs/AGENT_PROVIDER_INTEGRATION_SPEC.md`](../../sdkwork-kernel/specs/AGENT_PROVIDER_INTEGRATION_SPEC.md)
-  - [`../../sdkwork-kernel/specs/kernel-local-conventions.md`](../../sdkwork-kernel/specs/kernel-local-conventions.md)
   - [`AGENTS_KERNEL_BOUNDARY_SPEC.md`](./AGENTS_KERNEL_BOUNDARY_SPEC.md)
 
 ## 1. Purpose
 
-Define a stable, industry-aligned taxonomy for agent provider families so product,
-API, and documentation use the same vocabulary. Kernel implements providers; agents
-exposes catalog and composition; BirdCoder consumes through agents.
+This specification defines stable provider-family vocabulary. Kernel implements
+provider mechanisms; Agents owns managed-agent policy, durable execution and
+public APIs; product applications consume Agents.
 
-## 2. Agent Family Tiers
+## 2. Provider Family Tiers
 
 | Tier | Family | Description | Examples |
 | --- | --- | --- | --- |
-| T1 | **Code agents** | IDE/CLI coding assistants with official SDK or typed transport | Codex, Claude Code, Gemini CLI, OpenCode |
-| T2 | **Autonomous agents** | Self-directed execution agents with tool/MCP loops | OpenClaw, Hermes Agent |
-| T3 | **Framework agents** | In-process agent frameworks wrapped as kernel plugins | Rig (`rig-rust`) |
-| T4 | **Orchestration frameworks** | Declared via `implementation_type` on `ai_agent`; future provider bindings | LangGraph, CrewAI, AutoGen, Semantic Kernel, OpenAI Agents |
+| T1 | Code agents | IDE and CLI coding engines with an official SDK or typed protocol | Codex, Claude Code, Gemini CLI, OpenCode |
+| T2 | Autonomous agents | Self-directed engines with tool and MCP loops | OpenClaw, Hermes Agent |
+| T3 | Framework agents | In-process frameworks exposed through kernel plugins | Rig |
+| T4 | Orchestration frameworks | Manifest-selected frameworks enabled only by an approved provider binding | LangGraph, CrewAI, AutoGen, Semantic Kernel, OpenAI Agents |
+
+Tier describes integration and conformance policy. It does not create a second
+session, turn or persistence model.
 
 ## 3. Kernel Provider Matrix
 
-| engine_key / provider | Kernel crate | binding_id | SDK integration | Transport | Agents catalog tier | BirdCoder default |
-| --- | --- | --- | --- | --- | --- | --- |
-| `codex` | `sdkwork-agent-provider-codex` | `binding.agent-provider.codex` | Official TypeScript SDK + Rust native | `typescript_node`, `rust_native`, `ipc_protocol` | T1 canonical | Yes |
-| `claude-code` | `sdkwork-agent-provider-claude-code` | `binding.agent-provider.claude-code` | Official SDK | `typescript_node` | T1 canonical | Yes |
-| `gemini` | `sdkwork-agent-provider-gemini-cli` | `binding.agent-provider.gemini-cli` | Official CLI/SDK | `typescript_node` | T1 canonical | Yes |
-| `opencode` | `sdkwork-agent-provider-opencode` | `binding.agent-provider.opencode` | Official SDK + OpenAPI | `typescript_node`, `http_openapi` | T1 canonical | Yes |
-| `openclaw` | `sdkwork-agent-provider-openclaw` | `binding.agent-provider.openclaw` | Plugin binding (SDK when available) | plugin transport | T2 extended | Opt-in |
-| `hermes` | `sdkwork-agent-provider-hermes` | `binding.agent-provider.hermes` | Plugin binding | plugin transport | T2 extended | Opt-in |
-| `rig` | `sdkwork-agent-provider-rig` | `binding.agent-provider.rig` | `rust_crate` + `source_tree` | in-process | T3 framework | Via `implementation_type` |
+| Engine key | Kernel provider crate | Binding id | Integration | Default catalog |
+| --- | --- | --- | --- | --- |
+| `codex` | `sdkwork-agent-provider-codex` | `binding.agent-provider.codex` | official SDK / typed native adapter | yes |
+| `claude-code` | `sdkwork-agent-provider-claude-code` | `binding.agent-provider.claude-code` | official SDK | yes |
+| `gemini` | `sdkwork-agent-provider-gemini-cli` | `binding.agent-provider.gemini-cli` | official CLI/SDK adapter | yes |
+| `opencode` | `sdkwork-agent-provider-opencode` | `binding.agent-provider.opencode` | official SDK and OpenAPI adapter | yes |
+| `openclaw` | `sdkwork-agent-provider-openclaw` | `binding.agent-provider.openclaw` | plugin binding | opt-in |
+| `hermes` | `sdkwork-agent-provider-hermes` | `binding.agent-provider.hermes` | plugin binding | opt-in |
+| `rig` | `sdkwork-agent-provider-rig` | provider manifest binding | Rust crate plugin | manifest-selected |
 
-**Canonical catalog (T1):** `codex`, `claude-code`, `gemini`, `opencode` — bootstrapped by
-default in `sdkwork-agents-runtime-facade` and exposed via `GET /app/v3/api/ai/code_engines`.
+The app catalog endpoint is `GET /app/v3/api/ai/code_engines`. Catalog entries
+are runtime capabilities, not copied provider configuration.
 
-**Extended catalog (T2):** `openclaw`, `hermes` — bootstrap supported on demand; not in
-default host bootstrap until sibling SDK/conformance gates pass in CI.
+## 4. Capability Ownership
 
-**Framework (T3):** Rig — selected via `ai_agent.implementation_type = rig-rust` and kernel
-plugin registration; not listed in code-engine catalog.
-
-## 4. SPI Coverage By Capability
-
-| Capability | Kernel SPI spec | Codex | Claude Code | OpenCode | OpenClaw | Hermes | Rig |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Model invoke | `AGENT_MODEL_PROVIDER_SPI_SPEC.md` | SDK | SDK | SDK | plugin | plugin | crate |
-| Tool call | `AGENT_TOOL_PROVIDER_SPI_SPEC.md` | Yes | Yes | Yes | Yes | Yes | Yes |
-| MCP | `AGENT_MCP_PROVIDER_SPI_SPEC.md` | Via tools | Via tools | Native | Native | Native | Adapter |
-| Memory context | `AGENT_CONTEXT_MEMORY_SPEC.md` | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Via agents slot |
-| Knowledge | `AGENT_KNOWLEDGE_PROVIDER_SPI_SPEC.md` | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Plugin |
-| Skills | `AGENT_SKILL_PROVIDER_SPI_SPEC.md` | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Via agents slot | Plugin |
-| Planning / tasks | `AGENT_PLANNING_EXECUTION_SPEC.md` | Partial | Partial | Partial | Full | Full | Full |
-| Live interaction | facade → kernel (transition) | Approval | Approval | Permission + Q&A | Provider manifest + policy gate required | Provider manifest + policy gate required | Fail-closed default |
-| Streaming | `ModelProvider::stream` | Planned | Planned | Planned | Planned | Planned | Planned |
-
-Memory types (permanent, user-scoped, growth) are owned by `sdkwork-memory` and referenced
-through `slot_kind=memory` composition slots — not kernel tables.
-
-## 5. Domain Model Mapping (Product Language)
-
-| Product term | Kernel object | Agents persistence |
+| Capability | Runtime authority | Agents integration |
 | --- | --- | --- |
-| Agent definition | `AgentManifest` | `ai_agent.manifest_json` |
-| Agent configuration | `AgentConfiguration` | `ai_agent` + `ai_agent_runtime_binding` |
-| Chat session | `AgentSession` (runtime) | `ai_agent_session` (hosted) |
-| Message / turn | `AgentMessage` + `AgentPart` | `ai_agent_message` |
-| Task | `AgentTask` | `ai_agent_task` |
-| Run / step | `AgentRun` / `AgentStep` | Kernel runtime; future `ai_agent_task_run` projection |
-| Tool approval | live interaction | `ai_agent_interaction` |
-| External memory | `MemoryRecord` via provider | composition slot → `sdkwork-memory` |
-| Code workspace | code-kernel extension | BirdCoder-owned (`coding_session*`) |
+| Model invocation and streaming | kernel model provider SPI | `AgentTurn` execution |
+| Tool invocation | kernel tool provider SPI | typed session items |
+| MCP execution | kernel MCP provider SPI and `sdkwork-mcp` | stable composition reference |
+| Memory context | kernel context SPI and `sdkwork-memory` | stable composition reference |
+| Knowledge | kernel knowledge SPI and `sdkwork-knowledgebase` | stable composition reference |
+| Skills | kernel skill SPI and `sdkwork-skills` | stable skill/version reference |
+| Approval and user question | kernel/provider callback plus Agents command | `AgentInteraction` |
+| Durable product history | Agents | Session, Turn and SessionItem aggregate |
 
-## 6. `implementation_type` Enum (Agents-owned)
+Independent modules own their entities, APIs and tables. Agents stores bounded
+references and orchestration policy only.
 
-Stored on `ai_agent.implementation_type`:
+## 5. Product Model Mapping
 
-| Value | Maps to |
+| Product concept | Agents authority |
 | --- | --- |
-| `sdkwork-native` | Kernel native runtime (default) |
-| `rig-rust` | `sdkwork-agent-provider-rig` |
-| `openai-agents` | Future provider binding |
-| `langchain` / `langgraph` / `crewai` / `autogen` / `semantic-kernel` | Declared enum; provider binding requires an approved provider manifest and SDK integration before enablement |
-| `custom` | Tenant-defined manifest + custom provider binding |
+| Managed definition | `Agent` and provider bindings |
+| Reusable orchestration context | `AgentProject` |
+| Durable execution context | `AgentSession` |
+| Idempotent invocation | `AgentTurn` |
+| Ordered input/output/tool/artifact fact | `AgentSessionItem` |
+| Human pause and resolution | `AgentInteraction` |
+| Scheduled command | `AgentTask` |
 
-Code-engine `engine_key` is orthogonal: it selects the T1/T2 provider for turn execution
-when `implementation_kind` is `process-adapter` or `protocol-adapter`.
+Provider-native identifiers remain inside runtime bindings, turns, checkpoints
+or interactions as opaque values.
+
+## 6. Implementation Type
+
+`ai_agent.implementation_type` may select `sdkwork-native`, `rig-rust`,
+`openai-agents`, `langchain`, `langgraph`, `crewai`, `autogen`,
+`semantic-kernel` or `custom`. A value is executable only when an approved
+provider manifest and conformance-tested binding are registered. Unknown or
+unavailable bindings fail closed.
 
 ## 7. Integration Policy
 
-1. **Official SDK exists** → kernel provider MUST use SDK integration (`official_sdk` mode).
-2. **No official SDK** → defer integration; document in gap analysis; do not add raw HTTP bypass.
-3. **Product apps** → MUST use `@sdkwork/agents-app-sdk` for sessions/messages/catalog.
-4. **BirdCoder** → coding-session dialect stays BirdCoder-owned; turn execution via agents facade.
+1. Use the official SDK or typed protocol when one exists.
+2. Do not add a raw HTTP bypass for a missing provider binding.
+3. Product apps use the Agents App SDK for projects, sessions, turns, session
+   items, interactions and catalogs.
+4. Provider adapters do not own product authorization, product persistence or
+   public Agents resource identities.
+5. Skill package identity, installation and content remain owned by
+   `sdkwork-skills`; Agents stores stable references only.
 
 ## 8. Verification
 
 ```powershell
 cargo test -p sdkwork-agents-runtime-facade
-cargo test --manifest-path ../sdkwork-kernel/Cargo.toml -p sdkwork-agent-provider-codex -p sdkwork-agent-provider-claude-code -p sdkwork-agent-provider-opencode
+cargo check -p sdkwork-agents-kernel-bridge
+pnpm check:architecture-alignment
 ```

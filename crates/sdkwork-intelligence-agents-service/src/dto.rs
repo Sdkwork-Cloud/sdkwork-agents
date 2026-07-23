@@ -2,8 +2,8 @@ use crate::application::{
     ActivateAgentProviderBindingCommand, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AnswerInteractionCommand,
     ApproveInteractionCommand, ArchiveSessionCommand, CancelTaskCommand, ChangeAgentStatusCommand,
-    CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand, CreateSessionItemCommand,
-    CreateSessionCommand, CreateTaskCommand, DeleteAgentCommand, ExecuteTaskCommand,
+    CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand, CreateSessionCommand,
+    CreateSessionItemCommand, CreateTaskCommand, DeleteAgentCommand, ExecuteTaskCommand,
     GetAgentCommand, ListAgentsCommand, ListInteractionsCommand, ListSessionItemsCommand,
     ListSessionsCommand, ListTasksCommand, RestoreAgentCommand, UpdateAgentCommand,
 };
@@ -16,8 +16,8 @@ use crate::domain::{
     AgentSessionRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
-    AgentListQuery, InteractionListQuery, SessionItemListQuery, PaginationParams, SessionListQuery,
-    TaskListQuery,
+    AgentListQuery, InteractionListQuery, PaginationParams, SessionItemListQuery,
+    SessionItemListSort, SessionListQuery, TaskListQuery,
 };
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id,
@@ -779,7 +779,7 @@ pub struct AgentCompositionSlotRecordDto {
     pub target_module: String,
     pub target_ref: String,
     pub target_version_ref: Option<String>,
-    pub priority: String,
+    pub priority: i32,
     pub enabled: bool,
     pub policy_json: String,
     pub status: String,
@@ -801,7 +801,7 @@ impl AgentCompositionSlotRecordDto {
             target_module: record.target_module.as_str().to_string(),
             target_ref: record.target_ref.clone(),
             target_version_ref: record.target_version_ref.clone(),
-            priority: record.priority.to_string(),
+            priority: record.priority,
             enabled: record.enabled,
             policy_json: record.policy_json.clone(),
             status: record.status.as_str().to_string(),
@@ -814,52 +814,36 @@ impl AgentCompositionSlotRecordDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentCompositionSlotCreateDataDto {
-    pub tenant_id: String,
-    pub organization_id: String,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentCompositionSlotCreateRequestDto {
     pub slot_id: String,
     pub slot_kind: String,
     pub target_module: String,
     pub target_ref: String,
     pub target_version_ref: Option<String>,
-    pub priority: Option<String>,
+    pub priority: Option<i32>,
     pub enabled: Option<bool>,
     pub policy_json: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentCompositionSlotCreateRequestDto {
-    pub data: AgentCompositionSlotCreateDataDto,
     pub requested_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentCompositionSlotUpdateDataDto {
-    pub tenant_id: String,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentCompositionSlotUpdateRequestDto {
     pub expected_version: Option<String>,
     pub slot_kind: Option<String>,
     pub target_module: Option<String>,
     pub target_ref: Option<String>,
     pub target_version_ref: Option<Option<String>>,
-    pub priority: Option<String>,
+    pub priority: Option<i32>,
     pub enabled: Option<bool>,
     pub policy_json: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentCompositionSlotUpdateRequestDto {
-    pub data: AgentCompositionSlotUpdateDataDto,
     pub requested_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentCompositionSlotDeleteRequestDto {
-    pub tenant_id: String,
     pub expected_version: Option<String>,
     pub requested_at: String,
 }
@@ -887,61 +871,50 @@ pub struct AgentCompositionSlotListResponseDto {
 // ===========================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSessionDataDto {
-    pub tenant_id: String,
-    pub organization_id: String,
-    pub owner_user_id: String,
-    #[serde(default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSessionRequestDto {
     pub session_id: Option<String>,
     pub project_id: Option<String>,
-    pub session_kind: Option<String>,
-    pub entry_surface: Option<String>,
+    pub session_kind: String,
+    pub entry_surface: String,
     pub source_module: Option<String>,
     pub source_context_kind: Option<String>,
     pub source_context_id: Option<String>,
     pub parent_session_id: Option<String>,
     pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
-    pub idempotency_key: Option<String>,
-    pub payload_hash: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSessionRequestDto {
-    pub data: CreateSessionDataDto,
+    pub idempotency_key: String,
+    pub payload_hash: String,
     pub requested_at: String,
 }
 
 impl CreateSessionRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
         agent_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<CreateSessionCommand> {
         validate_requested_at(&self.requested_at)?;
         Ok(CreateSessionCommand {
-            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
-            organization_id: parse_organization_id(&self.data.organization_id)?,
+            tenant_id,
+            organization_id,
             agent_id,
-            owner_user_id: parse_owner_user_id(&self.data.owner_user_id)?,
-            session_id: self.data.session_id.unwrap_or_default(),
-            project_id: self.data.project_id,
-            session_kind: parse_session_kind(
-                self.data.session_kind.as_deref().unwrap_or("assistant"),
-            )?,
-            entry_surface: parse_session_entry_surface(
-                self.data.entry_surface.as_deref().unwrap_or("api"),
-            )?,
-            source_module: self.data.source_module,
-            source_context_kind: self.data.source_context_kind,
-            source_context_id: self.data.source_context_id,
-            parent_session_id: self.data.parent_session_id,
-            forked_from_turn_id: self.data.forked_from_turn_id,
-            title: self.data.title,
-            idempotency_key: self.data.idempotency_key,
-            payload_hash: self.data.payload_hash,
+            owner_user_id,
+            session_id: self.session_id.unwrap_or_default(),
+            project_id: self.project_id,
+            session_kind: parse_session_kind(&self.session_kind)?,
+            entry_surface: parse_session_entry_surface(&self.entry_surface)?,
+            source_module: self.source_module,
+            source_context_kind: self.source_context_kind,
+            source_context_id: self.source_context_id,
+            parent_session_id: self.parent_session_id,
+            forked_from_turn_id: self.forked_from_turn_id,
+            title: self.title,
+            idempotency_key: Some(self.idempotency_key),
+            payload_hash: Some(self.payload_hash),
             requested_by,
             requested_at: self.requested_at,
         })
@@ -951,10 +924,6 @@ impl CreateSessionRequestDto {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CloseSessionRequestDto {
-    #[serde(default)]
-    pub tenant_id: String,
-    #[serde(default)]
-    pub organization_id: String,
     pub expected_version: Option<String>,
     pub requested_at: String,
 }
@@ -962,6 +931,8 @@ pub struct CloseSessionRequestDto {
 impl CloseSessionRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<CloseSessionCommand> {
@@ -972,8 +943,8 @@ impl CloseSessionRequestDto {
             .map(parse_expected_version)
             .transpose()?;
         Ok(CloseSessionCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
-            organization_id: parse_organization_id(&self.organization_id)?,
+            tenant_id,
+            organization_id,
             session_id,
             expected_version,
             owner_scope: None,
@@ -986,10 +957,6 @@ impl CloseSessionRequestDto {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ArchiveSessionRequestDto {
-    #[serde(default)]
-    pub tenant_id: String,
-    #[serde(default)]
-    pub organization_id: String,
     pub expected_version: Option<String>,
     pub requested_at: String,
 }
@@ -997,6 +964,8 @@ pub struct ArchiveSessionRequestDto {
 impl ArchiveSessionRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<ArchiveSessionCommand> {
@@ -1007,8 +976,8 @@ impl ArchiveSessionRequestDto {
             .map(parse_expected_version)
             .transpose()?;
         Ok(ArchiveSessionCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
-            organization_id: parse_organization_id(&self.organization_id)?,
+            tenant_id,
+            organization_id,
             session_id,
             expected_version,
             owner_scope: None,
@@ -1247,43 +1216,36 @@ impl AgentItemFeedbackRecordDto {
 // ===========================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateTaskDataDto {
-    pub tenant_id: String,
-    pub organization_id: String,
-    pub owner_user_id: String,
-    #[serde(default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateTaskRequestDto {
     pub task_id: Option<String>,
-    pub title: Option<String>,
+    pub title: String,
     pub prompt: String,
     pub external_ref: Option<String>,
     pub metadata_json: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateTaskRequestDto {
-    pub data: CreateTaskDataDto,
     pub requested_at: String,
 }
 
 impl CreateTaskRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
         agent_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<CreateTaskCommand> {
         validate_requested_at(&self.requested_at)?;
         Ok(CreateTaskCommand {
-            tenant_id: parse_tenant_id(&self.data.tenant_id)?,
-            organization_id: parse_organization_id(&self.data.organization_id)?,
+            tenant_id,
+            organization_id,
             agent_id,
-            owner_user_id: parse_owner_user_id(&self.data.owner_user_id)?,
-            task_id: self.data.task_id.unwrap_or_default(),
-            title: self.data.title,
-            prompt: self.data.prompt,
-            external_ref: self.data.external_ref,
-            metadata_json: self.data.metadata_json.unwrap_or_else(|| "{}".to_string()),
+            owner_user_id,
+            task_id: self.task_id.unwrap_or_default(),
+            title: Some(self.title),
+            prompt: self.prompt,
+            external_ref: self.external_ref,
+            metadata_json: self.metadata_json.unwrap_or_else(|| "{}".to_string()),
             requested_by,
             requested_at: self.requested_at,
         })
@@ -1293,7 +1255,6 @@ impl CreateTaskRequestDto {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelTaskRequestDto {
-    pub tenant_id: String,
     pub expected_version: Option<String>,
     pub requested_at: String,
 }
@@ -1301,6 +1262,7 @@ pub struct CancelTaskRequestDto {
 impl CancelTaskRequestDto {
     pub fn into_command(
         self,
+        tenant_id: u64,
         path_agent_id: String,
         task_id: String,
         requested_by: PolicySubject,
@@ -1312,7 +1274,7 @@ impl CancelTaskRequestDto {
             .map(parse_expected_version)
             .transpose()?;
         Ok(CancelTaskCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            tenant_id,
             path_agent_id,
             task_id,
             expected_version,
@@ -1324,6 +1286,7 @@ impl CancelTaskRequestDto {
 
     pub fn into_execute_command(
         self,
+        tenant_id: u64,
         path_agent_id: String,
         task_id: String,
         requested_by: PolicySubject,
@@ -1335,7 +1298,7 @@ impl CancelTaskRequestDto {
             .map(parse_expected_version)
             .transpose()?;
         Ok(ExecuteTaskCommand {
-            tenant_id: parse_tenant_id(&self.tenant_id)?,
+            tenant_id,
             path_agent_id,
             task_id,
             expected_version,
@@ -1463,11 +1426,10 @@ pub struct AgentInteractionRecordDto {
 
 impl AgentInteractionRecordDto {
     pub fn from_record(record: &AgentInteractionRecord) -> KernelResult<Self> {
-        let options = serde_json::from_str(&record.options_json).map_err(|error| {
-            KernelError::Internal {
+        let options =
+            serde_json::from_str(&record.options_json).map_err(|error| KernelError::Internal {
                 message: format!("stored interaction options are invalid: {error}"),
-            }
-        })?;
+            })?;
         let resolution = record
             .resolution_json
             .as_deref()
@@ -1562,6 +1524,7 @@ impl CreateInteractionRequestDto {
 pub struct ListInteractionsRequestDto {
     pub tenant_id: String,
     pub organization_id: String,
+    pub kind: Option<String>,
     pub status: Option<String>,
 }
 
@@ -1576,6 +1539,9 @@ impl ListInteractionsRequestDto {
             parse_organization_id(&self.organization_id)?,
             session_id,
         );
+        if let Some(kind) = self.kind {
+            query = query.with_kind(parse_interaction_kind(&kind)?);
+        }
         if let Some(status) = self.status {
             query = query.with_status(parse_interaction_status(&status)?);
         }
@@ -1807,6 +1773,7 @@ pub struct ListSessionItemsRequestDto {
     pub organization_id: String,
     pub kind: Option<String>,
     pub status: Option<String>,
+    pub sort: Option<String>,
 }
 
 impl ListSessionItemsRequestDto {
@@ -1825,6 +1792,9 @@ impl ListSessionItemsRequestDto {
         }
         if let Some(status) = self.status {
             query = query.with_status(parse_session_item_status(&status)?);
+        }
+        if let Some(sort) = self.sort {
+            query = query.with_sort(parse_session_item_sort(&sort)?);
         }
         Ok(ListSessionItemsCommand {
             query,
@@ -2475,18 +2445,20 @@ impl ChangeSessionRuntimeBindingStatusRequestDto {
         requested_by: PolicySubject,
     ) -> KernelResult<crate::application::ChangeSessionRuntimeBindingStatusCommand> {
         validate_requested_at(&self.requested_at)?;
-        Ok(crate::application::ChangeSessionRuntimeBindingStatusCommand {
-            tenant_id,
-            organization_id,
-            path_agent_id,
-            session_id,
-            runtime_binding_id,
-            expected_version: parse_expected_version(&self.expected_version)?,
-            reason: self.reason,
-            owner_scope: None,
-            requested_by,
-            requested_at: self.requested_at,
-        })
+        Ok(
+            crate::application::ChangeSessionRuntimeBindingStatusCommand {
+                tenant_id,
+                organization_id,
+                path_agent_id,
+                session_id,
+                runtime_binding_id,
+                expected_version: parse_expected_version(&self.expected_version)?,
+                reason: self.reason,
+                owner_scope: None,
+                requested_by,
+                requested_at: self.requested_at,
+            },
+        )
     }
 }
 
@@ -2534,6 +2506,26 @@ fn parse_interaction_status(value: &str) -> KernelResult<String> {
                 "status must be one of pending, resolved, rejected, expired, cancelled: {value}"
             ))
         })
+}
+
+fn parse_interaction_kind(value: &str) -> KernelResult<String> {
+    AgentInteractionKind::from_code(value)
+        .map(|kind| kind.as_str().to_string())
+        .ok_or_else(|| {
+            KernelError::validation(format!(
+                "kind must be one of approval, user_question: {value}"
+            ))
+        })
+}
+
+fn parse_session_item_sort(value: &str) -> KernelResult<SessionItemListSort> {
+    match value {
+        "sequence" => Ok(SessionItemListSort::SequenceAsc),
+        "-sequence" => Ok(SessionItemListSort::SequenceDesc),
+        _ => Err(KernelError::validation(format!(
+            "sort must be one of sequence, -sequence: {value}"
+        ))),
+    }
 }
 
 fn parse_session_item_status(value: &str) -> KernelResult<String> {

@@ -6,7 +6,8 @@
   "authoritySpec": "openapi/sdkwork-agents-app-api.openapi.yaml",
   "generationInputSpec": "openapi/sdkwork-agents-app-api.sdkgen.yaml",
   "derivedSpecs": {
-    "default": "openapi/sdkwork-agents-app-api.sdkgen.yaml"
+    "default": "openapi/sdkwork-agents-app-api.sdkgen.yaml",
+    "flutter": "openapi/sdkwork-agents-app-api.sdkgen.yaml"
   },
   "apiAuthority": "sdkwork-agents-app-api",
   "discoverySurface": {
@@ -25,11 +26,29 @@
       "generationState": "materialized",
       "releaseState": "not_published",
       "generatedPath": "sdkwork-agents-app-sdk-typescript/generated/server-openapi",
+      "packagePath": "sdkwork-agents-app-sdk-typescript/generated/server-openapi",
       "manifestPath": "sdkwork-agents-app-sdk-typescript/generated/server-openapi/package.json",
       "consumerPackageName": "@sdkwork/agents-app-sdk",
       "name": "@sdkwork/agents-app-sdk",
       "version": "0.1.0",
       "description": "Generator-owned TypeScript transport SDK for SDKWork Agent Business App API.",
+      "consumerSurface": {
+        "primaryClient": "SdkworkAppClient",
+        "apiPrefix": "/app/v3/api"
+      }
+    },
+    {
+      "language": "flutter",
+      "workspace": "sdkwork-agents-app-sdk-flutter",
+      "generationState": "materialized",
+      "releaseState": "not_published",
+      "generatedPath": "sdkwork-agents-app-sdk-flutter/generated/server-openapi",
+      "packagePath": "sdkwork-agents-app-sdk-flutter/generated/server-openapi",
+      "manifestPath": "sdkwork-agents-app-sdk-flutter/generated/server-openapi/pubspec.yaml",
+      "consumerPackageName": "sdkwork_agents_app_sdk",
+      "name": "sdkwork_agents_app_sdk",
+      "version": "0.1.0",
+      "description": "Generator-owned Flutter transport SDK for SDKWork Agent Business App API.",
       "consumerSurface": {
         "primaryClient": "SdkworkAppClient",
         "apiPrefix": "/app/v3/api"
@@ -90,7 +109,7 @@
   "metadata": {
     "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
     "standardVersion": "2026-06-26",
-    "ownerOnlyOperationCount": 56
+    "ownerOnlyOperationCount": 68
   },
   "schemaVersion": 1,
   "sdkName": "sdkwork-agents-app-sdk",
@@ -98,7 +117,6 @@
   "sdkFamily": "sdkwork-agents-app-sdk",
   "sdkType": "app",
   "sdkSurface": "app",
-  "language": "typescript",
   "apiPrefix": "/app/v3/api",
   "generatedOutput": "sdkwork-agents-app-sdk-typescript/generated/server-openapi",
   "standardProfile": "sdkwork-v3",
@@ -109,7 +127,13 @@
     "transportRoot": "sdkwork-agents-app-sdk-typescript/generated/server-openapi",
     "transportEntry": "sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/index.ts"
   },
-  "ownerOnlyOperationCount": 56,
+  "flutter": {
+    "root": "sdkwork-agents-app-sdk-flutter",
+    "transportRoot": "sdkwork-agents-app-sdk-flutter/generated/server-openapi",
+    "transportEntry": "sdkwork-agents-app-sdk-flutter/generated/server-openapi/lib/sdkwork_agents_app_sdk.dart",
+    "packageName": "sdkwork_agents_app_sdk"
+  },
+  "ownerOnlyOperationCount": 68,
   "standardVersion": "2026-06-26",
   "managedBy": "sdks/_shared/agent-sdk-ownership.mjs"
 }

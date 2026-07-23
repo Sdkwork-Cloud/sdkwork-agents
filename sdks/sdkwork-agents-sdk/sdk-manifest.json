@@ -22,9 +22,10 @@
     {
       "language": "typescript",
       "workspace": "sdkwork-agents-sdk-typescript",
-      "generationState": "derived",
+      "generationState": "materialized",
       "releaseState": "not_published",
       "generatedPath": "sdkwork-agents-sdk-typescript/generated/server-openapi",
+      "packagePath": "sdkwork-agents-sdk-typescript/generated/server-openapi",
       "manifestPath": "sdkwork-agents-sdk-typescript/generated/server-openapi/package.json",
       "consumerPackageName": "@sdkwork/agents-sdk",
       "name": "@sdkwork/agents-sdk",
@@ -41,7 +42,7 @@
   "metadata": {
     "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
     "standardVersion": "2026-06-26",
-    "ownerOnlyOperationCount": 27
+    "ownerOnlyOperationCount": 47
   },
   "schemaVersion": 1,
   "sdkName": "sdkwork-agents-sdk",
@@ -49,7 +50,6 @@
   "sdkFamily": "sdkwork-agents-sdk",
   "sdkType": "custom",
   "sdkSurface": "open",
-  "language": "typescript",
   "apiPrefix": "/agent/v3/api",
   "generatedOutput": "sdkwork-agents-sdk-typescript/generated/server-openapi",
   "standardProfile": "sdkwork-v3",
@@ -60,7 +60,7 @@
     "transportRoot": "sdkwork-agents-sdk-typescript/generated/server-openapi",
     "transportEntry": "sdkwork-agents-sdk-typescript/generated/server-openapi/src/index.ts"
   },
-  "ownerOnlyOperationCount": 27,
+  "ownerOnlyOperationCount": 47,
   "standardVersion": "2026-06-26",
   "managedBy": "sdks/_shared/agent-sdk-ownership.mjs"
 }

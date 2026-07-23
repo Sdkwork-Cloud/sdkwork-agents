@@ -16,9 +16,10 @@ use sdkwork_intelligence_agents_service::{
     GetAgentCommand, IamGatedPolicyProvider, InMemoryAgentAuditSink, ItemFeedbackListQuery,
     ListItemFeedbackCommand, ListProjectCompositionSlotsCommand, ListSessionItemsCommand,
     ListSessionUserStatesCommand, ProjectCompositionSlotListQuery, ResourceUserStateListQuery,
-    RUNTIME_MODE_INFERENCE_ERROR, SessionItemListQuery, SqlAgentRepository,
-    SyncPostgresAdapter, TurnExecutionInput, TurnExecutionOutput, TurnExecutor,
-    UpdateItemFeedbackCommand, UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
+    SessionItemListQuery, SqlAgentRepository, SyncPostgresAdapter, TurnExecutionInput,
+    TurnExecutionOutput, TurnExecutor, UpdateItemFeedbackCommand,
+    UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
+    RUNTIME_MODE_INFERENCE_ERROR,
 };
 
 struct FailingTurnExecutor;
@@ -66,8 +67,7 @@ fn bootstrap_isolated_schema(base_url: &str, suffix: u128) -> (IsolatedPostgresS
         .expect("isolated postgres schema should be created");
 
     let separator = if base_url.contains('?') { '&' } else { '?' };
-    let isolated_url =
-        format!("{base_url}{separator}options=-c%20search_path%3D{schema}%2Cpublic");
+    let isolated_url = format!("{base_url}{separator}options=-c%20search_path%3D{schema}%2Cpublic");
     let isolated = SyncPostgresAdapter::connect(&isolated_url)
         .expect("isolated postgres adapter should connect");
     let previous_schema = std::env::var("SDKWORK_AGENTS_DATABASE_SCHEMA").ok();
@@ -430,7 +430,10 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         .unwrap();
     assert_eq!(turn.session.item_count, 3);
     assert_eq!(turn.user_item_drive_refs.len(), 1);
-    assert_eq!(turn.user_item_drive_refs[0].drive_node_id, drive_ref.drive_node_id);
+    assert_eq!(
+        turn.user_item_drive_refs[0].drive_node_id,
+        drive_ref.drive_node_id
+    );
 
     let page = service
         .list_session_items_with_drive_refs(ListSessionItemsCommand {

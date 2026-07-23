@@ -1,62 +1,68 @@
 # Incident Response And Rollback
 
-Use this runbook when sdkwork-agents production or staging shows elevated errors, data inconsistency, or failed cutover.
+Use for elevated errors, data-integrity risk, security exposure or failed
+release verification.
 
-## 1. Triage signals
+## 1. Triage
 
-| Signal | Check |
-| --- | --- |
-| HTTP 5xx spike | Gateway logs, `agents.managed_store.request` trace lines |
-| Auth failures | IAM session validity, `SDKWORK_AGENTS_DEV_AUTH_BYPASS` must be `false` |
-| Postgres errors | `SDKWORK_AGENTS_STORE_DATABASE_*` connectivity, migration status |
-| Client failures | App SDK base URLs, `pnpm workflow:build-agents-app-sdk` drift |
+1. Classify impact by surface, tenant scope, operation and lifecycle state.
+2. Capture server-owned `traceId`, release version, deployment profile and
+   relevant bounded resource identifiers.
+3. Check health, metrics, PostgreSQL pool/status, outbox backlog and provider
+   binding health.
+4. Verify development auth bypass is disabled and no credential mode changed.
 
-Prometheus (when scraped):
+Do not log Session Item content, tool arguments, credentials, API keys or claim
+tokens while collecting evidence.
 
-- `sdkwork_agents_requests_per_second`
-- `sdkwork_agents_http_errors_total`
-- `sdkwork_agents_http_requests_total`
+## 2. Containment
 
-Endpoint: `/metrics/agents` on the standalone gateway assembly.
+- Stop the rollout and route traffic to the last healthy replica set.
+- Disable an unhealthy provider binding through its governed command when the
+  incident is provider-specific.
+- Preserve read access when safe; reject new execution when write integrity is
+  uncertain.
+- Do not enable an in-memory store, raw provider transport, alternate Session
+  path or relaxed authorization as a workaround.
 
-## 2. Immediate containment
+## 3. Application Rollback
 
-1. Scale down traffic at ingress or disable new deployments.
-2. Confirm no pod is running with dev auth bypass or in-memory managed store in production-like profiles.
-3. Capture `traceId` from failing API responses (`x-sdkwork-trace-id`).
+1. Select the last signed, checksum-verified artifact compatible with the
+   current database contract.
+2. Redeploy through the same profile and configuration authority.
+3. Verify `GET /health`, metrics, one authenticated Session retrieve and one
+   idempotency reconciliation.
+4. Monitor error, Turn latency, database pool and outbox backlog until stable.
 
-## 3. Rollback procedure
+## 4. Database Recovery
 
-### Application binary
+1. Stop writers when data integrity is at risk.
+2. Run `pnpm db:status` and `pnpm db:drift:check` against the target.
+3. Do not reverse schema manually. Use only a reviewed database-framework plan
+   compatible with the deployed binary.
+4. Restore a verified PostgreSQL snapshot only under the platform recovery
+   procedure, then validate migration history and table registry.
+5. Reconcile idempotent Turn/outbox state before reopening writes.
 
-1. Identify last known-good release tag from CI packaging workflow.
-2. Redeploy previous container image or tar.gz artifact from `sdkwork.workflow.json` channel.
-3. Run health check: `GET /health` and one authenticated `GET /app/v3/api/ai/agents` smoke call.
+Cross-module data is never repaired by writing IM, Drive, Skill or other
+dependency tables from Agents.
 
-### Database
-
-1. **Do not** roll back schema without a planned migration reversal.
-2. Run `pnpm db:status` and `pnpm db:drift:check` from repository root against target env.
-3. If migration caused regression, restore Postgres snapshot per platform runbook, then redeploy matching application version.
-
-### Client surfaces
-
-1. Redeploy previous PC/H5 static build if API contract changed.
-2. Rebuild mini-program runtime: `pnpm --filter @sdkwork/agents-mini-program build`.
-
-## 4. Recovery verification
-
-From repository root:
+## 5. Recovery Verification
 
 ```powershell
-pnpm verify
-pnpm topology:validate
+node scripts/generate-agents-api-docs.mjs --check
+node scripts/check-agent-sdk-workspace.mjs
 pnpm db:validate
+pnpm topology:validate
+cargo test -p sdkwork-intelligence-agents-service --features http-axum --test http_axum_contracts
 ```
 
-Staging cutover checklist: [pre-launch-verification.md](./pre-launch-verification.md).
+Repeat the live [smoke test](./smoke-test.md) against the recovered candidate.
 
-## 5. Post-incident
+## 6. Follow-Up
 
-1. Record root cause in `docs/architecture/decisions/` as ADR when behavior or contract changes.
-2. Add regression test (HTTP contract or client contract) before closing the incident.
+- record timeline, root cause, affected release and bounded impact;
+- add the narrow regression test before closing;
+- update an ADR only when architecture or contract behavior changes;
+- rotate exposed credentials and verify revocation when security is involved;
+- retain audit and release evidence according to policy.

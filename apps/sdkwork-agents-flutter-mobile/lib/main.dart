@@ -5,6 +5,6 @@ import 'bootstrap/runtime.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await bootstrap();
-  runApp(const AgentsApp());
+  final runtime = await bootstrap();
+  runApp(AgentsApp(runtime: runtime));
 }

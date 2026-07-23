@@ -55,7 +55,7 @@
       "wrap_router_with_web_framework"
     ],
     "routeManifest": "../sdkwork-routes-agents-http-shared/src/web_bootstrap.rs#open_route_manifest",
-    "authMode": "dual-token",
+    "authMode": "api-key",
     "sdkClients": [],
     "events": [],
     "configKeys": [],

@@ -28,12 +28,9 @@ client.setAccessToken('your-access-token');
 
 // Use the SDK
 const params = {
-  tenant_id: 'tenant_id',
-  organization_id: 'organization_id',
-  owner_user_id: 'owner_user_id',
-  include_deleted: false,
-  page: 5,
-  page_size: 6,
+  include_deleted: true,
+  page: 2,
+  page_size: 3,
   q: 'q',
 };
 const result = await client.ai.agents.list(params);
@@ -72,12 +69,9 @@ const client = new SdkworkBackendClient({
 ```typescript
 // List managed agents for backend administration
 const params = {
-  tenant_id: 'tenant_id',
-  organization_id: 'organization_id',
-  owner_user_id: 'owner_user_id',
-  include_deleted: false,
-  page: 5,
-  page_size: 6,
+  include_deleted: true,
+  page: 2,
+  page_size: 3,
   q: 'q',
 };
 const result = await client.ai.agents.list(params);
@@ -90,12 +84,9 @@ import { SdkworkBackendClient, NetworkError, TimeoutError, AuthenticationError }
 
 try {
   const params = {
-    tenant_id: 'tenant_id',
-    organization_id: 'organization_id',
-    owner_user_id: 'owner_user_id',
-    include_deleted: false,
-    page: 5,
-    page_size: 6,
+    include_deleted: true,
+    page: 2,
+    page_size: 3,
     q: 'q',
   };
   const result = await client.ai.agents.list(params);

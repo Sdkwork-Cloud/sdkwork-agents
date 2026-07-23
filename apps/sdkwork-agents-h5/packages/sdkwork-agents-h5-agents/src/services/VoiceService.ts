@@ -4,10 +4,8 @@ import {
 } from "@sdkwork/agents-h5-core/sdk/voiceAppSdkClient";
 import {
   DEFAULT_LIST_PAGE_SIZE,
-  extractOffsetPageInfo,
+  toOffsetPageInfo,
 } from "@sdkwork/agents-h5-core/sdk/pagination";
-
-import { extractArray } from "./sdkEnvelope";
 
 export interface VoiceConfig {
   id: string;
@@ -73,14 +71,8 @@ class VoiceService {
       pageSize,
       ...(categoryId ? { categoryId } : {}),
     });
-    const pageInfo = extractOffsetPageInfo(response);
-    const items = extractArray(response)
-      .map((item, index) =>
-        item && typeof item === "object"
-          ? mapVoiceRecord(item as Record<string, unknown>, index)
-          : undefined,
-      )
-      .filter((item): item is VoiceConfig => Boolean(item));
+    const pageInfo = toOffsetPageInfo(response.pageInfo);
+    const items = response.items.map(mapVoiceRecord);
     return {
       items,
       page: pageInfo.page,

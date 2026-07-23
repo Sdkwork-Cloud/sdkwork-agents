@@ -21,18 +21,13 @@ export interface QueryListForm {
 
 export type { Page, RequestConfig, RequestOptions, QueryParams } from '@sdkwork/sdk-common';
 export { DEFAULT_TIMEOUT, SUCCESS_CODES } from '@sdkwork/sdk-common';
-import type { AuthTokenManager, AuthMode, AuthTokens } from '@sdkwork/sdk-common';
-export type { AuthTokenManager, AuthMode, AuthTokens };
 
-export interface SdkworkAppConfig {
+export interface SdkworkCustomConfig {
   baseUrl: string;
-  authToken?: string;
-  accessToken?: string;
+  apiKey?: string;
   tenantId?: string;
   organizationId?: string;
   platform?: string;
-  tokenManager?: AuthTokenManager;
   timeout?: number;
-  authMode?: AuthMode;
   headers?: Record<string, string>;
 }

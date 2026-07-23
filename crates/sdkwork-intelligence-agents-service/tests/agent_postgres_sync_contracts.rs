@@ -3,18 +3,19 @@
 use sdkwork_intelligence_agents_service::{
     SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_ITEMS,
     SQL_COUNT_AGENT_TASKS, SQL_INSERT_AGENT, SQL_INSERT_AGENT_COMPOSITION_SLOT,
-    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_SESSION_ITEM, SQL_INSERT_AGENT_TURN,
-    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION, SQL_INSERT_AGENT_TASK,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION,
+    SQL_INSERT_AGENT_SESSION_ITEM, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
     SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT, SQL_LIST_AGENT_COMPOSITION_SLOTS,
-    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_PROVIDER_BINDINGS,
-    SQL_LIST_AGENT_SESSION_ITEMS, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
-    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS, SQL_NEXT_SESSION_ITEM_SEQUENCE,
-    SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID, SQL_SELECT_AGENT_COMPOSITION_SLOT,
-    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_SELECT_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_TASK, SQL_UPDATE_AGENT,
-    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_UPDATE_AGENT_COMPOSITION_SLOT,
-    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_SESSION_ITEM,
-    SQL_UPDATE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT_SESSION, SQL_UPDATE_AGENT_TASK,
+    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS,
+    SQL_LIST_AGENT_SESSION_ITEMS, SQL_LIST_AGENT_SESSION_ITEMS_DESC,
+    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_TASKS,
+    SQL_NEXT_SESSION_ITEM_SEQUENCE, SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
+    SQL_SELECT_AGENT_COMPOSITION_SLOT, SQL_SELECT_AGENT_INTERACTION,
+    SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM,
+    SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_UPDATE_AGENT,
+    SQL_UPDATE_AGENT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_INTERACTION,
+    SQL_UPDATE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT_SESSION, SQL_UPDATE_AGENT_SESSION_ITEM,
+    SQL_UPDATE_AGENT_TASK,
 };
 
 fn tenant_scoped_select_sql(sql: &str, table: &str) {
@@ -199,10 +200,19 @@ fn sql_injection_prevention_all_queries() {
     assert_safe_update(SQL_UPDATE_AGENT_SESSION, "SQL_UPDATE_AGENT_SESSION");
 
     // Message queries
-    assert_safe_select(SQL_SELECT_AGENT_SESSION_ITEM, "SQL_SELECT_AGENT_SESSION_ITEM");
+    assert_safe_select(
+        SQL_SELECT_AGENT_SESSION_ITEM,
+        "SQL_SELECT_AGENT_SESSION_ITEM",
+    );
     assert_parameterized_query(SQL_LIST_AGENT_SESSION_ITEMS, "SQL_LIST_AGENT_SESSION_ITEMS");
-    assert_safe_insert(SQL_INSERT_AGENT_SESSION_ITEM, "SQL_INSERT_AGENT_SESSION_ITEM");
-    assert_safe_update(SQL_UPDATE_AGENT_SESSION_ITEM, "SQL_UPDATE_AGENT_SESSION_ITEM");
+    assert_safe_insert(
+        SQL_INSERT_AGENT_SESSION_ITEM,
+        "SQL_INSERT_AGENT_SESSION_ITEM",
+    );
+    assert_safe_update(
+        SQL_UPDATE_AGENT_SESSION_ITEM,
+        "SQL_UPDATE_AGENT_SESSION_ITEM",
+    );
     assert_parameterized_query(
         SQL_NEXT_SESSION_ITEM_SEQUENCE,
         "SQL_NEXT_SESSION_ITEM_SEQUENCE",
@@ -238,7 +248,7 @@ fn postgres_session_item_sql_is_tenant_scoped() {
 }
 
 #[test]
-fn commercial_chat_expand_columns_are_populated_and_soft_deletes_are_hidden() {
+fn session_aggregate_columns_are_populated_without_item_owner_duplication() {
     for required in ["created_by", "updated_by", "last_item_sequence"] {
         assert!(
             SQL_INSERT_AGENT_SESSION.contains(required),
@@ -247,9 +257,10 @@ fn commercial_chat_expand_columns_are_populated_and_soft_deletes_are_hidden() {
     }
     for required in [
         "organization_id",
-        "owner_user_id",
+        "session_id",
         "item_id",
         "kind",
+        "turn_id",
         "created_by",
     ] {
         assert!(
@@ -257,17 +268,17 @@ fn commercial_chat_expand_columns_are_populated_and_soft_deletes_are_hidden() {
             "session-item insert must populate {required}"
         );
     }
-    assert!(SQL_INSERT_AGENT_SESSION_ITEM.contains("FROM ai_agent_session"));
+    assert!(
+        !SQL_INSERT_AGENT_SESSION_ITEM.contains("owner_user_id"),
+        "session items must inherit owner scope through the session aggregate"
+    );
     assert!(SQL_NEXT_SESSION_ITEM_SEQUENCE.contains("last_item_sequence + 1"));
     assert!(SQL_UPDATE_AGENT_SESSION.contains("last_item_sequence = GREATEST"));
-    for sql in [
-        SQL_SELECT_AGENT_SESSION,
-        SQL_LIST_AGENT_SESSIONS,
-        SQL_SELECT_AGENT_SESSION_ITEM,
-        SQL_LIST_AGENT_SESSION_ITEMS,
-    ] {
+    for sql in [SQL_SELECT_AGENT_SESSION, SQL_LIST_AGENT_SESSIONS] {
         assert!(sql.contains("deleted_at IS NULL"));
     }
+    assert!(SQL_SELECT_AGENT_SESSION_ITEM.contains("redacted_at"));
+    assert!(SQL_LIST_AGENT_SESSION_ITEMS.contains("redacted_at"));
 }
 
 #[test]
@@ -297,20 +308,23 @@ fn postgres_session_list_has_mandatory_pagination() {
 #[test]
 fn postgres_session_item_list_has_mandatory_pagination() {
     assert!(
-        SQL_LIST_AGENT_SESSION_ITEMS.contains("LIMIT $5"),
+        SQL_LIST_AGENT_SESSION_ITEMS.contains("LIMIT $6"),
         "SQL_LIST_AGENT_SESSION_ITEMS must have LIMIT parameter for mandatory pagination"
     );
     assert!(
-        SQL_LIST_AGENT_SESSION_ITEMS.contains("OFFSET $6"),
+        SQL_LIST_AGENT_SESSION_ITEMS.contains("OFFSET $7"),
         "SQL_LIST_AGENT_SESSION_ITEMS must have OFFSET parameter for page navigation"
     );
-    assert_parameterized_query(SQL_COUNT_AGENT_SESSION_ITEMS, "SQL_COUNT_AGENT_SESSION_ITEMS");
+    assert_parameterized_query(
+        SQL_COUNT_AGENT_SESSION_ITEMS,
+        "SQL_COUNT_AGENT_SESSION_ITEMS",
+    );
     assert!(
         SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT.contains("ORDER BY sequence DESC"),
         "SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT must fetch the most recent context window first"
     );
     assert!(
-        SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT.contains("LIMIT $5"),
+        SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT.contains("LIMIT $6"),
         "SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT must bound the turn context window"
     );
 }
@@ -386,9 +400,15 @@ fn all_queries_enforce_tenant_isolation() {
         ("SQL_SELECT_AGENT_SESSION", SQL_SELECT_AGENT_SESSION),
         ("SQL_LIST_AGENT_SESSIONS", SQL_LIST_AGENT_SESSIONS),
         ("SQL_UPDATE_AGENT_SESSION", SQL_UPDATE_AGENT_SESSION),
-        ("SQL_SELECT_AGENT_SESSION_ITEM", SQL_SELECT_AGENT_SESSION_ITEM),
+        (
+            "SQL_SELECT_AGENT_SESSION_ITEM",
+            SQL_SELECT_AGENT_SESSION_ITEM,
+        ),
         ("SQL_LIST_AGENT_SESSION_ITEMS", SQL_LIST_AGENT_SESSION_ITEMS),
-        ("SQL_UPDATE_AGENT_SESSION_ITEM", SQL_UPDATE_AGENT_SESSION_ITEM),
+        (
+            "SQL_UPDATE_AGENT_SESSION_ITEM",
+            SQL_UPDATE_AGENT_SESSION_ITEM,
+        ),
         ("SQL_SELECT_AGENT_INTERACTION", SQL_SELECT_AGENT_INTERACTION),
         ("SQL_LIST_AGENT_INTERACTIONS", SQL_LIST_AGENT_INTERACTIONS),
         ("SQL_UPDATE_AGENT_INTERACTION", SQL_UPDATE_AGENT_INTERACTION),
@@ -444,6 +464,35 @@ fn postgres_interaction_sql_is_tenant_scoped() {
         SQL_INSERT_AGENT_INTERACTION.contains("tenant_id"),
         "ai_agent_interaction insert SQL must include tenant_id"
     );
+    for (name, sql) in [
+        ("list", SQL_LIST_AGENT_INTERACTIONS),
+        ("count", SQL_COUNT_AGENT_INTERACTIONS),
+    ] {
+        assert!(
+            sql.contains("status = $4") && sql.contains("kind = $5"),
+            "ai_agent_interaction {name} SQL must apply the same status and kind filters"
+        );
+    }
+    assert!(
+        SQL_LIST_AGENT_INTERACTIONS.contains("LIMIT $6 OFFSET $7"),
+        "ai_agent_interaction list SQL must paginate at the store"
+    );
+}
+
+#[test]
+fn postgres_session_item_sql_supports_stable_bidirectional_pages() {
+    assert!(
+        SQL_LIST_AGENT_SESSION_ITEMS.contains("ORDER BY sequence ASC, id ASC LIMIT $6 OFFSET $7")
+    );
+    assert!(SQL_LIST_AGENT_SESSION_ITEMS_DESC
+        .contains("ORDER BY sequence DESC, id DESC LIMIT $6 OFFSET $7"));
+    for sql in [
+        SQL_LIST_AGENT_SESSION_ITEMS,
+        SQL_LIST_AGENT_SESSION_ITEMS_DESC,
+        SQL_COUNT_AGENT_SESSION_ITEMS,
+    ] {
+        assert!(sql.contains("kind = $4") && sql.contains("status = $5"));
+    }
 }
 
 #[test]

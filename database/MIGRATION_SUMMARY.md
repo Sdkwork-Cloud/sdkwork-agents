@@ -18,9 +18,6 @@ The migrations directory is intentionally reserved for changes made after the
 first production schema release. There is no pre-launch compatibility chain,
 dual-write path, projection store, or legacy session table.
 
-SQLite remains a non-authoritative control-plane development subset and is not
-a managed engine for this contract.
-
 ## Operational Checks
 
 ```powershell

@@ -10,7 +10,7 @@
     "domain": "intelligence",
     "declaredDomain": null,
     "capability": "agents",
-    "status": "standardizing",
+    "status": "active",
     "surfaceNotRequiredReason": "This multi-surface Rust service exposes open, app, and backend router builders; surface-specific SDK families declare component.surface.",
     "languages": [
       "rust"

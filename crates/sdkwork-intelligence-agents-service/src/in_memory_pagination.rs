@@ -1,4 +1,4 @@
-use crate::ports::{SessionItemListSort, PaginationParams};
+use crate::ports::{PaginationParams, SessionItemListSort};
 use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
 /// Bounded offset window over an ordered iterator (PAGINATION_SPEC §5.3 / §9).
@@ -36,6 +36,9 @@ where
 {
     match sort {
         SessionItemListSort::SequenceAsc => paginate_iterator(iter, pagination),
-        SessionItemListSort::RecentContextDesc => paginate_recent_context(iter, pagination.page_size),
+        SessionItemListSort::SequenceDesc => paginate_iterator(iter.rev(), pagination),
+        SessionItemListSort::RecentContextDesc => {
+            paginate_recent_context(iter, pagination.page_size)
+        }
     }
 }

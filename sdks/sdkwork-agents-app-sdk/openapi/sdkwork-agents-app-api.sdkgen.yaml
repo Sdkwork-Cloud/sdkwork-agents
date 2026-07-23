@@ -1,8 +1,8 @@
 openapi: 3.1.2
 info:
   title: SDKWork Agent Business App API
-  version: 0.1.0
-  description: App-facing managed agent APIs for sdkwork-intelligence-agents-service.
+  version: 5.0.0
+  description: App-facing managed agent execution APIs for SDKWork clients.
 x-sdkwork-owner: sdkwork-agents
 x-sdkwork-api-authority: sdkwork-agents-app-api
 x-sdkwork-sdk-family: sdkwork-agents-app-sdk
@@ -694,7 +694,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: List commercial chat projects for the current user
+      summary: List agent projects for the current user
       operationId: agents.projects.list
       security:
       - AuthToken: []
@@ -737,7 +737,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Create a commercial chat project
+      summary: Create an agent project
       operationId: agents.projects.create
       security:
       - AuthToken: []
@@ -771,7 +771,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Retrieve a commercial chat project
+      summary: Retrieve an agent project
       operationId: agents.projects.retrieve
       security:
       - AuthToken: []
@@ -799,7 +799,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Update a commercial chat project
+      summary: Update an agent project
       operationId: agents.projects.update
       security:
       - AuthToken: []
@@ -834,7 +834,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Soft-delete a commercial chat project
+      summary: Soft-delete an agent project
       operationId: agents.projects.delete
       security:
       - AuthToken: []
@@ -860,7 +860,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Archive a commercial chat project
+      summary: Archive an agent project
       operationId: agents.projects.archive
       security:
       - AuthToken: []
@@ -896,7 +896,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: List composition slots for a commercial chat project
+      summary: List composition slots for an agent project
       operationId: agents.projectCompositionSlots.list
       security:
       - AuthToken: []
@@ -934,7 +934,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Add a composition slot to a commercial chat project
+      summary: Add a composition slot to an agent project
       operationId: agents.projectCompositionSlots.create
       security:
       - AuthToken: []
@@ -1068,7 +1068,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: List chat sessions for one managed agent
+      summary: List agent sessions for one managed agent
       operationId: agents.sessions.list
       security:
       - AuthToken: []
@@ -1105,7 +1105,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Create a chat session for one managed agent
+      summary: Create a agent session for one managed agent
       operationId: agents.sessions.create
       security:
       - AuthToken: []
@@ -1122,7 +1122,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AppCreateAgentSessionRequest'
+              $ref: '#/components/schemas/CreateAgentSessionRequest'
       responses:
         '201':
           description: Created managed agent session
@@ -1141,7 +1141,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: List per-user state for chat sessions owned by the authenticated user
+      summary: List per-user state for agent sessions owned by the authenticated user
       operationId: agents.sessionUserStates.list
       security:
       - AuthToken: []
@@ -1168,7 +1168,7 @@ paths:
           default: false
       responses:
         '200':
-          description: Paginated per-user chat session state
+          description: Paginated per-user agent session state
           content:
             application/json:
               schema:
@@ -1185,7 +1185,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Retrieve one chat session
+      summary: Retrieve one agent session
       operationId: agents.sessions.retrieve
       security:
       - AuthToken: []
@@ -1215,7 +1215,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Rename or move one chat session
+      summary: Rename or move one agent session
       operationId: agents.sessions.update
       security:
       - AuthToken: []
@@ -1252,7 +1252,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Soft delete one chat session
+      summary: Soft delete one agent session
       operationId: agents.sessions.delete
       security:
       - AuthToken: []
@@ -1280,7 +1280,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Close one chat session
+      summary: Close one agent session
       operationId: agents.sessions.close
       security:
       - AuthToken: []
@@ -1298,7 +1298,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AppCloseAgentSessionRequest'
+              $ref: '#/components/schemas/CloseAgentSessionRequest'
       responses:
         '200':
           description: Closed managed agent session
@@ -1317,7 +1317,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Retrieve the authenticated user's state for one chat session
+      summary: Retrieve the authenticated user's state for one agent session
       operationId: agents.sessionUserStates.retrieve
       security:
       - AuthToken: []
@@ -1331,7 +1331,7 @@ paths:
       - $ref: '#/components/parameters/SessionIdPath'
       responses:
         '200':
-          description: Per-user chat session state
+          description: Per-user agent session state
           content:
             application/json:
               schema:
@@ -1346,7 +1346,7 @@ paths:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags: [ai]
-      summary: Update the authenticated user's state for one chat session
+      summary: Update the authenticated user's state for one agent session
       operationId: agents.sessionUserStates.update
       security:
       - AuthToken: []
@@ -1366,7 +1366,7 @@ paths:
               $ref: '#/components/schemas/UpdateAgentSessionUserStateRequest'
       responses:
         '200':
-          description: Updated per-user chat session state
+          description: Updated per-user agent session state
           content:
             application/json:
               schema:
@@ -1377,52 +1377,20 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/message_feedback:
-    get:
-      x-sdkwork-owner: sdkwork-agents
-      x-sdkwork-api-authority: sdkwork-agents-app-api
-      tags: [ai]
-      summary: List the authenticated user's feedback for assistant messages in a session
-      operationId: agents.messageFeedback.list
-      security:
-      - AuthToken: []
-        AccessToken: []
-      x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.messageFeedback
-      x-sdkwork-permission: agent.business.message.feedback.list
-      x-sdkwork-tenant-scope: organization
-      parameters:
-      - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
-      - $ref: '#/components/parameters/PageSize'
-      responses:
-        '200':
-          description: Paginated assistant message feedback
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentMessageFeedbackListResponse'
-        default:
-          description: RFC 9457 problem detail response
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetail'
-  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages:
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/item_feedback:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: List messages in one chat session
-      operationId: agents.messages.list
+      summary: List item feedback for one agent session
+      operationId: agents.itemFeedback.list
       security:
       - AuthToken: []
         AccessToken: []
       x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.messages
-      x-sdkwork-permission: agent.business.message.list
+      x-sdkwork-resource: agents.itemFeedback
+      x-sdkwork-permission: agent.business.item_feedback.list
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1431,11 +1399,169 @@ paths:
       - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
-          description: Managed agent message list response
+          description: Paginated agent item feedback
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentMessageListResponse'
+                $ref: '#/components/schemas/AgentItemFeedbackListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List ordered items for one agent session
+      description: >-
+        P1 interactive offset list. Supports kind and status filters. The default
+        sort is sequence ascending; use -sequence to fetch the newest items first.
+      operationId: agents.sessionItems.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionItems
+      x-sdkwork-permission: agent.business.session_item.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: kind
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionItemKind'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionItemStatus'
+      - name: sort
+        in: query
+        required: false
+        description: Stable item sequence order.
+        schema:
+          type: string
+          enum: [sequence, '-sequence']
+          default: sequence
+      responses:
+        '200':
+          description: Paginated agent session item list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionItemListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Retrieve one agent session item
+      operationId: agents.sessionItems.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionItems
+      x-sdkwork-permission: agent.business.session_item.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/ItemIdPath'
+      responses:
+        '200':
+          description: Agent session item response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionItemResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}/feedback:
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Create, update, or clear feedback for one agent session item
+      operationId: agents.itemFeedback.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.itemFeedback
+      x-sdkwork-permission: agent.business.item_feedback.update
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.item_feedback_changed
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/ItemIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentItemFeedbackRequest'
+      responses:
+        '200':
+          description: Updated agent item feedback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentItemFeedbackResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List durable turns for one agent session
+      operationId: agents.turns.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turns
+      x-sdkwork-permission: agent.business.turn.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated agent turn list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTurnListResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -1447,16 +1573,16 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Send a user chat message and receive an assistant reply
-      operationId: agents.messages.stream
+      summary: Create one idempotent agent turn
+      operationId: agents.turns.stream
       security:
       - AuthToken: []
         AccessToken: []
       x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.messages
-      x-sdkwork-permission: agent.business.message.create
+      x-sdkwork-resource: agents.turns
+      x-sdkwork-permission: agent.business.turn.create
       x-sdkwork-tenant-scope: tenant
-      x-sdkwork-audit-event: agent.business.message_created
+      x-sdkwork-audit-event: agent.business.turn_requested
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -1466,89 +1592,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AppSendAgentChatMessageRequest'
+              $ref: '#/components/schemas/CreateAgentTurnRequest'
       responses:
         '200':
-          description: Chat completion response with user and assistant messages
+          description: Agent turn execution result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentChatCompletionResponse'
+                $ref: '#/components/schemas/AgentTurnExecutionResponse'
             text/event-stream:
               schema:
-                type: string
-                description: SSE payload with one completion event carrying AgentChatCompletionResponse
-                  JSON when stream=true
-        default:
-          description: RFC 9457 problem detail response
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetail'
-  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}:
-    get:
-      x-sdkwork-owner: sdkwork-agents
-      x-sdkwork-api-authority: sdkwork-agents-app-api
-      tags:
-      - ai
-      summary: Retrieve one chat message
-      operationId: agents.messages.retrieve
-      security:
-      - AuthToken: []
-        AccessToken: []
-      x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.messages
-      x-sdkwork-permission: agent.business.message.retrieve
-      x-sdkwork-tenant-scope: tenant
-      parameters:
-      - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/MessageIdPath'
-      responses:
-        '200':
-          description: Managed agent message response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentMessageResponse'
-        default:
-          description: RFC 9457 problem detail response
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetail'
-  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/{messageId}/feedback:
-    patch:
-      x-sdkwork-owner: sdkwork-agents
-      x-sdkwork-api-authority: sdkwork-agents-app-api
-      tags: [ai]
-      summary: Submit, change, or clear assistant message feedback
-      operationId: agents.messageFeedback.update
-      security:
-      - AuthToken: []
-        AccessToken: []
-      x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.messageFeedback
-      x-sdkwork-permission: agent.business.message.feedback.update
-      x-sdkwork-tenant-scope: organization
-      x-sdkwork-audit-event: agent.business.message_feedback_changed
-      parameters:
-      - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/MessageIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateAgentMessageFeedbackRequest'
-      responses:
-        '200':
-          description: Updated assistant message feedback
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentMessageFeedbackResponse'
+                $ref: '#/components/schemas/AgentTurnStreamEvent'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -1559,27 +1613,28 @@ paths:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
-      tags: [ai]
-      summary: Retrieve one durable chat turn
-      operationId: agents.chatTurns.retrieve
+      tags:
+      - ai
+      summary: Retrieve one durable agent turn
+      operationId: agents.turns.retrieve
       security:
       - AuthToken: []
         AccessToken: []
       x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.chatTurns
-      x-sdkwork-permission: agent.business.chat_turn.retrieve
-      x-sdkwork-tenant-scope: organization
+      x-sdkwork-resource: agents.turns
+      x-sdkwork-permission: agent.business.turn.retrieve
+      x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
       - $ref: '#/components/parameters/TurnIdPath'
       responses:
         '200':
-          description: Durable chat turn state
+          description: Agent turn response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentChatTurnResponse'
+                $ref: '#/components/schemas/AgentTurnResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -1590,17 +1645,18 @@ paths:
     post:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
-      tags: [ai]
-      summary: Cancel one requested or running chat turn
-      operationId: agents.chatTurns.cancel
+      tags:
+      - ai
+      summary: Request cancellation of one agent turn
+      operationId: agents.turns.cancel
       security:
       - AuthToken: []
         AccessToken: []
       x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.chatTurns
-      x-sdkwork-permission: agent.business.chat_turn.cancel
-      x-sdkwork-tenant-scope: organization
-      x-sdkwork-audit-event: agent.business.turn_cancelled
+      x-sdkwork-resource: agents.turns
+      x-sdkwork-permission: agent.business.turn.cancel
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.turn_cancel_requested
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -1610,51 +1666,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CancelAgentChatTurnRequest'
+              $ref: '#/components/schemas/CancelAgentTurnRequest'
       responses:
         '200':
-          description: Cancelled chat turn state
+          description: Agent turn cancellation state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentChatTurnResponse'
-        default:
-          description: RFC 9457 problem detail response
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetail'
-  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/messages/complete:
-    post:
-      x-sdkwork-owner: sdkwork-agents
-      x-sdkwork-api-authority: sdkwork-agents-app-api
-      tags: [ai]
-      summary: Send a chat message and return one complete JSON response
-      operationId: agents.messages.complete
-      security:
-      - AuthToken: []
-        AccessToken: []
-      x-sdkwork-domain: ai
-      x-sdkwork-resource: agents.messages
-      x-sdkwork-permission: agent.business.message.create
-      x-sdkwork-tenant-scope: tenant
-      x-sdkwork-audit-event: agent.business.message_created
-      parameters:
-      - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/SessionIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AppSendAgentChatMessageRequest'
-      responses:
-        '200':
-          description: Complete chat turn with user and assistant messages
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentChatCompletionResponse'
+                $ref: '#/components/schemas/AgentTurnResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -1667,7 +1686,10 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: List live interactions for one chat session
+      summary: List durable interactions for one agent session
+      description: >-
+        P1 interactive offset list. Supports kind and status filters and uses
+        createdAt descending with the interaction id as a stable tie-breaker.
       operationId: agents.interactions.list
       security:
       - AuthToken: []
@@ -1681,13 +1703,19 @@ paths:
       - $ref: '#/components/parameters/SessionIdPath'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
+      - name: kind
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentInteractionKind'
       - name: status
         in: query
+        required: false
         schema:
-          type: string
+          $ref: '#/components/schemas/AgentInteractionStatus'
       responses:
         '200':
-          description: Managed agent interaction list response
+          description: Paginated agent interaction list
           content:
             application/json:
               schema:
@@ -1703,7 +1731,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Create a live interaction pause point for one chat session
+      summary: Create one durable approval or user-question interaction
       operationId: agents.interactions.create
       security:
       - AuthToken: []
@@ -1712,7 +1740,7 @@ paths:
       x-sdkwork-resource: agents.interactions
       x-sdkwork-permission: agent.business.interaction.create
       x-sdkwork-tenant-scope: tenant
-      x-sdkwork-audit-event: agent.business.interaction.created
+      x-sdkwork-audit-event: agent.business.interaction_created
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -1724,7 +1752,7 @@ paths:
               $ref: '#/components/schemas/CreateAgentInteractionRequest'
       responses:
         '201':
-          description: Managed agent interaction created
+          description: Created agent interaction
           content:
             application/json:
               schema:
@@ -1741,7 +1769,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Retrieve one live interaction
+      summary: Retrieve one durable agent interaction
       operationId: agents.interactions.retrieve
       security:
       - AuthToken: []
@@ -1756,11 +1784,49 @@ paths:
       - $ref: '#/components/parameters/InteractionIdPath'
       responses:
         '200':
-          description: Managed agent interaction response
+          description: Agent interaction response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Claim one pending agent interaction for exclusive resolution
+      operationId: agents.interactions.claim
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: agent.business.interaction.claim
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/InteractionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimAgentInteractionRequest'
+      responses:
+        '200':
+          description: Claimed agent interaction and short-lived resolution credential
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionClaimResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -1773,7 +1839,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Approve or reject an approval interaction
+      summary: Approve or reject one approval interaction
       operationId: agents.interactions.approve
       security:
       - AuthToken: []
@@ -1782,6 +1848,7 @@ paths:
       x-sdkwork-resource: agents.interactions
       x-sdkwork-permission: agent.business.interaction.approve
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.interaction_resolved
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -1794,7 +1861,7 @@ paths:
               $ref: '#/components/schemas/ApproveAgentInteractionRequest'
       responses:
         '200':
-          description: Managed agent interaction resolved
+          description: Resolved agent interaction
           content:
             application/json:
               schema:
@@ -1811,7 +1878,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Answer or reject a user-question interaction
+      summary: Answer or reject one user-question interaction
       operationId: agents.interactions.answer
       security:
       - AuthToken: []
@@ -1820,6 +1887,7 @@ paths:
       x-sdkwork-resource: agents.interactions
       x-sdkwork-permission: agent.business.interaction.answer
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.interaction_resolved
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -1832,11 +1900,408 @@ paths:
               $ref: '#/components/schemas/AnswerAgentInteractionRequest'
       responses:
         '200':
-          description: Managed agent interaction resolved
+          description: Resolved agent interaction
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List resumable checkpoints for one agent session
+      operationId: agents.checkpoints.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.checkpoints
+      x-sdkwork-permission: agent.business.checkpoint.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated agent session checkpoint list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionCheckpointListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Create one bounded agent session checkpoint
+      operationId: agents.checkpoints.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.checkpoints
+      x-sdkwork-permission: agent.business.checkpoint.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.checkpoint_created
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentSessionCheckpointRequest'
+      responses:
+        '201':
+          description: Created agent session checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionCheckpointResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Retrieve one agent session checkpoint
+      operationId: agents.checkpoints.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.checkpoints
+      x-sdkwork-permission: agent.business.checkpoint.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/CheckpointIdPath'
+      responses:
+        '200':
+          description: Agent session checkpoint response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionCheckpointResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Restore one resumable agent session checkpoint
+      operationId: agents.checkpoints.restore
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.checkpoints
+      x-sdkwork-permission: agent.business.checkpoint.restore
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.checkpoint_restored
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/CheckpointIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreAgentSessionCheckpointRequest'
+      responses:
+        '200':
+          description: Restored agent session checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionCheckpointResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Invalidate one agent session checkpoint
+      operationId: agents.checkpoints.invalidate
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.checkpoints
+      x-sdkwork-permission: agent.business.checkpoint.invalidate
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.checkpoint_invalidated
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/CheckpointIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvalidateAgentSessionCheckpointRequest'
+      responses:
+        '200':
+          description: Invalidated agent session checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionCheckpointResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List runtime bindings for one agent session
+      operationId: agents.sessionRuntimeBindings.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionRuntimeBindings
+      x-sdkwork-permission: agent.business.session_runtime_binding.list
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated agent session runtime binding list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionRuntimeBindingListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Create the current runtime binding for one agent session
+      operationId: agents.sessionRuntimeBindings.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionRuntimeBindings
+      x-sdkwork-permission: agent.business.session_runtime_binding.create
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.runtime_binding_created
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentSessionRuntimeBindingRequest'
+      responses:
+        '201':
+          description: Created agent session runtime binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Retrieve one agent session runtime binding
+      operationId: agents.sessionRuntimeBindings.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionRuntimeBindings
+      x-sdkwork-permission: agent.business.session_runtime_binding.retrieve
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/SessionRuntimeBindingIdPath'
+      responses:
+        '200':
+          description: Agent session runtime binding response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Update one agent session runtime binding
+      operationId: agents.sessionRuntimeBindings.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionRuntimeBindings
+      x-sdkwork-permission: agent.business.session_runtime_binding.update
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/SessionRuntimeBindingIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentSessionRuntimeBindingRequest'
+      responses:
+        '200':
+          description: Updated agent session runtime binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Activate one agent session runtime binding as current
+      operationId: agents.sessionRuntimeBindings.activate
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionRuntimeBindings
+      x-sdkwork-permission: agent.business.session_runtime_binding.activate
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.runtime_binding_activated
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/SessionRuntimeBindingIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeAgentSessionRuntimeBindingStatusRequest'
+      responses:
+        '200':
+          description: Activated agent session runtime binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Deactivate one agent session runtime binding
+      operationId: agents.sessionRuntimeBindings.deactivate
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionRuntimeBindings
+      x-sdkwork-permission: agent.business.session_runtime_binding.deactivate
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.runtime_binding_deactivated
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/SessionRuntimeBindingIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeAgentSessionRuntimeBindingStatusRequest'
+      responses:
+        '200':
+          description: Deactivated agent session runtime binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -2414,21 +2879,6 @@ components:
         - published
         - mine
         - workspace
-    ExpectedVersion:
-      name: expected_version
-      in: query
-      required: false
-      description: Optimistic concurrency version in int64-string form.
-      schema:
-        $ref: '#/components/schemas/Int64String'
-    RequestedAt:
-      name: requested_at
-      in: query
-      required: true
-      description: RFC3339 mutation timestamp.
-      schema:
-        type: string
-        format: date-time
     AgentIdPath:
       name: agentId
       in: path
@@ -2447,33 +2897,6 @@ components:
         minLength: 1
         maxLength: 128
         pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-    SessionIdPath:
-      name: sessionId
-      in: path
-      required: true
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 128
-        pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-    MessageIdPath:
-      name: messageId
-      in: path
-      required: true
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 128
-        pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-    TurnIdPath:
-      name: turnId
-      in: path
-      required: true
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 128
-        pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     TaskIdPath:
       name: taskId
       in: path
@@ -2483,6 +2906,33 @@ components:
         minLength: 1
         maxLength: 128
         pattern: ^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+    SessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    ItemIdPath:
+      name: itemId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    TurnIdPath:
+      name: turnId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     InteractionIdPath:
       name: interactionId
       in: path
@@ -2491,7 +2941,25 @@ components:
         type: string
         minLength: 1
         maxLength: 128
-        pattern: ^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        pattern: '^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    CheckpointIdPath:
+      name: checkpointId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^checkpoint\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    SessionRuntimeBindingIdPath:
+      name: runtimeBindingId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^runtime_binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     BindingIdPath:
       name: bindingId
       in: path
@@ -2501,57 +2969,6 @@ components:
         minLength: 1
         maxLength: 128
         pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-    Problem:
-      description: RFC 9457 problem detail response
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetail'
-          examples:
-            ValidationError:
-              summary: Validation failure
-              value:
-                type: https://sdkwork.dev/problems/validation_error
-                title: validation_error
-                status: 400
-                detail: requestedAt must be RFC3339 date-time
-                code: 40001
-                errorCategory: validation
-                retryable: false
-                traceId: 00000000-0000-0000-0000-000000000000
-            VersionConflict:
-              summary: Optimistic concurrency conflict
-              value:
-                type: https://sdkwork.dev/problems/version_conflict
-                title: version_conflict
-                status: 409
-                detail: 'agent version mismatch: expected=2, actual=3'
-                code: 40901
-                errorCategory: concurrency
-                retryable: true
-                traceId: 00000000-0000-0000-0000-000000000000
-            PermissionRequired:
-              summary: Permission denied
-              value:
-                type: https://sdkwork.dev/problems/permission_required
-                title: permission_required
-                status: 403
-                detail: agent management denied
-                code: 40301
-                errorCategory: permission
-                retryable: false
-                traceId: 00000000-0000-0000-0000-000000000000
-            NotFound:
-              summary: Resource not found
-              value:
-                type: https://sdkwork.dev/problems/not_found
-                title: not_found
-                status: 404
-                detail: agent not found
-                code: 40401
-                errorCategory: resource
-                retryable: false
-                traceId: 00000000-0000-0000-0000-000000000000
   schemas:
     SdkWorkApiResponse:
       type: object
@@ -2599,43 +3016,6 @@ components:
           items: {}
         pageInfo:
           $ref: '#/components/schemas/PageInfo'
-    SdkWorkCommandData:
-      type: object
-      additionalProperties: false
-      required:
-      - accepted
-      properties:
-        accepted:
-          type: boolean
-          const: true
-        resourceId:
-          type: string
-        status:
-          type: string
-    SdkWorkAsyncData:
-      type: object
-      additionalProperties: false
-      required:
-      - accepted
-      - operationId
-      - status
-      properties:
-        accepted:
-          type: boolean
-          const: true
-        operationId:
-          type: string
-        status:
-          type: string
-          enum:
-          - pending
-          - running
-          - succeeded
-          - failed
-          - cancelled
-        pollUrl:
-          type: string
-          format: uri-reference
     Int64String:
       type: string
       pattern: ^[0-9]+$
@@ -3121,28 +3501,28 @@ components:
       type: object
       additionalProperties: false
       required:
-      - id
-      - tenantId
-      - organizationId
-      - agentId
-      - slotId
-      - slotKind
-      - targetModule
-      - targetRef
-      - priority
-      - enabled
-      - policyJson
-      - status
-      - version
-      - createdAt
-      - updatedAt
+        - id
+        - tenantId
+        - organizationId
+        - agentId
+        - slotId
+        - slotKind
+        - targetModule
+        - targetRef
+        - priority
+        - enabled
+        - policyJson
+        - status
+        - version
+        - createdAt
+        - updatedAt
       properties:
         id:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         tenantId:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         organizationId:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         agentId:
           type: string
           minLength: 1
@@ -3154,28 +3534,30 @@ components:
           maxLength: 128
           pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotKind:
-          $ref: '#/components/schemas/AgentCompositionSlotKind'
+          $ref: "#/components/schemas/AgentCompositionSlotKind"
         targetModule:
-          $ref: '#/components/schemas/AgentCompositionTargetModule'
+          $ref: "#/components/schemas/AgentCompositionTargetModule"
         targetRef:
           type: string
           minLength: 1
           maxLength: 256
         targetVersionRef:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           maxLength: 128
         priority:
-          $ref: '#/components/schemas/Int64String'
+          type: integer
+          minimum: -10000
+          maximum: 10000
         enabled:
           type: boolean
         policyJson:
           type: string
         status:
-          $ref: '#/components/schemas/AgentStatus'
+          $ref: "#/components/schemas/AgentStatus"
         version:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         createdAt:
           type: string
           format: date-time
@@ -3184,8 +3566,8 @@ components:
           format: date-time
         deletedAt:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
     AgentCompositionSlotResponse:
       description: Single agent composition slot response following SdkWorkApiResponse
@@ -3225,97 +3607,76 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentCompositionSlotRecord'
-    AgentCompositionSlotCreateData:
+    CreateAgentCompositionSlotRequest:
       type: object
       additionalProperties: false
       required:
-      - tenantId
-      - organizationId
-      - slotId
-      - slotKind
-      - targetModule
-      - targetRef
+        - slotId
+        - slotKind
+        - targetModule
+        - targetRef
+        - requestedAt
       properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
         slotId:
           type: string
           minLength: 1
           maxLength: 128
           pattern: ^slot\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         slotKind:
-          $ref: '#/components/schemas/AgentCompositionSlotKind'
+          $ref: "#/components/schemas/AgentCompositionSlotKind"
         targetModule:
-          $ref: '#/components/schemas/AgentCompositionTargetModule'
+          $ref: "#/components/schemas/AgentCompositionTargetModule"
         targetRef:
           type: string
           minLength: 1
           maxLength: 256
         targetVersionRef:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           maxLength: 128
         priority:
-          $ref: '#/components/schemas/Int64String'
+          type: integer
+          minimum: -10000
+          maximum: 10000
         enabled:
           type: boolean
           default: true
         policyJson:
           type: string
-          default: '{}'
-    CreateAgentCompositionSlotRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - data
-      - requestedAt
-      properties:
-        data:
-          $ref: '#/components/schemas/AgentCompositionSlotCreateData'
+          default: "{}"
         requestedAt:
           type: string
           format: date-time
-    UpdateAgentCompositionSlotData:
+    UpdateAgentCompositionSlotRequest:
       type: object
       additionalProperties: false
       required:
-      - tenantId
+        - requestedAt
       properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
         expectedVersion:
-          $ref: '#/components/schemas/Int64String'
+          $ref: "#/components/schemas/Int64String"
         slotKind:
-          $ref: '#/components/schemas/AgentCompositionSlotKind'
+          $ref: "#/components/schemas/AgentCompositionSlotKind"
         targetModule:
-          $ref: '#/components/schemas/AgentCompositionTargetModule'
+          $ref: "#/components/schemas/AgentCompositionTargetModule"
         targetRef:
           type: string
           minLength: 1
           maxLength: 256
         targetVersionRef:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           maxLength: 128
         priority:
-          $ref: '#/components/schemas/Int64String'
+          type: integer
+          minimum: -10000
+          maximum: 10000
         enabled:
           type: boolean
         policyJson:
           type: string
-    UpdateAgentCompositionSlotRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - data
-      - requestedAt
-      properties:
-        data:
-          $ref: '#/components/schemas/UpdateAgentCompositionSlotData'
         requestedAt:
           type: string
           format: date-time
@@ -3866,110 +4227,6 @@ components:
         policyJson:
           type: string
           maxLength: 16384
-    AgentSessionRecord:
-      type: object
-      additionalProperties: false
-      required:
-      - sessionId
-      - agentId
-      - tenantId
-      - status
-      - messageCount
-      - lastMessageSequence
-      - version
-      - createdAt
-      - updatedAt
-      properties:
-        sessionId:
-          type: string
-          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        agentId:
-          type: string
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
-        ownerUserId:
-          $ref: '#/components/schemas/Int64String'
-        projectId:
-          type: [string, 'null']
-        title:
-          type: string
-        status:
-          type: string
-          enum:
-          - active
-          - idle
-          - closed
-          - archived
-        providerBindingId:
-          type: string
-        modelId:
-          type: string
-        messageCount:
-          $ref: '#/components/schemas/Int64String'
-        lastMessageSequence:
-          $ref: '#/components/schemas/Int64String'
-        totalInputTokens:
-          $ref: '#/components/schemas/Int64String'
-        totalOutputTokens:
-          $ref: '#/components/schemas/Int64String'
-        metadataJson:
-          type: string
-        version:
-          $ref: '#/components/schemas/Int64String'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        lastMessageAt:
-          type: string
-          format: date-time
-        closedAt:
-          type: string
-          format: date-time
-        archivedAt:
-          type: string
-          format: date-time
-    AgentSessionResponse:
-      description: Single agent session response following SdkWorkApiResponse envelope.
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkResourceData'
-            - type: object
-              required:
-              - item
-              properties:
-                item:
-                  $ref: '#/components/schemas/AgentSessionRecord'
-    AgentSessionListResponse:
-      description: Paginated agent session list response following SdkWorkApiResponse
-        envelope.
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkPageData'
-            - type: object
-              required:
-              - items
-              properties:
-                items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/AgentSessionRecord'
     AgentResourceUserStateRecord:
       type: object
       additionalProperties: false
@@ -4006,7 +4263,7 @@ components:
         lastOpenedAt:
           type: string
           format: date-time
-        lastReadMessageSequence:
+        lastReadItemSequence:
           type: string
           pattern: ^[0-9]+$
         customTitle:
@@ -4066,7 +4323,7 @@ components:
         markOpened:
           type: boolean
           default: false
-        lastReadMessageSequence:
+        lastReadItemSequence:
           $ref: '#/components/schemas/Int64String'
         customTitle:
           type: string
@@ -4075,14 +4332,14 @@ components:
         clearCustomTitle:
           type: boolean
           default: false
-    AgentMessageFeedbackRecord:
+    AgentItemFeedbackRecord:
       type: object
       additionalProperties: false
       required:
       - id
       - tenantId
       - organizationId
-      - messageId
+      - itemId
       - userId
       - rating
       - version
@@ -4095,9 +4352,9 @@ components:
           $ref: '#/components/schemas/Int64String'
         organizationId:
           $ref: '#/components/schemas/Int64String'
-        messageId:
+        itemId:
           type: string
-          pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+          pattern: ^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         userId:
           $ref: '#/components/schemas/Int64String'
         rating:
@@ -4122,8 +4379,8 @@ components:
         deletedAt:
           type: string
           format: date-time
-    AgentMessageFeedbackResponse:
-      description: Single assistant message feedback following SdkWorkApiResponse envelope.
+    AgentItemFeedbackResponse:
+      description: Single assistant-output item feedback following SdkWorkApiResponse envelope.
       allOf:
       - $ref: '#/components/schemas/SdkWorkApiResponse'
       - type: object
@@ -4136,9 +4393,9 @@ components:
               required: [item]
               properties:
                 item:
-                  $ref: '#/components/schemas/AgentMessageFeedbackRecord'
-    AgentMessageFeedbackListResponse:
-      description: Paginated assistant message feedback following SdkWorkApiResponse envelope.
+                  $ref: '#/components/schemas/AgentItemFeedbackRecord'
+    AgentItemFeedbackListResponse:
+      description: Paginated assistant-output item feedback following SdkWorkApiResponse envelope.
       allOf:
       - $ref: '#/components/schemas/SdkWorkApiResponse'
       - type: object
@@ -4153,8 +4410,8 @@ components:
                 items:
                   type: array
                   items:
-                    $ref: '#/components/schemas/AgentMessageFeedbackRecord'
-    UpdateAgentMessageFeedbackRequest:
+                    $ref: '#/components/schemas/AgentItemFeedbackRecord'
+    UpdateAgentItemFeedbackRequest:
       type: object
       additionalProperties: false
       description: Supply rating to create or update feedback, or clearFeedback to remove it.
@@ -4217,175 +4474,6 @@ components:
           type: string
           format: date-time
         cancelledAt:
-          type: string
-          format: date-time
-    AgentInteractionRecord:
-      type: object
-      additionalProperties: false
-      required:
-      - interactionId
-      - sessionId
-      - agentId
-      - tenantId
-      - organizationId
-      - engineKey
-      - kind
-      - status
-      - prompt
-      - optionsJson
-      - resolutionJson
-      - version
-      - createdAt
-      - updatedAt
-      properties:
-        interactionId:
-          type: string
-        sessionId:
-          type: string
-        agentId:
-          type: string
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
-        engineKey:
-          type: string
-        kind:
-          type: string
-          enum:
-          - approval
-          - user_question
-        status:
-          type: string
-        prompt:
-          type: string
-        optionsJson:
-          type: string
-        resolutionJson:
-          type: string
-        version:
-          $ref: '#/components/schemas/Int64String'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        resolvedAt:
-          type: string
-          format: date-time
-    AgentInteractionResponse:
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkResourceData'
-            - type: object
-              required:
-              - item
-              properties:
-                item:
-                  $ref: '#/components/schemas/AgentInteractionRecord'
-    AgentInteractionListResponse:
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkPageData'
-            - type: object
-              required:
-              - items
-              properties:
-                items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/AgentInteractionRecord'
-    CreateAgentInteractionData:
-      type: object
-      additionalProperties: false
-      required:
-      - organizationId
-      - engineKey
-      - kind
-      - prompt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
-        interactionId:
-          type: string
-          pattern: ^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        engineKey:
-          type: string
-        kind:
-          type: string
-          enum:
-          - approval
-          - user_question
-        prompt:
-          type: string
-        optionsJson:
-          type: string
-    CreateAgentInteractionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - data
-      - requestedAt
-      properties:
-        data:
-          $ref: '#/components/schemas/CreateAgentInteractionData'
-        requestedAt:
-          type: string
-          format: date-time
-    ApproveAgentInteractionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - approved
-      - expectedVersion
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        approved:
-          type: boolean
-        reason:
-          type: string
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
-    AnswerAgentInteractionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - answer
-      - rejected
-      - expectedVersion
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        answer:
-          type: string
-        optionLabel:
-          type: string
-        rejected:
-          type: boolean
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
           type: string
           format: date-time
     AgentTaskResponse:
@@ -4452,436 +4540,6 @@ components:
         requestedAt:
           type: string
           format: date-time
-    CreateAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
-        ownerUserId:
-          $ref: '#/components/schemas/Int64String'
-        sessionId:
-          type: string
-          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        title:
-          type: string
-        providerBindingId:
-          type: string
-        modelId:
-          type: string
-        metadataJson:
-          type: string
-        requestedAt:
-          type: string
-          format: date-time
-    CloseAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - tenantId
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
-    MediaKind:
-      type: string
-      enum: [image, video, audio, voice, document, archive, model, other]
-    MediaSource:
-      type: string
-      enum: [drive]
-    MediaChecksum:
-      type: object
-      additionalProperties: false
-      required: [algorithm, value]
-      properties:
-        algorithm:
-          type: string
-          enum: [sha256, md5, etag]
-        value:
-          type: string
-          minLength: 1
-          maxLength: 256
-    MediaAccess:
-      type: object
-      additionalProperties: false
-      required: [visibility]
-      properties:
-        visibility:
-          type: string
-          enum: [private, tenant, organization, public, signed]
-        expiresAt:
-          type: string
-          format: date-time
-    MediaResource:
-      type: object
-      additionalProperties: false
-      required: [id, kind, source, uri]
-      properties:
-        id:
-          type: string
-          minLength: 1
-          maxLength: 128
-        kind:
-          $ref: '#/components/schemas/MediaKind'
-        source:
-          $ref: '#/components/schemas/MediaSource'
-        uri:
-          type: string
-          maxLength: 512
-          pattern: ^drive://spaces/[^/?#]+/nodes/[^/?#]+$
-        url:
-          type: [string, 'null']
-          format: uri
-          description: Transient Drive delivery hint; never persisted by Agents.
-        publicUrl:
-          type: [string, 'null']
-          format: uri
-          description: Transient Drive delivery hint; never persisted by Agents.
-        objectBlobId:
-          type: [string, 'null']
-          maxLength: 128
-        fileName:
-          type: [string, 'null']
-          maxLength: 512
-        mimeType:
-          type: [string, 'null']
-          maxLength: 256
-        sizeBytes:
-          type: [string, 'null']
-          pattern: ^[0-9]+$
-        checksum:
-          oneOf:
-          - $ref: '#/components/schemas/MediaChecksum'
-          - type: 'null'
-        width:
-          type: [integer, 'null']
-          minimum: 0
-        height:
-          type: [integer, 'null']
-          minimum: 0
-        durationSeconds:
-          type: [number, 'null']
-          minimum: 0
-        altText:
-          type: [string, 'null']
-          maxLength: 512
-        title:
-          type: [string, 'null']
-          maxLength: 255
-        access:
-          oneOf:
-          - $ref: '#/components/schemas/MediaAccess'
-          - type: 'null'
-        metadata:
-          type: object
-          additionalProperties: true
-    AgentMessageRecord:
-      type: object
-      additionalProperties: false
-      required:
-      - messageId
-      - sessionId
-      - agentId
-      - role
-      - content
-      - status
-      - sequence
-      - mediaResources
-      - createdAt
-      - updatedAt
-      properties:
-        messageId:
-          type: string
-          pattern: ^msg\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        sessionId:
-          type: string
-        agentId:
-          type: string
-        role:
-          type: string
-          enum:
-          - user
-          - assistant
-          - system
-          - tool
-        content:
-          type: string
-        contentType:
-          type: string
-        status:
-          type: string
-          enum:
-          - sent
-          - delivered
-          - read
-          - failed
-          - cancelled
-        sequence:
-          $ref: '#/components/schemas/Int64String'
-        inputTokens:
-          $ref: '#/components/schemas/Int64String'
-        outputTokens:
-          $ref: '#/components/schemas/Int64String'
-        modelId:
-          type: string
-        providerId:
-          type: string
-        parentMessageId:
-          type: string
-        turnId:
-          type: [string, 'null']
-          pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        mediaResources:
-          type: array
-          maxItems: 10
-          items:
-            $ref: '#/components/schemas/MediaResource'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-    AgentMessageResponse:
-      description: Single agent message response following SdkWorkApiResponse envelope.
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkResourceData'
-            - type: object
-              required:
-              - item
-              properties:
-                item:
-                  $ref: '#/components/schemas/AgentMessageRecord'
-    AgentMessageListResponse:
-      description: Paginated agent message list response following SdkWorkApiResponse
-        envelope.
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkPageData'
-            - type: object
-              required:
-              - items
-              properties:
-                items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/AgentMessageRecord'
-    SendAgentChatMessageRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - tenantId
-      - content
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        content:
-          type: string
-          minLength: 1
-        contentType:
-          type: string
-        metadataJson:
-          type: string
-        mediaResources:
-          type: array
-          maxItems: 10
-          items:
-            $ref: '#/components/schemas/MediaResource'
-        modelId:
-          type: string
-        requestedAt:
-          type: string
-          format: date-time
-    AgentChatCompletionResponse:
-      description: Agent chat completion response following SdkWorkApiResponse envelope
-        with composite item payload.
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required:
-        - data
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkResourceData'
-            - type: object
-              required:
-              - item
-              properties:
-                item:
-                  type: object
-                  additionalProperties: false
-                  required:
-                  - session
-                  - userMessage
-                  - assistantMessage
-                  properties:
-                    session:
-                      $ref: '#/components/schemas/AgentSessionRecord'
-                    userMessage:
-                      $ref: '#/components/schemas/AgentMessageRecord'
-                    assistantMessage:
-                      $ref: '#/components/schemas/AgentMessageRecord'
-    AgentChatTurnStatus:
-      type: string
-      enum: [requested, running, completed, failed, cancelled]
-    AgentChatTurnRecord:
-      type: object
-      additionalProperties: false
-      required:
-      - id
-      - turnId
-      - tenantId
-      - organizationId
-      - sessionId
-      - agentId
-      - ownerUserId
-      - idempotencyKey
-      - requestMessageId
-      - status
-      - inputTokens
-      - outputTokens
-      - version
-      - createdAt
-      - updatedAt
-      properties:
-        id:
-          $ref: '#/components/schemas/Int64String'
-        turnId:
-          type: string
-          pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        organizationId:
-          $ref: '#/components/schemas/Int64String'
-        sessionId:
-          type: string
-        agentId:
-          type: string
-        ownerUserId:
-          $ref: '#/components/schemas/Int64String'
-        clientRequestId:
-          type: [string, 'null']
-        idempotencyKey:
-          type: string
-        requestMessageId:
-          type: string
-        responseMessageId:
-          type: [string, 'null']
-        status:
-          $ref: '#/components/schemas/AgentChatTurnStatus'
-        requestedModelId:
-          type: [string, 'null']
-        providerBindingId:
-          type: [string, 'null']
-        modelId:
-          type: [string, 'null']
-        providerId:
-          type: [string, 'null']
-        inputTokens:
-          $ref: '#/components/schemas/Int64String'
-        outputTokens:
-          $ref: '#/components/schemas/Int64String'
-        finishReason:
-          type: [string, 'null']
-        errorCode:
-          type: [string, 'null']
-        errorDetail:
-          type: [string, 'null']
-          maxLength: 2048
-        traceId:
-          type: [string, 'null']
-        version:
-          $ref: '#/components/schemas/Int64String'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        startedAt:
-          type: [string, 'null']
-          format: date-time
-        completedAt:
-          type: [string, 'null']
-          format: date-time
-        cancelRequestedAt:
-          type: [string, 'null']
-          format: date-time
-        cancelledAt:
-          type: [string, 'null']
-          format: date-time
-    AgentChatTurnResponse:
-      description: Single durable chat turn response.
-      allOf:
-      - $ref: '#/components/schemas/SdkWorkApiResponse'
-      - type: object
-        required: [data]
-        properties:
-          data:
-            allOf:
-            - $ref: '#/components/schemas/SdkWorkResourceData'
-            - type: object
-              required: [item]
-              properties:
-                item:
-                  $ref: '#/components/schemas/AgentChatTurnRecord'
-    CancelAgentChatTurnRequest:
-      type: object
-      additionalProperties: false
-      required: [requestedAt]
-      properties:
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
-    AppCreateAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - requestedAt
-      properties:
-        sessionId:
-          type: string
-          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        projectId:
-          type: string
-          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        title:
-          type: string
-        providerBindingId:
-          type: string
-        modelId:
-          type: string
-        metadataJson:
-          type: string
-        requestedAt:
-          type: string
-          format: date-time
     AppUpdateAgentSessionRequest:
       type: object
       additionalProperties: false
@@ -4897,64 +4555,6 @@ components:
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         clearProject:
           type: boolean
-    AppSendAgentChatMessageRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - content
-      - requestedAt
-      - idempotencyKey
-      properties:
-        content:
-          type: string
-          minLength: 1
-        contentType:
-          type: string
-        metadataJson:
-          type: string
-        mediaResources:
-          type: array
-          maxItems: 10
-          items:
-            $ref: '#/components/schemas/MediaResource'
-        modelId:
-          type: string
-        idempotencyKey:
-          type: string
-          minLength: 1
-          maxLength: 256
-        clientRequestId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        requestedAt:
-          type: string
-          format: date-time
-    AppCloseAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - requestedAt
-      properties:
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
-    ArchiveAgentSessionRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - tenantId
-      - requestedAt
-      properties:
-        tenantId:
-          $ref: '#/components/schemas/Int64String'
-        expectedVersion:
-          $ref: '#/components/schemas/Int64String'
-        requestedAt:
-          type: string
-          format: date-time
     CodeEngineCatalogListResponse:
       description: Code engine catalog response following SdkWorkApiResponse envelope;
         the catalog is returned as a single composite resource under data.item.
@@ -5077,6 +4677,1392 @@ components:
         priority:
           type: integer
           format: int32
+    AgentSessionKind:
+      type: string
+      enum: [assistant, coding, automation, im_dispatch]
+    AgentSessionEntrySurface:
+      type: string
+      enum: [pc, h5, flutter, mini_program, api, im_dispatch, automation]
+    AgentSessionStatus:
+      type: string
+      enum: [active, idle, closed, archived]
+    AgentSessionRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - sessionId
+      - tenantId
+      - organizationId
+      - agentId
+      - ownerUserId
+      - sessionKind
+      - entrySurface
+      - status
+      - itemCount
+      - lastItemSequence
+      - totalInputTokens
+      - totalOutputTokens
+      - createdBy
+      - updatedBy
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        agentId:
+          type: string
+          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        projectId:
+          type: [string, 'null']
+          pattern: '^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        sessionKind:
+          $ref: '#/components/schemas/AgentSessionKind'
+        entrySurface:
+          $ref: '#/components/schemas/AgentSessionEntrySurface'
+        sourceModule:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        sourceContextKind:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        sourceContextId:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 256
+        parentSessionId:
+          type: [string, 'null']
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        forkedFromTurnId:
+          type: [string, 'null']
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        title:
+          type: [string, 'null']
+          maxLength: 512
+        status:
+          $ref: '#/components/schemas/AgentSessionStatus'
+        itemCount:
+          $ref: '#/components/schemas/Int64String'
+        lastItemSequence:
+          $ref: '#/components/schemas/Int64String'
+        totalInputTokens:
+          $ref: '#/components/schemas/Int64String'
+        totalOutputTokens:
+          $ref: '#/components/schemas/Int64String'
+        idempotencyKey:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 256
+        payloadHash:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+        createdBy:
+          $ref: '#/components/schemas/Int64String'
+        updatedBy:
+          $ref: '#/components/schemas/Int64String'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastItemAt:
+          type: [string, 'null']
+          format: date-time
+        closedAt:
+          type: [string, 'null']
+          format: date-time
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+        archivedBy:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+        deletedAt:
+          type: [string, 'null']
+          format: date-time
+        deletedBy:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+        retentionUntil:
+          type: [string, 'null']
+          format: date-time
+    AgentSessionResponse:
+      description: Single agent session response following the SDKWork resource envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentSessionRecord'
+    AgentSessionListResponse:
+      description: Paginated agent session response following the SDKWork page envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentSessionRecord'
+    CreateAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - sessionKind
+        - entrySurface
+        - idempotencyKey
+        - payloadHash
+        - requestedAt
+      dependentRequired:
+        sourceModule:
+          - sourceContextKind
+          - sourceContextId
+        sourceContextKind:
+          - sourceModule
+          - sourceContextId
+        sourceContextId:
+          - sourceModule
+          - sourceContextKind
+        parentSessionId:
+          - forkedFromTurnId
+        forkedFromTurnId:
+          - parentSessionId
+      properties:
+        sessionId:
+          type: string
+          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        sessionKind:
+          $ref: "#/components/schemas/AgentSessionKind"
+        entrySurface:
+          $ref: "#/components/schemas/AgentSessionEntrySurface"
+        sourceModule:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-z][a-z0-9_-]{0,63}$
+        sourceContextKind:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-z][a-z0-9_-]{0,63}$
+        sourceContextId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        parentSessionId:
+          type: string
+          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        forkedFromTurnId:
+          type: string
+          pattern: ^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        title:
+          type: string
+          minLength: 1
+          maxLength: 512
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        payloadHash:
+          type: string
+          minLength: 1
+          maxLength: 128
+        requestedAt:
+          type: string
+          format: date-time
+    CloseAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentItemDriveRefRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - resourceRole
+      - driveSpaceId
+      - driveNodeId
+      - sortOrder
+      - status
+      - createdBy
+      - createdAt
+      - updatedAt
+      properties:
+        resourceRole:
+          type: string
+          enum: [attachment, image, audio, generated_output, artifact]
+        driveSpaceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        driveNodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        mediaResourceId:
+          type: [string, 'null']
+          maxLength: 128
+        objectBlobId:
+          type: [string, 'null']
+          maxLength: 128
+        resourceHash:
+          type: [string, 'null']
+          maxLength: 128
+        altText:
+          type: [string, 'null']
+          maxLength: 512
+        sortOrder:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [active, unavailable, deleted]
+        createdBy:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: [string, 'null']
+          format: date-time
+        retentionUntil:
+          type: [string, 'null']
+          format: date-time
+    AgentSessionItemKind:
+      type: string
+      enum:
+      - user_input
+      - system_instruction
+      - assistant_output
+      - reasoning
+      - tool_call
+      - tool_result
+      - artifact_reference
+      - status_notice
+      - error_notice
+    AgentSessionItemStatus:
+      type: string
+      enum: [pending, completed, failed, cancelled, redacted]
+    AgentSessionItemRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - tenantId
+      - organizationId
+      - sessionId
+      - itemId
+      - kind
+      - status
+      - sequence
+      - inputTokens
+      - outputTokens
+      - driveRefs
+      - createdBy
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        itemId:
+          type: string
+          pattern: '^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        kind:
+          $ref: '#/components/schemas/AgentSessionItemKind'
+        content:
+          type: [string, 'null']
+          maxLength: 1048576
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 64
+          default: text/plain
+        status:
+          $ref: '#/components/schemas/AgentSessionItemStatus'
+        sequence:
+          $ref: '#/components/schemas/Int64String'
+        inputTokens:
+          $ref: '#/components/schemas/Int64String'
+        outputTokens:
+          $ref: '#/components/schemas/Int64String'
+        modelId:
+          type: [string, 'null']
+          maxLength: 128
+        providerId:
+          type: [string, 'null']
+          maxLength: 128
+        toolName:
+          type: [string, 'null']
+          maxLength: 128
+        toolCallId:
+          type: [string, 'null']
+          maxLength: 256
+        toolArguments:
+          type: [object, 'null']
+          additionalProperties: true
+        toolResult:
+          type: [object, 'null']
+          additionalProperties: true
+        parentItemId:
+          type: [string, 'null']
+          pattern: '^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        turnId:
+          type: [string, 'null']
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        driveRefs:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/AgentItemDriveRefRecord'
+        createdBy:
+          $ref: '#/components/schemas/Int64String'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        redactedAt:
+          type: [string, 'null']
+          format: date-time
+        redactedBy:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+        retentionUntil:
+          type: [string, 'null']
+          format: date-time
+    AgentSessionItemResponse:
+      description: Single agent session item response following the SDKWork resource envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentSessionItemListResponse:
+      description: Paginated agent session item response following the SDKWork page envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentTurnMode:
+      type: string
+      enum: [interactive, background, automation, resume, retry]
+    AgentTurnStatus:
+      type: string
+      enum: [requested, running, completed, failed, cancelled]
+    AgentTurnRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - turnId
+      - tenantId
+      - organizationId
+      - sessionId
+      - agentId
+      - ownerUserId
+      - idempotencyKey
+      - payloadHash
+      - requestItemId
+      - turnMode
+      - status
+      - inputTokens
+      - outputTokens
+      - cachedTokens
+      - attemptCount
+      - maxAttempts
+      - availableAt
+      - fencingToken
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        turnId:
+          type: string
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        agentId:
+          type: string
+          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        runtimeBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        clientRequestId:
+          type: [string, 'null']
+          maxLength: 128
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        payloadHash:
+          type: string
+          minLength: 1
+          maxLength: 128
+        requestItemId:
+          type: string
+          pattern: '^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        responseItemId:
+          type: [string, 'null']
+          pattern: '^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        turnMode:
+          $ref: '#/components/schemas/AgentTurnMode'
+        status:
+          $ref: '#/components/schemas/AgentTurnStatus'
+        requestedModelId:
+          type: [string, 'null']
+          maxLength: 128
+        providerBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        modelId:
+          type: [string, 'null']
+          maxLength: 128
+        providerId:
+          type: [string, 'null']
+          maxLength: 128
+        inputTokens:
+          $ref: '#/components/schemas/Int64String'
+        outputTokens:
+          $ref: '#/components/schemas/Int64String'
+        cachedTokens:
+          $ref: '#/components/schemas/Int64String'
+        finishReason:
+          type: [string, 'null']
+          maxLength: 64
+        errorCode:
+          type: [string, 'null']
+          maxLength: 128
+        errorDetail:
+          type: [string, 'null']
+          maxLength: 2048
+          description: Sanitized error detail that never contains credentials or provider secrets.
+        traceId:
+          type: [string, 'null']
+          maxLength: 128
+        attemptCount:
+          type: integer
+          minimum: 0
+        maxAttempts:
+          type: integer
+          minimum: 1
+        nextRetryAt:
+          type: [string, 'null']
+          format: date-time
+        availableAt:
+          type: string
+          format: date-time
+        leaseOwner:
+          type: [string, 'null']
+          maxLength: 128
+        leaseExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelRequestedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledAt:
+          type: [string, 'null']
+          format: date-time
+        retentionUntil:
+          type: [string, 'null']
+          format: date-time
+    AgentTurnResponse:
+      description: Single durable agent turn response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentTurnRecord'
+    AgentTurnListResponse:
+      description: Paginated durable agent turn response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentTurnRecord'
+    CreateAgentTurnRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - content
+      - turnMode
+      - idempotencyKey
+      - payloadHash
+      - requestedAt
+      properties:
+        turnId:
+          type: string
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1048576
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 64
+          default: text/plain
+        turnMode:
+          $ref: '#/components/schemas/AgentTurnMode'
+        runtimeBindingId:
+          type: string
+          maxLength: 128
+        requestedModelId:
+          type: string
+          maxLength: 128
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        payloadHash:
+          type: string
+          minLength: 1
+          maxLength: 128
+        clientRequestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        driveRefs:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [resourceRole, driveSpaceId, driveNodeId]
+            properties:
+              resourceRole:
+                type: string
+                enum: [attachment, image, audio, artifact]
+              driveSpaceId:
+                type: string
+                minLength: 1
+                maxLength: 128
+              driveNodeId:
+                type: string
+                minLength: 1
+                maxLength: 128
+        requestedAt:
+          type: string
+          format: date-time
+    AgentTurnExecutionResponse:
+      description: Idempotent agent turn result with ordered session items.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  type: object
+                  additionalProperties: false
+                  required: [session, turn, items]
+                  properties:
+                    session:
+                      $ref: '#/components/schemas/AgentSessionRecord'
+                    turn:
+                      $ref: '#/components/schemas/AgentTurnRecord'
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentTurnStreamEvent:
+      type: object
+      additionalProperties: false
+      description: Typed server-sent event data for one agent turn execution.
+      required: [eventType]
+      properties:
+        eventType:
+          type: string
+          enum: [delta, completion]
+        index:
+          type: integer
+          format: int32
+          minimum: 0
+        delta:
+          type: string
+        response:
+          $ref: '#/components/schemas/AgentTurnExecutionResponse'
+    CancelAgentTurnRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentInteractionKind:
+      type: string
+      enum: [approval, user_question]
+    AgentInteractionStatus:
+      type: string
+      enum: [pending, resolved, rejected, expired, cancelled]
+    AgentInteractionOption:
+      type: object
+      additionalProperties: false
+      required: [value, label]
+      properties:
+        value:
+          type: string
+          minLength: 1
+          maxLength: 256
+        label:
+          type: string
+          minLength: 1
+          maxLength: 512
+    AgentInteractionResolution:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [approved, rejected, answered, expired, cancelled]
+        answer:
+          type: string
+          maxLength: 65536
+        selectedOptionValue:
+          type: string
+          maxLength: 256
+        reason:
+          type: string
+          maxLength: 2048
+    AgentInteractionRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - interactionId
+      - tenantId
+      - organizationId
+      - sessionId
+      - kind
+      - status
+      - prompt
+      - options
+      - fencingToken
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        interactionId:
+          type: string
+          pattern: '^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        turnId:
+          type: [string, 'null']
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runtimeBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        providerInteractionId:
+          type: [string, 'null']
+          maxLength: 256
+        kind:
+          $ref: '#/components/schemas/AgentInteractionKind'
+        status:
+          $ref: '#/components/schemas/AgentInteractionStatus'
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        options:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/AgentInteractionOption'
+        resolution:
+          oneOf:
+          - $ref: '#/components/schemas/AgentInteractionResolution'
+          - type: 'null'
+        claimOwner:
+          type: [string, 'null']
+          maxLength: 128
+        claimExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: [string, 'null']
+          format: date-time
+        retentionUntil:
+          type: [string, 'null']
+          format: date-time
+    AgentInteractionResponse:
+      description: Single durable agent interaction response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentInteractionRecord'
+    AgentInteractionListResponse:
+      description: Paginated durable agent interaction response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentInteractionRecord'
+    CreateAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, prompt, requestedAt]
+      dependentRequired:
+        providerInteractionId: [runtimeBindingId]
+      properties:
+        interactionId:
+          type: string
+          pattern: '^interaction\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        turnId:
+          type: string
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runtimeBindingId:
+          type: string
+          maxLength: 128
+        providerInteractionId:
+          type: string
+          maxLength: 256
+        kind:
+          $ref: '#/components/schemas/AgentInteractionKind'
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        options:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/AgentInteractionOption'
+        retentionUntil:
+          type: string
+          format: date-time
+        requestedAt:
+          type: string
+          format: date-time
+    ClaimAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [claimOwner, expectedVersion, requestedAt]
+      properties:
+        claimOwner:
+          type: string
+          minLength: 1
+          maxLength: 128
+        leaseSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          default: 60
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentInteractionClaimResponse:
+      description: Claimed interaction with a short-lived credential that must never be logged.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  type: object
+                  additionalProperties: false
+                  required: [interaction, claimToken, claimExpiresAt, fencingToken]
+                  properties:
+                    interaction:
+                      $ref: '#/components/schemas/AgentInteractionRecord'
+                    claimToken:
+                      type: string
+                      minLength: 32
+                      maxLength: 256
+                    claimExpiresAt:
+                      type: string
+                      format: date-time
+                    fencingToken:
+                      $ref: '#/components/schemas/Int64String'
+    ApproveAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [approved, claimToken, fencingToken, expectedVersion, requestedAt]
+      properties:
+        approved:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 2048
+        claimToken:
+          type: string
+          minLength: 32
+          maxLength: 256
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AnswerAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [answer, rejected, claimToken, fencingToken, expectedVersion, requestedAt]
+      properties:
+        answer:
+          type: string
+          maxLength: 65536
+        selectedOptionValue:
+          type: string
+          maxLength: 256
+        rejected:
+          type: boolean
+        claimToken:
+          type: string
+          minLength: 32
+          maxLength: 256
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentSessionCheckpointStatus:
+      type: string
+      enum: [active, restored, invalidated, expired, deleted]
+    AgentSessionCheckpointRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - checkpointId
+      - tenantId
+      - organizationId
+      - sessionId
+      - checkpointKind
+      - resumable
+      - status
+      - createdBy
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        checkpointId:
+          type: string
+          pattern: '^checkpoint\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        turnId:
+          type: [string, 'null']
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runtimeBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        checkpointKind:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        providerCheckpointRef:
+          type: [string, 'null']
+          maxLength: 256
+        driveSpaceId:
+          type: [string, 'null']
+          maxLength: 128
+        driveNodeId:
+          type: [string, 'null']
+          maxLength: 128
+        resumable:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AgentSessionCheckpointStatus'
+        createdBy:
+          $ref: '#/components/schemas/Int64String'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        restoredAt:
+          type: [string, 'null']
+          format: date-time
+        invalidatedAt:
+          type: [string, 'null']
+          format: date-time
+        retentionUntil:
+          type: [string, 'null']
+          format: date-time
+    AgentSessionCheckpointResponse:
+      description: Single resumable agent session checkpoint response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentSessionCheckpointRecord'
+    AgentSessionCheckpointListResponse:
+      description: Paginated agent session checkpoint response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentSessionCheckpointRecord'
+    CreateAgentSessionCheckpointRequest:
+      type: object
+      additionalProperties: false
+      required: [checkpointKind, resumable, requestedAt]
+      oneOf:
+      - required: [runtimeBindingId, providerCheckpointRef]
+      - required: [driveSpaceId, driveNodeId]
+      properties:
+        checkpointId:
+          type: string
+          pattern: '^checkpoint\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        turnId:
+          type: string
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runtimeBindingId:
+          type: string
+          maxLength: 128
+        checkpointKind:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        providerCheckpointRef:
+          type: string
+          maxLength: 256
+        driveSpaceId:
+          type: string
+          maxLength: 128
+        driveNodeId:
+          type: string
+          maxLength: 128
+        resumable:
+          type: boolean
+        retentionUntil:
+          type: string
+          format: date-time
+        requestedAt:
+          type: string
+          format: date-time
+    RestoreAgentSessionCheckpointRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    InvalidateAgentSessionCheckpointRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        reason:
+          type: string
+          maxLength: 2048
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentSessionRuntimeBindingStatus:
+      type: string
+      enum: [active, deactivated, failed, deleted]
+    AgentSessionRuntimeBindingRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - runtimeBindingId
+      - tenantId
+      - organizationId
+      - sessionId
+      - hostMode
+      - transportKind
+      - providerBindingId
+      - modelId
+      - providerId
+      - status
+      - isCurrent
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        runtimeBindingId:
+          type: string
+          pattern: '^runtime_binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runtimeLocationId:
+          type: [string, 'null']
+          maxLength: 256
+        hostMode:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,31}$'
+        transportKind:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        providerBindingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        providerId:
+          type: string
+          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        nativeSessionId:
+          type: [string, 'null']
+          maxLength: 256
+        nativeSessionTreeId:
+          type: [string, 'null']
+          maxLength: 256
+        nativeParentSessionId:
+          type: [string, 'null']
+          maxLength: 256
+        nativeForkedFromSessionId:
+          type: [string, 'null']
+          maxLength: 256
+        status:
+          $ref: '#/components/schemas/AgentSessionRuntimeBindingStatus'
+        isCurrent:
+          type: boolean
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        activatedAt:
+          type: [string, 'null']
+          format: date-time
+        deactivatedAt:
+          type: [string, 'null']
+          format: date-time
+    AgentSessionRuntimeBindingResponse:
+      description: Single agent session runtime binding response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentSessionRuntimeBindingRecord'
+    AgentSessionRuntimeBindingListResponse:
+      description: Paginated agent session runtime binding response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentSessionRuntimeBindingRecord'
+    CreateAgentSessionRuntimeBindingRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - hostMode
+      - transportKind
+      - providerBindingId
+      - modelId
+      - providerId
+      - requestedAt
+      properties:
+        runtimeBindingId:
+          type: string
+          pattern: '^runtime_binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runtimeLocationId:
+          type: string
+          maxLength: 256
+        hostMode:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,31}$'
+        transportKind:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        providerBindingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        providerId:
+          type: string
+          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        nativeSessionId:
+          type: string
+          maxLength: 256
+        nativeSessionTreeId:
+          type: string
+          maxLength: 256
+        nativeParentSessionId:
+          type: string
+          maxLength: 256
+        nativeForkedFromSessionId:
+          type: string
+          maxLength: 256
+        requestedAt:
+          type: string
+          format: date-time
+    UpdateAgentSessionRuntimeBindingRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        runtimeLocationId:
+          type: string
+          maxLength: 256
+        clearRuntimeLocation:
+          type: boolean
+          default: false
+        hostMode:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,31}$'
+        transportKind:
+          type: string
+          pattern: '^[a-z][a-z0-9_-]{0,63}$'
+        providerBindingId:
+          type: string
+          maxLength: 128
+        modelId:
+          type: string
+          maxLength: 128
+        providerId:
+          type: string
+          pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        nativeSessionId:
+          type: string
+          maxLength: 256
+        nativeSessionTreeId:
+          type: string
+          maxLength: 256
+        nativeParentSessionId:
+          type: string
+          maxLength: 256
+        nativeForkedFromSessionId:
+          type: string
+          maxLength: 256
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    ChangeAgentSessionRuntimeBindingStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        reason:
+          type: string
+          maxLength: 2048
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
     FieldError:
       type: object
       additionalProperties: false

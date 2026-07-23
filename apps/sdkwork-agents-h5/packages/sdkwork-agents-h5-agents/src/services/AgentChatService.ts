@@ -1,12 +1,12 @@
-import { sendAgentChatMessageSync } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
+import { completeAgentTurn } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
 import {
   getAgentsAppSdkClientWithSession,
+  type AgentSessionItemRecord,
+  type AgentSessionRecord,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
-import { uuid } from "@sdkwork/utils";
-import { extractOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-h5-core/sdk/pagination";
-
-import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";
+import { sha256Hash, uuid } from "@sdkwork/utils";
+import { toOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-h5-core/sdk/pagination";
 
 export interface ChatMessage {
   id: string;
@@ -20,42 +20,46 @@ export interface ChatMessageListPage {
   pageInfo: OffsetPageInfo;
 }
 
-/** Matches backend `CHAT_CONTEXT_MESSAGE_LIMIT` for one interactive chat page. */
-const CHAT_MESSAGE_PAGE_SIZE = 50;
+/** Matches the bounded server context window for one interactive session page. */
+const SESSION_ITEM_PAGE_SIZE = 50;
 
-function pickString(record: Record<string, unknown> | undefined, keys: string[]): string | undefined {
-  if (!record) {
-    return undefined;
+function toChatMessage(record: AgentSessionItemRecord): ChatMessage {
+  if (!record.itemId) {
+    throw new Error("Agent session item did not include itemId.");
   }
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return undefined;
-}
 
-function toChatMessage(record: Record<string, unknown>): ChatMessage {
-  const messageId = pickString(record, ["messageId", "message_id", "id"]);
-  if (!messageId) {
-    throw new Error("Chat message did not include messageId.");
-  }
+  const role: ChatMessage["role"] = record.kind === "user_input"
+    ? "user"
+    : record.kind === "system_instruction"
+        || record.kind === "status_notice"
+        || record.kind === "error_notice"
+      ? "system"
+      : record.kind === "tool_call" || record.kind === "tool_result"
+        ? "tool"
+        : "assistant";
 
   return {
-    id: messageId,
-    role: (pickString(record, ["role"]) as ChatMessage["role"]) ?? "assistant",
-    content: pickString(record, ["content"]) ?? "",
-    createdAt: pickString(record, ["createdAt", "created_at"]) ?? new Date().toISOString(),
+    id: record.itemId,
+    role,
+    content: record.content ?? "",
+    createdAt: record.createdAt,
   };
 }
 
-function toSessionId(record: Record<string, unknown>): string {
-  return pickString(record, ["sessionId", "session_id", "id"]) ?? "";
+function toSessionId(record: AgentSessionRecord): string {
+  return record.sessionId;
 }
 
-function readSessionStatus(record: Record<string, unknown>): string | undefined {
-  return pickString(record, ["status"]);
+function findAssistantOutput(
+  items: AgentSessionItemRecord[],
+): AgentSessionItemRecord | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind === "assistant_output") {
+      return item;
+    }
+  }
+  return undefined;
 }
 
 export class AgentChatService {
@@ -64,11 +68,20 @@ export class AgentChatService {
   ) {}
 
   async createSession(agentId: string, title?: string): Promise<string> {
-    const response = await this.getClient().ai.agents.sessions.create(agentId, {
-      title: title?.trim() || "Chat",
+    const idempotencyKey = uuid();
+    const normalizedTitle = title?.trim() || "Agent session";
+    const session = await this.getClient().ai.agents.sessions.create(agentId, {
+      sessionKind: "assistant",
+      entrySurface: "h5",
+      title: normalizedTitle,
+      idempotencyKey,
+      payloadHash: `sha256:${sha256Hash(JSON.stringify({
+        sessionKind: "assistant",
+        entrySurface: "h5",
+        title: normalizedTitle,
+      }))}`,
       requestedAt: new Date().toISOString(),
     });
-    const session = extractResourceRecord(response);
     const sessionId = toSessionId(session);
     if (!sessionId) {
       throw new Error("Chat session create did not return sessionId.");
@@ -78,8 +91,8 @@ export class AgentChatService {
 
   async listSessions(agentId: string, page = 1, pageSize = 10): Promise<string[]> {
     const response = await this.getClient().ai.agents.sessions.list(agentId, { page, pageSize });
-    return extractArray(response)
-      .map((item) => (isRecord(item) ? toSessionId(item) : ""))
+    return (response.items as AgentSessionRecord[])
+      .map(toSessionId)
       .filter((sessionId) => sessionId.length > 0);
   }
 
@@ -89,10 +102,9 @@ export class AgentChatService {
       page: 1,
       pageSize: 10,
     });
-    const sessions = extractArray(response).filter(isRecord);
+    const sessions = response.items as AgentSessionRecord[];
     const reusable = sessions.find((session) => {
-      const status = readSessionStatus(session);
-      return !status || status === "active";
+      return session.status === "active";
     });
     if (reusable) {
       const sessionId = toSessionId(reusable);
@@ -109,13 +121,13 @@ export class AgentChatService {
     sessionId: string,
     page = 1,
   ): Promise<ChatMessageListPage> {
-    const response = await this.getClient().ai.agents.messages.list(agentId, sessionId, {
+    const response = await this.getClient().ai.agents.sessionItems.list(agentId, sessionId, {
       page,
-      pageSize: CHAT_MESSAGE_PAGE_SIZE,
+      pageSize: SESSION_ITEM_PAGE_SIZE,
     });
     return {
-      items: this.normalizeMessages(response),
-      pageInfo: extractOffsetPageInfo(response),
+      items: this.normalizeMessages(response.items as AgentSessionItemRecord[]),
+      pageInfo: toOffsetPageInfo(response.pageInfo),
     };
   }
 
@@ -141,36 +153,38 @@ export class AgentChatService {
     modelId?: string,
   ): Promise<ChatMessage> {
     const requestId = uuid();
+    const contentType = "text/plain";
+    const payloadHash = `sha256:${sha256Hash(JSON.stringify({
+      content: content.trim(),
+      contentType,
+      requestedModelId: modelId ?? null,
+    }))}`;
     const body = {
       content: content.trim(),
-      contentType: "text/plain",
+      contentType,
+      turnMode: "interactive" as const,
       requestedAt: new Date().toISOString(),
       idempotencyKey: requestId,
+      payloadHash,
       clientRequestId: requestId,
-      ...(modelId ? { modelId } : {}),
+      ...(modelId ? { requestedModelId: modelId } : {}),
     };
-    const response = await sendAgentChatMessageSync(
+    const completion = await completeAgentTurn(
       this.getClient(),
       agentId,
       sessionId,
       body,
     );
-    const completion = extractResourceRecord(response);
-    const assistantRecord = isRecord(completion.assistantMessage)
-      ? completion.assistantMessage
-      : isRecord(completion.assistant_message)
-        ? completion.assistant_message
-        : undefined;
+    const assistantRecord = findAssistantOutput(completion.items);
     if (!assistantRecord) {
-      throw new Error("Chat completion did not return assistantMessage.");
+      throw new Error("Agent turn did not return an assistant_output item.");
     }
     return toChatMessage(assistantRecord);
   }
 
-  private normalizeMessages(response: unknown): ChatMessage[] {
-    return extractArray(response)
-      .map((item) => (isRecord(item) ? toChatMessage(item) : undefined))
-      .filter((item): item is ChatMessage => Boolean(item))
+  private normalizeMessages(items: AgentSessionItemRecord[]): ChatMessage[] {
+    return items
+      .map(toChatMessage)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 }

@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import {
   AGENTS_SDK_FAMILIES,
   AGENTS_SDK_OWNER,
-  AGENTS_SDK_OWNERSHIP_STANDARD_VERSION
+  AGENTS_SDK_OWNERSHIP_STANDARD_VERSION,
+  resolveAgentsSdkLanguageTargets
 } from '../_shared/agents-sdk-families.mjs';
 import {
   annotateAgentOpenApiOwnership,
@@ -32,11 +33,7 @@ function verifyFamily(family) {
   const sdkgenPath = path.join(familyRoot, 'openapi', `${family.authority}.sdkgen.yaml`);
   const sdkManifestPath = path.join(familyRoot, 'sdk-manifest.json');
   const componentSpecPath = path.join(familyRoot, 'specs', 'component.spec.json');
-  const generatedOutputPath = path.join(
-    familyRoot,
-    family.languagePackageDir,
-    SDKWORK_SDKGEN_STANDARD.generatedOutput
-  );
+  const languageTargets = resolveAgentsSdkLanguageTargets(family);
 
   for (const filePath of [
     sourceOpenApiPath,
@@ -47,10 +44,12 @@ function verifyFamily(family) {
   ]) {
     assertFileExists(filePath, `${family.familyDir} required ownership file is missing`);
   }
-  assertDirectoryExists(
-    generatedOutputPath,
-    `${family.familyDir} generated TypeScript output directory is missing`
-  );
+  for (const target of languageTargets) {
+    assertDirectoryExists(
+      path.join(familyRoot, target.workspace, SDKWORK_SDKGEN_STANDARD.generatedOutput),
+      `${family.familyDir} generated ${target.language} output directory is missing`
+    );
+  }
 
   const expectedAuthority = ensureTrailingNewline(
     annotateAgentOpenApiOwnership(readText(sourceOpenApiPath), family)
@@ -80,28 +79,26 @@ function verifyFamily(family) {
   assert.equal(sdkManifest.metadata?.managedBy, 'sdks/_shared/agent-sdk-ownership.mjs');
   assert.equal(sdkManifest.metadata?.standardVersion, AGENTS_SDK_OWNERSHIP_STANDARD_VERSION);
 
-  const typescriptLanguage = sdkManifest.languages?.find((entry) => entry.language === 'typescript');
-  assert.ok(typescriptLanguage, `${family.familyDir} manifest must declare TypeScript language`);
-  assert.equal(
-    typescriptLanguage.workspace,
-    family.languagePackageDir,
-    `${family.familyDir} TypeScript workspace`
+  assert.deepEqual(
+    sdkManifest.languages?.map((entry) => entry.language),
+    languageTargets.map((target) => target.language),
+    `${family.familyDir} language inventory`
   );
-  assert.equal(
-    typescriptLanguage.generatedPath,
-    `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
-    `${family.familyDir} TypeScript generatedPath`
-  );
-  assert.equal(
-    typescriptLanguage.manifestPath,
-    `${family.languagePackageDir}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}/package.json`,
-    `${family.familyDir} TypeScript manifestPath`
-  );
-  assert.equal(
-    typescriptLanguage.consumerPackageName,
-    family.packageName,
-    `${family.familyDir} consumer package name`,
-  );
+  for (const target of languageTargets) {
+    const language = sdkManifest.languages.find((entry) => entry.language === target.language);
+    assert.equal(language.workspace, target.workspace, `${family.familyDir} ${target.language} workspace`);
+    assert.equal(
+      language.generatedPath,
+      `${target.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
+      `${family.familyDir} ${target.language} generatedPath`
+    );
+    assert.equal(
+      language.manifestPath,
+      `${target.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}/${target.manifestFile}`,
+      `${family.familyDir} ${target.language} manifestPath`
+    );
+    assert.equal(language.name, target.packageName, `${family.familyDir} ${target.language} name`);
+  }
 
   assert.equal(sdkManifest.schemaVersion, 1, `${family.familyDir} sdk manifest schemaVersion`);
   assert.equal(sdkManifest.sdkName, family.sdkName, `${family.familyDir} sdkName`);
@@ -111,7 +108,11 @@ function verifyFamily(family) {
   assert.equal(sdkManifest.sdkFamily, family.familyDir, `${family.familyDir} sdkFamily`);
   assert.equal(sdkManifest.sdkType, family.sdkType, `${family.familyDir} sdkType`);
   assert.equal(sdkManifest.sdkSurface, family.sdkSurface, `${family.familyDir} sdkSurface`);
-  assert.equal(sdkManifest.language, 'typescript', `${family.familyDir} language`);
+  assert.equal(
+    sdkManifest.language,
+    undefined,
+    `${family.familyDir} family manifest must not claim one language`
+  );
   assert.equal(sdkManifest.apiPrefix, family.apiPrefix, `${family.familyDir} apiPrefix`);
   assert.equal(
     sdkManifest.generationInputSpec,
@@ -149,6 +150,11 @@ function verifyFamily(family) {
   );
   assert.equal(componentSpec.component?.generated, true, `${family.familyDir} generated flag`);
   assert.deepEqual(
+    componentSpec.component?.languages,
+    languageTargets.map((target) => target.language),
+    `${family.familyDir} component language inventory`
+  );
+  assert.deepEqual(
     componentSpec.component?.manifests,
     ['sdk-manifest.json'],
     `${family.familyDir} component manifests`
@@ -157,6 +163,16 @@ function verifyFamily(family) {
   assert.equal(componentSpec.sdk?.authority, family.authority, `${family.familyDir} sdk.authority`);
   assert.equal(componentSpec.sdk?.sdkOwner, AGENTS_SDK_OWNER, `${family.familyDir} sdkOwner`);
   assert.equal(componentSpec.sdk?.apiPrefix, family.apiPrefix, `${family.familyDir} sdk apiPrefix`);
+  assert.deepEqual(
+    componentSpec.sdk?.generatedOutputs,
+    Object.fromEntries(
+      languageTargets.map((target) => [
+        target.language,
+        `${target.workspace}/${SDKWORK_SDKGEN_STANDARD.generatedOutput}`,
+      ])
+    ),
+    `${family.familyDir} generated outputs`
+  );
   assert.equal(
     componentSpec.sdk?.packageName,
     family.packageName,

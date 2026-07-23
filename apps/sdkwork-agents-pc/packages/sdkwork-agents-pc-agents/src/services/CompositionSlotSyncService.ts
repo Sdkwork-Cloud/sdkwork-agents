@@ -1,11 +1,10 @@
-import {
-  resolveAppSdkOrganizationId,
-  resolveAppSdkTenantId,
-} from "@sdkwork/agents-pc-core/session";
-import type { SdkworkAgentsAppClient } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
+import type {
+  AgentCompositionSlotRecord,
+  SdkworkAgentsAppClient,
+} from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
+import { syncAllOffsetPages } from "@sdkwork/agents-pc-core/sdk/pagination";
 
 import type { AgentConfig } from "./AgentService";
-import { extractArray, extractResourceRecord, isRecord, syncAllOffsetPages } from "./sdkEnvelope";
 
 type CompositionSlotKind = "memory" | "knowledge" | "skill" | "prompt" | "drive" | "tool";
 type CompositionTargetModule = "memory" | "knowledgebase" | "skills" | "prompts" | "drive";
@@ -24,7 +23,6 @@ function slotIdForRef(targetRef: string): string {
 
 function buildDesiredCompositionSlots(config: AgentConfig): DesiredCompositionSlot[] {
   const slots: DesiredCompositionSlot[] = [];
-  let priority = 0;
 
   for (const knowledgeId of config.knowledgeBaseIds ?? []) {
     const targetRef = knowledgeId.startsWith("kb.") ? knowledgeId : `kb.space.${knowledgeId}`;
@@ -34,7 +32,6 @@ function buildDesiredCompositionSlots(config: AgentConfig): DesiredCompositionSl
       targetModule: "knowledgebase",
       targetRef,
     });
-    priority += 1;
   }
 
   for (const skillId of config.skillIds ?? []) {
@@ -45,7 +42,6 @@ function buildDesiredCompositionSlots(config: AgentConfig): DesiredCompositionSl
       targetModule: "skills",
       targetRef,
     });
-    priority += 1;
   }
 
   for (const toolId of config.toolIds ?? []) {
@@ -56,7 +52,6 @@ function buildDesiredCompositionSlots(config: AgentConfig): DesiredCompositionSl
       targetModule: "drive",
       targetRef,
     });
-    priority += 1;
   }
 
   return slots;
@@ -67,25 +62,13 @@ export async function syncAgentCompositionSlots(
   agentId: string,
   config: AgentConfig,
 ): Promise<void> {
-  const tenantId = resolveAppSdkTenantId() ?? "100001";
-  const organizationId = resolveAppSdkOrganizationId() ?? "0";
   const desired = buildDesiredCompositionSlots(config);
   const desiredIds = new Set(desired.map((slot) => slot.slotId));
 
   // Batch diff sync on agent save — `syncAllOffsetPages` is allowed per `PAGINATION_SPEC.md` §7.
-  const existingItems = await syncAllOffsetPages<
-    Record<string, unknown> & { slotId: string }
-  >(
-      (params) => client.ai.agents.compositionSlots.list(agentId, params),
-      {
-        mapItems: (response) =>
-          extractArray(response)
-            .map((item) => extractResourceRecord(item))
-            .filter(
-              (item): item is Record<string, unknown> & { slotId: string } =>
-                isRecord(item) && typeof item.slotId === "string",
-            ),
-      },
+  const existingItems = await syncAllOffsetPages<AgentCompositionSlotRecord>(
+    (params) => client.ai.agents.compositionSlots.list(agentId, params),
+    {},
   );
 
   for (const item of existingItems) {
@@ -102,17 +85,13 @@ export async function syncAgentCompositionSlots(
     }
 
     await client.ai.agents.compositionSlots.create(agentId, {
-      data: {
-        tenantId,
-        organizationId,
-        slotId: slot.slotId,
-        slotKind: slot.slotKind,
-        targetModule: slot.targetModule,
-        targetRef: slot.targetRef,
-        priority: String(index + 1),
-        enabled: true,
-        policyJson: "{}",
-      },
+      slotId: slot.slotId,
+      slotKind: slot.slotKind,
+      targetModule: slot.targetModule,
+      targetRef: slot.targetRef,
+      priority: index + 1,
+      enabled: true,
+      policyJson: "{}",
       requestedAt: new Date().toISOString(),
     });
   }

@@ -80,3 +80,5 @@ export function resetMemoryAppSdkClient(): void {
   memoryAppSdkClient = null;
   memoryAppSdkClientProvider = null;
 }
+
+export type { MemorySpace, MemorySpaceList } from "@sdkwork/memory-app-sdk";

@@ -1,6 +1,7 @@
 import {
   createClient,
-  sendAgentChatMessageSync,
+  completeAgentTurn,
+  type CompleteAgentTurnResult,
   type SdkworkAppClient as GeneratedSdkworkAgentsAppClient,
   type SdkworkAppConfig,
 } from "@sdkwork/agents-app-sdk";
@@ -95,12 +96,25 @@ export function useAgentsAppSdkClient(): SdkworkAgentsAppClient {
 }
 
 export type {
+  AgentCompositionSlotRecord,
+  AgentItemFeedbackRecord,
   AgentManagementProfile,
+  AgentProjectCompositionSlotRecord,
+  AgentProjectRecord,
   AgentRecord,
+  AgentResourceUserStateRecord,
+  AgentRuntimeExecutionRecord,
+  AgentSessionItemRecord,
+  AgentSessionRecord,
   CodeEngineCatalog,
+  CodeEngineCatalogEngine,
+  CodeEngineModelCatalogEntry,
   CreateAgentProviderBindingRequest,
   CreateAgentRequest,
+  McpServerMarketplaceRecord,
+  PageInfo,
   UpdateAgentRequest,
 } from "@sdkwork/agents-app-sdk";
 
-export { sendAgentChatMessageSync };
+export { completeAgentTurn };
+export type { CompleteAgentTurnResult };

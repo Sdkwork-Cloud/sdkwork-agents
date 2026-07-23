@@ -1,56 +1,74 @@
 # Live Smoke Test
 
-Use after deployment or local `pnpm dev` when you need runtime evidence beyond `pnpm verify` contracts.
+Use after deploying the candidate artifact. Contract tests are necessary but do
+not replace this runtime evidence.
 
-Automated flow contract (mocked SDK, no live server): `pnpm --filter @sdkwork/agents-pc test:agent-contracts` includes `agent-e2e-flow-contract.test.ts` (create agent → session → chat).
+## 1. Prerequisites
 
-Gateway-only live smoke (server must be running):
+1. The selected standalone or cloud profile is running with PostgreSQL.
+2. App credentials, operator credentials and an Open API key are available from
+   approved secret/session infrastructure.
+3. At least one active managed agent has a conformance-tested provider binding.
+4. Client base URLs point to the exact surface prefixes.
 
-```powershell
-pnpm dev          # separate terminal
-pnpm smoke:live   # GET /health + /metrics/agents
-```
-
-## Prerequisites
-
-1. Standalone gateway or split API running with Postgres managed store.
-2. IAM session or dev bypass only in **development** (`SDKWORK_AGENTS_DEV_AUTH_BYPASS=true` must be `false` in staging/production).
-3. PC or H5 client pointed at the correct `VITE_SDKWORK_AGENTS_*_APP_API_BASE_URL`.
-
-## Smoke sequence
+## 2. Infrastructure
 
 | Step | Action | Pass criterion |
-| --- | --- | --- |
+| ---: | --- | --- |
 | 1 | `GET /health` | HTTP 200 |
-| 2 | `GET /metrics/agents` | Prometheus text with `sdkwork_agents_` metrics |
-| 3 | Sign in via client Auth Gate | Session tokens stored; no 401 on app API |
-| 4 | Create agent | `code: 0`, `data.item.agentId` present |
-| 5 | Open chat route | Session created; messages list loads |
-| 6 | Send message | Assistant reply from code-engine facade (`RuntimeFacadeChatCompleter`); `runtimeMode` ≠ contract stub; `traceId` in network response |
+| 2 | `GET /metrics/agents` | Prometheus output with `sdkwork_agents_` metrics |
+| 3 | Inspect startup logs | PostgreSQL connected; no development auth bypass or secret output |
 
-## Commands
+Gateway-only helper:
 
 ```powershell
-# Repository gates (required before any cutover)
-pnpm verify
-
-# Local dev stack
-pnpm dev
-
-# PC desktop
-pnpm start:desktop
-
-# H5 browser
-pnpm start:browser
+pnpm smoke:live
 ```
 
-## Failure triage
+## 3. App API Execution
+
+| Step | Action | Pass criterion |
+| ---: | --- | --- |
+| 1 | Sign in through appbase IAM | App SDK has current dual-token session |
+| 2 | List/retrieve a managed Agent | `code: 0`, typed resource and `traceId` |
+| 3 | Create a Session | Required kind/surface/idempotency fields accepted; Session id returned |
+| 4 | Retry Session creation | Same key/hash returns the same logical result |
+| 5 | Execute a Turn as JSON | Response contains Session, Turn and ordered Session Items |
+| 6 | Execute a Turn as SSE | Delta events followed by one typed completion event |
+| 7 | List Session Items | Stable ascending sequence with `PageInfo` |
+| 8 | Create and claim an Interaction | One claim succeeds; competing claim fails safely |
+| 9 | Resolve the Interaction | Version and claim token enforced |
+| 10 | Cancel an eligible Turn | Lifecycle becomes cancelled without duplicate execution |
+
+## 4. Security Surfaces
+
+| Check | Expected result |
+| --- | --- |
+| App call without valid dual tokens | 401/403 Problem Detail |
+| Backend call with app-only identity | denied |
+| Open call without `X-API-Key` | denied |
+| Open call with app credential headers only | denied |
+| Caller-supplied scope selector | rejected |
+| Cross-tenant resource id | not disclosed and denied |
+
+## 5. Recovery
+
+1. Submit a Turn and interrupt the client after request dispatch.
+2. Reconcile by Session and idempotency key.
+3. Confirm a completed Turn is returned without another provider invocation.
+4. Restart the service and retrieve the same Session, Turn and Items.
+5. Confirm outbox and audit processing resumes without duplicate business facts.
+
+## 6. Failure Triage
 
 | Symptom | Check |
 | --- | --- |
-| 401 on `/app/v3/api` | IAM tokens, Auth Gate, `SDKWORK_ACCESS_TOKEN` in dev only |
-| 5xx on agent CRUD | `SDKWORK_AGENTS_STORE_DATABASE_*`, migrations (`pnpm db:status`) |
-| Chat empty / error | Agent published, model binding, kernel runtime availability |
-| Client SDK errors | `pnpm workflow:build-agents-app-sdk`, base URL topology |
+| 401/403 | credential mode, token/key provider, clock and request context |
+| 404 | surface base URL and route assembly |
+| 409 | idempotency payload hash or optimistic version |
+| 5xx on Session/Turn | PostgreSQL status, provider binding, runtime facade and trace |
+| Missing SSE completion | gateway buffering, timeout, runtime error and HTTP contract |
+| Item order mismatch | Session sequence constraint and repository query order |
 
-See [incident-rollback.md](./incident-rollback.md) and [monitoring.md](./monitoring.md).
+See [monitoring.md](./monitoring.md) and
+[incident-rollback.md](./incident-rollback.md).

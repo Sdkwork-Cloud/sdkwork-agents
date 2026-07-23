@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import {
   createClient,
-  sendAgentChatMessageSync,
+  completeAgentTurn,
+  type CompleteAgentTurnResult,
   SdkworkAppClient,
 } from '../src/index.ts';
 
@@ -80,29 +81,136 @@ test('Agents App SDK supports the standard same-origin app-api surface path', as
   ]);
 });
 
-test('Agents App SDK chat helper uses the same canonical app-api prefix', async () => {
+test('Agents App SDK turn helper uses the canonical app-api prefix', async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
+  const turnResult = {
+    session: { sessionId: 'session-1' },
+    turn: { turnId: 'turn-1' },
+    items: [{ itemId: 'item-1', kind: 'assistant_output', content: 'ok' }],
+  };
   globalThis.fetch = async (input) => {
     requestedUrls.push(String(input));
     return new Response(
-      JSON.stringify({ code: 0, data: { item: { content: 'ok' } } }),
+      JSON.stringify({ code: 0, data: { item: turnResult } }),
       { headers: { 'content-type': 'application/json' }, status: 200 },
     );
   };
 
+  let completion: CompleteAgentTurnResult | undefined;
   try {
     const client = createClient({ baseUrl: APP_API_BASE_URL });
-    await sendAgentChatMessageSync(client, 'agent-1', 'session-1', {
+    completion = await completeAgentTurn(client, 'agent-1', 'session-1', {
       content: 'hello',
-      idempotencyKey: 'chat-test-1',
+      turnMode: 'interactive',
+      idempotencyKey: 'turn-test-1',
+      payloadHash: 'sha256:turn-test-1',
       requestedAt: '2026-07-18T00:00:00.000Z',
     });
   } finally {
     globalThis.fetch = originalFetch;
   }
 
+  assert.deepEqual(completion, turnResult);
+  assert.equal('item' in completion!, false);
   assert.deepEqual(requestedUrls, [
-    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/messages/complete',
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/turns?stream=false',
+  ]);
+});
+
+test('Agents App SDK exposes paginated interaction filters and single-item retrieval', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    const isRetrieve = url.endsWith('/interactions/interaction-1');
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        data: isRetrieve
+          ? { item: { interactionId: 'interaction-1', kind: 'user_question', status: 'pending' } }
+          : {
+              items: [],
+              pageInfo: {
+                mode: 'offset',
+                page: 1,
+                pageSize: 20,
+                totalItems: '0',
+                totalPages: 0,
+                hasMore: false,
+              },
+            },
+      }),
+      { headers: { 'content-type': 'application/json' }, status: 200 },
+    );
+  };
+
+  try {
+    const client = createClient({ baseUrl: APP_API_BASE_URL });
+    const page = await client.ai.agents.interactions.list('agent-1', 'session-1', {
+      page: 1,
+      pageSize: 20,
+      kind: 'user_question',
+      status: 'pending',
+    });
+    assert.equal(page.pageInfo.hasMore, false);
+
+    const retrieved = await client.ai.agents.interactions.retrieve(
+      'agent-1',
+      'session-1',
+      'interaction-1',
+    );
+    assert.equal(retrieved.interactionId, 'interaction-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requestedUrls, [
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/interactions?page=1&page_size=20&kind=user_question&status=pending',
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/interactions/interaction-1',
+  ]);
+});
+
+test('Agents App SDK exposes server-side Session Item filters and descending pages', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = async (input) => {
+    requestedUrls.push(String(input));
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        data: {
+          items: [],
+          pageInfo: {
+            mode: 'offset',
+            page: 1,
+            pageSize: 20,
+            totalItems: '0',
+            totalPages: 0,
+            hasMore: false,
+          },
+        },
+      }),
+      { headers: { 'content-type': 'application/json' }, status: 200 },
+    );
+  };
+
+  try {
+    const client = createClient({ baseUrl: APP_API_BASE_URL });
+    const page = await client.ai.agents.sessionItems.list('agent-1', 'session-1', {
+      page: 1,
+      pageSize: 20,
+      kind: 'assistant_output',
+      status: 'completed',
+      sort: '-sequence',
+    });
+    assert.equal(page.pageInfo.mode, 'offset');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requestedUrls, [
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/items?page=1&page_size=20&kind=assistant_output&status=completed&sort=-sequence',
   ]);
 });

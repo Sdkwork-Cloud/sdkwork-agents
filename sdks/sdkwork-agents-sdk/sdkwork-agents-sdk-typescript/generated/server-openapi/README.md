@@ -1,6 +1,6 @@
 # sdkwork-agents-sdk
 
-Generated SDKWork v3 dual-token transport SDK.
+Generated SDKWork v3 API-key open-api transport SDK.
 
 ## Installation
 
@@ -15,35 +15,44 @@ pnpm add @sdkwork/agents-sdk
 ## Quick Start
 
 ```typescript
-import { SdkworkAppClient } from '@sdkwork/agents-sdk';
+import { SdkworkCustomClient } from '@sdkwork/agents-sdk';
 
-const client = new SdkworkAppClient({
+const client = new SdkworkCustomClient({
   baseUrl: 'http://localhost:8080',
   timeout: 30000,
 });
 
-// Authentication
-client.setAuthToken('your-auth-token');
-client.setAccessToken('your-access-token');
+client.setApiKey('your-api-key');
 
 // Use the SDK
-const result = await client.ai.agents.list();
+const params = {
+  include_deleted: true,
+  page: 2,
+  page_size: 3,
+  q: 'q',
+};
+const result = await client.ai.agents.list(params);
 ```
 
 ## Authentication
 
 ```text
-Authorization: Bearer <authToken>
-Access-Token: <accessToken>
+X-API-Key: <apiKey>
+```
+
+Configure API key credentials through the generated client API:
+
+```typescript
+client.setApiKey('your-api-key');
 ```
 
 
 ## Configuration (Non-Auth)
 
 ```typescript
-import { SdkworkAppClient } from '@sdkwork/agents-sdk';
+import { SdkworkCustomClient } from '@sdkwork/agents-sdk';
 
-const client = new SdkworkAppClient({
+const client = new SdkworkCustomClient({
   baseUrl: 'http://localhost:8080',
   timeout: 30000, // Request timeout in ms
   headers: {      // Custom headers
@@ -62,16 +71,28 @@ const client = new SdkworkAppClient({
 
 ```typescript
 // List managed agents
-const result = await client.ai.agents.list();
+const params = {
+  include_deleted: true,
+  page: 2,
+  page_size: 3,
+  q: 'q',
+};
+const result = await client.ai.agents.list(params);
 ```
 
 ## Error Handling
 
 ```typescript
-import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-sdk';
+import { SdkworkCustomClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-sdk';
 
 try {
-  const result = await client.ai.agents.list();
+  const params = {
+    include_deleted: true,
+    page: 2,
+    page_size: 3,
+    q: 'q',
+  };
+  const result = await client.ai.agents.list(params);
 } catch (error) {
   if (error instanceof AuthenticationError) {
     console.error('Authentication failed:', error.message);
@@ -108,7 +129,7 @@ This SDK includes cross-platform publish scripts in `bin/`:
 .\bin\publish.ps1 --action publish --channel test --dry-run
 ```
 
-> Configure npm registry credentials before release publish.
+> Set `NPM_TOKEN` (and optional `NPM_REGISTRY_URL`) before release publish.
 
 ## License
 

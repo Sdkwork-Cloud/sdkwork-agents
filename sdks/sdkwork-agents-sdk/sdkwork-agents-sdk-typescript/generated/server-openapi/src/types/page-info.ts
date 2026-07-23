@@ -1,7 +1,7 @@
 import type { Int64String } from './int64-string';
 
 export interface PageInfo {
-  /** Pagination mode used by the response. */
+  /** Pagination mode used for this response. */
   mode: 'offset' | 'cursor';
   /** Current page number when mode is offset. */
   page?: number;

@@ -6,7 +6,7 @@ export interface UpdateAgentSessionUserStateRequest {
   pinned?: boolean;
   hidden?: boolean;
   markOpened?: boolean;
-  lastReadMessageSequence?: Int64String;
+  lastReadItemSequence?: Int64String;
   customTitle?: string;
   clearCustomTitle?: boolean;
 }

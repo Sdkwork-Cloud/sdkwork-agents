@@ -1,5 +1,5 @@
 @echo off
-echo SDKWork App SDK
+echo SDKWork Custom SDK
 if "%1"=="" goto help
 if "%1"=="build" goto build
 goto help

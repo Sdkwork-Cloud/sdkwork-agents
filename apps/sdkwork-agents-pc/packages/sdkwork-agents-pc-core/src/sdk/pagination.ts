@@ -53,19 +53,21 @@ export interface OffsetPageInfo {
   hasMore: boolean;
 }
 
-/** Parse SdkWork offset-mode `pageInfo` from an SDK list response envelope. */
-export function extractOffsetPageInfo(value: unknown): OffsetPageInfo {
-  const root = isRecord(value) ? value : {};
-  const data = isRecord(root.data) ? root.data : root;
-  const pageInfo = isRecord(data.pageInfo)
-    ? data.pageInfo
-    : isRecord(root.pageInfo)
-      ? root.pageInfo
-      : {};
-  const page = Math.max(1, readNumber(pageInfo, 'page'));
-  const pageSize = Math.max(1, readNumber(pageInfo, 'pageSize', 'page_size') || DEFAULT_LIST_PAGE_SIZE);
-  const totalPages = Math.max(0, readNumber(pageInfo, 'totalPages', 'total_pages'));
-  const totalItems = readNumber(pageInfo, 'totalItems', 'total_items');
+export interface CanonicalPageInfo {
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+  totalItems?: number | string;
+  hasMore?: boolean;
+}
+
+/** Map an already-unwrapped SDKWork `pageInfo` value into the UI page model. */
+export function toOffsetPageInfo(pageInfo: CanonicalPageInfo): OffsetPageInfo {
+  const page = Math.max(1, pageInfo.page ?? 1);
+  const pageSize = Math.max(1, pageInfo.pageSize ?? DEFAULT_LIST_PAGE_SIZE);
+  const totalPages = Math.max(0, pageInfo.totalPages ?? 0);
+  const parsedTotalItems = Number(pageInfo.totalItems ?? 0);
+  const totalItems = Number.isFinite(parsedTotalItems) ? parsedTotalItems : 0;
   const hasMore = pageInfo.hasMore === true || (totalPages > 0 && page < totalPages);
   return { page, pageSize, totalPages, totalItems, hasMore };
 }
@@ -74,7 +76,11 @@ export interface SyncAllOffsetPagesOptions<TQuery = Record<string, unknown>> {
   pageSize?: number;
   maxPages?: number;
   query?: TQuery;
-  mapItems: (response: unknown) => unknown[];
+}
+
+export interface CanonicalOffsetPage<T> {
+  items: T[];
+  pageInfo: CanonicalPageInfo;
 }
 
 /**
@@ -82,7 +88,9 @@ export interface SyncAllOffsetPagesOptions<TQuery = Record<string, unknown>> {
  * Per `PAGINATION_SPEC.md` §7–§8 — must not back interactive UI tables or feeds.
  */
 export async function syncAllOffsetPages<T, TQuery extends Record<string, unknown> = Record<string, unknown>>(
-  fetchPage: (params: { page: number; pageSize: number } & TQuery) => Promise<unknown>,
+  fetchPage: (
+    params: { page: number; pageSize: number } & TQuery,
+  ) => Promise<CanonicalOffsetPage<T>>,
   options: SyncAllOffsetPagesOptions<TQuery>,
 ): Promise<T[]> {
   const pageSize = Math.min(
@@ -95,8 +103,8 @@ export async function syncAllOffsetPages<T, TQuery extends Record<string, unknow
   let page = 1;
   while (page <= maxPages) {
     const response = await fetchPage({ page, pageSize, ...query });
-    items.push(...(options.mapItems(response) as T[]));
-    if (!extractOffsetPageInfo(response).hasMore) {
+    items.push(...response.items);
+    if (!toOffsetPageInfo(response.pageInfo).hasMore) {
       break;
     }
     page += 1;

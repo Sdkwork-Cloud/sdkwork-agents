@@ -10,7 +10,7 @@ export interface AgentResourceUserStateRecord {
   pinnedAt?: string;
   hiddenAt?: string;
   lastOpenedAt?: string;
-  lastReadMessageSequence?: string;
+  lastReadItemSequence?: string;
   customTitle?: string;
   version: Int64String;
   createdAt: string;

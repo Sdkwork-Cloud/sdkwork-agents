@@ -11,9 +11,9 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 | [AGENTS_SESSION_MODEL_SPEC.md](./AGENTS_SESSION_MODEL_SPEC.md) | Durable session aggregate, runtime binding, item, interaction, and checkpoint contract |
 | [AGENTS_KERNEL_BOUNDARY_SPEC.md](./AGENTS_KERNEL_BOUNDARY_SPEC.md) | Kernel vs agents vs product boundary (frozen) |
 | [AGENTS_PROVIDER_TAXONOMY_SPEC.md](./AGENTS_PROVIDER_TAXONOMY_SPEC.md) | Code / autonomous / framework agent taxonomy |
-| [AGENTS_KERNEL_SPI_GAP_ANALYSIS.md](./AGENTS_KERNEL_SPI_GAP_ANALYSIS.md) | SPI gaps, commercial readiness, roadmap |
+| [AGENTS_KERNEL_SPI_GAP_ANALYSIS.md](./AGENTS_KERNEL_SPI_GAP_ANALYSIS.md) | Kernel capability closure and commercial readiness gates |
 | [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](./AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md) | Mandatory `sdkwork-im -> sdkwork-agents` dependency direction and database ownership boundary |
-| [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md) | Active frontend-aligned Chat/Project database contract `4.0.0` |
+| [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md) | Canonical 19-table Agents PostgreSQL contract |
 | [agents-birdcoder-alignment.spec.json](./agents-birdcoder-alignment.spec.json) | Machine-readable cross-repo alignment tracker |
 | [docs/architecture/AGENTS_LAYERING.md](../docs/architecture/AGENTS_LAYERING.md) | Crate and SDK layering |
 | [docs/product/prd/PRD.md](../docs/product/prd/PRD.md) | Product requirements |
@@ -26,7 +26,7 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 | `sdkwork-web-framework` | **Integrated** | `sdkwork-routes-agents-*` + `build_served_combined_router` in kernel-bridge |
 | `sdkwork-database` | **Integrated** | `database/` assets, `sdkwork-agents-database-host`, managed-store postgres path |
 | `sdkwork-utils` | **Integrated** | `SdkWorkApiResponse`, `parse_bool`, `is_blank`, `trim`, `uuid` across contract/service/facade |
-| `sdkwork-drive` | **Integrated for PC upload scope** | PC core uses `@sdkwork/drive-app-sdk` Drive Uploader; Agents messages and slots retain canonical Drive-backed media references only |
+| `sdkwork-drive` | **Integrated for PC upload scope** | PC core uses `@sdkwork/drive-app-sdk` Drive Uploader; Agents session items and slots retain canonical Drive references only |
 | `sdkwork-discovery` | **Inactive** | No first-party RPC services yet |
 
 ## Independent Module Integration
@@ -40,14 +40,13 @@ depend on `sdkwork-agents` for their core domain behavior.
 | `sdkwork-knowledgebase` | `slot_kind=knowledge`, `target_module=knowledgebase` | `@sdkwork/knowledgebase-app-sdk` |
 | `sdkwork-skills` | `slot_kind=skill`, `target_module=skills` | `@sdkwork/skills-app-sdk` |
 | `sdkwork-prompts` | `slot_kind=prompt`, `target_module=prompts` | `@sdkwork/prompts-app-sdk` |
-| `sdkwork-mcp` | `slot_kind=mcp`, `target_module=mcp` | marketplace projection; federation enablement requires an approved sdkwork-mcp runtime surface |
+| `sdkwork-mcp` | `slot_kind=mcp`, `target_module=mcp` | public SDK/runtime integration with stable MCP references |
 | `sdkwork-llm` | runtime binding / model provider profile | model catalog, provider profile, credential references |
 | `sdkwork-drive` | `slot_kind=drive`, `target_module=drive` | `@sdkwork/drive-app-sdk`; Drive Uploader only |
 
-The active chat/project `4.0.0` contract additionally reuses `sdkwork-search` for
-cross-resource indexing/query and `sdkwork-generations` for image/video/music/
-voice generation records. They are not declared as active component dependencies
-until the SDK/facade implementation and verification gates are delivered.
+Search indexing and generated-media workflows remain independent capabilities.
+They integrate through approved public contracts and are not copied into the
+Agents database or SDK authorities.
 
 Do not reverse the dependency: memory, knowledgebase, skills, prompts, mcp, llm,
 and drive own their tables, APIs, SDKs, and runtime contracts. Agents stores only
@@ -63,9 +62,9 @@ Runtime composition uses sibling checkout `../sdkwork-kernel` per `DEPENDENCY_MA
 Products (including `sdkwork-birdcoder`) MUST consume agent runtime through
 `sdkwork-agents-runtime-facade` and `@sdkwork/agents-app-sdk`, not `sdkwork-agent-provider-*`.
 
-`sdkwork-im` is also an Agents consumer. The mandatory direction is
+`sdkwork-im` is an Agents consumer. The mandatory direction is
 `sdkwork-im -> sdkwork-agents -> sdkwork-kernel`; Agents MUST NOT import IM SDKs,
-read or write `im_*` tables, or persist IM conversation/group/message ownership.
+read or write `im_*` tables, or persist IM communication ownership.
 See `AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md`.
 
 Client composition authority: `APP_COMPOSITION_SPEC.md` via `pnpm check:app-composition` (`verify-repo.mjs`). Do not add `dependency.composition.json`.

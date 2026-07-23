@@ -225,11 +225,16 @@ function resolveComposerCommand(projectDir) {
 
 function runTypeScript(ctx) {
   const packageFile = path.join(ctx.projectDir, 'package.json');
+  const nodeModulesDir = path.join(ctx.projectDir, 'node_modules');
   ensureFile(packageFile, 'package.json');
   const packageJson = loadJson(packageFile);
   const hasBuildScript = Boolean(packageJson?.scripts?.build);
 
-  run('npm', ['install'], { cwd: ctx.projectDir });
+  if (existsSync(nodeModulesDir)) {
+    log('node_modules already exists, using the installed dependency graph.');
+  } else {
+    run('npm', ['install'], { cwd: ctx.projectDir });
+  }
   if (hasBuildScript) {
     run('npm', ['run', 'build'], { cwd: ctx.projectDir });
   } else {

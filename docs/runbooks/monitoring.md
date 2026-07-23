@@ -1,53 +1,63 @@
 # Monitoring And Alerting
 
-Operational observability for sdkwork-agents in staging and production.
+Operational observability for SDKWork Agents staging and production.
 
-## Health endpoints
+## 1. Endpoints
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health` | Liveness — process up |
-| `GET /metrics/agents` | Prometheus text exposition for managed-agent HTTP |
+| `GET /health` | process and dependency liveness/readiness |
+| `GET /metrics/agents` | Prometheus exposition for Agents runtime |
 
-Scrape `/metrics/agents` from the standalone gateway assembly or split API service behind your platform Prometheus stack.
+Scrape through the approved private operations network. Do not expose metrics
+publicly without platform authentication.
 
-## Key metrics
+## 2. Required Signals
 
-| Metric | Type | Use |
+| Signal | Dimensions | Use |
 | --- | --- | --- |
-| `sdkwork_agents_requests_per_second` | gauge | Traffic rate |
-| `sdkwork_agents_http_requests_total` | counter | Request volume by route/status |
-| `sdkwork_agents_http_errors_total` | counter | 4xx/5xx spike detection |
+| HTTP request count/latency | surface, route template, method, status | SLO and regression detection |
+| Turn lifecycle count/latency | mode, status, provider class | execution health |
+| Provider failures/timeouts | provider class, normalized error | dependency health |
+| Database pool | total, active, idle, wait, timeout | saturation and leak detection |
+| Interaction backlog | kind, age bucket | blocked human workflows |
+| Outbox backlog | status, age bucket, attempt bucket | delivery reliability |
+| Idempotency conflicts | operation/resource | client correctness and abuse detection |
 
-Correlate spikes with application logs (`agents.managed_store.request`) and client `traceId` from API responses (`x-sdkwork-trace-id`).
+Never use raw tenant/user IDs, content, prompts, tool arguments, credentials or
+claim tokens as metric labels.
 
-## Recommended alerts
+## 3. Alerts
 
-| Alert | Condition | Action |
+| Alert | Condition | First action |
 | --- | --- | --- |
-| High 5xx rate | `rate(sdkwork_agents_http_errors_total{status=~"5.."}[5m])` elevated | See [incident-rollback.md](./incident-rollback.md) |
-| Auth failures | IAM 401/403 on `/app/v3/api` | Verify session tokens, dev bypass off |
-| Postgres connectivity | Managed store errors in logs | Check `SDKWORK_AGENTS_STORE_DATABASE_*`, run `pnpm db:status` |
-| Zero traffic | RPS near zero during business hours | Ingress, gateway, or client base URL misconfiguration |
+| High 5xx rate | sustained elevated server-error ratio | correlate route and trace; inspect database/provider health |
+| Auth rejection spike | abnormal 401/403 by surface | verify credential provider and gateway classification |
+| Database saturation | high pool utilization or wait timeout | stop rollout; inspect slow queries and pool limits |
+| Turn timeout spike | runtime timeout above baseline | inspect provider health and binding rollout |
+| Interaction age | pending age exceeds product SLO | verify resolver clients and claim flow |
+| Outbox backlog | oldest pending age exceeds delivery SLO | inspect dispatcher and retry policy |
+| No traffic | expected traffic absent | ingress, discovery, base URL and release routing |
 
-## Client-side signals
+## 4. Logs And Traces
 
-| Surface | Check |
-| --- | --- |
-| PC / H5 | Browser network tab — `SdkWorkApiResponse` `code: 0`, `traceId` present |
-| Mini program | Rebuilt runtime: `pnpm --filter @sdkwork/agents-mini-program build` |
-| SDK drift | `pnpm workflow:build-agents-app-sdk` before release |
+Structured records include server-owned `traceId`, route template, method,
+surface, normalized status, duration and bounded resource type/id. Sensitive
+content is redacted. Use the response `traceId` to correlate client, gateway,
+service, database and provider spans.
 
-## Log fields
+Audit events are business evidence and are not replaced by application logs.
 
-Structured request traces should include:
+## 5. Release Observation
 
-- `traceId` / `x-sdkwork-trace-id`
-- HTTP method and path under `/app/v3/api` or `/backend/v3/api`
-- Tenant / subject when IAM context is available
+During rollout compare candidate and baseline:
 
-## Related
+- p50/p95/p99 API and Turn latency;
+- error, timeout and cancellation rate;
+- database pool wait and slow query count;
+- idempotency conflict rate;
+- Interaction and outbox age;
+- memory/CPU and restart count.
 
-- [incident-rollback.md](./incident-rollback.md) — containment and rollback
-- [pre-launch-verification.md](./pre-launch-verification.md) — cutover checklist
-- [TECH_ARCHITECTURE.md](../architecture/tech/TECH_ARCHITECTURE.md) §10 — platform-owned rate limit / CORS
+Rollback according to [incident-rollback.md](./incident-rollback.md) when a
+release breaches the approved threshold.

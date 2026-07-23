@@ -4,12 +4,12 @@ import { createElement } from "react";
 import {
   getSkillsAppSdkClient,
   isSkillsAppSdkConfigured,
+  type SkillPackageRecord,
+  type SkillRecord,
 } from "@sdkwork/agents-pc-core/sdk/skillsAppSdkClient";
 
 import type { SkillItem } from "../components/SelectSkillsModal";
-import { DEFAULT_LIST_PAGE_SIZE, extractOffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
-
-import { extractArray } from "./sdkEnvelope";
+import { DEFAULT_LIST_PAGE_SIZE, toOffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
 
 export interface SkillCatalogPage {
   items: SkillItem[];
@@ -17,33 +17,24 @@ export interface SkillCatalogPage {
   hasMore: boolean;
 }
 
-function pickString(record: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return undefined;
+function mapSkillRecord(record: SkillRecord): SkillItem {
+  return {
+    id: record.skillKey.startsWith("skill.") ? record.skillKey : `skill.${record.skillKey}`,
+    name: record.name,
+    description: record.description ?? record.summary ?? "Skill from sdkwork-skills",
+    provider: "sdkwork-skills",
+    category: "preset",
+    icon: createElement(Blocks, { size: 20, className: "text-cyan-500" }),
+  };
 }
 
-function mapSkillRecord(
-  record: Record<string, unknown>,
-  index: number,
-  category: SkillItem["category"],
-): SkillItem | undefined {
-  const id =
-    pickString(record, ["skillKey", "skill_key", "skillId", "skill_id", "id"]) ??
-    `skill.${category}.${index}`;
-  const name = pickString(record, ["displayName", "display_name", "name", "title"]) ?? id;
-  const description =
-    pickString(record, ["description", "summary"]) ?? "Skill package from sdkwork-skills";
+function mapSkillPackageRecord(record: SkillPackageRecord): SkillItem {
   return {
-    id: id.startsWith("skill.") ? id : `skill.${id}`,
-    name,
-    description,
-    provider: pickString(record, ["provider", "author"]) ?? "sdkwork-skills",
-    category,
+    id: record.skillKey.startsWith("skill.") ? record.skillKey : `skill.${record.skillKey}`,
+    name: record.displayName,
+    description: record.description ?? record.summary ?? "Skill package from sdkwork-skills",
+    provider: "sdkwork-skills",
+    category: "workflow",
     icon: createElement(Blocks, { size: 20, className: "text-cyan-500" }),
   };
 }
@@ -65,18 +56,13 @@ export async function loadSkillCatalogPageByCategory(
     pageSize,
     ...(q?.trim() ? { q: q.trim() } : {}),
   };
-  const response =
-    category === "preset"
-      ? await client.skills.list(listParams)
-      : await client.skills.skillPackages.list(listParams);
-  const pageInfo = extractOffsetPageInfo(response);
-  const items = extractArray(response)
-    .map((item, index) =>
-      item && typeof item === "object"
-        ? mapSkillRecord(item as Record<string, unknown>, index, category)
-        : undefined,
-    )
-    .filter((item): item is SkillItem => Boolean(item));
+  const response = category === "preset"
+    ? await client.skills.marketplace.list(listParams)
+    : await client.skills.skillPackages.list(listParams);
+  const pageInfo = toOffsetPageInfo(response.pageInfo);
+  const items = category === "preset"
+    ? (response.items as SkillRecord[]).map(mapSkillRecord)
+    : (response.items as SkillPackageRecord[]).map(mapSkillPackageRecord);
 
   return { items, page: pageInfo.page, hasMore: pageInfo.hasMore };
 }

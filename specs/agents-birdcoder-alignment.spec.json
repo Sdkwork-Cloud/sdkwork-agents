@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "sdkwork.agents-birdcoder-alignment",
-  "updatedAt": "2026-07-06",
+  "updatedAt": "2026-07-22",
   "summary": "Machine-readable alignment tracker for sdkwork-agents application layer vs sdkwork-kernel SPI and BirdCoder product integration.",
   "authorityDocs": [
     "specs/AGENTS_KERNEL_BOUNDARY_SPEC.md",
@@ -34,7 +34,8 @@
       "role": "code-agent-product",
       "requiredCapabilities": [
         "birdcoder-kernel-bridge-via-agents-facade",
-        "coding-session-projection",
+        "canonical-agent-session-consumer",
+        "agents-app-sdk-session-turn-items",
         "engine-conformance-contract"
       ]
     }
@@ -57,7 +58,7 @@
     },
     {
       "id": "P4-gaps",
-      "title": "Gap analysis and commercial readiness",
+      "title": "Capability closure and commercial readiness",
       "doc": "specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md"
     },
     {
@@ -71,7 +72,7 @@
       "id": "AGA-01",
       "phase": "P1-boundary",
       "owner": "agents",
-      "title": "Agents owns ai_* composition + hosted session/message persistence",
+      "title": "Agents owns ai_* composition and the canonical Session aggregate",
       "status": "done",
       "gate": true,
       "evidence": {
@@ -112,9 +113,9 @@
       "phase": "P2-taxonomy",
       "owner": "kernel",
       "title": "T2 autonomous providers (openclaw, hermes) bootstrap on demand",
-      "status": "in_progress",
-      "gate": false,
-      "notes": "Bootstrap exists in code_engines.rs; default catalog excludes T2 until CI conformance gates pass.",
+      "status": "done",
+      "gate": true,
+      "notes": "On-demand bootstrap is implemented; the default catalog intentionally exposes only conformance-approved T1 engines.",
       "evidence": {
         "paths": [
           "crates/sdkwork-agents-runtime-facade/src/code_engines.rs",
@@ -140,13 +141,15 @@
       "id": "AGA-05",
       "phase": "P3-facade",
       "owner": "agents",
-      "title": "95-operation HTTP surface + SdkWorkApiResponse envelope",
+      "title": "163-operation HTTP surface plus SDKWork response envelopes",
       "status": "done",
       "gate": true,
       "evidence": {
         "paths": [
           "docs/architecture/tech/TECH-api-specification.md",
           "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-app-api.openapi.yaml",
+          "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-backend-api.openapi.yaml",
+          "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-open-api.openapi.yaml",
           "crates/sdkwork-intelligence-agents-service/src/api.rs"
         ]
       },
@@ -191,12 +194,18 @@
     },
     {
       "id": "AGA-08",
-      "phase": "non-ga-scope",
-      "owner": "kernel",
-      "title": "Token-level ModelProvider::stream for SSE chat",
-      "status": "non-ga-scope",
-      "gate": false,
-      "notes": "Outside the current GA evidence bundle; see AGENTS_KERNEL_SPI_GAP_ANALYSIS.md G1"
+      "phase": "P3-facade",
+      "owner": "agents",
+      "title": "Typed Turn SSE delta and completion contract",
+      "status": "done",
+      "gate": true,
+      "notes": "All public surfaces expose AgentTurnStreamEvent; completion carries AgentTurnExecutionResponse.",
+      "evidence": {
+        "paths": [
+          "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-app-api.openapi.yaml",
+          "crates/sdkwork-intelligence-agents-service/tests/http_axum_contracts.rs"
+        ]
+      }
     },
     {
       "id": "AGA-09",
@@ -205,7 +214,7 @@
       "title": "Task scheduling persistence and HTTP APIs (ai_agent_task)",
       "status": "done",
       "gate": true,
-      "notes": "Postgres sync, app/backend HTTP, auto-execution via chat_completer; taskRuns projection remains non-GA scope until kernel run projection is stable.",
+      "notes": "Task commands use the same runtime facade and trusted AgentRequestContext as Session/Turn execution.",
       "evidence": {
         "paths": [
           "database/contract/table-registry.json",
@@ -254,12 +263,25 @@
     },
     {
       "id": "AGA-10",
-      "phase": "non-ga-scope",
+      "phase": "P3-facade",
       "owner": "agents",
       "title": "Flutter Dart agents-app-sdk",
-      "status": "non-ga-scope",
-      "gate": false,
-      "notes": "Flutter is outside the current GA evidence bundle until an owned Dart app SDK facade exists."
+      "status": "done",
+      "gate": true,
+      "notes": "The generated sdkwork_agents_app_sdk package exposes Session, Turn, SessionItem and Interaction resources through its package root.",
+      "evidence": {
+        "paths": [
+          "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi/pubspec.yaml",
+          "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi/lib/sdkwork_agents_app_sdk.dart",
+          "apps/sdkwork-agents-flutter-mobile/packages/sdkwork_agents_flutter_mobile_core/lib/sdk/agents_app_sdk_clients.dart"
+        ]
+      },
+      "verification": {
+        "commands": [
+          "flutter analyze apps/sdkwork-agents-flutter-mobile",
+          "flutter test apps/sdkwork-agents-flutter-mobile/packages/sdkwork_agents_flutter_mobile_core"
+        ]
+      }
     }
   ]
 }

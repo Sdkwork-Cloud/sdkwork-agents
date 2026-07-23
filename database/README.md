@@ -29,13 +29,8 @@ future released-schema changes. `baseline-plus-migrations` remains the lifecycle
 strategy so the first post-launch change can be added without changing bootstrap
 semantics.
 
-The SQLite DDL is an explicitly non-authoritative four-table control-plane
-development subset. It does not implement the Session aggregate and is not
-listed in `database.manifest.json#engines`.
-
 All business `id` columns are application-allocated signed 64-bit values.
-Neither PostgreSQL nor SQLite uses sequences, identity columns, rowid aliases,
-or any other database-side business ID allocation.
+PostgreSQL sequences and identity columns are not used for business IDs.
 
 ## Commands
 

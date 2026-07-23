@@ -1,13 +1,15 @@
-import { sendAgentChatMessageSync } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
+import { completeAgentTurn } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import {
   getAgentsAppSdkClientWithSession,
+  type AgentItemFeedbackRecord,
+  type AgentResourceUserStateRecord,
+  type AgentSessionItemRecord,
+  type AgentSessionRecord,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
-import { extractOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
+import { toOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
 import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
-import { uuid } from "@sdkwork/utils";
-
-import { extractArray, extractResourceRecord, isRecord } from "./sdkEnvelope";
+import { sha256Hash, uuid } from "@sdkwork/utils";
 
 export interface ChatMessage {
   id: string;
@@ -42,67 +44,66 @@ export interface ChatMessageFeedback {
   version: string;
 }
 
-/** Matches backend `CHAT_CONTEXT_MESSAGE_LIMIT` for one interactive chat page. */
-const CHAT_MESSAGE_PAGE_SIZE = 50;
+/** Matches the bounded server context window for one interactive session page. */
+const SESSION_ITEM_PAGE_SIZE = 50;
 
-function pickString(record: Record<string, unknown> | undefined, keys: string[]): string | undefined {
-  if (!record) {
-    return undefined;
+function toChatMessage(record: AgentSessionItemRecord): ChatMessage {
+  if (!record.itemId) {
+    throw new Error("Agent session item did not include itemId.");
   }
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return undefined;
-}
 
-function toChatMessage(record: Record<string, unknown>): ChatMessage {
-  const messageId = pickString(record, ["messageId", "message_id", "id"]);
-  if (!messageId) {
-    throw new Error("Chat message did not include messageId.");
-  }
+  const role: ChatMessage["role"] = record.kind === "user_input"
+    ? "user"
+    : record.kind === "system_instruction"
+        || record.kind === "status_notice"
+        || record.kind === "error_notice"
+      ? "system"
+      : record.kind === "tool_call" || record.kind === "tool_result"
+        ? "tool"
+        : "assistant";
 
   return {
-    id: messageId,
-    role: (pickString(record, ["role"]) as ChatMessage["role"]) ?? "assistant",
-    content: pickString(record, ["content"]) ?? "",
-    createdAt: pickString(record, ["createdAt", "created_at"]) ?? new Date().toISOString(),
-    mediaResources: Array.isArray(record.mediaResources)
-      ? record.mediaResources
-          .filter(isRecord)
-          .map((resource): AgentsDriveMediaResource | undefined => {
-            const id = pickString(resource, ["id"]);
-            const kind = pickString(resource, ["kind"]);
-            const source = pickString(resource, ["source"]);
-            const uri = pickString(resource, ["uri"]);
-            if (!id || !kind || source !== "drive" || !uri) {
-              return undefined;
-            }
-            return {
-              id,
-              kind: kind as AgentsDriveMediaResource["kind"],
-              source: "drive",
-              uri,
-              url: pickString(resource, ["url"]),
-              fileName: pickString(resource, ["fileName"]),
-              mimeType: pickString(resource, ["mimeType"]),
-              sizeBytes: pickString(resource, ["sizeBytes"]),
-              metadata: isRecord(resource.metadata) ? resource.metadata : {},
-            };
-          })
-          .filter((resource): resource is AgentsDriveMediaResource => Boolean(resource))
-      : [],
+    id: record.itemId,
+    role,
+    content: record.content ?? "",
+    createdAt: record.createdAt,
+    mediaResources: record.driveRefs
+      .filter((resource) => resource.status === "active")
+      .map((resource): AgentsDriveMediaResource => ({
+        id: resource.mediaResourceId ?? `${resource.driveSpaceId}:${resource.driveNodeId}`,
+        kind: resource.resourceRole === "image"
+          ? "image"
+          : resource.resourceRole === "audio"
+            ? "audio"
+            : "other",
+        source: "drive",
+        uri: `drive://spaces/${resource.driveSpaceId}/nodes/${resource.driveNodeId}`,
+        metadata: {
+          driveSpaceId: resource.driveSpaceId,
+          driveNodeId: resource.driveNodeId,
+          drive: {
+            spaceId: resource.driveSpaceId,
+            nodeId: resource.driveNodeId,
+          },
+        },
+      })),
   };
 }
 
-function toSessionId(record: Record<string, unknown>): string {
-  return pickString(record, ["sessionId", "session_id", "id"]) ?? "";
+function toSessionId(record: AgentSessionRecord): string {
+  return record.sessionId;
 }
 
-function readSessionStatus(record: Record<string, unknown>): string | undefined {
-  return pickString(record, ["status"]);
+function findAssistantOutput(
+  items: AgentSessionItemRecord[],
+): AgentSessionItemRecord | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind === "assistant_output") {
+      return item;
+    }
+  }
+  return undefined;
 }
 
 export class AgentChatService {
@@ -111,12 +112,22 @@ export class AgentChatService {
   ) {}
 
   async createSession(agentId: string, title?: string, sessionId?: string): Promise<string> {
-    const response = await this.getClient().ai.agents.sessions.create(agentId, {
+    const idempotencyKey = uuid();
+    const normalizedTitle = title?.trim() || "Agent session";
+    const session = await this.getClient().ai.agents.sessions.create(agentId, {
       ...(sessionId ? { sessionId } : {}),
-      title: title?.trim() || "Chat",
+      sessionKind: "assistant",
+      entrySurface: "pc",
+      title: normalizedTitle,
+      idempotencyKey,
+      payloadHash: `sha256:${sha256Hash(JSON.stringify({
+        sessionId: sessionId ?? null,
+        sessionKind: "assistant",
+        entrySurface: "pc",
+        title: normalizedTitle,
+      }))}`,
       requestedAt: new Date().toISOString(),
     });
-    const session = extractResourceRecord(response);
     const createdSessionId = toSessionId(session);
     if (!createdSessionId) {
       throw new Error("Chat session create did not return sessionId.");
@@ -126,8 +137,8 @@ export class AgentChatService {
 
   async listSessions(agentId: string, page = 1, pageSize = 10): Promise<string[]> {
     const response = await this.getClient().ai.agents.sessions.list(agentId, { page, pageSize });
-    return extractArray(response)
-      .map((item) => (isRecord(item) ? toSessionId(item) : ""))
+    return (response.items as AgentSessionRecord[])
+      .map(toSessionId)
       .filter((sessionId) => sessionId.length > 0);
   }
 
@@ -137,16 +148,13 @@ export class AgentChatService {
     pageSize = 50,
   ): Promise<ChatSessionSummary[]> {
     const response = await this.getClient().ai.agents.sessions.list(agentId, { page, pageSize });
-    return extractArray(response)
-      .filter(isRecord)
+    return (response.items as AgentSessionRecord[])
       .map((record) => ({
         id: toSessionId(record),
-        title: pickString(record, ["title"]) ?? "New chat",
-        updatedAt:
-          pickString(record, ["updatedAt", "updated_at"])
-          ?? new Date(0).toISOString(),
-        version: pickString(record, ["version"]) ?? "0",
-        projectId: pickString(record, ["projectId", "project_id"]),
+        title: record.title ?? "New chat",
+        updatedAt: record.updatedAt,
+        version: record.version,
+        projectId: record.projectId ?? undefined,
       }))
       .filter((session) => session.id.length > 0);
   }
@@ -156,14 +164,13 @@ export class AgentChatService {
     sessionId: string,
     patch: { title?: string; projectId?: string; clearProject?: boolean; expectedVersion?: string },
   ): Promise<ChatSessionSummary> {
-    const response = await this.getClient().ai.agents.sessions.update(agentId, sessionId, patch);
-    const record = extractResourceRecord(response);
+    const record = await this.getClient().ai.agents.sessions.update(agentId, sessionId, patch);
     return {
       id: toSessionId(record),
-      title: pickString(record, ["title"]) ?? "New chat",
-      updatedAt: pickString(record, ["updatedAt", "updated_at"]) ?? new Date().toISOString(),
-      version: pickString(record, ["version"]) ?? patch.expectedVersion ?? "0",
-      projectId: pickString(record, ["projectId", "project_id"]),
+      title: record.title ?? "New chat",
+      updatedAt: record.updatedAt,
+      version: record.version,
+      projectId: record.projectId ?? undefined,
     };
   }
 
@@ -180,12 +187,11 @@ export class AgentChatService {
       pageSize: 200,
       pinnedOnly,
     });
-    return extractArray(response)
-      .filter(isRecord)
-      .map((record) => ({
-        sessionId: pickString(record, ["resourceId", "resource_id"]) ?? "",
-        pinned: Boolean(pickString(record, ["pinnedAt", "pinned_at"])),
-        version: pickString(record, ["version"]) ?? "0",
+    return (response.items as AgentResourceUserStateRecord[])
+      .map((record: AgentResourceUserStateRecord) => ({
+        sessionId: record.resourceId,
+        pinned: Boolean(record.pinnedAt),
+        version: record.version,
       }))
       .filter((state) => state.sessionId.length > 0);
   }
@@ -195,16 +201,15 @@ export class AgentChatService {
     sessionId: string,
     patch: { pinned: boolean; expectedVersion?: string },
   ): Promise<ChatSessionUserState> {
-    const response = await this.getClient().ai.agents.sessionUserStates.update(
+    const record = await this.getClient().ai.agents.sessionUserStates.update(
       agentId,
       sessionId,
       patch,
     );
-    const record = extractResourceRecord(response);
     return {
-      sessionId: pickString(record, ["resourceId", "resource_id"]) ?? sessionId,
-      pinned: Boolean(pickString(record, ["pinnedAt", "pinned_at"])),
-      version: pickString(record, ["version"]) ?? patch.expectedVersion ?? "0",
+      sessionId: record.resourceId,
+      pinned: Boolean(record.pinnedAt),
+      version: record.version,
     };
   }
 
@@ -212,16 +217,15 @@ export class AgentChatService {
     agentId: string,
     sessionId: string,
   ): Promise<ChatMessageFeedback[]> {
-    const response = await this.getClient().ai.agents.messageFeedback.list(agentId, sessionId, {
+    const response = await this.getClient().ai.agents.itemFeedback.list(agentId, sessionId, {
       page: 1,
-      pageSize: CHAT_MESSAGE_PAGE_SIZE,
+      pageSize: SESSION_ITEM_PAGE_SIZE,
     });
-    return extractArray(response)
-      .filter(isRecord)
-      .map((record) => ({
-        messageId: pickString(record, ["messageId", "message_id"]) ?? "",
-        rating: pickString(record, ["rating"]) as ChatMessageFeedback["rating"],
-        version: pickString(record, ["version"]) ?? "0",
+    return (response.items as AgentItemFeedbackRecord[])
+      .map((record: AgentItemFeedbackRecord) => ({
+        messageId: record.itemId,
+        rating: record.deletedAt ? undefined : record.rating,
+        version: record.version,
       }))
       .filter((feedback) => feedback.messageId.length > 0);
   }
@@ -236,19 +240,16 @@ export class AgentChatService {
       expectedVersion?: string;
     },
   ): Promise<ChatMessageFeedback> {
-    const response = await this.getClient().ai.agents.messageFeedback.update(
+    const record = await this.getClient().ai.agents.itemFeedback.update(
       agentId,
       sessionId,
       messageId,
       patch,
     );
-    const record = extractResourceRecord(response);
     return {
-      messageId: pickString(record, ["messageId", "message_id"]) ?? messageId,
-      rating: pickString(record, ["deletedAt", "deleted_at"])
-        ? undefined
-        : pickString(record, ["rating"]) as ChatMessageFeedback["rating"],
-      version: pickString(record, ["version"]) ?? patch.expectedVersion ?? "0",
+      messageId: record.itemId,
+      rating: record.deletedAt ? undefined : record.rating,
+      version: record.version,
     };
   }
 
@@ -258,10 +259,9 @@ export class AgentChatService {
       page: 1,
       pageSize: 10,
     });
-    const sessions = extractArray(response).filter(isRecord);
+    const sessions = response.items as AgentSessionRecord[];
     const reusable = sessions.find((session) => {
-      const status = readSessionStatus(session);
-      return !status || status === "active";
+      return session.status === "active";
     });
     if (reusable) {
       const sessionId = toSessionId(reusable);
@@ -290,13 +290,13 @@ export class AgentChatService {
     sessionId: string,
     page = 1,
   ): Promise<ChatMessageListPage> {
-    const response = await this.getClient().ai.agents.messages.list(agentId, sessionId, {
+    const response = await this.getClient().ai.agents.sessionItems.list(agentId, sessionId, {
       page,
-      pageSize: CHAT_MESSAGE_PAGE_SIZE,
+      pageSize: SESSION_ITEM_PAGE_SIZE,
     });
     return {
-      items: this.normalizeMessages(response),
-      pageInfo: extractOffsetPageInfo(response),
+      items: this.normalizeMessages(response.items as AgentSessionItemRecord[]),
+      pageInfo: toOffsetPageInfo(response.pageInfo),
     };
   }
 
@@ -324,48 +324,52 @@ export class AgentChatService {
   ): Promise<ChatMessage> {
     const mediaResources = media ? (Array.isArray(media) ? media : [media]) : [];
     const requestId = uuid();
+    const driveRefs = mediaResources.map((item) => {
+      const driveSpaceId = item.metadata.driveSpaceId ?? item.metadata.drive?.spaceId;
+      const driveNodeId = item.metadata.driveNodeId ?? item.metadata.drive?.nodeId;
+      if (!driveSpaceId || !driveNodeId) {
+        throw new Error("Drive attachment is missing driveSpaceId or driveNodeId.");
+      }
+      return {
+        resourceRole: item.kind === "image" ? "image" as const : item.kind === "audio" ? "audio" as const : "attachment" as const,
+        driveSpaceId,
+        driveNodeId,
+      };
+    });
+    const contentType = mediaResources[0]?.mimeType ?? "text/plain";
+    const payloadHash = `sha256:${sha256Hash(JSON.stringify({
+      content: content.trim(),
+      contentType,
+      requestedModelId: modelId ?? null,
+      driveRefs,
+    }))}`;
     const body = {
       content: content.trim(),
-      contentType: mediaResources[0]?.mimeType ?? "text/plain",
-      ...(mediaResources.length > 0 ? {
-        mediaResources: mediaResources.map((item) => ({
-            id: item.id,
-            kind: item.kind,
-            source: item.source,
-            uri: item.uri,
-            fileName: item.fileName,
-            mimeType: item.mimeType,
-            sizeBytes: item.sizeBytes,
-            metadata: item.metadata,
-          })),
-      } : {}),
+      contentType,
+      turnMode: "interactive" as const,
+      ...(driveRefs.length > 0 ? { driveRefs } : {}),
       requestedAt: new Date().toISOString(),
       idempotencyKey: requestId,
+      payloadHash,
       clientRequestId: requestId,
-      ...(modelId ? { modelId } : {}),
+      ...(modelId ? { requestedModelId: modelId } : {}),
     };
-    const response = await sendAgentChatMessageSync(
+    const completion = await completeAgentTurn(
       this.getClient(),
       agentId,
       sessionId,
       body,
     );
-    const completion = extractResourceRecord(response);
-    const assistantRecord = isRecord(completion.assistantMessage)
-      ? completion.assistantMessage
-      : isRecord(completion.assistant_message)
-        ? completion.assistant_message
-        : undefined;
+    const assistantRecord = findAssistantOutput(completion.items);
     if (!assistantRecord) {
-      throw new Error("Chat completion did not return assistantMessage.");
+      throw new Error("Agent turn did not return an assistant_output item.");
     }
     return toChatMessage(assistantRecord);
   }
 
-  private normalizeMessages(response: unknown): ChatMessage[] {
-    return extractArray(response)
-      .map((item) => (isRecord(item) ? toChatMessage(item) : undefined))
-      .filter((item): item is ChatMessage => Boolean(item))
+  private normalizeMessages(items: AgentSessionItemRecord[]): ChatMessage[] {
+    return items
+      .map(toChatMessage)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 }

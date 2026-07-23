@@ -5,7 +5,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   AGENTS_SDK_FAMILIES,
-  resolveAgentsSdkFamily
+  resolveAgentsSdkFamily,
+  resolveAgentsSdkLanguageTargets
 } from './_shared/agents-sdk-families.mjs';
 import { syncAgentSdkOwnershipWorkspace } from './_shared/agent-sdk-ownership.mjs';
 import {
@@ -53,15 +54,7 @@ for (const family of families) {
     'openapi',
     `${family.authority}.sdkgen.yaml`
   );
-  const output = path.join(
-    root,
-    'sdks',
-    family.familyDir,
-    family.languagePackageDir,
-    'generated',
-    'server-openapi'
-  );
-  fs.mkdirSync(output, { recursive: true });
+  const languageTargets = resolveAgentsSdkLanguageTargets(family);
 
   if (family.externalSdkgenProfileSupported === false) {
     report.families.push({
@@ -69,7 +62,6 @@ for (const family of families) {
       familyDir: family.familyDir,
       authority: family.authority,
       input: toReportPath(input),
-      output: toReportPath(output),
       sdkName: family.sdkName,
       sdkType: family.sdkType,
       sdkSurface: family.sdkSurface,
@@ -79,127 +71,98 @@ for (const family of families) {
       skipped: true,
       skipReason:
         family.externalSdkgenProfileGap ??
-        'Open SDK is derived from app SDK; regenerate app family first.',
-      derivedFrom: 'sdkwork-agents-app-sdk'
+        'The canonical SDK generator profile is not available for this family.',
+      languages: languageTargets.map((target) => ({
+        language: target.language,
+        workspace: target.workspace,
+      })),
     });
     continue;
   }
 
-  const baseArgs = [
-    sdkgenPath,
-    'generate',
-    '-i',
-    input,
-    '-o',
-    output,
-    '-n',
-    family.sdkName,
-    '-t',
-    family.sdkType,
-    '-l',
-    'typescript',
-    '--base-url',
-    'http://localhost:8080',
-    '--api-prefix',
-    family.apiPrefix,
-    '--package-name',
-    family.packageName,
-    '--npm-package-name',
-    family.npmPackageName,
-    '--sdk-root',
-    path.join(root, 'sdks', family.familyDir),
-    '--sdk-name',
-    family.sdkName,
-    '--standard-profile',
-    SDKWORK_SDKGEN_STANDARD.standardProfile,
-    '--no-sync-published-version'
-  ];
+  const languageReports = [];
+  for (const target of languageTargets) {
+    const output = path.join(
+      root,
+      'sdks',
+      family.familyDir,
+      target.workspace,
+      'generated',
+      'server-openapi'
+    );
+    fs.mkdirSync(output, { recursive: true });
+    const baseArgs = buildGeneratorArgs(family, target, input, output);
+    const dryRun = runNodeForJson([
+      ...baseArgs,
+      '--fixed-sdk-version',
+      '0.1.0',
+      '--dry-run',
+      '--json'
+    ]);
+    const plannedChanges = Boolean(dryRun.hasChanges);
+    const languageReport = {
+      language: target.language,
+      workspace: target.workspace,
+      output: toReportPath(output),
+      packageName: target.packageName,
+      version: dryRun.sdk?.version ?? '0.1.0',
+      fingerprint: dryRun.changeFingerprint,
+      hasChanges: plannedChanges,
+      riskLevel: dryRun.executionDecision?.riskLevel ?? 'unknown',
+      generated: false
+    };
 
-  const dryRun = runNodeForJson([
-    ...baseArgs,
-    '--fixed-sdk-version',
-    '0.1.0',
-    '--dry-run',
-    '--json'
-  ]);
+    if (mode === 'apply') {
+      if (!dryRun.changeFingerprint && plannedChanges) {
+        throw new Error(
+          `${family.familyDir}/${target.language} dry-run did not return a change fingerprint`
+        );
+      }
+      if (plannedChanges) {
+        runNodeScript(sdkgenPath, [
+          ...baseArgs.slice(1),
+          '--fixed-sdk-version',
+          languageReport.version,
+          '--expected-change-fingerprint',
+          languageReport.fingerprint,
+          '--license',
+          'MIT'
+        ]);
+      }
+      languageReport.generated = plannedChanges;
+      languageReport.hasChanges = false;
+    }
+    languageReports.push(languageReport);
+  }
 
-  const familyReport = {
+  const typescriptReport = languageReports.find(
+    (languageReport) => languageReport.language === 'typescript'
+  );
+  report.families.push({
     key: family.key,
     familyDir: family.familyDir,
     authority: family.authority,
     input: toReportPath(input),
-    output: toReportPath(output),
+    output: typescriptReport?.output,
     sdkName: family.sdkName,
     sdkType: family.sdkType,
     sdkOwner: family.sdkOwner,
     packageName: family.packageName,
     apiPrefix: family.apiPrefix,
     sdkDependencies: family.sdkDependencies,
-    version: dryRun.sdk?.version ?? '0.1.0',
-    fingerprint: dryRun.changeFingerprint,
-    hasChanges: Boolean(dryRun.hasChanges),
-    riskLevel: dryRun.executionDecision?.riskLevel ?? 'unknown'
-  };
-
-  if (mode === 'apply') {
-    if (!dryRun.changeFingerprint && dryRun.hasChanges) {
-      throw new Error(`${family.familyDir} dry-run did not return a change fingerprint`);
-    }
-    if (dryRun.hasChanges) {
-      runNodeScript(sdkgenPath, [
-        'generate',
-        '-i',
-        input,
-        '-o',
-        output,
-        '-n',
-        family.sdkName,
-        '-t',
-        family.sdkType,
-        '-l',
-        'typescript',
-        '--base-url',
-        'http://localhost:8080',
-        '--api-prefix',
-        family.apiPrefix,
-        '--package-name',
-        family.packageName,
-        '--npm-package-name',
-        family.npmPackageName,
-        '--sdk-root',
-        path.join(root, 'sdks', family.familyDir),
-        '--sdk-name',
-        family.sdkName,
-        '--standard-profile',
-        SDKWORK_SDKGEN_STANDARD.standardProfile,
-        '--no-sync-published-version',
-        '--fixed-sdk-version',
-        familyReport.version,
-        '--expected-change-fingerprint',
-        familyReport.fingerprint,
-        '--license',
-        'MIT'
-      ]);
-    }
-    familyReport.generated = Boolean(dryRun.hasChanges);
-  } else {
-    familyReport.generated = false;
-  }
-
-  report.families.push(familyReport);
-}
-
-const appGeneratedOutput = path.join(
-  root,
-  'sdks',
-  'sdkwork-agents-app-sdk',
-  'sdkwork-agents-app-sdk-typescript',
-  'generated',
-  'server-openapi'
-);
-if (mode === 'apply' && fs.existsSync(appGeneratedOutput)) {
-  runNodeScript(path.join(root, 'sdks', 'materialize-agent-open-sdk-from-app.mjs'), []);
-  report.openSdkDerivedFromApp = true;
+    version: typescriptReport?.version ?? '0.1.0',
+    fingerprint: typescriptReport?.fingerprint,
+    fingerprints: Object.fromEntries(
+      languageReports.map((languageReport) => [
+        languageReport.language,
+        languageReport.fingerprint,
+      ])
+    ),
+    hasChanges: languageReports.some((languageReport) => languageReport.hasChanges),
+    riskLevel: highestRiskLevel(languageReports),
+    generated: languageReports.some((languageReport) => languageReport.generated),
+    languages: languageReports
+  });
 }
 
 syncAgentSdkOwnershipWorkspace(root, AGENTS_SDK_FAMILIES);
@@ -230,6 +193,55 @@ function printHelpAndExit() {
 Generates SDKWork agents SDK families with --standard-profile ${SDKWORK_SDKGEN_STANDARD.standardProfile}.
 `);
   process.exit(0);
+}
+
+function buildGeneratorArgs(family, target, input, output) {
+  return [
+    sdkgenPath,
+    'generate',
+    '-i',
+    input,
+    '-o',
+    output,
+    '-n',
+    family.sdkName,
+    '-t',
+    family.sdkType,
+    '-l',
+    target.language,
+    '--base-url',
+    'http://localhost:8080',
+    '--api-prefix',
+    family.apiPrefix,
+    '--package-name',
+    target.packageName,
+    ...(target.npmPackageName
+      ? ['--npm-package-name', target.npmPackageName]
+      : []),
+    '--sdk-root',
+    path.join(root, 'sdks', family.familyDir),
+    '--sdk-name',
+    family.sdkName,
+    '--standard-profile',
+    SDKWORK_SDKGEN_STANDARD.standardProfile,
+    '--no-sync-published-version'
+  ];
+}
+
+function highestRiskLevel(languageReports) {
+  const rank = new Map([
+    ['unknown', 0],
+    ['low', 1],
+    ['medium', 2],
+    ['high', 3]
+  ]);
+  return languageReports.reduce(
+    (highest, report) =>
+      (rank.get(report.riskLevel) ?? 0) > (rank.get(highest) ?? 0)
+        ? report.riskLevel
+        : highest,
+    'unknown'
+  );
 }
 
 function runNodeForJson(nodeArgs) {

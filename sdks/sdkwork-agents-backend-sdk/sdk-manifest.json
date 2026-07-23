@@ -25,6 +25,7 @@
       "generationState": "materialized",
       "releaseState": "not_published",
       "generatedPath": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
+      "packagePath": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
       "manifestPath": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi/package.json",
       "consumerPackageName": "@sdkwork/agents-backend-sdk",
       "name": "@sdkwork/agents-backend-sdk",
@@ -54,7 +55,7 @@
   "metadata": {
     "managedBy": "sdks/_shared/agent-sdk-ownership.mjs",
     "standardVersion": "2026-06-26",
-    "ownerOnlyOperationCount": 33
+    "ownerOnlyOperationCount": 48
   },
   "schemaVersion": 1,
   "sdkName": "sdkwork-agents-backend-sdk",
@@ -62,7 +63,6 @@
   "sdkFamily": "sdkwork-agents-backend-sdk",
   "sdkType": "backend",
   "sdkSurface": "backend",
-  "language": "typescript",
   "apiPrefix": "/backend/v3/api",
   "generatedOutput": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
   "standardProfile": "sdkwork-v3",
@@ -73,7 +73,7 @@
     "transportRoot": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi",
     "transportEntry": "sdkwork-agents-backend-sdk-typescript/generated/server-openapi/src/index.ts"
   },
-  "ownerOnlyOperationCount": 33,
+  "ownerOnlyOperationCount": 48,
   "standardVersion": "2026-06-26",
   "managedBy": "sdks/_shared/agent-sdk-ownership.mjs"
 }

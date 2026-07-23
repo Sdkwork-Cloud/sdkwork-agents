@@ -16,9 +16,9 @@ use crate::domain::{
 };
 use crate::ports::{
     AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
-    McpMarketplaceListQuery, ItemFeedbackListQuery, SessionItemListQuery,
-    ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionListQuery,
+    ItemFeedbackListQuery, McpMarketplaceListQuery, ProjectCompositionSlotListQuery,
+    ProjectListQuery, ProviderBindingListQuery, ResourceUserStateListQuery,
+    SessionCheckpointListQuery, SessionItemListQuery, SessionListQuery,
     SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectDriveAccessMode, AgentProjectVisibility};

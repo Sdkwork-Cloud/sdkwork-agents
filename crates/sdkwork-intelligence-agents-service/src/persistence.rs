@@ -2,21 +2,21 @@ use crate::agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
-    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus,
-    AgentItemDriveRefRecord, AgentItemFeedbackRating, AgentItemFeedbackRecord,
-    AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
+    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemDriveRefRecord,
+    AgentItemFeedbackRating, AgentItemFeedbackRecord, AgentItemResourceRole,
+    AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
     AgentSessionCheckpointRecord, AgentSessionCheckpointStatus, AgentSessionEntrySurface,
     AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind,
     AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
-    AgentSessionStatus,
-    AgentTaskRecord, AgentTaskStatus, AgentVisibility,
+    AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, McpMarketplaceListQuery, ItemFeedbackListQuery, SessionItemListQuery,
-    SessionItemListSort, ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionListQuery, TaskListQuery, TurnListQuery,
-    SessionCheckpointListQuery, SessionRuntimeBindingListQuery,
+    InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
+    ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
+    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery,
+    SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery,
+    TurnListQuery,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
@@ -24,8 +24,6 @@ use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
     AgentProjectStatus, AgentProjectVisibility,
 };
-#[cfg(feature = "sqlite-sync")]
-use crate::sqlite_sync_pool::{BlockingSqlitePool, SQLITE_MANAGED_STORE_DATABASE_SERVICE};
 use crate::validation::{validate_capabilities, validate_standard_id};
 #[cfg(feature = "postgres-sync")]
 use crate::{pg_execute, pg_query, pg_query_optional};
@@ -35,9 +33,7 @@ use sdkwork_agent_kernel::{
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_utils_rust::{is_blank, sha256_hash, trim};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "sqlite-sync")]
-use sqlx::sqlite::SqliteRow;
-#[cfg(any(feature = "postgres-sync", feature = "sqlite-sync"))]
+#[cfg(feature = "postgres-sync")]
 use sqlx::Row;
 
 #[cfg(feature = "postgres-sync")]
@@ -106,11 +102,7 @@ where
 
 #[cfg(feature = "postgres-sync")]
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
-#[cfg(all(feature = "sqlite-sync", not(feature = "postgres-sync")))]
-use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 mod sql;
-#[cfg(feature = "sqlite-sync")]
-pub mod sqlite_sql;
 
 pub use sql::{
     SQL_ACTIVATE_AGENT_PROVIDER_BINDING, SQL_COUNT_AGENT, SQL_COUNT_AGENT_COMPOSITION_SLOTS,
@@ -126,32 +118,29 @@ pub use sql::{
 #[cfg(feature = "postgres-sync")]
 pub use sql::{
     SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING, SQL_COUNT_AGENT_INTERACTIONS,
-    SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_TURNS,
-    SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
-    SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS,
-    SQL_COUNT_AGENT_PROJECTS, SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS,
-    SQL_COUNT_AGENT_RESOURCE_USER_STATES, SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_TASKS,
-    SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS,
-    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_PROJECTS,
+    SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_RESOURCE_USER_STATES,
+    SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
+    SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TASKS, SQL_COUNT_AGENT_TURNS,
+    SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_INSERT_AGENT_INTERACTION,
+    SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
     SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
     SQL_INSERT_AGENT_SESSION_CHECKPOINT, SQL_INSERT_AGENT_SESSION_ITEM,
     SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
-    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS, SQL_LIST_AGENT_TURNS,
-    SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK,
-    SQL_LIST_AGENT_PROJECTS,
+    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
+    SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
-    SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
-    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS,
-    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
-    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LOCK_AGENT_SESSION_FOR_UPDATE,
-    SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
-    SQL_NEXT_SESSION_ITEM_SEQUENCE, SQL_SELECT_AGENT_INTERACTION,
-    SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
-    SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
-    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_CHECKPOINT,
-    SQL_SELECT_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
-    SQL_SELECT_AGENT_TASK, SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
-    SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY,
+    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
+    SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
+    SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID, SQL_LIST_RECONCILABLE_AGENT_TURNS,
+    SQL_LOCK_AGENT_SESSION_FOR_UPDATE, SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_NEXT_SESSION_ITEM_SEQUENCE, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK,
+    SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
+    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION,
+    SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
+    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
+    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
     SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
@@ -1063,7 +1052,11 @@ impl AgentItemDriveRefRow {
             "audio" => AgentItemResourceRole::Audio,
             "generated_output" => AgentItemResourceRole::GeneratedOutput,
             "artifact" => AgentItemResourceRole::Artifact,
-            _ => return Err(KernelError::validation("invalid session-item resource role")),
+            _ => {
+                return Err(KernelError::validation(
+                    "invalid session-item resource role",
+                ))
+            }
         };
         Ok(AgentItemDriveRefRecord {
             id: self.id,
@@ -1165,7 +1158,10 @@ impl AgentSessionItemRow {
             KernelError::validation(format!("invalid session item kind db code: {}", self.kind))
         })?;
         let status = AgentSessionItemStatus::from_db_code(self.status).ok_or_else(|| {
-            KernelError::validation(format!("invalid session item status db code: {}", self.status))
+            KernelError::validation(format!(
+                "invalid session item status db code: {}",
+                self.status
+            ))
         })?;
         Ok(AgentSessionItemRecord {
             id: self.id,
@@ -1536,11 +1532,7 @@ fn build_session_runtime_binding_uuid(
     build_storage_uuid(
         "session-runtime-binding",
         tenant_id,
-        &[
-            &organization_id.to_string(),
-            session_id,
-            runtime_binding_id,
-        ],
+        &[&organization_id.to_string(), session_id, runtime_binding_id],
     )
 }
 
@@ -2068,9 +2060,8 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         _drive_refs: Vec<AgentItemDriveRefRow>,
     ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
         Err(KernelError::Internal {
-            message:
-                "insert_turn_with_drive_ref_rows requires a transactional adapter override"
-                    .to_string(),
+            message: "insert_turn_with_drive_ref_rows requires a transactional adapter override"
+                .to_string(),
         })
     }
     fn list_item_drive_ref_rows(
@@ -2091,11 +2082,7 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     ) -> KernelResult<Vec<AgentItemDriveRefRow>> {
         let mut rows = Vec::new();
         for item_id in item_ids {
-            rows.extend(self.list_item_drive_ref_rows(
-                tenant_id,
-                organization_id,
-                item_id,
-            )?);
+            rows.extend(self.list_item_drive_ref_rows(tenant_id, organization_id, item_id)?);
         }
         Ok(rows)
     }
@@ -2414,18 +2401,16 @@ where
         &self,
         record: AgentSessionRuntimeBindingRecord,
     ) -> KernelResult<()> {
-        self.adapter.insert_session_runtime_binding_row(
-            AgentSessionRuntimeBindingRow::from_record(&record),
-        )
+        self.adapter
+            .insert_session_runtime_binding_row(AgentSessionRuntimeBindingRow::from_record(&record))
     }
 
     fn update_session_runtime_binding(
         &self,
         record: AgentSessionRuntimeBindingRecord,
     ) -> KernelResult<()> {
-        self.adapter.update_session_runtime_binding_row(
-            AgentSessionRuntimeBindingRow::from_record(&record),
-        )
+        self.adapter
+            .update_session_runtime_binding_row(AgentSessionRuntimeBindingRow::from_record(&record))
     }
 
     fn get_session_runtime_binding(
@@ -2497,18 +2482,12 @@ where
             .into_record()
     }
 
-    fn insert_session_checkpoint(
-        &self,
-        record: AgentSessionCheckpointRecord,
-    ) -> KernelResult<()> {
+    fn insert_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()> {
         self.adapter
             .insert_session_checkpoint_row(AgentSessionCheckpointRow::from_record(&record))
     }
 
-    fn update_session_checkpoint(
-        &self,
-        record: AgentSessionCheckpointRecord,
-    ) -> KernelResult<()> {
+    fn update_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()> {
         self.adapter
             .update_session_checkpoint_row(AgentSessionCheckpointRow::from_record(&record))
     }
@@ -2521,12 +2500,7 @@ where
         checkpoint_id: &str,
     ) -> KernelResult<Option<AgentSessionCheckpointRecord>> {
         self.adapter
-            .get_session_checkpoint_row(
-                tenant_id,
-                organization_id,
-                session_id,
-                checkpoint_id,
-            )?
+            .get_session_checkpoint_row(tenant_id, organization_id, session_id, checkpoint_id)?
             .map(AgentSessionCheckpointRow::into_record)
             .transpose()
     }
@@ -2542,10 +2516,7 @@ where
             .collect()
     }
 
-    fn count_session_checkpoints(
-        &self,
-        query: &SessionCheckpointListQuery,
-    ) -> KernelResult<u64> {
+    fn count_session_checkpoints(&self, query: &SessionCheckpointListQuery) -> KernelResult<u64> {
         self.adapter.count_session_checkpoint_rows(query)
     }
 
@@ -2624,7 +2595,10 @@ where
             .transpose()
     }
 
-    fn list_session_items(&self, query: &SessionItemListQuery) -> KernelResult<Vec<AgentSessionItemRecord>> {
+    fn list_session_items(
+        &self,
+        query: &SessionItemListQuery,
+    ) -> KernelResult<Vec<AgentSessionItemRecord>> {
         self.adapter
             .list_session_item_rows(query)?
             .into_iter()
@@ -2642,10 +2616,7 @@ where
         expected_version: Option<u64>,
     ) -> KernelResult<AgentItemFeedbackRecord> {
         self.adapter
-            .upsert_item_feedback_row(
-                AgentItemFeedbackRow::from_record(&record),
-                expected_version,
-            )?
+            .upsert_item_feedback_row(AgentItemFeedbackRow::from_record(&record), expected_version)?
             .into_record()
     }
 
@@ -2769,7 +2740,11 @@ where
         session: AgentSessionRecord,
         user_input_item: AgentSessionItemRecord,
         assistant_output_item: AgentSessionItemRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+    ) -> KernelResult<(
+        AgentSessionRecord,
+        AgentSessionItemRecord,
+        AgentSessionItemRecord,
+    )> {
         let turn_row = AgentTurnRow::from_record(&turn);
         let session_row = AgentSessionRow::from_record(&session)?;
         let user_row = AgentSessionItemRow::from_record(&user_input_item)?;
@@ -2791,7 +2766,11 @@ where
         user_input_item: AgentSessionItemRecord,
         assistant_output_item: AgentSessionItemRecord,
         drive_refs: Vec<AgentItemDriveRefRecord>,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord, AgentSessionItemRecord)> {
+    ) -> KernelResult<(
+        AgentSessionRecord,
+        AgentSessionItemRecord,
+        AgentSessionItemRecord,
+    )> {
         let turn_row = AgentTurnRow::from_record(&turn);
         let session_row = AgentSessionRow::from_record(&session)?;
         let user_row = AgentSessionItemRow::from_record(&user_input_item)?;
@@ -2800,14 +2779,13 @@ where
             .iter()
             .map(AgentItemDriveRefRow::from_record)
             .collect();
-        let (session_row, user_row, assistant_row) =
-            self.adapter.insert_turn_with_drive_ref_rows(
-                turn_row,
-                session_row,
-                user_row,
-                assistant_row,
-                drive_ref_rows,
-            )?;
+        let (session_row, user_row, assistant_row) = self.adapter.insert_turn_with_drive_ref_rows(
+            turn_row,
+            session_row,
+            user_row,
+            assistant_row,
+            drive_ref_rows,
+        )?;
         Ok((
             session_row.into_record()?,
             user_row.into_record()?,
@@ -2925,162 +2903,8 @@ pub trait AgentAuditAdapter: Send + Sync {
     fn count_audit_rows(&self, query: &AuditEventListQuery) -> KernelResult<u64>;
 }
 
-#[cfg(feature = "sqlite-sync")]
-pub struct SyncSqliteAdapter {
-    pool: BlockingSqlitePool,
-    id_generator: AgentBusinessIdGenerator,
-}
-
-#[cfg(feature = "sqlite-sync")]
-impl SyncSqliteAdapter {
-    pub fn connect(connection_uri: &str) -> KernelResult<Self> {
-        Ok(Self {
-            pool: BlockingSqlitePool::connect(connection_uri)?,
-            id_generator: AgentBusinessIdGenerator::new_default()?,
-        })
-    }
-
-    pub fn connect_from_sdkwork_env(service_name: &str) -> KernelResult<Self> {
-        Ok(Self {
-            pool: BlockingSqlitePool::connect_from_sdkwork_env(service_name)?,
-            id_generator: AgentBusinessIdGenerator::new_default()?,
-        })
-    }
-
-    pub fn connect_from_agents_managed_store_env() -> KernelResult<Self> {
-        Self::connect_from_sdkwork_env(SQLITE_MANAGED_STORE_DATABASE_SERVICE)
-    }
-
-    pub fn from_pool(pool: BlockingSqlitePool) -> KernelResult<Self> {
-        Ok(Self {
-            pool,
-            id_generator: AgentBusinessIdGenerator::new_default()?,
-        })
-    }
-
-    pub fn with_pool_and_id_generator(
-        pool: BlockingSqlitePool,
-        id_generator: AgentBusinessIdGenerator,
-    ) -> Self {
-        Self { pool, id_generator }
-    }
-
-    pub fn pool(&self) -> &BlockingSqlitePool {
-        &self.pool
-    }
-
-    pub fn next_id(&self) -> KernelResult<u64> {
-        self.id_generator.next_id()
-    }
-
-    pub fn insert_agent(&self, record: AgentBusinessRecord) -> KernelResult<()> {
-        let row = AgentBusinessRow::from_record(&record)?;
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        let sqlite = self.pool.pool().clone();
-        self.pool.run_kernel(async move {
-            sqlx::query(sqlite_sql::INSERT_AGENT)
-                .bind(id)
-                .bind(row.uuid)
-                .bind(tenant_id)
-                .bind(organization_id)
-                .bind(owner_user_id)
-                .bind(row.agent_id)
-                .bind(row.code)
-                .bind(row.display_name)
-                .bind(row.description)
-                .bind(row.manifest_json)
-                .bind(row.default_code_task_intent_json)
-                .bind(row.implementation_provider_id)
-                .bind(row.implementation_kind)
-                .bind(row.implementation_type)
-                .bind(row.status)
-                .bind(row.visibility)
-                .bind(row.tags_json)
-                .bind(row.created_at)
-                .bind(row.updated_at)
-                .bind(row.deleted_at)
-                .bind(version)
-                .execute(&sqlite)
-                .await
-                .map(|_| ())
-        })
-    }
-
-    pub fn get_agent(
-        &self,
-        tenant_id: u64,
-        agent_id: &str,
-    ) -> KernelResult<Option<AgentBusinessRecord>> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
-        let sqlite = self.pool.pool().clone();
-        let agent_id = agent_id.to_owned();
-        let row = self.pool.run_kernel(async move {
-            sqlx::query(sqlite_sql::SELECT_AGENT)
-                .bind(tenant_id)
-                .bind(agent_id)
-                .fetch_optional(&sqlite)
-                .await
-        })?;
-        row.map(sqlite_row_to_agent_business_row)
-            .transpose()?
-            .map(AgentBusinessRow::into_record)
-            .transpose()
-    }
-
-    pub fn update_agent(&self, record: AgentBusinessRecord) -> KernelResult<()> {
-        let row = AgentBusinessRow::from_record(&record)?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
-        let version = u64_to_i64(row.version, "version")?;
-        let previous_version =
-            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let lookup_agent_id = row.agent_id.clone();
-        let sqlite = self.pool.pool().clone();
-        let affected = self.pool.run_kernel(async move {
-            sqlx::query(sqlite_sql::UPDATE_AGENT)
-                .bind(organization_id)
-                .bind(owner_user_id)
-                .bind(row.code)
-                .bind(row.display_name)
-                .bind(row.description)
-                .bind(row.manifest_json)
-                .bind(row.default_code_task_intent_json)
-                .bind(row.implementation_provider_id)
-                .bind(row.implementation_kind)
-                .bind(row.implementation_type)
-                .bind(row.status)
-                .bind(row.visibility)
-                .bind(row.tags_json)
-                .bind(row.updated_at)
-                .bind(row.deleted_at)
-                .bind(version)
-                .bind(tenant_id)
-                .bind(row.agent_id)
-                .bind(previous_version)
-                .execute(&sqlite)
-                .await
-                .map(|result| result.rows_affected())
-        })?;
-        if affected > 0 {
-            return Ok(());
-        }
-        if self
-            .get_agent(record.tenant_id, &lookup_agent_id)?
-            .is_some()
-        {
-            return Err(KernelError::conflict("agent version mismatch"));
-        }
-        Err(KernelError::validation("agent not found"))
-    }
-}
-
 #[cfg(feature = "postgres-sync")]
-pub const AGENTS_MANAGED_STORE_DATABASE_SERVICE: &str = "AGENTS_STORE";
+pub const AGENTS_DATABASE_SERVICE: &str = "AGENTS";
 
 #[cfg(feature = "postgres-sync")]
 pub struct SyncPostgresAdapter {
@@ -3097,10 +2921,7 @@ impl SyncPostgresAdapter {
         })
     }
 
-    /// Connects using `sdkwork-database-config` env resolution for the given service name.
-    ///
-    /// Honors the legacy `SDKWORK_{SERVICE}_POSTGRES_URI` variable when set, then falls back to
-    /// `DatabaseConfig::from_env` (`SDKWORK_{SERVICE}_DATABASE_URL` and unified claw profile keys).
+    /// Connects through the canonical `sdkwork-database-config` service profile.
     pub fn connect_from_sdkwork_env(service_name: &str) -> KernelResult<Self> {
         Ok(Self {
             pool: BlockingPostgresPool::connect_from_sdkwork_env(service_name)?,
@@ -3108,9 +2929,9 @@ impl SyncPostgresAdapter {
         })
     }
 
-    /// Connects using platform database config for agents managed store persistence.
-    pub fn connect_from_agents_managed_store_env() -> KernelResult<Self> {
-        Self::connect_from_sdkwork_env(AGENTS_MANAGED_STORE_DATABASE_SERVICE)
+    /// Connects to the canonical Agents PostgreSQL database.
+    pub fn connect_from_agents_database_env() -> KernelResult<Self> {
+        Self::connect_from_sdkwork_env(AGENTS_DATABASE_SERVICE)
     }
 
     pub fn from_pool(pool: BlockingPostgresPool) -> KernelResult<Self> {
@@ -4527,7 +4348,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 query.current_only
             )?;
             let total = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             int64_to_u64(total, "total_count")
@@ -4572,11 +4397,10 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .transpose()
                         .map_err(kernel_err)?
                         .ok_or_else(|| {
-                            kernel_err(KernelError::validation(
-                                "session runtime binding not found",
-                            ))
+                            kernel_err(KernelError::validation("session runtime binding not found"))
                         })?;
-                    let target_version = u64_to_i64(target.version, "version").map_err(kernel_err)?;
+                    let target_version =
+                        u64_to_i64(target.version, "version").map_err(kernel_err)?;
                     if target_version != expected_version {
                         return Err(kernel_err(KernelError::conflict(
                             "session runtime binding version mismatch",
@@ -4687,9 +4511,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 previous_version
             )?;
             if updated == 0 {
-                return Err(KernelError::conflict(
-                    "session checkpoint version mismatch",
-                ));
+                return Err(KernelError::conflict("session checkpoint version mismatch"));
             }
             Ok(())
         })
@@ -4783,7 +4605,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 status
             )?;
             let total = row
-                .map(|value| value.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
                 .transpose()?
                 .unwrap_or(0);
             int64_to_u64(total, "total_count")
@@ -5103,11 +4929,16 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                     status_code,
                     page_size
                 )?,
-                SessionItemListSort::SequenceAsc => {
+                SessionItemListSort::SequenceAsc | SessionItemListSort::SequenceDesc => {
                     let offset = query.pagination.offset as i64;
+                    let sql = match query.sort {
+                        SessionItemListSort::SequenceAsc => SQL_LIST_AGENT_SESSION_ITEMS,
+                        SessionItemListSort::SequenceDesc => SQL_LIST_AGENT_SESSION_ITEMS_DESC,
+                        SessionItemListSort::RecentContextDesc => unreachable!(),
+                    };
                     pg_query!(
                         pool,
-                        SQL_LIST_AGENT_SESSION_ITEMS,
+                        sql,
                         tenant_id,
                         organization_id,
                         query.session_id,
@@ -5415,15 +5246,10 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let limit = i64::try_from(limit.clamp(1, 200))
             .map_err(|_| KernelError::validation("reconciliation limit overflow"))?;
         self.with_pool(|pool| {
-            pg_query!(
-                pool,
-                SQL_LIST_RECONCILABLE_AGENT_TURNS,
-                stale_before,
-                limit
-            )?
-            .into_iter()
-            .map(pg_row_to_agent_turn_row)
-            .collect()
+            pg_query!(pool, SQL_LIST_RECONCILABLE_AGENT_TURNS, stale_before, limit)?
+                .into_iter()
+                .map(pg_row_to_agent_turn_row)
+                .collect()
         })
     }
 
@@ -5581,8 +5407,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let organization_id = u64_to_i64(session.organization_id, "organization_id")?;
         let session_id = session.session_id.clone();
         let item_count = u64_to_i64(session.item_count, "item_count")?;
-        let last_item_sequence =
-            u64_to_i64(session.last_item_sequence, "last_item_sequence")?;
+        let last_item_sequence = u64_to_i64(session.last_item_sequence, "last_item_sequence")?;
         let total_input_tokens = u64_to_i64(session.total_input_tokens, "total_input_tokens")?;
         let total_output_tokens = u64_to_i64(session.total_output_tokens, "total_output_tokens")?;
         let version = u64_to_i64(session.version, "version")?;
@@ -5661,8 +5486,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         u64_to_i64(assistant.output_tokens, "output_tokens").map_err(kernel_err)?;
                     let user_created_by =
                         u64_to_i64(user.created_by, "created_by").map_err(kernel_err)?;
-                    let user_version =
-                        u64_to_i64(user.version, "version").map_err(kernel_err)?;
+                    let user_version = u64_to_i64(user.version, "version").map_err(kernel_err)?;
                     let user_redacted_by = user
                         .redacted_by
                         .map(|value| u64_to_i64(value, "redacted_by"))
@@ -6068,6 +5892,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentInteractionStatus::from_code)
             .map(|s| s.as_db_code());
+        let kind_code: Option<i16> = query
+            .kind
+            .as_deref()
+            .and_then(AgentInteractionKind::from_code)
+            .map(|kind| kind.as_db_code());
         let page_size = query.pagination.page_size as i64;
         let offset = query.pagination.offset as i64;
 
@@ -6079,6 +5908,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 organization_id,
                 query.session_id,
                 status_code,
+                kind_code,
                 page_size,
                 offset
             )?;
@@ -6096,6 +5926,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentInteractionStatus::from_code)
             .map(|s| s.as_db_code());
+        let kind_code: Option<i16> = query
+            .kind
+            .as_deref()
+            .and_then(AgentInteractionKind::from_code)
+            .map(|kind| kind.as_db_code());
 
         self.with_pool(|pool| {
             let row = pg_query_optional!(
@@ -6104,7 +5939,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 query.session_id,
-                status_code
+                status_code,
+                kind_code
             )?;
             let total: i64 = row
                 .map(|value| {
@@ -6743,44 +6579,6 @@ fn int64_to_u64(value: i64, field: &str) -> KernelResult<u64> {
     })
 }
 
-#[cfg(feature = "sqlite-sync")]
-fn sqlite_row_to_agent_business_row(row: SqliteRow) -> KernelResult<AgentBusinessRow> {
-    let read = |error: sqlx::Error| {
-        KernelError::provider_error("sqlite_row_decode_error", error.to_string())
-    };
-    Ok(AgentBusinessRow {
-        id: int64_to_u64(row.try_get("id").map_err(&read)?, "id")?,
-        uuid: row.try_get("uuid").map_err(&read)?,
-        tenant_id: int64_to_u64(row.try_get("tenant_id").map_err(&read)?, "tenant_id")?,
-        organization_id: int64_to_u64(
-            row.try_get("organization_id").map_err(&read)?,
-            "organization_id",
-        )?,
-        owner_user_id: int64_to_u64(
-            row.try_get("owner_user_id").map_err(&read)?,
-            "owner_user_id",
-        )?,
-        agent_id: row.try_get("agent_id").map_err(&read)?,
-        code: row.try_get("code").map_err(&read)?,
-        display_name: row.try_get("display_name").map_err(&read)?,
-        description: row.try_get("description").map_err(&read)?,
-        manifest_json: row.try_get("manifest_json").map_err(&read)?,
-        default_code_task_intent_json: row
-            .try_get("default_code_task_intent_json")
-            .map_err(&read)?,
-        implementation_provider_id: row.try_get("implementation_provider_id").map_err(&read)?,
-        implementation_kind: row.try_get("implementation_kind").map_err(&read)?,
-        implementation_type: row.try_get("implementation_type").map_err(&read)?,
-        status: row.try_get("status").map_err(&read)?,
-        visibility: row.try_get("visibility").map_err(&read)?,
-        tags_json: row.try_get("tags_json").map_err(&read)?,
-        created_at: row.try_get("created_at").map_err(&read)?,
-        updated_at: row.try_get("updated_at").map_err(&read)?,
-        deleted_at: row.try_get("deleted_at").map_err(&read)?,
-        version: int64_to_u64(row.try_get("version").map_err(&read)?, "version")?,
-    })
-}
-
 #[cfg(feature = "postgres-sync")]
 fn pg_row_to_agent_business_row(row: PgRow) -> KernelResult<AgentBusinessRow> {
     Ok(AgentBusinessRow {
@@ -6964,18 +6762,10 @@ fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
         session_kind: row.try_get("session_kind").map_err(map_sqlx_error)?,
         entry_surface: row.try_get("entry_surface").map_err(map_sqlx_error)?,
         source_module: row.try_get("source_module").map_err(map_sqlx_error)?,
-        source_context_kind: row
-            .try_get("source_context_kind")
-            .map_err(map_sqlx_error)?,
-        source_context_id: row
-            .try_get("source_context_id")
-            .map_err(map_sqlx_error)?,
-        parent_session_id: row
-            .try_get("parent_session_id")
-            .map_err(map_sqlx_error)?,
-        forked_from_turn_id: row
-            .try_get("forked_from_turn_id")
-            .map_err(map_sqlx_error)?,
+        source_context_kind: row.try_get("source_context_kind").map_err(map_sqlx_error)?,
+        source_context_id: row.try_get("source_context_id").map_err(map_sqlx_error)?,
+        parent_session_id: row.try_get("parent_session_id").map_err(map_sqlx_error)?,
+        forked_from_turn_id: row.try_get("forked_from_turn_id").map_err(map_sqlx_error)?,
         title: row.try_get("title").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
         item_count: int64_to_u64(
@@ -6983,8 +6773,7 @@ fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
             "item_count",
         )?,
         last_item_sequence: int64_to_u64(
-            row.try_get("last_item_sequence")
-                .map_err(map_sqlx_error)?,
+            row.try_get("last_item_sequence").map_err(map_sqlx_error)?,
             "last_item_sequence",
         )?,
         total_input_tokens: int64_to_u64(
@@ -7038,22 +6827,14 @@ fn pg_row_to_agent_session_runtime_binding_row(
             "organization_id",
         )?,
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
-        runtime_binding_id: row
-            .try_get("runtime_binding_id")
-            .map_err(map_sqlx_error)?,
-        runtime_location_id: row
-            .try_get("runtime_location_id")
-            .map_err(map_sqlx_error)?,
+        runtime_binding_id: row.try_get("runtime_binding_id").map_err(map_sqlx_error)?,
+        runtime_location_id: row.try_get("runtime_location_id").map_err(map_sqlx_error)?,
         host_mode: row.try_get("host_mode").map_err(map_sqlx_error)?,
         transport_kind: row.try_get("transport_kind").map_err(map_sqlx_error)?,
-        provider_binding_id: row
-            .try_get("provider_binding_id")
-            .map_err(map_sqlx_error)?,
+        provider_binding_id: row.try_get("provider_binding_id").map_err(map_sqlx_error)?,
         model_id: row.try_get("model_id").map_err(map_sqlx_error)?,
         provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
-        native_session_id: row
-            .try_get("native_session_id")
-            .map_err(map_sqlx_error)?,
+        native_session_id: row.try_get("native_session_id").map_err(map_sqlx_error)?,
         native_session_tree_id: row
             .try_get("native_session_tree_id")
             .map_err(map_sqlx_error)?,
@@ -7074,9 +6855,7 @@ fn pg_row_to_agent_session_runtime_binding_row(
 }
 
 #[cfg(feature = "postgres-sync")]
-fn pg_row_to_agent_session_checkpoint_row(
-    row: PgRow,
-) -> KernelResult<AgentSessionCheckpointRow> {
+fn pg_row_to_agent_session_checkpoint_row(row: PgRow) -> KernelResult<AgentSessionCheckpointRow> {
     Ok(AgentSessionCheckpointRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
         uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
@@ -7091,9 +6870,7 @@ fn pg_row_to_agent_session_checkpoint_row(
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
         checkpoint_id: row.try_get("checkpoint_id").map_err(map_sqlx_error)?,
         turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
-        runtime_binding_id: row
-            .try_get("runtime_binding_id")
-            .map_err(map_sqlx_error)?,
+        runtime_binding_id: row.try_get("runtime_binding_id").map_err(map_sqlx_error)?,
         checkpoint_kind: row.try_get("checkpoint_kind").map_err(map_sqlx_error)?,
         provider_checkpoint_ref: row
             .try_get("provider_checkpoint_ref")
@@ -7238,12 +7015,8 @@ fn pg_row_to_agent_session_item_row(row: PgRow) -> KernelResult<AgentSessionItem
         provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
         tool_name: row.try_get("tool_name").map_err(map_sqlx_error)?,
         tool_call_id: row.try_get("tool_call_id").map_err(map_sqlx_error)?,
-        tool_arguments_json: row
-            .try_get("tool_arguments_json")
-            .map_err(map_sqlx_error)?,
-        tool_result_json: row
-            .try_get("tool_result_json")
-            .map_err(map_sqlx_error)?,
+        tool_arguments_json: row.try_get("tool_arguments_json").map_err(map_sqlx_error)?,
+        tool_result_json: row.try_get("tool_result_json").map_err(map_sqlx_error)?,
         parent_item_id: row.try_get("parent_item_id").map_err(map_sqlx_error)?,
         turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
         created_by: int64_to_u64(
@@ -7282,9 +7055,7 @@ fn pg_row_to_agent_turn_row(row: PgRow) -> KernelResult<AgentTurnRow> {
             row.try_get("owner_user_id").map_err(map_sqlx_error)?,
             "owner_user_id",
         )?,
-        runtime_binding_id: row
-            .try_get("runtime_binding_id")
-            .map_err(map_sqlx_error)?,
+        runtime_binding_id: row.try_get("runtime_binding_id").map_err(map_sqlx_error)?,
         client_request_id: row.try_get("client_request_id").map_err(map_sqlx_error)?,
         idempotency_key: row.try_get("idempotency_key").map_err(map_sqlx_error)?,
         payload_hash: row.try_get("payload_hash").map_err(map_sqlx_error)?,
@@ -7357,9 +7128,7 @@ fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionR
         )?,
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
         turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
-        runtime_binding_id: row
-            .try_get("runtime_binding_id")
-            .map_err(map_sqlx_error)?,
+        runtime_binding_id: row.try_get("runtime_binding_id").map_err(map_sqlx_error)?,
         interaction_id: row.try_get("interaction_id").map_err(map_sqlx_error)?,
         provider_interaction_id: row
             .try_get("provider_interaction_id")
@@ -7488,146 +7257,6 @@ mod tests {
 
         assert_eq!(row.uuid.len(), 64);
         assert_eq!(row.agent_id.as_deref(), Some(agent_id.as_str()));
-    }
-
-    #[cfg(feature = "sqlite-sync")]
-    fn sqlite_agent_record() -> crate::domain::AgentBusinessRecord {
-        crate::domain::AgentBusinessRecord {
-            id: 101,
-            agent_id: "agent.sqlite.test".to_string(),
-            tenant_id: 100_001,
-            organization_id: 0,
-            owner_user_id: 20,
-            code: "sqlite-test".to_string(),
-            display_name: "SQLite Test".to_string(),
-            description: Some("SQLite round trip".to_string()),
-            manifest: sdkwork_agent_kernel::AgentManifest {
-                schema_version: "1.0.0".to_string(),
-                manifest_type: "agent".to_string(),
-                agent_id: "agent.sqlite.test".to_string(),
-                name: "sqlite-test".to_string(),
-                display_name: "SQLite Test".to_string(),
-                description: "SQLite round trip".to_string(),
-                version: "1.0.0".to_string(),
-                domain: "intelligence".to_string(),
-                required_capabilities: vec![],
-                optional_capabilities: vec![],
-                required_capability_requirements: vec![],
-                optional_capability_requirements: vec![],
-                event_families: vec![],
-                owner_name: "sdkwork".to_string(),
-                status: "active".to_string(),
-            },
-            default_code_task_intent: None,
-            implementation_provider_id: None,
-            implementation_kind: None,
-            implementation_type: crate::domain::AgentImplementationType::SdkworkNative,
-            status: crate::domain::AgentBusinessStatus::Draft,
-            visibility: crate::domain::AgentVisibility::Private,
-            tags: vec!["sqlite".to_string()],
-            version: 1,
-            created_at: "2026-07-14T00:00:00Z".to_string(),
-            updated_at: "2026-07-14T00:00:00Z".to_string(),
-            deleted_at: None,
-        }
-    }
-
-    #[cfg(feature = "sqlite-sync")]
-    fn sqlite_adapter_with_schema() -> super::SyncSqliteAdapter {
-        let adapter = super::SyncSqliteAdapter::connect("sqlite::memory:")
-            .expect("SQLite adapter should connect");
-        let sqlite = adapter.pool().pool().clone();
-        adapter
-            .pool()
-            .run_kernel(async move {
-                sqlx::raw_sql(include_str!(
-                    "../../../database/ddl/baseline/sqlite/0001_agents_baseline.sql"
-                ))
-                .execute(&sqlite)
-                .await
-                .map(|_| ())
-            })
-            .expect("SQLite baseline should execute");
-        adapter
-    }
-
-    #[cfg(feature = "sqlite-sync")]
-    #[test]
-    fn sqlite_adapter_constructs_with_real_pool_and_generates_ids() {
-        let adapter = super::SyncSqliteAdapter::connect("sqlite::memory:")
-            .expect("SQLite adapter should connect");
-        let first = adapter.next_id().expect("first ID should be generated");
-        let second = adapter.next_id().expect("second ID should be generated");
-
-        assert!(second > first);
-        assert_eq!(
-            adapter.pool().database_pool().engine(),
-            sdkwork_database_config::DatabaseEngine::Sqlite
-        );
-    }
-
-    #[cfg(feature = "sqlite-sync")]
-    #[test]
-    fn sqlite_adapter_rejects_postgres_urls() {
-        assert!(super::SyncSqliteAdapter::connect("postgres://localhost/agents").is_err());
-    }
-
-    #[cfg(feature = "sqlite-sync")]
-    #[test]
-    fn sqlite_agent_insert_and_get_round_trip_is_tenant_scoped() {
-        let adapter = sqlite_adapter_with_schema();
-        let record = sqlite_agent_record();
-        adapter
-            .insert_agent(record.clone())
-            .expect("SQLite agent insert should succeed");
-
-        assert_eq!(
-            adapter
-                .get_agent(record.tenant_id, &record.agent_id)
-                .expect("SQLite agent read should succeed"),
-            Some(record.clone())
-        );
-        assert_eq!(
-            adapter
-                .get_agent(record.tenant_id + 1, &record.agent_id)
-                .expect("cross-tenant read should not fail"),
-            None
-        );
-        assert!(adapter.insert_agent(record).is_err());
-    }
-
-    #[cfg(feature = "sqlite-sync")]
-    #[test]
-    fn sqlite_agent_update_enforces_optimistic_version() {
-        let adapter = sqlite_adapter_with_schema();
-        let original = sqlite_agent_record();
-        adapter
-            .insert_agent(original.clone())
-            .expect("SQLite agent insert should succeed");
-
-        let mut updated = original.clone();
-        updated.display_name = "Updated SQLite Agent".to_string();
-        updated.version = 2;
-        updated.updated_at = "2026-07-14T00:01:00Z".to_string();
-        adapter
-            .update_agent(updated.clone())
-            .expect("matching previous version should update");
-        assert_eq!(
-            adapter
-                .get_agent(updated.tenant_id, &updated.agent_id)
-                .expect("updated agent should load"),
-            Some(updated)
-        );
-
-        let mut stale = original;
-        stale.version = 2;
-        let error = adapter
-            .update_agent(stale)
-            .expect_err("stale SQLite agent update must fail");
-        assert_eq!(
-            error.kind(),
-            sdkwork_agent_kernel::KernelErrorKind::Conflict
-        );
     }
 
     #[test]

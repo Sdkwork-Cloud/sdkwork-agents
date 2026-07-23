@@ -1,74 +1,82 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-test("agents database manifest declares postgres-only production engine", () => {
+test("agents database manifest declares one canonical PostgreSQL engine", () => {
   const manifest = JSON.parse(
     readFileSync(path.join(repoRoot, "database/database.manifest.json"), "utf8"),
   );
   assert.equal(manifest.moduleId, "agents");
   assert.deepEqual(manifest.engines, ["postgres"]);
+  assert.equal(manifest.defaultEngine, "postgres");
   assert.equal(manifest.tablePrefix, "ai_");
-  assert.equal(manifest.contractVersion, "4.0.0");
+  assert.equal(manifest.contractVersion, "5.0.0");
+  assert.equal(manifest.paths.contract, "contract/schema.yaml");
+  assert.equal(
+    existsSync(
+      path.join(repoRoot, "database/ddl/baseline/sqlite/0001_agents_baseline.sql"),
+    ),
+    false,
+    "Agents must not retain a partial SQLite schema beside its PostgreSQL authority",
+  );
+  assert.equal(
+    existsSync(path.join(repoRoot, "database/migrations/sqlite/README.md")),
+    false,
+    "Agents must not advertise an inactive SQLite migration path",
+  );
 });
 
 test("agents database contract is materialized without placeholders", () => {
   const schemaPath = path.join(repoRoot, "database/contract/schema.yaml");
   const schema = readFileSync(schemaPath, "utf8");
   assert.doesNotMatch(schema, /<module-id>/);
-  assert.match(schema, /ai_/);
-  assert.match(schema, /contract_version: 4\.0\.0/u);
+  assert.match(schema, /table_prefix: ai_/u);
+  assert.match(schema, /contract_version: 5\.0\.0/u);
+  assert.match(
+    schema,
+    /ddl_authority: ddl\/baseline\/postgres\/0001_agents_baseline\.sql/u,
+  );
   assert.equal((schema.match(/lifecycle_status: expanding/gu) ?? []).length, 0);
-  assert.equal((schema.match(/lifecycle_status: active/gu) ?? []).length, 17);
+  assert.equal((schema.match(/lifecycle_status: active/gu) ?? []).length, 19);
 
   const registry = JSON.parse(
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
   );
-  assert.equal(registry.tables.length, 17);
+  assert.equal(registry.contractVersion, "5.0.0");
+  assert.equal(registry.tables.length, 19);
   assert.ok(
     registry.tables.every((entry) => entry.lifecycle_status === "active"),
-    "every Agents 4.0 table must be active in the contract registry",
+    "every Agents 5.0 table must be active in the contract registry",
   );
 });
 
-test("sqlite managed-store baseline is a real eight-table schema", () => {
+test("PostgreSQL baseline exactly matches the 19-table contract registry", () => {
   const baseline = readFileSync(
-    path.join(repoRoot, "database/ddl/baseline/sqlite/0001_agents_baseline.sql"),
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
   );
-  const tables = Array.from(
-    baseline.matchAll(/CREATE TABLE IF NOT EXISTS (ai_agent(?:_[a-z_]+)?)/giu),
+  const baselineTables = Array.from(
+    baseline.matchAll(/CREATE TABLE IF NOT EXISTS (ai_[a-z_]+)/giu),
     (match) => match[1],
   );
+  const registry = JSON.parse(
+    readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
+  );
+  const registryTables = registry.tables.map((entry) => entry.table_name);
 
   assert.deepEqual(
-    [...new Set(tables)].sort(),
-    [
-      "ai_agent",
-      "ai_agent_audit_event",
-      "ai_agent_composition_slot",
-      "ai_agent_interaction",
-      "ai_agent_message",
-      "ai_agent_runtime_binding",
-      "ai_agent_session",
-      "ai_agent_task",
-    ].sort(),
+    [...new Set(baselineTables)].sort(),
+    [...registryTables].sort(),
   );
-  assert.match(baseline, /PRAGMA foreign_keys = ON/u);
-  assert.doesNotMatch(baseline, /\bJSONB\b|\bTIMESTAMPTZ\b|\bCREATE EXTENSION\b|\bGIN\b/iu);
-  assert.match(
+  assert.doesNotMatch(
     baseline,
-    /FOREIGN KEY \(tenant_id, agent_id\) REFERENCES ai_agent/iu,
+    /\bai_(?:coding_session|agent_message|agent_chat_turn|chat_conversation|chat_message)\b/iu,
   );
-  assert.match(
-    baseline,
-    /UNIQUE INDEX IF NOT EXISTS uk_ai_agent_runtime_binding_active_default/iu,
-  );
+  assert.doesNotMatch(baseline, /\bim_[a-z_]+\b/iu);
 });
 
 test("greenfield baseline structures are not replayed by incremental migrations", () => {
@@ -94,41 +102,12 @@ test("greenfield baseline structures are not replayed by incremental migrations"
   }
 });
 
-test("commercial chat expand migrations are paired and own the approved target tables", () => {
+test("pre-launch PostgreSQL contract has no incremental migration chain", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
-  const expandName = "0002_chat_project_commercial_expand";
-  const up = readFileSync(path.join(migrationRoot, `${expandName}.up.sql`), "utf8");
-  const down = readFileSync(path.join(migrationRoot, `${expandName}.down.sql`), "utf8");
-
-  for (const table of [
-    "ai_agent_project",
-    "ai_agent_project_composition_slot",
-    "ai_agent_chat_turn",
-    "ai_agent_message_drive_ref",
-    "ai_agent_message_feedback",
-    "ai_agent_resource_user_state",
-    "ai_agent_project_member",
-    "ai_agent_share_link",
-    "ai_agent_outbox_event",
-  ]) {
-    assert.match(up, new RegExp(`CREATE\\s+TABLE\\s+${table}\\b`, "iu"));
-    assert.match(down, new RegExp(`DROP\\s+TABLE\\s+${table}\\b`, "iu"));
-  }
-
-  assert.match(up, /last_message_sequence\s+BIGINT\s+NOT NULL/iu);
-  assert.match(up, /DEFERRABLE INITIALLY DEFERRED/iu);
-  assert.match(
-    up,
-    /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_ai_agent_tenant_id/iu,
-    "expand migration must repair the baseline tenant-scoped internal key",
+  const activeMigrations = readdirSync(migrationRoot).filter((fileName) =>
+    /\.(?:up|down)\.sql$/u.test(fileName),
   );
-  assert.match(
-    up,
-    /DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+fk_ai_agent_audit_event_agent/iu,
-    "expand migration must tolerate baselines created before the audit agent FK existed",
-  );
-  assert.match(down, /rollback refused/iu);
-  assert.doesNotMatch(up, /\b(?:CREATE|ALTER|REFERENCES|INSERT|UPDATE|DELETE)\b[^;]*\bim_/iu);
+  assert.deepEqual(activeMigrations, []);
 });
 
 test("every PostgreSQL up migration has a reviewed down pair", () => {
@@ -140,22 +119,20 @@ test("every PostgreSQL up migration has a reviewed down pair", () => {
   }
 });
 
-test("outbox dedupe is corrected through an immutable follow-up migration", () => {
-  const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
-  const correction = readFileSync(
-    path.join(migrationRoot, "0003_scope_agents_outbox_dedupe.up.sql"),
+test("baseline outbox dedupe is tenant and organization scoped", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
   );
   assert.match(
-    correction,
-    /UNIQUE\s*\(tenant_id,\s*organization_id,\s*dedupe_key\)/iu,
+    baseline,
+    /CONSTRAINT\s+uk_ai_agent_outbox_event_dedupe\s+UNIQUE\s*\(\s*tenant_id,\s*organization_id,\s*dedupe_key\s*\)/iu,
   );
 });
 
-test("audit action constraint accepts every action emitted by the runtime", () => {
-  const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
-  const correction = readFileSync(
-    path.join(migrationRoot, "0004_audit_action_runtime_compatibility.up.sql"),
+test("audit baseline accepts every action emitted by the runtime", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
   );
   const domain = readFileSync(
@@ -175,33 +152,22 @@ test("audit action constraint accepts every action emitted by the runtime", () =
   assert.ok(actionCodes.length > 0, "runtime audit action codes must be discoverable");
   for (const actionCode of actionCodes) {
     assert.match(
-      correction,
+      baseline,
       new RegExp(`'${actionCode}'`, "u"),
       `audit constraint must accept runtime action ${actionCode}`,
     );
   }
 });
 
-test("audit storage supports project aggregates without fabricated agent foreign keys", () => {
-  const migration = readFileSync(
-    path.join(
-      repoRoot,
-      "database/migrations/postgres/0005_generalize_agents_audit_aggregate.up.sql",
-    ),
+test("audit baseline supports non-agent aggregates without fabricated agent keys", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
   );
-  const rollback = readFileSync(
-    path.join(
-      repoRoot,
-      "database/migrations/postgres/0005_generalize_agents_audit_aggregate.down.sql",
-    ),
-    "utf8",
-  );
-  assert.match(migration, /aggregate_type\s+VARCHAR\(64\)/iu);
-  assert.match(migration, /agent_internal_id\s+DROP NOT NULL/iu);
-  assert.match(migration, /agent_id\s+DROP NOT NULL/iu);
-  assert.match(migration, /aggregate_type\s+<>\s+'agent'/iu);
-  assert.match(rollback, /rollback refused/iu);
+  assert.match(baseline, /aggregate_type\s+VARCHAR\(64\)\s+NOT NULL/iu);
+  assert.match(baseline, /agent_internal_id\s+BIGINT,/iu);
+  assert.match(baseline, /agent_id\s+VARCHAR\(128\),/iu);
+  assert.match(baseline, /aggregate_type\s+<>\s+'agent'/iu);
 });
 
 const databaseContractDocumentationFiles = [

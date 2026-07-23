@@ -1,3 +1,3 @@
 export { BaseApi } from './base';
-export { agentApiPath } from './paths';
+export { customApiPath } from './paths';
 export { AiApi, createAiApi } from './ai';

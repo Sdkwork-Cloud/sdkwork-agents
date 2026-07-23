@@ -1,6 +1,6 @@
 //! App API route boundary for SDKWork agents managed store.
 
-pub use sdkwork_intelligence_agents_service::{build_app_router, build_app_routes, AgentHttpState};
+pub use sdkwork_intelligence_agents_service::{build_app_routes, AgentHttpState};
 pub use sdkwork_routes_agents_http_shared::{
     app_route_manifest, wrap_router_with_web_framework, wrap_router_with_web_framework_from_env,
     AgentRequestContext, APP_ROUTES,

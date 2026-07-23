@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "SDKWork App SDK"
+echo "SDKWork Custom SDK"
 case "${1:-}" in
   build)
     cd "$(dirname "$0")/.." && npm install && npm run build

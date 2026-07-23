@@ -38,7 +38,7 @@ function verify(candidate) {
     'operationId: agents.list',
     'operationId: agents.providerBindings.create',
     'operationId: agents.compositionSlots.create',
-    'Access-Token'
+    'X-API-Key'
   ]) {
     if (!authorityText.includes(required) || !sdkgenText.includes(required)) {
       throw new Error(`${candidate.familyDir} OpenAPI boundary missing ${required}`);
@@ -46,5 +46,10 @@ function verify(candidate) {
   }
   if (sdkgenText.includes("$ref: '#/components/responses/Problem'")) {
     throw new Error(`${candidate.familyDir} sdkgen input must inline explicit problem responses`);
+  }
+  for (const forbidden of ['AuthToken:', 'AccessToken:', 'name: Access-Token']) {
+    if (authorityText.includes(forbidden) || sdkgenText.includes(forbidden)) {
+      throw new Error(`${candidate.familyDir} OpenAPI boundary contains app credential ${forbidden}`);
+    }
   }
 }

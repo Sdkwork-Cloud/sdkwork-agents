@@ -1,13 +1,18 @@
-import type { Int64String } from './int64-string';
+import type { AgentSessionEntrySurface } from './agent-session-entry-surface';
+import type { AgentSessionKind } from './agent-session-kind';
 
 export interface CreateAgentSessionRequest {
-  tenantId?: Int64String;
-  organizationId?: Int64String;
-  ownerUserId?: Int64String;
   sessionId?: string;
+  projectId?: string;
+  sessionKind: AgentSessionKind;
+  entrySurface: AgentSessionEntrySurface;
+  sourceModule?: string;
+  sourceContextKind?: string;
+  sourceContextId?: string;
+  parentSessionId?: string;
+  forkedFromTurnId?: string;
   title?: string;
-  providerBindingId?: string;
-  modelId?: string;
-  metadataJson?: string;
+  idempotencyKey: string;
+  payloadHash: string;
   requestedAt: string;
 }

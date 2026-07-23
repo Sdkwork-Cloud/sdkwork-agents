@@ -1,0 +1,13 @@
+import type { AgentSessionItemRecord } from './agent-session-item-record';
+import type { AgentSessionRecord } from './agent-session-record';
+import type { AgentTurnRecord } from './agent-turn-record';
+import type { SdkWorkResourceData } from './sdk-work-resource-data';
+
+/** Idempotent agent turn result with ordered session items. */
+export interface AgentTurnExecutionResponse {
+  /** Numeric success result code. MUST be 0 on HTTP 2xx JSON bodies. See API_SPEC.md 搂15.3. */
+  code: 0;
+  data: unknown & SdkWorkResourceData & { item: { session: AgentSessionRecord; turn: AgentTurnRecord; items: AgentSessionItemRecord[]; }; };
+  /** Server-owned request correlation id. Clients MUST NOT supply this value. */
+  traceId: string;
+}

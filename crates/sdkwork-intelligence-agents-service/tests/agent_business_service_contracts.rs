@@ -1,23 +1,24 @@
 use std::sync::{Arc, Mutex};
 
-use sdkwork_agent_kernel::{AgentManifest, KernelError, KernelEvent, KernelResult, PolicySubject};
+use sdkwork_agent_kernel::{
+    AgentManifest, KernelError, KernelErrorKind, KernelEvent, KernelResult, PolicySubject,
+};
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_intelligence_agents_service::{
     extract_event_context, offset_paginated_result, ActivateAgentProviderBindingCommand,
     AgentAuditSink, AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
     AgentInteractionKind, AgentItemDriveRefInput, AgentItemResourceRole, AgentListQuery,
-    AgentPreviewResponseCommand, AgentPromptOptimizationCommand, AgentSessionEntrySurface,
-    AgentSessionItemKind, AgentSessionKind, AgentTurnMode, AgentTurnStatus,
-    AgentProviderBindingCommand, AgentVisibility, AgentsService, ApproveInteractionCommand,
+    AgentPreviewResponseCommand, AgentPromptOptimizationCommand, AgentProviderBindingCommand,
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionKind, AgentTurnMode,
+    AgentTurnStatus, AgentVisibility, AgentsService, ApproveInteractionCommand,
     AuditEventListQuery, ChangeAgentStatusCommand, ClaimInteractionCommand, CreateAgentCommand,
     CreateInteractionCommand, CreateSessionCommand, CreateSessionRuntimeBindingCommand,
-    DeleteAgentCommand, DenyAllPolicyProvider, GetAgentCommand,
-    GetTurnByIdempotencyCommand, GetTurnCommand, GetInteractionCommand, GetSessionCommand,
+    CreateTurnCommand, DeleteAgentCommand, DenyAllPolicyProvider, GetAgentCommand,
+    GetInteractionCommand, GetSessionCommand, GetTurnByIdempotencyCommand, GetTurnCommand,
     IamGatedPolicyProvider, InMemoryAgentRepository, InteractionListQuery,
     ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand, PaginatedResult,
     PaginationParams, ProviderBindingListCommand, ProviderBindingListQuery, RestoreAgentCommand,
-    CreateTurnCommand, UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
-    MAX_PAGE_SIZE,
+    UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, MAX_PAGE_SIZE,
 };
 use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
@@ -1121,7 +1122,7 @@ fn execute_turn_persists_user_input_and_assistant_output() {
             0,
             100,
             "chat-turn",
-            "Chat Turn",
+            "Agent Turn",
             "2026-06-01T05:00:00Z",
         ))
         .expect("create should succeed");
@@ -1225,8 +1226,14 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         .expect("turn execution should succeed");
 
     assert_eq!(result.user_input_item.kind, AgentSessionItemKind::UserInput);
-    assert_eq!(result.user_input_item.content.as_deref(), Some("Hello, can you help?"));
-    assert_eq!(result.assistant_output_item.kind, AgentSessionItemKind::AssistantOutput);
+    assert_eq!(
+        result.user_input_item.content.as_deref(),
+        Some("Hello, can you help?")
+    );
+    assert_eq!(
+        result.assistant_output_item.kind,
+        AgentSessionItemKind::AssistantOutput
+    );
     assert!(result
         .assistant_output_item
         .content
@@ -1261,16 +1268,15 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         .expect("completed turn should be found");
     assert_eq!(turn_by_idempotency.turn_id, completed_turn.turn_id);
     assert_eq!(turn_by_idempotency.status, AgentTurnStatus::Completed);
-    let hidden_from_foreign_owner =
-        service.get_turn_by_idempotency(GetTurnByIdempotencyCommand {
-            tenant_id: 100_001,
-            organization_id: 0,
-            path_agent_id: result.turn.agent_id.clone(),
-            session_id: result.user_input_item.session_id.clone(),
-            owner_user_id: 999,
-            idempotency_key: "turn-test-idempotency-1".to_string(),
-            requested_by: sample_subject(),
-        });
+    let hidden_from_foreign_owner = service.get_turn_by_idempotency(GetTurnByIdempotencyCommand {
+        tenant_id: 100_001,
+        organization_id: 0,
+        path_agent_id: result.turn.agent_id.clone(),
+        session_id: result.user_input_item.session_id.clone(),
+        owner_user_id: 999,
+        idempotency_key: "turn-test-idempotency-1".to_string(),
+        requested_by: sample_subject(),
+    });
     assert!(hidden_from_foreign_owner.is_err());
     assert_eq!(result.user_item_drive_refs.len(), 1);
     assert_eq!(result.user_item_drive_refs[0].drive_space_id, "space-turn");
@@ -1288,14 +1294,15 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         result.assistant_output_item.item_id,
     );
     assert_eq!(replay.session.item_count, 2);
-    assert_eq!(
-        replay.user_item_drive_refs,
-        result.user_item_drive_refs
-    );
+    assert_eq!(replay.user_item_drive_refs, result.user_item_drive_refs);
 
     let mut conflicting = turn_command;
     conflicting.content = "Different payload".to_string();
-    assert!(service.execute_turn(conflicting).is_err());
+    conflicting.payload_hash = "sha256:turn-test-payload-2".to_string();
+    assert!(matches!(
+        service.execute_turn(conflicting),
+        Err(KernelError::Structured { info }) if info.kind == KernelErrorKind::Conflict
+    ));
 }
 
 #[test]

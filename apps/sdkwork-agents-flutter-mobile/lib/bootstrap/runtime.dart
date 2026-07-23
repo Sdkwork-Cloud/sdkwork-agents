@@ -3,9 +3,16 @@ import 'iam_runtime.dart';
 import 'routes.dart';
 import 'sdk_clients.dart';
 
-Future<void> bootstrap() async {
+class AgentsMobileRuntime {
+  const AgentsMobileRuntime({required this.sdkClients});
+
+  final SdkClients sdkClients;
+}
+
+Future<AgentsMobileRuntime> bootstrap() async {
   createIamRuntime();
   registerHostAdapters();
-  createSdkClients();
+  final sdkClients = createSdkClients();
   createRoutes();
+  return AgentsMobileRuntime(sdkClients: sdkClients);
 }

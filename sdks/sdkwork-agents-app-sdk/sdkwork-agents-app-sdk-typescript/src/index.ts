@@ -36,4 +36,5 @@ export function createClient(config: SdkworkAppConfig): SdkworkAppClient {
   return new SdkworkAppClient(config);
 }
 
-export { sendAgentChatMessageSync } from './chat';
+export { completeAgentTurn } from './turns';
+export type { CompleteAgentTurnResult } from './turns';

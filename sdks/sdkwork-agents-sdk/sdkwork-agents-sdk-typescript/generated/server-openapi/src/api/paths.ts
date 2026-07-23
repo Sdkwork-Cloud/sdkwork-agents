@@ -1,13 +1,13 @@
-export const AGENT_API_PREFIX = '/agent/v3/api';
+export const CUSTOM_API_PREFIX = '/agent/v3/api';
 
-export function agentApiPath(path: string): string {
+export function customApiPath(path: string): string {
   if (!path) {
-    return AGENT_API_PREFIX;
+    return CUSTOM_API_PREFIX;
   }
   if (/^https?:\/\//i.test(path)) {
     return path;
   }
-  const normalizedPrefixRaw = (AGENT_API_PREFIX || '').trim();
+  const normalizedPrefixRaw = (CUSTOM_API_PREFIX || '').trim();
   const normalizedPrefix = normalizedPrefixRaw
     ? `/${normalizedPrefixRaw.replace(/^\/+|\/+$/g, '')}`
     : '';

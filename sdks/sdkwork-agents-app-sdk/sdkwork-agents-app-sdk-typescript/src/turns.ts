@@ -1,0 +1,35 @@
+import type { SdkworkAppClient } from '../generated/server-openapi/src/index';
+import { appApiPath } from '../generated/server-openapi/src/api/paths';
+import type {
+  AgentTurnExecutionResponse,
+  CreateAgentTurnRequest,
+} from '../generated/server-openapi/src/types';
+
+export type CompleteAgentTurnResult = AgentTurnExecutionResponse['data']['item'];
+
+function pathSegment(value: string, name: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${name} is required.`);
+  }
+  return encodeURIComponent(normalized);
+}
+
+/** Execute one non-streaming turn through the canonical POST /turns operation. */
+export async function completeAgentTurn(
+  client: SdkworkAppClient,
+  agentId: string,
+  sessionId: string,
+  body: CreateAgentTurnRequest,
+): Promise<CompleteAgentTurnResult> {
+  const path = appApiPath(
+    `/ai/agents/${pathSegment(agentId, 'agentId')}/sessions/${pathSegment(sessionId, 'sessionId')}/turns`,
+  );
+  return client.http.post<CompleteAgentTurnResult>(
+    path,
+    body,
+    { stream: false },
+    undefined,
+    'application/json',
+  );
+}
