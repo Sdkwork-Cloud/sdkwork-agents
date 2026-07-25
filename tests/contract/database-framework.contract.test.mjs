@@ -12,18 +12,40 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { validateDatabaseFramework } from "../../../sdkwork-specs/tools/check-database-framework-standard.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+test("canonical database framework validator accepts the Agents contract", () => {
+  const result = validateDatabaseFramework(repoRoot);
+
+  assert.equal(result.skipped, false);
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.ok, true);
+});
 
 test("agents database manifest declares one canonical PostgreSQL engine", () => {
   const manifest = JSON.parse(
     readFileSync(path.join(repoRoot, "database/database.manifest.json"), "utf8"),
   );
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.databaseRole, "authoritative-server");
   assert.equal(manifest.moduleId, "agents");
   assert.deepEqual(manifest.engines, ["postgres"]);
   assert.equal(manifest.defaultEngine, "postgres");
   assert.equal(manifest.tablePrefix, "ai_");
   assert.equal(manifest.contractVersion, "5.0.0");
+  assert.equal(manifest.baselineStrategy, "baseline-plus-migrations");
+  assert.equal(
+    manifest.lifecycle.autoMigrate,
+    false,
+    "authoritative startup must not execute pending migrations implicitly",
+  );
+  assert.equal(
+    manifest.baselineAnchorTable,
+    "ai_agent_outbox_event",
+    "the pre-launch completion anchor must be created only after the complete Agents baseline",
+  );
   assert.equal(manifest.paths.contract, "contract/schema.yaml");
   assert.equal(
     existsSync(
@@ -86,10 +108,23 @@ test("PostgreSQL baseline exactly matches the 19-table contract registry", () =>
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
   );
   const registryTables = registry.tables.map((entry) => entry.table_name);
+  const completionAnchor = JSON.parse(
+    readFileSync(path.join(repoRoot, "database/database.manifest.json"), "utf8"),
+  ).baselineAnchorTable;
 
   assert.deepEqual(
     [...new Set(baselineTables)].sort(),
     [...registryTables].sort(),
+  );
+  assert.equal(
+    baselineTables.at(-1),
+    completionAnchor,
+    "baselineAnchorTable must remain the final table created by the atomic greenfield baseline",
+  );
+  assert.equal(
+    registryTables.at(-1),
+    completionAnchor,
+    "the table registry must end with the pre-launch baseline completion anchor",
   );
   assert.doesNotMatch(
     baseline,
@@ -310,6 +345,20 @@ test("baseline outbox dedupe is tenant and organization scoped", () => {
     baseline,
     /CONSTRAINT\s+uk_ai_agent_outbox_event_dedupe\s+UNIQUE\s*\(\s*tenant_id,\s*organization_id,\s*dedupe_key\s*\)/iu,
   );
+});
+
+test("resource user-state baseline uses the canonical last-read item sequence", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
+    "utf8",
+  );
+  const tableSql = extractCreateTableSql(
+    baseline,
+    "ai_agent_resource_user_state",
+  );
+
+  assert.match(tableSql, /last_read_item_sequence\s+BIGINT/iu);
+  assert.doesNotMatch(tableSql, /last_seen_item_sequence/iu);
 });
 
 test("audit baseline accepts every action emitted by the runtime", () => {

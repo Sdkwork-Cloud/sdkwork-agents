@@ -26,9 +26,9 @@ integration. It defines:
 
 ## Architecture
 
-**Key Design Principles (2025 Update):**
+**Key Design Principles:**
 - **Stateless Service Layer**: `AgentsService` uses `&self` methods with no interior mutability, enabling true concurrent request processing without global locks.
-- **Thread-Safe Ports**: `AgentRepository` and `AgentAuditSink` traits use `&self` for all operations; adapters must provide interior mutability (e.g., `RwLock` for in-memory, connection pool for PostgreSQL).
+- **Thread-Safe Ports**: `AgentRepository` and `AgentAuditSink` traits use `&self` for all operations; adapters must provide interior mutability (e.g., `RwLock` for in-memory, connection pool for PostgreSQL). Repository readiness is exposed through `AgentRepository::check_readiness`; the PostgreSQL adapter probes the same pool used for business requests.
 - **SQL-Level Filtering**: Search queries are pushed to PostgreSQL WHERE clause with trigram GIN indexes, eliminating in-memory filter chains.
 - **Connection Pool Monitoring**: `BlockingPostgresPool` exposes `PoolMetrics` (total, idle, active, utilization) for observability.
 

@@ -34,7 +34,7 @@ AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteractio
 ```
 
 The managed store uses PostgreSQL and owns exactly 19 tables. It has no read
-projection tables, shadow tables, compatibility tables, dual-write path, or
+derived read tables, shadow tables, compatibility tables, dual-write path, or
 second session aggregate. A consumer may render an Agent Session as a dialog,
 but that presentation does not create another persistence vocabulary.
 
@@ -89,7 +89,7 @@ foreign keys to it. Composition slot values are allow-listed by `slot_kind` and
 | `ai_agent_project_composition_slot` | relation entity | Ordered project-level independent-capability references |
 | `ai_agent_project_member` | relation entity | Project owner/editor/viewer collaboration ACL |
 | `ai_agent_share_link` | tenant entity, L3 | Revocable and expiring project/session grant using token hashes |
-| `ai_agent_resource_user_state` | user entity | Per-user project/session pin, hide, open and last-seen item state |
+| `ai_agent_resource_user_state` | user entity | Per-user project/session pin, hide, open and last-read item state |
 
 Project membership is an Agents collaboration ACL, not an IM group. Share-link
 rows persist only `token_hash` and a safe prefix; a raw token is returned once,

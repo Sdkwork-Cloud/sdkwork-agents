@@ -202,6 +202,11 @@ impl DomainContextInjector for AgentRequestContextInjector {
     }
 }
 
+/// Returns the Agents domain-context contribution for a host-owned Web Framework pipeline.
+pub fn agent_request_context_injector() -> Arc<dyn DomainContextInjector> {
+    Arc::new(AgentRequestContextInjector)
+}
+
 fn agent_request_context_from_web_request(
     context: &WebRequestContext,
 ) -> Option<AgentRequestContext> {
@@ -230,7 +235,7 @@ pub fn wrap_router_with_web_framework(
         .with_profile(agent_web_request_context_profile(environment))
         .with_security_policy(security_policy)
         .with_route_manifest(route_manifest)
-        .with_domain_injector(Arc::new(AgentRequestContextInjector));
+        .with_domain_injector(agent_request_context_injector());
     with_web_request_context(router, layer)
 }
 
@@ -362,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_environment_uses_shared_environment_projection() {
+    fn resolve_environment_uses_shared_environment_setting() {
         let _guard = env_test_lock();
         std::env::set_var("SDKWORK_ENVIRONMENT", "test");
         std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
@@ -374,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_and_agents_environment_projection_must_agree() {
+    fn shared_and_agents_environment_settings_must_agree() {
         let _guard = env_test_lock();
         std::env::set_var("SDKWORK_ENVIRONMENT", "test");
         std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "production");
@@ -385,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_and_agents_staging_and_production_projections_must_not_converge_silently() {
+    fn shared_and_agents_staging_and_production_settings_must_not_converge_silently() {
         let _guard = env_test_lock();
         std::env::set_var("SDKWORK_ENVIRONMENT", "staging");
         std::env::set_var("SDKWORK_AGENTS_ENVIRONMENT", "production");
@@ -396,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_and_agents_cors_origin_projections_must_agree() {
+    fn shared_and_agents_cors_origin_settings_must_agree() {
         let _guard = env_test_lock();
         std::env::set_var("SDKWORK_CORS_ALLOWED_ORIGINS", "https://agents.sdkwork.com");
         std::env::set_var(

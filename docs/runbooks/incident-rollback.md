@@ -30,8 +30,8 @@ tokens while collecting evidence.
 1. Select the last signed, checksum-verified artifact compatible with the
    current database contract.
 2. Redeploy through the same profile and configuration authority.
-3. Verify `GET /health`, metrics, one authenticated Session retrieve and one
-   idempotency reconciliation.
+3. Verify `GET /healthz`, `GET /livez`, `GET /readyz`, `GET /metrics`, one
+   authenticated Session retrieve and one idempotency reconciliation.
 4. Monitor error, Turn latency, database pool and outbox backlog until stable.
 
 ## 4. Database Recovery

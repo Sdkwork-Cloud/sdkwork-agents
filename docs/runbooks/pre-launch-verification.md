@@ -8,6 +8,8 @@ profile, timestamp, exit code and important output in release evidence.
 - Sibling `sdkwork-specs`, `sdkwork-kernel`, `sdkwork-web-framework`,
   `sdkwork-database`, `sdkwork-utils` and SDK generator workspaces resolve.
 - Production uses PostgreSQL with TLS and a bounded connection pool.
+- `database/database.manifest.json` keeps `lifecycle.autoMigrate=false`; the
+  release workflow applies pending migrations explicitly before rollout.
 - `SDKWORK_AGENTS_DEV_AUTH_BYPASS` is absent or false.
 - App/Backend token providers and Open API key providers are configured
   independently.
@@ -68,7 +70,9 @@ pnpm db:drift:check
 
 Validate the target profile separately. The expected module contains 19
 Agents-owned PostgreSQL `ai_*` tables. Confirm migrations/checksums match the
-baseline and there are no extra session, item, interaction or dependency-owned
+baseline, `init` uses the greenfield baseline only when its completion anchor is
+absent, and an anchored partial schema fails drift validation instead of being
+rebuilt. There must be no extra session, item, interaction or dependency-owned
 tables.
 
 For a configured integration environment:

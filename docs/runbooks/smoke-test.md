@@ -10,14 +10,18 @@ not replace this runtime evidence.
    approved secret/session infrastructure.
 3. At least one active managed agent has a conformance-tested provider binding.
 4. Client base URLs point to the exact surface prefixes.
+5. `SDKWORK_AGENTS_DEV_AUTH_BYPASS=true` must be `false` in staging/production.
 
 ## 2. Infrastructure
 
 | Step | Action | Pass criterion |
 | ---: | --- | --- |
-| 1 | `GET /health` | HTTP 200 |
-| 2 | `GET /metrics/agents` | Prometheus output with `sdkwork_agents_` metrics |
-| 3 | Inspect startup logs | PostgreSQL connected; no development auth bypass or secret output |
+| 1 | `GET /healthz` | HTTP 200 with liveness status `ok` |
+| 2 | `GET /livez` | HTTP 200 with the same liveness status as `/healthz` |
+| 3 | `GET /readyz` | HTTP 200 with readiness status `ready` after required dependencies pass |
+| 4 | `GET /metrics` | HTTP 200 with framework Prometheus exposition |
+| 5 | `GET /metrics/agents` | HTTP 200 with `sdkwork_agents_` domain metrics |
+| 6 | Inspect startup logs | PostgreSQL connected; no development auth bypass or secret output |
 
 Gateway-only helper:
 
@@ -33,7 +37,7 @@ pnpm smoke:live
 | 2 | List/retrieve a managed Agent | `code: 0`, typed resource and `traceId` |
 | 3 | Create a Session | Required kind/surface/idempotency fields accepted; Session id returned |
 | 4 | Retry Session creation | Same key/hash returns the same logical result |
-| 5 | Execute a Turn as JSON | Response contains Session, Turn and ordered Session Items |
+| 5 | Execute a Turn as JSON | Response contains Session, Turn and ordered Session Items; `runtimeMode` is `agents-runtime-facade`, never a contract stub |
 | 6 | Execute a Turn as SSE | Delta events followed by one typed completion event |
 | 7 | List Session Items | Stable ascending sequence with `PageInfo` |
 | 8 | Create and claim an Interaction | One claim succeeds; competing claim fails safely |

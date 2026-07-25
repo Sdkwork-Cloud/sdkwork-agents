@@ -234,7 +234,7 @@ pub fn execute_code_engine_turn_with_stream(
 }
 
 /// Execute a turn and forward each provider-neutral model chunk as it arrives.
-/// The caller owns product projection; this facade owns the kernel SPI
+/// The caller owns its product representation; this facade owns the kernel SPI
 /// boundary, ordering, output budget enforcement, and native-session proof.
 ///
 /// Codex initial turns can stream only because its runtime terminal frame
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_stream_collector_preserves_chunk_order_for_product_projection() {
+    fn forwarding_stream_collector_preserves_chunk_order_for_product_output() {
         let mut sink = RecordingStreamSink::default();
         let mut collector = ForwardingStreamCollector::new(&mut sink);
 

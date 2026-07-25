@@ -3,12 +3,14 @@ import type { RequestOptions, QueryParams } from '@sdkwork/sdk-common';
 import type { AuthTokenManager } from '@sdkwork/sdk-common';
 import { BaseHttpClient, withRetry } from '@sdkwork/sdk-common';
 
-type HttpRequestOptions = RequestOptions & {
+export type HttpRequestOptions = RequestOptions & {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
   contentType?: string;
 };
+
+export type ApiRequestOptions = Pick<HttpRequestOptions, 'signal' | 'timeout'>;
 
 export class HttpClient extends BaseHttpClient {
   private static readonly ACCESS_TOKEN_HEADER: string = 'Access-Token';
@@ -249,7 +251,7 @@ export class HttpClient extends BaseHttpClient {
 
     const record = payload as Record<string, unknown>;
     if (record.code !== 0 || !('data' in record)) {
-      return payload as T;
+      return this.unwrapSdkworkV3Data<T>(record);
     }
 
     const data = record.data;
@@ -257,15 +259,18 @@ export class HttpClient extends BaseHttpClient {
       return data as T;
     }
 
-    const envelopeData = data as Record<string, unknown>;
-    if ('items' in envelopeData && 'pageInfo' in envelopeData) {
+    return this.unwrapSdkworkV3Data<T>(data as Record<string, unknown>);
+  }
+
+  private unwrapSdkworkV3Data<T>(data: Record<string, unknown>): T {
+    if ('items' in data && 'pageInfo' in data) {
       return data as T;
     }
-    if ('accepted' in envelopeData) {
+    if ('accepted' in data) {
       return data as T;
     }
-    if ('item' in envelopeData) {
-      return envelopeData.item as T;
+    if ('item' in data) {
+      return data.item as T;
     }
 
     return data as T;

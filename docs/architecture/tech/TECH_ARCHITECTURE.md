@@ -138,7 +138,7 @@ aggregate.
 
 Agent and Project composition use the canonical mapping in
 `specs/AGENTS_DOMAIN_SPEC.md` section 3. `document/documents` is a reference to
-the Documents module, not a copied document table, Drive alias or read projection.
+the Documents module, not a copied document table, Drive alias or derived read table.
 
 ## 6. Execution And Consistency
 
@@ -201,5 +201,6 @@ node sdks/workspace-agent-sdkgen.mjs --mode dry-run
 node scripts/check-agent-sdk-workspace.mjs
 pnpm check:agents-im-boundary
 pnpm db:validate
+pnpm check:production-security
 pnpm check:docs
 ```

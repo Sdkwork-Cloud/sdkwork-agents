@@ -49,9 +49,11 @@ kubectl get hpa sdkwork-api-agents-standalone-gateway
 
 ### Health Check Endpoints
 
-- **Liveness**: `GET /health` (port 8095)
-- **Readiness**: `GET /ready` (port 8095)
-- **Metrics**: `GET /metrics/agents` (port 8095)
+- **Liveness**: `GET /healthz` (port 8095)
+- **Liveness alias**: `GET /livez` (port 8095)
+- **Readiness**: `GET /readyz` (port 8095)
+- **Framework metrics**: `GET /metrics` (port 8095)
+- **Agents domain metrics**: `GET /metrics/agents` (port 8095)
 
 ### Environment Variables
 

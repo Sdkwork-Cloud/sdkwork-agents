@@ -11,7 +11,69 @@ use tokio::runtime::Runtime;
 pub type PgRow = sqlx::postgres::PgRow;
 
 pub fn map_sqlx_error(error: sqlx::Error) -> sdkwork_agent_kernel::KernelError {
-    sdkwork_agent_kernel::KernelError::provider_error("postgres_error", error.to_string())
+    use sdkwork_agent_kernel::KernelError;
+
+    match error {
+        sqlx::Error::Protocol(message) => {
+            if let Some(message) = message.strip_prefix("sdkwork-domain-validation:") {
+                return KernelError::validation(message);
+            }
+            if let Some(message) = message.strip_prefix("sdkwork-domain-conflict:") {
+                return KernelError::conflict(message);
+            }
+            if message.starts_with("sdkwork-domain-internal:") {
+                return KernelError::Internal {
+                    message: "database transaction invariant failed".to_string(),
+                };
+            }
+            tracing::error!(target: "sdkwork.agents.postgres", "postgres protocol failure");
+            KernelError::provider_error("postgres_protocol_error", "database operation failed")
+        }
+        sqlx::Error::Database(database) => {
+            let sqlstate = database
+                .code()
+                .map(|code| code.into_owned())
+                .unwrap_or_else(|| "unknown".to_string());
+            let constraint = database.constraint().unwrap_or("unknown");
+            tracing::warn!(
+                target: "sdkwork.agents.postgres",
+                sqlstate,
+                constraint,
+                "postgres rejected a database operation"
+            );
+            match sqlstate.as_str() {
+                "23505" => KernelError::conflict("database uniqueness conflict"),
+                "23502" | "23503" | "23514" | "22001" => {
+                    KernelError::validation("database constraint violation")
+                }
+                "40001" | "40P01" => KernelError::ProviderUnavailable {
+                    provider_id: "postgres_transaction".to_string(),
+                },
+                "53300" => KernelError::resource_exhausted("database connection limit reached"),
+                "57014" => KernelError::timeout("database operation timed out"),
+                code if code.starts_with("08") => KernelError::ProviderUnavailable {
+                    provider_id: "postgres".to_string(),
+                },
+                _ => KernelError::provider_error(
+                    "postgres_database_error",
+                    "database operation failed",
+                ),
+            }
+        }
+        sqlx::Error::PoolTimedOut => KernelError::timeout("database pool acquisition timed out"),
+        sqlx::Error::PoolClosed | sqlx::Error::WorkerCrashed => KernelError::ProviderUnavailable {
+            provider_id: "postgres".to_string(),
+        },
+        sqlx::Error::RowNotFound => KernelError::validation("database row not found"),
+        error => {
+            tracing::error!(
+                target: "sdkwork.agents.postgres",
+                error_kind = ?error,
+                "postgres adapter failure"
+            );
+            KernelError::provider_error("postgres_error", "database operation failed")
+        }
+    }
 }
 
 pub fn map_pool_error(error: PoolError) -> sdkwork_agent_kernel::KernelError {
@@ -230,7 +292,8 @@ macro_rules! pg_query_optional {
 
 #[cfg(test)]
 mod tests {
-    use super::block_on_runtime;
+    use super::{block_on_runtime, map_sqlx_error};
+    use sdkwork_agent_kernel::KernelErrorKind;
     use tokio::runtime::Runtime;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -238,5 +301,27 @@ mod tests {
         let runtime = Runtime::new().expect("private runtime builds");
         assert_eq!(block_on_runtime(&runtime, async { 42 }), 42);
         tokio::task::block_in_place(|| drop(runtime));
+    }
+
+    #[test]
+    fn transaction_domain_errors_keep_their_stable_kind() {
+        let validation = map_sqlx_error(sqlx::Error::Protocol(
+            "sdkwork-domain-validation:invalid session".to_string(),
+        ));
+        assert_eq!(validation.kind(), KernelErrorKind::ValidationError);
+        assert_eq!(validation.safe_message(), "invalid session");
+
+        let conflict = map_sqlx_error(sqlx::Error::Protocol(
+            "sdkwork-domain-conflict:turn completion conflict".to_string(),
+        ));
+        assert_eq!(conflict.kind(), KernelErrorKind::Conflict);
+        assert_eq!(conflict.safe_message(), "turn completion conflict");
+    }
+
+    #[test]
+    fn pool_failures_do_not_expose_sqlx_details() {
+        let error = map_sqlx_error(sqlx::Error::PoolTimedOut);
+        assert_eq!(error.kind(), KernelErrorKind::Timeout);
+        assert_eq!(error.safe_message(), "database pool acquisition timed out");
     }
 }

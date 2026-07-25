@@ -1860,7 +1860,7 @@ impl AgentInteractionRecord {
 }
 
 // ============================================================================
-// Agent Task Management — kernel AgentTask projection for scheduling
+// Agent Task Management — kernel AgentTask scheduling contract
 // ============================================================================
 
 /// Lifecycle status of a scheduled agent task.

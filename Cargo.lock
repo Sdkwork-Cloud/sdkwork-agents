@@ -2488,9 +2488,12 @@ version = "0.1.0"
 dependencies = [
  "dotenvy",
  "sdkwork-database-config",
+ "sdkwork-database-drift",
  "sdkwork-database-lifecycle",
  "sdkwork-database-spi",
  "sdkwork-database-sqlx",
+ "sdkwork-utils-rust",
+ "tracing",
 ]
 
 [[package]]
@@ -2548,14 +2551,18 @@ dependencies = [
  "sdkwork-agent-server",
  "sdkwork-agents-database-host",
  "sdkwork-agents-kernel-bridge",
- "sdkwork-agents-runtime-facade",
  "sdkwork-iam-database-host",
  "sdkwork-iam-embedded-application-bootstrap",
+ "sdkwork-intelligence-agents-service",
  "sdkwork-routes-agents-app-api",
  "sdkwork-routes-agents-backend-api",
  "sdkwork-routes-agents-http-shared",
  "sdkwork-routes-agents-open-api",
  "sdkwork-routes-iam-app-api",
+ "sdkwork-web-bootstrap",
+ "sdkwork-web-contract",
+ "sdkwork-web-core",
+ "serde_json",
  "tokio",
 ]
 

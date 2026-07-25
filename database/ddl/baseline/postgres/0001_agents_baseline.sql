@@ -769,24 +769,51 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_session_item_retention
     ON ai_agent_session_item (tenant_id, organization_id, retention_until, id)
     WHERE retention_until IS NOT NULL;
 
-ALTER TABLE ai_agent_turn
-    ADD CONSTRAINT fk_ai_agent_turn_request_item FOREIGN KEY (
-        tenant_id, organization_id, session_id, request_item_id
-    ) REFERENCES ai_agent_session_item (
-        tenant_id, organization_id, session_id, item_id
-    ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
-    ADD CONSTRAINT fk_ai_agent_turn_response_item FOREIGN KEY (
-        tenant_id, organization_id, session_id, response_item_id
-    ) REFERENCES ai_agent_session_item (
-        tenant_id, organization_id, session_id, item_id
-    ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+DO $sdkwork_agents_baseline$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_ai_agent_turn_request_item'
+          AND conrelid = 'ai_agent_turn'::regclass
+    ) THEN
+        ALTER TABLE ai_agent_turn
+            ADD CONSTRAINT fk_ai_agent_turn_request_item FOREIGN KEY (
+                tenant_id, organization_id, session_id, request_item_id
+            ) REFERENCES ai_agent_session_item (
+                tenant_id, organization_id, session_id, item_id
+            ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+    END IF;
 
-ALTER TABLE ai_agent_session
-    ADD CONSTRAINT fk_ai_agent_session_fork_turn FOREIGN KEY (
-        tenant_id, organization_id, parent_session_id, forked_from_turn_id
-    ) REFERENCES ai_agent_turn (
-        tenant_id, organization_id, session_id, turn_id
-    ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_ai_agent_turn_response_item'
+          AND conrelid = 'ai_agent_turn'::regclass
+    ) THEN
+        ALTER TABLE ai_agent_turn
+            ADD CONSTRAINT fk_ai_agent_turn_response_item FOREIGN KEY (
+                tenant_id, organization_id, session_id, response_item_id
+            ) REFERENCES ai_agent_session_item (
+                tenant_id, organization_id, session_id, item_id
+            ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_ai_agent_session_fork_turn'
+          AND conrelid = 'ai_agent_session'::regclass
+    ) THEN
+        ALTER TABLE ai_agent_session
+            ADD CONSTRAINT fk_ai_agent_session_fork_turn FOREIGN KEY (
+                tenant_id, organization_id, parent_session_id, forked_from_turn_id
+            ) REFERENCES ai_agent_turn (
+                tenant_id, organization_id, session_id, turn_id
+            ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+END
+$sdkwork_agents_baseline$;
 
 CREATE TABLE IF NOT EXISTS ai_agent_item_drive_ref (
     id BIGINT NOT NULL PRIMARY KEY,
@@ -1059,7 +1086,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_resource_user_state (
     pinned_at TIMESTAMPTZ,
     hidden_at TIMESTAMPTZ,
     last_opened_at TIMESTAMPTZ,
-    last_seen_item_sequence BIGINT,
+    last_read_item_sequence BIGINT,
     custom_title VARCHAR(512),
     version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
@@ -1070,7 +1097,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_resource_user_state (
     ),
     CONSTRAINT ck_ai_agent_resource_user_state_type CHECK (resource_type IN (0, 1)),
     CONSTRAINT ck_ai_agent_resource_user_state_sequence CHECK (
-        last_seen_item_sequence IS NULL OR last_seen_item_sequence >= 0
+        last_read_item_sequence IS NULL OR last_read_item_sequence >= 0
     ),
     CONSTRAINT ck_ai_agent_resource_user_state_version CHECK (version >= 0)
 );

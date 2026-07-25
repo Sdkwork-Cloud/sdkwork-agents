@@ -16,7 +16,7 @@ Updated: 2026-07-22
 The full current schema is installed from one baseline on an empty database.
 The migrations directory is intentionally reserved for changes made after the
 first production schema release. There is no pre-launch compatibility chain,
-dual-write path, projection store, or legacy session table.
+dual-write path, derived read store, or legacy session table.
 
 ## Operational Checks
 

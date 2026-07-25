@@ -3,7 +3,7 @@
   "kind": "sdkwork.component.spec",
   "component": {
     "name": "sdkwork-api-agents-assembly",
-    "displayName": "SDKWork agents Gateway Assembly",
+    "displayName": "SDKWork Agents API Assembly",
     "version": "0.1.0",
     "type": "rust-api-assembly",
     "root": "crates/sdkwork-api-agents-assembly",
@@ -21,6 +21,36 @@
   },
   "canonicalSpecs": [
     {
+      "file": "COMPONENT_SPEC.md",
+      "path": "../../../sdkwork-specs/COMPONENT_SPEC.md",
+      "purpose": "Component-local contract and public port declaration rules."
+    },
+    {
+      "file": "CODE_STYLE_SPEC.md",
+      "path": "../../../sdkwork-specs/CODE_STYLE_SPEC.md",
+      "purpose": "Authored source structure and stable public export rules."
+    },
+    {
+      "file": "NAMING_SPEC.md",
+      "path": "../../../sdkwork-specs/NAMING_SPEC.md",
+      "purpose": "Canonical API assembly and Rust naming rules."
+    },
+    {
+      "file": "RUST_CODE_SPEC.md",
+      "path": "../../../sdkwork-specs/RUST_CODE_SPEC.md",
+      "purpose": "Rust API assembly and dependency composition rules."
+    },
+    {
+      "file": "HEALTH_CHECK_SPEC.md",
+      "path": "../../../sdkwork-specs/HEALTH_CHECK_SPEC.md",
+      "purpose": "Composable dependency readiness and safe infrastructure probe behavior."
+    },
+    {
+      "file": "API_ASSEMBLY_SPEC.md",
+      "path": "../../../sdkwork-specs/API_ASSEMBLY_SPEC.md",
+      "purpose": "Host-neutral API assembly and dependency composition rules."
+    },
+    {
       "file": "APPLICATION_GATEWAY_SPEC.md",
       "path": "../../../sdkwork-specs/APPLICATION_GATEWAY_SPEC.md",
       "purpose": "Gateway assembly discovery, business-only mounting, and verification rules."
@@ -29,6 +59,21 @@
       "file": "WEB_FRAMEWORK_SPEC.md",
       "path": "../../../sdkwork-specs/WEB_FRAMEWORK_SPEC.md",
       "purpose": "Typed request context and HTTP framework composition rules."
+    },
+    {
+      "file": "WEB_BACKEND_SPEC.md",
+      "path": "../../../sdkwork-specs/WEB_BACKEND_SPEC.md",
+      "purpose": "HTTP service, repository, adapter, and composition boundaries."
+    },
+    {
+      "file": "APP_COMPOSITION_SPEC.md",
+      "path": "../../../sdkwork-specs/APP_COMPOSITION_SPEC.md",
+      "purpose": "Application-owned dependency composition and public runtime ports."
+    },
+    {
+      "file": "TEST_SPEC.md",
+      "path": "../../../sdkwork-specs/TEST_SPEC.md",
+      "purpose": "Behavior and component contract verification rules."
     },
     {
       "file": "DATABASE_FRAMEWORK_SPEC.md",
@@ -43,14 +88,69 @@
   ],
   "contracts": {
     "publicExports": [
-      "."
+      ".",
+      "sdkwork_api_agents_assembly::assemble_app_api_contribution",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution::router",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution::route_manifest",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution::openapi",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution::permission_catalog",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution::domain_context_injectors",
+      "sdkwork_api_agents_assembly::ApiAssemblyContribution::readiness_check",
+      "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness",
+      "sdkwork_routes_agents_app_api::build_router",
+      "sdkwork_routes_agents_http_shared::app_route_manifest",
+      "sdkwork_routes_agents_http_shared::agent_request_context_injector"
     ],
     "runtimeEntrypoints": [
       "src/bootstrap.rs#assemble_api_router",
-      "src/lib.rs#assemble_app_business_router",
-      "src/lib.rs#assemble_app_business_runtime",
+      "src/contribution.rs#assemble_app_api_contribution",
       "src/lib.rs#bootstrap_application_database_from_env",
       "src/bootstrap/iam.rs#wire_iam_app_router"
+    ],
+    "providedPorts": [
+      {
+        "name": "agentsAppApiContribution",
+        "export": "sdkwork_api_agents_assembly::assemble_app_api_contribution"
+      },
+      {
+        "name": "agentsReadinessCheck",
+        "export": "sdkwork_api_agents_assembly::ApiAssemblyContribution::readiness_check"
+      },
+      {
+        "name": "agentsDomainContextInjectors",
+        "export": "sdkwork_api_agents_assembly::ApiAssemblyContribution::domain_context_injectors"
+      },
+      {
+        "name": "agentsRoutePolicyInventory",
+        "export": "sdkwork_api_agents_assembly::ApiAssemblyContribution::route_manifest"
+      },
+      {
+        "name": "agentsOpenApiContribution",
+        "export": "sdkwork_api_agents_assembly::ApiAssemblyContribution::openapi"
+      },
+      {
+        "name": "agentsPermissionCatalog",
+        "export": "sdkwork_api_agents_assembly::ApiAssemblyContribution::permission_catalog"
+      }
+    ],
+    "requiredPorts": [
+      {
+        "name": "agentHttpReadiness",
+        "export": "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness"
+      },
+      {
+        "name": "agentsAppApiRouter",
+        "export": "sdkwork_routes_agents_app_api::build_router"
+      },
+      {
+        "name": "agentsAppApiRouteManifest",
+        "export": "sdkwork_routes_agents_http_shared::app_route_manifest"
+      },
+      {
+        "name": "agentsDomainContextInjector",
+        "export": "sdkwork_routes_agents_http_shared::agent_request_context_injector"
+      }
     ],
     "routeManifest": "assembly-manifest.json",
     "sdkClients": [],

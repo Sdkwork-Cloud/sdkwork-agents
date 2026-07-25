@@ -1,10 +1,11 @@
-use crate::agent_turn::AgentTurnRecord;
+use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
-    AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionRecord,
-    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentTaskRecord,
+    AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionItemStatus,
+    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
+    AgentTaskRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 use crate::in_memory_pagination::{count_iterator, paginate_items, paginate_iterator};
@@ -13,7 +14,7 @@ use crate::ports::{
     InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery, SessionListQuery,
-    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
+    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery, TurnRequestWriteOutcome,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::parse_rfc3339_datetime;
@@ -658,6 +659,10 @@ impl Default for InMemoryAgentRepository {
 }
 
 impl AgentRepository for InMemoryAgentRepository {
+    fn check_readiness(&self) -> KernelResult<()> {
+        Ok(())
+    }
+
     fn next_id(&self) -> KernelResult<u64> {
         self.id_generator.next_id()
     }
@@ -1671,18 +1676,62 @@ impl AgentRepository for InMemoryAgentRepository {
             .count() as u64)
     }
 
-    fn insert_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
-        let primary_key = session_item_primary_key(&record);
+    fn append_session_item(
+        &self,
+        mut record: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
+        if record.sequence != 0
+            || record.turn_id.is_some()
+            || record.status != AgentSessionItemStatus::Completed
+        {
+            return Err(KernelError::validation(
+                "standalone session item must be an unsequenced completed item without a turn",
+            ));
+        }
+        let session_primary_key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+        );
+        let mut sessions = self.sessions.recovering_write();
+        let mut session_index = self.session_index.recovering_write();
         let mut items = self.items.recovering_write();
+        let mut item_index = self.session_item_index.recovering_write();
+        let existing_session = sessions
+            .get(&session_primary_key)
+            .cloned()
+            .ok_or_else(|| KernelError::validation("active session not found"))?;
+        if !existing_session.status.is_active()
+            || existing_session.deleted_at.is_some()
+            || existing_session.owner_user_id != record.created_by
+        {
+            return Err(KernelError::validation("active session not found"));
+        }
+        record.sequence = existing_session.last_item_sequence.saturating_add(1);
+        let primary_key = session_item_primary_key(&record);
         if items.contains_key(&primary_key) {
             return Err(KernelError::conflict("session item already exists"));
         }
         let index_key = session_item_index_key(&record);
-        items.insert(primary_key.clone(), record);
-        self.session_item_index
-            .recovering_write()
-            .insert(index_key, primary_key);
-        Ok(())
+        if item_index.contains_key(&index_key) {
+            return Err(KernelError::conflict("session item sequence conflict"));
+        }
+        let mut updated_session = existing_session.clone();
+        updated_session.updated_by = record.created_by;
+        updated_session.record_item(
+            record.input_tokens,
+            record.output_tokens,
+            record.updated_at.clone(),
+        );
+        let previous_session_index_key = session_index_key(&existing_session);
+        let next_session_index_key = session_index_key(&updated_session);
+
+        items.insert(primary_key.clone(), record.clone());
+        item_index.insert(index_key, primary_key);
+        sessions.insert(session_primary_key.clone(), updated_session.clone());
+        session_index.remove(&previous_session_index_key);
+        session_index.insert(next_session_index_key, session_primary_key);
+        Ok((updated_session, record))
     }
 
     fn update_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
@@ -1855,28 +1904,6 @@ impl AgentRepository for InMemoryAgentRepository {
             .count() as u64)
     }
 
-    fn next_item_sequence(
-        &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-    ) -> KernelResult<u64> {
-        let index = self.session_item_index.recovering_read();
-        let max_sequence = index
-            .iter()
-            .filter(
-                |((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
-                    *indexed_tenant_id == tenant_id
-                        && *indexed_organization_id == organization_id
-                        && indexed_session_id == session_id
-                },
-            )
-            .map(|((_, _, _, sequence, _), _)| *sequence)
-            .max()
-            .unwrap_or(0);
-        Ok(max_sequence.saturating_add(1))
-    }
-
     fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
@@ -1978,7 +2005,26 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(turns)
     }
 
-    fn insert_turn_reservation(&self, turn: AgentTurnRecord) -> KernelResult<()> {
+    fn insert_turn_request(
+        &self,
+        turn: AgentTurnRecord,
+        mut request_item: AgentSessionItemRecord,
+        drive_refs: Vec<AgentItemDriveRefRecord>,
+    ) -> KernelResult<TurnRequestWriteOutcome> {
+        if turn.status != AgentTurnStatus::Requested
+            || turn.version != 0
+            || turn.response_item_id.is_some()
+            || turn.request_item_id != request_item.item_id
+            || turn.tenant_id != request_item.tenant_id
+            || turn.organization_id != request_item.organization_id
+            || turn.session_id != request_item.session_id
+            || request_item.turn_id.as_deref() != Some(turn.turn_id.as_str())
+        {
+            return Err(KernelError::validation(
+                "turn request and session item scope mismatch",
+            ));
+        }
+
         let primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
         let idempotency_key = (
             turn.tenant_id,
@@ -1986,14 +2032,115 @@ impl AgentRepository for InMemoryAgentRepository {
             turn.owner_user_id,
             turn.idempotency_key.clone(),
         );
+        let session_primary_key = (
+            turn.tenant_id,
+            turn.organization_id,
+            turn.session_id.clone(),
+        );
+        let mut pending_drive_refs = Vec::with_capacity(drive_refs.len());
+        for record in drive_refs {
+            if record.tenant_id != request_item.tenant_id
+                || record.organization_id != request_item.organization_id
+                || record.item_id != request_item.item_id
+            {
+                return Err(KernelError::validation(
+                    "session item Drive reference scope mismatch",
+                ));
+            }
+            let key = (
+                record.tenant_id,
+                record.organization_id,
+                record.item_id.clone(),
+                record.drive_node_id.clone(),
+                record.resource_role.as_str().to_string(),
+            );
+            if pending_drive_refs
+                .iter()
+                .any(|(candidate, _)| candidate == &key)
+            {
+                return Err(KernelError::conflict(
+                    "duplicate session item Drive reference",
+                ));
+            }
+            pending_drive_refs.push((key, record));
+        }
+
         let mut turns = self.turns.recovering_write();
-        let mut index = self.turn_idempotency.recovering_write();
-        if turns.contains_key(&primary_key) || index.contains_key(&idempotency_key) {
+        let mut turn_idempotency = self.turn_idempotency.recovering_write();
+        let mut sessions = self.sessions.recovering_write();
+        let mut session_index = self.session_index.recovering_write();
+        let mut items = self.items.recovering_write();
+        let mut session_item_index = self.session_item_index.recovering_write();
+        let mut item_drive_refs = self.item_drive_refs.recovering_write();
+
+        if let Some(existing) = turns.get(&primary_key) {
+            if existing.idempotency_key == turn.idempotency_key {
+                return Ok(TurnRequestWriteOutcome::Existing(Box::new(
+                    existing.clone(),
+                )));
+            }
             return Err(KernelError::conflict("turn idempotency conflict"));
         }
+        if let Some(existing_primary_key) = turn_idempotency.get(&idempotency_key) {
+            let existing =
+                turns
+                    .get(existing_primary_key)
+                    .cloned()
+                    .ok_or_else(|| KernelError::Internal {
+                        message: "turn idempotency index references a missing turn".to_string(),
+                    })?;
+            return Ok(TurnRequestWriteOutcome::Existing(Box::new(existing)));
+        }
+        let existing_session = sessions
+            .get(&session_primary_key)
+            .cloned()
+            .ok_or_else(|| KernelError::validation("active session not found"))?;
+        if !existing_session.status.is_active() || existing_session.deleted_at.is_some() {
+            return Err(KernelError::validation("active session not found"));
+        }
+        let request_primary_key = session_item_primary_key(&request_item);
+        if items.contains_key(&request_primary_key) {
+            return Err(KernelError::conflict("request item already exists"));
+        }
+        if pending_drive_refs
+            .iter()
+            .any(|(key, _)| item_drive_refs.contains_key(key))
+        {
+            return Err(KernelError::conflict(
+                "duplicate session item Drive reference",
+            ));
+        }
+
+        request_item.sequence = existing_session.last_item_sequence.saturating_add(1);
+        let request_index_key = session_item_index_key(&request_item);
+        if session_item_index.contains_key(&request_index_key) {
+            return Err(KernelError::conflict("session item sequence conflict"));
+        }
+        let mut updated_session = existing_session.clone();
+        updated_session.updated_by = request_item.created_by;
+        updated_session.record_item(
+            request_item.input_tokens,
+            request_item.output_tokens,
+            request_item.updated_at.clone(),
+        );
+
+        let previous_session_index_key = session_index_key(&existing_session);
+        let next_session_index_key = session_index_key(&updated_session);
         turns.insert(primary_key.clone(), turn);
-        index.insert(idempotency_key, primary_key);
-        Ok(())
+        turn_idempotency.insert(idempotency_key, primary_key);
+        items.insert(request_primary_key.clone(), request_item.clone());
+        session_item_index.insert(request_index_key, request_primary_key);
+        sessions.insert(session_primary_key.clone(), updated_session.clone());
+        session_index.remove(&previous_session_index_key);
+        session_index.insert(next_session_index_key, session_primary_key);
+        for (key, record) in pending_drive_refs {
+            item_drive_refs.insert(key, record);
+        }
+
+        Ok(TurnRequestWriteOutcome::Inserted {
+            session: Box::new(updated_session),
+            request_item: Box::new(request_item),
+        })
     }
 
     fn update_turn_state(
@@ -2023,155 +2170,89 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(turn)
     }
 
-    fn insert_turn(
+    fn complete_turn(
         &self,
         turn: AgentTurnRecord,
-        session: AgentSessionRecord,
-        mut user_input_item: AgentSessionItemRecord,
-        mut assistant_output_item: AgentSessionItemRecord,
-    ) -> KernelResult<(
-        AgentSessionRecord,
-        AgentSessionItemRecord,
-        AgentSessionItemRecord,
-    )> {
-        // Atomic: acquire all relevant write locks in canonical order
-        // (sessions -> session_index -> items -> session_item_index) to prevent
-        // races on item sequence and session counters.
-        let tenant_id = user_input_item.tenant_id;
-        let organization_id = user_input_item.organization_id;
-        let session_id = user_input_item.session_id.clone();
-
-        let mut turns = self.turns.recovering_write();
-        let mut turn_idempotency = self.turn_idempotency.recovering_write();
+        expected_turn_version: u64,
+        expected_fencing_token: u64,
+        expected_lease_token: Option<String>,
+        mut response_item: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
+        if turn.status != AgentTurnStatus::Completed
+            || turn.version != expected_turn_version.saturating_add(1)
+            || turn.response_item_id.as_deref() != Some(response_item.item_id.as_str())
+            || turn.tenant_id != response_item.tenant_id
+            || turn.organization_id != response_item.organization_id
+            || turn.session_id != response_item.session_id
+            || response_item.turn_id.as_deref() != Some(turn.turn_id.as_str())
+            || response_item.parent_item_id.as_deref() != Some(turn.request_item_id.as_str())
+        {
+            return Err(KernelError::validation(
+                "completed turn and response item scope mismatch",
+            ));
+        }
         let turn_primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
-        let turn_idempotency_key = (
+        let session_primary_key = (
             turn.tenant_id,
             turn.organization_id,
-            turn.owner_user_id,
-            turn.idempotency_key.clone(),
+            turn.session_id.clone(),
         );
-        if let Some(existing) = turns.get(&turn_primary_key) {
-            if existing.payload_hash != turn.payload_hash
-                || existing.idempotency_key != turn.idempotency_key
-                || turn.version != existing.version.saturating_add(1)
-                || !matches!(
-                    existing.status,
-                    crate::agent_turn::AgentTurnStatus::Requested
-                        | crate::agent_turn::AgentTurnStatus::Running
-                )
-            {
-                return Err(KernelError::conflict("turn idempotency conflict"));
-            }
-        } else if turn_idempotency.contains_key(&turn_idempotency_key) {
-            return Err(KernelError::conflict("turn idempotency conflict"));
-        }
+        let mut turns = self.turns.recovering_write();
         let mut sessions = self.sessions.recovering_write();
         let mut session_index = self.session_index.recovering_write();
         let mut items = self.items.recovering_write();
         let mut session_item_index = self.session_item_index.recovering_write();
 
-        // Verify session exists and check optimistic version
-        let session_primary_key = session_primary_key(&session);
+        let existing_turn = turns
+            .get(&turn_primary_key)
+            .cloned()
+            .ok_or_else(|| KernelError::validation("turn not found"))?;
+        if existing_turn.version != expected_turn_version
+            || existing_turn.fencing_token != expected_fencing_token
+            || existing_turn.lease_token != expected_lease_token
+            || existing_turn.payload_hash != turn.payload_hash
+            || existing_turn.idempotency_key != turn.idempotency_key
+            || existing_turn.session_id != turn.session_id
+            || existing_turn.agent_id != turn.agent_id
+            || existing_turn.owner_user_id != turn.owner_user_id
+            || existing_turn.status != AgentTurnStatus::Running
+        {
+            return Err(KernelError::conflict("turn completion conflict"));
+        }
         let existing_session = sessions
             .get(&session_primary_key)
+            .cloned()
             .ok_or_else(|| KernelError::validation("session not found"))?;
-        let expected_version = existing_session.version.saturating_add(1);
-        if session.version != expected_version {
-            return Err(KernelError::conflict(format!(
-                "session version mismatch: expected={expected_version}, actual={}",
-                session.version
-            )));
+        if existing_session.deleted_at.is_some() {
+            return Err(KernelError::validation("session not found"));
         }
-
-        let max_sequence = session_item_index
-            .iter()
-            .filter(
-                |((indexed_tenant_id, indexed_organization_id, indexed_session_id, _, _), _)| {
-                    *indexed_tenant_id == tenant_id
-                        && *indexed_organization_id == organization_id
-                        && indexed_session_id == &session_id
-                },
-            )
-            .map(|((_, _, _, sequence, _), _)| *sequence)
-            .max()
-            .unwrap_or(0);
-        let user_sequence = max_sequence.saturating_add(1);
-        user_input_item.sequence = user_sequence;
-        assistant_output_item.sequence = user_sequence.saturating_add(1);
-
-        let user_primary_key = session_item_primary_key(&user_input_item);
-        if items.contains_key(&user_primary_key) {
-            return Err(KernelError::conflict("user input item already exists"));
+        let response_primary_key = session_item_primary_key(&response_item);
+        if items.contains_key(&response_primary_key) {
+            return Err(KernelError::conflict("response item already exists"));
         }
-        let user_index_key = session_item_index_key(&user_input_item);
-        items.insert(user_primary_key.clone(), user_input_item.clone());
-        session_item_index.insert(user_index_key, user_primary_key);
-
-        let assistant_primary_key = session_item_primary_key(&assistant_output_item);
-        if items.contains_key(&assistant_primary_key) {
-            return Err(KernelError::conflict(
-                "assistant output item already exists",
-            ));
+        response_item.sequence = existing_session.last_item_sequence.saturating_add(1);
+        let response_index_key = session_item_index_key(&response_item);
+        if session_item_index.contains_key(&response_index_key) {
+            return Err(KernelError::conflict("session item sequence conflict"));
         }
-        let assistant_index_key = session_item_index_key(&assistant_output_item);
-        items.insert(assistant_primary_key.clone(), assistant_output_item.clone());
-        session_item_index.insert(assistant_index_key, assistant_primary_key);
+        let mut updated_session = existing_session.clone();
+        updated_session.updated_by = response_item.created_by;
+        updated_session.record_item(
+            response_item.input_tokens,
+            response_item.output_tokens,
+            response_item.updated_at.clone(),
+        );
 
-        // Update session (inline to preserve lock atomicity)
-        let previous_session_index_key = session_index_key(existing_session);
-        let next_session_index_key = session_index_key(&session);
-        sessions.insert(session_primary_key.clone(), session.clone());
+        let previous_session_index_key = session_index_key(&existing_session);
+        let next_session_index_key = session_index_key(&updated_session);
+        items.insert(response_primary_key.clone(), response_item.clone());
+        session_item_index.insert(response_index_key, response_primary_key);
+        sessions.insert(session_primary_key.clone(), updated_session.clone());
         session_index.remove(&previous_session_index_key);
         session_index.insert(next_session_index_key, session_primary_key);
+        turns.insert(turn_primary_key, turn);
 
-        turns.insert(turn_primary_key.clone(), turn);
-        turn_idempotency.insert(turn_idempotency_key, turn_primary_key);
-
-        Ok((session, user_input_item, assistant_output_item))
-    }
-
-    fn insert_turn_with_drive_refs(
-        &self,
-        turn: AgentTurnRecord,
-        session: AgentSessionRecord,
-        user_input_item: AgentSessionItemRecord,
-        assistant_output_item: AgentSessionItemRecord,
-        drive_refs: Vec<AgentItemDriveRefRecord>,
-    ) -> KernelResult<(
-        AgentSessionRecord,
-        AgentSessionItemRecord,
-        AgentSessionItemRecord,
-    )> {
-        let mut refs = self.item_drive_refs.recovering_write();
-        let mut pending = Vec::with_capacity(drive_refs.len());
-        for record in drive_refs {
-            if record.tenant_id != user_input_item.tenant_id
-                || record.organization_id != session.organization_id
-                || record.item_id != user_input_item.item_id
-            {
-                return Err(KernelError::validation(
-                    "session item Drive reference scope mismatch",
-                ));
-            }
-            let key = (
-                record.tenant_id,
-                record.organization_id,
-                record.item_id.clone(),
-                record.drive_node_id.clone(),
-                record.resource_role.as_str().to_string(),
-            );
-            if refs.contains_key(&key) || pending.iter().any(|(candidate, _)| candidate == &key) {
-                return Err(KernelError::conflict(
-                    "duplicate session item Drive reference",
-                ));
-            }
-            pending.push((key, record));
-        }
-        let result = self.insert_turn(turn, session, user_input_item, assistant_output_item)?;
-        for (key, record) in pending {
-            refs.insert(key, record);
-        }
-        Ok(result)
+        Ok((updated_session, response_item))
     }
 
     fn list_item_drive_refs(

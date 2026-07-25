@@ -28,14 +28,14 @@ impl AgentAuditSink for AuditSink {
     }
 }
 
+type TestService = AgentsService<InMemoryAgentRepository, AuditSink, IamGatedPolicyProvider>;
+type RecordedEvents = Arc<Mutex<Vec<KernelEvent>>>;
+
 fn subject() -> PolicySubject {
     PolicySubject::new("user.30", "10").with_role("ai.agents.manage")
 }
 
-fn service() -> (
-    AgentsService<InMemoryAgentRepository, AuditSink, IamGatedPolicyProvider>,
-    Arc<Mutex<Vec<KernelEvent>>>,
-) {
+fn service() -> (TestService, RecordedEvents) {
     let events = Arc::new(Mutex::new(Vec::new()));
     (
         AgentsService::new(

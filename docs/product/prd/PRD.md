@@ -166,9 +166,9 @@ stores, or copied dependency entities.
 ## 11. Release Gates
 
 Release requires API, SDK, database, Rust, security, documentation, deployment
-and supply-chain checks to pass. PostgreSQL is the production persistence
-authority. Open API credentials are isolated from app/backend session tokens.
-The exact commands are maintained in
+and supply-chain checks to pass, including `pnpm check:production-security`.
+PostgreSQL is the production persistence authority. Open API credentials are
+isolated from app/backend session tokens. The exact commands are maintained in
 [pre-launch-verification.md](../../runbooks/pre-launch-verification.md).
 
 ## 12. Linked Requirements And Decisions

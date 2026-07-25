@@ -94,7 +94,7 @@ test("container profile entrypoint rejects lifecycle identity downgrades before 
   assert.match(
     source,
     /profile_agents_environment" \!= "\$expected_environment"[\s\S]*profile_environment" \!= "\$expected_environment"[\s\S]*selected profile lifecycle environment does not match/,
-    "profile lifecycle projections must agree with the selected profile identifier",
+    "profile lifecycle settings must agree with the selected profile identifier",
   );
   assert.match(
     source,
@@ -130,8 +130,8 @@ test("production HTTP bootstrap uses IAM, Postgres, and runtime facade completio
   );
   assert.match(
     source,
-    /fn production_postgres_agent_http_state\(\) -> Result<AgentHttpState>\s*\{[\s\S]*SqlAgentRepository::new[\s\S]*SqlAgentAuditSink::new_global[\s\S]*IamGatedPolicyProvider::default\(\)[\s\S]*RuntimeFacadeChatCompleter/,
-    "production state must use Postgres repository, Postgres audit, IAM policy, and RuntimeFacadeChatCompleter",
+    /fn production_postgres_agent_http_state\(\) -> Result<AgentHttpState>\s*\{[\s\S]*SqlAgentRepository::new[\s\S]*SqlAgentAuditSink::new_global[\s\S]*IamGatedPolicyProvider::default\(\)[\s\S]*RuntimeFacadeTurnExecutor/,
+    "production state must use Postgres repository, Postgres audit, IAM policy, and RuntimeFacadeTurnExecutor",
   );
   assert.match(
     source,
@@ -259,12 +259,14 @@ test("agent repository port does not compile incomplete persistence adapters", (
     "get_session",
     "list_sessions",
     "count_sessions",
-    "insert_message",
-    "update_message",
-    "get_message",
-    "list_messages",
-    "count_messages",
-    "next_message_sequence",
+    "append_session_item",
+    "update_session_item",
+    "get_session_item",
+    "list_session_items",
+    "count_session_items",
+    "insert_turn_request",
+    "update_turn_state",
+    "complete_turn",
     "insert_interaction",
     "update_interaction",
     "get_interaction",
@@ -325,7 +327,7 @@ test("postgres read failures propagate instead of masquerading as empty or missi
     "AgentProviderBindingRow",
     "AgentCompositionSlotRow",
     "AgentSessionRow",
-    "AgentMessageRow",
+    "AgentSessionItemRow",
     "AgentInteractionRow",
     "AgentTaskRow",
   ]) {
@@ -337,22 +339,22 @@ test("postgres read failures propagate instead of masquerading as empty or missi
   }
   assert.match(
     source,
-    /fn list_message_rows\([\s\S]*?\) -> KernelResult<Vec<AgentMessageRow>>/,
-    "high-volume message reads must expose repository failures",
+    /fn list_session_item_rows\([\s\S]*?\) -> KernelResult<Vec<AgentSessionItemRow>>/,
+    "high-volume Session Item reads must expose repository failures",
   );
 });
 
 test("blocking service and provider work use bounded observable capacity", () => {
   const http = readText("crates/sdkwork-intelligence-agents-service/src/http.rs");
-  const chat = readText(
-    "crates/sdkwork-intelligence-agents-service/src/chat_runtime.rs",
+  const turnRuntime = readText(
+    "crates/sdkwork-intelligence-agents-service/src/turn_runtime.rs",
   );
   const metrics = readText(
     "crates/sdkwork-intelligence-agents-service/src/infrastructure.rs",
   );
 
   assert.match(http, /SERVICE_WORKER_LIMIT[\s\S]*try_acquire_owned/);
-  assert.match(chat, /PROVIDER_WORKER_LIMIT[\s\S]*try_acquire_owned/);
+  assert.match(turnRuntime, /PROVIDER_WORKER_LIMIT[\s\S]*try_acquire_owned/);
   assert.match(metrics, /sdkwork_agents_service_worker_rejections_total/);
   assert.match(metrics, /sdkwork_agents_provider_worker_rejections_total/);
 });
@@ -400,7 +402,7 @@ test("operator docs expose production security smoke criteria", () => {
   );
   assert.match(
     prd,
-    /Production gates[\s\S]*check:production-security/,
+    /Release Gates[\s\S]*check:production-security/,
     "PRD production gates must include the production-security check",
   );
   assert.match(

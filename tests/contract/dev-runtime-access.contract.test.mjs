@@ -105,6 +105,51 @@ test('gateway startup output distinguishes health links from authenticated API o
   assert.match(accessUrls, /API origin \(authentication required\)/u);
 });
 
+test('operator surfaces use canonical infrastructure health endpoints', () => {
+  const liveSmoke = read('scripts/agents-live-smoke.mjs');
+  for (const endpoint of ['/healthz', '/livez', '/readyz', '/metrics']) {
+    assert.match(
+      liveSmoke,
+      new RegExp(escapeRegex(endpoint), 'u'),
+      `live smoke must verify ${endpoint}`,
+    );
+  }
+  assert.doesNotMatch(liveSmoke, /fetchText\(['"]\/(?:health|ready)['"]\)/u);
+
+  const operatorDocuments = [
+    'docs/runbooks/smoke-test.md',
+    'docs/runbooks/monitoring.md',
+    'docs/runbooks/incident-rollback.md',
+    'docs/architecture/AGENTS_LAYERING.md',
+    'crates/sdkwork-intelligence-agents-service/ops/docs/operations-manual.md',
+  ];
+  for (const relativePath of operatorDocuments) {
+    const content = read(relativePath);
+    for (const endpoint of ['/healthz', '/livez', '/readyz', '/metrics']) {
+      assert.match(
+        content,
+        new RegExp(escapeRegex(endpoint), 'u'),
+        `${relativePath} must document ${endpoint}`,
+      );
+    }
+    assert.doesNotMatch(
+      content,
+      /(?:GET\s+|[`'"])\/(?:health|ready)(?:\s|[`'"]|$)/mu,
+      `${relativePath} must not document retired /health or /ready probes`,
+    );
+  }
+
+  for (const relativePath of [
+    'deployments/kubernetes/standalone-gateway-deployment.yaml',
+    'crates/sdkwork-intelligence-agents-service/ops/kubernetes/deployment-hpa-ingress.yaml',
+  ]) {
+    const deployment = read(relativePath);
+    assert.match(deployment, /path:\s+\/healthz/u);
+    assert.match(deployment, /path:\s+\/readyz/u);
+    assert.doesNotMatch(deployment, /path:\s+\/(?:health|ready)(?:\s|$)/mu);
+  }
+});
+
 test('source topology profiles project exact CORS and IAM origins from etc', () => {
   const profiles = [
     'standalone.development',

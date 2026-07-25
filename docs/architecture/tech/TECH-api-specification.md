@@ -32,8 +32,9 @@ deterministic inventory and must be regenerated after an authority change.
 ## 3. SDK Consumption
 
 TypeScript consumers import only package roots. App consumers construct
-`createClient({ baseUrl: "https://host/app/v3/api", tokenManager })`; the
-composed package validates and normalizes the surface prefix. Non-streaming
+`createClient({ baseUrl: "https://host", tokenManager })`; the composed
+package accepts a common SDK root or one canonical `/app/v3/api` surface URL
+and normalizes the surface prefix exactly once. Non-streaming
 Turn execution uses `completeAgentTurn(...)`; streaming uses
 `client.ai.turns.stream(...)`.
 

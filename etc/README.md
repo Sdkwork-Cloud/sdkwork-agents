@@ -3,7 +3,7 @@
 `sdkwork.deployment.config.json` is the source-controlled deployment index for
 SDKWork Agents. It selects one typed profile from `topology/`; each profile
 defines its deployment profile, lifecycle environment, runtime target, public
-ingress URLs, platform gateway URL, and shared Web Framework projections.
+ingress URLs, platform gateway URL, and shared Web Framework settings.
 
 ## Supported Profiles
 

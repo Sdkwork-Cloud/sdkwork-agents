@@ -89,5 +89,5 @@ pnpm check:composition-resolver
 pnpm check:rust-backend-composition
 pnpm check:production-security
 pnpm deploy:validate:cloud
-node ../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs
+pnpm check:architecture-alignment
 ```

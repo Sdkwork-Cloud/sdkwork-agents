@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "sdkwork.database.module",
+  "databaseRole": "authoritative-server",
   "moduleId": "agents",
   "serviceCode": "AGENTS",
   "displayName": "Agents Database",
@@ -12,10 +13,10 @@
   "tablePrefix": "ai_",
   "contractVersion": "5.0.0",
   "baselineStrategy": "baseline-plus-migrations",
-  "baselineAnchorTable": "ai_agent",
+  "baselineAnchorTable": "ai_agent_outbox_event",
   "modules": [],
   "lifecycle": {
-    "autoMigrate": true,
+    "autoMigrate": false,
     "seedOnBoot": false,
     "defaultSeedLocale": "zh-CN",
     "defaultSeedProfile": "standard",

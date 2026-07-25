@@ -63,6 +63,11 @@
       "purpose": "Standard ownership, exception, compatibility, and migration rules."
     },
     {
+      "file": "HEALTH_CHECK_SPEC.md",
+      "path": "../../../sdkwork-specs/HEALTH_CHECK_SPEC.md",
+      "purpose": "Repository readiness ports, dependency failure handling, and safe probe responses."
+    },
+    {
       "file": "IAM_SPEC.md",
       "path": "../../../sdkwork-specs/IAM_SPEC.md",
       "purpose": "Tenant, organization, and authorization context contracts."
@@ -127,8 +132,21 @@
       "sdkwork_intelligence_agents_service::ports::*",
       "sdkwork_intelligence_agents_service::infrastructure::*",
       "sdkwork_intelligence_agents_service::persistence::*",
-      "sdkwork_intelligence_agents_service::{AgentHttpState,build_open_router,build_app_router,build_backend_router,build_combined_router} [feature=http-axum]"
+      "sdkwork_intelligence_agents_service::{AgentHttpState,build_open_router,build_app_router,build_backend_router,build_combined_router} [feature=http-axum]",
+      "sdkwork_intelligence_agents_service::AgentRepository::check_readiness",
+      "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness"
     ],
+    "providedPorts": [
+      {
+        "name": "agentRepositoryReadiness",
+        "export": "sdkwork_intelligence_agents_service::AgentRepository::check_readiness"
+      },
+      {
+        "name": "agentHttpReadiness",
+        "export": "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness"
+      }
+    ],
+    "requiredPorts": [],
     "runtimeEntrypoints": [
       "Cargo.toml"
     ],

@@ -2397,7 +2397,7 @@ paths:
       - $ref: '#/components/parameters/SearchQ'
       responses:
         '200':
-          description: MCP composition-slot marketplace projection for the tenant
+          description: MCP marketplace catalog assembled from tenant composition slots
           content:
             application/json:
               schema:

@@ -12,12 +12,22 @@ export * from '../generated/server-openapi/src/auth';
 
 function resolveTransportBaseUrl(appApiBaseUrl: string): string {
   const normalized = appApiBaseUrl.trim().replace(/\/+$/u, '');
-  if (!normalized.endsWith(APP_API_PREFIX)) {
-    throw new Error(`Agents App API base URL must end with ${APP_API_PREFIX}.`);
+  if (!normalized) {
+    throw new Error('Agents App SDK base URL must not be empty.');
   }
 
-  const transportBaseUrl = normalized.slice(0, -APP_API_PREFIX.length);
-  if (transportBaseUrl.endsWith(APP_API_PREFIX)) {
+  const prefixIndex = normalized.indexOf(APP_API_PREFIX);
+  const hasCanonicalSurfaceSuffix = normalized.endsWith(APP_API_PREFIX);
+  if (prefixIndex >= 0 && !hasCanonicalSurfaceSuffix) {
+    throw new Error(
+      `Agents App SDK base URL must identify a gateway root or end with ${APP_API_PREFIX}.`,
+    );
+  }
+
+  const transportBaseUrl = hasCanonicalSurfaceSuffix
+    ? normalized.slice(0, -APP_API_PREFIX.length)
+    : normalized;
+  if (transportBaseUrl.includes(APP_API_PREFIX)) {
     throw new Error(`Agents App API base URL must include ${APP_API_PREFIX} exactly once.`);
   }
   return transportBaseUrl;

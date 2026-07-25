@@ -14,8 +14,32 @@ async function fetchText(path) {
 }
 
 async function main() {
-  const health = await fetchText("/health");
-  assert.equal(health.response.status, 200, `/health must return 200 (got ${health.response.status})`);
+  for (const { path, expectedStatus } of [
+    { path: "/healthz", expectedStatus: "ok" },
+    { path: "/livez", expectedStatus: "ok" },
+    { path: "/readyz", expectedStatus: "ready" },
+  ]) {
+    const probe = await fetchText(path);
+    assert.equal(
+      probe.response.status,
+      200,
+      `${path} must return 200 (got ${probe.response.status})`,
+    );
+    const payload = JSON.parse(probe.body);
+    assert.equal(payload.status, expectedStatus, `${path} must report ${expectedStatus}`);
+  }
+
+  const frameworkMetrics = await fetchText("/metrics");
+  assert.equal(
+    frameworkMetrics.response.status,
+    200,
+    `/metrics must return 200 (got ${frameworkMetrics.response.status})`,
+  );
+  assert.match(
+    frameworkMetrics.body,
+    /(?:http_requests_total|sdkwork_)/u,
+    "/metrics must expose Prometheus metrics",
+  );
 
   const metrics = await fetchText("/metrics/agents");
   assert.equal(

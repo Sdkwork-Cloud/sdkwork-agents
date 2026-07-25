@@ -312,7 +312,7 @@ impl AuditEventListQuery {
     }
 }
 
-/// Query parameters for listing MCP marketplace projection rows.
+/// Query parameters for listing MCP marketplace catalog entries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpMarketplaceListQuery {
     pub tenant_id: u64,
@@ -830,6 +830,15 @@ impl TaskListQuery {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnRequestWriteOutcome {
+    Inserted {
+        session: Box<AgentSessionRecord>,
+        request_item: Box<AgentSessionItemRecord>,
+    },
+    Existing(Box<AgentTurnRecord>),
+}
+
 /// Thread-safe agent repository port.
 ///
 /// All methods use `&self` — implementations MUST provide interior mutability
@@ -837,6 +846,9 @@ impl TaskListQuery {
 /// the need for a global `Mutex<AgentsService>` and enables true concurrent
 /// request processing.
 pub trait AgentRepository: Send + Sync {
+    /// Verify that the repository's required backing store can serve requests.
+    fn check_readiness(&self) -> KernelResult<()>;
+
     fn next_id(&self) -> KernelResult<u64>;
 
     fn insert(&self, record: AgentBusinessRecord) -> KernelResult<()>;
@@ -1121,7 +1133,11 @@ pub trait AgentRepository: Send + Sync {
     // Session-item persistence
     // -----------------------------------------------------------------------
 
-    fn insert_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()>;
+    /// Atomically append one item and update its owning session counters.
+    fn append_session_item(
+        &self,
+        record: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)>;
 
     fn update_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()>;
 
@@ -1162,15 +1178,6 @@ pub trait AgentRepository: Send + Sync {
 
     fn count_item_feedback(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64>;
 
-    /// Next item sequence number for a session. Implementations should
-    /// return `item_count + 1` for the session, or `1` if no items exist.
-    fn next_item_sequence(
-        &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-    ) -> KernelResult<u64>;
-
     fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
@@ -1194,60 +1201,31 @@ pub trait AgentRepository: Send + Sync {
         limit: usize,
     ) -> KernelResult<Vec<AgentTurnRecord>>;
 
-    fn insert_turn_reservation(&self, _turn: AgentTurnRecord) -> KernelResult<()> {
-        Err(KernelError::Internal {
-            message: "insert_turn_reservation requires an adapter override".to_string(),
-        })
-    }
+    /// Atomically persist a requested turn, its user-input item, any Drive
+    /// references, and the corresponding session counter update.
+    fn insert_turn_request(
+        &self,
+        turn: AgentTurnRecord,
+        request_item: AgentSessionItemRecord,
+        drive_refs: Vec<AgentItemDriveRefRecord>,
+    ) -> KernelResult<TurnRequestWriteOutcome>;
 
     fn update_turn_state(
         &self,
-        _turn: AgentTurnRecord,
-        _expected_version: u64,
-    ) -> KernelResult<AgentTurnRecord> {
-        Err(KernelError::Internal {
-            message: "update_turn_state requires an adapter override".to_string(),
-        })
-    }
+        turn: AgentTurnRecord,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnRecord>;
 
-    /// Atomically persist one user-input and assistant-output turn and update session counters.
-    ///
-    /// Adapters MUST override this method with a transactional implementation
-    /// (e.g. SQL `BEGIN ... COMMIT` with `SELECT ... FOR UPDATE`). The default
-    /// implementation is fail-closed to prevent non-atomic data corruption.
-    fn insert_turn(
+    /// Atomically persist a turn response item, transition the turn to its
+    /// completed state, and update the corresponding session counters.
+    fn complete_turn(
         &self,
-        _turn: AgentTurnRecord,
-        _session: AgentSessionRecord,
-        _user_input_item: AgentSessionItemRecord,
-        _assistant_output_item: AgentSessionItemRecord,
-    ) -> KernelResult<(
-        AgentSessionRecord,
-        AgentSessionItemRecord,
-        AgentSessionItemRecord,
-    )> {
-        Err(KernelError::Internal {
-            message: "insert_turn requires a transactional adapter override".to_string(),
-        })
-    }
-
-    fn insert_turn_with_drive_refs(
-        &self,
-        _turn: AgentTurnRecord,
-        _session: AgentSessionRecord,
-        _user_input_item: AgentSessionItemRecord,
-        _assistant_output_item: AgentSessionItemRecord,
-        _drive_refs: Vec<AgentItemDriveRefRecord>,
-    ) -> KernelResult<(
-        AgentSessionRecord,
-        AgentSessionItemRecord,
-        AgentSessionItemRecord,
-    )> {
-        Err(KernelError::Internal {
-            message: "insert_turn_with_drive_refs requires a transactional adapter override"
-                .to_string(),
-        })
-    }
+        turn: AgentTurnRecord,
+        expected_turn_version: u64,
+        expected_fencing_token: u64,
+        expected_lease_token: Option<String>,
+        response_item: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)>;
 
     fn list_item_drive_refs(
         &self,

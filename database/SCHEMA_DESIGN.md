@@ -9,7 +9,7 @@ Managed engine: PostgreSQL
 ## Ownership
 
 All 19 tables are authored and written by `sdkwork-intelligence-agents-service`.
-There are no imported tables, projections, shadow copies, compatibility tables,
+There are no imported tables, derived read stores, shadow copies, compatibility tables,
 or cross-module foreign keys. External capabilities are represented only by
 stable reference columns.
 
@@ -68,5 +68,5 @@ tokens, expirations, and monotonic fencing tokens.
 
 PostgreSQL list paths use tenant-leading indexes with stable `id` tie-breakers.
 Retention scans use partial indexes. There are no IM delivery/read columns in
-the execution aggregate; `last_seen_item_sequence` is only a local user-view
-preference.
+the execution aggregate; `last_read_item_sequence` is only a local Agents
+user-view preference.

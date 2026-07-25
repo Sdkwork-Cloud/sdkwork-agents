@@ -1,9 +1,9 @@
-//! MCP marketplace projection from agent composition slots.
+//! MCP marketplace catalog assembled from agent composition slots.
 //!
 //! MCP server persistence is owned by `sdkwork-mcp`. Agents exposes only the
 //! composition-plane references (`slot_kind = mcp`) for marketplace discovery.
 //!
-//! The projection is exposed as a list payload under
+//! The catalog is exposed as a list payload under
 //! `SdkWorkPageData<McpServerMarketplaceRecord>` per `API_SPEC.md` §16.
 
 use crate::domain::AgentCompositionSlotRecord;

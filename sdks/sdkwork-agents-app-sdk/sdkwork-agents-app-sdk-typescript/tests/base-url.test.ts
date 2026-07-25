@@ -9,10 +9,12 @@ import {
 } from '../src/index.ts';
 
 const APP_API_BASE_URL = 'http://127.0.0.1:8095/app/v3/api';
+const SDK_BASE_URL = 'http://127.0.0.1:8095';
 const EXPECTED_AGENTS_URL =
   'http://127.0.0.1:8095/app/v3/api/ai/agents?scope=market&page=1&page_size=20';
 
-test('Agents App SDK composes the app-api prefix exactly once', async () => {
+for (const baseUrl of [SDK_BASE_URL, APP_API_BASE_URL]) {
+  test(`Agents App SDK composes the app-api prefix exactly once from ${baseUrl}`, async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
   globalThis.fetch = async (input) => {
@@ -30,25 +32,30 @@ test('Agents App SDK composes the app-api prefix exactly once', async () => {
   };
 
   try {
-    const client = createClient({ baseUrl: APP_API_BASE_URL });
+    const client = createClient({ baseUrl });
     await client.ai.agents.list({ scope: 'market', page: 1, pageSize: 20 });
   } finally {
     globalThis.fetch = originalFetch;
   }
 
   assert.deepEqual(requestedUrls, [EXPECTED_AGENTS_URL]);
-});
+  });
+}
 
-test('Agents App SDK requires one canonical app-api surface URL', () => {
+test('Agents App SDK rejects empty and duplicated app-api base URLs', () => {
   assert.throws(
-    () => new SdkworkAppClient({ baseUrl: 'http://127.0.0.1:8095' }),
-    /must end with \/app\/v3\/api/,
+    () => new SdkworkAppClient({ baseUrl: '  ' }),
+    /must not be empty/,
   );
   assert.throws(
     () => new SdkworkAppClient({
       baseUrl: 'http://127.0.0.1:8095/app/v3/api/app/v3/api',
     }),
     /must include \/app\/v3\/api exactly once/,
+  );
+  assert.throws(
+    () => new SdkworkAppClient({ baseUrl: 'http://127.0.0.1:8095/app/v3/api/extra' }),
+    /must identify a gateway root or end with \/app\/v3\/api/,
   );
 });
 

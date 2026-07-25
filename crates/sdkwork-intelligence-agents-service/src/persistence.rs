@@ -16,7 +16,7 @@ use crate::ports::{
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery,
     SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery,
-    TurnListQuery,
+    TurnListQuery, TurnRequestWriteOutcome,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
@@ -28,7 +28,8 @@ use crate::validation::{validate_capabilities, validate_standard_id};
 #[cfg(feature = "postgres-sync")]
 use crate::{pg_execute, pg_query, pg_query_optional};
 use sdkwork_agent_kernel::{
-    AgentManifest, KernelError, KernelEvent, KernelEventSeverity, KernelEventSource, KernelResult,
+    AgentManifest, KernelError, KernelErrorKind, KernelEvent, KernelEventSeverity,
+    KernelEventSource, KernelResult,
 };
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_utils_rust::{is_blank, sha256_hash, trim};
@@ -39,65 +40,71 @@ use sqlx::Row;
 #[cfg(feature = "postgres-sync")]
 use std::future::Future;
 
-/// Maximum number of retries when a PostgreSQL deadlock (SQLSTATE 40P01) is detected.
+/// Maximum number of retries for a retryable PostgreSQL transaction failure.
 #[cfg(feature = "postgres-sync")]
-const DEADLOCK_MAX_RETRIES: usize = 3;
+const TRANSACTION_MAX_RETRIES: usize = 3;
 
-/// Initial backoff (milliseconds) before the first deadlock retry.
+/// Initial backoff (milliseconds) before the first transaction retry.
 /// Backoff doubles on each retry: 10 ms, 20 ms, 40 ms.
 #[cfg(feature = "postgres-sync")]
-const DEADLOCK_INITIAL_BACKOFF_MS: u64 = 10;
+const TRANSACTION_INITIAL_BACKOFF_MS: u64 = 10;
 
-/// Returns true when the supplied error is a PostgreSQL `deadlock_detected`
-/// error (SQLSTATE 40P01). Such errors are safe to retry after the failed
-/// transaction has been rolled back.
+/// Returns true for PostgreSQL transaction failures that are safe to retry
+/// after the failed transaction has been rolled back.
 #[cfg(feature = "postgres-sync")]
-fn is_postgres_deadlock(error: &sqlx::Error) -> bool {
+fn is_retryable_postgres_transaction_error(error: &sqlx::Error) -> bool {
     matches!(
         error,
-        sqlx::Error::Database(db) if db.code().map(|code| code == "40P01").unwrap_or(false)
+        sqlx::Error::Database(db)
+            if db
+                .code()
+                .is_some_and(|code| code == "40001" || code == "40P01")
     )
 }
 
-/// Executes `operation` and retries on PostgreSQL deadlock (SQLSTATE 40P01)
-/// using exponential backoff. Up to [`DEADLOCK_MAX_RETRIES`] retries are
-/// attempted (10 ms, 20 ms, 40 ms). Non-deadlock errors are returned
-/// immediately without retrying.
+/// Executes `operation` and retries serialization/deadlock failures using
+/// bounded exponential backoff with jitter.
 ///
 /// The closure must create a fresh transaction on each call — any state
 /// mutated inside the transaction body must be cloned from captured
 /// references so that a retry starts from a clean snapshot.
 #[cfg(feature = "postgres-sync")]
-async fn retry_on_deadlock<T, F, Fut>(operation: F) -> Result<T, sqlx::Error>
+async fn retry_postgres_transaction<T, F, Fut>(operation: F) -> Result<T, sqlx::Error>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, sqlx::Error>>,
 {
-    let mut backoff_ms = DEADLOCK_INITIAL_BACKOFF_MS;
+    let mut backoff_ms = TRANSACTION_INITIAL_BACKOFF_MS;
     let mut last_error: Option<sqlx::Error> = None;
-    for attempt in 0..=DEADLOCK_MAX_RETRIES {
+    for attempt in 0..=TRANSACTION_MAX_RETRIES {
         match operation().await {
             Ok(value) => return Ok(value),
             Err(error) => {
-                if !is_postgres_deadlock(&error) {
+                if !is_retryable_postgres_transaction_error(&error) {
                     return Err(error);
                 }
+                let jitter_bound = (backoff_ms / 2).max(1);
+                let jitter_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| u64::from(duration.subsec_nanos()) % jitter_bound)
+                    .unwrap_or(0);
+                let delay_ms = backoff_ms.saturating_add(jitter_ms);
                 tracing::warn!(
-                    target: "sdkwork.agents.persistence.deadlock_retry",
+                    target: "sdkwork.agents.persistence.transaction_retry",
                     attempt,
-                    max_retries = DEADLOCK_MAX_RETRIES,
-                    backoff_ms,
-                    "postgres deadlock detected, retrying transaction"
+                    max_retries = TRANSACTION_MAX_RETRIES,
+                    delay_ms,
+                    "retryable postgres transaction failure detected"
                 );
                 last_error = Some(error);
-                if attempt < DEADLOCK_MAX_RETRIES {
-                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                if attempt < TRANSACTION_MAX_RETRIES {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                     backoff_ms = backoff_ms.saturating_mul(2);
                 }
             }
         }
     }
-    Err(last_error.expect("deadlock retry loop exhausted without an error"))
+    Err(last_error.expect("transaction retry loop exhausted without an error"))
 }
 
 #[cfg(feature = "postgres-sync")]
@@ -117,8 +124,8 @@ pub use sql::{
 };
 #[cfg(feature = "postgres-sync")]
 pub use sql::{
-    SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING, SQL_COUNT_AGENT_INTERACTIONS,
-    SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_PROJECTS,
+    SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING, SQL_COMPLETE_AGENT_TURN_STATE,
+    SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_PROJECTS,
     SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_RESOURCE_USER_STATES,
     SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
     SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TASKS, SQL_COUNT_AGENT_TURNS,
@@ -134,11 +141,10 @@ pub use sql::{
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
     SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID, SQL_LIST_RECONCILABLE_AGENT_TURNS,
-    SQL_LOCK_AGENT_SESSION_FOR_UPDATE, SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
-    SQL_NEXT_SESSION_ITEM_SEQUENCE, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK,
-    SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
-    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION,
-    SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
+    SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING, SQL_RECORD_AGENT_SESSION_ITEM,
+    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
+    SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
+    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
     SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
     SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
@@ -1772,6 +1778,15 @@ impl AgentAuditEventRow {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentTurnRequestRowsOutcome {
+    Inserted {
+        session: Box<AgentSessionRow>,
+        request_item: Box<AgentSessionItemRow>,
+    },
+    Existing(Box<AgentTurnRow>),
+}
+
 /// Thread-safe PostgreSQL adapter trait.
 ///
 /// All methods use `&self` — implementations MUST use interior mutability
@@ -1779,6 +1794,7 @@ impl AgentAuditEventRow {
 /// internally manages transactional state). This aligns with the stateless
 /// `AgentRepository` trait and eliminates the global Mutex bottleneck.
 pub trait AgentRepositoryAdapter: Send + Sync {
+    fn check_readiness(&self) -> KernelResult<()>;
     fn next_id(&self) -> KernelResult<u64>;
     fn insert_row(&self, row: AgentBusinessRow) -> KernelResult<()>;
     fn update_row(&self, row: AgentBusinessRow) -> KernelResult<()>;
@@ -1955,7 +1971,10 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     ) -> KernelResult<u64>;
 
     // Session-item operations
-    fn insert_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()>;
+    fn append_session_item_row(
+        &self,
+        row: AgentSessionItemRow,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)>;
     fn update_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()>;
     fn get_session_item_row(
         &self,
@@ -1987,12 +2006,6 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         query: &ItemFeedbackListQuery,
     ) -> KernelResult<Vec<AgentItemFeedbackRow>>;
     fn count_item_feedback_rows(&self, query: &ItemFeedbackListQuery) -> KernelResult<u64>;
-    fn next_item_sequence(
-        &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-    ) -> KernelResult<u64>;
     fn get_turn_row_by_idempotency(
         &self,
         tenant_id: u64,
@@ -2030,9 +2043,15 @@ pub trait AgentRepositoryAdapter: Send + Sync {
             message: "list_reconcilable_turn_rows requires an adapter override".to_string(),
         })
     }
-    fn insert_turn_reservation_row(&self, _turn: AgentTurnRow) -> KernelResult<()> {
+    fn insert_turn_request_rows(
+        &self,
+        _turn: AgentTurnRow,
+        _request_item: AgentSessionItemRow,
+        _drive_refs: Vec<AgentItemDriveRefRow>,
+    ) -> KernelResult<AgentTurnRequestRowsOutcome> {
         Err(KernelError::Internal {
-            message: "insert_turn_reservation_row requires an adapter override".to_string(),
+            message: "insert_turn_request_rows requires a transactional adapter override"
+                .to_string(),
         })
     }
     fn update_turn_state_row(
@@ -2044,24 +2063,16 @@ pub trait AgentRepositoryAdapter: Send + Sync {
             message: "update_turn_state_row requires an adapter override".to_string(),
         })
     }
-    fn insert_turn_rows(
-        &self,
-        turn: AgentTurnRow,
-        session: AgentSessionRow,
-        user: AgentSessionItemRow,
-        assistant: AgentSessionItemRow,
-    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)>;
-    fn insert_turn_with_drive_ref_rows(
+    fn complete_turn_rows(
         &self,
         _turn: AgentTurnRow,
-        _session: AgentSessionRow,
-        _user: AgentSessionItemRow,
-        _assistant: AgentSessionItemRow,
-        _drive_refs: Vec<AgentItemDriveRefRow>,
-    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
+        _expected_turn_version: u64,
+        _expected_fencing_token: u64,
+        _expected_lease_token: Option<String>,
+        _response_item: AgentSessionItemRow,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)> {
         Err(KernelError::Internal {
-            message: "insert_turn_with_drive_ref_rows requires a transactional adapter override"
-                .to_string(),
+            message: "complete_turn_rows requires a transactional adapter override".to_string(),
         })
     }
     fn list_item_drive_ref_rows(
@@ -2131,6 +2142,10 @@ impl<A> AgentRepository for SqlAgentRepository<A>
 where
     A: AgentRepositoryAdapter,
 {
+    fn check_readiness(&self) -> KernelResult<()> {
+        self.adapter.check_readiness()
+    }
+
     fn next_id(&self) -> KernelResult<u64> {
         self.adapter.next_id()
     }
@@ -2572,9 +2587,14 @@ where
     // Session-item persistence
     // -----------------------------------------------------------------------
 
-    fn insert_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
-        self.adapter
-            .insert_session_item_row(AgentSessionItemRow::from_record(&record)?)
+    fn append_session_item(
+        &self,
+        record: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
+        let (session_row, item_row) = self
+            .adapter
+            .append_session_item_row(AgentSessionItemRow::from_record(&record)?)?;
+        Ok((session_row.into_record()?, item_row.into_record()?))
     }
 
     fn update_session_item(&self, record: AgentSessionItemRecord) -> KernelResult<()> {
@@ -2655,16 +2675,6 @@ where
         self.adapter.count_item_feedback_rows(query)
     }
 
-    fn next_item_sequence(
-        &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-    ) -> KernelResult<u64> {
-        self.adapter
-            .next_item_sequence(tenant_id, organization_id, session_id)
-    }
-
     fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
@@ -2719,9 +2729,33 @@ where
             .collect()
     }
 
-    fn insert_turn_reservation(&self, turn: AgentTurnRecord) -> KernelResult<()> {
-        self.adapter
-            .insert_turn_reservation_row(AgentTurnRow::from_record(&turn))
+    fn insert_turn_request(
+        &self,
+        turn: AgentTurnRecord,
+        request_item: AgentSessionItemRecord,
+        drive_refs: Vec<AgentItemDriveRefRecord>,
+    ) -> KernelResult<TurnRequestWriteOutcome> {
+        let turn_row = AgentTurnRow::from_record(&turn);
+        let request_item_row = AgentSessionItemRow::from_record(&request_item)?;
+        let drive_ref_rows = drive_refs
+            .iter()
+            .map(AgentItemDriveRefRow::from_record)
+            .collect();
+        match self
+            .adapter
+            .insert_turn_request_rows(turn_row, request_item_row, drive_ref_rows)?
+        {
+            AgentTurnRequestRowsOutcome::Inserted {
+                session,
+                request_item,
+            } => Ok(TurnRequestWriteOutcome::Inserted {
+                session: Box::new((*session).into_record()?),
+                request_item: Box::new((*request_item).into_record()?),
+            }),
+            AgentTurnRequestRowsOutcome::Existing(turn) => Ok(TurnRequestWriteOutcome::Existing(
+                Box::new((*turn).into_record()?),
+            )),
+        }
     }
 
     fn update_turn_state(
@@ -2734,63 +2768,24 @@ where
             .into_record()
     }
 
-    fn insert_turn(
+    fn complete_turn(
         &self,
         turn: AgentTurnRecord,
-        session: AgentSessionRecord,
-        user_input_item: AgentSessionItemRecord,
-        assistant_output_item: AgentSessionItemRecord,
-    ) -> KernelResult<(
-        AgentSessionRecord,
-        AgentSessionItemRecord,
-        AgentSessionItemRecord,
-    )> {
+        expected_turn_version: u64,
+        expected_fencing_token: u64,
+        expected_lease_token: Option<String>,
+        response_item: AgentSessionItemRecord,
+    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
         let turn_row = AgentTurnRow::from_record(&turn);
-        let session_row = AgentSessionRow::from_record(&session)?;
-        let user_row = AgentSessionItemRow::from_record(&user_input_item)?;
-        let assistant_row = AgentSessionItemRow::from_record(&assistant_output_item)?;
-        let (session_row, user_row, assistant_row) =
-            self.adapter
-                .insert_turn_rows(turn_row, session_row, user_row, assistant_row)?;
-        Ok((
-            session_row.into_record()?,
-            user_row.into_record()?,
-            assistant_row.into_record()?,
-        ))
-    }
-
-    fn insert_turn_with_drive_refs(
-        &self,
-        turn: AgentTurnRecord,
-        session: AgentSessionRecord,
-        user_input_item: AgentSessionItemRecord,
-        assistant_output_item: AgentSessionItemRecord,
-        drive_refs: Vec<AgentItemDriveRefRecord>,
-    ) -> KernelResult<(
-        AgentSessionRecord,
-        AgentSessionItemRecord,
-        AgentSessionItemRecord,
-    )> {
-        let turn_row = AgentTurnRow::from_record(&turn);
-        let session_row = AgentSessionRow::from_record(&session)?;
-        let user_row = AgentSessionItemRow::from_record(&user_input_item)?;
-        let assistant_row = AgentSessionItemRow::from_record(&assistant_output_item)?;
-        let drive_ref_rows = drive_refs
-            .iter()
-            .map(AgentItemDriveRefRow::from_record)
-            .collect();
-        let (session_row, user_row, assistant_row) = self.adapter.insert_turn_with_drive_ref_rows(
+        let response_item_row = AgentSessionItemRow::from_record(&response_item)?;
+        let (session_row, response_item_row) = self.adapter.complete_turn_rows(
             turn_row,
-            session_row,
-            user_row,
-            assistant_row,
-            drive_ref_rows,
+            expected_turn_version,
+            expected_fencing_token,
+            expected_lease_token,
+            response_item_row,
         )?;
-        Ok((
-            session_row.into_record()?,
-            user_row.into_record()?,
-            assistant_row.into_record()?,
-        ))
+        Ok((session_row.into_record()?, response_item_row.into_record()?))
     }
 
     fn list_item_drive_refs(
@@ -2965,7 +2960,325 @@ impl SyncPostgresAdapter {
 }
 
 #[cfg(feature = "postgres-sync")]
+fn transaction_error(error: KernelError) -> sqlx::Error {
+    let prefix = match error.kind() {
+        KernelErrorKind::ValidationError => "sdkwork-domain-validation:",
+        KernelErrorKind::Conflict => "sdkwork-domain-conflict:",
+        _ => "sdkwork-domain-internal:",
+    };
+    sqlx::Error::Protocol(format!("{prefix}{}", error.message()))
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn record_session_item_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: &AgentSessionItemRow,
+    require_active_session: bool,
+) -> Result<AgentSessionRow, sqlx::Error> {
+    let tenant_id = u64_to_i64(item.tenant_id, "item.tenant_id").map_err(transaction_error)?;
+    let organization_id =
+        u64_to_i64(item.organization_id, "item.organization_id").map_err(transaction_error)?;
+    let input_tokens =
+        u64_to_i64(item.input_tokens, "item.input_tokens").map_err(transaction_error)?;
+    let output_tokens =
+        u64_to_i64(item.output_tokens, "item.output_tokens").map_err(transaction_error)?;
+    let updated_by = u64_to_i64(item.created_by, "item.created_by").map_err(transaction_error)?;
+    let row = sqlx::query(SQL_RECORD_AGENT_SESSION_ITEM)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&item.session_id)
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(updated_by)
+        .bind(&item.updated_at)
+        .bind(require_active_session)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| {
+            transaction_error(KernelError::validation(if require_active_session {
+                "active session not found"
+            } else {
+                "session not found"
+            }))
+        })?;
+    pg_row_to_agent_session_row(row).map_err(transaction_error)
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn insert_turn_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    turn: &AgentTurnRow,
+) -> Result<bool, sqlx::Error> {
+    let id = u64_to_i64(turn.id, "turn.id").map_err(transaction_error)?;
+    let tenant_id = u64_to_i64(turn.tenant_id, "turn.tenant_id").map_err(transaction_error)?;
+    let organization_id =
+        u64_to_i64(turn.organization_id, "turn.organization_id").map_err(transaction_error)?;
+    let owner_user_id =
+        u64_to_i64(turn.owner_user_id, "turn.owner_user_id").map_err(transaction_error)?;
+    let input_tokens =
+        u64_to_i64(turn.input_tokens, "turn.input_tokens").map_err(transaction_error)?;
+    let output_tokens =
+        u64_to_i64(turn.output_tokens, "turn.output_tokens").map_err(transaction_error)?;
+    let cached_tokens =
+        u64_to_i64(turn.cached_tokens, "turn.cached_tokens").map_err(transaction_error)?;
+    let attempt_count = i32::try_from(turn.attempt_count)
+        .map_err(|_| transaction_error(KernelError::validation("turn.attempt_count overflow")))?;
+    let max_attempts = i32::try_from(turn.max_attempts)
+        .map_err(|_| transaction_error(KernelError::validation("turn.max_attempts overflow")))?;
+    let fencing_token =
+        u64_to_i64(turn.fencing_token, "turn.fencing_token").map_err(transaction_error)?;
+    let version = u64_to_i64(turn.version, "turn.version").map_err(transaction_error)?;
+    let inserted = sqlx::query(SQL_INSERT_AGENT_TURN)
+        .bind(id)
+        .bind(&turn.uuid)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&turn.turn_id)
+        .bind(&turn.session_id)
+        .bind(&turn.agent_id)
+        .bind(owner_user_id)
+        .bind(&turn.runtime_binding_id)
+        .bind(&turn.client_request_id)
+        .bind(&turn.idempotency_key)
+        .bind(&turn.payload_hash)
+        .bind(&turn.request_item_id)
+        .bind(&turn.response_item_id)
+        .bind(turn.turn_mode)
+        .bind(turn.status)
+        .bind(&turn.requested_model_id)
+        .bind(&turn.provider_binding_id)
+        .bind(&turn.model_id)
+        .bind(&turn.provider_id)
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(cached_tokens)
+        .bind(&turn.finish_reason)
+        .bind(&turn.error_code)
+        .bind(&turn.error_detail)
+        .bind(&turn.trace_id)
+        .bind(attempt_count)
+        .bind(max_attempts)
+        .bind(&turn.next_retry_at)
+        .bind(&turn.available_at)
+        .bind(&turn.lease_owner)
+        .bind(&turn.lease_token)
+        .bind(&turn.lease_expires_at)
+        .bind(fencing_token)
+        .bind(version)
+        .bind(&turn.created_at)
+        .bind(&turn.updated_at)
+        .bind(&turn.started_at)
+        .bind(&turn.completed_at)
+        .bind(&turn.cancel_requested_at)
+        .bind(&turn.cancelled_at)
+        .bind(&turn.retention_until)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    Ok(inserted == 1)
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn get_turn_by_idempotency_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    turn: &AgentTurnRow,
+) -> Result<Option<AgentTurnRow>, sqlx::Error> {
+    let tenant_id = u64_to_i64(turn.tenant_id, "turn.tenant_id").map_err(transaction_error)?;
+    let organization_id =
+        u64_to_i64(turn.organization_id, "turn.organization_id").map_err(transaction_error)?;
+    let owner_user_id =
+        u64_to_i64(turn.owner_user_id, "turn.owner_user_id").map_err(transaction_error)?;
+    sqlx::query(SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(owner_user_id)
+        .bind(&turn.idempotency_key)
+        .fetch_optional(&mut **tx)
+        .await?
+        .map(pg_row_to_agent_turn_row)
+        .transpose()
+        .map_err(transaction_error)
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn complete_turn_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    turn: &AgentTurnRow,
+    expected_version: u64,
+    expected_fencing_token: u64,
+    expected_lease_token: &Option<String>,
+) -> Result<(), sqlx::Error> {
+    let input_tokens =
+        u64_to_i64(turn.input_tokens, "turn.input_tokens").map_err(transaction_error)?;
+    let output_tokens =
+        u64_to_i64(turn.output_tokens, "turn.output_tokens").map_err(transaction_error)?;
+    let cached_tokens =
+        u64_to_i64(turn.cached_tokens, "turn.cached_tokens").map_err(transaction_error)?;
+    let attempt_count = i32::try_from(turn.attempt_count)
+        .map_err(|_| transaction_error(KernelError::validation("turn.attempt_count overflow")))?;
+    let max_attempts = i32::try_from(turn.max_attempts)
+        .map_err(|_| transaction_error(KernelError::validation("turn.max_attempts overflow")))?;
+    let fencing_token =
+        u64_to_i64(turn.fencing_token, "turn.fencing_token").map_err(transaction_error)?;
+    let version = u64_to_i64(turn.version, "turn.version").map_err(transaction_error)?;
+    let tenant_id = u64_to_i64(turn.tenant_id, "turn.tenant_id").map_err(transaction_error)?;
+    let organization_id =
+        u64_to_i64(turn.organization_id, "turn.organization_id").map_err(transaction_error)?;
+    let expected_version =
+        u64_to_i64(expected_version, "turn.expected_version").map_err(transaction_error)?;
+    let expected_fencing_token = u64_to_i64(expected_fencing_token, "turn.expected_fencing_token")
+        .map_err(transaction_error)?;
+    let affected = sqlx::query(SQL_COMPLETE_AGENT_TURN_STATE)
+        .bind(&turn.response_item_id)
+        .bind(&turn.runtime_binding_id)
+        .bind(turn.turn_mode)
+        .bind(turn.status)
+        .bind(&turn.requested_model_id)
+        .bind(&turn.provider_binding_id)
+        .bind(&turn.model_id)
+        .bind(&turn.provider_id)
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(cached_tokens)
+        .bind(&turn.finish_reason)
+        .bind(&turn.error_code)
+        .bind(&turn.error_detail)
+        .bind(&turn.trace_id)
+        .bind(attempt_count)
+        .bind(max_attempts)
+        .bind(&turn.next_retry_at)
+        .bind(&turn.available_at)
+        .bind(&turn.lease_owner)
+        .bind(&turn.lease_token)
+        .bind(&turn.lease_expires_at)
+        .bind(fencing_token)
+        .bind(version)
+        .bind(&turn.updated_at)
+        .bind(&turn.started_at)
+        .bind(&turn.completed_at)
+        .bind(&turn.cancel_requested_at)
+        .bind(&turn.cancelled_at)
+        .bind(&turn.retention_until)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&turn.turn_id)
+        .bind(expected_version)
+        .bind(expected_fencing_token)
+        .bind(expected_lease_token)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    if affected != 1 {
+        return Err(transaction_error(KernelError::conflict(
+            "turn completion conflict",
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn insert_session_item_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: &AgentSessionItemRow,
+) -> Result<(), sqlx::Error> {
+    let id = u64_to_i64(item.id, "item.id").map_err(transaction_error)?;
+    let tenant_id = u64_to_i64(item.tenant_id, "item.tenant_id").map_err(transaction_error)?;
+    let organization_id =
+        u64_to_i64(item.organization_id, "item.organization_id").map_err(transaction_error)?;
+    let sequence = u64_to_i64(item.sequence, "item.sequence").map_err(transaction_error)?;
+    let input_tokens =
+        u64_to_i64(item.input_tokens, "item.input_tokens").map_err(transaction_error)?;
+    let output_tokens =
+        u64_to_i64(item.output_tokens, "item.output_tokens").map_err(transaction_error)?;
+    let created_by = u64_to_i64(item.created_by, "item.created_by").map_err(transaction_error)?;
+    let version = u64_to_i64(item.version, "item.version").map_err(transaction_error)?;
+    let redacted_by = item
+        .redacted_by
+        .map(|value| u64_to_i64(value, "item.redacted_by"))
+        .transpose()
+        .map_err(transaction_error)?;
+    sqlx::query(SQL_INSERT_AGENT_SESSION_ITEM)
+        .bind(id)
+        .bind(&item.uuid)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&item.session_id)
+        .bind(&item.item_id)
+        .bind(item.kind)
+        .bind(&item.content)
+        .bind(&item.content_type)
+        .bind(item.status)
+        .bind(sequence)
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(&item.model_id)
+        .bind(&item.provider_id)
+        .bind(&item.tool_name)
+        .bind(&item.tool_call_id)
+        .bind(&item.tool_arguments_json)
+        .bind(&item.tool_result_json)
+        .bind(&item.parent_item_id)
+        .bind(&item.turn_id)
+        .bind(created_by)
+        .bind(version)
+        .bind(&item.created_at)
+        .bind(&item.updated_at)
+        .bind(&item.completed_at)
+        .bind(&item.redacted_at)
+        .bind(redacted_by)
+        .bind(&item.retention_until)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres-sync")]
+async fn insert_drive_ref_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    drive_ref: &AgentItemDriveRefRow,
+) -> Result<(), sqlx::Error> {
+    let id = u64_to_i64(drive_ref.id, "drive_ref.id").map_err(transaction_error)?;
+    let tenant_id =
+        u64_to_i64(drive_ref.tenant_id, "drive_ref.tenant_id").map_err(transaction_error)?;
+    let organization_id = u64_to_i64(drive_ref.organization_id, "drive_ref.organization_id")
+        .map_err(transaction_error)?;
+    let sort_order = i32::try_from(drive_ref.sort_order)
+        .map_err(|_| transaction_error(KernelError::validation("drive_ref.sort_order overflow")))?;
+    let created_by =
+        u64_to_i64(drive_ref.created_by, "drive_ref.created_by").map_err(transaction_error)?;
+    sqlx::query(SQL_INSERT_AGENT_ITEM_DRIVE_REF)
+        .bind(id)
+        .bind(&drive_ref.uuid)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&drive_ref.item_id)
+        .bind(&drive_ref.resource_role)
+        .bind(&drive_ref.drive_space_id)
+        .bind(&drive_ref.drive_node_id)
+        .bind(&drive_ref.media_resource_id)
+        .bind(&drive_ref.object_blob_id)
+        .bind(&drive_ref.resource_hash)
+        .bind(&drive_ref.alt_text)
+        .bind(sort_order)
+        .bind(drive_ref.status)
+        .bind(created_by)
+        .bind(&drive_ref.created_at)
+        .bind(&drive_ref.updated_at)
+        .bind(&drive_ref.deleted_at)
+        .bind(&drive_ref.retention_until)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres-sync")]
 impl AgentRepositoryAdapter for SyncPostgresAdapter {
+    fn check_readiness(&self) -> KernelResult<()> {
+        let pool = self.pool.pool().clone();
+        self.pool
+            .run_kernel(async move { sqlx::query("SELECT 1").execute(&pool).await.map(|_| ()) })
+    }
+
     fn next_id(&self) -> KernelResult<u64> {
         self.id_generator.next_id()
     }
@@ -3073,8 +3386,14 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     fn list_rows(&self, query: &AgentListQuery) -> KernelResult<Vec<AgentBusinessRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
 
-        let organization_id: Option<i64> = query.organization_id.map(|v| v as i64);
-        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
+        let organization_id = query
+            .organization_id
+            .map(|value| u64_to_i64(value, "organization_id"))
+            .transpose()?;
+        let owner_user_id = query
+            .owner_user_id
+            .map(|value| u64_to_i64(value, "owner_user_id"))
+            .transpose()?;
         let include_deleted = query.include_deleted;
         let search_query: Option<String> = query
             .search_query
@@ -3082,8 +3401,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .filter(|q| !is_blank(Some(q.as_str())))
             .map(|q| format!("%{}%", trim(q).to_lowercase()));
         let visibility_code = query.visibility.map(|visibility| visibility.as_db_code());
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let page_size = usize_to_i64(query.pagination.page_size, "pagination.page_size")?;
+        let offset = usize_to_i64(query.pagination.offset, "pagination.offset")?;
 
         self.with_pool(|pool| {
             let rows = pg_query!(
@@ -3110,8 +3429,14 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     fn count_rows(&self, query: &AgentListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
 
-        let organization_id: Option<i64> = query.organization_id.map(|v| v as i64);
-        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
+        let organization_id = query
+            .organization_id
+            .map(|value| u64_to_i64(value, "organization_id"))
+            .transpose()?;
+        let owner_user_id = query
+            .owner_user_id
+            .map(|value| u64_to_i64(value, "owner_user_id"))
+            .transpose()?;
         let include_deleted = query.include_deleted;
         let search_query: Option<String> = query
             .search_query
@@ -3281,8 +3606,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .search_query
             .as_ref()
             .map(|value| format!("%{}%", trim(value)));
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let page_size = usize_to_i64(query.pagination.page_size, "pagination.page_size")?;
+        let offset = usize_to_i64(query.pagination.offset, "pagination.offset")?;
         self.with_pool(|pool| {
             pg_query!(
                 pool,
@@ -3471,8 +3796,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let slot_kind = query.slot_kind.map(|value| value.as_str().to_string());
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let page_size = usize_to_i64(query.pagination.page_size, "pagination.page_size")?;
+        let offset = usize_to_i64(query.pagination.offset, "pagination.offset")?;
         self.with_pool(|pool| {
             pg_query!(
                 pool,
@@ -3608,7 +3933,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             let agent_id = agent_id.to_string();
             let binding_id = binding_id.to_string();
             pool.run_kernel(async move {
-                retry_on_deadlock(|| async {
+                retry_postgres_transaction(|| async {
                     let agent_id = agent_id.clone();
                     let binding_id = binding_id.clone();
                     let updated_at = updated_at.clone();
@@ -4087,18 +4412,24 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn list_session_rows(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let organization_id: Option<i64> = query.organization_id.map(|v| v as i64);
+        let organization_id = query
+            .organization_id
+            .map(|value| u64_to_i64(value, "organization_id"))
+            .transpose()?;
         let agent_id: Option<&str> = query.agent_id.as_deref();
         let project_id: Option<&str> = query.project_id.as_deref();
-        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
+        let owner_user_id = query
+            .owner_user_id
+            .map(|value| u64_to_i64(value, "owner_user_id"))
+            .transpose()?;
         let status_code: Option<i16> = query
             .status
             .as_deref()
             .and_then(AgentSessionStatus::from_code)
             .map(|s| s.as_db_code());
         let include_archived = query.include_archived;
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let page_size = usize_to_i64(query.pagination.page_size, "pagination.page_size")?;
+        let offset = usize_to_i64(query.pagination.offset, "pagination.offset")?;
 
         self.with_pool(|pool| {
             let rows = pg_query!(
@@ -4120,10 +4451,16 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn count_session_rows(&self, query: &SessionListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let organization_id: Option<i64> = query.organization_id.map(|v| v as i64);
+        let organization_id = query
+            .organization_id
+            .map(|value| u64_to_i64(value, "organization_id"))
+            .transpose()?;
         let agent_id: Option<&str> = query.agent_id.as_deref();
         let project_id: Option<&str> = query.project_id.as_deref();
-        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
+        let owner_user_id = query
+            .owner_user_id
+            .map(|value| u64_to_i64(value, "owner_user_id"))
+            .transpose()?;
         let status_code: Option<i16> = query
             .status
             .as_deref()
@@ -4381,7 +4718,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             let session_id = session_id.to_string();
             let runtime_binding_id = runtime_binding_id.to_string();
             pool.run_kernel(async move {
-                retry_on_deadlock(|| async {
+                retry_postgres_transaction(|| async {
                     let session_id = session_id.clone();
                     let runtime_binding_id = runtime_binding_id.clone();
                     let updated_at = updated_at.clone();
@@ -4762,60 +5099,37 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     // Session-item persistence
     // -----------------------------------------------------------------------
 
-    fn insert_session_item_row(&self, row: AgentSessionItemRow) -> KernelResult<()> {
-        let id = u64_to_i64(row.id, "id")?;
-        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
-        let sequence = u64_to_i64(row.sequence, "sequence")?;
-        let input_tokens = u64_to_i64(row.input_tokens, "input_tokens")?;
-        let output_tokens = u64_to_i64(row.output_tokens, "output_tokens")?;
-        let created_by = u64_to_i64(row.created_by, "created_by")?;
-        let version = u64_to_i64(row.version, "version")?;
-        let redacted_by = row
-            .redacted_by
-            .map(|value| u64_to_i64(value, "redacted_by"))
-            .transpose()?;
-
+    fn append_session_item_row(
+        &self,
+        row: AgentSessionItemRow,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)> {
+        if row.sequence != 0
+            || row.turn_id.is_some()
+            || row.status != AgentSessionItemStatus::Completed.as_db_code()
+        {
+            return Err(KernelError::validation(
+                "standalone session item must be an unsequenced completed item without a turn",
+            ));
+        }
         self.with_pool(|pool| {
-            let inserted_rows = pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_SESSION_ITEM,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                row.session_id,
-                row.item_id,
-                row.kind,
-                row.content,
-                row.content_type,
-                row.status,
-                sequence,
-                input_tokens,
-                output_tokens,
-                row.model_id,
-                row.provider_id,
-                row.tool_name,
-                row.tool_call_id,
-                row.tool_arguments_json,
-                row.tool_result_json,
-                row.parent_item_id,
-                row.turn_id,
-                created_by,
-                version,
-                row.created_at,
-                row.updated_at,
-                row.completed_at,
-                row.redacted_at,
-                redacted_by,
-                row.retention_until
-            )?;
-            if inserted_rows == 0 {
-                return Err(KernelError::validation(
-                    "session-item parent session not found",
-                ));
-            }
-            Ok(())
+            let pg_pool = pool.pool().clone();
+            pool.run_kernel(async move {
+                retry_postgres_transaction(|| async {
+                    let mut row = row.clone();
+                    let mut tx = pg_pool.begin().await?;
+                    let session = record_session_item_in_transaction(&mut tx, &row, true).await?;
+                    if session.owner_user_id != row.created_by {
+                        return Err(transaction_error(KernelError::validation(
+                            "session item creator does not own the session",
+                        )));
+                    }
+                    row.sequence = session.last_item_sequence;
+                    insert_session_item_in_transaction(&mut tx, &row).await?;
+                    tx.commit().await?;
+                    Ok((session, row))
+                })
+                .await
+            })
         })
     }
 
@@ -5115,30 +5429,6 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn next_item_sequence(
-        &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-    ) -> KernelResult<u64> {
-        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(organization_id, "organization_id")?;
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_NEXT_SESSION_ITEM_SEQUENCE,
-                tenant_id,
-                organization_id,
-                session_id
-            )?;
-            let next: i64 = row
-                .map(|r| r.try_get::<i64, _>("next_sequence").map_err(map_sqlx_error))
-                .transpose()?
-                .unwrap_or(1);
-            int64_to_u64(next, "next_sequence")
-        })
-    }
-
     fn get_turn_row_by_idempotency(
         &self,
         tenant_id: u64,
@@ -5253,72 +5543,80 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn insert_turn_reservation_row(&self, turn: AgentTurnRow) -> KernelResult<()> {
-        let id = u64_to_i64(turn.id, "turn.id")?;
-        let tenant_id = u64_to_i64(turn.tenant_id, "turn.tenant_id")?;
-        let organization_id = u64_to_i64(turn.organization_id, "turn.organization_id")?;
-        let owner_user_id = u64_to_i64(turn.owner_user_id, "turn.owner_user_id")?;
-        let input_tokens = u64_to_i64(turn.input_tokens, "turn.input_tokens")?;
-        let output_tokens = u64_to_i64(turn.output_tokens, "turn.output_tokens")?;
-        let cached_tokens = u64_to_i64(turn.cached_tokens, "turn.cached_tokens")?;
-        let attempt_count = i32::try_from(turn.attempt_count)
-            .map_err(|_| KernelError::validation("turn.attempt_count overflow"))?;
-        let max_attempts = i32::try_from(turn.max_attempts)
-            .map_err(|_| KernelError::validation("turn.max_attempts overflow"))?;
-        let fencing_token = u64_to_i64(turn.fencing_token, "turn.fencing_token")?;
-        let version = u64_to_i64(turn.version, "turn.version")?;
+    fn insert_turn_request_rows(
+        &self,
+        turn: AgentTurnRow,
+        request_item: AgentSessionItemRow,
+        drive_refs: Vec<AgentItemDriveRefRow>,
+    ) -> KernelResult<AgentTurnRequestRowsOutcome> {
+        if turn.status != AgentTurnStatus::Requested.as_db_code()
+            || turn.version != 0
+            || turn.response_item_id.is_some()
+            || turn.request_item_id != request_item.item_id
+            || turn.tenant_id != request_item.tenant_id
+            || turn.organization_id != request_item.organization_id
+            || turn.session_id != request_item.session_id
+            || request_item.turn_id.as_deref() != Some(turn.turn_id.as_str())
+            || request_item.kind != AgentSessionItemKind::UserInput.as_db_code()
+            || request_item.status != AgentSessionItemStatus::Completed.as_db_code()
+        {
+            return Err(KernelError::validation(
+                "turn request and session item scope mismatch",
+            ));
+        }
+        if drive_refs.iter().any(|drive_ref| {
+            drive_ref.tenant_id != request_item.tenant_id
+                || drive_ref.organization_id != request_item.organization_id
+                || drive_ref.item_id != request_item.item_id
+        }) {
+            return Err(KernelError::validation(
+                "session item Drive reference scope mismatch",
+            ));
+        }
+
         self.with_pool(|pool| {
-            let affected = pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_TURN,
-                id,
-                turn.uuid,
-                tenant_id,
-                organization_id,
-                turn.turn_id,
-                turn.session_id,
-                turn.agent_id,
-                owner_user_id,
-                turn.runtime_binding_id,
-                turn.client_request_id,
-                turn.idempotency_key,
-                turn.payload_hash,
-                turn.request_item_id,
-                &turn.response_item_id,
-                turn.turn_mode,
-                turn.status,
-                &turn.requested_model_id,
-                &turn.provider_binding_id,
-                &turn.model_id,
-                &turn.provider_id,
-                input_tokens,
-                output_tokens,
-                cached_tokens,
-                turn.finish_reason,
-                turn.error_code,
-                turn.error_detail,
-                turn.trace_id,
-                attempt_count,
-                max_attempts,
-                turn.next_retry_at,
-                turn.available_at,
-                turn.lease_owner,
-                turn.lease_token,
-                turn.lease_expires_at,
-                fencing_token,
-                version,
-                turn.created_at,
-                turn.updated_at,
-                turn.started_at,
-                turn.completed_at,
-                turn.cancel_requested_at,
-                turn.cancelled_at,
-                turn.retention_until
-            )?;
-            if affected == 0 {
-                return Err(KernelError::conflict("turn reservation conflict"));
-            }
-            Ok(())
+            let pg_pool = pool.pool().clone();
+            pool.run_kernel(async move {
+                retry_postgres_transaction(|| async {
+                    let turn = turn.clone();
+                    let mut request_item = request_item.clone();
+                    let drive_refs = drive_refs.clone();
+                    let mut tx = pg_pool.begin().await?;
+
+                    let session =
+                        record_session_item_in_transaction(&mut tx, &request_item, true).await?;
+                    if session.agent_id != turn.agent_id
+                        || session.owner_user_id != turn.owner_user_id
+                    {
+                        return Err(transaction_error(KernelError::validation(
+                            "turn request does not belong to the session agent and owner",
+                        )));
+                    }
+                    request_item.sequence = session.last_item_sequence;
+                    if !insert_turn_in_transaction(&mut tx, &turn).await? {
+                        let existing = get_turn_by_idempotency_in_transaction(&mut tx, &turn)
+                            .await?
+                            .ok_or_else(|| {
+                                transaction_error(KernelError::Internal {
+                                    message: "idempotent turn conflict has no existing row"
+                                        .to_string(),
+                                })
+                            })?;
+                        tx.rollback().await?;
+                        return Ok(AgentTurnRequestRowsOutcome::Existing(Box::new(existing)));
+                    }
+                    insert_session_item_in_transaction(&mut tx, &request_item).await?;
+                    for drive_ref in &drive_refs {
+                        insert_drive_ref_in_transaction(&mut tx, drive_ref).await?;
+                    }
+                    tx.commit().await?;
+                    Ok(AgentTurnRequestRowsOutcome::Inserted {
+                        session: Box::new(session),
+                        request_item: Box::new(request_item),
+                    })
+                })
+                .await
+            })
         })
     }
 
@@ -5385,333 +5683,59 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn insert_turn_rows(
+    fn complete_turn_rows(
         &self,
         turn: AgentTurnRow,
-        session: AgentSessionRow,
-        user: AgentSessionItemRow,
-        assistant: AgentSessionItemRow,
-    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
-        self.insert_turn_with_drive_ref_rows(turn, session, user, assistant, Vec::new())
-    }
-
-    fn insert_turn_with_drive_ref_rows(
-        &self,
-        turn: AgentTurnRow,
-        session: AgentSessionRow,
-        user: AgentSessionItemRow,
-        assistant: AgentSessionItemRow,
-        drive_refs: Vec<AgentItemDriveRefRow>,
-    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow, AgentSessionItemRow)> {
-        let tenant_id = u64_to_i64(session.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(session.organization_id, "organization_id")?;
-        let session_id = session.session_id.clone();
-        let item_count = u64_to_i64(session.item_count, "item_count")?;
-        let last_item_sequence = u64_to_i64(session.last_item_sequence, "last_item_sequence")?;
-        let total_input_tokens = u64_to_i64(session.total_input_tokens, "total_input_tokens")?;
-        let total_output_tokens = u64_to_i64(session.total_output_tokens, "total_output_tokens")?;
-        let version = u64_to_i64(session.version, "version")?;
-        let previous_version = u64_to_i64(
-            expected_previous_version(session.version)?,
-            "previous_version",
-        )?;
-
-        let user_id = u64_to_i64(user.id, "id")?;
-        let assistant_id = u64_to_i64(assistant.id, "id")?;
-        let turn_internal_id = u64_to_i64(turn.id, "turn_id")?;
-        let turn_owner_user_id = u64_to_i64(turn.owner_user_id, "owner_user_id")?;
-        let turn_input_tokens = u64_to_i64(turn.input_tokens, "input_tokens")?;
-        let turn_output_tokens = u64_to_i64(turn.output_tokens, "output_tokens")?;
-        let turn_cached_tokens = u64_to_i64(turn.cached_tokens, "cached_tokens")?;
-        let turn_attempt_count = i32::try_from(turn.attempt_count)
-            .map_err(|_| KernelError::validation("turn.attempt_count overflow"))?;
-        let turn_max_attempts = i32::try_from(turn.max_attempts)
-            .map_err(|_| KernelError::validation("turn.max_attempts overflow"))?;
-        let turn_fencing_token = u64_to_i64(turn.fencing_token, "fencing_token")?;
-        let turn_version = u64_to_i64(turn.version, "version")?;
-
-        fn kernel_err(error: KernelError) -> sqlx::Error {
-            sqlx::Error::Protocol(error.to_string())
+        expected_turn_version: u64,
+        expected_fencing_token: u64,
+        expected_lease_token: Option<String>,
+        response_item: AgentSessionItemRow,
+    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)> {
+        if turn.status != AgentTurnStatus::Completed.as_db_code()
+            || turn.version != expected_turn_version.saturating_add(1)
+            || turn.response_item_id.as_deref() != Some(response_item.item_id.as_str())
+            || turn.tenant_id != response_item.tenant_id
+            || turn.organization_id != response_item.organization_id
+            || turn.session_id != response_item.session_id
+            || response_item.turn_id.as_deref() != Some(turn.turn_id.as_str())
+            || response_item.parent_item_id.as_deref() != Some(turn.request_item_id.as_str())
+            || response_item.kind != AgentSessionItemKind::AssistantOutput.as_db_code()
+            || response_item.status != AgentSessionItemStatus::Completed.as_db_code()
+        {
+            return Err(KernelError::validation(
+                "completed turn and response item scope mismatch",
+            ));
         }
 
         self.with_pool(|pool| {
             let pg_pool = pool.pool().clone();
             pool.run_kernel(async move {
-                retry_on_deadlock(|| async {
-                    let mut user = user.clone();
-                    let mut assistant = assistant.clone();
+                retry_postgres_transaction(|| async {
                     let turn = turn.clone();
-                    let session = session.clone();
-                    let session_id = session_id.clone();
-                    let drive_refs = drive_refs.clone();
+                    let mut response_item = response_item.clone();
                     let mut tx = pg_pool.begin().await?;
 
-                    let locked = sqlx::query(SQL_LOCK_AGENT_SESSION_FOR_UPDATE)
-                        .bind(tenant_id)
-                        .bind(&session_id)
-                        .bind(organization_id)
-                        .fetch_optional(&mut *tx)
-                        .await?;
-                    if locked.is_none() {
-                        return Err(kernel_err(KernelError::validation("session not found")));
-                    }
-
-                    let row = sqlx::query(SQL_NEXT_SESSION_ITEM_SEQUENCE)
-                        .bind(tenant_id)
-                        .bind(organization_id)
-                        .bind(&session_id)
-                        .fetch_optional(&mut *tx)
-                        .await?;
-                    let user_seq: i64 = row
-                        .and_then(|r| r.try_get::<i64, _>("next_sequence").ok())
-                        .unwrap_or(1);
-                    let assistant_seq = user_seq.saturating_add(1);
-                    user.sequence = int64_to_u64(user_seq, "sequence").map_err(kernel_err)?;
-                    assistant.sequence =
-                        int64_to_u64(assistant_seq, "sequence").map_err(kernel_err)?;
-                    user.turn_id = Some(turn.turn_id.clone());
-                    assistant.turn_id = Some(turn.turn_id.clone());
-
-                    let user_sequence =
-                        u64_to_i64(user.sequence, "sequence").map_err(kernel_err)?;
-                    let assistant_sequence =
-                        u64_to_i64(assistant.sequence, "sequence").map_err(kernel_err)?;
-                    let user_input_tokens =
-                        u64_to_i64(user.input_tokens, "input_tokens").map_err(kernel_err)?;
-                    let user_output_tokens =
-                        u64_to_i64(user.output_tokens, "output_tokens").map_err(kernel_err)?;
-                    let assistant_input_tokens =
-                        u64_to_i64(assistant.input_tokens, "input_tokens").map_err(kernel_err)?;
-                    let assistant_output_tokens =
-                        u64_to_i64(assistant.output_tokens, "output_tokens").map_err(kernel_err)?;
-                    let user_created_by =
-                        u64_to_i64(user.created_by, "created_by").map_err(kernel_err)?;
-                    let user_version = u64_to_i64(user.version, "version").map_err(kernel_err)?;
-                    let user_redacted_by = user
-                        .redacted_by
-                        .map(|value| u64_to_i64(value, "redacted_by"))
-                        .transpose()
-                        .map_err(kernel_err)?;
-                    let assistant_created_by =
-                        u64_to_i64(assistant.created_by, "created_by").map_err(kernel_err)?;
-                    let assistant_version =
-                        u64_to_i64(assistant.version, "version").map_err(kernel_err)?;
-                    let assistant_redacted_by = assistant
-                        .redacted_by
-                        .map(|value| u64_to_i64(value, "redacted_by"))
-                        .transpose()
-                        .map_err(kernel_err)?;
-                    let session_updated_by =
-                        u64_to_i64(session.updated_by, "updated_by").map_err(kernel_err)?;
-                    let session_archived_by = session
-                        .archived_by
-                        .map(|value| u64_to_i64(value, "archived_by"))
-                        .transpose()
-                        .map_err(kernel_err)?;
-                    let session_deleted_by = session
-                        .deleted_by
-                        .map(|value| u64_to_i64(value, "deleted_by"))
-                        .transpose()
-                        .map_err(kernel_err)?;
-
-                    let turn_write = sqlx::query(SQL_INSERT_AGENT_TURN)
-                        .bind(turn_internal_id)
-                        .bind(&turn.uuid)
-                        .bind(tenant_id)
-                        .bind(organization_id)
-                        .bind(&turn.turn_id)
-                        .bind(&turn.session_id)
-                        .bind(&turn.agent_id)
-                        .bind(turn_owner_user_id)
-                        .bind(&turn.runtime_binding_id)
-                        .bind(&turn.client_request_id)
-                        .bind(&turn.idempotency_key)
-                        .bind(&turn.payload_hash)
-                        .bind(&turn.request_item_id)
-                        .bind(&turn.response_item_id)
-                        .bind(turn.turn_mode)
-                        .bind(turn.status)
-                        .bind(&turn.requested_model_id)
-                        .bind(&turn.provider_binding_id)
-                        .bind(&turn.model_id)
-                        .bind(&turn.provider_id)
-                        .bind(turn_input_tokens)
-                        .bind(turn_output_tokens)
-                        .bind(turn_cached_tokens)
-                        .bind(&turn.finish_reason)
-                        .bind(&turn.error_code)
-                        .bind(&turn.error_detail)
-                        .bind(&turn.trace_id)
-                        .bind(turn_attempt_count)
-                        .bind(turn_max_attempts)
-                        .bind(&turn.next_retry_at)
-                        .bind(&turn.available_at)
-                        .bind(&turn.lease_owner)
-                        .bind(&turn.lease_token)
-                        .bind(&turn.lease_expires_at)
-                        .bind(turn_fencing_token)
-                        .bind(turn_version)
-                        .bind(&turn.created_at)
-                        .bind(&turn.updated_at)
-                        .bind(&turn.started_at)
-                        .bind(&turn.completed_at)
-                        .bind(&turn.cancel_requested_at)
-                        .bind(&turn.cancelled_at)
-                        .bind(&turn.retention_until)
-                        .execute(&mut *tx)
-                        .await?;
-                    if turn_write.rows_affected() == 0 {
-                        return Err(kernel_err(KernelError::conflict(
-                            "turn completion conflict",
+                    let session =
+                        record_session_item_in_transaction(&mut tx, &response_item, false).await?;
+                    if session.agent_id != turn.agent_id
+                        || session.owner_user_id != turn.owner_user_id
+                    {
+                        return Err(transaction_error(KernelError::validation(
+                            "completed turn does not belong to the session agent and owner",
                         )));
                     }
-
-                    sqlx::query(SQL_INSERT_AGENT_SESSION_ITEM)
-                        .bind(user_id)
-                        .bind(&user.uuid)
-                        .bind(tenant_id)
-                        .bind(organization_id)
-                        .bind(&user.session_id)
-                        .bind(&user.item_id)
-                        .bind(user.kind)
-                        .bind(&user.content)
-                        .bind(&user.content_type)
-                        .bind(user.status)
-                        .bind(user_sequence)
-                        .bind(user_input_tokens)
-                        .bind(user_output_tokens)
-                        .bind(&user.model_id)
-                        .bind(&user.provider_id)
-                        .bind(&user.tool_name)
-                        .bind(&user.tool_call_id)
-                        .bind(&user.tool_arguments_json)
-                        .bind(&user.tool_result_json)
-                        .bind(&user.parent_item_id)
-                        .bind(&user.turn_id)
-                        .bind(user_created_by)
-                        .bind(user_version)
-                        .bind(&user.created_at)
-                        .bind(&user.updated_at)
-                        .bind(&user.completed_at)
-                        .bind(&user.redacted_at)
-                        .bind(user_redacted_by)
-                        .bind(&user.retention_until)
-                        .execute(&mut *tx)
-                        .await?;
-
-                    for drive_ref in drive_refs {
-                        if drive_ref.tenant_id != session.tenant_id
-                            || drive_ref.organization_id != session.organization_id
-                            || drive_ref.item_id != user.item_id
-                        {
-                            return Err(kernel_err(KernelError::validation(
-                                "session-item Drive reference scope mismatch",
-                            )));
-                        }
-                        let drive_ref_id =
-                            u64_to_i64(drive_ref.id, "drive_ref.id").map_err(kernel_err)?;
-                        let drive_ref_tenant_id =
-                            u64_to_i64(drive_ref.tenant_id, "drive_ref.tenant_id")
-                                .map_err(kernel_err)?;
-                        let drive_ref_organization_id =
-                            u64_to_i64(drive_ref.organization_id, "drive_ref.organization_id")
-                                .map_err(kernel_err)?;
-                        let drive_ref_sort_order =
-                            i32::try_from(drive_ref.sort_order).map_err(|_| {
-                                kernel_err(KernelError::validation(
-                                    "drive_ref.sort_order exceeds integer range",
-                                ))
-                            })?;
-                        let drive_ref_created_by =
-                            u64_to_i64(drive_ref.created_by, "drive_ref.created_by")
-                                .map_err(kernel_err)?;
-                        sqlx::query(SQL_INSERT_AGENT_ITEM_DRIVE_REF)
-                            .bind(drive_ref_id)
-                            .bind(&drive_ref.uuid)
-                            .bind(drive_ref_tenant_id)
-                            .bind(drive_ref_organization_id)
-                            .bind(&drive_ref.item_id)
-                            .bind(&drive_ref.resource_role)
-                            .bind(&drive_ref.drive_space_id)
-                            .bind(&drive_ref.drive_node_id)
-                            .bind(&drive_ref.media_resource_id)
-                            .bind(&drive_ref.object_blob_id)
-                            .bind(&drive_ref.resource_hash)
-                            .bind(&drive_ref.alt_text)
-                            .bind(drive_ref_sort_order)
-                            .bind(drive_ref.status)
-                            .bind(drive_ref_created_by)
-                            .bind(&drive_ref.created_at)
-                            .bind(&drive_ref.updated_at)
-                            .bind(&drive_ref.deleted_at)
-                            .bind(&drive_ref.retention_until)
-                            .execute(&mut *tx)
-                            .await?;
-                    }
-
-                    sqlx::query(SQL_INSERT_AGENT_SESSION_ITEM)
-                        .bind(assistant_id)
-                        .bind(&assistant.uuid)
-                        .bind(tenant_id)
-                        .bind(organization_id)
-                        .bind(&assistant.session_id)
-                        .bind(&assistant.item_id)
-                        .bind(assistant.kind)
-                        .bind(&assistant.content)
-                        .bind(&assistant.content_type)
-                        .bind(assistant.status)
-                        .bind(assistant_sequence)
-                        .bind(assistant_input_tokens)
-                        .bind(assistant_output_tokens)
-                        .bind(&assistant.model_id)
-                        .bind(&assistant.provider_id)
-                        .bind(&assistant.tool_name)
-                        .bind(&assistant.tool_call_id)
-                        .bind(&assistant.tool_arguments_json)
-                        .bind(&assistant.tool_result_json)
-                        .bind(&assistant.parent_item_id)
-                        .bind(&assistant.turn_id)
-                        .bind(assistant_created_by)
-                        .bind(assistant_version)
-                        .bind(&assistant.created_at)
-                        .bind(&assistant.updated_at)
-                        .bind(&assistant.completed_at)
-                        .bind(&assistant.redacted_at)
-                        .bind(assistant_redacted_by)
-                        .bind(&assistant.retention_until)
-                        .execute(&mut *tx)
-                        .await?;
-
-                    let updated_rows = sqlx::query(SQL_UPDATE_AGENT_SESSION)
-                        .bind(&session.project_id)
-                        .bind(&session.title)
-                        .bind(session.status)
-                        .bind(item_count)
-                        .bind(last_item_sequence)
-                        .bind(total_input_tokens)
-                        .bind(total_output_tokens)
-                        .bind(session_updated_by)
-                        .bind(version)
-                        .bind(&session.updated_at)
-                        .bind(&session.last_item_at)
-                        .bind(&session.closed_at)
-                        .bind(&session.archived_at)
-                        .bind(session_archived_by)
-                        .bind(&session.deleted_at)
-                        .bind(session_deleted_by)
-                        .bind(&session.retention_until)
-                        .bind(tenant_id)
-                        .bind(organization_id)
-                        .bind(&session_id)
-                        .bind(previous_version)
-                        .execute(&mut *tx)
-                        .await?;
-                    if updated_rows.rows_affected() == 0 {
-                        return Err(kernel_err(KernelError::conflict("session update conflict")));
-                    }
-
+                    response_item.sequence = session.last_item_sequence;
+                    complete_turn_in_transaction(
+                        &mut tx,
+                        &turn,
+                        expected_turn_version,
+                        expected_fencing_token,
+                        &expected_lease_token,
+                    )
+                    .await?;
+                    insert_session_item_in_transaction(&mut tx, &response_item).await?;
                     tx.commit().await?;
-                    Ok((session, user, assistant))
+                    Ok((session, response_item))
                 })
                 .await
             })
@@ -6568,6 +6592,12 @@ fn map_sqlx_error(error: sqlx::Error) -> KernelError {
 
 #[cfg(feature = "postgres-sync")]
 fn u64_to_i64(value: u64, field: &str) -> KernelResult<i64> {
+    i64::try_from(value)
+        .map_err(|_| KernelError::validation(format!("{field} exceeds postgres int64 range")))
+}
+
+#[cfg(feature = "postgres-sync")]
+fn usize_to_i64(value: usize, field: &str) -> KernelResult<i64> {
     i64::try_from(value)
         .map_err(|_| KernelError::validation(format!("{field} exceeds postgres int64 range")))
 }

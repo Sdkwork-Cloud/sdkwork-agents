@@ -188,11 +188,9 @@ impl ApiProblem {
             StatusCode::INTERNAL_SERVER_ERROR => WebFrameworkErrorKind::InternalServerError,
             _ => WebFrameworkErrorKind::InternalServerError,
         };
-        WebFrameworkError {
-            kind,
-            message: self.message.clone(),
-            retry_after_seconds: None,
-        }
+        let mut error = WebFrameworkError::internal_server_error(self.message.clone());
+        error.kind = kind;
+        error
     }
 
     pub fn into_response_for(&self, ctx: &WebRequestContext) -> Response {
@@ -267,6 +265,7 @@ mod tests {
                 auth_token_present: true,
                 access_token_present: true,
                 api_key_present: false,
+                ingress_token_present: false,
                 oauth_bearer_present: false,
                 agent_token_present: false,
             },

@@ -187,8 +187,8 @@
       "gate": true,
       "evidence": {
         "paths": [
-          "../sdkwork-birdcoder/crates/sdkwork-birdcoder-kernel-bridge/Cargo.toml",
-          "../sdkwork-birdcoder/scripts/birdcoder-agents-integration-contract.test.mjs"
+          "../sdkwork-birdcoder/specs/kernel-birdcoder-alignment.spec.json",
+          "../sdkwork-birdcoder/scripts/agents-birdcoder-alignment-contract.test.mjs"
         ]
       }
     },

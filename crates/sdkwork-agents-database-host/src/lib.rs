@@ -1,3 +1,5 @@
+mod drift_gate;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -5,6 +7,8 @@ use sdkwork_database_config::DatabaseConfig;
 use sdkwork_database_lifecycle::{lifecycle_options_from_env, LifecycleOrchestrator};
 use sdkwork_database_spi::{DatabaseAssetProvider, DatabaseManifest, DefaultDatabaseModule};
 use sdkwork_database_sqlx::{create_pool_from_config, DatabasePool};
+
+use crate::drift_gate::ensure_agents_schema_current;
 
 pub struct AgentsDatabaseHost {
     pool: DatabasePool,
@@ -44,6 +48,8 @@ pub async fn bootstrap_agents_database(pool: DatabasePool) -> Result<AgentsDatab
             .await
             .map_err(|error| format!("agents database migrate failed: {error}"))?;
     }
+
+    ensure_agents_schema_current(&pool, module.clone()).await?;
 
     Ok(AgentsDatabaseHost { pool, module })
 }

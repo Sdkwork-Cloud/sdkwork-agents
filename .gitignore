@@ -21,6 +21,8 @@ config/*.local.toml
 dist/
 **/dist/
 coverage/
+artifacts/
+**/artifacts/
 
 # SDKWork local runtime state
 .runtime/

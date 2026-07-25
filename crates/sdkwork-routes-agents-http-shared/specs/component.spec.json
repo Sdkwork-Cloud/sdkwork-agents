@@ -42,8 +42,12 @@
     }
   ],
   "contracts": {
-    "publicExports": ["."],
+    "publicExports": [
+      ".",
+      "sdkwork_routes_agents_http_shared::agent_request_context_injector"
+    ],
     "runtimeEntrypoints": [
+      "agent_request_context_injector",
       "app_route_manifest",
       "backend_route_manifest",
       "open_route_manifest",

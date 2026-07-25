@@ -29,6 +29,14 @@ future released-schema changes. `baseline-plus-migrations` remains the lifecycle
 strategy so the first post-launch change can be added without changing bootstrap
 semantics.
 
+Lifecycle `init` atomically materializes the consolidated baseline only when the
+completion anchor is absent. Automatic pending-migration execution defaults to
+disabled (`lifecycle.autoMigrate=false`); release and operator workflows run
+`pnpm db:migrate` explicitly before service readiness. An existing partial
+schema that already contains the completion anchor is never treated as an empty
+database: startup drift validation fails closed instead of replaying the
+greenfield baseline.
+
 All business `id` columns are application-allocated signed 64-bit values.
 PostgreSQL sequences and identity columns are not used for business IDs.
 

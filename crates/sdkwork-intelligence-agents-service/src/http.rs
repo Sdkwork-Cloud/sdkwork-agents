@@ -167,6 +167,10 @@ impl DynPolicyProvider {
 }
 
 impl AgentRepository for DynAgentRepository {
+    fn check_readiness(&self) -> KernelResult<()> {
+        self.0.check_readiness()
+    }
+
     fn next_id(&self) -> KernelResult<u64> {
         self.0.next_id()
     }
@@ -527,11 +531,14 @@ impl AgentRepository for DynAgentRepository {
         self.0.count_resource_user_states(query)
     }
 
-    fn insert_session_item(
+    fn append_session_item(
         &self,
         record: crate::domain::AgentSessionItemRecord,
-    ) -> KernelResult<()> {
-        self.0.insert_session_item(record)
+    ) -> KernelResult<(
+        crate::domain::AgentSessionRecord,
+        crate::domain::AgentSessionItemRecord,
+    )> {
+        self.0.append_session_item(record)
     }
 
     fn update_session_item(
@@ -602,16 +609,6 @@ impl AgentRepository for DynAgentRepository {
         self.0.count_item_feedback(query)
     }
 
-    fn next_item_sequence(
-        &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-    ) -> KernelResult<u64> {
-        self.0
-            .next_item_sequence(tenant_id, organization_id, session_id)
-    }
-
     fn get_turn_by_idempotency(
         &self,
         tenant_id: u64,
@@ -651,11 +648,13 @@ impl AgentRepository for DynAgentRepository {
         self.0.list_reconcilable_turns(stale_before, limit)
     }
 
-    fn insert_turn_reservation(
+    fn insert_turn_request(
         &self,
         turn: crate::agent_turn::AgentTurnRecord,
-    ) -> KernelResult<()> {
-        self.0.insert_turn_reservation(turn)
+        request_item: crate::domain::AgentSessionItemRecord,
+        drive_refs: Vec<crate::domain::AgentItemDriveRefRecord>,
+    ) -> KernelResult<crate::ports::TurnRequestWriteOutcome> {
+        self.0.insert_turn_request(turn, request_item, drive_refs)
     }
 
     fn update_turn_state(
@@ -666,39 +665,23 @@ impl AgentRepository for DynAgentRepository {
         self.0.update_turn_state(turn, expected_version)
     }
 
-    fn insert_turn(
+    fn complete_turn(
         &self,
         turn: crate::agent_turn::AgentTurnRecord,
-        session: crate::domain::AgentSessionRecord,
-        user_input_item: crate::domain::AgentSessionItemRecord,
-        assistant_output_item: crate::domain::AgentSessionItemRecord,
+        expected_turn_version: u64,
+        expected_fencing_token: u64,
+        expected_lease_token: Option<String>,
+        response_item: crate::domain::AgentSessionItemRecord,
     ) -> KernelResult<(
         crate::domain::AgentSessionRecord,
         crate::domain::AgentSessionItemRecord,
-        crate::domain::AgentSessionItemRecord,
     )> {
-        self.0
-            .insert_turn(turn, session, user_input_item, assistant_output_item)
-    }
-
-    fn insert_turn_with_drive_refs(
-        &self,
-        turn: crate::agent_turn::AgentTurnRecord,
-        session: crate::domain::AgentSessionRecord,
-        user_input_item: crate::domain::AgentSessionItemRecord,
-        assistant_output_item: crate::domain::AgentSessionItemRecord,
-        drive_refs: Vec<crate::domain::AgentItemDriveRefRecord>,
-    ) -> KernelResult<(
-        crate::domain::AgentSessionRecord,
-        crate::domain::AgentSessionItemRecord,
-        crate::domain::AgentSessionItemRecord,
-    )> {
-        self.0.insert_turn_with_drive_refs(
+        self.0.complete_turn(
             turn,
-            session,
-            user_input_item,
-            assistant_output_item,
-            drive_refs,
+            expected_turn_version,
+            expected_fencing_token,
+            expected_lease_token,
+            response_item,
         )
     }
 
@@ -871,6 +854,11 @@ impl AgentHttpState {
         })
     }
 
+    /// Verify the repository dependency used by the same HTTP service state.
+    pub fn check_readiness(&self) -> KernelResult<()> {
+        self.service.check_readiness()
+    }
+
     pub fn spawn_turn_reconciliation_worker(&self) -> Option<tokio::task::JoinHandle<()>> {
         let interval_seconds = env_usize(ENV_TURN_RECONCILIATION_INTERVAL_SECONDS, 30, 0, 3600);
         if interval_seconds == 0 {
@@ -927,18 +915,32 @@ struct HttpAgentsSessionFacade {
     service: Arc<HttpService>,
 }
 
+struct EnsureRuntimeBindingRequest<'a> {
+    tenant_id: u64,
+    organization_id: u64,
+    owner_user_id: u64,
+    agent_id: &'a str,
+    session_id: &'a str,
+    descriptor: Option<&'a sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor>,
+    subject: sdkwork_agent_kernel::PolicySubject,
+    requested_at: &'a str,
+}
+
 impl HttpAgentsSessionFacade {
     fn ensure_runtime_binding(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        owner_user_id: u64,
-        agent_id: &str,
-        session_id: &str,
-        descriptor: Option<&sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor>,
-        subject: sdkwork_agent_kernel::PolicySubject,
-        requested_at: &str,
+        request: EnsureRuntimeBindingRequest<'_>,
     ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
+        let EnsureRuntimeBindingRequest {
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            agent_id,
+            session_id,
+            descriptor,
+            subject,
+            requested_at,
+        } = request;
         let Some(descriptor) = descriptor else {
             return Ok(());
         };
@@ -1111,16 +1113,16 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                         ),
                     );
                 }
-                self.ensure_runtime_binding(
-                    request.tenant_id,
-                    request.organization_id,
-                    request.owner_user_id,
-                    &request.agent_id,
-                    &request.session_id,
-                    request.runtime_binding.as_ref(),
+                self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
+                    tenant_id: request.tenant_id,
+                    organization_id: request.organization_id,
+                    owner_user_id: request.owner_user_id,
+                    agent_id: &request.agent_id,
+                    session_id: &request.session_id,
+                    descriptor: request.runtime_binding.as_ref(),
                     subject,
-                    &request.requested_at,
-                )?;
+                    requested_at: &request.requested_at,
+                })?;
                 return Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
                     session_id: existing.session_id,
                     created: false,
@@ -1159,16 +1161,16 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
             .map_err(|error| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
             })?;
-        self.ensure_runtime_binding(
-            request.tenant_id,
-            request.organization_id,
-            request.owner_user_id,
-            &request.agent_id,
-            &created.session_id,
-            request.runtime_binding.as_ref(),
+        self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
+            tenant_id: request.tenant_id,
+            organization_id: request.organization_id,
+            owner_user_id: request.owner_user_id,
+            agent_id: &request.agent_id,
+            session_id: &created.session_id,
+            descriptor: request.runtime_binding.as_ref(),
             subject,
-            &request.requested_at,
-        )?;
+            requested_at: &request.requested_at,
+        })?;
         Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
             session_id: created.session_id,
             created: true,
@@ -5596,16 +5598,34 @@ async fn get_session_checkpoint_data(
     })
 }
 
-async fn change_session_checkpoint_data(
-    state: &AgentHttpState,
+enum SessionCheckpointTransition {
+    Restore,
+    Invalidate,
+}
+
+struct ChangeSessionCheckpointInput {
     scope: RequestScope,
     agent_id: String,
     session_id: String,
     checkpoint_id: String,
     owner_scope: Option<u64>,
     body: ChangeSessionCheckpointStatusRequestDto,
-    restore: bool,
+    transition: SessionCheckpointTransition,
+}
+
+async fn change_session_checkpoint_data(
+    state: &AgentHttpState,
+    input: ChangeSessionCheckpointInput,
 ) -> ApiResult<ResourceData<AgentSessionCheckpointRecordDto>> {
+    let ChangeSessionCheckpointInput {
+        scope,
+        agent_id,
+        session_id,
+        checkpoint_id,
+        owner_scope,
+        body,
+        transition,
+    } = input;
     let mut command = body
         .into_command(
             parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
@@ -5617,12 +5637,9 @@ async fn change_session_checkpoint_data(
         )
         .map_err(ApiProblem::from_kernel_error)?;
     command.owner_scope = owner_scope;
-    let record = with_service(state, move |service| {
-        if restore {
-            service.restore_session_checkpoint(command)
-        } else {
-            service.invalidate_session_checkpoint(command)
-        }
+    let record = with_service(state, move |service| match transition {
+        SessionCheckpointTransition::Restore => service.restore_session_checkpoint(command),
+        SessionCheckpointTransition::Invalidate => service.invalidate_session_checkpoint(command),
     })
     .await?;
     Ok(ResourceData {
@@ -5757,16 +5774,34 @@ async fn update_session_runtime_binding_data(
     })
 }
 
-async fn change_session_runtime_binding_data(
-    state: &AgentHttpState,
+enum SessionRuntimeBindingTransition {
+    Activate,
+    Deactivate,
+}
+
+struct ChangeSessionRuntimeBindingInput {
     scope: RequestScope,
     agent_id: String,
     session_id: String,
     runtime_binding_id: String,
     owner_scope: Option<u64>,
     body: ChangeSessionRuntimeBindingStatusRequestDto,
-    activate: bool,
+    transition: SessionRuntimeBindingTransition,
+}
+
+async fn change_session_runtime_binding_data(
+    state: &AgentHttpState,
+    input: ChangeSessionRuntimeBindingInput,
 ) -> ApiResult<ResourceData<AgentSessionRuntimeBindingRecordDto>> {
+    let ChangeSessionRuntimeBindingInput {
+        scope,
+        agent_id,
+        session_id,
+        runtime_binding_id,
+        owner_scope,
+        body,
+        transition,
+    } = input;
     let mut command = body
         .into_command(
             parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
@@ -5778,10 +5813,11 @@ async fn change_session_runtime_binding_data(
         )
         .map_err(ApiProblem::from_kernel_error)?;
     command.owner_scope = owner_scope;
-    let record = with_service(state, move |service| {
-        if activate {
+    let record = with_service(state, move |service| match transition {
+        SessionRuntimeBindingTransition::Activate => {
             service.activate_session_runtime_binding(command)
-        } else {
+        }
+        SessionRuntimeBindingTransition::Deactivate => {
             service.deactivate_session_runtime_binding(command)
         }
     })
@@ -5880,13 +5916,15 @@ async fn app_restore_session_checkpoint(
         let owner_scope = scope.owner_scope()?;
         change_session_checkpoint_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            checkpoint_id,
-            owner_scope,
-            body,
-            true,
+            ChangeSessionCheckpointInput {
+                scope,
+                agent_id,
+                session_id,
+                checkpoint_id,
+                owner_scope,
+                body,
+                transition: SessionCheckpointTransition::Restore,
+            },
         )
         .await
     }
@@ -5909,13 +5947,15 @@ async fn app_invalidate_session_checkpoint(
         let owner_scope = scope.owner_scope()?;
         change_session_checkpoint_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            checkpoint_id,
-            owner_scope,
-            body,
-            false,
+            ChangeSessionCheckpointInput {
+                scope,
+                agent_id,
+                session_id,
+                checkpoint_id,
+                owner_scope,
+                body,
+                transition: SessionCheckpointTransition::Invalidate,
+            },
         )
         .await
     }
@@ -6041,13 +6081,15 @@ async fn app_activate_session_runtime_binding(
         let owner_scope = scope.owner_scope()?;
         change_session_runtime_binding_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            runtime_binding_id,
-            owner_scope,
-            body,
-            true,
+            ChangeSessionRuntimeBindingInput {
+                scope,
+                agent_id,
+                session_id,
+                runtime_binding_id,
+                owner_scope,
+                body,
+                transition: SessionRuntimeBindingTransition::Activate,
+            },
         )
         .await
     }
@@ -6070,13 +6112,15 @@ async fn app_deactivate_session_runtime_binding(
         let owner_scope = scope.owner_scope()?;
         change_session_runtime_binding_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            runtime_binding_id,
-            owner_scope,
-            body,
-            false,
+            ChangeSessionRuntimeBindingInput {
+                scope,
+                agent_id,
+                session_id,
+                runtime_binding_id,
+                owner_scope,
+                body,
+                transition: SessionRuntimeBindingTransition::Deactivate,
+            },
         )
         .await
     }
@@ -6595,13 +6639,15 @@ async fn backend_restore_session_checkpoint(
         let scope = RequestScope::from_context(context);
         change_session_checkpoint_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            checkpoint_id,
-            None,
-            body,
-            true,
+            ChangeSessionCheckpointInput {
+                scope,
+                agent_id,
+                session_id,
+                checkpoint_id,
+                owner_scope: None,
+                body,
+                transition: SessionCheckpointTransition::Restore,
+            },
         )
         .await
     }
@@ -6623,13 +6669,15 @@ async fn backend_invalidate_session_checkpoint(
         let scope = RequestScope::from_context(context);
         change_session_checkpoint_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            checkpoint_id,
-            None,
-            body,
-            false,
+            ChangeSessionCheckpointInput {
+                scope,
+                agent_id,
+                session_id,
+                checkpoint_id,
+                owner_scope: None,
+                body,
+                transition: SessionCheckpointTransition::Invalidate,
+            },
         )
         .await
     }
@@ -6749,13 +6797,15 @@ async fn backend_activate_session_runtime_binding(
         let scope = RequestScope::from_context(context);
         change_session_runtime_binding_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            runtime_binding_id,
-            None,
-            body,
-            true,
+            ChangeSessionRuntimeBindingInput {
+                scope,
+                agent_id,
+                session_id,
+                runtime_binding_id,
+                owner_scope: None,
+                body,
+                transition: SessionRuntimeBindingTransition::Activate,
+            },
         )
         .await
     }
@@ -6777,13 +6827,15 @@ async fn backend_deactivate_session_runtime_binding(
         let scope = RequestScope::from_context(context);
         change_session_runtime_binding_data(
             &state,
-            scope,
-            agent_id,
-            session_id,
-            runtime_binding_id,
-            None,
-            body,
-            false,
+            ChangeSessionRuntimeBindingInput {
+                scope,
+                agent_id,
+                session_id,
+                runtime_binding_id,
+                owner_scope: None,
+                body,
+                transition: SessionRuntimeBindingTransition::Deactivate,
+            },
         )
         .await
     }

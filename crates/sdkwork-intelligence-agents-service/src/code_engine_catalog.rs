@@ -1,4 +1,4 @@
-//! Canonical code-engine catalog projection via `sdkwork-agents-runtime-facade`.
+//! Canonical code-engine catalog assembled through `sdkwork-agents-runtime-facade`.
 //!
 //! The catalog is exposed as a single composite resource under
 //! `SdkWorkResourceData<CodeEngineCatalog>` per `API_SPEC.md` §16.

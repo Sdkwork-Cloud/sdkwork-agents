@@ -6,8 +6,11 @@ Operational observability for SDKWork Agents staging and production.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health` | process and dependency liveness/readiness |
-| `GET /metrics/agents` | Prometheus exposition for Agents runtime |
+| `GET /healthz` | canonical process liveness probe |
+| `GET /livez` | Kubernetes-style liveness alias of `/healthz` |
+| `GET /readyz` | required-dependency readiness probe; unavailable dependencies return 503 |
+| `GET /metrics` | canonical framework Prometheus exposition |
+| `GET /metrics/agents` | Agents domain Prometheus exposition |
 
 Scrape through the approved private operations network. Do not expose metrics
 publicly without platform authentication.

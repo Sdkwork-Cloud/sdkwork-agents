@@ -431,4 +431,8 @@ fn postgres_item_feedback_sql_is_scoped_parameterized_and_versioned() {
     assert!(SQL_LIST_AGENT_ITEM_FEEDBACK.contains("item.session_id = $4"));
     assert!(SQL_LIST_AGENT_ITEM_FEEDBACK.contains("LIMIT $5 OFFSET $6"));
     assert!(SQL_COUNT_AGENT_ITEM_FEEDBACK.contains("feedback.user_id = $3"));
+    for sql in [SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_ITEM_FEEDBACK] {
+        assert!(sql.contains("feedback.deleted_at IS NULL"));
+        assert!(!sql.contains("item.deleted_at"));
+    }
 }

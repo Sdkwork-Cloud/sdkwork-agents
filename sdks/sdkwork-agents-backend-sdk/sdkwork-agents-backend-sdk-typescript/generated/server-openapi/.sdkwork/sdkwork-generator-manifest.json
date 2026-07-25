@@ -12,7 +12,7 @@
   "generatedFiles": [
     {
       "path": "bin/publish-core.mjs",
-      "sha256": "582c020e50ece8a369ab0c5b2f18d6efe16a54d7c46cd4b29d0a2d560ea07d6c"
+      "sha256": "98ad0918a78bfbe22bf8f12fec709b0bed545b9e01edd40f5e4abf31a23378a5"
     },
     {
       "path": "bin/publish.ps1",
@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "59742ab566e0772982d92f8949e898e8efa3610aee719c9587d2a9ed84f313fd"
+      "sha256": "923440fd1937ad1b1f91f140ea6adde8850d5cba5e0e96cb8f6c19c6a8e317ab"
     },
     {
       "path": "src/api/base.ts",
@@ -72,7 +72,7 @@
     },
     {
       "path": "src/http/client.ts",
-      "sha256": "6e389d5c14fb5845365972b6776af185d8af8eb8da7bb398e59be6c29e394ddf"
+      "sha256": "527cd02c1312bc9b4123709c3e01635ac4dd93a579109838235508eb3a839c51"
     },
     {
       "path": "src/http/index.ts",

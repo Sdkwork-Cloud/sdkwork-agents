@@ -4,7 +4,7 @@
   "mode": "dry-run",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-23T00:33:05.669Z",
+  "startedAt": "2026-07-24T11:07:30.628Z",
   "families": [
     {
       "key": "open",
@@ -99,16 +99,28 @@
           "packageByLanguage": {
             "typescript": "@sdkwork/memory-app-sdk"
           }
+        },
+        {
+          "workspace": "sdkwork-documents-app-sdk",
+          "role": "project-document-selection-capability",
+          "required": true,
+          "dependencyMode": "consumer-sdk",
+          "apiPrefix": "/app/v3/api",
+          "apiAuthority": "sdkwork-documents-app-api",
+          "generatedTransportImportPolicy": "forbidden",
+          "packageByLanguage": {
+            "typescript": "@sdkwork/documents-app-sdk"
+          }
         }
       ],
       "version": "0.1.0",
       "fingerprint": "00f3a1c01305d4ac8cdf9ae2ba5f74fa09b9124632bcbfef11186088f884452a",
       "fingerprints": {
         "typescript": "00f3a1c01305d4ac8cdf9ae2ba5f74fa09b9124632bcbfef11186088f884452a",
-        "flutter": "614a545ec713c87a3fa01815575cad7c15af66ef558a38e42760cd7641208374"
+        "flutter": "a0558a354404627f813f1ea00a094e1c94f382d637315f4722befd75290f0fb8"
       },
-      "hasChanges": false,
-      "riskLevel": "low",
+      "hasChanges": true,
+      "riskLevel": "medium",
       "generated": false,
       "languages": [
         {
@@ -128,9 +140,9 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi",
           "packageName": "sdkwork_agents_app_sdk",
           "version": "0.1.0",
-          "fingerprint": "614a545ec713c87a3fa01815575cad7c15af66ef558a38e42760cd7641208374",
-          "hasChanges": false,
-          "riskLevel": "low",
+          "fingerprint": "a0558a354404627f813f1ea00a094e1c94f382d637315f4722befd75290f0fb8",
+          "hasChanges": true,
+          "riskLevel": "medium",
           "generated": false
         }
       ]
@@ -183,5 +195,5 @@
       ]
     }
   ],
-  "finishedAt": "2026-07-23T00:33:06.789Z"
+  "finishedAt": "2026-07-24T11:07:31.574Z"
 }

@@ -22,8 +22,8 @@ use crate::domain::{
 use crate::dto::AgentManagementProfileDto;
 use crate::ports::{
     offset_paginated_result, AgentAuditSink, AgentRepository, PaginatedResult, PaginationParams,
-    ProviderBindingListQuery, SessionItemListQuery, MAX_PAGE_SIZE, MAX_TURN_INPUT_CONTENT_BYTES,
-    TURN_CONTEXT_ITEM_LIMIT,
+    ProviderBindingListQuery, SessionItemListQuery, TurnRequestWriteOutcome, MAX_PAGE_SIZE,
+    MAX_TURN_INPUT_CONTENT_BYTES, TURN_CONTEXT_ITEM_LIMIT,
 };
 use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
@@ -248,6 +248,11 @@ where
     pub fn with_turn_executor(mut self, turn_executor: Arc<dyn TurnExecutor>) -> Self {
         self.turn_executor = turn_executor;
         self
+    }
+
+    /// Verify that the canonical Agents repository can serve requests.
+    pub fn check_readiness(&self) -> KernelResult<()> {
+        self.repository.check_readiness()
     }
 
     fn ensure_session_owner_scope(
@@ -3600,7 +3605,7 @@ where
         )?;
 
         // Ensure session exists and is active
-        let mut session = self
+        let session = self
             .repository
             .get_session(
                 command.tenant_id,
@@ -3637,12 +3642,6 @@ where
         }
         reject_secret_material(command.content.as_str(), "content")?;
 
-        let sequence = self.repository.next_item_sequence(
-            command.tenant_id,
-            command.organization_id,
-            command.session_id.as_str(),
-        )?;
-
         let record = AgentSessionItemRecord {
             id: self.repository.next_id()?,
             item_id: command.item_id,
@@ -3653,7 +3652,7 @@ where
             content: Some(command.content),
             content_type: default_plain_text_if_blank(command.content_type.as_str()),
             status: AgentSessionItemStatus::Completed,
-            sequence,
+            sequence: 0,
             input_tokens: command.input_tokens,
             output_tokens: command.output_tokens,
             model_id: command.model_id,
@@ -3674,15 +3673,7 @@ where
             retention_until: None,
         };
 
-        self.repository.insert_session_item(record.clone())?;
-
-        // Update session counters
-        session.record_item(
-            command.input_tokens,
-            command.output_tokens,
-            command.requested_at.clone(),
-        );
-        self.repository.update_session(session)?;
+        let (_, record) = self.repository.append_session_item(record)?;
 
         self.emit_session_item_audit_event(
             AgentAuditAction::SessionItemCreated,
@@ -4009,6 +4000,81 @@ where
         })
     }
 
+    fn replay_existing_turn(
+        &self,
+        command: &CreateTurnCommand,
+        session: AgentSessionRecord,
+        existing_turn: AgentTurnRecord,
+    ) -> KernelResult<TurnExecutionResult> {
+        if existing_turn.tenant_id != command.tenant_id
+            || existing_turn.organization_id != command.organization_id
+            || existing_turn.owner_user_id != session.owner_user_id
+            || existing_turn.session_id != command.session_id
+            || existing_turn.agent_id != command.agent_id
+        {
+            return Err(KernelError::conflict(
+                "idempotency key was already used for a different turn scope",
+            ));
+        }
+        if existing_turn.payload_hash != command.payload_hash.trim() {
+            return Err(KernelError::conflict(
+                "idempotency key was already used with a different payload",
+            ));
+        }
+        if existing_turn.status != AgentTurnStatus::Completed {
+            return Err(KernelError::conflict(match existing_turn.status {
+                AgentTurnStatus::Requested | AgentTurnStatus::Running => {
+                    "turn execution is already in progress"
+                }
+                AgentTurnStatus::Failed => "turn execution already failed",
+                AgentTurnStatus::Cancelled => "turn execution was already cancelled",
+                AgentTurnStatus::Completed => unreachable!(),
+            }));
+        }
+        let response_item_id =
+            existing_turn
+                .response_item_id
+                .as_deref()
+                .ok_or_else(|| KernelError::Internal {
+                    message: "completed turn is missing response_item_id".to_string(),
+                })?;
+        let user_input_item = self
+            .repository
+            .get_session_item(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &existing_turn.request_item_id,
+            )?
+            .ok_or_else(|| KernelError::Internal {
+                message: "completed turn is missing request item".to_string(),
+            })?;
+        let assistant_output_item = self
+            .repository
+            .get_session_item(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                response_item_id,
+            )?
+            .ok_or_else(|| KernelError::Internal {
+                message: "completed turn is missing response item".to_string(),
+            })?;
+        let user_item_drive_refs = self.repository.list_item_drive_refs(
+            command.tenant_id,
+            session.organization_id,
+            &user_input_item.item_id,
+        )?;
+        Ok(TurnExecutionResult {
+            session,
+            turn: existing_turn,
+            user_input_item,
+            assistant_output_item,
+            user_item_drive_refs,
+            stream_deltas: Vec::new(),
+        })
+    }
+
     /// Execute one turn and atomically persist its input, output and session counters.
     pub fn execute_turn(&self, command: CreateTurnCommand) -> KernelResult<TurnExecutionResult> {
         validate_agent_id(command.agent_id.as_str())?;
@@ -4025,7 +4091,7 @@ where
             .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
 
-        let mut session = self
+        let session = self
             .repository
             .get_session(
                 command.tenant_id,
@@ -4071,56 +4137,7 @@ where
             session.owner_user_id,
             &idempotency_key,
         )? {
-            if existing_turn.payload_hash != payload_hash {
-                return Err(KernelError::conflict(
-                    "idempotency key was already used with a different payload",
-                ));
-            }
-            if existing_turn.status != AgentTurnStatus::Completed {
-                return Err(KernelError::conflict("turn is not completed"));
-            }
-            let response_item_id =
-                existing_turn
-                    .response_item_id
-                    .as_deref()
-                    .ok_or_else(|| KernelError::Internal {
-                        message: "completed turn is missing response_item_id".to_string(),
-                    })?;
-            let user_input_item = self
-                .repository
-                .get_session_item(
-                    command.tenant_id,
-                    command.organization_id,
-                    &command.session_id,
-                    &existing_turn.request_item_id,
-                )?
-                .ok_or_else(|| KernelError::Internal {
-                    message: "completed turn is missing request item".to_string(),
-                })?;
-            let assistant_output_item = self
-                .repository
-                .get_session_item(
-                    command.tenant_id,
-                    command.organization_id,
-                    &command.session_id,
-                    response_item_id,
-                )?
-                .ok_or_else(|| KernelError::Internal {
-                    message: "completed turn is missing response item".to_string(),
-                })?;
-            let user_item_drive_refs = self.repository.list_item_drive_refs(
-                command.tenant_id,
-                session.organization_id,
-                &user_input_item.item_id,
-            )?;
-            return Ok(TurnExecutionResult {
-                session,
-                turn: existing_turn,
-                user_input_item,
-                assistant_output_item,
-                user_item_drive_refs,
-                stream_deltas: Vec::new(),
-            });
+            return self.replay_existing_turn(&command, session, existing_turn);
         }
 
         let session_runtime_binding = match command.runtime_binding_id.as_deref() {
@@ -4166,6 +4183,19 @@ where
                 "session runtime binding references an inactive provider binding",
             ));
         }
+        let history_items =
+            self.repository
+                .list_session_items(&SessionItemListQuery::for_recent_turn_context(
+                    command.tenant_id,
+                    command.organization_id,
+                    command.session_id.clone(),
+                    TURN_CONTEXT_ITEM_LIMIT,
+                ))?;
+        let history = history_items
+            .iter()
+            .filter_map(|record| record.content.clone().map(|content| (record.kind, content)))
+            .collect::<Vec<_>>();
+
         let turn_id = match command.turn_id.as_deref() {
             Some(turn_id) => {
                 validate_standard_id(turn_id, "turnId", Some("turn."))?;
@@ -4174,7 +4204,6 @@ where
             None => format!("turn.{}", self.repository.next_id()?),
         };
         let user_input_item_id = format!("item.{}", self.repository.next_id()?);
-        let assistant_output_item_id = format!("item.{}", self.repository.next_id()?);
         let mut turn = AgentTurnRecord {
             id: self.repository.next_id()?,
             turn_id: turn_id.clone(),
@@ -4219,74 +4248,7 @@ where
             cancelled_at: None,
             retention_until: None,
         };
-        self.repository.insert_turn_reservation(turn.clone())?;
-        self.emit_turn_audit_event(
-            AgentAuditAction::TurnRequested,
-            &turn,
-            command.requested_by.clone(),
-            command.requested_at.clone(),
-        )?;
-        turn.mark_running(command.requested_at.clone());
-        turn = self.repository.update_turn_state(turn, 0)?;
-
-        let history_items =
-            self.repository
-                .list_session_items(&SessionItemListQuery::for_recent_turn_context(
-                    command.tenant_id,
-                    command.organization_id,
-                    command.session_id.clone(),
-                    TURN_CONTEXT_ITEM_LIMIT,
-                ))?;
-        let history = history_items
-            .iter()
-            .filter_map(|record| record.content.clone().map(|content| (record.kind, content)))
-            .collect::<Vec<_>>();
-
-        let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
-            agent.default_code_task_intent.as_ref(),
-        )
-        .and_then(|profile| profile.welcome_message);
-        let provider_has_model_chat = provider_binding
-            .capabilities
-            .iter()
-            .any(|capability| capability == "model.chat");
-
         let user_content = command.content.clone();
-        let completion = complete_with_timeout(
-            Arc::clone(&self.turn_executor),
-            &TurnExecutionInput {
-                agent_display_name: agent.display_name.clone(),
-                welcome_message,
-                session: session.clone(),
-                history,
-                user_content: user_content.clone(),
-                model_id: Some(session_runtime_binding.model_id.clone()),
-                provider_id: Some(session_runtime_binding.provider_id.clone()),
-                binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
-                provider_has_model_chat,
-            },
-            command.prefer_stream,
-            TURN_EXECUTION_TIMEOUT,
-        );
-        if is_inference_error(completion.runtime_mode) {
-            turn.mark_failed(
-                "turn_inference_failed",
-                "managed turn inference failed",
-                command.requested_at.clone(),
-            );
-            let failed_turn = self.repository.update_turn_state(turn, 1)?;
-            self.emit_turn_audit_event(
-                AgentAuditAction::TurnFailed,
-                &failed_turn,
-                command.requested_by,
-                command.requested_at,
-            )?;
-            return Err(KernelError::provider_error(
-                "turn_inference_failed",
-                completion.content,
-            ));
-        }
-
         let user_input_item = AgentSessionItemRecord {
             id: self.repository.next_id()?,
             item_id: user_input_item_id,
@@ -4294,7 +4256,7 @@ where
             organization_id: session.organization_id,
             session_id: command.session_id.clone(),
             kind: AgentSessionItemKind::UserInput,
-            content: Some(user_content),
+            content: Some(user_content.clone()),
             content_type: default_plain_text_if_blank(command.content_type.as_str()),
             status: AgentSessionItemStatus::Completed,
             sequence: 0,
@@ -4342,7 +4304,79 @@ where
                 })
             })
             .collect::<KernelResult<Vec<_>>>()?;
+        let (session, user_input_item) = match self.repository.insert_turn_request(
+            turn.clone(),
+            user_input_item,
+            user_item_drive_refs.clone(),
+        )? {
+            TurnRequestWriteOutcome::Inserted {
+                session,
+                request_item,
+            } => (*session, *request_item),
+            TurnRequestWriteOutcome::Existing(existing_turn) => {
+                return self.replay_existing_turn(&command, session, *existing_turn);
+            }
+        };
+        self.emit_turn_audit_event(
+            AgentAuditAction::TurnRequested,
+            &turn,
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
+        self.emit_session_item_audit_event(
+            AgentAuditAction::SessionItemCreated,
+            &user_input_item,
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
+        turn.mark_running(command.requested_at.clone());
+        turn = self.repository.update_turn_state(turn, 0)?;
 
+        let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
+            agent.default_code_task_intent.as_ref(),
+        )
+        .and_then(|profile| profile.welcome_message);
+        let provider_has_model_chat = provider_binding
+            .capabilities
+            .iter()
+            .any(|capability| capability == "model.chat");
+
+        let completion = complete_with_timeout(
+            Arc::clone(&self.turn_executor),
+            &TurnExecutionInput {
+                agent_display_name: agent.display_name.clone(),
+                welcome_message,
+                session: session.clone(),
+                history,
+                user_content: user_content.clone(),
+                model_id: Some(session_runtime_binding.model_id.clone()),
+                provider_id: Some(session_runtime_binding.provider_id.clone()),
+                binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
+                provider_has_model_chat,
+            },
+            command.prefer_stream,
+            TURN_EXECUTION_TIMEOUT,
+        );
+        if is_inference_error(completion.runtime_mode) {
+            turn.mark_failed(
+                "turn_inference_failed",
+                "managed turn inference failed",
+                command.requested_at.clone(),
+            );
+            let failed_turn = self.repository.update_turn_state(turn, 1)?;
+            self.emit_turn_audit_event(
+                AgentAuditAction::TurnFailed,
+                &failed_turn,
+                command.requested_by,
+                command.requested_at,
+            )?;
+            return Err(KernelError::provider_error(
+                "turn_inference_failed",
+                completion.content,
+            ));
+        }
+
+        let assistant_output_item_id = format!("item.{}", self.repository.next_id()?);
         let assistant_output_item = AgentSessionItemRecord {
             id: self.repository.next_id()?,
             item_id: assistant_output_item_id,
@@ -4384,28 +4418,24 @@ where
             retention_until: None,
         };
 
-        session.record_turn(
-            completion.input_tokens,
-            completion.output_tokens,
-            command.requested_at.clone(),
-        );
-
         turn.response_item_id = Some(assistant_output_item.item_id.clone());
         turn.model_id = assistant_output_item.model_id.clone();
         turn.provider_id = assistant_output_item.provider_id.clone();
         turn.input_tokens = completion.input_tokens;
         turn.output_tokens = completion.output_tokens;
+        let expected_turn_version = turn.version;
+        let expected_fencing_token = turn.fencing_token;
+        let expected_lease_token = turn.lease_token.clone();
         turn.mark_completed(command.requested_at.clone());
         let completed_turn = turn.clone();
 
-        let (session, user_input_item, assistant_output_item) =
-            self.repository.insert_turn_with_drive_refs(
-                turn,
-                session,
-                user_input_item,
-                assistant_output_item,
-                user_item_drive_refs.clone(),
-            )?;
+        let (session, assistant_output_item) = self.repository.complete_turn(
+            turn,
+            expected_turn_version,
+            expected_fencing_token,
+            expected_lease_token,
+            assistant_output_item,
+        )?;
 
         self.emit_turn_audit_event(
             AgentAuditAction::TurnCompleted,
@@ -4414,12 +4444,6 @@ where
             command.requested_at.clone(),
         )?;
 
-        self.emit_session_item_audit_event(
-            AgentAuditAction::SessionItemCreated,
-            &user_input_item,
-            command.requested_by.clone(),
-            command.requested_at.clone(),
-        )?;
         self.emit_session_item_audit_event(
             AgentAuditAction::SessionItemCreated,
             &assistant_output_item,
