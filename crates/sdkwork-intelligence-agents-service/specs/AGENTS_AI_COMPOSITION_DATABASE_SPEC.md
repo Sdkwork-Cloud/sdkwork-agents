@@ -307,10 +307,10 @@ partial indexes declared by the baseline.
 ## 11. Schema Lifecycle
 
 PostgreSQL `0001_agents_baseline.sql` is the greenfield `6.0.0` authority and
-contains the complete 20-table model. Existing `5.0.0` installations use the
-governed `0001_add_agent_workspaces.up.sql` forward migration, which creates one
-default Workspace per Project owner and backfills every historical Project
-before enabling the non-null and foreign-key contracts.
+contains the complete 20-table model. The application is pre-launch, so there
+is no supported historical installation and no active compatibility migration.
+The baseline is the complete initial state; the migration directory remains
+empty until the first released schema change.
 
 After the first production release, changes use ordered forward migrations and
 the expand/contract rules from `MIGRATION_SPEC.md`. Baseline rewrites then stop.

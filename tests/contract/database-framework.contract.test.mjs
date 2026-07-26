@@ -297,44 +297,12 @@ test("composition slot enums and canonical module pairs stay aligned", () => {
   }
 });
 
-test("Workspace migration declares only structures introduced or extended after 5.0", () => {
-  const baseline = readFileSync(
-    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
-    "utf8",
-  );
-  const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
-  const migrations = readdirSync(migrationRoot)
-    .filter((fileName) => fileName.endsWith(".up.sql"))
-    .map((fileName) => readFileSync(path.join(migrationRoot, fileName), "utf8"))
-    .join("\n");
-
-  const expectedMigrationConstraints = new Set([
-    "ck_ai_agent_audit_aggregate_type",
-    "ck_ai_agent_audit_action",
-    "ck_ai_agent_project_import_source",
-    "ck_ai_agent_project_drive_source",
-    "fk_ai_agent_project_workspace",
-  ]);
-  for (const constraint of Array.from(
-    baseline.matchAll(/CONSTRAINT\s+([a-z0-9_]+)/giu),
-    (match) => match[1],
-  )) {
-    if (!expectedMigrationConstraints.has(constraint)) {
-      assert.doesNotMatch(
-        migrations,
-        new RegExp(`ADD\\s+CONSTRAINT\\s+${constraint}\\b`, "iu"),
-        `Workspace migration must not replay unchanged pre-6.0 constraint ${constraint}`,
-      );
-    }
-  }
-});
-
-test("PostgreSQL contract contains the governed 5.0 to 6.0 Workspace migration", () => {
+test("pre-launch PostgreSQL contract has no compatibility migrations", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
   const activeMigrations = readdirSync(migrationRoot).filter((fileName) =>
     /\.(?:up|down)\.sql$/u.test(fileName),
   );
-  assert.deepEqual(activeMigrations, ["0001_add_agent_workspaces.up.sql"]);
+  assert.deepEqual(activeMigrations, []);
 });
 
 test("every PostgreSQL up migration declares a governed rollback strategy", () => {

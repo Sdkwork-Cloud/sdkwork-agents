@@ -24,9 +24,11 @@ remain owned by their respective modules.
 ## Engine And Lifecycle
 
 PostgreSQL is the only managed-store engine. The `6.0.0` greenfield baseline
-contains Workspace-scoped Projects; existing `5.0.0` installations apply the
-governed Workspace backfill under `database/migrations/postgres/`.
-`baseline-plus-migrations` remains the lifecycle strategy.
+contains the complete Workspace-scoped Project model and is the only database
+state supported before the first release. `baseline-plus-migrations` remains
+the lifecycle strategy so ordered forward migrations can be added after the
+schema is released; the migration directory is intentionally empty while the
+application is still pre-launch.
 
 Lifecycle `init` atomically materializes the consolidated baseline only when the
 completion anchor is absent. Automatic pending-migration execution defaults to
