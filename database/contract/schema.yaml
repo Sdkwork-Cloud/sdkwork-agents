@@ -2,7 +2,7 @@ schema_version: 1
 kind: sdkwork.database.schema
 database_role: authoritative-server
 module_id: agents
-contract_version: 5.0.0
+contract_version: 6.0.0
 owner_team: agents-platform
 compliance_level: L2
 engines:
@@ -43,11 +43,16 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: Immutable, sanitized Agents aggregate audit facts.
+  - name: ai_agent_workspace
+    profile: tenant_entity
+    lifecycle_status: active
+    owner: agents-platform
+    description: User-owned project container with one active default per owner scope.
   - name: ai_agent_project
     profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: Reusable orchestration project and access-policy aggregate.
+    description: Workspace-scoped reusable orchestration project and access-policy aggregate.
   - name: ai_agent_project_composition_slot
     profile: relation_entity
     lifecycle_status: active

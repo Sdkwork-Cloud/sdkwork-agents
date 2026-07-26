@@ -3817,6 +3817,206 @@ async fn backend_route_should_accept_trusted_subject_tenant_context() {
 }
 
 #[tokio::test]
+async fn app_workspace_initialization_scopes_projects_and_imports_idempotently() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+
+    let ensured = post_json(
+        &app,
+        "/app/v3/api/ai/workspaces/default",
+        json!({ "name": "My Workspace" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let workspace_id = ensured["data"]["item"]["workspaceId"]
+        .as_str()
+        .expect("default Workspace id")
+        .to_string();
+    assert_eq!(workspace_id, "workspace.default.100");
+    assert_eq!(ensured["data"]["item"]["isDefault"], true);
+
+    let ensured_again = post_json(
+        &app,
+        "/app/v3/api/ai/workspaces/default",
+        json!({}),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(ensured_again["data"]["item"]["workspaceId"], workspace_id);
+
+    let workspaces = get_json(
+        &app,
+        "/app/v3/api/ai/workspaces?page=1&page_size=20",
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        workspaces["data"]["items"].as_array().map(Vec::len),
+        Some(1)
+    );
+
+    let created = post_json(
+        &app,
+        "/app/v3/api/ai/projects",
+        json!({
+            "projectId": "project.workspace.scoped",
+            "workspaceId": workspace_id,
+            "name": "Workspace scoped",
+            "visibility": "private",
+            "driveAccessMode": "owner_library"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(
+        created["data"]["item"]["workspaceId"],
+        "workspace.default.100"
+    );
+
+    let imported = post_json(
+        &app,
+        "/app/v3/api/ai/projects/import",
+        json!({
+            "workspaceId": "workspace.default.100",
+            "name": "Drive sandbox",
+            "sourceKind": "drive_sandbox",
+            "sourceRef": "drive://space.alpha/root.alpha",
+            "driveSpaceId": "space.alpha",
+            "driveRootEntryId": "root.alpha",
+            "driveLogicalPath": "/sandbox"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    let imported_project_id = imported["data"]["item"]["projectId"]
+        .as_str()
+        .expect("imported Project id")
+        .to_string();
+    assert_eq!(imported["data"]["item"]["driveSpaceId"], "space.alpha");
+
+    let imported_again = post_json(
+        &app,
+        "/app/v3/api/ai/projects/import",
+        json!({
+            "workspaceId": "workspace.default.100",
+            "name": "Drive sandbox duplicate",
+            "sourceKind": "drive_sandbox",
+            "sourceRef": "drive://space.alpha/root.alpha",
+            "driveSpaceId": "space.alpha",
+            "driveRootEntryId": "root.alpha",
+            "driveLogicalPath": "/sandbox"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        imported_again["data"]["item"]["projectId"],
+        imported_project_id
+    );
+
+    let listed = get_json(
+        &app,
+        "/app/v3/api/ai/projects?workspace_id=workspace.default.100&page=1&page_size=20",
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["data"]["items"].as_array().map(Vec::len), Some(2));
+    assert!(listed["data"]["items"]
+        .as_array()
+        .expect("Project items")
+        .iter()
+        .all(|item| item["workspaceId"] == "workspace.default.100"));
+}
+
+#[tokio::test]
+async fn app_workspace_lifecycle_should_create_retrieve_update_archive_and_delete() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+
+    post_json(
+        &app,
+        "/app/v3/api/ai/workspaces/default",
+        json!({}),
+        StatusCode::CREATED,
+    )
+    .await;
+    let created = post_json(
+        &app,
+        "/app/v3/api/ai/workspaces",
+        json!({ "name": "Client Workspace" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let workspace_id = created["data"]["item"]["workspaceId"]
+        .as_str()
+        .expect("Workspace id")
+        .to_string();
+    assert_eq!(created["data"]["item"]["isDefault"], false);
+
+    let retrieved = get_json(
+        &app,
+        &format!("/app/v3/api/ai/workspaces/{workspace_id}"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(retrieved["data"]["item"]["name"], "Client Workspace");
+
+    let updated = patch_json(
+        &app,
+        &format!("/app/v3/api/ai/workspaces/{workspace_id}"),
+        json!({
+            "expectedVersion": "0",
+            "name": "Renamed Workspace"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(updated["data"]["item"]["version"], "1");
+
+    let archived = post_json(
+        &app,
+        &format!("/app/v3/api/ai/workspaces/{workspace_id}/archive"),
+        json!({ "expectedVersion": "1" }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(archived["data"]["item"]["status"], "archived");
+
+    let request = Request::builder()
+        .method("DELETE")
+        .uri(format!(
+            "/app/v3/api/ai/workspaces/{workspace_id}?expectedVersion=2"
+        ))
+        .body(Body::empty())
+        .expect("delete request should be built");
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("delete request should succeed");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let workspaces = get_json(
+        &app,
+        "/app/v3/api/ai/workspaces?page=1&page_size=20&status=active",
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        workspaces["data"]["items"].as_array().map(Vec::len),
+        Some(1)
+    );
+}
+
+#[tokio::test]
 async fn app_project_crud_should_be_versioned_listed_archived_and_deleted() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),

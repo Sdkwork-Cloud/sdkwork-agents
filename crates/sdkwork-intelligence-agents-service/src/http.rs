@@ -10,16 +10,18 @@ use crate::application::{
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
     AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService, CancelTurnCommand,
     CreateProjectCommand, CreateProjectCompositionSlotCommand, CreateSessionCommand,
-    CreateTurnCommand, DeleteProjectCompositionSlotCommand, DeleteSessionCommand,
-    GetInteractionCommand, GetProjectCommand, GetProjectCompositionSlotCommand,
-    GetSessionCheckpointCommand, GetSessionCommand, GetSessionItemCommand,
-    GetSessionRuntimeBindingCommand, GetSessionUserStateCommand, GetTaskCommand,
-    GetTurnByIdempotencyCommand, GetTurnCommand, ListAgentAuditEventsCommand,
-    ListItemFeedbackCommand, ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand,
-    ListProjectsCommand, ListSessionCheckpointsCommand, ListSessionRuntimeBindingsCommand,
-    ListSessionUserStatesCommand, ListTurnsCommand, ProjectMutationCommand,
-    ProviderBindingListCommand, UpdateItemFeedbackCommand, UpdateProjectCommand,
-    UpdateProjectCompositionSlotCommand, UpdateSessionCommand, UpdateSessionUserStateCommand,
+    CreateTurnCommand, CreateWorkspaceCommand, DeleteProjectCompositionSlotCommand,
+    DeleteSessionCommand, EnsureDefaultWorkspaceCommand, GetInteractionCommand, GetProjectCommand,
+    GetProjectCompositionSlotCommand, GetSessionCheckpointCommand, GetSessionCommand,
+    GetSessionItemCommand, GetSessionRuntimeBindingCommand, GetSessionUserStateCommand,
+    GetTaskCommand, GetTurnByIdempotencyCommand, GetTurnCommand, GetWorkspaceCommand,
+    ImportProjectCommand, ListAgentAuditEventsCommand, ListItemFeedbackCommand,
+    ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand, ListProjectsCommand,
+    ListSessionCheckpointsCommand, ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
+    ListTurnsCommand, ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
+    UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
+    UpdateSessionCommand, UpdateSessionUserStateCommand, UpdateWorkspaceCommand,
+    WorkspaceMutationCommand,
 };
 use crate::domain::{
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
@@ -52,7 +54,7 @@ use crate::ports::{
     ItemFeedbackListQuery, McpMarketplaceListQuery, PaginationParams,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionCheckpointListQuery, SessionRuntimeBindingListQuery,
-    TurnListQuery,
+    TurnListQuery, WorkspaceListQuery,
 };
 use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
@@ -67,6 +69,7 @@ use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
     parse_organization_id, parse_tenant_id, validate_requested_at, validate_standard_id,
 };
+use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use axum::body::Body;
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
 use axum::extract::{Extension, Path, Query, State};
@@ -202,6 +205,45 @@ impl AgentRepository for DynAgentRepository {
         self.0.count_agents(query)
     }
 
+    fn insert_workspace(&self, record: crate::workspace::AgentWorkspaceRecord) -> KernelResult<()> {
+        self.0.insert_workspace(record)
+    }
+
+    fn update_workspace(&self, record: crate::workspace::AgentWorkspaceRecord) -> KernelResult<()> {
+        self.0.update_workspace(record)
+    }
+
+    fn get_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+    ) -> KernelResult<Option<crate::workspace::AgentWorkspaceRecord>> {
+        self.0
+            .get_workspace(tenant_id, organization_id, workspace_id)
+    }
+
+    fn get_default_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+    ) -> KernelResult<Option<crate::workspace::AgentWorkspaceRecord>> {
+        self.0
+            .get_default_workspace(tenant_id, organization_id, owner_user_id)
+    }
+
+    fn list_workspaces(
+        &self,
+        query: &crate::ports::WorkspaceListQuery,
+    ) -> KernelResult<Vec<crate::workspace::AgentWorkspaceRecord>> {
+        self.0.list_workspaces(query)
+    }
+
+    fn count_workspaces(&self, query: &crate::ports::WorkspaceListQuery) -> KernelResult<u64> {
+        self.0.count_workspaces(query)
+    }
+
     fn insert_project(&self, record: crate::project::AgentProjectRecord) -> KernelResult<()> {
         self.0.insert_project(record)
     }
@@ -217,6 +259,23 @@ impl AgentRepository for DynAgentRepository {
         project_id: &str,
     ) -> KernelResult<Option<crate::project::AgentProjectRecord>> {
         self.0.get_project(tenant_id, organization_id, project_id)
+    }
+
+    fn get_project_by_import_source(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        source_kind: &str,
+        source_ref: &str,
+    ) -> KernelResult<Option<crate::project::AgentProjectRecord>> {
+        self.0.get_project_by_import_source(
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            source_kind,
+            source_ref,
+        )
     }
 
     fn list_projects(
@@ -1334,6 +1393,25 @@ fn facade_policy_subject(
 pub fn build_app_routes() -> Router<AgentHttpState> {
     Router::new()
         .route(
+            "/app/v3/api/ai/workspaces",
+            get(app_list_workspaces).post(app_create_workspace),
+        )
+        .route(
+            "/app/v3/api/ai/workspaces/default",
+            post(app_ensure_default_workspace),
+        )
+        .route(
+            "/app/v3/api/ai/workspaces/{workspaceId}",
+            get(app_get_workspace)
+                .patch(app_update_workspace)
+                .delete(app_delete_workspace),
+        )
+        .route(
+            "/app/v3/api/ai/workspaces/{workspaceId}/archive",
+            post(app_archive_workspace),
+        )
+        .route("/app/v3/api/ai/projects/import", post(app_import_project))
+        .route(
             "/app/v3/api/ai/projects",
             get(app_list_projects).post(app_create_project),
         )
@@ -1882,6 +1960,8 @@ struct AppListAgentsQueryParams {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct AppListProjectsQueryParams {
+    #[serde(rename = "workspaceId", alias = "workspace_id")]
+    workspace_id: Option<String>,
     q: Option<String>,
     status: Option<String>,
     include_deleted: Option<bool>,
@@ -1889,16 +1969,73 @@ struct AppListProjectsQueryParams {
     page_size: Option<usize>,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct AppListWorkspacesQueryParams {
+    status: Option<String>,
+    include_deleted: Option<bool>,
+    page: Option<usize>,
+    page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppEnsureDefaultWorkspaceBody {
+    name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppCreateWorkspaceBody {
+    name: String,
+    description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppUpdateWorkspaceBody {
+    expected_version: Option<String>,
+    name: Option<String>,
+    description: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppWorkspaceMutationBody {
+    expected_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppDeleteWorkspaceQuery {
+    expected_version: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AppCreateProjectBody {
     project_id: Option<String>,
+    workspace_id: Option<String>,
     name: String,
     description: Option<String>,
     visibility: Option<String>,
     drive_access_mode: Option<String>,
     default_agent_id: Option<String>,
     default_model_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppImportProjectBody {
+    workspace_id: String,
+    project_id: Option<String>,
+    name: String,
+    description: Option<String>,
+    source_kind: String,
+    source_ref: String,
+    drive_space_id: String,
+    drive_root_entry_id: String,
+    drive_logical_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2004,6 +2141,7 @@ struct AppCancelTurnBody {
 struct AgentProjectRecordResponse {
     id: String,
     project_id: String,
+    workspace_id: String,
     tenant_id: String,
     organization_id: String,
     owner_user_id: String,
@@ -2014,6 +2152,29 @@ struct AgentProjectRecordResponse {
     drive_access_mode: String,
     default_agent_id: Option<String>,
     default_model_id: Option<String>,
+    import_source_kind: Option<String>,
+    import_source_ref: Option<String>,
+    drive_space_id: Option<String>,
+    drive_root_entry_id: Option<String>,
+    drive_logical_path: Option<String>,
+    version: String,
+    created_at: String,
+    updated_at: String,
+    archived_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentWorkspaceRecordResponse {
+    id: String,
+    workspace_id: String,
+    tenant_id: String,
+    organization_id: String,
+    owner_user_id: String,
+    name: String,
+    description: Option<String>,
+    is_default: bool,
+    status: String,
     version: String,
     created_at: String,
     updated_at: String,
@@ -3754,6 +3915,269 @@ fn map_composition_slot_record(
 // Project handlers - App API
 // ===========================================================================
 
+async fn app_ensure_default_workspace(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    body: Result<Json<AppEnsureDefaultWorkspaceBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentWorkspaceRecordResponse>> = async {
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = EnsureDefaultWorkspaceCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            owner_user_id,
+            default_name: body.name,
+            requested_by: scope.subject,
+            requested_at: server_requested_at(),
+        };
+        let record = with_service(&state, move |service| {
+            service.ensure_default_workspace(command)
+        })
+        .await?;
+        Ok(ResourceData {
+            item: workspace_response(&record),
+        })
+    }
+    .await;
+    finish_created_api_json(&web_ctx, result)
+}
+
+async fn app_create_workspace(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    body: Result<Json<AppCreateWorkspaceBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentWorkspaceRecordResponse>> = async {
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = CreateWorkspaceCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            owner_user_id,
+            name: body.name,
+            description: body.description,
+            requested_by: scope.subject,
+            requested_at: server_requested_at(),
+        };
+        let record = with_service(&state, move |service| service.create_workspace(command)).await?;
+        Ok(ResourceData {
+            item: workspace_response(&record),
+        })
+    }
+    .await;
+    finish_created_api_json(&web_ctx, result)
+}
+
+async fn app_get_workspace(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    workspace_id: Result<Path<String>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentWorkspaceRecordResponse>> = async {
+        let Path(workspace_id) = workspace_id.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = GetWorkspaceCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            workspace_id,
+            owner_user_id,
+            requested_by: scope.subject,
+        };
+        let record = with_service(&state, move |service| service.get_workspace(command)).await?;
+        Ok(ResourceData {
+            item: workspace_response(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_update_workspace(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    workspace_id: Result<Path<String>, PathRejection>,
+    body: Result<Json<AppUpdateWorkspaceBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentWorkspaceRecordResponse>> = async {
+        let Path(workspace_id) = workspace_id.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = UpdateWorkspaceCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            workspace_id,
+            owner_user_id,
+            expected_version: body
+                .expected_version
+                .as_deref()
+                .map(parse_expected_version)
+                .transpose()
+                .map_err(ApiProblem::from_kernel_error)?,
+            name: body.name,
+            description: body.description,
+            requested_by: scope.subject,
+            requested_at: server_requested_at(),
+        };
+        let record = with_service(&state, move |service| service.update_workspace(command)).await?;
+        Ok(ResourceData {
+            item: workspace_response(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_archive_workspace(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    workspace_id: Result<Path<String>, PathRejection>,
+    body: Result<Json<AppWorkspaceMutationBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentWorkspaceRecordResponse>> = async {
+        let Path(workspace_id) = workspace_id.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = WorkspaceMutationCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            workspace_id,
+            owner_user_id,
+            expected_version: body
+                .expected_version
+                .as_deref()
+                .map(parse_expected_version)
+                .transpose()
+                .map_err(ApiProblem::from_kernel_error)?,
+            requested_by: scope.subject,
+            requested_at: server_requested_at(),
+        };
+        let record =
+            with_service(&state, move |service| service.archive_workspace(command)).await?;
+        Ok(ResourceData {
+            item: workspace_response(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_delete_workspace(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    workspace_id: Result<Path<String>, PathRejection>,
+    query: Result<Query<AppDeleteWorkspaceQuery>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<()> = async {
+        let Path(workspace_id) = workspace_id.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = WorkspaceMutationCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            workspace_id,
+            owner_user_id,
+            expected_version: query
+                .expected_version
+                .as_deref()
+                .map(parse_expected_version)
+                .transpose()
+                .map_err(ApiProblem::from_kernel_error)?,
+            requested_by: scope.subject,
+            requested_at: server_requested_at(),
+        };
+        with_service(&state, move |service| service.delete_workspace(command)).await?;
+        Ok(())
+    }
+    .await;
+    match result {
+        Ok(()) => {
+            no_content(&web_ctx).unwrap_or_else(|problem| problem.into_response_for(&web_ctx))
+        }
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn app_list_workspaces(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    query: Result<Query<AppListWorkspacesQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentWorkspaceRecordResponse>> = async {
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut workspace_query = WorkspaceListQuery::for_owner(
+            scope.tenant_id_u64()?,
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?,
+            owner_user_id,
+        )
+        .with_pagination(
+            PaginationParams::default()
+                .with_page_size(page_size)
+                .with_page(page),
+        );
+        workspace_query.status = query
+            .status
+            .as_deref()
+            .map(parse_workspace_status)
+            .transpose()?;
+        workspace_query.include_deleted = query.include_deleted.unwrap_or(false);
+        let records = with_service(&state, move |service| {
+            service.list_workspaces(ListWorkspacesCommand {
+                query: workspace_query,
+                requested_by: scope.subject,
+            })
+        })
+        .await?;
+        Ok(PageData {
+            items: records.items.iter().map(workspace_response).collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
 async fn app_list_projects(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
@@ -3777,6 +4201,9 @@ async fn app_list_projects(
                     .with_page_size(page_size)
                     .with_page(page),
             );
+        if let Some(workspace_id) = query.workspace_id {
+            project_query = project_query.for_workspace(workspace_id);
+        }
         if let Some(search) = query.q {
             project_query = project_query.with_search(search);
         }
@@ -3822,6 +4249,7 @@ async fn app_create_project(
             organization_id: parse_organization_id(&scope.organization_id)
                 .map_err(ApiProblem::from_kernel_error)?,
             project_id: body.project_id.unwrap_or_default(),
+            workspace_id: body.workspace_id,
             owner_user_id,
             name: body.name,
             description: body.description,
@@ -3841,6 +4269,44 @@ async fn app_create_project(
     }
     .await;
     finish_created_api_json(&web_ctx, result)
+}
+
+async fn app_import_project(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    body: Result<Json<AppImportProjectBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentProjectRecordResponse>> = async {
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let command = ImportProjectCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            workspace_id: body.workspace_id,
+            project_id: body.project_id.unwrap_or_default(),
+            owner_user_id,
+            name: body.name,
+            description: body.description,
+            source_kind: body.source_kind,
+            source_ref: body.source_ref,
+            drive_space_id: body.drive_space_id,
+            drive_root_entry_id: body.drive_root_entry_id,
+            drive_logical_path: body.drive_logical_path.unwrap_or_default(),
+            requested_by: scope.subject,
+            requested_at: server_requested_at(),
+        };
+        let record = with_service(&state, move |service| service.import_project(command)).await?;
+        Ok(ResourceData {
+            item: project_response(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
 }
 
 async fn app_get_project(
@@ -4011,6 +4477,7 @@ fn project_response(record: &AgentProjectRecord) -> AgentProjectRecordResponse {
     AgentProjectRecordResponse {
         id: record.id.to_string(),
         project_id: record.project_id.clone(),
+        workspace_id: record.workspace_id.clone(),
         tenant_id: record.tenant_id.to_string(),
         organization_id: record.organization_id.to_string(),
         owner_user_id: record.owner_user_id.to_string(),
@@ -4021,6 +4488,29 @@ fn project_response(record: &AgentProjectRecord) -> AgentProjectRecordResponse {
         drive_access_mode: record.drive_access_mode.as_str().to_string(),
         default_agent_id: record.default_agent_id.clone(),
         default_model_id: record.default_model_id.clone(),
+        import_source_kind: record.import_source_kind.clone(),
+        import_source_ref: record.import_source_ref.clone(),
+        drive_space_id: record.drive_space_id.clone(),
+        drive_root_entry_id: record.drive_root_entry_id.clone(),
+        drive_logical_path: record.drive_logical_path.clone(),
+        version: record.version.to_string(),
+        created_at: record.created_at.clone(),
+        updated_at: record.updated_at.clone(),
+        archived_at: record.archived_at.clone(),
+    }
+}
+
+fn workspace_response(record: &AgentWorkspaceRecord) -> AgentWorkspaceRecordResponse {
+    AgentWorkspaceRecordResponse {
+        id: record.id.to_string(),
+        workspace_id: record.workspace_id.clone(),
+        tenant_id: record.tenant_id.to_string(),
+        organization_id: record.organization_id.to_string(),
+        owner_user_id: record.owner_user_id.to_string(),
+        name: record.name.clone(),
+        description: record.description.clone(),
+        is_default: record.is_default,
+        status: record.status.as_str().to_string(),
         version: record.version.to_string(),
         created_at: record.created_at.clone(),
         updated_at: record.updated_at.clone(),
@@ -4313,6 +4803,15 @@ fn parse_project_status(value: &str) -> ApiResult<AgentProjectStatus> {
         "archived" => Ok(AgentProjectStatus::Archived),
         "deleted" => Ok(AgentProjectStatus::Deleted),
         _ => Err(ApiProblem::validation("invalid project status")),
+    }
+}
+
+fn parse_workspace_status(value: &str) -> ApiResult<AgentWorkspaceStatus> {
+    match value {
+        "active" => Ok(AgentWorkspaceStatus::Active),
+        "archived" => Ok(AgentWorkspaceStatus::Archived),
+        "deleted" => Ok(AgentWorkspaceStatus::Deleted),
+        _ => Err(ApiProblem::validation("invalid workspace status")),
     }
 }
 
@@ -7975,9 +8474,16 @@ mod tests {
     }
 
     fn build_test_router(state: AgentHttpState) -> axum::Router {
+        build_test_router_with_context(state, test_agent_context())
+    }
+
+    fn build_test_router_with_context(
+        state: AgentHttpState,
+        context: AgentRequestContext,
+    ) -> axum::Router {
         build_combined_routes()
             .with_state(state)
-            .layer(Extension(test_agent_context()))
+            .layer(Extension(context))
             .layer(Extension(test_web_context()))
     }
 
@@ -8146,6 +8652,7 @@ mod tests {
                 tenant_id: 100_001,
                 organization_id: 0,
                 project_id: "project.facade".to_string(),
+                workspace_id: None,
                 owner_user_id: 100,
                 name: "Facade project".to_string(),
                 description: Some("Canonical session ownership".to_string()),
@@ -8637,6 +9144,95 @@ mod tests {
         // 信封形状：{ code: 0, data: { item: { status, ... } }, traceId }
         assert_eq!(body_json["code"], 0);
         assert_eq!(body_json["data"]["item"]["status"], "active");
+    }
+
+    #[tokio::test]
+    async fn app_project_and_code_engine_lists_allow_read_only_subjects() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let read_context = AgentRequestContext::new("100001", "100")
+            .with_organization_id("0")
+            .with_subject_id("100")
+            .with_roles(["ai.agents.read"]);
+        let app = build_test_router_with_context(state, read_context);
+
+        for uri in [
+            "/app/v3/api/ai/code_engines",
+            "/app/v3/api/ai/projects?page=1&page_size=20",
+        ] {
+            let request = Request::builder()
+                .method("GET")
+                .uri(uri)
+                .body(Body::empty())
+                .expect("request should be built");
+            let response = app
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("list request should succeed");
+            assert_eq!(response.status(), StatusCode::OK, "GET {uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn app_user_can_create_project_with_use_permission() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app_user_context = AgentRequestContext::new("100001", "100")
+            .with_organization_id("0")
+            .with_subject_id("100")
+            .with_roles(["ai.agents.read", "ai.agents.use"]);
+        let app = build_test_router_with_context(state, app_user_context);
+        let request = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "projectId": "project.app-user",
+                    "name": "BirdCoder project"
+                })
+                .to_string(),
+            ))
+            .expect("request should be built");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("project create request should succeed");
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn read_only_subject_cannot_create_project() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let read_context = AgentRequestContext::new("100001", "100")
+            .with_organization_id("0")
+            .with_subject_id("100")
+            .with_roles(["ai.agents.read"]);
+        let app = build_test_router_with_context(state, read_context);
+        let request = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({ "name": "Denied project" }).to_string()))
+            .expect("request should be built");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("project create request should complete");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]

@@ -15,9 +15,11 @@ use crate::ports::{
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery, SessionListQuery,
     SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery, TurnRequestWriteOutcome,
+    WorkspaceListQuery,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::parse_rfc3339_datetime;
+use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
     ProviderHealth, ProviderManifest,
@@ -312,6 +314,16 @@ type AgentPrimaryKey = (u64, String);
 type AgentIndexKey = (u64, Reverse<String>, Reverse<u64>, String);
 type ProjectPrimaryKey = (u64, u64, String);
 type ProjectIndexKey = (u64, u64, Reverse<String>, Reverse<u64>, String);
+type WorkspacePrimaryKey = (u64, u64, String);
+type WorkspaceIndexKey = (
+    u64,
+    u64,
+    u64,
+    Reverse<bool>,
+    Reverse<String>,
+    Reverse<u64>,
+    String,
+);
 type ProjectCompositionSlotPrimaryKey = (u64, u64, String, String);
 type ProviderBindingPrimaryKey = (u64, String, String);
 type ProviderBindingIndexKey = (u64, String, Reverse<bool>, Reverse<String>, String);
@@ -388,6 +400,8 @@ pub struct InMemoryAgentRepository {
     agent_list_index: RwLock<BTreeMap<AgentIndexKey, AgentPrimaryKey>>,
     projects: RwLock<HashMap<ProjectPrimaryKey, AgentProjectRecord>>,
     project_index: RwLock<BTreeMap<ProjectIndexKey, ProjectPrimaryKey>>,
+    workspaces: RwLock<HashMap<WorkspacePrimaryKey, AgentWorkspaceRecord>>,
+    workspace_index: RwLock<BTreeMap<WorkspaceIndexKey, WorkspacePrimaryKey>>,
     project_composition_slots:
         RwLock<HashMap<ProjectCompositionSlotPrimaryKey, AgentProjectCompositionSlotRecord>>,
     provider_bindings: RwLock<HashMap<ProviderBindingPrimaryKey, AgentProviderBindingRecord>>,
@@ -431,6 +445,8 @@ impl InMemoryAgentRepository {
             agent_list_index: RwLock::new(BTreeMap::new()),
             projects: RwLock::new(HashMap::new()),
             project_index: RwLock::new(BTreeMap::new()),
+            workspaces: RwLock::new(HashMap::new()),
+            workspace_index: RwLock::new(BTreeMap::new()),
             project_composition_slots: RwLock::new(HashMap::new()),
             provider_bindings: RwLock::new(HashMap::new()),
             provider_binding_index: RwLock::new(BTreeMap::new()),
@@ -487,6 +503,26 @@ fn project_index_key(record: &AgentProjectRecord) -> ProjectIndexKey {
         Reverse(record.updated_at.clone()),
         Reverse(record.id),
         record.project_id.clone(),
+    )
+}
+
+fn workspace_primary_key(record: &AgentWorkspaceRecord) -> WorkspacePrimaryKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.workspace_id.clone(),
+    )
+}
+
+fn workspace_index_key(record: &AgentWorkspaceRecord) -> WorkspaceIndexKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.owner_user_id,
+        Reverse(record.is_default),
+        Reverse(record.updated_at.clone()),
+        Reverse(record.id),
+        record.workspace_id.clone(),
     )
 }
 
@@ -748,11 +784,148 @@ impl AgentRepository for InMemoryAgentRepository {
         ))
     }
 
+    fn insert_workspace(&self, record: AgentWorkspaceRecord) -> KernelResult<()> {
+        let primary_key = workspace_primary_key(&record);
+        let mut workspaces = self.workspaces.recovering_write();
+        if workspaces.contains_key(&primary_key) {
+            return Err(KernelError::conflict("workspace already exists"));
+        }
+        if record.is_default
+            && workspaces.values().any(|existing| {
+                existing.tenant_id == record.tenant_id
+                    && existing.organization_id == record.organization_id
+                    && existing.owner_user_id == record.owner_user_id
+                    && existing.is_default
+                    && existing.status != AgentWorkspaceStatus::Deleted
+            })
+        {
+            return Err(KernelError::conflict("default workspace already exists"));
+        }
+        let index_key = workspace_index_key(&record);
+        workspaces.insert(primary_key.clone(), record);
+        self.workspace_index
+            .recovering_write()
+            .insert(index_key, primary_key);
+        Ok(())
+    }
+
+    fn update_workspace(&self, record: AgentWorkspaceRecord) -> KernelResult<()> {
+        let primary_key = workspace_primary_key(&record);
+        let mut workspaces = self.workspaces.recovering_write();
+        let existing = workspaces
+            .get(&primary_key)
+            .ok_or_else(|| KernelError::validation("workspace not found"))?;
+        if existing.status == AgentWorkspaceStatus::Deleted {
+            return Err(KernelError::validation("workspace not found"));
+        }
+        if record.version != existing.version.saturating_add(1) {
+            return Err(KernelError::conflict("workspace version mismatch"));
+        }
+        if record.owner_user_id != existing.owner_user_id
+            || record.is_default != existing.is_default
+            || record.created_by != existing.created_by
+            || record.created_at != existing.created_at
+        {
+            return Err(KernelError::validation(
+                "workspace immutable identity cannot be changed",
+            ));
+        }
+        let previous_index_key = workspace_index_key(existing);
+        let next_index_key = workspace_index_key(&record);
+        workspaces.insert(primary_key.clone(), record);
+        let mut index = self.workspace_index.recovering_write();
+        index.remove(&previous_index_key);
+        index.insert(next_index_key, primary_key);
+        Ok(())
+    }
+
+    fn get_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+    ) -> KernelResult<Option<AgentWorkspaceRecord>> {
+        Ok(self
+            .workspaces
+            .recovering_read()
+            .get(&(tenant_id, organization_id, workspace_id.to_string()))
+            .filter(|record| record.status != AgentWorkspaceStatus::Deleted)
+            .cloned())
+    }
+
+    fn get_default_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+    ) -> KernelResult<Option<AgentWorkspaceRecord>> {
+        Ok(self
+            .workspaces
+            .recovering_read()
+            .values()
+            .find(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && record.owner_user_id == owner_user_id
+                    && record.is_default
+                    && record.status == AgentWorkspaceStatus::Active
+            })
+            .cloned())
+    }
+
+    fn list_workspaces(
+        &self,
+        query: &WorkspaceListQuery,
+    ) -> KernelResult<Vec<AgentWorkspaceRecord>> {
+        let workspaces = self.workspaces.recovering_read();
+        let index = self.workspace_index.recovering_read();
+        let records = index
+            .iter()
+            .filter(
+                |((tenant_id, organization_id, owner_user_id, _, _, _, _), _)| {
+                    *tenant_id == query.tenant_id
+                        && *organization_id == query.organization_id
+                        && *owner_user_id == query.owner_user_id
+                },
+            )
+            .filter_map(|(_, key)| workspaces.get(key))
+            .filter(|record| workspace_matches_list_query(record, query))
+            .cloned();
+        Ok(paginate_iterator(records, &query.pagination))
+    }
+
+    fn count_workspaces(&self, query: &WorkspaceListQuery) -> KernelResult<u64> {
+        Ok(count_iterator(
+            self.workspaces
+                .recovering_read()
+                .values()
+                .filter(|record| workspace_matches_list_query(record, query)),
+        ))
+    }
+
     fn insert_project(&self, record: AgentProjectRecord) -> KernelResult<()> {
         let primary_key = project_primary_key(&record);
         let mut projects = self.projects.recovering_write();
         if projects.contains_key(&primary_key) {
             return Err(KernelError::conflict("project already exists"));
+        }
+        if let (Some(source_kind), Some(source_ref)) = (
+            record.import_source_kind.as_deref(),
+            record.import_source_ref.as_deref(),
+        ) {
+            let import_source_exists = projects.values().any(|existing| {
+                existing.tenant_id == record.tenant_id
+                    && existing.organization_id == record.organization_id
+                    && existing.owner_user_id == record.owner_user_id
+                    && existing.status != AgentProjectStatus::Deleted
+                    && existing.import_source_kind.as_deref() == Some(source_kind)
+                    && existing.import_source_ref.as_deref() == Some(source_ref)
+            });
+            if import_source_exists {
+                return Err(KernelError::conflict(
+                    "project import source already exists",
+                ));
+            }
         }
         let index_key = project_index_key(&record);
         projects.insert(primary_key.clone(), record);
@@ -775,6 +948,25 @@ impl AgentRepository for InMemoryAgentRepository {
                 record.version
             )));
         }
+        if let (Some(source_kind), Some(source_ref)) = (
+            record.import_source_kind.as_deref(),
+            record.import_source_ref.as_deref(),
+        ) {
+            let import_source_exists = projects.iter().any(|(key, candidate)| {
+                key != &primary_key
+                    && candidate.tenant_id == record.tenant_id
+                    && candidate.organization_id == record.organization_id
+                    && candidate.owner_user_id == record.owner_user_id
+                    && candidate.status != AgentProjectStatus::Deleted
+                    && candidate.import_source_kind.as_deref() == Some(source_kind)
+                    && candidate.import_source_ref.as_deref() == Some(source_ref)
+            });
+            if import_source_exists {
+                return Err(KernelError::conflict(
+                    "project import source already exists",
+                ));
+            }
+        }
         let previous_index_key = project_index_key(existing);
         let next_index_key = project_index_key(&record);
         projects.insert(primary_key.clone(), record);
@@ -795,6 +987,29 @@ impl AgentRepository for InMemoryAgentRepository {
             .recovering_read()
             .get(&(tenant_id, organization_id, project_id.to_string()))
             .filter(|record| record.status != AgentProjectStatus::Deleted)
+            .cloned())
+    }
+
+    fn get_project_by_import_source(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        source_kind: &str,
+        source_ref: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>> {
+        Ok(self
+            .projects
+            .recovering_read()
+            .values()
+            .find(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && record.owner_user_id == owner_user_id
+                    && record.status != AgentProjectStatus::Deleted
+                    && record.import_source_kind.as_deref() == Some(source_kind)
+                    && record.import_source_ref.as_deref() == Some(source_ref)
+            })
             .cloned())
     }
 
@@ -2638,36 +2853,61 @@ impl PolicyProvider for DenyAllPolicyProvider {
 /// the `ai` module manifest in `sdkwork-iam/iam/modules/ai/iam.module.manifest.json`.
 pub const IAM_PERMISSION_AGENTS_MANAGE: &str = "ai.agents.manage";
 pub const IAM_PERMISSION_AGENTS_READ: &str = "ai.agents.read";
+pub const IAM_PERMISSION_AGENTS_USE: &str = "ai.agents.use";
 
 /// Role codes that grant wildcard AI permissions per the IAM module manifest
 /// `roleGrantExtensions` (org_admin and org_operations both map to `ai.*`).
 const IAM_ADMIN_ROLE_CODES: &[&str] = &["org_admin", "org_operations"];
 
-/// Policy actions (from `AgentsService::authorize`) that are read-only and
-/// therefore require only `ai.agents.read`. Any action not in this set is
-/// treated as a manage operation requiring `ai.agents.manage`.
-const READ_ONLY_POLICY_ACTIONS: &[&str] = &[
-    "retrieve",
-    "list",
-    "audit.read",
-    "provider_binding.list",
-    "composition_slot.list",
-    "composition_slot.retrieve",
-    "task.list",
-    "task.retrieve",
-    "interaction.list",
-    "interaction.retrieve",
-];
+/// Canonical read-only operation suffixes used by `AgentsService::authorize`.
+/// Resource-qualified actions such as `project.list` and `code_engine.list`
+/// resolve through the same operation suffix as unqualified actions.
+const READ_ONLY_POLICY_OPERATIONS: &[&str] = &["list", "read", "retrieve"];
 
-/// Policy actions that any **authenticated** subject may perform without a
-/// specific IAM permission scope. These actions are safe for all logged-in
-/// users because their effects are gated by a subsequent review step:
-///
-/// - `create`: agents are always created in `Draft` status. Activating an
-///   agent (Draft → Active) requires the `change_status` action, which still
-///   demands `ai.agents.manage`. This implements the "everyone can create,
-///   admins approve" workflow.
-const OPEN_ACTIONS: &[&str] = &["create"];
+/// Owner-scoped and runtime mutations available to ordinary app users. This
+/// list is intentionally exact so future actions remain manage-only until
+/// their ownership checks and permission classification are reviewed.
+const SELF_SERVICE_POLICY_ACTIONS: &[&str] = &[
+    "checkpoint.create",
+    "checkpoint.invalidate",
+    "checkpoint.restore",
+    "create",
+    "interaction.answer",
+    "interaction.approve",
+    "interaction.claim",
+    "interaction.create",
+    "item_feedback.update",
+    "project.archive",
+    "project.composition_slot.create",
+    "project.composition_slot.delete",
+    "project.composition_slot.update",
+    "project.create",
+    "project.delete",
+    "project.update",
+    "runtime.preview_response",
+    "runtime.prompt_optimization",
+    "session.archive",
+    "session.close",
+    "session.create",
+    "session.delete",
+    "session.update",
+    "session.user_state.update",
+    "session_item.create",
+    "session_runtime_binding.activate",
+    "session_runtime_binding.create",
+    "session_runtime_binding.deactivate",
+    "session_runtime_binding.update",
+    "task.cancel",
+    "task.create",
+    "task.execute",
+    "turn.cancel",
+    "turn.create",
+    "workspace.archive",
+    "workspace.create",
+    "workspace.delete",
+    "workspace.ensureDefault",
+    "workspace.update",
+];
 
 /// IAM-gated policy provider that maps agent business actions to IAM permission
 /// scopes and evaluates the request subject's roles/scopes against the
@@ -2700,27 +2940,28 @@ impl IamGatedPolicyProvider {
         }
     }
 
+    fn is_read_only_action(action: &str) -> bool {
+        let operation = action.rsplit('.').next().unwrap_or(action);
+        READ_ONLY_POLICY_OPERATIONS.contains(&operation)
+    }
+
+    fn is_self_service_action(action: &str) -> bool {
+        SELF_SERVICE_POLICY_ACTIONS.contains(&action)
+    }
+
     /// Determine the required IAM permission for the given policy action.
-    ///
-    /// Returns `None` for open actions (e.g. `create`) that any authenticated
-    /// user may perform. Returns `Some(permission)` for actions that require
-    /// a specific IAM scope.
-    fn required_permission_for_action(action: Option<&str>) -> Option<&'static str> {
-        let action = action?;
-        if OPEN_ACTIONS.contains(&action) {
-            return None;
-        }
-        if READ_ONLY_POLICY_ACTIONS.contains(&action) {
-            Some(IAM_PERMISSION_AGENTS_READ)
-        } else {
-            Some(IAM_PERMISSION_AGENTS_MANAGE)
+    fn required_permission_for_action(action: Option<&str>) -> &'static str {
+        match action {
+            Some(action) if Self::is_read_only_action(action) => IAM_PERMISSION_AGENTS_READ,
+            Some(action) if Self::is_self_service_action(action) => IAM_PERMISSION_AGENTS_USE,
+            _ => IAM_PERMISSION_AGENTS_MANAGE,
         }
     }
 
     /// Return `true` if the subject's role/scope entry satisfies the required
     /// permission. Supports wildcards `ai.*` and `*`, and known admin role
     /// codes that grant `ai.*`. Also honors the implication that
-    /// `ai.agents.manage` grants `ai.agents.read` (manage implies read).
+    /// `ai.agents.manage` grants both read and use capabilities.
     fn entry_grants_permission(entry: &str, required_permission: &str) -> bool {
         let entry = entry.trim();
         if entry.is_empty() {
@@ -2732,9 +2973,12 @@ impl IamGatedPolicyProvider {
         if entry == required_permission {
             return true;
         }
-        // Manage permission implies read permission within the same resource.
+        // Manage permission implies all narrower capabilities for the same resource.
         if entry == IAM_PERMISSION_AGENTS_MANAGE
-            && required_permission == IAM_PERMISSION_AGENTS_READ
+            && matches!(
+                required_permission,
+                IAM_PERMISSION_AGENTS_READ | IAM_PERMISSION_AGENTS_USE
+            )
         {
             return true;
         }
@@ -2789,30 +3033,6 @@ impl PolicyProvider for IamGatedPolicyProvider {
         );
         let action = request.action.as_deref();
         let required_permission = Self::required_permission_for_action(action);
-
-        // Open actions: allow any authenticated subject (fail-closed if no
-        // subject is present).  This lets every logged-in user create agents
-        // while the activation step (`change_status`) still demands
-        // `ai.agents.manage`, preserving the review workflow.
-        if required_permission.is_none() {
-            if request.subject.is_some() {
-                return Ok(PolicyDecision::allow(
-                    decision_id,
-                    request.policy_request_id,
-                    self.provider_id.clone(),
-                )
-                .with_safe_reason("iam.permission.open:authenticated"));
-            }
-            return Ok(PolicyDecision::deny(
-                decision_id,
-                request.policy_request_id,
-                self.provider_id.clone(),
-                "iam.permission.missing",
-            )
-            .with_safe_reason("iam.permission.missing:authenticated"));
-        }
-
-        let required_permission = required_permission.unwrap();
         if Self::subject_has_permission(request.subject.as_ref(), required_permission) {
             Ok(PolicyDecision::allow(
                 decision_id,
@@ -3001,6 +3221,11 @@ fn project_matches_list_query(record: &AgentProjectRecord, query: &ProjectListQu
             return false;
         }
     }
+    if let Some(workspace_id) = query.workspace_id.as_deref() {
+        if record.workspace_id != workspace_id {
+            return false;
+        }
+    }
     if let Some(status) = query.status {
         if record.status != status {
             return false;
@@ -3019,6 +3244,21 @@ fn project_matches_list_query(record: &AgentProjectRecord, query: &ProjectListQu
         }
     }
     true
+}
+
+fn workspace_matches_list_query(record: &AgentWorkspaceRecord, query: &WorkspaceListQuery) -> bool {
+    if record.tenant_id != query.tenant_id
+        || record.organization_id != query.organization_id
+        || record.owner_user_id != query.owner_user_id
+    {
+        return false;
+    }
+    if let Some(status) = query.status {
+        if record.status != status {
+            return false;
+        }
+    }
+    query.include_deleted || record.status != AgentWorkspaceStatus::Deleted
 }
 
 fn message_matches_list_query(
@@ -3544,11 +3784,108 @@ mod tests {
     }
 
     #[test]
+    fn iam_gated_provider_allows_resource_qualified_read_actions_with_read_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        for action in [
+            "code_engine.list",
+            "project.list",
+            "project.retrieve",
+            "session.user_state.list",
+            "audit.read",
+        ] {
+            let request = policy_request_with_action_and_roles(action, &["ai.agents.read"]);
+            let decision = provider.evaluate(request).expect("evaluate should succeed");
+            assert_eq!(
+                decision.decision,
+                PolicyDecisionValue::Allow,
+                "{action} must require only ai.agents.read"
+            );
+        }
+    }
+
+    #[test]
     fn iam_gated_provider_allows_read_action_with_manage_permission() {
         let provider = IamGatedPolicyProvider::default();
         let request = policy_request_with_action_and_roles("retrieve", &["ai.agents.manage"]);
         let decision = provider.evaluate(request).expect("evaluate should succeed");
         assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_self_service_actions_with_use_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        for action in [
+            "create",
+            "project.create",
+            "project.update",
+            "project.archive",
+            "project.delete",
+            "project.composition_slot.create",
+            "project.composition_slot.update",
+            "project.composition_slot.delete",
+            "session.create",
+            "session.update",
+            "session.delete",
+            "session.close",
+            "session.archive",
+            "session.user_state.update",
+            "session_item.create",
+            "item_feedback.update",
+            "turn.create",
+            "turn.cancel",
+            "task.create",
+            "task.cancel",
+            "task.execute",
+            "interaction.create",
+            "interaction.claim",
+            "interaction.approve",
+            "interaction.answer",
+            "checkpoint.create",
+            "checkpoint.restore",
+            "checkpoint.invalidate",
+            "session_runtime_binding.create",
+            "session_runtime_binding.update",
+            "session_runtime_binding.activate",
+            "session_runtime_binding.deactivate",
+            "runtime.preview_response",
+            "runtime.prompt_optimization",
+            "workspace.ensureDefault",
+        ] {
+            let request = policy_request_with_action_and_roles(action, &["ai.agents.use"]);
+            let decision = provider.evaluate(request).expect("evaluate should succeed");
+            assert_eq!(
+                decision.decision,
+                PolicyDecisionValue::Allow,
+                "{action} must require ai.agents.use"
+            );
+        }
+    }
+
+    #[test]
+    fn iam_gated_provider_keeps_management_actions_behind_manage_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        for action in [
+            "update",
+            "delete",
+            "change_status",
+            "provider_binding.add",
+            "provider_binding.activate",
+            "composition_slot.create",
+            "session.unclassified_mutation",
+        ] {
+            let request = policy_request_with_action_and_roles(action, &["ai.agents.use"]);
+            let decision = provider.evaluate(request).expect("evaluate should succeed");
+            assert_eq!(
+                decision.decision,
+                PolicyDecisionValue::Deny,
+                "{action} must remain restricted to ai.agents.manage"
+            );
+            assert!(decision
+                .safe_reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("iam.permission.missing:ai.agents.manage"));
+        }
     }
 
     #[test]
@@ -3567,9 +3904,11 @@ mod tests {
     #[test]
     fn iam_gated_provider_allows_manage_action_with_manage_permission() {
         let provider = IamGatedPolicyProvider::default();
-        let request = policy_request_with_action_and_roles("update", &["ai.agents.manage"]);
-        let decision = provider.evaluate(request).expect("evaluate should succeed");
-        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+        for action in ["update", "project.create", "session.create"] {
+            let request = policy_request_with_action_and_roles(action, &["ai.agents.manage"]);
+            let decision = provider.evaluate(request).expect("evaluate should succeed");
+            assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+        }
     }
 
     #[test]
@@ -3654,55 +3993,70 @@ mod tests {
         assert_eq!(decision.decision, PolicyDecisionValue::Deny);
     }
 
-    // --- Open action tests (create is open to any authenticated user) ---
+    // --- Self-service action tests ---
 
     #[test]
-    fn iam_gated_provider_allows_create_for_any_authenticated_user() {
+    fn iam_gated_provider_denies_self_service_action_without_use_permission() {
         let provider = IamGatedPolicyProvider::default();
-        // Any authenticated user — even with no IAM scopes — can create agents.
-        // The review gate is the activation step (change_status → Active)
-        // which still requires ai.agents.manage.
-        let request = policy_request_with_action_and_roles("create", &[]);
-        let decision = provider.evaluate(request).expect("evaluate should succeed");
-        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
-        assert!(decision
-            .safe_reason
-            .as_deref()
-            .unwrap_or_default()
-            .contains("iam.permission.open:authenticated"));
-    }
-
-    #[test]
-    fn iam_gated_provider_allows_create_with_read_only_permission() {
-        let provider = IamGatedPolicyProvider::default();
-        let request = policy_request_with_action_and_roles("create", &["ai.agents.read"]);
-        let decision = provider.evaluate(request).expect("evaluate should succeed");
-        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
-    }
-
-    #[test]
-    fn iam_gated_provider_denies_create_without_subject() {
-        let provider = IamGatedPolicyProvider::default();
-        let request = PolicyRequest::new(
-            "req.test",
-            "agent.business.manage",
-            "agent.business.tenant.100001",
-        )
-        .with_action("create");
+        let request = policy_request_with_action_and_roles("project.create", &["ai.agents.read"]);
         let decision = provider.evaluate(request).expect("evaluate should succeed");
         assert_eq!(decision.decision, PolicyDecisionValue::Deny);
         assert!(decision
             .safe_reason
             .as_deref()
             .unwrap_or_default()
-            .contains("iam.permission.missing:authenticated"));
+            .contains("iam.permission.missing:ai.agents.use"));
+    }
+
+    #[test]
+    fn iam_gated_provider_allows_create_with_use_permission() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = policy_request_with_action_and_roles("create", &["ai.agents.use"]);
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Allow);
+    }
+
+    #[test]
+    fn iam_gated_provider_denies_self_service_action_without_subject() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = PolicyRequest::new(
+            "req.test",
+            "agent.business.manage",
+            "agent.business.tenant.100001",
+        )
+        .with_action("project.create");
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+        assert!(decision
+            .safe_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("iam.permission.missing:ai.agents.use"));
+    }
+
+    #[test]
+    fn iam_gated_provider_treats_missing_action_as_manage() {
+        let provider = IamGatedPolicyProvider::default();
+        let request = PolicyRequest::new(
+            "req.test",
+            "agent.business.manage",
+            "agent.business.tenant.100001",
+        )
+        .with_subject(PolicySubject::new("user.test", "100001").with_role("ai.agents.use"));
+        let decision = provider.evaluate(request).expect("evaluate should succeed");
+        assert_eq!(decision.decision, PolicyDecisionValue::Deny);
+        assert!(decision
+            .safe_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("iam.permission.missing:ai.agents.manage"));
     }
 
     #[test]
     fn iam_gated_provider_denies_change_status_without_manage_permission() {
         let provider = IamGatedPolicyProvider::default();
         // change_status (activation) must still require ai.agents.manage,
-        // preserving the review workflow even though create is open.
+        // preserving the review workflow while draft creation requires use permission.
         let request = policy_request_with_action_and_roles("change_status", &["ai.agents.read"]);
         let decision = provider.evaluate(request).expect("evaluate should succeed");
         assert_eq!(decision.decision, PolicyDecisionValue::Deny);

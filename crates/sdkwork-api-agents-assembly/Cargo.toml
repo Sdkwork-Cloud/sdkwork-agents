@@ -16,6 +16,7 @@ anyhow.workspace = true
 sdkwork-agent-server.workspace = true
 sdkwork-agents-kernel-bridge.workspace = true
 sdkwork-agents-database-host.workspace = true
+sdkwork-agents-runtime-facade.workspace = true
 sdkwork-intelligence-agents-service.workspace = true
 sdkwork-web-bootstrap.workspace = true
 sdkwork-web-contract.workspace = true

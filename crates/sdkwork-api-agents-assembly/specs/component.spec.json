@@ -90,13 +90,17 @@
     "publicExports": [
       ".",
       "sdkwork_api_agents_assembly::assemble_app_api_contribution",
+      "sdkwork_api_agents_assembly::assemble_app_runtime_contribution",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution",
+      "sdkwork_api_agents_assembly::AppRuntimeContribution",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::router",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::route_manifest",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::openapi",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::permission_catalog",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::domain_context_injectors",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::readiness_check",
+      "sdkwork_api_agents_assembly::AppRuntimeContribution::api",
+      "sdkwork_api_agents_assembly::AppRuntimeContribution::session_facade",
       "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness",
       "sdkwork_routes_agents_app_api::build_router",
       "sdkwork_routes_agents_http_shared::app_route_manifest",
@@ -105,6 +109,7 @@
     "runtimeEntrypoints": [
       "src/bootstrap.rs#assemble_api_router",
       "src/contribution.rs#assemble_app_api_contribution",
+      "src/contribution.rs#assemble_app_runtime_contribution",
       "src/lib.rs#bootstrap_application_database_from_env",
       "src/bootstrap/iam.rs#wire_iam_app_router"
     ],
@@ -114,8 +119,16 @@
         "export": "sdkwork_api_agents_assembly::assemble_app_api_contribution"
       },
       {
+        "name": "agentsAppRuntimeContribution",
+        "export": "sdkwork_api_agents_assembly::assemble_app_runtime_contribution"
+      },
+      {
         "name": "agentsReadinessCheck",
         "export": "sdkwork_api_agents_assembly::ApiAssemblyContribution::readiness_check"
+      },
+      {
+        "name": "agentsSessionFacade",
+        "export": "sdkwork_api_agents_assembly::AppRuntimeContribution::session_facade"
       },
       {
         "name": "agentsDomainContextInjectors",

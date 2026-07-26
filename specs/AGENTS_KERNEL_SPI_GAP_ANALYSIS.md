@@ -21,12 +21,12 @@ model.
 | --- | --- | --- |
 | Runtime invocation | `sdkwork-agents-runtime-facade` over kernel provider SPI | closed |
 | Durable execution | Agents Session aggregate | closed |
-| Public API | 47 Open, 68 App, 48 Backend operations | closed |
+| Public API | 47 Open, 76 App, 48 Backend operations | closed |
 | TypeScript SDKs | Open, App and Backend family package roots | closed |
 | Flutter SDK | `sdkwork_agents_app_sdk` package root | closed |
 | Typed streaming | `AgentTurnStreamEvent` delta and completion events | closed |
 | Human pause points | `AgentInteraction` claim and resolution | closed |
-| Persistence | 19-table PostgreSQL Agents module | closed |
+| Persistence | 20-table PostgreSQL Agents module | closed |
 | IM boundary | IM-owned opaque Session/Turn correlation | closed |
 
 ## 2. Provider Capability Policy

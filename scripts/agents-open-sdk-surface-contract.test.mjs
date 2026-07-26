@@ -62,7 +62,7 @@ assert.doesNotMatch(
 );
 
 const openApiContracts = [
-  ['app', 'agents-app-api.openapi.yaml', 68],
+  ['app', 'agents-app-api.openapi.yaml', 76],
   ['backend', 'agents-backend-api.openapi.yaml', 48],
   ['open', 'agents-open-api.openapi.yaml', 47],
 ];

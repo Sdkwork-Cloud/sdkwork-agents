@@ -2551,6 +2551,7 @@ dependencies = [
  "sdkwork-agent-server",
  "sdkwork-agents-database-host",
  "sdkwork-agents-kernel-bridge",
+ "sdkwork-agents-runtime-facade",
  "sdkwork-iam-database-host",
  "sdkwork-iam-embedded-application-bootstrap",
  "sdkwork-intelligence-agents-service",
@@ -2750,13 +2751,7 @@ dependencies = [
 name = "sdkwork-iam-embedded-application-bootstrap"
 version = "0.1.0"
 dependencies = [
- "sdkwork-database-config",
- "sdkwork-iam-bootstrap",
  "sdkwork-iam-web-adapter",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
 ]
 
 [[package]]

@@ -311,6 +311,7 @@ const agentsDatabaseSpec = readText(
 const agentsTableRegistry = readJson('database/contract/table-registry.json');
 const agentTableNames = (agentsTableRegistry.tables ?? []).map((table) => table.table_name);
 for (const targetTable of [
+  'ai_agent_workspace',
   'ai_agent_project',
   'ai_agent_project_composition_slot',
   'ai_agent_session',
@@ -332,10 +333,10 @@ for (const targetTable of [
   );
 }
 assert(
-  agentsTableRegistry.contractVersion === '5.0.0'
-    && agentTableNames.length === 19
-    && agentsDatabaseSpec.includes('owns exactly 19 tables'),
-  'Agents database contract 5.0 must declare the active 19-table inventory',
+  agentsTableRegistry.contractVersion === '6.0.0'
+    && agentTableNames.length === 20
+    && agentsDatabaseSpec.includes('owns exactly 20 tables'),
+  'Agents database contract 6.0 must declare the active 20-table inventory',
 );
 for (const retiredTable of [
   'ai_agent_chat_turn',

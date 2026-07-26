@@ -20,6 +20,7 @@ pub mod response;
 mod runtime_facade_bridge;
 mod turn_runtime;
 mod validation;
+mod workspace;
 
 pub use agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 pub use api::{
@@ -37,19 +38,22 @@ pub use application::{
     ClaimInteractionCommand, CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand,
     CreateProjectCommand, CreateProjectCompositionSlotCommand, CreateSessionCheckpointCommand,
     CreateSessionCommand, CreateSessionItemCommand, CreateSessionRuntimeBindingCommand,
-    CreateTurnCommand, DeleteAgentCommand, DeleteProjectCompositionSlotCommand, GetAgentCommand,
+    CreateTurnCommand, CreateWorkspaceCommand, DeleteAgentCommand,
+    DeleteProjectCompositionSlotCommand, EnsureDefaultWorkspaceCommand, GetAgentCommand,
     GetInteractionCommand, GetProjectCommand, GetProjectCompositionSlotCommand,
     GetSessionCheckpointCommand, GetSessionCommand, GetSessionItemCommand,
     GetSessionRuntimeBindingCommand, GetSessionUserStateCommand, GetTurnByIdempotencyCommand,
-    GetTurnCommand, InteractionClaimResult, ItemFeedbackResult, ListAgentAuditEventsCommand,
-    ListAgentsCommand, ListInteractionsCommand, ListItemFeedbackCommand, ListMcpMarketplaceCommand,
-    ListProjectCompositionSlotsCommand, ListProjectsCommand, ListSessionCheckpointsCommand,
-    ListSessionItemsCommand, ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
-    ListSessionsCommand, ListTurnsCommand, ProjectMutationCommand, ProviderBindingListCommand,
+    GetTurnCommand, GetWorkspaceCommand, ImportProjectCommand, InteractionClaimResult,
+    ItemFeedbackResult, ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand,
+    ListItemFeedbackCommand, ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand,
+    ListProjectsCommand, ListSessionCheckpointsCommand, ListSessionItemsCommand,
+    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand, ListSessionsCommand,
+    ListTurnsCommand, ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
     RestoreAgentCommand, SessionCheckpointResult, SessionRuntimeBindingResult,
     SessionUserStateResult, TurnExecutionResult, TurnReconciliationResult, UpdateAgentCommand,
     UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
-    UpdateSessionRuntimeBindingCommand, UpdateSessionUserStateCommand,
+    UpdateSessionRuntimeBindingCommand, UpdateSessionUserStateCommand, UpdateWorkspaceCommand,
+    WorkspaceMutationCommand,
 };
 pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
@@ -137,8 +141,10 @@ pub use persistence::{
     SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_ITEM, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
-    SQL_UPSERT_AGENT_ITEM_FEEDBACK, SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
+    SQL_UPDATE_AGENT_WORKSPACE, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
+    SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
+pub use ports::WorkspaceListQuery;
 pub use ports::{
     offset_paginated_result, AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery,
     CompositionSlotListQuery, InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
@@ -152,3 +158,4 @@ pub use project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
     AgentProjectStatus, AgentProjectVisibility,
 };
+pub use workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};

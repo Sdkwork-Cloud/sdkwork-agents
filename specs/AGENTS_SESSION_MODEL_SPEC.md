@@ -38,7 +38,7 @@ Creation is idempotent and requires `sessionKind`, `entrySurface`,
 `idempotencyKey`, `payloadHash` and `requestedAt`. Tenant, organization and
 owner are resolved only from trusted request context.
 
-A session does not contain IM resource identities, a product workspace
+A session does not contain IM resource identities, an embedded Workspace
 snapshot, filesystem paths, copied catalogs, raw credentials or unbounded
 provider metadata.
 
@@ -126,8 +126,9 @@ Product applications map their domain context to stable Agents references:
 | Resume point | `AgentSessionCheckpoint` |
 | Approval or user question | `AgentInteraction` |
 
-Products own their local workspace and UI state. They retain only opaque Agents
-resource identifiers needed for correlation and do not persist a second agent
+Agents owns Workspace identity and Project membership. Products own their local
+UI selection and device state, retain only opaque Agents resource identifiers
+needed for correlation, and do not persist a second agent
 execution transcript.
 
 ## 9. Verification

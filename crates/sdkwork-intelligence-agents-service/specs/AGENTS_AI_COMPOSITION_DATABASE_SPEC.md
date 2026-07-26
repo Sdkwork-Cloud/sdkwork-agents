@@ -1,6 +1,6 @@
 # SDKWork Agents Database Specification
 
-- Version: `5.0.0`
+- Version: `6.0.0`
 - Status: active
 - Domain: `intelligence`
 - Capability: `agents`
@@ -30,10 +30,10 @@ table, column, relationship, or lifecycle that is absent from the authorities.
 and durable agent execution:
 
 ```text
-AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
-The managed store uses PostgreSQL and owns exactly 19 tables. It has no read
+The managed store uses PostgreSQL and owns exactly 20 tables. It has no read
 derived read tables, shadow tables, compatibility tables, dual-write path, or
 second session aggregate. A consumer may render an Agent Session as a dialog,
 but that presentation does not create another persistence vocabulary.
@@ -59,7 +59,7 @@ following data remains authoritative in its source module:
 | MCP server definitions | `sdkwork-mcp` | Composition references |
 | File bytes, versions and access grants | `sdkwork-drive` | Typed Drive node relations |
 | IM delivery, membership and correlation | `sdkwork-im` | Nothing; IM stores opaque Agents identifiers on its side |
-| Product runtime locations and workspaces | Product application | Opaque `runtime_location_id` only |
+| Product runtime locations and device-local mount state | Product application | Opaque `runtime_location_id` only |
 
 There are no cross-module foreign keys, cross-module SQL joins, copied catalog
 rows, serialized external snapshots, or writes to another module's tables.
@@ -85,13 +85,18 @@ foreign keys to it. Composition slot values are allow-listed by `slot_kind` and
 
 | Table | Profile | Responsibility |
 | --- | --- | --- |
-| `ai_agent_project` | tenant entity | Reusable orchestration project and project access policy |
+| `ai_agent_workspace` | tenant entity | User-owned project container; exactly one active default per owner scope |
+| `ai_agent_project` | tenant entity | Workspace-scoped orchestration project and project access policy |
 | `ai_agent_project_composition_slot` | relation entity | Ordered project-level independent-capability references |
 | `ai_agent_project_member` | relation entity | Project owner/editor/viewer collaboration ACL |
 | `ai_agent_share_link` | tenant entity, L3 | Revocable and expiring project/session grant using token hashes |
 | `ai_agent_resource_user_state` | user entity | Per-user project/session pin, hide, open and last-read item state |
 
-Project membership is an Agents collaboration ACL, not an IM group. Share-link
+Every Project has a non-null `workspace_id`. Default Workspace initialization is
+idempotent and uses `workspace.default.<owner_user_id>` as its stable business
+identifier. Historical Projects are assigned to their owner's default Workspace
+before the foreign key is enabled. Project membership is an Agents collaboration
+ACL, not an IM group. Share-link
 rows persist only `token_hash` and a safe prefix; a raw token is returned once,
 is never logged, and is never included in audit or outbox payloads.
 
@@ -301,10 +306,11 @@ partial indexes declared by the baseline.
 
 ## 11. Schema Lifecycle
 
-The application is pre-launch. PostgreSQL `0001_agents_baseline.sql` is the
-greenfield `5.0.0` baseline and already contains the complete 19-table model.
-There is no legacy compatibility migration and no reason to retain a retired
-schema alongside it.
+PostgreSQL `0001_agents_baseline.sql` is the greenfield `6.0.0` authority and
+contains the complete 20-table model. Existing `5.0.0` installations use the
+governed `0001_add_agent_workspaces.up.sql` forward migration, which creates one
+default Workspace per Project owner and backfills every historical Project
+before enabling the non-null and foreign-key contracts.
 
 After the first production release, changes use ordered forward migrations and
 the expand/contract rules from `MIGRATION_SPEC.md`. Baseline rewrites then stop.

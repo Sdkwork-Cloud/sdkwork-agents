@@ -124,11 +124,84 @@ class AiApi {
     })();
   }
 
-  /// List agent projects for the current user
-  Future<AgentProjectListResponse?> agentsProjectsList([int? page, int? pageSize, String? q, String? status, bool? includeDeleted]) async {
+  /// List Workspaces for the current user
+  Future<AgentWorkspaceListResponse?> agentsWorkspacesList([int? page, int? pageSize, String? status, bool? includeDeleted]) async {
     final query = buildQueryString([
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
+      QueryParameterSpec('status', status, 'form', true, false, null),
+      QueryParameterSpec('includeDeleted', includeDeleted, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/workspaces'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentWorkspaceListResponse.fromJson(map);
+    })();
+  }
+
+  /// Create a Workspace for the current user
+  Future<AgentWorkspaceResponse?> agentsWorkspacesCreate(CreateAgentWorkspaceRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/workspaces'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentWorkspaceResponse.fromJson(map);
+    })();
+  }
+
+  /// Ensure the current user has a default Workspace
+  Future<AgentWorkspaceResponse?> agentsWorkspacesDefaultCreate(EnsureDefaultAgentWorkspaceRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/workspaces/default'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentWorkspaceResponse.fromJson(map);
+    })();
+  }
+
+  /// Retrieve a Workspace owned by the current user
+  Future<AgentWorkspaceResponse?> agentsWorkspacesRetrieve(String workspaceId) async {
+    final response = await _client.get(ApiPaths.appPath('/ai/workspaces/${serializePathParameter(workspaceId, const PathParameterSpec('workspaceId', 'simple', false))}'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentWorkspaceResponse.fromJson(map);
+    })();
+  }
+
+  /// Update a Workspace owned by the current user
+  Future<AgentWorkspaceResponse?> agentsWorkspacesUpdate(String workspaceId, UpdateAgentWorkspaceRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.patch(ApiPaths.appPath('/ai/workspaces/${serializePathParameter(workspaceId, const PathParameterSpec('workspaceId', 'simple', false))}'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentWorkspaceResponse.fromJson(map);
+    })();
+  }
+
+  /// Soft-delete an empty, non-default Workspace
+  Future<void> agentsWorkspacesDelete(String workspaceId, String expectedVersion) async {
+    final query = buildQueryString([
+      QueryParameterSpec('expectedVersion', expectedVersion, 'form', true, false, null)
+    ]);
+    await _client.delete(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/workspaces/${serializePathParameter(workspaceId, const PathParameterSpec('workspaceId', 'simple', false))}'), query));
+  }
+
+  /// Archive an empty, non-default Workspace
+  Future<AgentWorkspaceResponse?> agentsWorkspacesArchive(String workspaceId, AgentWorkspaceMutationRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/workspaces/${serializePathParameter(workspaceId, const PathParameterSpec('workspaceId', 'simple', false))}/archive'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentWorkspaceResponse.fromJson(map);
+    })();
+  }
+
+  /// List agent projects for the current user
+  Future<AgentProjectListResponse?> agentsProjectsList([int? page, int? pageSize, String? workspaceId, String? q, String? status, bool? includeDeleted]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
+      QueryParameterSpec('workspaceId', workspaceId, 'form', true, false, null),
       QueryParameterSpec('q', q, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
       QueryParameterSpec('includeDeleted', includeDeleted, 'form', true, false, null)
@@ -144,6 +217,16 @@ class AiApi {
   Future<AgentProjectResponse?> agentsProjectsCreate(CreateAgentProjectRequest body) async {
     final payload = body.toJson();
     final response = await _client.post(ApiPaths.appPath('/ai/projects'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentProjectResponse.fromJson(map);
+    })();
+  }
+
+  /// Import or reopen a Workspace-scoped Drive sandbox project
+  Future<AgentProjectResponse?> agentsProjectsImport(ImportAgentProjectRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/projects/import'), body: payload, contentType: 'application/json');
     return (() {
       final map = sdkworkResponseAsMap(response);
       return map == null ? null : AgentProjectResponse.fromJson(map);

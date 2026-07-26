@@ -2,7 +2,7 @@
 
 Owner: `agents-platform`
 
-Canonical contract: `database/contract/schema.yaml` (`5.0.0`)
+Canonical contract: `database/contract/schema.yaml` (`6.0.0`)
 
 Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 
@@ -12,7 +12,7 @@ This module is the single system of record for managed agents and durable agent
 execution:
 
 ```text
-AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
 The Session aggregate also owns one current runtime binding, resumable
@@ -23,11 +23,10 @@ remain owned by their respective modules.
 
 ## Engine And Lifecycle
 
-PostgreSQL is the only managed-store engine. The pre-launch contract is one
-greenfield baseline; `database/migrations/postgres/` is empty and reserved for
-future released-schema changes. `baseline-plus-migrations` remains the lifecycle
-strategy so the first post-launch change can be added without changing bootstrap
-semantics.
+PostgreSQL is the only managed-store engine. The `6.0.0` greenfield baseline
+contains Workspace-scoped Projects; existing `5.0.0` installations apply the
+governed Workspace backfill under `database/migrations/postgres/`.
+`baseline-plus-migrations` remains the lifecycle strategy.
 
 Lifecycle `init` atomically materializes the consolidated baseline only when the
 completion anchor is absent. Automatic pending-migration execution defaults to

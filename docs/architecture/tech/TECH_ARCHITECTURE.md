@@ -30,13 +30,14 @@ PC / H5 / Flutter / product integrations / sdkwork-im
 The durable business aggregate is:
 
 ```text
-AgentProject
-  `- AgentSession
-       |- AgentSessionRuntimeBinding
-       |- AgentTurn
-       |    `- AgentSessionItem
-       |- AgentInteraction
-       `- AgentSessionCheckpoint
+AgentWorkspace
+  `- AgentProject
+       `- AgentSession
+            |- AgentSessionRuntimeBinding
+            |- AgentTurn
+            |    `- AgentSessionItem
+            |- AgentInteraction
+            `- AgentSessionCheckpoint
 ```
 
 No other module owns a durable agent execution Session or transcript.
@@ -47,7 +48,7 @@ No other module owns a durable agent execution Session or transcript.
 | --- | --- | --- |
 | HTTP | Rust, Axum, `sdkwork-web-framework` | request context, routing, envelopes, problem details |
 | Application | Rust service/use-case layer | authorization, orchestration, transactions |
-| Persistence | PostgreSQL, `sdkwork-database` | 19-table managed module and lifecycle |
+| Persistence | PostgreSQL, `sdkwork-database` | 20-table managed module and lifecycle |
 | Runtime | `sdkwork-agents-runtime-facade` | product-safe kernel adapter |
 | Provider mechanism | `sdkwork-kernel` | provider SPI, plugins and transient events |
 | SDK | canonical `sdkgen` | TypeScript and Flutter generated clients |
@@ -94,7 +95,7 @@ stays under `generated/server-openapi` and is never hand-edited.
 
 | Surface | Authority | Prefix | Operations | Auth |
 | --- | --- | --- | ---: | --- |
-| App | `sdkwork-agents-app-api` | `/app/v3/api` | 68 | dual token |
+| App | `sdkwork-agents-app-api` | `/app/v3/api` | 76 | dual token |
 | Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 48 | dual token/operator |
 | Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 47 | API key |
 
@@ -120,7 +121,7 @@ the same contract before constructing the generated client.
 | Group | Tables |
 | --- | --- |
 | Agent composition | `ai_agent`, `ai_agent_runtime_binding`, `ai_agent_composition_slot`, `ai_agent_audit_event` |
-| Project | `ai_agent_project`, `ai_agent_project_composition_slot`, `ai_agent_project_member`, `ai_agent_share_link` |
+| Workspace and Project | `ai_agent_workspace`, `ai_agent_project`, `ai_agent_project_composition_slot`, `ai_agent_project_member`, `ai_agent_share_link` |
 | Session execution | `ai_agent_session`, `ai_agent_session_runtime_binding`, `ai_agent_turn`, `ai_agent_session_item`, `ai_agent_item_drive_ref`, `ai_agent_item_feedback`, `ai_agent_interaction`, `ai_agent_session_checkpoint` |
 | Orchestration and delivery | `ai_agent_task`, `ai_agent_resource_user_state`, `ai_agent_outbox_event` |
 

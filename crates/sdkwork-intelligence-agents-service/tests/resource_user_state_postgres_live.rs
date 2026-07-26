@@ -573,6 +573,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             tenant_id: 700_001,
             organization_id: 0,
             project_id: project_id.clone(),
+            workspace_id: None,
             owner_user_id: 700,
             name: "Postgres composition project".to_string(),
             description: None,

@@ -17,7 +17,7 @@ belong to `sdkwork-kernel`; managed business state belongs to `sdkwork-agents`.
 The product uses one execution vocabulary:
 
 ```text
-AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
 It is distinct from instant messaging. IM may invoke Agents, but continues to
@@ -52,14 +52,15 @@ Non-goals:
 - provider runtime SPI implementation inside the product service;
 - skill package content, installation records or marketplace ownership;
 - copied model catalogs, prompt bodies, document content, memory records or Drive bytes;
-- product-specific workspaces, filesystem paths or UI state persistence.
+- product-local duplicate Workspace authorities, filesystem paths or UI state persistence.
 
 ## 4. Product Scope
 
 | Capability | Product behavior | Authority |
 | --- | --- | --- |
 | Managed agents | Lifecycle, visibility, provider binding and policy | `ai_agent*` composition tables |
-| Projects | Reusable orchestration context, membership and sharing | `AgentProject` |
+| Workspaces | User-owned Project container with one idempotent default per user | `AgentWorkspace` |
+| Projects | Workspace-scoped reusable orchestration context, membership and sharing | `AgentProject` |
 | Sessions | Durable execution context and lineage | `AgentSession` |
 | Turns | Idempotent execution, retry, cancellation and usage | `AgentTurn` |
 | Session items | Ordered input/output/tool/artifact facts | `AgentSessionItem` |
@@ -79,9 +80,10 @@ completion events.
 
 ### 5.2 Coding product integration
 
-A coding product maps its project to an Agent Project and uses the same Session
-and Turn APIs. Product-owned runtime-location and repository state remain local;
-only bounded opaque references are supplied to Agents.
+A coding product selects an Agent Workspace, uses its Workspace-scoped Agent
+Projects, and calls the same Session and Turn APIs. Product-owned
+runtime-location and repository state remain local; only bounded opaque
+references are supplied to Agents.
 
 ### 5.3 IM dispatch
 
@@ -120,7 +122,7 @@ runtime binding, lifecycle and expected version before provider invocation.
 
 | Surface | Prefix | Operations | Credential mode | SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 68 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 76 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 48 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
 | Open API | `/agent/v3/api` | 47 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
@@ -129,7 +131,7 @@ The complete generated inventory is
 
 ## 8. Data Ownership
 
-Agents owns 19 PostgreSQL tables under prefix `ai_`. The canonical design is
+Agents owns 20 PostgreSQL tables under prefix `ai_`. The canonical design is
 [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../../../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md).
 
 All cross-domain links are identifiers validated through public contracts.

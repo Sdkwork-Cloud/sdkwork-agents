@@ -9,11 +9,10 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "d64e7e403cf3abaf307b08ffc63bb8d9a4e55134810abfb5304aeaafa0e7264b",
+  "changeFingerprint": "b07bd5e186f6d9a06ab14d5f79671407d070aa6add92741b3b42731bc05bf38f",
   "changes": {
     "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts",
       "src/http/client.ts"
     ],
     "unchangedGeneratedFiles": [
@@ -27,6 +26,7 @@
       "package.json",
       "README.md",
       "sdkwork-sdk.json",
+      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
@@ -107,6 +107,11 @@
       "src/types/agent-turn-status.ts",
       "src/types/agent-turn-stream-event.ts",
       "src/types/agent-visibility.ts",
+      "src/types/agent-workspace-list-response.ts",
+      "src/types/agent-workspace-mutation-request.ts",
+      "src/types/agent-workspace-record.ts",
+      "src/types/agent-workspace-response.ts",
+      "src/types/agent-workspace-status.ts",
       "src/types/answer-agent-interaction-request.ts",
       "src/types/app-update-agent-session-request.ts",
       "src/types/approve-agent-interaction-request.ts",
@@ -133,7 +138,10 @@
       "src/types/create-agent-session-runtime-binding-request.ts",
       "src/types/create-agent-task-request.ts",
       "src/types/create-agent-turn-request.ts",
+      "src/types/create-agent-workspace-request.ts",
+      "src/types/ensure-default-agent-workspace-request.ts",
       "src/types/field-error.ts",
+      "src/types/import-agent-project-request.ts",
       "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
@@ -153,6 +161,7 @@
       "src/types/update-agent-request.ts",
       "src/types/update-agent-session-runtime-binding-request.ts",
       "src/types/update-agent-session-user-state-request.ts",
+      "src/types/update-agent-workspace-request.ts",
       "tsconfig.json"
     ],
     "deletedGeneratedFiles": [],
@@ -173,7 +182,6 @@
       {
         "area": "api-surface",
         "paths": [
-          "src/api/ai.ts",
           "src/http/client.ts"
         ]
       },

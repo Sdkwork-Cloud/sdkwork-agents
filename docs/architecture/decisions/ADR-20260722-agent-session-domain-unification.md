@@ -17,7 +17,7 @@ Those semantics are independent of product UI style and IM delivery semantics.
 Agents owns one canonical aggregate:
 
 ```text
-AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
 All products use this aggregate through Agents APIs or SDKs. Runtime bindings

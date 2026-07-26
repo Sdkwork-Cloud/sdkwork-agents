@@ -11,7 +11,7 @@
   ],
   "defaultEngine": "postgres",
   "tablePrefix": "ai_",
-  "contractVersion": "5.0.0",
+  "contractVersion": "6.0.0",
   "baselineStrategy": "baseline-plus-migrations",
   "baselineAnchorTable": "ai_agent_outbox_event",
   "modules": [],

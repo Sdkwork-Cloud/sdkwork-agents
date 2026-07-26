@@ -16,7 +16,7 @@ use crate::ports::{
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery,
     SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery,
-    TurnListQuery, TurnRequestWriteOutcome,
+    TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
@@ -25,6 +25,7 @@ use crate::project::{
     AgentProjectStatus, AgentProjectVisibility,
 };
 use crate::validation::{validate_capabilities, validate_standard_id};
+use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 #[cfg(feature = "postgres-sync")]
 use crate::{pg_execute, pg_query, pg_query_optional};
 use sdkwork_agent_kernel::{
@@ -129,29 +130,32 @@ pub use sql::{
     SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_RESOURCE_USER_STATES,
     SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
     SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TASKS, SQL_COUNT_AGENT_TURNS,
-    SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_INSERT_AGENT_INTERACTION,
-    SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_COUNT_AGENT_WORKSPACES, SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
     SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
     SQL_INSERT_AGENT_SESSION_CHECKPOINT, SQL_INSERT_AGENT_SESSION_ITEM,
     SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
-    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
+    SQL_INSERT_AGENT_WORKSPACE, SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
     SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
     SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
-    SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID, SQL_LIST_RECONCILABLE_AGENT_TURNS,
-    SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING, SQL_RECORD_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
+    SQL_LIST_AGENT_WORKSPACES, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
+    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK,
+    SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE,
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
     SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
-    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
+    SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
     SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
     SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
-    SQL_UPSERT_AGENT_ITEM_FEEDBACK, SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
+    SQL_UPDATE_AGENT_WORKSPACE, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
+    SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,12 +254,93 @@ impl AgentBusinessRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkspaceRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub workspace_id: String,
+    pub owner_user_id: u64,
+    pub name: String,
+    pub description: Option<String>,
+    pub is_default: bool,
+    pub status: i16,
+    pub created_by: u64,
+    pub updated_by: u64,
+    pub version: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub archived_at: Option<String>,
+    pub archived_by: Option<u64>,
+    pub deleted_at: Option<String>,
+    pub deleted_by: Option<u64>,
+    pub retention_until: Option<String>,
+}
+
+impl AgentWorkspaceRow {
+    pub fn from_record(record: &AgentWorkspaceRecord) -> Self {
+        Self {
+            id: record.id,
+            uuid: build_workspace_uuid(
+                record.tenant_id,
+                record.organization_id,
+                &record.workspace_id,
+            ),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            workspace_id: record.workspace_id.clone(),
+            owner_user_id: record.owner_user_id,
+            name: record.name.clone(),
+            description: record.description.clone(),
+            is_default: record.is_default,
+            status: record.status.as_db_code(),
+            created_by: record.created_by,
+            updated_by: record.updated_by,
+            version: record.version,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            archived_at: record.archived_at.clone(),
+            archived_by: record.archived_by,
+            deleted_at: record.deleted_at.clone(),
+            deleted_by: record.deleted_by,
+            retention_until: record.retention_until.clone(),
+        }
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentWorkspaceRecord> {
+        Ok(AgentWorkspaceRecord {
+            id: self.id,
+            workspace_id: self.workspace_id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            owner_user_id: self.owner_user_id,
+            name: self.name,
+            description: self.description,
+            is_default: self.is_default,
+            status: AgentWorkspaceStatus::from_db_code(self.status)
+                .ok_or_else(|| KernelError::validation("invalid workspace status"))?,
+            created_by: self.created_by,
+            updated_by: self.updated_by,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            archived_at: self.archived_at,
+            archived_by: self.archived_by,
+            deleted_at: self.deleted_at,
+            deleted_by: self.deleted_by,
+            retention_until: self.retention_until,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentProjectRow {
     pub id: u64,
     pub uuid: String,
     pub tenant_id: u64,
     pub organization_id: u64,
     pub project_id: String,
+    pub workspace_id: String,
     pub owner_user_id: u64,
     pub name: String,
     pub description: Option<String>,
@@ -264,6 +349,11 @@ pub struct AgentProjectRow {
     pub drive_access_mode: i16,
     pub default_agent_id: Option<String>,
     pub default_model_id: Option<String>,
+    pub import_source_kind: Option<String>,
+    pub import_source_ref: Option<String>,
+    pub drive_space_id: Option<String>,
+    pub drive_root_entry_id: Option<String>,
+    pub drive_logical_path: Option<String>,
     pub created_by: u64,
     pub updated_by: u64,
     pub version: u64,
@@ -284,6 +374,7 @@ impl AgentProjectRow {
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
             project_id: record.project_id.clone(),
+            workspace_id: record.workspace_id.clone(),
             owner_user_id: record.owner_user_id,
             name: record.name.clone(),
             description: record.description.clone(),
@@ -292,6 +383,11 @@ impl AgentProjectRow {
             drive_access_mode: record.drive_access_mode.as_db_code(),
             default_agent_id: record.default_agent_id.clone(),
             default_model_id: record.default_model_id.clone(),
+            import_source_kind: record.import_source_kind.clone(),
+            import_source_ref: record.import_source_ref.clone(),
+            drive_space_id: record.drive_space_id.clone(),
+            drive_root_entry_id: record.drive_root_entry_id.clone(),
+            drive_logical_path: record.drive_logical_path.clone(),
             created_by: record.created_by,
             updated_by: record.updated_by,
             version: record.version,
@@ -309,6 +405,7 @@ impl AgentProjectRow {
         Ok(AgentProjectRecord {
             id: self.id,
             project_id: self.project_id,
+            workspace_id: self.workspace_id,
             tenant_id: self.tenant_id,
             organization_id: self.organization_id,
             owner_user_id: self.owner_user_id,
@@ -322,6 +419,11 @@ impl AgentProjectRow {
                 .ok_or_else(|| KernelError::validation("invalid project drive access mode"))?,
             default_agent_id: self.default_agent_id,
             default_model_id: self.default_model_id,
+            import_source_kind: self.import_source_kind,
+            import_source_ref: self.import_source_ref,
+            drive_space_id: self.drive_space_id,
+            drive_root_entry_id: self.drive_root_entry_id,
+            drive_logical_path: self.drive_logical_path,
             created_by: self.created_by,
             updated_by: self.updated_by,
             version: self.version,
@@ -1572,6 +1674,11 @@ fn build_project_uuid(tenant_id: u64, organization_id: u64, project_id: &str) ->
     build_storage_uuid("project", tenant_id, &[&organization_id, project_id])
 }
 
+fn build_workspace_uuid(tenant_id: u64, organization_id: u64, workspace_id: &str) -> String {
+    let organization_id = organization_id.to_string();
+    build_storage_uuid("workspace", tenant_id, &[&organization_id, workspace_id])
+}
+
 fn build_project_composition_slot_uuid(
     tenant_id: u64,
     organization_id: u64,
@@ -1801,6 +1908,25 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     fn get_row(&self, tenant_id: u64, agent_id: &str) -> KernelResult<Option<AgentBusinessRow>>;
     fn list_rows(&self, query: &AgentListQuery) -> KernelResult<Vec<AgentBusinessRow>>;
     fn count_rows(&self, query: &AgentListQuery) -> KernelResult<u64>;
+    fn insert_workspace_row(&self, row: AgentWorkspaceRow) -> KernelResult<()>;
+    fn update_workspace_row(&self, row: AgentWorkspaceRow) -> KernelResult<()>;
+    fn get_workspace_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+    ) -> KernelResult<Option<AgentWorkspaceRow>>;
+    fn get_default_workspace_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+    ) -> KernelResult<Option<AgentWorkspaceRow>>;
+    fn list_workspace_rows(
+        &self,
+        query: &WorkspaceListQuery,
+    ) -> KernelResult<Vec<AgentWorkspaceRow>>;
+    fn count_workspace_rows(&self, query: &WorkspaceListQuery) -> KernelResult<u64>;
     fn insert_project_row(&self, row: AgentProjectRow) -> KernelResult<()>;
     fn update_project_row(&self, row: AgentProjectRow) -> KernelResult<()>;
     fn get_project_row(
@@ -1808,6 +1934,14 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         tenant_id: u64,
         organization_id: u64,
         project_id: &str,
+    ) -> KernelResult<Option<AgentProjectRow>>;
+    fn get_project_row_by_import_source(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        source_kind: &str,
+        source_ref: &str,
     ) -> KernelResult<Option<AgentProjectRow>>;
     fn list_project_rows(&self, query: &ProjectListQuery) -> KernelResult<Vec<AgentProjectRow>>;
     fn count_project_rows(&self, query: &ProjectListQuery) -> KernelResult<u64>;
@@ -2179,6 +2313,55 @@ where
         self.adapter.count_rows(query)
     }
 
+    fn insert_workspace(&self, record: AgentWorkspaceRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_workspace_row(AgentWorkspaceRow::from_record(&record))
+    }
+
+    fn update_workspace(&self, record: AgentWorkspaceRecord) -> KernelResult<()> {
+        self.adapter
+            .update_workspace_row(AgentWorkspaceRow::from_record(&record))
+    }
+
+    fn get_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+    ) -> KernelResult<Option<AgentWorkspaceRecord>> {
+        self.adapter
+            .get_workspace_row(tenant_id, organization_id, workspace_id)?
+            .map(AgentWorkspaceRow::into_record)
+            .transpose()
+    }
+
+    fn get_default_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+    ) -> KernelResult<Option<AgentWorkspaceRecord>> {
+        self.adapter
+            .get_default_workspace_row(tenant_id, organization_id, owner_user_id)?
+            .map(AgentWorkspaceRow::into_record)
+            .transpose()
+    }
+
+    fn list_workspaces(
+        &self,
+        query: &WorkspaceListQuery,
+    ) -> KernelResult<Vec<AgentWorkspaceRecord>> {
+        self.adapter
+            .list_workspace_rows(query)?
+            .into_iter()
+            .map(AgentWorkspaceRow::into_record)
+            .collect()
+    }
+
+    fn count_workspaces(&self, query: &WorkspaceListQuery) -> KernelResult<u64> {
+        self.adapter.count_workspace_rows(query)
+    }
+
     fn insert_project(&self, record: AgentProjectRecord) -> KernelResult<()> {
         self.adapter
             .insert_project_row(AgentProjectRow::from_record(&record))
@@ -2197,6 +2380,26 @@ where
     ) -> KernelResult<Option<AgentProjectRecord>> {
         self.adapter
             .get_project_row(tenant_id, organization_id, project_id)?
+            .map(AgentProjectRow::into_record)
+            .transpose()
+    }
+
+    fn get_project_by_import_source(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        source_kind: &str,
+        source_ref: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>> {
+        self.adapter
+            .get_project_row_by_import_source(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                source_kind,
+                source_ref,
+            )?
             .map(AgentProjectRow::into_record)
             .transpose()
     }
@@ -3468,6 +3671,202 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn insert_workspace_row(&self, row: AgentWorkspaceRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
+        let created_by = u64_to_i64(row.created_by, "created_by")?;
+        let updated_by = u64_to_i64(row.updated_by, "updated_by")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let archived_by = row
+            .archived_by
+            .map(|value| u64_to_i64(value, "archived_by"))
+            .transpose()?;
+        let deleted_by = row
+            .deleted_by
+            .map(|value| u64_to_i64(value, "deleted_by"))
+            .transpose()?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_WORKSPACE,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.workspace_id,
+                owner_user_id,
+                row.name,
+                row.description,
+                row.is_default,
+                row.status,
+                created_by,
+                updated_by,
+                version,
+                row.created_at,
+                row.updated_at,
+                row.archived_at,
+                archived_by,
+                row.deleted_at,
+                deleted_by,
+                row.retention_until
+            )?;
+            Ok(())
+        })
+    }
+
+    fn update_workspace_row(&self, row: AgentWorkspaceRow) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let updated_by = u64_to_i64(row.updated_by, "updated_by")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        let archived_by = row
+            .archived_by
+            .map(|value| u64_to_i64(value, "archived_by"))
+            .transpose()?;
+        let deleted_by = row
+            .deleted_by
+            .map(|value| u64_to_i64(value, "deleted_by"))
+            .transpose()?;
+        self.with_pool(|pool| {
+            let updated_rows = pg_execute!(
+                pool,
+                SQL_UPDATE_AGENT_WORKSPACE,
+                row.name,
+                row.description,
+                row.status,
+                updated_by,
+                version,
+                row.updated_at,
+                row.archived_at,
+                archived_by,
+                row.deleted_at,
+                deleted_by,
+                row.retention_until,
+                tenant_id,
+                organization_id,
+                row.workspace_id,
+                previous_version
+            )?;
+            if updated_rows == 0 {
+                let exists = pg_query_optional!(
+                    pool,
+                    SQL_SELECT_AGENT_WORKSPACE,
+                    tenant_id,
+                    organization_id,
+                    row.workspace_id
+                )?
+                .is_some();
+                if exists {
+                    return Err(KernelError::conflict("workspace version mismatch"));
+                }
+                return Err(KernelError::validation("workspace not found"));
+            }
+            Ok(())
+        })
+    }
+
+    fn get_workspace_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+    ) -> KernelResult<Option<AgentWorkspaceRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_WORKSPACE,
+                tenant_id,
+                organization_id,
+                workspace_id
+            )?
+            .map(pg_row_to_agent_workspace_row)
+            .transpose()
+        })
+    }
+
+    fn get_default_workspace_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+    ) -> KernelResult<Option<AgentWorkspaceRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
+                tenant_id,
+                organization_id,
+                owner_user_id
+            )?
+            .map(pg_row_to_agent_workspace_row)
+            .transpose()
+        })
+    }
+
+    fn list_workspace_rows(
+        &self,
+        query: &WorkspaceListQuery,
+    ) -> KernelResult<Vec<AgentWorkspaceRow>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(query.owner_user_id, "owner_user_id")?;
+        let status = query.status.map(AgentWorkspaceStatus::as_db_code);
+        let page_size = usize_to_i64(query.pagination.page_size, "pagination.page_size")?;
+        let offset = usize_to_i64(query.pagination.offset, "pagination.offset")?;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_WORKSPACES,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                status,
+                query.include_deleted,
+                page_size,
+                offset
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_workspace_row)
+            .collect()
+        })
+    }
+
+    fn count_workspace_rows(&self, query: &WorkspaceListQuery) -> KernelResult<u64> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(query.owner_user_id, "owner_user_id")?;
+        let status = query.status.map(AgentWorkspaceStatus::as_db_code);
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_AGENT_WORKSPACES,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                status,
+                query.include_deleted
+            )?;
+            let total = row
+                .map(|value| {
+                    value
+                        .try_get::<i64, _>("total_count")
+                        .map_err(map_sqlx_error)
+                })
+                .transpose()?
+                .unwrap_or(0);
+            int64_to_u64(total, "total_count")
+        })
+    }
+
     fn insert_project_row(&self, row: AgentProjectRow) -> KernelResult<()> {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
@@ -3493,6 +3892,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 row.project_id,
+                row.workspace_id,
                 owner_user_id,
                 row.name,
                 row.description,
@@ -3501,6 +3901,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.drive_access_mode,
                 row.default_agent_id,
                 row.default_model_id,
+                row.import_source_kind,
+                row.import_source_ref,
+                row.drive_space_id,
+                row.drive_root_entry_id,
+                row.drive_logical_path,
                 created_by,
                 updated_by,
                 version,
@@ -3535,6 +3940,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             let updated_rows = pg_execute!(
                 pool,
                 SQL_UPDATE_AGENT_PROJECT,
+                row.workspace_id,
                 row.name,
                 row.description,
                 row.visibility,
@@ -3542,6 +3948,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.drive_access_mode,
                 row.default_agent_id,
                 row.default_model_id,
+                row.import_source_kind,
+                row.import_source_ref,
+                row.drive_space_id,
+                row.drive_root_entry_id,
+                row.drive_logical_path,
                 updated_by,
                 version,
                 row.updated_at,
@@ -3594,6 +4005,32 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn get_project_row_by_import_source(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        source_kind: &str,
+        source_ref: &str,
+    ) -> KernelResult<Option<AgentProjectRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                source_kind,
+                source_ref
+            )?
+            .map(pg_row_to_agent_project_row)
+            .transpose()
+        })
+    }
+
     fn list_project_rows(&self, query: &ProjectListQuery) -> KernelResult<Vec<AgentProjectRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
@@ -3601,6 +4038,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .owner_user_id
             .map(|value| u64_to_i64(value, "owner_user_id"))
             .transpose()?;
+        let workspace_id = query.workspace_id.as_deref();
         let status = query.status.map(AgentProjectStatus::as_db_code);
         let search = query
             .search_query
@@ -3615,6 +4053,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 owner_user_id,
+                workspace_id,
                 status,
                 search,
                 query.include_deleted,
@@ -3634,6 +4073,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .owner_user_id
             .map(|value| u64_to_i64(value, "owner_user_id"))
             .transpose()?;
+        let workspace_id = query.workspace_id.as_deref();
         let status = query.status.map(AgentProjectStatus::as_db_code);
         let search = query
             .search_query
@@ -3646,6 +4086,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 owner_user_id,
+                workspace_id,
                 status,
                 search,
                 query.include_deleted
@@ -6650,6 +7091,53 @@ fn pg_row_to_agent_business_row(row: PgRow) -> KernelResult<AgentBusinessRow> {
 }
 
 #[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_workspace_row(row: PgRow) -> KernelResult<AgentWorkspaceRow> {
+    let archived_by: Option<i64> = row.try_get("archived_by").map_err(map_sqlx_error)?;
+    let deleted_by: Option<i64> = row.try_get("deleted_by").map_err(map_sqlx_error)?;
+    Ok(AgentWorkspaceRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        workspace_id: row.try_get("workspace_id").map_err(map_sqlx_error)?,
+        owner_user_id: int64_to_u64(
+            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
+            "owner_user_id",
+        )?,
+        name: row.try_get("name").map_err(map_sqlx_error)?,
+        description: row.try_get("description").map_err(map_sqlx_error)?,
+        is_default: row.try_get("is_default").map_err(map_sqlx_error)?,
+        status: row.try_get("status").map_err(map_sqlx_error)?,
+        created_by: int64_to_u64(
+            row.try_get("created_by").map_err(map_sqlx_error)?,
+            "created_by",
+        )?,
+        updated_by: int64_to_u64(
+            row.try_get("updated_by").map_err(map_sqlx_error)?,
+            "updated_by",
+        )?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        archived_at: row.try_get("archived_at").map_err(map_sqlx_error)?,
+        archived_by: archived_by
+            .map(|value| int64_to_u64(value, "archived_by"))
+            .transpose()?,
+        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
+        deleted_by: deleted_by
+            .map(|value| int64_to_u64(value, "deleted_by"))
+            .transpose()?,
+        retention_until: row.try_get("retention_until").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
 fn pg_row_to_agent_project_row(row: PgRow) -> KernelResult<AgentProjectRow> {
     let archived_by: Option<i64> = row.try_get("archived_by").map_err(map_sqlx_error)?;
     let deleted_by: Option<i64> = row.try_get("deleted_by").map_err(map_sqlx_error)?;
@@ -6665,6 +7153,7 @@ fn pg_row_to_agent_project_row(row: PgRow) -> KernelResult<AgentProjectRow> {
             "organization_id",
         )?,
         project_id: row.try_get("project_id").map_err(map_sqlx_error)?,
+        workspace_id: row.try_get("workspace_id").map_err(map_sqlx_error)?,
         owner_user_id: int64_to_u64(
             row.try_get("owner_user_id").map_err(map_sqlx_error)?,
             "owner_user_id",
@@ -6676,6 +7165,11 @@ fn pg_row_to_agent_project_row(row: PgRow) -> KernelResult<AgentProjectRow> {
         drive_access_mode: row.try_get("drive_access_mode").map_err(map_sqlx_error)?,
         default_agent_id: row.try_get("default_agent_id").map_err(map_sqlx_error)?,
         default_model_id: row.try_get("default_model_id").map_err(map_sqlx_error)?,
+        import_source_kind: row.try_get("import_source_kind").map_err(map_sqlx_error)?,
+        import_source_ref: row.try_get("import_source_ref").map_err(map_sqlx_error)?,
+        drive_space_id: row.try_get("drive_space_id").map_err(map_sqlx_error)?,
+        drive_root_entry_id: row.try_get("drive_root_entry_id").map_err(map_sqlx_error)?,
+        drive_logical_path: row.try_get("drive_logical_path").map_err(map_sqlx_error)?,
         created_by: int64_to_u64(
             row.try_get("created_by").map_err(map_sqlx_error)?,
             "created_by",

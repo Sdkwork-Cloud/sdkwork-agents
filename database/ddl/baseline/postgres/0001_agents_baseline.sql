@@ -1,5 +1,5 @@
 -- SDKWork Agents PostgreSQL greenfield baseline.
--- Contract: database/contract/schema.yaml (5.0.0)
+-- Contract: database/contract/schema.yaml (6.0.0)
 -- PostgreSQL is the only managed-store authority for this contract.
 -- Sibling modules own memory, knowledge, skills, prompts, MCP, model catalogs,
 -- runtime-location details, and Drive bytes. Agents stores stable references only.
@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_audit_event (
     CONSTRAINT uk_ai_agent_audit_event_uuid UNIQUE (uuid),
     CONSTRAINT ck_ai_agent_audit_aggregate_type CHECK (
         aggregate_type IN (
-            'agent', 'runtime_binding', 'composition_slot', 'project', 'project_member',
+            'agent', 'runtime_binding', 'composition_slot', 'workspace', 'project', 'project_member',
             'session', 'turn', 'session_item', 'item_feedback', 'interaction',
             'checkpoint', 'task', 'share_link'
         )
@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_audit_event (
             'started', 'completed', 'failed', 'cancelled', 'runtime_executed',
             'provider_binding_changed', 'composition_slot_created',
             'composition_slot_updated', 'composition_slot_deleted',
+            'workspace_created', 'workspace_updated', 'workspace_archived', 'workspace_deleted',
             'project_created', 'project_updated', 'project_archived', 'project_deleted',
             'project_member_added', 'project_member_role_changed', 'project_member_removed',
             'project_composition_slot_created', 'project_composition_slot_updated',
@@ -276,12 +277,54 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_audit_retention
     ON ai_agent_audit_event (tenant_id, retention_until, id)
     WHERE retention_until IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS ai_agent_workspace (
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid VARCHAR(96) NOT NULL,
+    tenant_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL DEFAULT 0,
+    workspace_id VARCHAR(128) NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    status SMALLINT NOT NULL DEFAULT 0,
+    created_by BIGINT NOT NULL,
+    updated_by BIGINT NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    archived_at TIMESTAMPTZ,
+    archived_by BIGINT,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    retention_until TIMESTAMPTZ,
+    CONSTRAINT uk_ai_agent_workspace_uuid UNIQUE (uuid),
+    CONSTRAINT uk_ai_agent_workspace_scope UNIQUE (
+        tenant_id, organization_id, workspace_id
+    ),
+    CONSTRAINT ck_ai_agent_workspace_status CHECK (status IN (0, 1, 2)),
+    CONSTRAINT ck_ai_agent_workspace_version CHECK (version >= 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_workspace_active_default
+    ON ai_agent_workspace (tenant_id, organization_id, owner_user_id)
+    WHERE is_default = TRUE AND status = 0 AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_workspace_owner_list
+    ON ai_agent_workspace (
+        tenant_id, organization_id, owner_user_id, status,
+        is_default DESC, updated_at DESC, id DESC
+    ) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_workspace_retention
+    ON ai_agent_workspace (tenant_id, organization_id, retention_until, id)
+    WHERE retention_until IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS ai_agent_project (
     id BIGINT NOT NULL PRIMARY KEY,
     uuid VARCHAR(96) NOT NULL,
     tenant_id BIGINT NOT NULL,
     organization_id BIGINT NOT NULL DEFAULT 0,
     project_id VARCHAR(128) NOT NULL,
+    workspace_id VARCHAR(128) NOT NULL,
     owner_user_id BIGINT NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -290,6 +333,11 @@ CREATE TABLE IF NOT EXISTS ai_agent_project (
     drive_access_mode SMALLINT NOT NULL DEFAULT 0,
     default_agent_id VARCHAR(128),
     default_model_id VARCHAR(128),
+    import_source_kind VARCHAR(64),
+    import_source_ref VARCHAR(512),
+    drive_space_id VARCHAR(128),
+    drive_root_entry_id VARCHAR(128),
+    drive_logical_path VARCHAR(1024),
     created_by BIGINT NOT NULL,
     updated_by BIGINT NOT NULL,
     version BIGINT NOT NULL DEFAULT 0,
@@ -309,13 +357,30 @@ CREATE TABLE IF NOT EXISTS ai_agent_project (
         visibility <> 2 OR drive_access_mode <> 1
     ),
     CONSTRAINT ck_ai_agent_project_version CHECK (version >= 0),
+    CONSTRAINT ck_ai_agent_project_import_source CHECK (
+        (import_source_kind IS NULL AND import_source_ref IS NULL)
+        OR (import_source_kind IS NOT NULL AND import_source_ref IS NOT NULL)
+    ),
+    CONSTRAINT ck_ai_agent_project_drive_source CHECK (
+        import_source_kind IS DISTINCT FROM 'drive_sandbox'
+        OR (drive_space_id IS NOT NULL AND drive_root_entry_id IS NOT NULL)
+    ),
+    CONSTRAINT fk_ai_agent_project_workspace FOREIGN KEY (
+        tenant_id, organization_id, workspace_id
+    ) REFERENCES ai_agent_workspace (tenant_id, organization_id, workspace_id)
+        ON DELETE RESTRICT,
     CONSTRAINT fk_ai_agent_project_default_agent FOREIGN KEY (tenant_id, default_agent_id)
         REFERENCES ai_agent (tenant_id, agent_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_agent_project_owner_list
     ON ai_agent_project (
-        tenant_id, organization_id, owner_user_id, status, updated_at DESC, id DESC
+        tenant_id, organization_id, owner_user_id, workspace_id, status,
+        updated_at DESC, id DESC
+    ) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_project_workspace_list
+    ON ai_agent_project (
+        tenant_id, organization_id, workspace_id, status, updated_at DESC, id DESC
     ) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_agent_project_org_list
     ON ai_agent_project (
@@ -324,6 +389,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_project_org_list
 CREATE INDEX IF NOT EXISTS idx_ai_agent_project_retention
     ON ai_agent_project (tenant_id, organization_id, retention_until, id)
     WHERE retention_until IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_project_active_import_source
+    ON ai_agent_project (
+        tenant_id, organization_id, owner_user_id, import_source_kind, import_source_ref
+    ) WHERE import_source_kind IS NOT NULL
+        AND import_source_ref IS NOT NULL
+        AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS ai_agent_project_composition_slot (
     id BIGINT NOT NULL PRIMARY KEY,

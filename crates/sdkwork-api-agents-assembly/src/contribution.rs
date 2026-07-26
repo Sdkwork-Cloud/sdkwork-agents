@@ -19,12 +19,33 @@ pub struct ApiAssemblyContribution {
     pub readiness_check: Arc<dyn ReadinessCheck>,
 }
 
+/// App-host runtime ports backed by the same Agents repository state.
+pub struct AppRuntimeContribution {
+    pub api: ApiAssemblyContribution,
+    pub session_facade: Arc<dyn sdkwork_agents_runtime_facade::AgentsSessionFacade>,
+}
+
 /// Builds the unwrapped Agents App API for a gateway that owns the single Web Framework layer.
 pub async fn assemble_app_api_contribution() -> anyhow::Result<ApiAssemblyContribution> {
-    let state = tokio::task::spawn_blocking(sdkwork_agents_kernel_bridge::build_agent_http_state)
-        .await
-        .map_err(|error| anyhow::anyhow!("agents state bootstrap worker failed: {error}"))??;
+    let state = build_agent_http_state().await?;
     Ok(contribution_from_state(state))
+}
+
+/// Builds the App API contribution and approved in-process facade from one state.
+pub async fn assemble_app_runtime_contribution() -> anyhow::Result<AppRuntimeContribution> {
+    let state = build_agent_http_state().await?;
+    let session_facade = state.session_facade();
+    let api = contribution_from_state(state);
+    Ok(AppRuntimeContribution {
+        api,
+        session_facade,
+    })
+}
+
+async fn build_agent_http_state() -> anyhow::Result<AgentHttpState> {
+    tokio::task::spawn_blocking(sdkwork_agents_kernel_bridge::build_agent_http_state)
+        .await
+        .map_err(|error| anyhow::anyhow!("agents state bootstrap worker failed: {error}"))?
 }
 
 fn contribution_from_state(state: AgentHttpState) -> ApiAssemblyContribution {

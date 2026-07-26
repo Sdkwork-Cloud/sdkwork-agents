@@ -274,6 +274,7 @@ pub struct CreateProjectCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub project_id: String,
+    pub workspace_id: Option<String>,
     pub owner_user_id: u64,
     pub name: String,
     pub description: Option<String>,
@@ -281,6 +282,84 @@ pub struct CreateProjectCommand {
     pub drive_access_mode: AgentProjectDriveAccessMode,
     pub default_agent_id: Option<String>,
     pub default_model_id: Option<String>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnsureDefaultWorkspaceCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub owner_user_id: u64,
+    pub default_name: Option<String>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateWorkspaceCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub owner_user_id: u64,
+    pub name: String,
+    pub description: Option<String>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetWorkspaceCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub workspace_id: String,
+    pub owner_user_id: u64,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateWorkspaceCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub workspace_id: String,
+    pub owner_user_id: u64,
+    pub expected_version: Option<u64>,
+    pub name: Option<String>,
+    pub description: Option<Option<String>>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceMutationCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub workspace_id: String,
+    pub owner_user_id: u64,
+    pub expected_version: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListWorkspacesCommand {
+    pub query: crate::ports::WorkspaceListQuery,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportProjectCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub workspace_id: String,
+    pub project_id: String,
+    pub owner_user_id: u64,
+    pub name: String,
+    pub description: Option<String>,
+    pub source_kind: String,
+    pub source_ref: String,
+    pub drive_space_id: String,
+    pub drive_root_entry_id: String,
+    pub drive_logical_path: String,
     pub requested_by: PolicySubject,
     pub requested_at: String,
 }

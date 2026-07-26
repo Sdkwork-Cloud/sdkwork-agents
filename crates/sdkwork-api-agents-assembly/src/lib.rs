@@ -8,7 +8,10 @@ mod generated;
 mod readiness;
 
 pub use bootstrap::{assemble_api_router, ApiAssembly};
-pub use contribution::{assemble_app_api_contribution, ApiAssemblyContribution};
+pub use contribution::{
+    assemble_app_api_contribution, assemble_app_runtime_contribution, ApiAssemblyContribution,
+    AppRuntimeContribution,
+};
 
 /// Apply the Agents managed-store lifecycle from the canonical environment profile.
 pub async fn bootstrap_application_database_from_env() -> anyhow::Result<()> {

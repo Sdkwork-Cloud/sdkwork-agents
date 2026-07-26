@@ -83,7 +83,7 @@
     {
       "file": "AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
       "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
-      "purpose": "Canonical 19-table Agents PostgreSQL contract."
+      "purpose": "Canonical 20-table Agents PostgreSQL contract."
     },
     {
       "file": "agents-birdcoder-alignment.spec.json",
@@ -247,6 +247,7 @@
   },
   "integration": {
     "authority": "Application domain logic, HTTP routes, SDKs, and managed-store persistence live in sdkwork-agents. sdkwork-kernel provides runtime SPI only.",
+    "permissionManifest": "../sdkwork-iam/iam/modules/ai/iam.module.manifest.json",
     "kernelPolicy": "Compose sdkwork-agent-server and sdkwork-agent-database for runtime; never embed application domain rules in kernel.",
     "uploadPolicy": "All file uploads must use sdkwork-drive Drive Uploader; no app-local upload APIs.",
     "discoveryPolicy": "sdkwork-discovery remains inactive until RPC services ship."

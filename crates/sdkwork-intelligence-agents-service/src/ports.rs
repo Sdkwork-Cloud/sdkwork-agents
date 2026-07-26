@@ -8,6 +8,7 @@ use crate::domain::{
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::validation::optional_non_blank;
+use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
 
 // ---------------------------------------------------------------------------
@@ -370,6 +371,7 @@ pub struct ProjectListQuery {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub owner_user_id: Option<u64>,
+    pub workspace_id: Option<String>,
     pub status: Option<AgentProjectStatus>,
     pub search_query: Option<String>,
     pub include_deleted: bool,
@@ -382,6 +384,7 @@ impl ProjectListQuery {
             tenant_id,
             organization_id,
             owner_user_id: None,
+            workspace_id: None,
             status: None,
             search_query: None,
             include_deleted: false,
@@ -394,6 +397,11 @@ impl ProjectListQuery {
         self
     }
 
+    pub fn for_workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = optional_non_blank(workspace_id.into());
+        self
+    }
+
     pub fn with_status(mut self, status: AgentProjectStatus) -> Self {
         self.status = Some(status);
         self
@@ -402,6 +410,34 @@ impl ProjectListQuery {
     pub fn with_search(mut self, search_query: impl Into<String>) -> Self {
         self.search_query = optional_non_blank(search_query.into());
         self
+    }
+
+    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
+        self.pagination = pagination;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub owner_user_id: u64,
+    pub status: Option<AgentWorkspaceStatus>,
+    pub include_deleted: bool,
+    pub pagination: PaginationParams,
+}
+
+impl WorkspaceListQuery {
+    pub fn for_owner(tenant_id: u64, organization_id: u64, owner_user_id: u64) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            status: None,
+            include_deleted: false,
+            pagination: PaginationParams::default(),
+        }
     }
 
     pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
@@ -863,6 +899,31 @@ pub trait AgentRepository: Send + Sync {
     /// Count agents matching list filters (excluding pagination bounds).
     fn count_agents(&self, query: &AgentListQuery) -> KernelResult<u64>;
 
+    fn insert_workspace(&self, record: AgentWorkspaceRecord) -> KernelResult<()>;
+
+    fn update_workspace(&self, record: AgentWorkspaceRecord) -> KernelResult<()>;
+
+    fn get_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+    ) -> KernelResult<Option<AgentWorkspaceRecord>>;
+
+    fn get_default_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+    ) -> KernelResult<Option<AgentWorkspaceRecord>>;
+
+    fn list_workspaces(
+        &self,
+        query: &WorkspaceListQuery,
+    ) -> KernelResult<Vec<AgentWorkspaceRecord>>;
+
+    fn count_workspaces(&self, query: &WorkspaceListQuery) -> KernelResult<u64>;
+
     fn insert_project(&self, record: AgentProjectRecord) -> KernelResult<()>;
 
     fn update_project(&self, record: AgentProjectRecord) -> KernelResult<()>;
@@ -872,6 +933,15 @@ pub trait AgentRepository: Send + Sync {
         tenant_id: u64,
         organization_id: u64,
         project_id: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>>;
+
+    fn get_project_by_import_source(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        source_kind: &str,
+        source_ref: &str,
     ) -> KernelResult<Option<AgentProjectRecord>>;
 
     fn list_projects(&self, query: &ProjectListQuery) -> KernelResult<Vec<AgentProjectRecord>>;

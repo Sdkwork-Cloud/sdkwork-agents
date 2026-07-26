@@ -34,7 +34,7 @@ test("agents database manifest declares one canonical PostgreSQL engine", () => 
   assert.deepEqual(manifest.engines, ["postgres"]);
   assert.equal(manifest.defaultEngine, "postgres");
   assert.equal(manifest.tablePrefix, "ai_");
-  assert.equal(manifest.contractVersion, "5.0.0");
+  assert.equal(manifest.contractVersion, "6.0.0");
   assert.equal(manifest.baselineStrategy, "baseline-plus-migrations");
   assert.equal(
     manifest.lifecycle.autoMigrate,
@@ -66,13 +66,13 @@ test("agents database contract is materialized without placeholders", () => {
   const schema = readFileSync(schemaPath, "utf8");
   assert.doesNotMatch(schema, /<module-id>/);
   assert.match(schema, /table_prefix: ai_/u);
-  assert.match(schema, /contract_version: 5\.0\.0/u);
+  assert.match(schema, /contract_version: 6\.0\.0/u);
   assert.match(
     schema,
     /ddl_authority: ddl\/baseline\/postgres\/0001_agents_baseline\.sql/u,
   );
   assert.equal((schema.match(/lifecycle_status: expanding/gu) ?? []).length, 0);
-  assert.equal((schema.match(/lifecycle_status: active/gu) ?? []).length, 19);
+  assert.equal((schema.match(/lifecycle_status: active/gu) ?? []).length, 20);
   assert.equal(
     (schema.match(/- \[document, documents\]/gu) ?? []).length,
     2,
@@ -87,15 +87,15 @@ test("agents database contract is materialized without placeholders", () => {
   const registry = JSON.parse(
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
   );
-  assert.equal(registry.contractVersion, "5.0.0");
-  assert.equal(registry.tables.length, 19);
+  assert.equal(registry.contractVersion, "6.0.0");
+  assert.equal(registry.tables.length, 20);
   assert.ok(
     registry.tables.every((entry) => entry.lifecycle_status === "active"),
-    "every Agents 5.0 table must be active in the contract registry",
+    "every Agents 6.0 table must be active in the contract registry",
   );
 });
 
-test("PostgreSQL baseline exactly matches the 19-table contract registry", () => {
+test("PostgreSQL baseline exactly matches the 20-table contract registry", () => {
   const baseline = readFileSync(
     path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
@@ -155,6 +155,7 @@ test("agent project and execution table names close across every persistence aut
     registry.tables.map((entry) => entry.table_name),
   );
   const aggregateTables = [
+    "ai_agent_workspace",
     "ai_agent_project",
     "ai_agent_project_composition_slot",
     "ai_agent_session",
@@ -296,7 +297,7 @@ test("composition slot enums and canonical module pairs stay aligned", () => {
   }
 });
 
-test("greenfield baseline structures are not replayed by incremental migrations", () => {
+test("Workspace migration declares only structures introduced or extended after 5.0", () => {
   const baseline = readFileSync(
     path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
@@ -307,32 +308,48 @@ test("greenfield baseline structures are not replayed by incremental migrations"
     .map((fileName) => readFileSync(path.join(migrationRoot, fileName), "utf8"))
     .join("\n");
 
+  const expectedMigrationConstraints = new Set([
+    "ck_ai_agent_audit_aggregate_type",
+    "ck_ai_agent_audit_action",
+    "ck_ai_agent_project_import_source",
+    "ck_ai_agent_project_drive_source",
+    "fk_ai_agent_project_workspace",
+  ]);
   for (const constraint of Array.from(
     baseline.matchAll(/CONSTRAINT\s+([a-z0-9_]+)/giu),
     (match) => match[1],
   )) {
-    assert.doesNotMatch(
-      migrations,
-      new RegExp(`ADD\\s+CONSTRAINT\\s+${constraint}\\b`, "iu"),
-      `incremental migrations must not replay baseline constraint ${constraint}`,
-    );
+    if (!expectedMigrationConstraints.has(constraint)) {
+      assert.doesNotMatch(
+        migrations,
+        new RegExp(`ADD\\s+CONSTRAINT\\s+${constraint}\\b`, "iu"),
+        `Workspace migration must not replay unchanged pre-6.0 constraint ${constraint}`,
+      );
+    }
   }
 });
 
-test("pre-launch PostgreSQL contract has no incremental migration chain", () => {
+test("PostgreSQL contract contains the governed 5.0 to 6.0 Workspace migration", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
   const activeMigrations = readdirSync(migrationRoot).filter((fileName) =>
     /\.(?:up|down)\.sql$/u.test(fileName),
   );
-  assert.deepEqual(activeMigrations, []);
+  assert.deepEqual(activeMigrations, ["0001_add_agent_workspaces.up.sql"]);
 });
 
-test("every PostgreSQL up migration has a reviewed down pair", () => {
+test("every PostgreSQL up migration declares a governed rollback strategy", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
   const files = readdirSync(migrationRoot);
   for (const upName of files.filter((fileName) => fileName.endsWith(".up.sql"))) {
     const downName = upName.replace(/\.up\.sql$/u, ".down.sql");
-    assert.ok(files.includes(downName), `${upName} must have ${downName}`);
+    const upSql = readFileSync(path.join(migrationRoot, upName), "utf8");
+    assert.match(upSql, /^-- reversible: (?:true|false)$/mu);
+    assert.match(upSql, /^-- rollback: (?:down-migration|forward-fix|restore-cutover)$/mu);
+    if (/^-- reversible: true$/mu.test(upSql)) {
+      assert.ok(files.includes(downName), `${upName} must have ${downName}`);
+    } else {
+      assert.equal(files.includes(downName), false, `${upName} must use forward recovery`);
+    }
   }
 });
 

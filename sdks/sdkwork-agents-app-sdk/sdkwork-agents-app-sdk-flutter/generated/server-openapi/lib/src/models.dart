@@ -1818,9 +1818,346 @@ class RestoreAgentRequest {
   }
 }
 
+class AgentWorkspaceRecord {
+  final String id;
+  final String workspaceId;
+  final String tenantId;
+  final String organizationId;
+  final String ownerUserId;
+  final String name;
+  final String? description;
+  final bool isDefault;
+  final String status;
+  final String version;
+  final String createdAt;
+  final String updatedAt;
+  final String? archivedAt;
+
+  AgentWorkspaceRecord({
+    required this.id,
+    required this.workspaceId,
+    required this.tenantId,
+    required this.organizationId,
+    required this.ownerUserId,
+    required this.name,
+    this.description,
+    required this.isDefault,
+    required this.status,
+    required this.version,
+    required this.createdAt,
+    required this.updatedAt,
+    this.archivedAt
+  });
+
+  factory AgentWorkspaceRecord.fromJson(Map<String, dynamic> json) {
+    return AgentWorkspaceRecord(
+      id: (() {
+        final value = json['id']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.id is required');
+        }
+        return value;
+      })(),
+      workspaceId: (() {
+        final value = json['workspaceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.workspaceId is required');
+        }
+        return value;
+      })(),
+      tenantId: (() {
+        final value = json['tenantId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.tenantId is required');
+        }
+        return value;
+      })(),
+      organizationId: (() {
+        final value = json['organizationId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.organizationId is required');
+        }
+        return value;
+      })(),
+      ownerUserId: (() {
+        final value = json['ownerUserId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.ownerUserId is required');
+        }
+        return value;
+      })(),
+      name: (() {
+        final value = json['name']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.name is required');
+        }
+        return value;
+      })(),
+      description: json['description']?.toString(),
+      isDefault: (() {
+        final value = json['isDefault'];
+        if (value is! bool) {
+          throw FormatException('AgentWorkspaceRecord.isDefault is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.status is required');
+        }
+        return value;
+      })(),
+      version: (() {
+        final value = json['version']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.version is required');
+        }
+        return value;
+      })(),
+      createdAt: (() {
+        final value = json['createdAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.createdAt is required');
+        }
+        return value;
+      })(),
+      updatedAt: (() {
+        final value = json['updatedAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceRecord.updatedAt is required');
+        }
+        return value;
+      })(),
+      archivedAt: json['archivedAt']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'id': id,
+      'workspaceId': workspaceId,
+      'tenantId': tenantId,
+      'organizationId': organizationId,
+      'ownerUserId': ownerUserId,
+      'name': name,
+      'description': description,
+      'isDefault': isDefault,
+      'status': status,
+      'version': version,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'archivedAt': archivedAt,
+    };
+  }
+}
+
+class AgentWorkspaceResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentWorkspaceResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentWorkspaceResponse.fromJson(Map<String, dynamic> json) {
+    return AgentWorkspaceResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentWorkspaceResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentWorkspaceResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class AgentWorkspaceListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentWorkspaceListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentWorkspaceListResponse.fromJson(Map<String, dynamic> json) {
+    return AgentWorkspaceListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentWorkspaceListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentWorkspaceListResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class EnsureDefaultAgentWorkspaceRequest {
+  final String? name;
+
+  EnsureDefaultAgentWorkspaceRequest({
+    this.name
+  });
+
+  factory EnsureDefaultAgentWorkspaceRequest.fromJson(Map<String, dynamic> json) {
+    return EnsureDefaultAgentWorkspaceRequest(
+      name: json['name']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'name': name,
+    };
+  }
+}
+
+class CreateAgentWorkspaceRequest {
+  final String name;
+  final String? description;
+
+  CreateAgentWorkspaceRequest({
+    required this.name,
+    this.description
+  });
+
+  factory CreateAgentWorkspaceRequest.fromJson(Map<String, dynamic> json) {
+    return CreateAgentWorkspaceRequest(
+      name: (() {
+        final value = json['name']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentWorkspaceRequest.name is required');
+        }
+        return value;
+      })(),
+      description: json['description']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'name': name,
+      'description': description,
+    };
+  }
+}
+
+class UpdateAgentWorkspaceRequest {
+  final String expectedVersion;
+  final String? name;
+  final String? description;
+
+  UpdateAgentWorkspaceRequest({
+    required this.expectedVersion,
+    this.name,
+    this.description
+  });
+
+  factory UpdateAgentWorkspaceRequest.fromJson(Map<String, dynamic> json) {
+    return UpdateAgentWorkspaceRequest(
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('UpdateAgentWorkspaceRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      name: json['name']?.toString(),
+      description: json['description']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'expectedVersion': expectedVersion,
+      'name': name,
+      'description': description,
+    };
+  }
+}
+
+class AgentWorkspaceMutationRequest {
+  final String expectedVersion;
+
+  AgentWorkspaceMutationRequest({
+    required this.expectedVersion
+  });
+
+  factory AgentWorkspaceMutationRequest.fromJson(Map<String, dynamic> json) {
+    return AgentWorkspaceMutationRequest(
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('AgentWorkspaceMutationRequest.expectedVersion is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'expectedVersion': expectedVersion,
+    };
+  }
+}
+
 class AgentProjectRecord {
   final String id;
   final String projectId;
+  final String workspaceId;
   final String tenantId;
   final String organizationId;
   final String ownerUserId;
@@ -1831,6 +2168,11 @@ class AgentProjectRecord {
   final String driveAccessMode;
   final String? defaultAgentId;
   final String? defaultModelId;
+  final String? importSourceKind;
+  final String? importSourceRef;
+  final String? driveSpaceId;
+  final String? driveRootEntryId;
+  final String? driveLogicalPath;
   final String version;
   final String createdAt;
   final String updatedAt;
@@ -1839,6 +2181,7 @@ class AgentProjectRecord {
   AgentProjectRecord({
     required this.id,
     required this.projectId,
+    required this.workspaceId,
     required this.tenantId,
     required this.organizationId,
     required this.ownerUserId,
@@ -1849,6 +2192,11 @@ class AgentProjectRecord {
     required this.driveAccessMode,
     this.defaultAgentId,
     this.defaultModelId,
+    this.importSourceKind,
+    this.importSourceRef,
+    this.driveSpaceId,
+    this.driveRootEntryId,
+    this.driveLogicalPath,
     required this.version,
     required this.createdAt,
     required this.updatedAt,
@@ -1868,6 +2216,13 @@ class AgentProjectRecord {
         final value = json['projectId']?.toString();
         if (value == null) {
           throw FormatException('AgentProjectRecord.projectId is required');
+        }
+        return value;
+      })(),
+      workspaceId: (() {
+        final value = json['workspaceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentProjectRecord.workspaceId is required');
         }
         return value;
       })(),
@@ -1923,6 +2278,11 @@ class AgentProjectRecord {
       })(),
       defaultAgentId: json['defaultAgentId']?.toString(),
       defaultModelId: json['defaultModelId']?.toString(),
+      importSourceKind: json['importSourceKind']?.toString(),
+      importSourceRef: json['importSourceRef']?.toString(),
+      driveSpaceId: json['driveSpaceId']?.toString(),
+      driveRootEntryId: json['driveRootEntryId']?.toString(),
+      driveLogicalPath: json['driveLogicalPath']?.toString(),
       version: (() {
         final value = json['version']?.toString();
         if (value == null) {
@@ -1952,6 +2312,7 @@ class AgentProjectRecord {
     return <String, dynamic>{
       'id': id,
       'projectId': projectId,
+      'workspaceId': workspaceId,
       'tenantId': tenantId,
       'organizationId': organizationId,
       'ownerUserId': ownerUserId,
@@ -1962,6 +2323,11 @@ class AgentProjectRecord {
       'driveAccessMode': driveAccessMode,
       'defaultAgentId': defaultAgentId,
       'defaultModelId': defaultModelId,
+      'importSourceKind': importSourceKind,
+      'importSourceRef': importSourceRef,
+      'driveSpaceId': driveSpaceId,
+      'driveRootEntryId': driveRootEntryId,
+      'driveLogicalPath': driveLogicalPath,
       'version': version,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
@@ -2064,6 +2430,7 @@ class AgentProjectListResponse {
 
 class CreateAgentProjectRequest {
   final String? projectId;
+  final String? workspaceId;
   final String name;
   final String? description;
   final String? visibility;
@@ -2073,6 +2440,7 @@ class CreateAgentProjectRequest {
 
   CreateAgentProjectRequest({
     this.projectId,
+    this.workspaceId,
     required this.name,
     this.description,
     this.visibility,
@@ -2084,6 +2452,7 @@ class CreateAgentProjectRequest {
   factory CreateAgentProjectRequest.fromJson(Map<String, dynamic> json) {
     return CreateAgentProjectRequest(
       projectId: json['projectId']?.toString(),
+      workspaceId: json['workspaceId']?.toString(),
       name: (() {
         final value = json['name']?.toString();
         if (value == null) {
@@ -2102,12 +2471,101 @@ class CreateAgentProjectRequest {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'projectId': projectId,
+      'workspaceId': workspaceId,
       'name': name,
       'description': description,
       'visibility': visibility,
       'driveAccessMode': driveAccessMode,
       'defaultAgentId': defaultAgentId,
       'defaultModelId': defaultModelId,
+    };
+  }
+}
+
+class ImportAgentProjectRequest {
+  final String workspaceId;
+  final String? projectId;
+  final String name;
+  final String? description;
+  final String sourceKind;
+  final String sourceRef;
+  final String driveSpaceId;
+  final String driveRootEntryId;
+  final String? driveLogicalPath;
+
+  ImportAgentProjectRequest({
+    required this.workspaceId,
+    this.projectId,
+    required this.name,
+    this.description,
+    required this.sourceKind,
+    required this.sourceRef,
+    required this.driveSpaceId,
+    required this.driveRootEntryId,
+    this.driveLogicalPath
+  });
+
+  factory ImportAgentProjectRequest.fromJson(Map<String, dynamic> json) {
+    return ImportAgentProjectRequest(
+      workspaceId: (() {
+        final value = json['workspaceId']?.toString();
+        if (value == null) {
+          throw FormatException('ImportAgentProjectRequest.workspaceId is required');
+        }
+        return value;
+      })(),
+      projectId: json['projectId']?.toString(),
+      name: (() {
+        final value = json['name']?.toString();
+        if (value == null) {
+          throw FormatException('ImportAgentProjectRequest.name is required');
+        }
+        return value;
+      })(),
+      description: json['description']?.toString(),
+      sourceKind: (() {
+        final value = json['sourceKind']?.toString();
+        if (value == null) {
+          throw FormatException('ImportAgentProjectRequest.sourceKind is required');
+        }
+        return value;
+      })(),
+      sourceRef: (() {
+        final value = json['sourceRef']?.toString();
+        if (value == null) {
+          throw FormatException('ImportAgentProjectRequest.sourceRef is required');
+        }
+        return value;
+      })(),
+      driveSpaceId: (() {
+        final value = json['driveSpaceId']?.toString();
+        if (value == null) {
+          throw FormatException('ImportAgentProjectRequest.driveSpaceId is required');
+        }
+        return value;
+      })(),
+      driveRootEntryId: (() {
+        final value = json['driveRootEntryId']?.toString();
+        if (value == null) {
+          throw FormatException('ImportAgentProjectRequest.driveRootEntryId is required');
+        }
+        return value;
+      })(),
+      driveLogicalPath: json['driveLogicalPath']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'workspaceId': workspaceId,
+      'projectId': projectId,
+      'name': name,
+      'description': description,
+      'sourceKind': sourceKind,
+      'sourceRef': sourceRef,
+      'driveSpaceId': driveSpaceId,
+      'driveRootEntryId': driveRootEntryId,
+      'driveLogicalPath': driveLogicalPath,
     };
   }
 }

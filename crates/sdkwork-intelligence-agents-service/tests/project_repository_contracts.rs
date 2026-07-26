@@ -1,12 +1,13 @@
 use sdkwork_intelligence_agents_service::{
     AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProjectCompositionSlotRecord,
     AgentProjectDriveAccessMode, AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
-    AgentRepository, InMemoryAgentRepository, PaginationParams, ProjectCompositionSlotListQuery,
-    ProjectListQuery, SQL_COUNT_AGENT_PROJECTS, SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS,
-    SQL_INSERT_AGENT_PROJECT, SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_LIST_AGENT_PROJECTS,
+    AgentRepository, AgentWorkspaceRecord, AgentWorkspaceStatus, InMemoryAgentRepository,
+    PaginationParams, ProjectCompositionSlotListQuery, ProjectListQuery, SQL_COUNT_AGENT_PROJECTS,
+    SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_INSERT_AGENT_PROJECT,
+    SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_SELECT_AGENT_PROJECT,
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_PROJECT,
-    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT,
+    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_WORKSPACE,
 };
 
 fn project(
@@ -19,6 +20,7 @@ fn project(
     AgentProjectRecord {
         id,
         project_id: project_id.to_string(),
+        workspace_id: format!("workspace.default.{owner_user_id}"),
         tenant_id,
         organization_id,
         owner_user_id,
@@ -29,6 +31,11 @@ fn project(
         drive_access_mode: AgentProjectDriveAccessMode::OwnerLibrary,
         default_agent_id: None,
         default_model_id: None,
+        import_source_kind: None,
+        import_source_ref: None,
+        drive_space_id: None,
+        drive_root_entry_id: None,
+        drive_logical_path: None,
         created_by: owner_user_id,
         updated_by: owner_user_id,
         version: 0,
@@ -65,6 +72,61 @@ fn project_slot(id: u64, slot_id: &str, priority: i32) -> AgentProjectCompositio
         deleted_by: None,
         retention_until: None,
     }
+}
+
+fn workspace(id: u64, workspace_id: &str) -> AgentWorkspaceRecord {
+    AgentWorkspaceRecord {
+        id,
+        workspace_id: workspace_id.to_string(),
+        tenant_id: 10,
+        organization_id: 20,
+        owner_user_id: 30,
+        name: "Workspace".to_string(),
+        description: None,
+        is_default: false,
+        status: AgentWorkspaceStatus::Active,
+        created_by: 30,
+        updated_by: 30,
+        version: 0,
+        created_at: "2026-07-25T00:00:00Z".to_string(),
+        updated_at: "2026-07-25T00:00:00Z".to_string(),
+        archived_at: None,
+        archived_by: None,
+        deleted_at: None,
+        deleted_by: None,
+        retention_until: None,
+    }
+}
+
+#[test]
+fn workspace_repository_enforces_optimistic_version_and_soft_delete() {
+    let repository = InMemoryAgentRepository::new();
+    let record = workspace(1, "workspace.alpha");
+    repository.insert_workspace(record.clone()).unwrap();
+
+    let mut stale = record.clone();
+    stale.name = "Stale".to_string();
+    assert!(repository.update_workspace(stale).is_err());
+
+    let mut updated = record;
+    updated.name = "Updated".to_string();
+    updated.mark_updated(30, "2026-07-25T00:01:00Z");
+    repository.update_workspace(updated.clone()).unwrap();
+    assert_eq!(
+        repository
+            .get_workspace(10, 20, "workspace.alpha")
+            .unwrap()
+            .expect("Workspace")
+            .name,
+        "Updated"
+    );
+
+    updated.soft_delete(30, "2026-07-25T00:02:00Z");
+    repository.update_workspace(updated).unwrap();
+    assert!(repository
+        .get_workspace(10, 20, "workspace.alpha")
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -135,8 +197,10 @@ fn project_postgres_sql_is_scoped_parameterized_and_versioned() {
         assert!(sql.contains("organization_id = $2"));
     }
     assert!(SQL_SELECT_AGENT_PROJECT.contains("deleted_at IS NULL"));
-    assert!(SQL_LIST_AGENT_PROJECTS.contains("LIMIT $7 OFFSET $8"));
-    assert!(SQL_UPDATE_AGENT_PROJECT.contains("version = $19"));
+    assert!(SQL_LIST_AGENT_PROJECTS.contains("workspace_id = $4"));
+    assert!(SQL_LIST_AGENT_PROJECTS.contains("LIMIT $8 OFFSET $9"));
+    assert!(SQL_UPDATE_AGENT_PROJECT.contains("version = $25"));
+    assert!(SQL_UPDATE_AGENT_WORKSPACE.contains("version = $15"));
 }
 
 #[test]

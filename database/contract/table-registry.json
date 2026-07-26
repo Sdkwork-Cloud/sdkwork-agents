@@ -1,13 +1,14 @@
 {
   "schemaVersion": 1,
   "kind": "sdkwork.database.table-registry",
-  "contractVersion": "5.0.0",
+  "contractVersion": "6.0.0",
   "moduleId": "agents",
   "tables": [
     { "table_name": "ai_agent", "profile": "tenant_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },
     { "table_name": "ai_agent_runtime_binding", "profile": "tenant_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },
     { "table_name": "ai_agent_composition_slot", "profile": "relation_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },
     { "table_name": "ai_agent_audit_event", "profile": "audit_event", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L3", "lifecycle_status": "active" },
+    { "table_name": "ai_agent_workspace", "profile": "tenant_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },
     { "table_name": "ai_agent_project", "profile": "tenant_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },
     { "table_name": "ai_agent_project_composition_slot", "profile": "relation_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },
     { "table_name": "ai_agent_session", "profile": "tenant_entity", "owner": "agents-platform", "write_owner": "sdkwork-intelligence-agents-service", "system_of_record": true, "compliance_level": "L2", "lifecycle_status": "active" },

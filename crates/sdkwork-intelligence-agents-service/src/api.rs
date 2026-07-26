@@ -364,6 +364,48 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
+        path: "/app/v3/api/ai/workspaces",
+        tag: "ai",
+        operation_id: "agents.workspaces.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/workspaces",
+        tag: "ai",
+        operation_id: "agents.workspaces.create",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/workspaces/default",
+        tag: "ai",
+        operation_id: "agents.workspaces.default.create",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/workspaces/{workspaceId}",
+        tag: "ai",
+        operation_id: "agents.workspaces.retrieve",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/workspaces/{workspaceId}",
+        tag: "ai",
+        operation_id: "agents.workspaces.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/workspaces/{workspaceId}",
+        tag: "ai",
+        operation_id: "agents.workspaces.delete",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/workspaces/{workspaceId}/archive",
+        tag: "ai",
+        operation_id: "agents.workspaces.archive",
+    },
+    ApiOperation {
+        method: "GET",
         path: "/app/v3/api/ai/projects",
         tag: "ai",
         operation_id: "agents.projects.list",
@@ -373,6 +415,12 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         path: "/app/v3/api/ai/projects",
         tag: "ai",
         operation_id: "agents.projects.create",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/projects/import",
+        tag: "ai",
+        operation_id: "agents.projects.import",
     },
     ApiOperation {
         method: "GET",
@@ -1021,6 +1069,42 @@ mod tests {
         );
     }
 
+    fn assert_openapi_permission(
+        openapi: &str,
+        method: &str,
+        path: &str,
+        expected_permission: &str,
+    ) {
+        let document: serde_yaml::Value =
+            serde_yaml::from_str(openapi).expect("OpenAPI authority must be valid YAML");
+        let permission = document
+            .get("paths")
+            .and_then(|value| value.get(path))
+            .and_then(|value| value.get(method))
+            .and_then(|value| value.get("x-sdkwork-permission"))
+            .and_then(serde_yaml::Value::as_str);
+
+        assert_eq!(permission, Some(expected_permission));
+    }
+
+    #[test]
+    fn app_project_and_code_engine_lists_require_agents_read_permission() {
+        let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
+
+        assert_openapi_permission(
+            app_openapi,
+            "get",
+            "/app/v3/api/ai/projects",
+            crate::infrastructure::IAM_PERMISSION_AGENTS_READ,
+        );
+        assert_openapi_permission(
+            app_openapi,
+            "get",
+            "/app/v3/api/ai/code_engines",
+            crate::infrastructure::IAM_PERMISSION_AGENTS_READ,
+        );
+    }
+
     #[test]
     fn provider_binding_operations_are_registered() {
         assert_operation(
@@ -1179,11 +1263,27 @@ mod tests {
                 "UpdateAgentCompositionSlotRequest:".to_string(),
                 "AgentCompositionSlotResponse:".to_string(),
                 "AgentCompositionSlotListResponse:".to_string(),
-                "x-sdkwork-permission: agent.business.composition_slot.list".to_string(),
-                "x-sdkwork-permission: agent.business.composition_slot.create".to_string(),
             ] {
                 assert!(
                     openapi.contains(required.as_str()),
+                    "{label} OpenAPI must contain {required}"
+                );
+            }
+
+            let composition_permissions = if label == "app" {
+                [
+                    "x-sdkwork-permission: ai.agents.read",
+                    "x-sdkwork-permission: ai.agents.manage",
+                ]
+            } else {
+                [
+                    "x-sdkwork-permission: agent.business.composition_slot.list",
+                    "x-sdkwork-permission: agent.business.composition_slot.create",
+                ]
+            };
+            for required in composition_permissions {
+                assert!(
+                    openapi.contains(required),
                     "{label} OpenAPI must contain {required}"
                 );
             }
@@ -1366,7 +1466,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 47);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 68);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 76);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 48);
 
         assert_eq!(

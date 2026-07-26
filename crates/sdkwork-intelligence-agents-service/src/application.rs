@@ -41,6 +41,7 @@ use crate::validation::{
     is_trimmed_blank, parse_optional_rfc3339_datetime, parse_rfc3339_datetime, require_non_blank,
     validate_capabilities, validate_requested_at, validate_standard_id,
 };
+use crate::workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
     KernelError, KernelErrorKind, KernelEvent, KernelEventRedaction, KernelEventSeverity,
     KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider,
@@ -277,6 +278,38 @@ where
             }
         }
         Ok(())
+    }
+
+    fn resolve_active_project_workspace(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        workspace_id: Option<&str>,
+        requested_by: PolicySubject,
+        requested_at: String,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        let workspace = if let Some(workspace_id) = workspace_id {
+            validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
+            self.repository
+                .get_workspace(tenant_id, organization_id, workspace_id)?
+                .ok_or_else(|| KernelError::validation("workspace not found"))?
+        } else {
+            self.ensure_default_workspace(EnsureDefaultWorkspaceCommand {
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                default_name: None,
+                requested_by,
+                requested_at,
+            })?
+        };
+        if workspace.owner_user_id != owner_user_id
+            || workspace.status != AgentWorkspaceStatus::Active
+        {
+            return Err(KernelError::validation("workspace not found"));
+        }
+        Ok(workspace)
     }
 
     fn load_active_project_for_composition(
@@ -1294,6 +1327,327 @@ where
     // Project management
     // -----------------------------------------------------------------------
 
+    pub fn ensure_default_workspace(
+        &self,
+        command: EnsureDefaultWorkspaceCommand,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        self.authorize(
+            "agent.business.workspace.ensure_default",
+            command.requested_by.clone(),
+            format!("agent.business.workspace.owner.{}", command.owner_user_id),
+            "workspace.ensureDefault",
+        )?;
+        if let Some(existing) = self.repository.get_default_workspace(
+            command.tenant_id,
+            command.organization_id,
+            command.owner_user_id,
+        )? {
+            return Ok(existing);
+        }
+        let workspace_id = default_workspace_id(command.owner_user_id);
+        if let Some(existing) = self.repository.get_workspace(
+            command.tenant_id,
+            command.organization_id,
+            &workspace_id,
+        )? {
+            return Ok(existing);
+        }
+        let name = command
+            .default_name
+            .as_deref()
+            .map(trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "Workspace".to_string());
+        let record = AgentWorkspaceRecord {
+            id: self.repository.next_id()?,
+            workspace_id,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            owner_user_id: command.owner_user_id,
+            name,
+            description: None,
+            is_default: true,
+            status: AgentWorkspaceStatus::Active,
+            created_by: command.owner_user_id,
+            updated_by: command.owner_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at,
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+        match self.repository.insert_workspace(record.clone()) {
+            Ok(()) => {
+                self.emit_workspace_audit_event(
+                    AgentAuditAction::WorkspaceCreated,
+                    &record,
+                    command.requested_by,
+                    record.created_at.clone(),
+                )?;
+                Ok(record)
+            }
+            Err(error) if error.kind() == KernelErrorKind::Conflict => self
+                .repository
+                .get_default_workspace(
+                    command.tenant_id,
+                    command.organization_id,
+                    command.owner_user_id,
+                )?
+                .ok_or(error),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn create_workspace(
+        &self,
+        command: CreateWorkspaceCommand,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        self.authorize(
+            "agent.business.workspace.create",
+            command.requested_by.clone(),
+            format!("agent.business.workspace.owner.{}", command.owner_user_id),
+            "workspace.create",
+        )?;
+        let name = normalized_workspace_name(&command.name)?;
+        let id = self.repository.next_id()?;
+        let record = AgentWorkspaceRecord {
+            id,
+            workspace_id: format!("workspace.{id}"),
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            owner_user_id: command.owner_user_id,
+            name,
+            description: command.description,
+            is_default: false,
+            status: AgentWorkspaceStatus::Active,
+            created_by: command.owner_user_id,
+            updated_by: command.owner_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+        self.repository.insert_workspace(record.clone())?;
+        self.emit_workspace_audit_event(
+            AgentAuditAction::WorkspaceCreated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn get_workspace(
+        &self,
+        command: GetWorkspaceCommand,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        self.authorize(
+            "agent.business.workspace.retrieve",
+            command.requested_by,
+            format!("agent.business.workspace.{}", command.workspace_id),
+            "workspace.retrieve",
+        )?;
+        validate_standard_id(&command.workspace_id, "workspaceId", Some("workspace."))?;
+        let record = self
+            .repository
+            .get_workspace(
+                command.tenant_id,
+                command.organization_id,
+                &command.workspace_id,
+            )?
+            .ok_or_else(|| KernelError::validation("workspace not found"))?;
+        Self::ensure_workspace_owner_scope(&record, command.owner_user_id)?;
+        Ok(record)
+    }
+
+    pub fn update_workspace(
+        &self,
+        command: UpdateWorkspaceCommand,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        self.authorize(
+            "agent.business.workspace.update",
+            command.requested_by.clone(),
+            format!("agent.business.workspace.{}", command.workspace_id),
+            "workspace.update",
+        )?;
+        let mut record = self.load_workspace_for_owner(
+            command.tenant_id,
+            command.organization_id,
+            &command.workspace_id,
+            command.owner_user_id,
+        )?;
+        ensure_expected_version(record.version, command.expected_version, "workspace")?;
+        if record.status != AgentWorkspaceStatus::Active {
+            return Err(KernelError::validation("workspace is not active"));
+        }
+        if let Some(name) = command.name {
+            record.name = normalized_workspace_name(&name)?;
+        }
+        if let Some(description) = command.description {
+            record.description = description;
+        }
+        record.mark_updated(command.owner_user_id, command.requested_at.clone());
+        self.repository.update_workspace(record.clone())?;
+        self.emit_workspace_audit_event(
+            AgentAuditAction::WorkspaceUpdated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub fn archive_workspace(
+        &self,
+        command: WorkspaceMutationCommand,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        self.mutate_workspace_status(command, AgentWorkspaceStatus::Archived)
+    }
+
+    pub fn delete_workspace(
+        &self,
+        command: WorkspaceMutationCommand,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        self.mutate_workspace_status(command, AgentWorkspaceStatus::Deleted)
+    }
+
+    fn mutate_workspace_status(
+        &self,
+        command: WorkspaceMutationCommand,
+        target: AgentWorkspaceStatus,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        let (request_id, action, audit_action) = match target {
+            AgentWorkspaceStatus::Archived => (
+                "agent.business.workspace.archive",
+                "workspace.archive",
+                AgentAuditAction::WorkspaceArchived,
+            ),
+            AgentWorkspaceStatus::Deleted => (
+                "agent.business.workspace.delete",
+                "workspace.delete",
+                AgentAuditAction::WorkspaceDeleted,
+            ),
+            AgentWorkspaceStatus::Active => {
+                return Err(KernelError::validation("unsupported workspace transition"));
+            }
+        };
+        self.authorize(
+            request_id,
+            command.requested_by.clone(),
+            format!("agent.business.workspace.{}", command.workspace_id),
+            action,
+        )?;
+        let mut record = self.load_workspace_for_owner(
+            command.tenant_id,
+            command.organization_id,
+            &command.workspace_id,
+            command.owner_user_id,
+        )?;
+        ensure_expected_version(record.version, command.expected_version, "workspace")?;
+        if record.is_default {
+            return Err(KernelError::validation(
+                "default workspace cannot be archived or deleted",
+            ));
+        }
+        if target == AgentWorkspaceStatus::Archived && record.status != AgentWorkspaceStatus::Active
+        {
+            return Err(KernelError::validation("workspace is not active"));
+        }
+        if target == AgentWorkspaceStatus::Deleted
+            && !matches!(
+                record.status,
+                AgentWorkspaceStatus::Active | AgentWorkspaceStatus::Archived
+            )
+        {
+            return Err(KernelError::validation("workspace cannot be deleted"));
+        }
+        let projects = self.repository.count_projects(
+            &crate::ports::ProjectListQuery::for_organization(
+                command.tenant_id,
+                command.organization_id,
+            )
+            .for_owner(command.owner_user_id)
+            .for_workspace(&command.workspace_id),
+        )?;
+        if projects > 0 {
+            return Err(KernelError::conflict(
+                "workspace contains projects and cannot be archived or deleted",
+            ));
+        }
+        match target {
+            AgentWorkspaceStatus::Archived => {
+                record.archive(command.owner_user_id, command.requested_at.clone())
+            }
+            AgentWorkspaceStatus::Deleted => {
+                record.soft_delete(command.owner_user_id, command.requested_at.clone())
+            }
+            AgentWorkspaceStatus::Active => unreachable!(),
+        }
+        self.repository.update_workspace(record.clone())?;
+        self.emit_workspace_audit_event(
+            audit_action,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    fn load_workspace_for_owner(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<AgentWorkspaceRecord> {
+        validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
+        let record = self
+            .repository
+            .get_workspace(tenant_id, organization_id, workspace_id)?
+            .ok_or_else(|| KernelError::validation("workspace not found"))?;
+        Self::ensure_workspace_owner_scope(&record, owner_user_id)?;
+        Ok(record)
+    }
+
+    fn ensure_workspace_owner_scope(
+        record: &AgentWorkspaceRecord,
+        owner_user_id: u64,
+    ) -> KernelResult<()> {
+        if record.owner_user_id != owner_user_id {
+            return Err(KernelError::validation("workspace not found"));
+        }
+        Ok(())
+    }
+
+    pub fn list_workspaces(
+        &self,
+        command: ListWorkspacesCommand,
+    ) -> KernelResult<PaginatedResult<AgentWorkspaceRecord>> {
+        self.authorize(
+            "agent.business.workspace.list",
+            command.requested_by,
+            format!(
+                "agent.business.workspace.owner.{}",
+                command.query.owner_user_id
+            ),
+            "workspace.list",
+        )?;
+        let total_count = self.repository.count_workspaces(&command.query)?;
+        let items = self.repository.list_workspaces(&command.query)?;
+        Ok(offset_paginated_result(
+            items,
+            &command.query.pagination,
+            total_count,
+        ))
+    }
+
     pub fn create_project(
         &self,
         command: CreateProjectCommand,
@@ -1315,6 +1669,14 @@ where
             format!("agent.business.project.{project_id}"),
             "project.create",
         )?;
+        let workspace = self.resolve_active_project_workspace(
+            command.tenant_id,
+            command.organization_id,
+            command.owner_user_id,
+            command.workspace_id.as_deref(),
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
         if let Some(agent_id) = command.default_agent_id.as_deref() {
             validate_agent_id(agent_id)?;
             let agent = self
@@ -1335,6 +1697,7 @@ where
         let record = AgentProjectRecord {
             id: self.repository.next_id()?,
             project_id,
+            workspace_id: workspace.workspace_id,
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
             owner_user_id: command.owner_user_id,
@@ -1345,6 +1708,11 @@ where
             drive_access_mode: command.drive_access_mode,
             default_agent_id: command.default_agent_id,
             default_model_id: command.default_model_id,
+            import_source_kind: None,
+            import_source_ref: None,
+            drive_space_id: None,
+            drive_root_entry_id: None,
+            drive_logical_path: None,
             created_by: command.owner_user_id,
             updated_by: command.owner_user_id,
             version: 0,
@@ -1364,6 +1732,130 @@ where
             command.requested_at,
         )?;
         Ok(record)
+    }
+
+    pub fn import_project(
+        &self,
+        command: ImportProjectCommand,
+    ) -> KernelResult<AgentProjectRecord> {
+        let source_kind = trim(&command.source_kind).to_string();
+        let source_ref = trim(&command.source_ref).to_string();
+        let drive_space_id = trim(&command.drive_space_id).to_string();
+        let drive_root_entry_id = trim(&command.drive_root_entry_id).to_string();
+        let drive_logical_path = trim(&command.drive_logical_path).to_string();
+        require_non_blank(&source_kind, "sourceKind")?;
+        require_non_blank(&source_ref, "sourceRef")?;
+        require_non_blank(&drive_space_id, "driveSpaceId")?;
+        require_non_blank(&drive_root_entry_id, "driveRootEntryId")?;
+        if source_kind.len() > 64 {
+            return Err(KernelError::validation("sourceKind exceeds 64 bytes"));
+        }
+        if source_ref.len() > 512 {
+            return Err(KernelError::validation("sourceRef exceeds 512 bytes"));
+        }
+        if let Some(existing) = self.repository.get_project_by_import_source(
+            command.tenant_id,
+            command.organization_id,
+            command.owner_user_id,
+            &source_kind,
+            &source_ref,
+        )? {
+            if existing.workspace_id != command.workspace_id {
+                return Err(KernelError::conflict(
+                    "import source is already assigned to another workspace",
+                ));
+            }
+            return Ok(existing);
+        }
+        let project_id = if is_trimmed_blank(command.project_id.as_str()) {
+            format!("project.{}", self.repository.next_id()?)
+        } else {
+            command.project_id.clone()
+        };
+        validate_standard_id(project_id.as_str(), "projectId", Some("project."))?;
+        require_non_blank(command.name.as_str(), "name")?;
+        if command.name.len() > 255 {
+            return Err(KernelError::validation("name exceeds 255 bytes"));
+        }
+        self.authorize(
+            "agent.business.project.import",
+            command.requested_by.clone(),
+            format!("agent.business.project.{project_id}"),
+            "project.create",
+        )?;
+        let workspace = self.resolve_active_project_workspace(
+            command.tenant_id,
+            command.organization_id,
+            command.owner_user_id,
+            Some(&command.workspace_id),
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
+        if self
+            .repository
+            .get_project(command.tenant_id, command.organization_id, &project_id)?
+            .is_some()
+        {
+            return Err(KernelError::conflict("project already exists"));
+        }
+        let record = AgentProjectRecord {
+            id: self.repository.next_id()?,
+            project_id,
+            workspace_id: workspace.workspace_id,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            owner_user_id: command.owner_user_id,
+            name: trim(command.name.as_str()).to_string(),
+            description: command.description,
+            visibility: AgentProjectVisibility::Private,
+            status: AgentProjectStatus::Active,
+            drive_access_mode: AgentProjectDriveAccessMode::ExplicitResources,
+            default_agent_id: None,
+            default_model_id: None,
+            import_source_kind: Some(source_kind.clone()),
+            import_source_ref: Some(source_ref.clone()),
+            drive_space_id: Some(drive_space_id),
+            drive_root_entry_id: Some(drive_root_entry_id),
+            drive_logical_path: Some(drive_logical_path),
+            created_by: command.owner_user_id,
+            updated_by: command.owner_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+        match self.repository.insert_project(record.clone()) {
+            Ok(()) => {
+                self.emit_project_audit_event(
+                    AgentAuditAction::ProjectCreated,
+                    &record,
+                    command.requested_by,
+                    command.requested_at,
+                )?;
+                Ok(record)
+            }
+            Err(error) if error.kind() == KernelErrorKind::Conflict => {
+                let existing = self.repository.get_project_by_import_source(
+                    command.tenant_id,
+                    command.organization_id,
+                    command.owner_user_id,
+                    &source_kind,
+                    &source_ref,
+                )?;
+                match existing {
+                    Some(existing) if existing.workspace_id == command.workspace_id => Ok(existing),
+                    Some(_) => Err(KernelError::conflict(
+                        "import source is already assigned to another workspace",
+                    )),
+                    None => Err(error),
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub fn update_project(
@@ -4561,6 +5053,7 @@ where
         let payload_json = serde_json::json!({
             "schemaVersion": "v1",
             "projectId": record.project_id,
+            "workspaceId": record.workspace_id,
             "tenantId": record.tenant_id.to_string(),
             "organizationId": record.organization_id.to_string(),
             "ownerUserId": record.owner_user_id.to_string(),
@@ -4590,6 +5083,48 @@ where
         )
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.project.audit.v1");
+        self.audit_sink.record(event)
+    }
+
+    fn emit_workspace_audit_event(
+        &self,
+        action: AgentAuditAction,
+        record: &AgentWorkspaceRecord,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let payload_json = serde_json::json!({
+            "schemaVersion": "v1",
+            "workspaceId": record.workspace_id,
+            "tenantId": record.tenant_id.to_string(),
+            "organizationId": record.organization_id.to_string(),
+            "ownerUserId": record.owner_user_id.to_string(),
+            "isDefault": record.is_default,
+            "status": record.status.as_str(),
+            "version": record.version.to_string(),
+        })
+        .to_string();
+        let event = KernelEvent::new(
+            format!("agent_workspace_{}_{}", record.workspace_id, record.version),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "workspace")
+        .with_context("aggregate_id", record.workspace_id.as_str())
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.workspace.audit.v1");
         self.audit_sink.record(event)
     }
 
@@ -5655,6 +6190,15 @@ fn ensure_expected_version(
         )));
     }
     Ok(())
+}
+
+fn normalized_workspace_name(name: &str) -> KernelResult<String> {
+    require_non_blank(name, "name")?;
+    let normalized = trim(name).to_string();
+    if normalized.len() > 255 {
+        return Err(KernelError::validation("name exceeds 255 bytes"));
+    }
+    Ok(normalized)
 }
 
 fn validate_non_empty(value: &str, field_name: &str) -> KernelResult<()> {

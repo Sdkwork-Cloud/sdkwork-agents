@@ -1,6 +1,6 @@
 # SDKWork Agents Domain Specification
 
-- Version: `5.0.0`
+- Version: `6.0.0`
 - Status: active
 - Domain: `intelligence`
 - Capability: `agents`
@@ -12,12 +12,15 @@
 execution. Its canonical aggregate vocabulary is:
 
 ```text
-AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
 These terms describe agent execution, not instant messaging:
 
-- `AgentProject` groups reusable orchestration policy and sessions.
+- `AgentWorkspace` is the user-owned Project container; each owner scope has
+  one idempotently initialized active default Workspace.
+- `AgentProject` groups reusable orchestration policy and sessions within one
+  Workspace.
 - `AgentSession` is the durable agent execution context.
 - `AgentTurn` is one idempotent request and its execution lifecycle.
 - `AgentSessionItem` is an ordered typed transcript or execution item.
@@ -31,7 +34,8 @@ event, service, and repository contracts use the domain terms above.
 Agents owns:
 
 - managed agent identity, lifecycle, runtime and composition bindings;
-- agent projects, sessions, turns, session items and interactions;
+- agent workspaces, Workspace-scoped projects, sessions, turns, session items
+  and interactions;
 - provider-native session bindings, fork lineage and resumable checkpoints;
 - turn idempotency, retry/lease state, usage, audit and outbox facts;
 - typed Drive references attached to session items;
@@ -41,7 +45,7 @@ Agents does not own:
 
 - IM conversations, messages, members, read cursors, reactions or presence;
 - prompt library content, skill packages, document content, model catalogs or Drive bytes;
-- product-local workspaces, runtime-location details or filesystem paths;
+- product-local duplicate workspaces, runtime-location details or filesystem paths;
 - kernel provider mechanisms, transient token events, runs or steps.
 
 Cross-domain links are stable identifiers validated through public contracts.
@@ -102,6 +106,7 @@ performs tenant, organization, owner, agent and session authorization.
 
 | Agents concept | Canonical identifier | Forbidden new identifier |
 | --- | --- | --- |
+| Workspace | `workspaceId` / `ai_agent_workspace` | product-local Workspace id |
 | Session | `sessionId` / `ai_agent_session` | `conversationId`, `chatSessionId` |
 | Turn | `turnId` / `ai_agent_turn` | `chatTurnId` |
 | Session item | `itemId` / `ai_agent_session_item` | `messageId`, `chatMessageId` |

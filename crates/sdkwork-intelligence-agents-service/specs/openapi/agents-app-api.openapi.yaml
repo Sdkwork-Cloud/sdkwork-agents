@@ -1,7 +1,7 @@
 openapi: 3.1.2
 info:
   title: SDKWork Agent Business App API
-  version: 5.0.0
+  version: 6.0.0
   description: App-facing managed agent execution APIs for SDKWork clients.
 x-sdkwork-owner: sdkwork-agents
 x-sdkwork-api-authority: sdkwork-agents-app-api
@@ -24,7 +24,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
-      x-sdkwork-permission: agent.business.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.listed
       parameters:
@@ -55,7 +55,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
-      x-sdkwork-permission: agent.business.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-permission-scope: authenticated
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.created
@@ -116,7 +116,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
-      x-sdkwork-permission: agent.business.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.retrieved
       parameters:
@@ -170,7 +170,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
-      x-sdkwork-permission: agent.business.update
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.updated
       parameters:
@@ -245,7 +245,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
-      x-sdkwork-permission: agent.business.delete
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.deleted
       parameters:
@@ -311,7 +311,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents
-      x-sdkwork-permission: agent.business.restore
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.restored
       parameters:
@@ -387,7 +387,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.providerBindings
-      x-sdkwork-permission: agent.business.provider_binding.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -418,7 +418,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.providerBindings
-      x-sdkwork-permission: agent.business.provider_binding.add
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.provider_binding_changed
       parameters:
@@ -457,7 +457,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.providerBindings
-      x-sdkwork-permission: agent.business.provider_binding.activate
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.provider_binding_changed
       parameters:
@@ -495,7 +495,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.previewResponses
-      x-sdkwork-permission: agent.business.runtime.preview_response
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime.executed
       parameters:
@@ -532,7 +532,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.promptOptimizations
-      x-sdkwork-permission: agent.business.runtime.prompt_optimization
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime.executed
       parameters:
@@ -558,6 +558,199 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/workspaces:
+    get:
+      tags: [ai]
+      summary: List Workspaces for the current user
+      operationId: agents.workspaces.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/AgentWorkspaceStatus'
+      - name: includeDeleted
+        in: query
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Paginated Workspace list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWorkspaceListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [ai]
+      summary: Create a Workspace for the current user
+      operationId: agents.workspaces.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.workspace_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentWorkspaceRequest'
+      responses:
+        '201':
+          description: Created Workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWorkspaceResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/workspaces/default:
+    post:
+      tags: [ai]
+      summary: Ensure the current user has a default Workspace
+      operationId: agents.workspaces.default.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnsureDefaultAgentWorkspaceRequest'
+      responses:
+        '201':
+          description: Existing or newly initialized default Workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWorkspaceResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/workspaces/{workspaceId}:
+    get:
+      tags: [ai]
+      summary: Retrieve a Workspace owned by the current user
+      operationId: agents.workspaces.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/WorkspaceIdPath'
+      responses:
+        '200':
+          description: Workspace details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWorkspaceResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    patch:
+      tags: [ai]
+      summary: Update a Workspace owned by the current user
+      operationId: agents.workspaces.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.workspace_updated
+      parameters:
+      - $ref: '#/components/parameters/WorkspaceIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentWorkspaceRequest'
+      responses:
+        '200':
+          description: Updated Workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWorkspaceResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      tags: [ai]
+      summary: Soft-delete an empty, non-default Workspace
+      operationId: agents.workspaces.delete
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.workspace_deleted
+      parameters:
+      - $ref: '#/components/parameters/WorkspaceIdPath'
+      - name: expectedVersion
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/Int64String'
+      responses:
+        '204':
+          description: Workspace deleted
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/workspaces/{workspaceId}/archive:
+    post:
+      tags: [ai]
+      summary: Archive an empty, non-default Workspace
+      operationId: agents.workspaces.archive
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.workspaces
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.workspace_archived
+      parameters:
+      - $ref: '#/components/parameters/WorkspaceIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentWorkspaceMutationRequest'
+      responses:
+        '200':
+          description: Archived Workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWorkspaceResponse'
+        default:
+          $ref: '#/components/responses/Problem'
   /app/v3/api/ai/projects:
     get:
       tags: [ai]
@@ -568,11 +761,18 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projects
-      x-sdkwork-permission: agent.business.project.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
+      - name: workspaceId
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
       - name: q
         in: query
         schema:
@@ -605,7 +805,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projects
-      x-sdkwork-permission: agent.business.project.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_created
       requestBody:
@@ -623,6 +823,34 @@ paths:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/projects/import:
+    post:
+      tags: [ai]
+      summary: Import or reopen a Workspace-scoped Drive sandbox project
+      operationId: agents.projects.import
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.projects
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.project_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportAgentProjectRequest'
+      responses:
+        '200':
+          description: Imported project or existing project for the same source identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProjectResponse'
+        default:
+          $ref: '#/components/responses/Problem'
   /app/v3/api/ai/projects/{projectId}:
     get:
       tags: [ai]
@@ -633,7 +861,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projects
-      x-sdkwork-permission: agent.business.project.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/ProjectIdPath'
@@ -655,7 +883,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projects
-      x-sdkwork-permission: agent.business.project.update
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_updated
       parameters:
@@ -684,7 +912,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projects
-      x-sdkwork-permission: agent.business.project.delete
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_deleted
       parameters:
@@ -704,7 +932,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projects
-      x-sdkwork-permission: agent.business.project.archive
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_archived
       parameters:
@@ -734,7 +962,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projectCompositionSlots
-      x-sdkwork-permission: agent.business.project.composition_slot.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/ProjectIdPath'
@@ -766,7 +994,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projectCompositionSlots
-      x-sdkwork-permission: agent.business.project.composition_slot.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_composition_slot_created
       parameters:
@@ -796,7 +1024,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projectCompositionSlots
-      x-sdkwork-permission: agent.business.project.composition_slot.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/ProjectIdPath'
@@ -819,7 +1047,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projectCompositionSlots
-      x-sdkwork-permission: agent.business.project.composition_slot.update
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_composition_slot_updated
       parameters:
@@ -849,7 +1077,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.projectCompositionSlots
-      x-sdkwork-permission: agent.business.project.composition_slot.delete
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       x-sdkwork-audit-event: agent.business.project_composition_slot_deleted
       parameters:
@@ -876,7 +1104,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
-      x-sdkwork-permission: agent.business.session.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -907,7 +1135,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
-      x-sdkwork-permission: agent.business.session.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.session_created
       parameters:
@@ -937,7 +1165,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionUserStates
-      x-sdkwork-permission: agent.business.session.user_state.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -975,7 +1203,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
-      x-sdkwork-permission: agent.business.session.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -999,7 +1227,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
-      x-sdkwork-permission: agent.business.session.update
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.session_updated
       parameters:
@@ -1030,7 +1258,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
-      x-sdkwork-permission: agent.business.session.delete
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.session_deleted
       parameters:
@@ -1052,7 +1280,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessions
-      x-sdkwork-permission: agent.business.session.close
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.session_closed
       parameters:
@@ -1083,7 +1311,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionUserStates
-      x-sdkwork-permission: agent.business.session.user_state.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1106,7 +1334,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionUserStates
-      x-sdkwork-permission: agent.business.session.user_state.update
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1137,7 +1365,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.itemFeedback
-      x-sdkwork-permission: agent.business.item_feedback.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1167,7 +1395,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionItems
-      x-sdkwork-permission: agent.business.session_item.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1212,7 +1440,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionItems
-      x-sdkwork-permission: agent.business.session_item.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1238,7 +1466,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.itemFeedback
-      x-sdkwork-permission: agent.business.item_feedback.update
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.item_feedback_changed
       parameters:
@@ -1271,7 +1499,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.turns
-      x-sdkwork-permission: agent.business.turn.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1297,7 +1525,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.turns
-      x-sdkwork-permission: agent.business.turn.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.turn_requested
       parameters:
@@ -1333,7 +1561,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.turns
-      x-sdkwork-permission: agent.business.turn.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1359,7 +1587,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.turns
-      x-sdkwork-permission: agent.business.turn.cancel
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.turn_cancel_requested
       parameters:
@@ -1395,7 +1623,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.interactions
-      x-sdkwork-permission: agent.business.interaction.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1431,7 +1659,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.interactions
-      x-sdkwork-permission: agent.business.interaction.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.interaction_created
       parameters:
@@ -1463,7 +1691,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.interactions
-      x-sdkwork-permission: agent.business.interaction.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1489,7 +1717,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.interactions
-      x-sdkwork-permission: agent.business.interaction.claim
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1521,7 +1749,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.interactions
-      x-sdkwork-permission: agent.business.interaction.approve
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.interaction_resolved
       parameters:
@@ -1554,7 +1782,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.interactions
-      x-sdkwork-permission: agent.business.interaction.answer
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.interaction_resolved
       parameters:
@@ -1587,7 +1815,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.checkpoints
-      x-sdkwork-permission: agent.business.checkpoint.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1613,7 +1841,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.checkpoints
-      x-sdkwork-permission: agent.business.checkpoint.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.checkpoint_created
       parameters:
@@ -1645,7 +1873,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.checkpoints
-      x-sdkwork-permission: agent.business.checkpoint.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1671,7 +1899,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.checkpoints
-      x-sdkwork-permission: agent.business.checkpoint.restore
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.checkpoint_restored
       parameters:
@@ -1704,7 +1932,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.checkpoints
-      x-sdkwork-permission: agent.business.checkpoint.invalidate
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.checkpoint_invalidated
       parameters:
@@ -1737,7 +1965,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionRuntimeBindings
-      x-sdkwork-permission: agent.business.session_runtime_binding.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1763,7 +1991,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionRuntimeBindings
-      x-sdkwork-permission: agent.business.session_runtime_binding.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime_binding_created
       parameters:
@@ -1795,7 +2023,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionRuntimeBindings
-      x-sdkwork-permission: agent.business.session_runtime_binding.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1820,7 +2048,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionRuntimeBindings
-      x-sdkwork-permission: agent.business.session_runtime_binding.update
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1852,7 +2080,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionRuntimeBindings
-      x-sdkwork-permission: agent.business.session_runtime_binding.activate
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime_binding_activated
       parameters:
@@ -1885,7 +2113,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.sessionRuntimeBindings
-      x-sdkwork-permission: agent.business.session_runtime_binding.deactivate
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.runtime_binding_deactivated
       parameters:
@@ -1918,7 +2146,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
-      x-sdkwork-permission: agent.business.task.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1943,7 +2171,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
-      x-sdkwork-permission: agent.business.task.create
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.task_created
       parameters:
@@ -1974,7 +2202,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
-      x-sdkwork-permission: agent.business.task.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -1999,7 +2227,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
-      x-sdkwork-permission: agent.business.task.cancel
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.task_cancelled
       parameters:
@@ -2031,7 +2259,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.tasks
-      x-sdkwork-permission: agent.business.task.execute
+      x-sdkwork-permission: ai.agents.use
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.task_executed
       parameters:
@@ -2063,7 +2291,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
-      x-sdkwork-permission: agent.business.composition_slot.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -2094,7 +2322,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
-      x-sdkwork-permission: agent.business.composition_slot.create
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.composition_slot_created
       parameters:
@@ -2133,7 +2361,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
-      x-sdkwork-permission: agent.business.composition_slot.retrieve
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
@@ -2163,7 +2391,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
-      x-sdkwork-permission: agent.business.composition_slot.update
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.composition_slot_updated
       parameters:
@@ -2200,7 +2428,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: agents.compositionSlots
-      x-sdkwork-permission: agent.business.composition_slot.delete
+      x-sdkwork-permission: ai.agents.manage
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.composition_slot_deleted
       parameters:
@@ -2228,7 +2456,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: codeEngines
-      x-sdkwork-permission: agent.business.code_engine.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.code_engine_listed
       responses:
@@ -2251,7 +2479,7 @@ paths:
         AccessToken: []
       x-sdkwork-domain: ai
       x-sdkwork-resource: mcpServers
-      x-sdkwork-permission: agent.business.mcp_server.list
+      x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.mcp_server_listed
       parameters:
@@ -2278,6 +2506,15 @@ components:
       in: header
       name: Access-Token
   parameters:
+    WorkspaceIdPath:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     ProjectIdPath:
       name: projectId
       in: path
@@ -3390,6 +3627,128 @@ components:
     AgentProjectVisibility:
       type: string
       enum: [private, organization, shared]
+    AgentWorkspaceStatus:
+      type: string
+      enum: [active, archived, deleted]
+    AgentWorkspaceRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - workspaceId
+      - tenantId
+      - organizationId
+      - ownerUserId
+      - name
+      - isDefault
+      - status
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
+        workspaceId:
+          type: string
+          pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: [string, 'null']
+        isDefault:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AgentWorkspaceStatus'
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+    AgentWorkspaceResponse:
+      description: Single Workspace response following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentWorkspaceRecord'
+    AgentWorkspaceListResponse:
+      description: Paginated Workspace response following SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentWorkspaceRecord'
+    EnsureDefaultAgentWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+    CreateAgentWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: [string, 'null']
+    UpdateAgentWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: [string, 'null']
+    AgentWorkspaceMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
     AgentProjectStatus:
       type: string
       enum: [active, archived, deleted]
@@ -3402,6 +3761,7 @@ components:
       required:
       - id
       - projectId
+      - workspaceId
       - tenantId
       - organizationId
       - ownerUserId
@@ -3418,6 +3778,9 @@ components:
         projectId:
           type: string
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        workspaceId:
+          type: string
+          pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         tenantId:
           $ref: '#/components/schemas/Int64String'
         organizationId:
@@ -3440,6 +3803,21 @@ components:
           type: [string, 'null']
         defaultModelId:
           type: [string, 'null']
+        importSourceKind:
+          type: [string, 'null']
+          maxLength: 64
+        importSourceRef:
+          type: [string, 'null']
+          maxLength: 512
+        driveSpaceId:
+          type: [string, 'null']
+          maxLength: 128
+        driveRootEntryId:
+          type: [string, 'null']
+          maxLength: 128
+        driveLogicalPath:
+          type: [string, 'null']
+          maxLength: 1024
         version:
           $ref: '#/components/schemas/Int64String'
         createdAt:
@@ -3491,6 +3869,9 @@ components:
         projectId:
           type: string
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        workspaceId:
+          type: string
+          pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         name:
           type: string
           minLength: 1
@@ -3505,6 +3886,48 @@ components:
           type: string
         defaultModelId:
           type: string
+    ImportAgentProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - workspaceId
+      - name
+      - sourceKind
+      - sourceRef
+      - driveSpaceId
+      - driveRootEntryId
+      properties:
+        workspaceId:
+          type: string
+          pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        projectId:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        sourceKind:
+          type: string
+          minLength: 1
+          maxLength: 64
+        sourceRef:
+          type: string
+          minLength: 1
+          maxLength: 512
+        driveSpaceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        driveRootEntryId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        driveLogicalPath:
+          type: string
+          maxLength: 1024
     UpdateAgentProjectRequest:
       type: object
       additionalProperties: false

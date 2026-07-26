@@ -48,7 +48,8 @@ public Agents APIs, product workspaces or durable product execution history.
 Agents owns:
 
 - managed agents, provider bindings, composition slots and audit;
-- Agent Projects, Sessions, Turns, Session Items and Interactions;
+- Agent Workspaces, Workspace-scoped Projects, Sessions, Turns, Session Items
+  and Interactions;
 - runtime bindings, checkpoints, tasks, per-user state, sharing and outbox;
 - the public Open, App and Backend API authorities;
 - generated SDK families and the product-facing runtime facade.
@@ -58,7 +59,7 @@ The current authored API inventories are:
 | Surface | Prefix | Operations | SDK |
 | --- | --- | ---: | --- |
 | Open API | `/agent/v3/api` | 47 | `@sdkwork/agents-sdk` |
-| App API | `/app/v3/api` | 68 | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 76 | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 48 | `@sdkwork/agents-backend-sdk` |
 
 Counts are derived from the three authored OpenAPI documents. The Open API uses
@@ -66,7 +67,7 @@ Counts are derived from the three authored OpenAPI documents. The Open API uses
 
 ## 4. Persistence Boundary
 
-The Agents managed PostgreSQL store contains 19 Agents-owned `ai_*` tables. Its
+The Agents managed PostgreSQL store contains 20 Agents-owned `ai_*` tables. Its
 authority is
 [`AGENTS_AI_COMPOSITION_DATABASE_SPEC.md`](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md).
 

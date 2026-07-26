@@ -3,6 +3,7 @@ import type { AgentProjectVisibility } from './agent-project-visibility';
 
 export interface CreateAgentProjectRequest {
   projectId?: string;
+  workspaceId?: string;
   name: string;
   description?: string;
   visibility?: AgentProjectVisibility;

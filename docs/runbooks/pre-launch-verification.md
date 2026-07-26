@@ -31,7 +31,7 @@ pnpm check:docs
 
 Pass criteria:
 
-- operation counts are App 68, Backend 48 and Open 47;
+- operation counts are App 76, Backend 48 and Open 47;
 - no client-writable tenant, organization or user selector exists;
 - all list operations use store-level pagination;
 - Session, Turn, SessionItem and Interaction naming is consistent;
@@ -68,7 +68,7 @@ pnpm db:status
 pnpm db:drift:check
 ```
 
-Validate the target profile separately. The expected module contains 19
+Validate the target profile separately. The expected module contains 20
 Agents-owned PostgreSQL `ai_*` tables. Confirm migrations/checksums match the
 baseline, `init` uses the greenfield baseline only when its completion anchor is
 absent, and an anchored partial schema fails drift validation instead of being

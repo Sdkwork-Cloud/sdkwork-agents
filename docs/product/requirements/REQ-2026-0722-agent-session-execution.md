@@ -14,14 +14,14 @@ independent capability entities remain outside the Agents persistence boundary.
 
 ## Acceptance Criteria
 
-- The 19-table PostgreSQL module is the only Agents business persistence
+- The 20-table PostgreSQL module is the only Agents business persistence
   authority and passes database framework validation.
 - Session and Turn commands enforce trusted context, idempotency, payload hash,
   request time and bounded input.
 - Turn completion persists ordered typed Session Items, usage, audit and outbox
   facts consistently.
 - Interaction claim and resolution are race-safe and versioned.
-- App, Backend and Open OpenAPI authorities expose 68, 48 and 47 operations
+- App, Backend and Open OpenAPI authorities expose 76, 48 and 47 operations
   respectively with standard envelopes, problem details and pagination.
 - TypeScript and Flutter App SDKs expose Session, Turn, SessionItem, feedback and
   Interaction resources from package roots.

@@ -1,9 +1,7 @@
 # PostgreSQL Migrations
 
-The pre-launch `5.0.0` schema is fully consolidated in the canonical baseline,
-so this directory has no active migration files.
-
-After the first production schema release, add sortable paired files named
-`{version}_{name}.up.sql` and `{version}_{name}.down.sql` with the metadata,
-expand/backfill/verify/contract, checksum, and rollback evidence required by
-`DATABASE_FRAMEWORK_SPEC.md` and `MIGRATION_SPEC.md`.
+`0001_add_agent_workspaces.up.sql` upgrades existing `5.0.0` installations to
+the `6.0.0` Workspace-scoped Project contract. It is an idempotent, transactional
+forward migration with an explicit default-Workspace backfill and verification
+gate before constraints are enabled. Rollback is by compatible application
+rollback or forward-fix; the migration does not delete historical data.
