@@ -67,7 +67,8 @@ use crate::response::{
 };
 use crate::runtime_facade_bridge::{engine_key_for_provider_identity, shared_code_engine_host};
 use crate::session_activity::{
-    decode_session_activity_cursor, SessionActivitySummaryRecord, SessionProviderActivityObservation,
+    decode_session_activity_cursor, SessionActivitySummaryRecord,
+    SessionProviderActivityObservation,
 };
 use crate::turn_runtime::{ContractTurnExecutor, TurnExecutor};
 use crate::validation::{
@@ -1274,8 +1275,9 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                 if self.provider_session_history_reconciliation
                     && existing.title.as_deref() != Some(request.title.as_str())
                 {
-                    existing = match self.service.reconcile_provider_session_history_session_title(
-                        UpdateSessionCommand {
+                    existing = match self
+                        .service
+                        .reconcile_provider_session_history_session_title(UpdateSessionCommand {
                             tenant_id: request.tenant_id,
                             organization_id: request.organization_id,
                             path_agent_id: request.agent_id.clone(),
@@ -1286,8 +1288,7 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                             owner_scope: Some(request.owner_user_id),
                             requested_by: subject.clone(),
                             requested_at: request.requested_at.clone(),
-                        },
-                    ) {
+                        }) {
                         Ok(updated) => updated,
                         Err(error)
                             if error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
@@ -1347,7 +1348,8 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
             requested_at: request.requested_at.clone(),
         };
         let creation_result = if self.provider_session_history_reconciliation {
-            self.service.reconcile_provider_session_history_session(command)
+            self.service
+                .reconcile_provider_session_history_session(command)
         } else {
             self.service.create_session(command)
         };

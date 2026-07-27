@@ -203,7 +203,8 @@ fn synchronize_provider_session_inventory(
     subject: PolicySubject,
     inventory: Vec<ProviderSessionInventoryItem>,
 ) -> KernelResult<usize> {
-    let facade = HttpAgentsSessionFacade::for_provider_session_history_reconciliation(service.clone());
+    let facade =
+        HttpAgentsSessionFacade::for_provider_session_history_reconciliation(service.clone());
     let actor = AgentsSessionActor {
         subject_id: subject.subject_id.clone(),
         roles: subject.roles.clone(),
@@ -224,8 +225,10 @@ fn synchronize_provider_session_inventory(
         )?;
         let stable_key = stable_provider_session_key(&item.engine_key, &item.session.session_id);
         let session_id = format!("session.provider.{}.{}", item.engine_key, stable_key);
-        let runtime_binding_id =
-            format!("runtime_binding.provider.{}.{}", item.engine_key, stable_key);
+        let runtime_binding_id = format!(
+            "runtime_binding.provider.{}.{}",
+            item.engine_key, stable_key
+        );
         let title = provider_session_title(item.session.title.as_deref(), &item.engine_key);
         let model_id = item
             .session
@@ -415,7 +418,10 @@ mod tests {
             provider_session_title(Some("  first\n\tsecond  "), "codex"),
             "first second"
         );
-        assert_eq!(provider_session_title(Some("   "), "codex"), "codex session");
+        assert_eq!(
+            provider_session_title(Some("   "), "codex"),
+            "codex session"
+        );
 
         let long_ascii = "a".repeat(PROVIDER_SESSION_TITLE_MAX_BYTES + 100);
         let ascii_title = provider_session_title(Some(&long_ascii), "codex");
@@ -774,7 +780,11 @@ mod tests {
             state.service.clone(),
             &project,
             read_subject(),
-            vec![inventory_item(engine, "provider-session-transcript-1".to_string(), 1)],
+            vec![inventory_item(
+                engine,
+                "provider-session-transcript-1".to_string(),
+                1,
+            )],
         )
         .expect("provider inventory sync");
         let session = state

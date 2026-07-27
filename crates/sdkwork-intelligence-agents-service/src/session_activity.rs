@@ -468,7 +468,8 @@ fn provider_identity(
             .or_else(|| turn.and_then(|value| value.model_id.clone())),
         provider_session_id: binding.and_then(|value| value.provider_session_id.clone()),
         provider_session_tree_id: binding.and_then(|value| value.provider_session_tree_id.clone()),
-        provider_parent_session_id: binding.and_then(|value| value.provider_parent_session_id.clone()),
+        provider_parent_session_id: binding
+            .and_then(|value| value.provider_parent_session_id.clone()),
         provider_forked_from_session_id: binding
             .and_then(|value| value.provider_forked_from_session_id.clone()),
     }

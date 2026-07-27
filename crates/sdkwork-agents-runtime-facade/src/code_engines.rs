@@ -194,11 +194,15 @@ impl CodeEngineSlot {
         provider_session_id: &str,
     ) -> KernelResult<SessionActivitySnapshot> {
         match self {
-            Self::Codex(integration) => integration.get_provider_session_activity(provider_session_id),
+            Self::Codex(integration) => {
+                integration.get_provider_session_activity(provider_session_id)
+            }
             Self::ClaudeCode(integration) => {
                 integration.get_provider_session_activity(provider_session_id)
             }
-            Self::Gemini(integration) => integration.get_provider_session_activity(provider_session_id),
+            Self::Gemini(integration) => {
+                integration.get_provider_session_activity(provider_session_id)
+            }
             Self::OpenCode(integration) => {
                 integration.get_provider_session_activity(provider_session_id)
             }

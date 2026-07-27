@@ -10,13 +10,13 @@ mod id;
 mod in_memory_pagination;
 mod infrastructure;
 mod mcp_marketplace;
-#[cfg(feature = "http-axum")]
-mod provider_session_sync;
 mod persistence;
 mod ports;
 #[cfg(feature = "postgres-sync")]
 mod postgres_sync_pool;
 mod project;
+#[cfg(feature = "http-axum")]
+mod provider_session_sync;
 #[cfg(feature = "http-axum")]
 pub mod response;
 mod runtime_facade_bridge;
@@ -164,9 +164,8 @@ pub use project::{
 };
 pub use session_activity::{
     SessionActivityCursor, SessionActivityFreshness, SessionActivitySource,
-    SessionActivitySummaryRecord, SessionProviderActivityEvidenceKind,
+    SessionActivitySummaryRecord, SessionPresentationPhase, SessionProviderActivityEvidenceKind,
     SessionProviderActivityFreshness, SessionProviderActivityInteractionHint,
-    SessionProviderActivityObservation, SessionProviderActivityState, SessionPresentationPhase,
-    SessionProviderIdentity,
+    SessionProviderActivityObservation, SessionProviderActivityState, SessionProviderIdentity,
 };
 pub use workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};

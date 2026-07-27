@@ -2591,7 +2591,9 @@ where
         let engine_key = command
             .agent_id
             .strip_prefix("agent.intelligence.")
-            .ok_or_else(|| KernelError::validation("provider Session history agent is not canonical"))?;
+            .ok_or_else(|| {
+                KernelError::validation("provider Session history agent is not canonical")
+            })?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.agent_id.as_str())
             || command.project_id.is_none()
@@ -2814,7 +2816,9 @@ where
         let engine_key = command
             .path_agent_id
             .strip_prefix("agent.intelligence.")
-            .ok_or_else(|| KernelError::validation("provider Session history agent is not canonical"))?;
+            .ok_or_else(|| {
+                KernelError::validation("provider Session history agent is not canonical")
+            })?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
             || !command
@@ -3836,7 +3840,9 @@ where
         let engine_key = command
             .path_agent_id
             .strip_prefix("agent.intelligence.")
-            .ok_or_else(|| KernelError::validation("provider Session history agent is not canonical"))?;
+            .ok_or_else(|| {
+                KernelError::validation("provider Session history agent is not canonical")
+            })?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
             || sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key)
@@ -3948,7 +3954,11 @@ where
         }
         validate_optional_bounded(&command.runtime_location_id, "runtimeLocationId", 256)?;
         validate_optional_bounded(&command.provider_session_id, "providerSessionId", 256)?;
-        validate_optional_bounded(&command.provider_session_tree_id, "providerSessionTreeId", 256)?;
+        validate_optional_bounded(
+            &command.provider_session_tree_id,
+            "providerSessionTreeId",
+            256,
+        )?;
         validate_optional_bounded(
             &command.provider_parent_session_id,
             "providerParentSessionId",
@@ -4663,7 +4673,9 @@ where
         engine_key: &str,
     ) -> KernelResult<AgentSessionItemRecord> {
         let expected_agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
-            .ok_or_else(|| KernelError::validation("provider Session history engine is not canonical"))?;
+            .ok_or_else(|| {
+                KernelError::validation("provider Session history engine is not canonical")
+            })?;
         if !command
             .session_id
             .starts_with(&format!("session.provider.{engine_key}."))
