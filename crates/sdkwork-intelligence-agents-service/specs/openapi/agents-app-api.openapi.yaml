@@ -1093,6 +1093,122 @@ paths:
           description: Project composition slot deleted
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/workspaces/{workspaceId}/sessions:
+    get:
+      tags: [ai]
+      summary: List agent sessions for one workspace
+      operationId: agents.workspaceSessions.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/WorkspaceIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionStatus'
+      - name: include_archived
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Workspace-scoped agent session list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/projects/{projectId}/sessions:
+    get:
+      tags: [ai]
+      summary: List agent sessions for one project
+      operationId: agents.projectSessions.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionStatus'
+      - name: include_archived
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      - name: native_directory_name
+        in: query
+        required: false
+        description: Device-local directory basename used only to reconcile provider-native sessions.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 255
+      - name: native_directory_fingerprint
+        in: query
+        required: false
+        description: Opaque manifest digest used only to disambiguate same-name local directories.
+        schema:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+      responses:
+        '200':
+          description: Project-scoped agent session list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [ai]
+      summary: Create an agent session in one project
+      operationId: agents.projectSessions.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.session_created
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentSessionRequest'
+      responses:
+        '201':
+          description: Created project-scoped agent session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/sessions:
     get:
       tags:
@@ -1110,12 +1226,23 @@ paths:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
-      - name: projectId
+      - name: project_id
         in: query
         required: false
         schema:
           type: string
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionStatus'
+      - name: include_archived
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
       responses:
         '200':
           description: Managed agent session list response
@@ -4747,6 +4874,9 @@ components:
         forkedFromTurnId:
           - parentSessionId
       properties:
+        agentId:
+          type: string
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         sessionId:
           type: string
           pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$

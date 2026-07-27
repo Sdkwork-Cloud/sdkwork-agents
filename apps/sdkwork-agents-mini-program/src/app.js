@@ -1,9 +1,10 @@
 const { bootstrapAgentsMiniProgram } = require("./runtime/agents-app");
+const runtimeEnv = require("./runtime/runtime-env");
 
 App({
   globalData: {
-    agentsAppApiBaseUrl: "http://127.0.0.1:8095/app/v3/api",
-    agentsH5Url: "http://127.0.0.1:5196",
+    sdkworkProfileId: runtimeEnv.SDKWORK_PROFILE_ID,
+    agentsAppApiBaseUrl: runtimeEnv.SDKWORK_AGENTS_APP_API_BASE_URL,
   },
   onLaunch() {
     try {

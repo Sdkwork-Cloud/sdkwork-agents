@@ -7,6 +7,7 @@ mod code_engines;
 mod engine_catalog;
 mod error;
 mod live_interaction;
+mod native_sessions;
 mod runtime_host;
 mod sessions;
 mod turn;
@@ -23,6 +24,10 @@ pub use engine_catalog::{
 pub use error::{RuntimeFacadeError, RuntimeFacadeResult};
 pub use live_interaction::{
     ApprovalDecision, EngineLiveInteraction, LiveInteractionRegistry, UserQuestionAnswer,
+};
+pub use native_sessions::{
+    NativeSessionInventoryItem, NativeSessionInventorySelector, NativeSessionProjectCwdResolver,
+    NativeSessionProjectCwdSelector,
 };
 pub use runtime_host::AgentsCodeEngineHost;
 pub use sdkwork_agent_kernel::{

@@ -8,8 +8,9 @@ use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentAuditAction, AgentAuditPayload, AgentBusinessRecord, AgentBusinessStatus,
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
-    AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemDriveRefRecord,
-    AgentItemFeedbackRecord, AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType,
+    AgentImplementationKind, AgentImplementationType, AgentInteractionKind, AgentInteractionRecord,
+    AgentInteractionStatus, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
+    AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType,
     AgentResourceUserStateRecord, AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
     AgentRuntimeExecutionStatus, AgentSessionCheckpointRecord, AgentSessionCheckpointStatus,
     AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus,
@@ -26,8 +27,8 @@ use crate::ports::{
     MAX_TURN_INPUT_CONTENT_BYTES, TURN_CONTEXT_ITEM_LIMIT,
 };
 use crate::project::{
-    AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
-    AgentProjectStatus, AgentProjectVisibility,
+    project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode,
+    AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
 };
 use crate::runtime_facade_bridge::{
     execute_preview_response, execute_prompt_optimization, RUNTIME_MODE_CONTRACT_FALLBACK,
@@ -43,9 +44,9 @@ use crate::validation::{
 };
 use crate::workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
-    KernelError, KernelErrorKind, KernelEvent, KernelEventRedaction, KernelEventSeverity,
-    KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue, PolicyProvider,
-    PolicyRequest, PolicySubject,
+    AgentManifest, KernelError, KernelErrorKind, KernelEvent, KernelEventRedaction,
+    KernelEventSeverity, KernelEventSource, KernelResult, PolicyCategory, PolicyDecisionValue,
+    PolicyProvider, PolicyRequest, PolicySubject,
 };
 use sdkwork_agents_contract::agents_allow_contract_runtime_fallback;
 use sdkwork_utils_rust::{sha256_hash, trim};
@@ -53,6 +54,26 @@ use time::OffsetDateTime;
 
 const MAX_TURN_DRIVE_REFS: usize = 64;
 const MAX_INTERACTION_LEASE_SECONDS: u32 = 300;
+
+fn code_engine_runtime_manifest(engine_key: &str, agent_id: &str) -> AgentManifest {
+    AgentManifest {
+        schema_version: "1.0".to_string(),
+        manifest_type: "agent".to_string(),
+        agent_id: agent_id.to_string(),
+        name: engine_key.to_string(),
+        display_name: engine_key.to_string(),
+        description: "Canonical local code-engine runtime identity".to_string(),
+        version: "1.0.0".to_string(),
+        domain: "coding".to_string(),
+        required_capabilities: vec!["model.chat".to_string()],
+        optional_capabilities: vec!["session.resume".to_string()],
+        required_capability_requirements: Vec::new(),
+        optional_capability_requirements: Vec::new(),
+        event_families: Vec::new(),
+        owner_name: "sdkwork-agents".to_string(),
+        status: "active".to_string(),
+    }
+}
 
 fn validate_runtime_token(value: &str, field_name: &str, max_bytes: usize) -> KernelResult<()> {
     require_non_blank(value, field_name)?;
@@ -431,6 +452,140 @@ where
             command.requested_at,
         )?;
         Ok(record)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ensure_code_engine_runtime_identity(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        engine_key: &str,
+        agent_id: &str,
+        binding_id: &str,
+        provider_id: &str,
+        requested_by: PolicySubject,
+        requested_at: &str,
+    ) -> KernelResult<()> {
+        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) != Some(agent_id)
+            || sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key) != Some(binding_id)
+        {
+            return Err(KernelError::validation(
+                "code-engine runtime identity is not canonical",
+            ));
+        }
+        validate_standard_id(provider_id, "providerId", Some("provider."))?;
+        validate_requested_at(requested_at)?;
+
+        let agent = self.repository.get(tenant_id, agent_id)?;
+        match agent {
+            Some(agent)
+                if !agent.is_deleted()
+                    && agent.implementation_provider_id.as_deref() == Some(provider_id) => {}
+            Some(_) => {
+                return Err(KernelError::validation(
+                    "canonical code-engine agent identity conflicts with existing agent",
+                ));
+            }
+            None => {
+                let mut record = AgentBusinessRecord {
+                    id: self.repository.next_id()?,
+                    agent_id: agent_id.to_string(),
+                    tenant_id,
+                    organization_id,
+                    owner_user_id,
+                    code: engine_key.to_string(),
+                    display_name: engine_key.to_string(),
+                    description: Some("Canonical local code-engine runtime identity".to_string()),
+                    manifest: code_engine_runtime_manifest(engine_key, agent_id),
+                    default_code_task_intent: None,
+                    implementation_provider_id: Some(provider_id.to_string()),
+                    implementation_kind: Some(AgentImplementationKind::TypedLocalProvider),
+                    implementation_type: AgentImplementationType::SdkworkNative,
+                    status: AgentBusinessStatus::Active,
+                    visibility: AgentVisibility::Private,
+                    tags: vec!["code-engine".to_string(), engine_key.to_string()],
+                    version: 0,
+                    created_at: requested_at.to_string(),
+                    updated_at: requested_at.to_string(),
+                    deleted_at: None,
+                };
+                record.mark_updated(requested_at.to_string());
+                match self.repository.insert(record.clone()) {
+                    Ok(()) => {
+                        self.emit_audit_event(
+                            AgentAuditAction::Create,
+                            &record,
+                            None,
+                            requested_by.clone(),
+                            requested_at.to_string(),
+                        )?;
+                    }
+                    Err(error) if error.kind() == KernelErrorKind::Conflict => {
+                        let concurrent = self.repository.get(tenant_id, agent_id)?.ok_or(error)?;
+                        if concurrent.is_deleted()
+                            || concurrent.implementation_provider_id.as_deref() != Some(provider_id)
+                        {
+                            return Err(KernelError::validation(
+                                "concurrent canonical code-engine agent identity conflicts",
+                            ));
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+
+        match self
+            .repository
+            .get_provider_binding(tenant_id, agent_id, binding_id)?
+        {
+            Some(binding) if binding.active && binding.provider_id == provider_id => Ok(()),
+            Some(_) => Err(KernelError::validation(
+                "canonical code-engine provider binding conflicts with existing binding",
+            )),
+            None => {
+                let binding = AgentProviderBindingRecord {
+                    id: self.repository.next_id()?,
+                    tenant_id,
+                    agent_id: agent_id.to_string(),
+                    binding_id: binding_id.to_string(),
+                    provider_id: provider_id.to_string(),
+                    implementation_kind: AgentImplementationKind::TypedLocalProvider,
+                    configuration_profile_id: format!("profile.native.{engine_key}"),
+                    capabilities: vec!["model.chat".to_string(), "session.resume".to_string()],
+                    active: true,
+                    version: 1,
+                    created_at: requested_at.to_string(),
+                    updated_at: requested_at.to_string(),
+                };
+                match self.repository.insert_provider_binding(binding.clone()) {
+                    Ok(()) => {
+                        self.emit_binding_audit_event(
+                            AgentAuditAction::ProviderBindingChanged,
+                            &binding,
+                            requested_by,
+                            requested_at.to_string(),
+                        )?;
+                        Ok(())
+                    }
+                    Err(error) if error.kind() == KernelErrorKind::Conflict => {
+                        let concurrent = self
+                            .repository
+                            .get_provider_binding(tenant_id, agent_id, binding_id)?
+                            .ok_or(error)?;
+                        if concurrent.active && concurrent.provider_id == provider_id {
+                            Ok(())
+                        } else {
+                            Err(KernelError::validation(
+                                "concurrent canonical code-engine provider binding conflicts",
+                            ))
+                        }
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+        }
     }
 
     pub fn add_provider_binding(
@@ -1677,6 +1832,20 @@ where
             command.requested_by.clone(),
             command.requested_at.clone(),
         )?;
+        if self
+            .repository
+            .get_project_by_workspace_name(
+                command.tenant_id,
+                command.organization_id,
+                &workspace.workspace_id,
+                &command.name,
+            )?
+            .is_some()
+        {
+            return Err(KernelError::conflict(
+                "project name already exists in workspace",
+            ));
+        }
         if let Some(agent_id) = command.default_agent_id.as_deref() {
             validate_agent_id(agent_id)?;
             let agent = self
@@ -1697,7 +1866,7 @@ where
         let record = AgentProjectRecord {
             id: self.repository.next_id()?,
             project_id,
-            workspace_id: workspace.workspace_id,
+            workspace_id: workspace.workspace_id.clone(),
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
             owner_user_id: command.owner_user_id,
@@ -1791,6 +1960,14 @@ where
             command.requested_by.clone(),
             command.requested_at.clone(),
         )?;
+        if let Some(existing) = self.repository.get_project_by_workspace_name(
+            command.tenant_id,
+            command.organization_id,
+            &workspace.workspace_id,
+            &command.name,
+        )? {
+            return Ok(existing);
+        }
         if self
             .repository
             .get_project(command.tenant_id, command.organization_id, &project_id)?
@@ -1801,7 +1978,7 @@ where
         let record = AgentProjectRecord {
             id: self.repository.next_id()?,
             project_id,
-            workspace_id: workspace.workspace_id,
+            workspace_id: workspace.workspace_id.clone(),
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
             owner_user_id: command.owner_user_id,
@@ -1839,19 +2016,27 @@ where
                 Ok(record)
             }
             Err(error) if error.kind() == KernelErrorKind::Conflict => {
-                let existing = self.repository.get_project_by_import_source(
+                let existing_by_source = self.repository.get_project_by_import_source(
                     command.tenant_id,
                     command.organization_id,
                     command.owner_user_id,
                     &source_kind,
                     &source_ref,
                 )?;
-                match existing {
+                match existing_by_source {
                     Some(existing) if existing.workspace_id == command.workspace_id => Ok(existing),
                     Some(_) => Err(KernelError::conflict(
                         "import source is already assigned to another workspace",
                     )),
-                    None => Err(error),
+                    None => self
+                        .repository
+                        .get_project_by_workspace_name(
+                            command.tenant_id,
+                            command.organization_id,
+                            &workspace.workspace_id,
+                            &command.name,
+                        )?
+                        .ok_or(error),
                 }
             }
             Err(error) => Err(error),
@@ -1886,6 +2071,21 @@ where
             require_non_blank(&name, "name")?;
             if name.len() > 255 {
                 return Err(KernelError::validation("name exceeds 255 bytes"));
+            }
+            if !project_names_equal(&record.name, &name)
+                && self
+                    .repository
+                    .get_project_by_workspace_name(
+                        command.tenant_id,
+                        command.organization_id,
+                        &record.workspace_id,
+                        &name,
+                    )?
+                    .is_some()
+            {
+                return Err(KernelError::conflict(
+                    "project name already exists in workspace",
+                ));
             }
             record.name = trim(&name).to_string();
         }
@@ -2307,6 +2507,38 @@ where
         &self,
         command: CreateSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
+        self.create_session_with_authorization(command, true)
+    }
+
+    pub(crate) fn reconcile_native_history_session(
+        &self,
+        command: CreateSessionCommand,
+    ) -> KernelResult<AgentSessionRecord> {
+        let engine_key = command
+            .agent_id
+            .strip_prefix("agent.intelligence.")
+            .ok_or_else(|| KernelError::validation("native history agent is not canonical"))?;
+        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+            != Some(command.agent_id.as_str())
+            || command.project_id.is_none()
+            || command.source_module.as_deref() != Some("birdcoder")
+            || command.source_context_kind.as_deref() != Some("provider_native_session")
+            || !command
+                .session_id
+                .starts_with(&format!("session.native.{engine_key}."))
+        {
+            return Err(KernelError::validation(
+                "native history session reconciliation is not canonical",
+            ));
+        }
+        self.create_session_with_authorization(command, false)
+    }
+
+    fn create_session_with_authorization(
+        &self,
+        command: CreateSessionCommand,
+        authorize: bool,
+    ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.agent_id.as_str())?;
         let session_id = if is_trimmed_blank(command.session_id.as_str()) {
             format!("session.{}", self.repository.next_id()?)
@@ -2314,12 +2546,14 @@ where
             command.session_id.clone()
         };
         validate_standard_id(session_id.as_str(), "sessionId", Some("session."))?;
-        self.authorize(
-            "agent.business.session.create",
-            command.requested_by.clone(),
-            format!("agent.business.session.{}", session_id),
-            "session.create",
-        )?;
+        if authorize {
+            self.authorize(
+                "agent.business.session.create",
+                command.requested_by.clone(),
+                format!("agent.business.session.{}", session_id),
+                "session.create",
+            )?;
+        }
 
         // Ensure the agent exists
         self.repository
@@ -3384,6 +3618,43 @@ where
         &self,
         command: CreateSessionRuntimeBindingCommand,
     ) -> KernelResult<SessionRuntimeBindingResult> {
+        self.create_session_runtime_binding_with_authorization(command, true)
+    }
+
+    pub(crate) fn reconcile_native_history_runtime_binding(
+        &self,
+        command: CreateSessionRuntimeBindingCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        let engine_key = command
+            .path_agent_id
+            .strip_prefix("agent.intelligence.")
+            .ok_or_else(|| KernelError::validation("native history agent is not canonical"))?;
+        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+            != Some(command.path_agent_id.as_str())
+            || sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key)
+                != Some(command.provider_binding_id.as_str())
+            || command.host_mode != "server"
+            || command.transport_kind != "native-history"
+            || command
+                .native_session_id
+                .as_deref()
+                .is_none_or(str::is_empty)
+            || !command
+                .session_id
+                .starts_with(&format!("session.native.{engine_key}."))
+        {
+            return Err(KernelError::validation(
+                "native history runtime binding reconciliation is not canonical",
+            ));
+        }
+        self.create_session_runtime_binding_with_authorization(command, false)
+    }
+
+    fn create_session_runtime_binding_with_authorization(
+        &self,
+        command: CreateSessionRuntimeBindingCommand,
+        authorize: bool,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
         validate_requested_at(&command.requested_at)?;
         let session = self.load_session_for_nested_route(
             command.tenant_id,
@@ -3400,15 +3671,17 @@ where
                 "session is not active, cannot create a runtime binding",
             ));
         }
-        self.authorize(
-            "agent.business.session_runtime_binding.create",
-            command.requested_by.clone(),
-            format!(
-                "agent.business.session.{}.runtime_binding",
-                command.session_id
-            ),
-            "session_runtime_binding.create",
-        )?;
+        if authorize {
+            self.authorize(
+                "agent.business.session_runtime_binding.create",
+                command.requested_by.clone(),
+                format!(
+                    "agent.business.session.{}.runtime_binding",
+                    command.session_id
+                ),
+                "session_runtime_binding.create",
+            )?;
+        }
         validate_runtime_token(&command.host_mode, "hostMode", 32)?;
         validate_runtime_token(&command.transport_kind, "transportKind", 64)?;
         require_non_blank(&command.model_id, "modelId")?;
@@ -4167,6 +4440,112 @@ where
 
         let (_, record) = self.repository.append_session_item(record)?;
 
+        self.emit_session_item_audit_event(
+            AgentAuditAction::SessionItemCreated,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub(crate) fn reconcile_native_history_session_item(
+        &self,
+        command: CreateSessionItemCommand,
+        engine_key: &str,
+    ) -> KernelResult<AgentSessionItemRecord> {
+        let expected_agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+            .ok_or_else(|| KernelError::validation("native history engine is not canonical"))?;
+        if !command
+            .session_id
+            .starts_with(&format!("session.native.{engine_key}."))
+            || !command
+                .item_id
+                .starts_with(&format!("item.native.{engine_key}."))
+            || !matches!(
+                command.kind,
+                AgentSessionItemKind::UserInput | AgentSessionItemKind::AssistantOutput
+            )
+        {
+            return Err(KernelError::validation(
+                "native history session item reconciliation is not canonical",
+            ));
+        }
+        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
+        let session = self
+            .repository
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        if session.agent_id != expected_agent_id
+            || session.source_module.as_deref() != Some("birdcoder")
+            || session.source_context_kind.as_deref() != Some("provider_native_session")
+            || !session.status.is_active()
+        {
+            return Err(KernelError::validation(
+                "native history session item reconciliation is not canonical",
+            ));
+        }
+        if let Some(existing) = self.repository.get_session_item(
+            command.tenant_id,
+            command.organization_id,
+            command.session_id.as_str(),
+            command.item_id.as_str(),
+        )? {
+            return Ok(existing);
+        }
+        require_non_blank(command.content.as_str(), "content")?;
+        if command.content.len() > MAX_TURN_INPUT_CONTENT_BYTES {
+            return Err(KernelError::validation(format!(
+                "native history content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
+            )));
+        }
+        let record = AgentSessionItemRecord {
+            id: self.repository.next_id()?,
+            item_id: command.item_id.clone(),
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            session_id: command.session_id.clone(),
+            kind: command.kind,
+            content: Some(command.content),
+            content_type: default_plain_text_if_blank(command.content_type.as_str()),
+            status: AgentSessionItemStatus::Completed,
+            sequence: 0,
+            input_tokens: command.input_tokens,
+            output_tokens: command.output_tokens,
+            model_id: command.model_id,
+            provider_id: command.provider_id,
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            parent_item_id: command.parent_item_id,
+            turn_id: None,
+            created_by: session.owner_user_id,
+            version: 0,
+            created_at: command.requested_at.clone(),
+            updated_at: command.requested_at.clone(),
+            completed_at: Some(command.requested_at.clone()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
+        };
+        let record = match self.repository.append_session_item(record) {
+            Ok((_, record)) => record,
+            Err(error) if error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict => self
+                .repository
+                .get_session_item(
+                    command.tenant_id,
+                    command.organization_id,
+                    command.session_id.as_str(),
+                    command.item_id.as_str(),
+                )?
+                .ok_or(error)?,
+            Err(error) => return Err(error),
+        };
         self.emit_session_item_audit_event(
             AgentAuditAction::SessionItemCreated,
             &record,
@@ -6306,6 +6685,53 @@ mod task_tests {
             requested_by: sample_subject(),
             requested_at: requested_at.to_string(),
         }
+    }
+
+    #[test]
+    fn canonical_code_engine_identity_bootstrap_does_not_require_manage_permission() {
+        let service = AgentsService::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let read_subject = PolicySubject {
+            subject_id: "user.100".to_string(),
+            tenant_id: "100001".to_string(),
+            roles: vec!["ai.agents.read".to_string()],
+        };
+
+        service
+            .ensure_code_engine_runtime_identity(
+                100_001,
+                0,
+                100,
+                "codex",
+                "agent.intelligence.codex",
+                "binding.agent-provider.codex",
+                "provider.model.codex",
+                read_subject.clone(),
+                "2026-07-26T15:00:00Z",
+            )
+            .expect("canonical identity bootstrap");
+
+        let agent = service
+            .get_agent(GetAgentCommand {
+                tenant_id: 100_001,
+                agent_id: "agent.intelligence.codex".to_string(),
+                requested_by: read_subject.clone(),
+            })
+            .expect("canonical agent");
+        assert_eq!(agent.status, AgentBusinessStatus::Active);
+        let binding = service
+            .get_provider_binding(
+                100_001,
+                "agent.intelligence.codex",
+                "binding.agent-provider.codex",
+                read_subject,
+            )
+            .expect("canonical provider binding");
+        assert!(binding.active);
+        assert_eq!(binding.provider_id, "provider.model.codex");
     }
 
     #[test]

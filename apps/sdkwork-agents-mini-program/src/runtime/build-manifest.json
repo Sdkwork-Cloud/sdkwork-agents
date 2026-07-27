@@ -1,0 +1,7 @@
+{
+  "deploymentProfile": "cloud",
+  "environment": "production",
+  "profileId": "cloud.production",
+  "runtimeTarget": "mini-program",
+  "platform": "MP_WEIXIN"
+}

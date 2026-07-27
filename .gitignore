@@ -3,6 +3,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+!apps/sdkwork-agents-h5/.env.standalone.*
+!apps/sdkwork-agents-h5/.env.cloud.*
 *.local.toml
 config/*.local.toml
 /etc/**/*.local.*

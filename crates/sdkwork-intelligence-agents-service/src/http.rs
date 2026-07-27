@@ -261,6 +261,17 @@ impl AgentRepository for DynAgentRepository {
         self.0.get_project(tenant_id, organization_id, project_id)
     }
 
+    fn get_project_by_workspace_name(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        name: &str,
+    ) -> KernelResult<Option<crate::project::AgentProjectRecord>> {
+        self.0
+            .get_project_by_workspace_name(tenant_id, organization_id, workspace_id, name)
+    }
+
     fn get_project_by_import_source(
         &self,
         tenant_id: u64,
@@ -867,7 +878,9 @@ pub(crate) type HttpService =
 
 #[derive(Clone)]
 pub struct AgentHttpState {
-    service: Arc<HttpService>,
+    pub(crate) service: Arc<HttpService>,
+    native_session_cwd_resolver:
+        Option<Arc<dyn sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver>>,
 }
 
 impl AgentHttpState {
@@ -904,13 +917,20 @@ impl AgentHttpState {
         .with_turn_executor(turn_executor);
         Self {
             service: Arc::new(service),
+            native_session_cwd_resolver: None,
         }
     }
 
+    pub fn with_native_session_cwd_resolver(
+        mut self,
+        resolver: Arc<dyn sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver>,
+    ) -> Self {
+        self.native_session_cwd_resolver = Some(resolver);
+        self
+    }
+
     pub fn session_facade(&self) -> Arc<dyn sdkwork_agents_runtime_facade::AgentsSessionFacade> {
-        Arc::new(HttpAgentsSessionFacade {
-            service: self.service.clone(),
-        })
+        Arc::new(HttpAgentsSessionFacade::new(self.service.clone()))
     }
 
     /// Verify the repository dependency used by the same HTTP service state.
@@ -970,8 +990,9 @@ impl AgentHttpState {
     }
 }
 
-struct HttpAgentsSessionFacade {
-    service: Arc<HttpService>,
+pub(crate) struct HttpAgentsSessionFacade {
+    pub(crate) service: Arc<HttpService>,
+    native_history_reconciliation: bool,
 }
 
 struct EnsureRuntimeBindingRequest<'a> {
@@ -986,6 +1007,20 @@ struct EnsureRuntimeBindingRequest<'a> {
 }
 
 impl HttpAgentsSessionFacade {
+    pub(crate) fn new(service: Arc<HttpService>) -> Self {
+        Self {
+            service,
+            native_history_reconciliation: false,
+        }
+    }
+
+    pub(crate) fn for_native_history_reconciliation(service: Arc<HttpService>) -> Self {
+        Self {
+            service,
+            native_history_reconciliation: true,
+        }
+    }
+
     fn ensure_runtime_binding(
         &self,
         request: EnsureRuntimeBindingRequest<'_>,
@@ -1035,32 +1070,69 @@ impl HttpAgentsSessionFacade {
             }
         }
 
-        self.service
-            .create_session_runtime_binding(
-                crate::application::CreateSessionRuntimeBindingCommand {
-                    tenant_id,
-                    organization_id,
-                    path_agent_id: agent_id.to_string(),
-                    session_id: session_id.to_string(),
-                    runtime_binding_id: Some(descriptor.runtime_binding_id.clone()),
-                    runtime_location_id: descriptor.runtime_location_id.clone(),
-                    host_mode: descriptor.host_mode.clone(),
-                    transport_kind: descriptor.transport_kind.clone(),
-                    provider_binding_id: descriptor.provider_binding_id.clone(),
-                    model_id: descriptor.model_id.clone(),
-                    provider_id: descriptor.provider_id.clone(),
-                    native_session_id: descriptor.native_session_id.clone(),
-                    native_session_tree_id: descriptor.native_session_tree_id.clone(),
-                    native_parent_session_id: descriptor.native_parent_session_id.clone(),
-                    native_forked_from_session_id: descriptor.native_forked_from_session_id.clone(),
-                    owner_scope: Some(owner_user_id),
-                    requested_by: subject,
-                    requested_at: requested_at.to_string(),
-                },
-            )
-            .map_err(|error| {
-                sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
-            })?;
+        let command = crate::application::CreateSessionRuntimeBindingCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id: agent_id.to_string(),
+            session_id: session_id.to_string(),
+            runtime_binding_id: Some(descriptor.runtime_binding_id.clone()),
+            runtime_location_id: descriptor.runtime_location_id.clone(),
+            host_mode: descriptor.host_mode.clone(),
+            transport_kind: descriptor.transport_kind.clone(),
+            provider_binding_id: descriptor.provider_binding_id.clone(),
+            model_id: descriptor.model_id.clone(),
+            provider_id: descriptor.provider_id.clone(),
+            native_session_id: descriptor.native_session_id.clone(),
+            native_session_tree_id: descriptor.native_session_tree_id.clone(),
+            native_parent_session_id: descriptor.native_parent_session_id.clone(),
+            native_forked_from_session_id: descriptor.native_forked_from_session_id.clone(),
+            owner_scope: Some(owner_user_id),
+            requested_by: subject.clone(),
+            requested_at: requested_at.to_string(),
+        };
+        let creation_result = if self.native_history_reconciliation {
+            self.service
+                .reconcile_native_history_runtime_binding(command)
+        } else {
+            self.service.create_session_runtime_binding(command)
+        };
+        match creation_result {
+            Ok(_) => {}
+            Err(error)
+                if self.native_history_reconciliation
+                    && error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
+            {
+                let existing = self
+                    .service
+                    .get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+                        tenant_id,
+                        organization_id,
+                        path_agent_id: agent_id.to_string(),
+                        session_id: session_id.to_string(),
+                        runtime_binding_id: descriptor.runtime_binding_id.clone(),
+                        owner_scope: Some(owner_user_id),
+                        requested_by: subject,
+                    })
+                    .map_err(|read_error| {
+                        sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                            read_error.to_string(),
+                        )
+                    })?;
+                if !runtime_binding_matches_descriptor(&existing, descriptor) {
+                    return Err(
+                        sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                            "concurrent native runtime binding conflicts with the requested descriptor"
+                                .into(),
+                        ),
+                    );
+                }
+            }
+            Err(error) => {
+                return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                    error.to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -1195,31 +1267,45 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                 ));
             }
         }
-        let created = self
-            .service
-            .create_session(CreateSessionCommand {
-                tenant_id: request.tenant_id,
-                organization_id: request.organization_id,
-                agent_id: request.agent_id.clone(),
-                owner_user_id: request.owner_user_id,
-                session_id: request.session_id.clone(),
-                project_id: request.project_id.clone(),
-                session_kind: map_facade_session_kind(request.session_kind),
-                entry_surface: map_facade_entry_surface(request.entry_surface),
-                source_module: request.source_module.clone(),
-                source_context_kind: request.source_context_kind.clone(),
-                source_context_id: request.source_context_id.clone(),
-                parent_session_id: request.parent_session_id.clone(),
-                forked_from_turn_id: request.forked_from_turn_id.clone(),
-                title: Some(request.title.clone()),
-                idempotency_key: Some(request.idempotency_key.clone()),
-                payload_hash: Some(request.payload_hash.clone()),
-                requested_by: subject.clone(),
-                requested_at: request.requested_at.clone(),
-            })
-            .map_err(|error| {
-                sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
-            })?;
+        let command = CreateSessionCommand {
+            tenant_id: request.tenant_id,
+            organization_id: request.organization_id,
+            agent_id: request.agent_id.clone(),
+            owner_user_id: request.owner_user_id,
+            session_id: request.session_id.clone(),
+            project_id: request.project_id.clone(),
+            session_kind: map_facade_session_kind(request.session_kind),
+            entry_surface: map_facade_entry_surface(request.entry_surface),
+            source_module: request.source_module.clone(),
+            source_context_kind: request.source_context_kind.clone(),
+            source_context_id: request.source_context_id.clone(),
+            parent_session_id: request.parent_session_id.clone(),
+            forked_from_turn_id: request.forked_from_turn_id.clone(),
+            title: Some(request.title.clone()),
+            idempotency_key: Some(request.idempotency_key.clone()),
+            payload_hash: Some(request.payload_hash.clone()),
+            requested_by: subject.clone(),
+            requested_at: request.requested_at.clone(),
+        };
+        let creation_result = if self.native_history_reconciliation {
+            self.service.reconcile_native_history_session(command)
+        } else {
+            self.service.create_session(command)
+        };
+        let created = match creation_result {
+            Ok(created) => created,
+            Err(error)
+                if self.native_history_reconciliation
+                    && error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
+            {
+                return self.resolve_or_create_session(request);
+            }
+            Err(error) => {
+                return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                    error.to_string(),
+                ));
+            }
+        };
         self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
             tenant_id: request.tenant_id,
             organization_id: request.organization_id,
@@ -1410,6 +1496,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             "/app/v3/api/ai/workspaces/{workspaceId}/archive",
             post(app_archive_workspace),
         )
+        .route(
+            "/app/v3/api/ai/workspaces/{workspaceId}/sessions",
+            get(app_list_workspace_sessions),
+        )
         .route("/app/v3/api/ai/projects/import", post(app_import_project))
         .route(
             "/app/v3/api/ai/projects",
@@ -1434,6 +1524,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             get(app_get_project_composition_slot)
                 .patch(app_update_project_composition_slot)
                 .delete(app_delete_project_composition_slot),
+        )
+        .route(
+            "/app/v3/api/ai/projects/{projectId}/sessions",
+            get(app_list_project_sessions).post(app_create_project_session),
         )
         .route(
             "/app/v3/api/ai/agents",
@@ -2252,6 +2346,17 @@ pub(crate) struct ListSessionsQueryParams {
     pub(crate) include_archived: Option<bool>,
     pub(crate) page: Option<usize>,
     pub(crate) page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListProjectSessionsQueryParams {
+    status: Option<String>,
+    include_archived: Option<bool>,
+    native_directory_name: Option<String>,
+    native_directory_fingerprint: Option<String>,
+    page: Option<usize>,
+    page_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -4891,6 +4996,230 @@ async fn app_list_sessions(
     finish_api_json(&web_ctx, result)
 }
 
+async fn app_list_project_sessions(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    project_id: Result<Path<String>, PathRejection>,
+    query: Result<Query<ListProjectSessionsQueryParams>, QueryRejection>,
+) -> Response {
+    let trace_id = web_ctx.resolved_trace_id();
+    let result: ApiResult<PageData<AgentSessionRecordDto>> = async {
+        let Path(project_id) = project_id.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let native_directory_name = query
+            .native_directory_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        if native_directory_name
+            .as_ref()
+            .is_some_and(|value| value.len() > 255)
+        {
+            return Err(ApiProblem::validation(
+                "native_directory_name exceeds 255 bytes",
+            ));
+        }
+        let native_directory_fingerprint = query
+            .native_directory_fingerprint
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
+        if native_directory_fingerprint.as_ref().is_some_and(|value| {
+            value.len() != 71
+                || !value.starts_with("sha256:")
+                || !value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(ApiProblem::validation(
+                "native_directory_fingerprint must be a sha256 digest",
+            ));
+        }
+        if native_directory_fingerprint.is_some() && native_directory_name.is_none() {
+            return Err(ApiProblem::validation(
+                "native_directory_name is required with native_directory_fingerprint",
+            ));
+        }
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut command = ListSessionsRequestDto {
+            tenant_id: scope.tenant_id,
+            owner_user_id: Some(owner_user_id.to_string()),
+            status: query.status,
+            include_archived: query.include_archived.unwrap_or(false),
+        }
+        .into_command(scope.subject.clone())
+        .map_err(ApiProblem::from_kernel_error)?;
+        command.query = command
+            .query
+            .for_organization(organization_id)
+            .for_project(project_id.clone())
+            .with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            );
+        let service = state.service.clone();
+        let native_session_cwd_resolver = state.native_session_cwd_resolver.clone();
+        let native_sync_trace_id = trace_id.clone();
+        let records = tokio::task::spawn_blocking(move || {
+            let project = service.get_project(GetProjectCommand {
+                tenant_id,
+                organization_id,
+                project_id: project_id.clone(),
+                owner_scope: Some(owner_user_id),
+                requested_by: scope.subject.clone(),
+            })?;
+            if page == 1 {
+                let native_sync_result = (|| {
+                    let exact_cwd = native_session_cwd_resolver
+                        .as_ref()
+                        .map(|resolver| {
+                            resolver.resolve_project_cwd(
+                                &sdkwork_agents_runtime_facade::NativeSessionProjectCwdSelector {
+                                    tenant_id: project.tenant_id,
+                                    organization_id: project.organization_id,
+                                    owner_user_id: project.owner_user_id,
+                                    project_id: project.project_id.clone(),
+                                    project_name: project.name.clone(),
+                                },
+                            )
+                        })
+                        .transpose()
+                        .map_err(|error| KernelError::Internal {
+                            message: error.to_string(),
+                        })?
+                        .flatten();
+                    if exact_cwd.is_some() {
+                        crate::native_session_sync::synchronize_project_native_sessions_at_cwd(
+                            service.clone(),
+                            &project,
+                            scope.subject,
+                            exact_cwd,
+                        )
+                    } else if native_directory_fingerprint.is_some() {
+                        crate::native_session_sync::synchronize_project_native_sessions_with_selector(
+                            service.clone(),
+                            &project,
+                            scope.subject,
+                            None,
+                            native_directory_name,
+                            native_directory_fingerprint,
+                        )
+                    } else {
+                        crate::native_session_sync::synchronize_project_native_sessions(
+                            service.clone(),
+                            &project,
+                            scope.subject,
+                        )
+                    }
+                })();
+                if let Err(error) = native_sync_result {
+                    tracing::warn!(
+                        target: "sdkwork.agents.native_session_sync",
+                        trace_id = %native_sync_trace_id,
+                        operation_id = "agents.projectSessions.list",
+                        stage = "native_session_inventory_sync",
+                        project_id = %project.project_id,
+                        error = %error,
+                        "native session inventory synchronization failed; returning canonical project sessions"
+                    );
+                }
+            }
+            service.list_sessions(command)
+        })
+        .await
+        .map_err(|error| ApiProblem::internal(error.to_string()))?
+        .map_err(ApiProblem::from_kernel_error)?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentSessionRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_list_workspace_sessions(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    workspace_id: Result<Path<String>, PathRejection>,
+    query: Result<Query<ListSessionsQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentSessionRecordDto>> = async {
+        let Path(workspace_id) = workspace_id.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let mut command = ListSessionsRequestDto {
+            tenant_id: scope.tenant_id,
+            owner_user_id: Some(owner_user_id.to_string()),
+            status: query.status,
+            include_archived: query.include_archived.unwrap_or(false),
+        }
+        .into_command(scope.subject.clone())
+        .map_err(ApiProblem::from_kernel_error)?;
+        command.query = command
+            .query
+            .for_organization(organization_id)
+            .for_workspace(workspace_id.clone())
+            .with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            );
+        let records = with_service(&state, move |service| {
+            service.get_workspace(GetWorkspaceCommand {
+                tenant_id,
+                organization_id,
+                workspace_id,
+                owner_user_id,
+                requested_by: scope.subject,
+            })?;
+            service.list_sessions(command)
+        })
+        .await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentSessionRecordDto::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
 async fn app_list_session_user_states(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
@@ -5172,8 +5501,15 @@ async fn app_create_session(
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
-        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
+        if let Some(body_agent_id) = body.agent_id.take() {
+            if body_agent_id != agent_id {
+                return Err(ApiProblem::validation(
+                    "agentId must match the agentId path parameter",
+                ));
+            }
+        }
         let command = body
             .into_command(
                 scope.tenant_id_u64()?,
@@ -5187,6 +5523,72 @@ async fn app_create_session(
             )
             .map_err(ApiProblem::from_kernel_error)?;
         let record = with_service(&state, move |service| service.create_session(command)).await?;
+        Ok(ResourceData {
+            item: AgentSessionRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    match result {
+        Ok(data) => created_json(&web_ctx, data)
+            .unwrap_or_else(|problem| problem.into_response_for(&web_ctx)),
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn app_create_project_session(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    project_id: Result<Path<String>, PathRejection>,
+    body: Result<Json<CreateSessionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
+        let Path(project_id) = project_id.map_err(ApiProblem::from_path_rejection)?;
+        let Json(mut body) = body.map_err(ApiProblem::from_json_rejection)?;
+        if let Some(body_project_id) = body.project_id.as_deref() {
+            if body_project_id != project_id {
+                return Err(ApiProblem::validation(
+                    "projectId must match the projectId path parameter",
+                ));
+            }
+        }
+        body.project_id = Some(project_id.clone());
+
+        let scope = RequestScope::from_context(context);
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let requested_by = scope.subject;
+        let record = with_service(&state, move |service| {
+            let project = service.get_project(GetProjectCommand {
+                tenant_id,
+                organization_id,
+                project_id,
+                owner_scope: Some(owner_user_id),
+                requested_by: requested_by.clone(),
+            })?;
+            let agent_id = body
+                .agent_id
+                .take()
+                .or(project.default_agent_id)
+                .ok_or_else(|| {
+                    KernelError::validation(
+                        "agentId is required when the project has no defaultAgentId",
+                    )
+                })?;
+            let command = body.into_command(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                agent_id,
+                requested_by,
+            )?;
+            service.create_session(command)
+        })
+        .await?;
         Ok(ResourceData {
             item: AgentSessionRecordDto::from_record(&record),
         })
@@ -5748,11 +6150,19 @@ async fn app_list_session_items(
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
 ) -> Response {
+    let trace_id = web_ctx.resolved_trace_id();
     let result: ApiResult<PageData<AgentSessionItemRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
+        let native_sync_tenant_id = scope.tenant_id_u64()?;
+        let native_sync_organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let native_sync_subject = scope.subject.clone();
+        let native_sync_agent_id = agent_id.clone();
+        let native_sync_session_id = session_id.clone();
+        let native_sync_trace_id = trace_id.clone();
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
@@ -5770,6 +6180,31 @@ async fn app_list_session_items(
                 .with_page(page),
         );
         let records = with_service(&state, move |service| {
+            if page == 1 {
+                if let Some(owner_user_id) = owner_scope {
+                    if let Err(error) =
+                        crate::native_session_sync::synchronize_native_session_transcript(
+                        service,
+                        native_sync_tenant_id,
+                        native_sync_organization_id,
+                        owner_user_id,
+                        native_sync_agent_id.clone(),
+                        native_sync_session_id.clone(),
+                        native_sync_subject,
+                    ) {
+                        tracing::warn!(
+                            target: "sdkwork.agents.native_session_sync",
+                            trace_id = %native_sync_trace_id,
+                            operation_id = "agents.sessionItems.list",
+                            stage = "native_session_transcript_sync",
+                            agent_id = %native_sync_agent_id,
+                            session_id = %native_sync_session_id,
+                            error = %error,
+                            "native session transcript synchronization failed; returning canonical session items"
+                        );
+                    }
+                }
+            }
             service.list_session_items_with_drive_refs(command)
         })
         .await?;
@@ -8451,6 +8886,21 @@ mod tests {
     use axum::Extension;
     use tower::ServiceExt;
 
+    struct FailingNativeSessionProjectCwdResolver;
+
+    impl sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver
+        for FailingNativeSessionProjectCwdResolver
+    {
+        fn resolve_project_cwd(
+            &self,
+            _selector: &sdkwork_agents_runtime_facade::NativeSessionProjectCwdSelector,
+        ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<Option<String>> {
+            Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                "test native session cwd resolver failure".to_string(),
+            ))
+        }
+    }
+
     fn test_manifest() -> Value {
         json!({
             "schema_version": "1.0.0",
@@ -9207,6 +9657,155 @@ mod tests {
             .await
             .expect("project create request should succeed");
         assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn app_session_list_routes_survive_native_sync_failure_and_support_scopes() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        )
+        .with_native_session_cwd_resolver(std::sync::Arc::new(
+            FailingNativeSessionProjectCwdResolver,
+        ));
+        let app = build_test_router(state);
+        create_app_agent(&app, "agent.alpha", "alpha").await;
+
+        let create_project = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "projectId": "project.sessions",
+                    "name": "Project sessions",
+                    "defaultAgentId": "agent.alpha"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(create_project).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        let workspace_id = payload["data"]["item"]["workspaceId"]
+            .as_str()
+            .expect("created project must expose its workspaceId")
+            .to_string();
+
+        let create_session = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects/project.sessions/sessions")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "sessionId": "session.project-scoped",
+                    "sessionKind": "coding",
+                    "entrySurface": "pc",
+                    "idempotencyKey": "create-session.project-scoped",
+                    "payloadHash": "sha256:create-session.project-scoped",
+                    "requestedAt": "2026-07-26T00:00:00Z"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(create_session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["data"]["item"]["projectId"], "project.sessions");
+        assert_eq!(payload["data"]["item"]["agentId"], "agent.alpha");
+
+        let create_second_project = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "projectId": "project.sessions-secondary",
+                    "workspaceId": workspace_id,
+                    "name": "Secondary project"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(create_second_project).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let create_second_session = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects/project.sessions-secondary/sessions")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "agentId": "agent.alpha",
+                    "sessionId": "session.workspace-secondary",
+                    "sessionKind": "assistant",
+                    "entrySurface": "pc",
+                    "idempotencyKey": "create-session.workspace-secondary",
+                    "payloadHash": "sha256:create-session.workspace-secondary",
+                    "requestedAt": "2026-07-26T00:00:01Z"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(create_second_session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let list = Request::builder()
+            .method("GET")
+            .uri(
+                "/app/v3/api/ai/projects/project.sessions/sessions?page=1&page_size=20&status=active&include_archived=false",
+            )
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(list).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["data"]["items"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            payload["data"]["items"][0]["sessionId"],
+            "session.project-scoped"
+        );
+
+        for (uri, expected_session_count) in [
+            (
+                "/app/v3/api/ai/agents/agent.alpha/sessions?page=1&page_size=20&include_archived=false"
+                    .to_string(),
+                2,
+            ),
+            (
+                format!(
+                    "/app/v3/api/ai/workspaces/{workspace_id}/sessions?page=1&page_size=20&include_archived=false"
+                ),
+                2,
+            ),
+        ] {
+            let list = Request::builder()
+                .method("GET")
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap();
+            let response = app.clone().oneshot(list).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "GET {uri}");
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let payload: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                payload["data"]["items"].as_array().unwrap().len(),
+                expected_session_count,
+                "GET {uri} must return its complete scoped page"
+            );
+        }
+
+        let invalid_query = Request::builder()
+            .method("GET")
+            .uri("/app/v3/api/ai/projects/project.sessions/sessions?projectId=project.sessions")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(invalid_query).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

@@ -406,6 +406,12 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
+        path: "/app/v3/api/ai/workspaces/{workspaceId}/sessions",
+        tag: "ai",
+        operation_id: "agents.workspaceSessions.list",
+    },
+    ApiOperation {
+        method: "GET",
         path: "/app/v3/api/ai/projects",
         tag: "ai",
         operation_id: "agents.projects.list",
@@ -475,6 +481,18 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         path: "/app/v3/api/ai/projects/{projectId}/composition_slots/{slotId}",
         tag: "ai",
         operation_id: "agents.projectCompositionSlots.delete",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/projects/{projectId}/sessions",
+        tag: "ai",
+        operation_id: "agents.projectSessions.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/projects/{projectId}/sessions",
+        tag: "ai",
+        operation_id: "agents.projectSessions.create",
     },
     ApiOperation {
         method: "GET",
@@ -1466,7 +1484,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 47);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 76);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 79);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 48);
 
         assert_eq!(

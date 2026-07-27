@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, SdkWorkPageData, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentWorkspaceRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, SdkWorkPageData, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentWorkspaceRequest } from '../types';
 
 
 export interface AiAgentsMcpServersListParams {
@@ -420,6 +420,8 @@ export interface AiAgentsSessionsListParams {
   page?: number;
   pageSize?: number;
   projectId?: string;
+  status?: AgentSessionStatus;
+  includeArchived?: boolean;
 }
 
 export class AiAgentsSessionsApi {
@@ -435,7 +437,9 @@ export class AiAgentsSessionsApi {
     const query = buildQueryString([
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
-      { name: 'projectId', value: params?.projectId, style: 'form', explode: true, allowReserved: false },
+      { name: 'project_id', value: params?.projectId, style: 'form', explode: true, allowReserved: false },
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'include_archived', value: params?.includeArchived, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.request<SdkWorkPageData & { items: AgentSessionRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any });
   }
@@ -463,6 +467,69 @@ export class AiAgentsSessionsApi {
 /** Close one agent session */
   async close(agentId: string, sessionId: string, body: CloseAgentSessionRequest, requestOptions?: ApiRequestOptions): Promise<AgentSessionRecord> {
     return this.client.request<AgentSessionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/close`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json' });
+  }
+}
+
+export interface AiAgentsProjectSessionsListParams {
+  page?: number;
+  pageSize?: number;
+  status?: AgentSessionStatus;
+  includeArchived?: boolean;
+  nativeDirectoryName?: string;
+  nativeDirectoryFingerprint?: string;
+}
+
+export class AiAgentsProjectSessionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List agent sessions for one project */
+  async list(projectId: string, params?: AiAgentsProjectSessionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionRecord[]; }> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'include_archived', value: params?.includeArchived, style: 'form', explode: true, allowReserved: false },
+      { name: 'native_directory_name', value: params?.nativeDirectoryName, style: 'form', explode: true, allowReserved: false },
+      { name: 'native_directory_fingerprint', value: params?.nativeDirectoryFingerprint, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentSessionRecord[]; }>(appendQueryString(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/sessions`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any });
+  }
+
+/** Create an agent session in one project */
+  async create(projectId: string, body: CreateAgentSessionRequest, requestOptions?: ApiRequestOptions): Promise<AgentSessionRecord> {
+    return this.client.request<AgentSessionRecord>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/sessions`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json' });
+  }
+}
+
+export interface AiAgentsWorkspaceSessionsListParams {
+  page?: number;
+  pageSize?: number;
+  status?: AgentSessionStatus;
+  includeArchived?: boolean;
+}
+
+export class AiAgentsWorkspaceSessionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List agent sessions for one workspace */
+  async list(workspaceId: string, params?: AiAgentsWorkspaceSessionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionRecord[]; }> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'include_archived', value: params?.includeArchived, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentSessionRecord[]; }>(appendQueryString(appApiPath(`/ai/workspaces/${serializePathParameter(workspaceId, { name: 'workspaceId', style: 'simple', explode: false })}/sessions`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any });
   }
 }
 
@@ -733,6 +800,8 @@ export class AiAgentsApi {
   public readonly workspaces: AiAgentsWorkspacesApi;
   public readonly projects: AiAgentsProjectsApi;
   public readonly projectCompositionSlots: AiAgentsProjectCompositionSlotsApi;
+  public readonly workspaceSessions: AiAgentsWorkspaceSessionsApi;
+  public readonly projectSessions: AiAgentsProjectSessionsApi;
   public readonly sessions: AiAgentsSessionsApi;
   public readonly sessionUserStates: AiAgentsSessionUserStatesApi;
   public readonly itemFeedback: AiAgentsItemFeedbackApi;
@@ -754,6 +823,8 @@ export class AiAgentsApi {
     this.workspaces = new AiAgentsWorkspacesApi(client);
     this.projects = new AiAgentsProjectsApi(client);
     this.projectCompositionSlots = new AiAgentsProjectCompositionSlotsApi(client);
+    this.workspaceSessions = new AiAgentsWorkspaceSessionsApi(client);
+    this.projectSessions = new AiAgentsProjectSessionsApi(client);
     this.sessions = new AiAgentsSessionsApi(client);
     this.sessionUserStates = new AiAgentsSessionUserStatesApi(client);
     this.itemFeedback = new AiAgentsItemFeedbackApi(client);

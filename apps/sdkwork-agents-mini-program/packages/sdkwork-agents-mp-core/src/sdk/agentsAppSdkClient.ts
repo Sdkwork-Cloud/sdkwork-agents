@@ -18,11 +18,12 @@ let agentsAppSdkClient: SdkworkAgentsAppClient | null = null;
 let configuredBaseUrl: string | null = null;
 let bootstrapAccessToken: string | null = null;
 
-const DEFAULT_MP_APP_API_BASE_URL = "http://127.0.0.1:8095/app/v3/api";
-
 export function configureAgentsAppSdkBaseUrl(baseUrl: string): void {
   const normalized = baseUrl.trim().replace(/\/+$/u, "");
-  configuredBaseUrl = normalized.length > 0 ? normalized : DEFAULT_MP_APP_API_BASE_URL;
+  if (normalized.length === 0) {
+    throw new Error("SDKWORK_AGENTS_APP_API_BASE_URL is required");
+  }
+  configuredBaseUrl = normalized;
 }
 
 export function configureAgentsAppSdkBootstrapAccessToken(accessToken?: string): void {
@@ -34,7 +35,7 @@ export function resolveAgentsAppSdkBaseUrl(): string {
   if (configuredBaseUrl) {
     return configuredBaseUrl;
   }
-  return DEFAULT_MP_APP_API_BASE_URL;
+  throw new Error("SDKWORK_AGENTS_APP_API_BASE_URL must be configured before SDK bootstrap");
 }
 
 export function createAgentsAppSdkClientConfig(

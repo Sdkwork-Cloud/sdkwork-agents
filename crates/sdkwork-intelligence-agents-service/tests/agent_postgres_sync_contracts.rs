@@ -9,7 +9,8 @@ use sdkwork_intelligence_agents_service::{
     SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_INTERACTIONS,
     SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ITEMS,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
-    SQL_LIST_AGENT_TASKS, SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
+    SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
+    SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
     SQL_SELECT_AGENT_COMPOSITION_SLOT, SQL_SELECT_AGENT_INTERACTION,
     SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_UPDATE_AGENT,
@@ -31,7 +32,7 @@ fn tenant_scoped_select_sql(sql: &str, table: &str) {
 
 fn tenant_scoped_list_sql(sql: &str, table: &str) {
     assert!(
-        sql.contains("WHERE tenant_id = $1"),
+        sql.contains("WHERE tenant_id = $1") || sql.contains("WHERE s.tenant_id = $1"),
         "{table} list SQL must filter by tenant_id"
     );
 }
@@ -231,6 +232,19 @@ fn create_flow_casts_rfc3339_text_to_postgres_timestamptz() {
 }
 
 #[test]
+fn audit_event_sql_uses_authoritative_actor_columns() {
+    for sql in [
+        SQL_INSERT_AUDIT_EVENT,
+        SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
+    ] {
+        assert!(sql.contains("actor_type"));
+        assert!(sql.contains("actor_id"));
+        assert!(!sql.contains("subject_id"));
+        assert!(!sql.contains("subject_tenant_id"));
+    }
+}
+
+#[test]
 fn postgres_session_sql_is_tenant_scoped() {
     tenant_scoped_select_sql(SQL_SELECT_AGENT_SESSION, "ai_agent_session");
     tenant_scoped_list_sql(SQL_LIST_AGENT_SESSIONS, "ai_agent_session");
@@ -301,15 +315,17 @@ fn turn_sql_uses_scoped_idempotency_and_links_items() {
 #[test]
 fn postgres_session_list_has_mandatory_pagination() {
     assert!(
-        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $8"),
+        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $9"),
         "SQL_LIST_AGENT_SESSIONS must have LIMIT parameter for mandatory pagination"
     );
     assert!(
-        SQL_LIST_AGENT_SESSIONS.contains("OFFSET $9"),
+        SQL_LIST_AGENT_SESSIONS.contains("OFFSET $10"),
         "SQL_LIST_AGENT_SESSIONS must have OFFSET parameter for page navigation"
     );
     assert!(SQL_LIST_AGENT_SESSIONS.contains("organization_id = $2"));
     assert!(SQL_LIST_AGENT_SESSIONS.contains("project_id = $4"));
+    assert!(SQL_LIST_AGENT_SESSIONS.contains("p.workspace_id = $5"));
+    assert!(SQL_COUNT_AGENT_SESSIONS.contains("p.workspace_id = $5"));
 }
 
 #[test]

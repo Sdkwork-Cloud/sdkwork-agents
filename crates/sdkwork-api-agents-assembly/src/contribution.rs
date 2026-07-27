@@ -31,6 +31,15 @@ pub async fn assemble_app_api_contribution() -> anyhow::Result<ApiAssemblyContri
     Ok(contribution_from_state(state))
 }
 
+pub async fn assemble_app_api_contribution_with_native_session_cwd_resolver(
+    resolver: Arc<dyn sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver>,
+) -> anyhow::Result<ApiAssemblyContribution> {
+    let state = build_agent_http_state()
+        .await?
+        .with_native_session_cwd_resolver(resolver);
+    Ok(contribution_from_state(state))
+}
+
 /// Builds the App API contribution and approved in-process facade from one state.
 pub async fn assemble_app_runtime_contribution() -> anyhow::Result<AppRuntimeContribution> {
     let state = build_agent_http_state().await?;

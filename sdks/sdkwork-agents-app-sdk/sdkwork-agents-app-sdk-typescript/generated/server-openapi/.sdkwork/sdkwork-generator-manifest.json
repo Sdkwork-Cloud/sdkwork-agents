@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "4fad2c4902c357d3824a76943692bea85bca3d079ea244d8849558d643db3e6c"
+      "sha256": "8f0d25b50b2890caf9e0f763a8b2e421cc7c0b66613e653434aae692b37b4608"
     },
     {
       "path": "src/api/base.ts",
@@ -72,7 +72,7 @@
     },
     {
       "path": "src/http/client.ts",
-      "sha256": "c2782d9085ba008427aac25bc071f6961b3a99826f7f39e51f970f3c1b32cef7"
+      "sha256": "a400aaa79494485aecb46e21b6662c0bbb9315fe2bd4cbef86abe82b96964dda"
     },
     {
       "path": "src/http/index.ts",
@@ -488,7 +488,7 @@
     },
     {
       "path": "src/types/create-agent-session-request.ts",
-      "sha256": "62d00c3ff68889b76ff4e7afbb9c6ba1be1f4672538d15662b95d2c6793d12aa"
+      "sha256": "c7545dd20184f2b9b45f166d815e8311c5e8f8b10f52e234923c136707b4ed97"
     },
     {
       "path": "src/types/create-agent-session-runtime-binding-request.ts",

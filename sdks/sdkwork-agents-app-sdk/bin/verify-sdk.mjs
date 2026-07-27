@@ -37,6 +37,9 @@ function verify(candidate) {
     candidate.apiPrefix,
     candidate.title,
     'operationId: agents.list',
+    'operationId: agents.sessions.list',
+    'operationId: agents.projectSessions.list',
+    'operationId: agents.workspaceSessions.list',
     'operationId: agents.providerBindings.create',
     'operationId: agents.compositionSlots.list',
     'Access-Token'
@@ -96,8 +99,12 @@ function verifyFlutterOutput(familyRoot, candidate) {
   }
   const api = fs.readFileSync(path.join(output, 'lib', 'src', 'api', 'ai.dart'), 'utf8');
   for (const requiredMethod of [
+    'agentsSessionsList',
     'agentsSessionsCreate',
     'agentsSessionsRetrieve',
+    'agentsProjectSessionsList',
+    'agentsProjectSessionsCreate',
+    'agentsWorkspaceSessionsList',
     'agentsTurnsList',
     'agentsTurnsStream',
     'agentsSessionItemsList',

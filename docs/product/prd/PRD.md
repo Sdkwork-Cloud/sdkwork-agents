@@ -122,7 +122,7 @@ runtime binding, lifecycle and expected version before provider invocation.
 
 | Surface | Prefix | Operations | Credential mode | SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 76 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 79 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 48 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
 | Open API | `/agent/v3/api` | 47 | `X-API-Key` | `@sdkwork/agents-sdk` |
 

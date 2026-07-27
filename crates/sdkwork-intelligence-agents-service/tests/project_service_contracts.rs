@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use sdkwork_agent_kernel::{KernelEvent, KernelResult, PolicySubject};
+use sdkwork_agent_kernel::{KernelErrorKind, KernelEvent, KernelResult, PolicySubject};
 use sdkwork_intelligence_agents_service::{
     extract_event_context, AgentAuditSink, AgentCompositionSlotKind, AgentCompositionTargetModule,
     AgentProjectDriveAccessMode, AgentProjectStatus, AgentProjectVisibility, AgentsService,
@@ -346,6 +346,125 @@ fn drive_import_is_inserted_once_and_reused_by_source_identity() {
         })
         .unwrap();
     assert_eq!(projects.items.len(), 1);
+}
+
+#[test]
+fn project_name_is_unique_within_workspace_across_create_import_and_rename() {
+    let (service, _) = service();
+    service
+        .ensure_default_workspace(EnsureDefaultWorkspaceCommand {
+            tenant_id: 10,
+            organization_id: 20,
+            owner_user_id: 30,
+            default_name: None,
+            requested_by: subject(),
+            requested_at: "2026-07-26T00:00:00Z".to_string(),
+        })
+        .unwrap();
+
+    let imported = service
+        .import_project(ImportProjectCommand {
+            tenant_id: 10,
+            organization_id: 20,
+            workspace_id: "workspace.default.30".to_string(),
+            project_id: "project.folder-alpha".to_string(),
+            owner_user_id: 30,
+            name: "Shared Folder".to_string(),
+            description: None,
+            source_kind: "drive_sandbox".to_string(),
+            source_ref: "drive://space.alpha/root.alpha".to_string(),
+            drive_space_id: "space.alpha".to_string(),
+            drive_root_entry_id: "root.alpha".to_string(),
+            drive_logical_path: "/shared-folder".to_string(),
+            requested_by: app_user_subject(),
+            requested_at: "2026-07-26T00:01:00Z".to_string(),
+        })
+        .unwrap();
+    let imported_from_another_source = service
+        .import_project(ImportProjectCommand {
+            tenant_id: 10,
+            organization_id: 20,
+            workspace_id: "workspace.default.30".to_string(),
+            project_id: "project.folder-beta".to_string(),
+            owner_user_id: 30,
+            name: "  shared folder  ".to_string(),
+            description: None,
+            source_kind: "drive_sandbox".to_string(),
+            source_ref: "drive://space.beta/root.beta".to_string(),
+            drive_space_id: "space.beta".to_string(),
+            drive_root_entry_id: "root.beta".to_string(),
+            drive_logical_path: "/shared-folder".to_string(),
+            requested_by: app_user_subject(),
+            requested_at: "2026-07-26T00:02:00Z".to_string(),
+        })
+        .unwrap();
+    assert_eq!(imported_from_another_source.project_id, imported.project_id);
+
+    let create_error = service
+        .create_project(CreateProjectCommand {
+            tenant_id: 10,
+            organization_id: 20,
+            project_id: "project.duplicate-create".to_string(),
+            workspace_id: Some("workspace.default.30".to_string()),
+            owner_user_id: 30,
+            name: "SHARED FOLDER".to_string(),
+            description: None,
+            visibility: AgentProjectVisibility::Private,
+            drive_access_mode: AgentProjectDriveAccessMode::OwnerLibrary,
+            default_agent_id: None,
+            default_model_id: None,
+            requested_by: app_user_subject(),
+            requested_at: "2026-07-26T00:03:00Z".to_string(),
+        })
+        .unwrap_err();
+    assert_eq!(create_error.kind(), KernelErrorKind::Conflict);
+
+    let other = service
+        .create_project(CreateProjectCommand {
+            tenant_id: 10,
+            organization_id: 20,
+            project_id: "project.other".to_string(),
+            workspace_id: Some("workspace.default.30".to_string()),
+            owner_user_id: 30,
+            name: "Other".to_string(),
+            description: None,
+            visibility: AgentProjectVisibility::Private,
+            drive_access_mode: AgentProjectDriveAccessMode::OwnerLibrary,
+            default_agent_id: None,
+            default_model_id: None,
+            requested_by: app_user_subject(),
+            requested_at: "2026-07-26T00:04:00Z".to_string(),
+        })
+        .unwrap();
+    let rename_error = service
+        .update_project(UpdateProjectCommand {
+            tenant_id: 10,
+            organization_id: 20,
+            project_id: other.project_id,
+            owner_scope: Some(30),
+            expected_version: Some(other.version),
+            name: Some("shared folder".to_string()),
+            description: None,
+            visibility: None,
+            drive_access_mode: None,
+            default_agent_id: None,
+            default_model_id: None,
+            requested_user_id: 30,
+            requested_by: app_user_subject(),
+            requested_at: "2026-07-26T00:05:00Z".to_string(),
+        })
+        .unwrap_err();
+    assert_eq!(rename_error.kind(), KernelErrorKind::Conflict);
+
+    let projects = service
+        .list_projects(ListProjectsCommand {
+            query: ProjectListQuery::for_organization(10, 20)
+                .for_owner(30)
+                .for_workspace("workspace.default.30"),
+            requested_by: app_user_subject(),
+        })
+        .unwrap();
+    assert_eq!(projects.items.len(), 2);
 }
 
 #[test]

@@ -2,6 +2,14 @@
 
 use crate::domain::{AgentCompositionSlotKind, AgentCompositionTargetModule};
 
+pub(crate) fn normalize_project_name(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+pub(crate) fn project_names_equal(left: &str, right: &str) -> bool {
+    normalize_project_name(left) == normalize_project_name(right)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentProjectVisibility {
     Private,

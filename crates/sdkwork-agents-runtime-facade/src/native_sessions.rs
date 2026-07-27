@@ -1,0 +1,333 @@
+use std::collections::{HashMap, HashSet};
+
+use sdkwork_agent_kernel::{AgentMessage, AgentSession};
+use sdkwork_agent_provider_claude_code::{
+    discover_claude_code_native_session_messages, discover_claude_code_native_sessions,
+};
+use sdkwork_agent_provider_codex::{
+    discover_codex_native_session_messages, discover_codex_native_sessions,
+};
+use sdkwork_agent_provider_core::{
+    native_session_directory_fingerprint, native_session_path_basename,
+    normalize_native_session_path,
+};
+use sdkwork_agent_provider_opencode::{
+    discover_opencode_native_session_messages, discover_opencode_native_sessions,
+};
+
+use crate::code_engines::CodeEngineSlot;
+use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeSessionProjectCwdSelector {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub owner_user_id: u64,
+    pub project_id: String,
+    pub project_name: String,
+}
+
+pub trait NativeSessionProjectCwdResolver: Send + Sync {
+    fn resolve_project_cwd(
+        &self,
+        selector: &NativeSessionProjectCwdSelector,
+    ) -> RuntimeFacadeResult<Option<String>>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeSessionInventorySelector {
+    pub directory_fingerprint: Option<String>,
+    pub exact_cwd: Option<String>,
+    pub unique_basename: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeSessionInventoryItem {
+    pub engine_key: String,
+    pub agent_id: String,
+    pub binding_id: String,
+    pub provider_id: String,
+    pub default_model_id: String,
+    pub session: AgentSession,
+}
+
+pub(crate) fn discover_native_sessions(
+    slots: &HashMap<String, CodeEngineSlot>,
+    selector: &NativeSessionInventorySelector,
+) -> RuntimeFacadeResult<Vec<NativeSessionInventoryItem>> {
+    let mut candidates = Vec::new();
+    for engine_key in ["codex", "claude-code", "opencode"] {
+        let Some(slot) = slots.get(engine_key) else {
+            continue;
+        };
+        let sessions = match engine_key {
+            "codex" => discover_codex_native_sessions(),
+            "claude-code" => discover_claude_code_native_sessions(),
+            "opencode" => discover_opencode_native_sessions(),
+            _ => unreachable!(),
+        }
+        .map_err(|error| RuntimeFacadeError::EngineUnavailable {
+            engine_key: engine_key.to_string(),
+            reason: error.to_string(),
+        })?;
+        let descriptors = slot.list_model_descriptors();
+        let Some(default_model) = descriptors.first() else {
+            continue;
+        };
+        let Some(agent_id) = crate::code_engines::code_engine_agent_id(engine_key) else {
+            continue;
+        };
+        for session in sessions {
+            candidates.push(NativeSessionInventoryItem {
+                engine_key: engine_key.to_string(),
+                agent_id: agent_id.to_string(),
+                binding_id: slot.binding_id().to_string(),
+                provider_id: default_model.provider_id.clone(),
+                default_model_id: default_model.model_id.clone(),
+                session,
+            });
+        }
+    }
+
+    let selected_cwd = resolve_selected_cwd(&candidates, selector)?;
+    let mut dedupe = HashSet::new();
+    let mut selected = candidates
+        .into_iter()
+        .filter(|item| {
+            item.session
+                .cwd
+                .as_deref()
+                .map(normalize_native_session_path)
+                .as_deref()
+                == selected_cwd.as_deref()
+        })
+        .filter(|item| dedupe.insert((item.engine_key.clone(), item.session.session_id.clone())))
+        .collect::<Vec<_>>();
+    selected.sort_by(|left, right| {
+        right
+            .session
+            .updated_at
+            .as_deref()
+            .unwrap_or_default()
+            .cmp(left.session.updated_at.as_deref().unwrap_or_default())
+            .then_with(|| left.engine_key.cmp(&right.engine_key))
+            .then_with(|| left.session.session_id.cmp(&right.session.session_id))
+    });
+    Ok(selected)
+}
+
+pub(crate) fn load_native_session_messages(
+    slots: &HashMap<String, CodeEngineSlot>,
+    engine_key: &str,
+    native_session_id: &str,
+) -> RuntimeFacadeResult<Vec<AgentMessage>> {
+    if !slots.contains_key(engine_key) {
+        return Err(RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        });
+    }
+    if native_session_id.trim().is_empty() {
+        return Err(RuntimeFacadeError::InvalidInput(
+            "native session id is required to load transcript messages".to_string(),
+        ));
+    }
+    match engine_key {
+        "codex" => discover_codex_native_session_messages(native_session_id),
+        "claude-code" => discover_claude_code_native_session_messages(native_session_id),
+        "opencode" => discover_opencode_native_session_messages(native_session_id),
+        _ => {
+            return Err(RuntimeFacadeError::UnsupportedEngine {
+                engine_key: engine_key.to_string(),
+            })
+        }
+    }
+    .map_err(|error| RuntimeFacadeError::EngineUnavailable {
+        engine_key: engine_key.to_string(),
+        reason: error.to_string(),
+    })
+}
+
+fn resolve_selected_cwd(
+    candidates: &[NativeSessionInventoryItem],
+    selector: &NativeSessionInventorySelector,
+) -> RuntimeFacadeResult<Option<String>> {
+    if let Some(cwd) = selector
+        .exact_cwd
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Ok(Some(normalize_native_session_path(cwd)));
+    }
+    let Some(basename) = selector
+        .unique_basename
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Err(RuntimeFacadeError::InvalidInput(
+            "native session inventory requires an exact cwd or unique basename".to_string(),
+        ));
+    };
+    let basename = basename.to_ascii_lowercase();
+    if let Some(directory_fingerprint) = selector
+        .directory_fingerprint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let matching_paths = candidates
+            .iter()
+            .filter_map(|item| item.session.cwd.as_deref())
+            .filter(|cwd| native_session_path_basename(cwd).as_deref() == Some(basename.as_str()))
+            .filter(|cwd| {
+                native_session_directory_fingerprint(cwd).ok().as_deref()
+                    == Some(directory_fingerprint)
+            })
+            .map(normalize_native_session_path)
+            .collect::<HashSet<_>>();
+        return match matching_paths.len() {
+            0 => Ok(None),
+            1 => Ok(matching_paths.into_iter().next()),
+            _ => Err(RuntimeFacadeError::InvalidInput(format!(
+                "native session directory fingerprint is ambiguous: {basename}"
+            ))),
+        };
+    }
+    let matching_paths = candidates
+        .iter()
+        .filter_map(|item| item.session.cwd.as_deref())
+        .filter(|cwd| native_session_path_basename(cwd).as_deref() == Some(basename.as_str()))
+        .map(normalize_native_session_path)
+        .collect::<HashSet<_>>();
+    match matching_paths.len() {
+        0 => Ok(None),
+        1 => Ok(matching_paths.into_iter().next()),
+        _ => Err(RuntimeFacadeError::InvalidInput(format!(
+            "native session directory name is ambiguous: {basename}"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(engine: &str, session_id: &str, cwd: &str) -> NativeSessionInventoryItem {
+        NativeSessionInventoryItem {
+            engine_key: engine.to_string(),
+            agent_id: format!("agent.intelligence.{engine}"),
+            binding_id: format!("binding.agent-provider.{engine}"),
+            provider_id: format!("provider.model.{engine}"),
+            default_model_id: "model.default".to_string(),
+            session: AgentSession::new(session_id).with_cwd(cwd),
+        }
+    }
+
+    #[test]
+    fn exact_windows_path_matches_extended_length_provider_cwd() {
+        let candidates = vec![item("codex", "one", r"\\?\E:\Work\BirdCoder")];
+        let selected = resolve_selected_cwd(
+            &candidates,
+            &NativeSessionInventorySelector {
+                directory_fingerprint: None,
+                exact_cwd: Some("e:/work/birdcoder/".to_string()),
+                unique_basename: None,
+            },
+        )
+        .expect("selected cwd");
+        assert_eq!(selected.as_deref(), Some("e:/work/birdcoder"));
+    }
+
+    #[test]
+    fn basename_selection_fails_closed_when_multiple_paths_match() {
+        let candidates = vec![
+            item("codex", "one", "C:/one/BirdCoder"),
+            item("opencode", "two", "D:/two/BirdCoder"),
+        ];
+        let result = resolve_selected_cwd(
+            &candidates,
+            &NativeSessionInventorySelector {
+                directory_fingerprint: None,
+                exact_cwd: None,
+                unique_basename: Some("BirdCoder".to_string()),
+            },
+        );
+        assert!(matches!(result, Err(RuntimeFacadeError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn directory_fingerprint_selects_one_of_two_same_basename_paths() {
+        let fixture_root = create_fingerprint_fixture_root("unique");
+        let first = fixture_root.join("first").join("BirdCoder");
+        let second = fixture_root.join("second").join("BirdCoder");
+        std::fs::create_dir_all(first.join("apps")).expect("create first fixture");
+        std::fs::create_dir_all(second.join("packages")).expect("create second fixture");
+        let fingerprint =
+            native_session_directory_fingerprint(second.to_str().expect("second fixture path"))
+                .expect("fingerprint second fixture");
+        let candidates = vec![
+            item("codex", "one", first.to_str().expect("first fixture path")),
+            item(
+                "opencode",
+                "two",
+                second.to_str().expect("second fixture path"),
+            ),
+        ];
+
+        let selected = resolve_selected_cwd(
+            &candidates,
+            &NativeSessionInventorySelector {
+                directory_fingerprint: Some(fingerprint),
+                exact_cwd: None,
+                unique_basename: Some("BirdCoder".to_string()),
+            },
+        )
+        .expect("select fingerprinted directory");
+        let normalized_second =
+            normalize_native_session_path(second.to_str().expect("second fixture path"));
+        assert_eq!(selected.as_deref(), Some(normalized_second.as_str()));
+        std::fs::remove_dir_all(fixture_root).expect("remove fixtures");
+    }
+
+    #[test]
+    fn directory_fingerprint_fails_closed_for_identical_roots() {
+        let fixture_root = create_fingerprint_fixture_root("ambiguous");
+        let first = fixture_root.join("first").join("BirdCoder");
+        let second = fixture_root.join("second").join("BirdCoder");
+        std::fs::create_dir_all(first.join("apps")).expect("create first fixture");
+        std::fs::create_dir_all(second.join("apps")).expect("create second fixture");
+        let fingerprint =
+            native_session_directory_fingerprint(first.to_str().expect("first fixture path"))
+                .expect("fingerprint first fixture");
+        let candidates = vec![
+            item("codex", "one", first.to_str().expect("first fixture path")),
+            item(
+                "opencode",
+                "two",
+                second.to_str().expect("second fixture path"),
+            ),
+        ];
+
+        let result = resolve_selected_cwd(
+            &candidates,
+            &NativeSessionInventorySelector {
+                directory_fingerprint: Some(fingerprint),
+                exact_cwd: None,
+                unique_basename: Some("BirdCoder".to_string()),
+            },
+        );
+        assert!(matches!(result, Err(RuntimeFacadeError::InvalidInput(_))));
+        std::fs::remove_dir_all(fixture_root).expect("remove fixtures");
+    }
+
+    fn create_fingerprint_fixture_root(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sdkwork-native-session-selector-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+}

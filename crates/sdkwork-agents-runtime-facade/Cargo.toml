@@ -18,3 +18,4 @@ sdkwork-agent-provider-opencode = { workspace = true }
 sdkwork-agent-provider-openclaw = { workspace = true }
 sdkwork-agent-provider-hermes = { workspace = true }
 sdkwork-agent-provider-spi = { workspace = true }
+sdkwork-agent-provider-core = { workspace = true }

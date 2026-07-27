@@ -1,0 +1,13 @@
+{
+  "SDKWORK_AGENTS_APP_API_BASE_URL": "https://agents.sdkwork.com/app/v3/api",
+  "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL": "https://agents.sdkwork.com",
+  "SDKWORK_AGENTS_DEPLOYMENT_PROFILE": "cloud",
+  "SDKWORK_AGENTS_ENVIRONMENT": "production",
+  "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL": "https://api.sdkwork.com",
+  "SDKWORK_AGENTS_PROFILE_ID": "cloud.production",
+  "SDKWORK_AGENTS_RUNTIME_TARGET": "flutter-android",
+  "SDKWORK_DEPLOYMENT_PROFILE": "cloud",
+  "SDKWORK_ENVIRONMENT": "production",
+  "SDKWORK_PROFILE_ID": "cloud.production",
+  "SDKWORK_RUNTIME_TARGET": "flutter-android"
+}

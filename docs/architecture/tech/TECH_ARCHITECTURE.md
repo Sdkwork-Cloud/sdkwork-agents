@@ -95,7 +95,7 @@ stays under `generated/server-openapi` and is never hand-edited.
 
 | Surface | Authority | Prefix | Operations | Auth |
 | --- | --- | --- | ---: | --- |
-| App | `sdkwork-agents-app-api` | `/app/v3/api` | 76 | dual token |
+| App | `sdkwork-agents-app-api` | `/app/v3/api` | 79 | dual token |
 | Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 48 | dual token/operator |
 | Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 47 | API key |
 

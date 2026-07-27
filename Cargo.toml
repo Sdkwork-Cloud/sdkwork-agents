@@ -44,6 +44,7 @@ sdkwork-agent-kernel = { path = "../sdkwork-kernel/sdkwork-agent-kernel" }
 sdkwork-code-kernel = { path = "../sdkwork-kernel/sdkwork-code-kernel" }
 sdkwork-agent-server = { path = "../sdkwork-kernel/sdkwork-agent-server" }
 sdkwork-agent-provider-spi = { path = "../sdkwork-kernel/sdkwork-agent-provider-spi" }
+sdkwork-agent-provider-core = { path = "../sdkwork-kernel/sdkwork-kernel-plugins/crates/sdkwork-agent-provider-core" }
 sdkwork-agent-provider-codex = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-codex" }
 sdkwork-agent-provider-claude-code = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-claude-code" }
 sdkwork-agent-provider-gemini-cli = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-gemini-cli" }

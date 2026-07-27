@@ -21,8 +21,8 @@ use crate::ports::{
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
 use crate::project::{
-    AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
-    AgentProjectStatus, AgentProjectVisibility,
+    project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode,
+    AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
 };
 use crate::validation::{validate_capabilities, validate_standard_id};
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
@@ -142,9 +142,10 @@ pub use sql::{
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
     SQL_LIST_AGENT_WORKSPACES, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
-    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
-    SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK,
-    SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE,
+    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME,
+    SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING, SQL_RECORD_AGENT_SESSION_ITEM,
+    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
+    SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE, SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME,
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
     SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
@@ -1746,8 +1747,8 @@ pub struct AgentAuditEventRow {
     pub agent_internal_id: Option<u64>,
     pub agent_id: Option<String>,
     pub action: String,
-    pub subject_id: String,
-    pub subject_tenant_id: String,
+    pub actor_type: i16,
+    pub actor_id: u64,
     pub request_id: Option<String>,
     pub trace_id: Option<String>,
     pub payload_json: String,
@@ -1761,11 +1762,11 @@ impl AgentAuditEventRow {
     /// helpers) via the `KernelEventExt::with_context` extension, which embeds
     /// a `_context` JSON object inside the event payload. The following keys
     /// are consulted: `agent_id`, `tenant_id`, `organization_id`,
-    /// `agent_internal_id`, `subject_id`, `subject_tenant_id`.
+    /// `agent_internal_id` and `subject_id`.
     ///
-    /// Missing context values fall back to safe defaults (`0` for numeric
-    /// fields, `"unknown"` for string fields) so that audit recording never
-    /// fails due to incomplete metadata.
+    /// Authenticated user and service subjects must map to a positive SQL
+    /// `BIGINT`. Internal `system.agents.*` subjects use the reserved system
+    /// actor representation.
     pub fn from_kernel_event(event: &KernelEvent, id: u64) -> KernelResult<Self> {
         let occurred_at = event
             .occurred_at
@@ -1794,8 +1795,7 @@ impl AgentAuditEventRow {
         let subject_id = extract_event_context(event.payload.as_str(), "subject_id")
             .or_else(|| event.correlation_id.clone())
             .unwrap_or_else(|| "unknown".to_string());
-        let subject_tenant_id = extract_event_context(event.payload.as_str(), "subject_tenant_id")
-            .unwrap_or_else(|| "unknown".to_string());
+        let (actor_type, actor_id) = audit_actor_from_subject_id(subject_id.as_str())?;
 
         Ok(Self {
             id,
@@ -1816,8 +1816,8 @@ impl AgentAuditEventRow {
                         .to_string()
                 },
             ),
-            subject_id,
-            subject_tenant_id,
+            actor_type,
+            actor_id,
             request_id: None,
             trace_id: event
                 .trace_context
@@ -1875,8 +1875,11 @@ impl AgentAuditEventRow {
                 .transpose()?,
             agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
             action: row.try_get("action").map_err(map_sqlx_error)?,
-            subject_id: row.try_get("subject_id").map_err(map_sqlx_error)?,
-            subject_tenant_id: row.try_get("subject_tenant_id").map_err(map_sqlx_error)?,
+            actor_type: row.try_get("actor_type").map_err(map_sqlx_error)?,
+            actor_id: int64_to_u64(
+                row.try_get::<i64, _>("actor_id").map_err(map_sqlx_error)?,
+                "actor_id",
+            )?,
             request_id: row.try_get("request_id").map_err(map_sqlx_error)?,
             trace_id: row.try_get("trace_id").map_err(map_sqlx_error)?,
             payload_json: row.try_get("payload_json").map_err(map_sqlx_error)?,
@@ -1934,6 +1937,13 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         tenant_id: u64,
         organization_id: u64,
         project_id: &str,
+    ) -> KernelResult<Option<AgentProjectRow>>;
+    fn get_project_row_by_workspace_name(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        name: &str,
     ) -> KernelResult<Option<AgentProjectRow>>;
     fn get_project_row_by_import_source(
         &self,
@@ -2380,6 +2390,19 @@ where
     ) -> KernelResult<Option<AgentProjectRecord>> {
         self.adapter
             .get_project_row(tenant_id, organization_id, project_id)?
+            .map(AgentProjectRow::into_record)
+            .transpose()
+    }
+
+    fn get_project_by_workspace_name(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        name: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>> {
+        self.adapter
+            .get_project_row_by_workspace_name(tenant_id, organization_id, workspace_id, name)?
             .map(AgentProjectRow::into_record)
             .transpose()
     }
@@ -3884,40 +3907,69 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .map(|value| u64_to_i64(value, "deleted_by"))
             .transpose()?;
         self.with_pool(|pool| {
-            pg_execute!(
-                pool,
-                SQL_INSERT_AGENT_PROJECT,
-                id,
-                row.uuid,
-                tenant_id,
-                organization_id,
-                row.project_id,
-                row.workspace_id,
-                owner_user_id,
-                row.name,
-                row.description,
-                row.visibility,
-                row.status,
-                row.drive_access_mode,
-                row.default_agent_id,
-                row.default_model_id,
-                row.import_source_kind,
-                row.import_source_ref,
-                row.drive_space_id,
-                row.drive_root_entry_id,
-                row.drive_logical_path,
-                created_by,
-                updated_by,
-                version,
-                row.created_at,
-                row.updated_at,
-                row.archived_at,
-                archived_by,
-                row.deleted_at,
-                deleted_by,
-                row.retention_until
-            )?;
-            Ok(())
+            let pg_pool = pool.pool().clone();
+            pool.run_kernel(async move {
+                retry_postgres_transaction(|| async {
+                    let row = row.clone();
+                    let mut tx = pg_pool.begin().await?;
+                    sqlx::query(SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&row.workspace_id)
+                        .bind(&row.name)
+                        .execute(&mut *tx)
+                        .await?;
+                    if sqlx::query(SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&row.workspace_id)
+                        .bind(&row.name)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .is_some()
+                    {
+                        return Err(sqlx::Error::Protocol(
+                            "sdkwork-domain-conflict:project name already exists in workspace"
+                                .to_string(),
+                        ));
+                    }
+                    sqlx::query(SQL_INSERT_AGENT_PROJECT)
+                        .bind(id)
+                        .bind(&row.uuid)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&row.project_id)
+                        .bind(&row.workspace_id)
+                        .bind(owner_user_id)
+                        .bind(&row.name)
+                        .bind(&row.description)
+                        .bind(row.visibility)
+                        .bind(row.status)
+                        .bind(row.drive_access_mode)
+                        .bind(&row.default_agent_id)
+                        .bind(&row.default_model_id)
+                        .bind(&row.import_source_kind)
+                        .bind(&row.import_source_ref)
+                        .bind(&row.drive_space_id)
+                        .bind(&row.drive_root_entry_id)
+                        .bind(&row.drive_logical_path)
+                        .bind(created_by)
+                        .bind(updated_by)
+                        .bind(version)
+                        .bind(&row.created_at)
+                        .bind(&row.updated_at)
+                        .bind(&row.archived_at)
+                        .bind(archived_by)
+                        .bind(&row.deleted_at)
+                        .bind(deleted_by)
+                        .bind(&row.retention_until)
+                        .execute(&mut *tx)
+                        .await?;
+                    tx.commit().await?;
+                    Ok(())
+                })
+                .await
+            })
         })
     }
 
@@ -3937,50 +3989,91 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .map(|value| u64_to_i64(value, "deleted_by"))
             .transpose()?;
         self.with_pool(|pool| {
-            let updated_rows = pg_execute!(
-                pool,
-                SQL_UPDATE_AGENT_PROJECT,
-                row.workspace_id,
-                row.name,
-                row.description,
-                row.visibility,
-                row.status,
-                row.drive_access_mode,
-                row.default_agent_id,
-                row.default_model_id,
-                row.import_source_kind,
-                row.import_source_ref,
-                row.drive_space_id,
-                row.drive_root_entry_id,
-                row.drive_logical_path,
-                updated_by,
-                version,
-                row.updated_at,
-                row.archived_at,
-                archived_by,
-                row.deleted_at,
-                deleted_by,
-                row.retention_until,
-                tenant_id,
-                organization_id,
-                row.project_id,
-                previous_version
-            )?;
-            if updated_rows == 0 {
-                let exists = pg_query_optional!(
-                    pool,
-                    SQL_SELECT_AGENT_PROJECT,
-                    tenant_id,
-                    organization_id,
-                    row.project_id
-                )?
-                .is_some();
-                if exists {
-                    return Err(KernelError::conflict("project version mismatch"));
-                }
-                return Err(KernelError::validation("project not found"));
-            }
-            Ok(())
+            let pg_pool = pool.pool().clone();
+            pool.run_kernel(async move {
+                retry_postgres_transaction(|| async {
+                    let row = row.clone();
+                    let mut tx = pg_pool.begin().await?;
+                    let current = sqlx::query(SQL_SELECT_AGENT_PROJECT)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&row.project_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(pg_row_to_agent_project_row)
+                        .transpose()
+                        .map_err(|_| {
+                            sqlx::Error::Protocol(
+                                "sdkwork-domain-validation:project row is invalid".to_string(),
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            sqlx::Error::Protocol(
+                                "sdkwork-domain-validation:project not found".to_string(),
+                            )
+                        })?;
+                    if !project_names_equal(&current.name, &row.name) {
+                        sqlx::query(SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME)
+                            .bind(tenant_id)
+                            .bind(organization_id)
+                            .bind(&row.workspace_id)
+                            .bind(&row.name)
+                            .execute(&mut *tx)
+                            .await?;
+                        if sqlx::query(SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME)
+                            .bind(tenant_id)
+                            .bind(organization_id)
+                            .bind(&row.workspace_id)
+                            .bind(&row.name)
+                            .fetch_optional(&mut *tx)
+                            .await?
+                            .is_some()
+                        {
+                            return Err(sqlx::Error::Protocol(
+                                "sdkwork-domain-conflict:project name already exists in workspace"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                    let updated_rows = sqlx::query(SQL_UPDATE_AGENT_PROJECT)
+                        .bind(&row.workspace_id)
+                        .bind(&row.name)
+                        .bind(&row.description)
+                        .bind(row.visibility)
+                        .bind(row.status)
+                        .bind(row.drive_access_mode)
+                        .bind(&row.default_agent_id)
+                        .bind(&row.default_model_id)
+                        .bind(&row.import_source_kind)
+                        .bind(&row.import_source_ref)
+                        .bind(&row.drive_space_id)
+                        .bind(&row.drive_root_entry_id)
+                        .bind(&row.drive_logical_path)
+                        .bind(updated_by)
+                        .bind(version)
+                        .bind(&row.updated_at)
+                        .bind(&row.archived_at)
+                        .bind(archived_by)
+                        .bind(&row.deleted_at)
+                        .bind(deleted_by)
+                        .bind(&row.retention_until)
+                        .bind(tenant_id)
+                        .bind(organization_id)
+                        .bind(&row.project_id)
+                        .bind(previous_version)
+                        .execute(&mut *tx)
+                        .await?
+                        .rows_affected();
+                    if updated_rows == 0 {
+                        return Err(sqlx::Error::Protocol(
+                            "sdkwork-domain-conflict:project version mismatch".to_string(),
+                        ));
+                    }
+                    tx.commit().await?;
+                    Ok(())
+                })
+                .await
+            })
         })
     }
 
@@ -3999,6 +4092,29 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 project_id
+            )?
+            .map(pg_row_to_agent_project_row)
+            .transpose()
+        })
+    }
+
+    fn get_project_row_by_workspace_name(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        name: &str,
+    ) -> KernelResult<Option<AgentProjectRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME,
+                tenant_id,
+                organization_id,
+                workspace_id,
+                name
             )?
             .map(pg_row_to_agent_project_row)
             .transpose()
@@ -4859,6 +4975,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .transpose()?;
         let agent_id: Option<&str> = query.agent_id.as_deref();
         let project_id: Option<&str> = query.project_id.as_deref();
+        let workspace_id: Option<&str> = query.workspace_id.as_deref();
         let owner_user_id = query
             .owner_user_id
             .map(|value| u64_to_i64(value, "owner_user_id"))
@@ -4880,6 +4997,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 organization_id,
                 agent_id,
                 project_id,
+                workspace_id,
                 owner_user_id,
                 status_code,
                 include_archived,
@@ -4898,6 +5016,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .transpose()?;
         let agent_id: Option<&str> = query.agent_id.as_deref();
         let project_id: Option<&str> = query.project_id.as_deref();
+        let workspace_id: Option<&str> = query.workspace_id.as_deref();
         let owner_user_id = query
             .owner_user_id
             .map(|value| u64_to_i64(value, "owner_user_id"))
@@ -4917,6 +5036,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 organization_id,
                 agent_id,
                 project_id,
+                workspace_id,
                 owner_user_id,
                 status_code,
                 include_archived
@@ -6606,6 +6726,7 @@ impl AgentAuditAdapter for SyncPostgresAdapter {
             .agent_internal_id
             .map(|value| u64_to_i64(value, "agent_internal_id"))
             .transpose()?;
+        let actor_id = u64_to_i64(row.actor_id, "actor_id")?;
 
         self.with_pool(|pool| {
             pg_execute!(
@@ -6620,8 +6741,8 @@ impl AgentAuditAdapter for SyncPostgresAdapter {
                 agent_internal_id,
                 row.agent_id,
                 row.action,
-                row.subject_id,
-                row.subject_tenant_id,
+                row.actor_type,
+                actor_id,
                 row.request_id,
                 row.trace_id,
                 row.payload_json,
@@ -6756,6 +6877,35 @@ fn build_storage_uuid(resource_kind: &str, tenant_id: u64, identity_parts: &[&st
         material.push_str(part);
     }
     sha256_hash(material.as_bytes())
+}
+
+const AUDIT_ACTOR_TYPE_USER: i16 = 0;
+const AUDIT_ACTOR_TYPE_SERVICE: i16 = 1;
+const AUDIT_ACTOR_TYPE_SYSTEM: i16 = 2;
+
+fn audit_actor_from_subject_id(subject_id: &str) -> KernelResult<(i16, u64)> {
+    if subject_id == "system.agents" || subject_id.starts_with("system.agents.") {
+        return Ok((AUDIT_ACTOR_TYPE_SYSTEM, 0));
+    }
+
+    if let Some(service_id) = subject_id.strip_prefix("service.") {
+        return parse_positive_audit_actor_id(service_id)
+            .map(|actor_id| (AUDIT_ACTOR_TYPE_SERVICE, actor_id));
+    }
+
+    parse_positive_audit_actor_id(subject_id).map(|actor_id| (AUDIT_ACTOR_TYPE_USER, actor_id))
+}
+
+fn parse_positive_audit_actor_id(value: &str) -> KernelResult<u64> {
+    value
+        .parse::<u64>()
+        .ok()
+        .filter(|actor_id| *actor_id > 0 && *actor_id <= i64::MAX as u64)
+        .ok_or_else(|| {
+            KernelError::validation(
+                "audit subject_id must be a positive numeric IAM subject, service.<positive numeric id>, or system.agents.*",
+            )
+        })
 }
 
 /// Extract a structured context value from a `KernelEvent` payload by key.
@@ -7713,14 +7863,15 @@ fn pg_row_to_agent_task_row(row: PgRow) -> KernelResult<AgentTaskRow> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_agent_business_uuid, build_agent_provider_binding_uuid, build_composition_slot_uuid,
-        build_interaction_uuid, build_session_item_uuid, build_session_uuid, build_task_uuid,
-        extract_event_context, AgentAuditEventRow, AgentProjectCompositionSlotRow,
+        audit_actor_from_subject_id, build_agent_business_uuid, build_agent_provider_binding_uuid,
+        build_composition_slot_uuid, build_interaction_uuid, build_session_item_uuid,
+        build_session_uuid, build_task_uuid, extract_event_context, AgentAuditEventRow,
+        AgentProjectCompositionSlotRow,
     };
     use crate::{
         AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProjectCompositionSlotRecord,
     };
-    use sdkwork_agent_kernel::{KernelEvent, KernelEventSeverity, KernelEventSource};
+    use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelEventSeverity, KernelEventSource};
 
     #[test]
     fn document_project_composition_slot_roundtrips_through_postgres_row_mapping() {
@@ -7809,7 +7960,8 @@ mod tests {
                 "_context": {
                     "tenant_id": tenant_id.to_string(),
                     "agent_id": agent_id,
-                    "agent_internal_id": "4096123456789012346"
+                    "agent_internal_id": "4096123456789012346",
+                    "subject_id": "700"
                 }
             })
             .to_string(),
@@ -7822,6 +7974,35 @@ mod tests {
 
         assert_eq!(row.uuid.len(), 64);
         assert_eq!(row.agent_id.as_deref(), Some(agent_id.as_str()));
+        assert_eq!((row.actor_type, row.actor_id), (0, 700));
+    }
+
+    #[test]
+    fn audit_actor_maps_numeric_user_subject() {
+        assert_eq!(audit_actor_from_subject_id("700").unwrap(), (0, 700));
+    }
+
+    #[test]
+    fn audit_actor_maps_numeric_service_subject() {
+        assert_eq!(
+            audit_actor_from_subject_id("service.701").unwrap(),
+            (1, 701)
+        );
+    }
+
+    #[test]
+    fn audit_actor_maps_agents_system_subject() {
+        assert_eq!(
+            audit_actor_from_subject_id("system.agents.reconciliation").unwrap(),
+            (2, 0)
+        );
+    }
+
+    #[test]
+    fn audit_actor_rejects_opaque_authenticated_subject() {
+        let error = audit_actor_from_subject_id("user.700")
+            .expect_err("opaque authenticated subjects must fail before SQL persistence");
+        assert!(matches!(error, KernelError::Validation { .. }));
     }
 
     #[test]

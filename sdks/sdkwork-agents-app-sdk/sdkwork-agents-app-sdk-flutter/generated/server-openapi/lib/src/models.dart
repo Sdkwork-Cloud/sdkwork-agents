@@ -4573,6 +4573,7 @@ class AgentSessionListResponse {
 }
 
 class CreateAgentSessionRequest {
+  final String? agentId;
   final String? sessionId;
   final String? projectId;
   final String sessionKind;
@@ -4588,6 +4589,7 @@ class CreateAgentSessionRequest {
   final String requestedAt;
 
   CreateAgentSessionRequest({
+    this.agentId,
     this.sessionId,
     this.projectId,
     required this.sessionKind,
@@ -4605,6 +4607,7 @@ class CreateAgentSessionRequest {
 
   factory CreateAgentSessionRequest.fromJson(Map<String, dynamic> json) {
     return CreateAgentSessionRequest(
+      agentId: json['agentId']?.toString(),
       sessionId: json['sessionId']?.toString(),
       projectId: json['projectId']?.toString(),
       sessionKind: (() {
@@ -4653,6 +4656,7 @@ class CreateAgentSessionRequest {
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
+      'agentId': agentId,
       'sessionId': sessionId,
       'projectId': projectId,
       'sessionKind': sessionKind,

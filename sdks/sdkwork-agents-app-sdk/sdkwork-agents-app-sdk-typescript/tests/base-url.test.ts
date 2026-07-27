@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { createTokenManager } from '@sdkwork/sdk-common';
+
 import {
   createClient,
   completeAgentTurn,
@@ -12,6 +14,13 @@ const APP_API_BASE_URL = 'http://127.0.0.1:8095/app/v3/api';
 const SDK_BASE_URL = 'http://127.0.0.1:8095';
 const EXPECTED_AGENTS_URL =
   'http://127.0.0.1:8095/app/v3/api/ai/agents?scope=market&page=1&page_size=20';
+
+function createAuthenticatedClient(baseUrl: string): SdkworkAppClient {
+  return createClient({
+    baseUrl,
+    tokenManager: createTokenManager({ accessToken: 'test-access-token' }),
+  });
+}
 
 for (const baseUrl of [SDK_BASE_URL, APP_API_BASE_URL]) {
   test(`Agents App SDK composes the app-api prefix exactly once from ${baseUrl}`, async () => {
@@ -32,7 +41,7 @@ for (const baseUrl of [SDK_BASE_URL, APP_API_BASE_URL]) {
   };
 
   try {
-    const client = createClient({ baseUrl });
+    const client = createAuthenticatedClient(baseUrl);
     await client.ai.agents.list({ scope: 'market', page: 1, pageSize: 20 });
   } finally {
     globalThis.fetch = originalFetch;
@@ -77,7 +86,7 @@ test('Agents App SDK supports the standard same-origin app-api surface path', as
   };
 
   try {
-    const client = createClient({ baseUrl: '/app/v3/api' });
+    const client = createAuthenticatedClient('/app/v3/api');
     await client.ai.agents.list({ scope: 'market', page: 1, pageSize: 20 });
   } finally {
     globalThis.fetch = originalFetch;
@@ -106,7 +115,7 @@ test('Agents App SDK turn helper uses the canonical app-api prefix', async () =>
 
   let completion: CompleteAgentTurnResult | undefined;
   try {
-    const client = createClient({ baseUrl: APP_API_BASE_URL });
+    const client = createAuthenticatedClient(APP_API_BASE_URL);
     completion = await completeAgentTurn(client, 'agent-1', 'session-1', {
       content: 'hello',
       turnMode: 'interactive',
@@ -154,7 +163,7 @@ test('Agents App SDK exposes paginated interaction filters and single-item retri
   };
 
   try {
-    const client = createClient({ baseUrl: APP_API_BASE_URL });
+    const client = createAuthenticatedClient(APP_API_BASE_URL);
     const page = await client.ai.agents.interactions.list('agent-1', 'session-1', {
       page: 1,
       pageSize: 20,
@@ -204,7 +213,7 @@ test('Agents App SDK exposes server-side Session Item filters and descending pag
   };
 
   try {
-    const client = createClient({ baseUrl: APP_API_BASE_URL });
+    const client = createAuthenticatedClient(APP_API_BASE_URL);
     const page = await client.ai.agents.sessionItems.list('agent-1', 'session-1', {
       page: 1,
       pageSize: 20,
@@ -219,5 +228,54 @@ test('Agents App SDK exposes server-side Session Item filters and descending pag
 
   assert.deepEqual(requestedUrls, [
     'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/items?page=1&page_size=20&kind=assistant_output&status=completed&sort=-sequence',
+  ]);
+});
+
+test('Agents App SDK exposes distinct agent, project, and workspace session lists', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = async (input) => {
+    requestedUrls.push(String(input));
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        data: {
+          items: [],
+          pageInfo: {
+            mode: 'offset',
+            page: 2,
+            pageSize: 50,
+            totalItems: '0',
+            totalPages: 0,
+            hasMore: false,
+          },
+        },
+      }),
+      { headers: { 'content-type': 'application/json' }, status: 200 },
+    );
+  };
+
+  try {
+    const client = createAuthenticatedClient(APP_API_BASE_URL);
+    const params = {
+      page: 2,
+      pageSize: 50,
+      status: 'idle' as const,
+      includeArchived: true,
+    };
+    await client.ai.agents.sessions.list('agent-1', {
+      ...params,
+      projectId: 'project-filter',
+    });
+    await client.ai.agents.projectSessions.list('project-1', params);
+    await client.ai.agents.workspaceSessions.list('workspace-1', params);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requestedUrls, [
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions?page=2&page_size=50&project_id=project-filter&status=idle&include_archived=true',
+    'http://127.0.0.1:8095/app/v3/api/ai/projects/project-1/sessions?page=2&page_size=50&status=idle&include_archived=true',
+    'http://127.0.0.1:8095/app/v3/api/ai/workspaces/workspace-1/sessions?page=2&page_size=50&status=idle&include_archived=true',
   ]);
 });

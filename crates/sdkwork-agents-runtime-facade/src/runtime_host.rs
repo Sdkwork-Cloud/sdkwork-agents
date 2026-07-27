@@ -6,6 +6,10 @@ use crate::code_engines::{
 use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
+use crate::native_sessions::{
+    discover_native_sessions, load_native_session_messages, NativeSessionInventoryItem,
+    NativeSessionInventorySelector,
+};
 use crate::turn::{execute_code_engine_turn, CodeEngineTurnInput, CodeEngineTurnOutput};
 
 /// Agents-owned runtime host for canonical code-engine provider slots.
@@ -88,6 +92,21 @@ impl AgentsCodeEngineHost {
     pub fn catalog(&self) -> CodeEngineCatalog {
         let slots: Vec<&CodeEngineSlot> = self.slots.values().collect();
         build_code_engine_catalog(&slots)
+    }
+
+    pub fn discover_native_sessions(
+        &self,
+        selector: &NativeSessionInventorySelector,
+    ) -> RuntimeFacadeResult<Vec<NativeSessionInventoryItem>> {
+        discover_native_sessions(&self.slots, selector)
+    }
+
+    pub fn load_native_session_messages(
+        &self,
+        engine_key: &str,
+        native_session_id: &str,
+    ) -> RuntimeFacadeResult<Vec<sdkwork_agent_kernel::AgentMessage>> {
+        load_native_session_messages(&self.slots, engine_key, native_session_id)
     }
 
     pub fn execute_turn(

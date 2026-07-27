@@ -17,7 +17,9 @@ use crate::ports::{
     SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery, TurnRequestWriteOutcome,
     WorkspaceListQuery,
 };
-use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
+use crate::project::{
+    project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus,
+};
 use crate::validation::parse_rfc3339_datetime;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
@@ -470,6 +472,25 @@ impl InMemoryAgentRepository {
         }
     }
 
+    fn workspace_project_ids(&self, query: &SessionListQuery) -> Option<HashSet<String>> {
+        let workspace_id = query.workspace_id.as_deref()?;
+        let projects = self.projects.recovering_read();
+        Some(
+            projects
+                .values()
+                .filter(|project| {
+                    project.tenant_id == query.tenant_id
+                        && query.organization_id.is_none_or(|organization_id| {
+                            project.organization_id == organization_id
+                        })
+                        && project.workspace_id == workspace_id
+                        && project.deleted_at.is_none()
+                })
+                .map(|project| project.project_id.clone())
+                .collect(),
+        )
+    }
+
     pub fn records(&self) -> Vec<AgentBusinessRecord> {
         self.agents.recovering_read().values().cloned().collect()
     }
@@ -909,6 +930,17 @@ impl AgentRepository for InMemoryAgentRepository {
         if projects.contains_key(&primary_key) {
             return Err(KernelError::conflict("project already exists"));
         }
+        if projects.values().any(|existing| {
+            existing.tenant_id == record.tenant_id
+                && existing.organization_id == record.organization_id
+                && existing.workspace_id == record.workspace_id
+                && existing.status != AgentProjectStatus::Deleted
+                && project_names_equal(&existing.name, &record.name)
+        }) {
+            return Err(KernelError::conflict(
+                "project name already exists in workspace",
+            ));
+        }
         if let (Some(source_kind), Some(source_ref)) = (
             record.import_source_kind.as_deref(),
             record.import_source_ref.as_deref(),
@@ -947,6 +979,20 @@ impl AgentRepository for InMemoryAgentRepository {
                 "project version mismatch: expected={expected_version}, actual={}",
                 record.version
             )));
+        }
+        if !project_names_equal(&existing.name, &record.name)
+            && projects.iter().any(|(key, candidate)| {
+                key != &primary_key
+                    && candidate.tenant_id == record.tenant_id
+                    && candidate.organization_id == record.organization_id
+                    && candidate.workspace_id == record.workspace_id
+                    && candidate.status != AgentProjectStatus::Deleted
+                    && project_names_equal(&candidate.name, &record.name)
+            })
+        {
+            return Err(KernelError::conflict(
+                "project name already exists in workspace",
+            ));
         }
         if let (Some(source_kind), Some(source_ref)) = (
             record.import_source_kind.as_deref(),
@@ -987,6 +1033,34 @@ impl AgentRepository for InMemoryAgentRepository {
             .recovering_read()
             .get(&(tenant_id, organization_id, project_id.to_string()))
             .filter(|record| record.status != AgentProjectStatus::Deleted)
+            .cloned())
+    }
+
+    fn get_project_by_workspace_name(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        name: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>> {
+        Ok(self
+            .projects
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && record.workspace_id == workspace_id
+                    && record.status != AgentProjectStatus::Deleted
+                    && project_names_equal(&record.name, name)
+            })
+            .min_by_key(|record| {
+                (
+                    u8::from(record.status != AgentProjectStatus::Active),
+                    record.created_at.as_str(),
+                    record.id,
+                )
+            })
             .cloned())
     }
 
@@ -1457,18 +1531,22 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>> {
+        let workspace_project_ids = self.workspace_project_ids(query);
         let sessions = self.sessions.recovering_read();
         let index = self.session_index.recovering_read();
         let iter = index
             .iter()
             .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
             .filter_map(|(_, primary_key)| sessions.get(primary_key))
-            .filter(|record| session_matches_list_query(record, query))
+            .filter(|record| {
+                session_matches_list_query(record, query, workspace_project_ids.as_ref())
+            })
             .cloned();
         Ok(paginate_iterator(iter, &query.pagination))
     }
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64> {
+        let workspace_project_ids = self.workspace_project_ids(query);
         let sessions = self.sessions.recovering_read();
         let index = self.session_index.recovering_read();
         Ok(count_iterator(
@@ -1476,7 +1554,9 @@ impl AgentRepository for InMemoryAgentRepository {
                 .iter()
                 .filter(|((tenant_id, _, _, _), _)| *tenant_id == query.tenant_id)
                 .filter_map(|(_, primary_key)| sessions.get(primary_key))
-                .filter(|record| session_matches_list_query(record, query)),
+                .filter(|record| {
+                    session_matches_list_query(record, query, workspace_project_ids.as_ref())
+                }),
         ))
     }
 
@@ -3177,7 +3257,11 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
 // Shared comparison helpers for in-memory repository sorting
 // ---------------------------------------------------------------------------
 
-fn session_matches_list_query(record: &AgentSessionRecord, query: &SessionListQuery) -> bool {
+fn session_matches_list_query(
+    record: &AgentSessionRecord,
+    query: &SessionListQuery,
+    workspace_project_ids: Option<&HashSet<String>>,
+) -> bool {
     if record.tenant_id != query.tenant_id {
         return false;
     }
@@ -3201,6 +3285,15 @@ fn session_matches_list_query(record: &AgentSessionRecord, query: &SessionListQu
     }
     if let Some(project_id) = query.project_id.as_ref() {
         if record.project_id.as_ref() != Some(project_id) {
+            return false;
+        }
+    }
+    if let Some(project_ids) = workspace_project_ids {
+        if !record
+            .project_id
+            .as_ref()
+            .is_some_and(|project_id| project_ids.contains(project_id))
+        {
             return false;
         }
     }

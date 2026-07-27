@@ -8,21 +8,22 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use sdkwork_agent_kernel::{AgentManifest, KernelErrorKind, PolicySubject};
 use sdkwork_database_config::claw_database::postgres_url_with_search_path;
 use sdkwork_intelligence_agents_service::{
-    AgentCompositionSlotKind, AgentCompositionTargetModule, AgentImplementationKind,
-    AgentItemDriveRefInput, AgentItemFeedbackRating, AgentItemResourceRole,
-    AgentProjectDriveAccessMode, AgentProjectVisibility, AgentProviderBindingCommand,
-    AgentRepository, AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord,
-    AgentSessionItemStatus, AgentSessionKind, AgentTurnMode, AgentTurnRecord, AgentTurnStatus,
-    AgentVisibility, AgentsService, CancelTurnCommand, CreateAgentCommand, CreateProjectCommand,
-    CreateProjectCompositionSlotCommand, CreateSessionCommand, CreateSessionItemCommand,
-    CreateSessionRuntimeBindingCommand, CreateTurnCommand, DeleteProjectCompositionSlotCommand,
-    GetAgentCommand, IamGatedPolicyProvider, InMemoryAgentAuditSink, ItemFeedbackListQuery,
-    ListItemFeedbackCommand, ListProjectCompositionSlotsCommand, ListSessionItemsCommand,
-    ListSessionUserStatesCommand, ProjectCompositionSlotListQuery, ResourceUserStateListQuery,
-    SessionItemListQuery, SqlAgentRepository, SyncPostgresAdapter, TurnExecutionInput,
-    TurnExecutionOutput, TurnExecutor, TurnListQuery, UpdateItemFeedbackCommand,
-    UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
-    RUNTIME_MODE_INFERENCE_ERROR,
+    AgentBusinessIdGenerator, AgentCompositionSlotKind, AgentCompositionTargetModule,
+    AgentImplementationKind, AgentItemDriveRefInput, AgentItemFeedbackRating,
+    AgentItemResourceRole, AgentProjectDriveAccessMode, AgentProjectVisibility,
+    AgentProviderBindingCommand, AgentRepository, AgentSessionEntrySurface, AgentSessionItemKind,
+    AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind, AgentTurnMode,
+    AgentTurnRecord, AgentTurnStatus, AgentVisibility, AgentsService, CancelTurnCommand,
+    CreateAgentCommand, CreateProjectCommand, CreateProjectCompositionSlotCommand,
+    CreateSessionCommand, CreateSessionItemCommand, CreateSessionRuntimeBindingCommand,
+    CreateTurnCommand, DeleteProjectCompositionSlotCommand, GetAgentCommand,
+    IamGatedPolicyProvider, InMemoryAgentAuditSink, ItemFeedbackListQuery, ListItemFeedbackCommand,
+    ListProjectCompositionSlotsCommand, ListProjectsCommand, ListSessionItemsCommand,
+    ListSessionUserStatesCommand, ProjectCompositionSlotListQuery, ProjectListQuery,
+    ResourceUserStateListQuery, SessionItemListQuery, SqlAgentAuditSink, SqlAgentRepository,
+    SyncPostgresAdapter, TurnExecutionInput, TurnExecutionOutput, TurnExecutor, TurnListQuery,
+    UpdateItemFeedbackCommand, UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
+    AUDIT_SINK_NODE_ID, RUNTIME_MODE_INFERENCE_ERROR,
 };
 
 struct FailingTurnExecutor;
@@ -206,8 +207,8 @@ fn bootstrap_isolated_schema(base_url: &str, suffix: u128) -> (IsolatedPostgresS
         .expect("agents database lifecycle should bootstrap the isolated schema");
     assert_eq!(
         authoritative_agent_table_count(&isolated, &isolated_schema.schema),
-        19,
-        "greenfield init must materialize exactly 19 authoritative Agents baseline tables without enabling auto-migrate",
+        20,
+        "greenfield init must materialize exactly 20 authoritative Agents baseline tables without enabling auto-migrate",
     );
 
     (isolated_schema, isolated_url)
@@ -231,6 +232,10 @@ fn authoritative_agent_table_count(adapter: &SyncPostgresAdapter, schema: &str) 
 
 fn subject() -> PolicySubject {
     PolicySubject::new("user.700", "700001").with_role("ai.agents.manage")
+}
+
+fn numeric_subject() -> PolicySubject {
+    PolicySubject::new("700", "700001").with_role("ai.agents.manage")
 }
 
 fn manifest(agent_id: &str) -> AgentManifest {
@@ -585,6 +590,19 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             requested_at: "2026-07-19T00:00:10Z".to_string(),
         })
         .unwrap();
+    let projects = service
+        .list_projects(ListProjectsCommand {
+            query: ProjectListQuery::for_organization(700_001, 0).for_owner(700),
+            requested_by: subject(),
+        })
+        .expect("live projects should be listable after project creation");
+    assert!(
+        projects
+            .items
+            .iter()
+            .any(|project| project.project_id == project_id),
+        "the newly created project should be visible in its owner-scoped project list"
+    );
     let project_slot = service
         .create_project_composition_slot(CreateProjectCompositionSlotCommand {
             tenant_id: 700_001,
@@ -1121,6 +1139,53 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         requested_at: "2026-07-19T00:03:00Z".to_string(),
     });
     assert!(stale.is_err());
+}
+
+#[test]
+#[ignore = "requires SDKWORK_AGENTS_TEST_POSTGRES_URL with schema create/drop permission"]
+fn postgres_project_create_persists_sql_audit_events() {
+    let _environment_lock = database_environment_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let base_database_url = std::env::var("SDKWORK_AGENTS_TEST_POSTGRES_URL")
+        .expect("SDKWORK_AGENTS_TEST_POSTGRES_URL must be set");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let (_isolated_schema, database_url) = bootstrap_isolated_schema(&base_database_url, suffix);
+    let repository_adapter =
+        SyncPostgresAdapter::connect(&database_url).expect("postgres adapter should connect");
+    let audit_adapter = SyncPostgresAdapter::with_pool_and_id_generator(
+        repository_adapter.pool().clone(),
+        AgentBusinessIdGenerator::with_node_id(AUDIT_SINK_NODE_ID)
+            .expect("audit sink id generator should initialize"),
+    );
+    let service = AgentsService::new(
+        SqlAgentRepository::new(repository_adapter),
+        SqlAgentAuditSink::new_global(audit_adapter),
+        IamGatedPolicyProvider::new("policy.agents.project-audit.postgres-live"),
+    );
+
+    let project = service
+        .create_project(CreateProjectCommand {
+            tenant_id: 700_001,
+            organization_id: 0,
+            project_id: format!("project.audit.{suffix}"),
+            workspace_id: None,
+            owner_user_id: 700,
+            name: "Postgres audited project".to_string(),
+            description: None,
+            visibility: AgentProjectVisibility::Private,
+            drive_access_mode: AgentProjectDriveAccessMode::ExplicitResources,
+            default_agent_id: None,
+            default_model_id: None,
+            requested_by: numeric_subject(),
+            requested_at: "2026-07-27T00:00:00Z".to_string(),
+        })
+        .expect("project creation should persist workspace and project audit events");
+
+    assert_eq!(project.owner_user_id, 700);
 }
 
 #[test]

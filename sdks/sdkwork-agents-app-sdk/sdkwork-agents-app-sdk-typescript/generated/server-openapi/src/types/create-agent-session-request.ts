@@ -2,6 +2,7 @@ import type { AgentSessionEntrySurface } from './agent-session-entry-surface';
 import type { AgentSessionKind } from './agent-session-kind';
 
 export interface CreateAgentSessionRequest {
+  agentId?: string;
   sessionId?: string;
   projectId?: string;
   sessionKind: AgentSessionKind;

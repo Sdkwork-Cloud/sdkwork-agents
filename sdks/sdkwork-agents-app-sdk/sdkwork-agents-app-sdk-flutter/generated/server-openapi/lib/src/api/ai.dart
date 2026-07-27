@@ -319,12 +319,56 @@ class AiApi {
     await _client.delete(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/composition_slots/${serializePathParameter(slotId, const PathParameterSpec('slotId', 'simple', false))}'), query));
   }
 
-  /// List agent sessions for one managed agent
-  Future<AgentSessionListResponse?> agentsSessionsList(String agentId, [int? page, int? pageSize, String? projectId]) async {
+  /// List agent sessions for one workspace
+  Future<AgentSessionListResponse?> agentsWorkspaceSessionsList(String workspaceId, [int? page, int? pageSize, String? status, bool? includeArchived]) async {
     final query = buildQueryString([
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
-      QueryParameterSpec('projectId', projectId, 'form', true, false, null)
+      QueryParameterSpec('status', status, 'form', true, false, null),
+      QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/workspaces/${serializePathParameter(workspaceId, const PathParameterSpec('workspaceId', 'simple', false))}/sessions'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentSessionListResponse.fromJson(map);
+    })();
+  }
+
+  /// List agent sessions for one project
+  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [int? page, int? pageSize, String? status, bool? includeArchived, String? nativeDirectoryName, String? nativeDirectoryFingerprint]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
+      QueryParameterSpec('status', status, 'form', true, false, null),
+      QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null),
+      QueryParameterSpec('native_directory_name', nativeDirectoryName, 'form', true, false, null),
+      QueryParameterSpec('native_directory_fingerprint', nativeDirectoryFingerprint, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/sessions'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentSessionListResponse.fromJson(map);
+    })();
+  }
+
+  /// Create an agent session in one project
+  Future<AgentSessionResponse?> agentsProjectSessionsCreate(String projectId, CreateAgentSessionRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/sessions'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentSessionResponse.fromJson(map);
+    })();
+  }
+
+  /// List agent sessions for one managed agent
+  Future<AgentSessionListResponse?> agentsSessionsList(String agentId, [int? page, int? pageSize, String? projectId, String? status, bool? includeArchived]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
+      QueryParameterSpec('project_id', projectId, 'form', true, false, null),
+      QueryParameterSpec('status', status, 'form', true, false, null),
+      QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions'), query));
     return (() {

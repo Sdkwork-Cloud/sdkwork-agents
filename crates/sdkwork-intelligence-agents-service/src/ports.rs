@@ -360,6 +360,7 @@ pub struct SessionListQuery {
     pub organization_id: Option<u64>,
     pub agent_id: Option<String>,
     pub project_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub owner_user_id: Option<u64>,
     pub status: Option<String>,
     pub include_archived: bool,
@@ -485,6 +486,7 @@ impl SessionListQuery {
             organization_id: None,
             agent_id: None,
             project_id: None,
+            workspace_id: None,
             owner_user_id: None,
             status: None,
             include_archived: false,
@@ -504,6 +506,11 @@ impl SessionListQuery {
 
     pub fn for_project(mut self, project_id: impl Into<String>) -> Self {
         self.project_id = Some(project_id.into());
+        self
+    }
+
+    pub fn for_workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
         self
     }
 
@@ -933,6 +940,14 @@ pub trait AgentRepository: Send + Sync {
         tenant_id: u64,
         organization_id: u64,
         project_id: &str,
+    ) -> KernelResult<Option<AgentProjectRecord>>;
+
+    fn get_project_by_workspace_name(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        workspace_id: &str,
+        name: &str,
     ) -> KernelResult<Option<AgentProjectRecord>>;
 
     fn get_project_by_import_source(

@@ -6,8 +6,9 @@ use sdkwork_intelligence_agents_service::{
     SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_INSERT_AGENT_PROJECT,
     SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_SELECT_AGENT_PROJECT,
-    SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_PROJECT,
-    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_WORKSPACE,
+    SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
+    SQL_UPDATE_AGENT_PROJECT, SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT,
+    SQL_UPDATE_AGENT_WORKSPACE,
 };
 
 fn project(
@@ -186,6 +187,31 @@ fn project_repository_enforces_optimistic_version_and_soft_delete() {
 }
 
 #[test]
+fn project_repository_enforces_normalized_workspace_name_uniqueness() {
+    let repository = InMemoryAgentRepository::new();
+    let mut first = project(1, 10, 20, 30, "project.alpha");
+    first.name = "BirdCoder".to_string();
+    repository.insert_project(first.clone()).unwrap();
+
+    let mut duplicate = project(2, 10, 20, 30, "project.duplicate");
+    duplicate.name = "  birdcoder  ".to_string();
+    assert!(repository.insert_project(duplicate).is_err());
+    assert_eq!(
+        repository
+            .get_project_by_workspace_name(10, 20, &first.workspace_id, "BIRDCODER")
+            .unwrap()
+            .expect("project by workspace name")
+            .project_id,
+        first.project_id
+    );
+
+    let mut other_workspace = project(3, 10, 20, 30, "project.other-workspace");
+    other_workspace.workspace_id = "workspace.other".to_string();
+    other_workspace.name = "birdcoder".to_string();
+    repository.insert_project(other_workspace).unwrap();
+}
+
+#[test]
 fn project_postgres_sql_is_scoped_parameterized_and_versioned() {
     assert!(SQL_INSERT_AGENT_PROJECT.contains("created_by"));
     for sql in [
@@ -197,6 +223,8 @@ fn project_postgres_sql_is_scoped_parameterized_and_versioned() {
         assert!(sql.contains("organization_id = $2"));
     }
     assert!(SQL_SELECT_AGENT_PROJECT.contains("deleted_at IS NULL"));
+    assert!(SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME.contains("LOWER(BTRIM(name))"));
+    assert!(SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME.contains("workspace_id = $3"));
     assert!(SQL_LIST_AGENT_PROJECTS.contains("workspace_id = $4"));
     assert!(SQL_LIST_AGENT_PROJECTS.contains("LIMIT $8 OFFSET $9"));
     assert!(SQL_UPDATE_AGENT_PROJECT.contains("version = $25"));

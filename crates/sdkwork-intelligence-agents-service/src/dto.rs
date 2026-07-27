@@ -873,6 +873,7 @@ pub struct AgentCompositionSlotListResponseDto {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSessionRequestDto {
+    pub agent_id: Option<String>,
     pub session_id: Option<String>,
     pub project_id: Option<String>,
     pub session_kind: String,

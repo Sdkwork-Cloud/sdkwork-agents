@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.client-env-materialization",
+  "application": "sdkwork-agents",
+  "command": "pnpm workflow:materialize-client-env",
+  "sourceIdentity": {
+    "deploymentProfileKeys": ["SDKWORK_DEPLOYMENT_PROFILE", "SDKWORK_AGENTS_DEPLOYMENT_PROFILE"],
+    "environmentKeys": ["SDKWORK_ENVIRONMENT", "SDKWORK_AGENTS_ENVIRONMENT"],
+    "profileIdKeys": ["SDKWORK_PROFILE_ID", "SDKWORK_AGENTS_PROFILE_ID"]
+  },
+  "surfaces": [
+    {
+      "id": "sdkwork-agents-pc",
+      "root": "apps/sdkwork-agents-pc",
+      "format": "vite",
+      "runtimeTarget": "browser",
+      "identityPrefixes": ["VITE_SDKWORK_AGENTS_PC"],
+      "includePrefixes": ["VITE_SDKWORK_AGENTS_PC_"],
+      "bindings": {
+        "VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL": ["VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL", "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL"]
+      },
+      "requiredOutputKeys": ["VITE_SDKWORK_AGENTS_PC_APP_API_BASE_URL"]
+    },
+    {
+      "id": "sdkwork-agents-h5",
+      "root": "apps/sdkwork-agents-h5",
+      "format": "vite",
+      "runtimeTarget": "browser",
+      "identityPrefixes": ["VITE_SDKWORK_AGENTS_H5"],
+      "includePrefixes": ["VITE_SDKWORK_AGENTS_H5_"],
+      "bindings": {
+        "VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL": ["VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL", "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL"]
+      },
+      "requiredOutputKeys": ["VITE_SDKWORK_AGENTS_H5_APP_API_BASE_URL"]
+    },
+    {
+      "id": "sdkwork-agents-flutter-mobile",
+      "root": "apps/sdkwork-agents-flutter-mobile",
+      "format": "flutter",
+      "runtimeTarget": "flutter-android",
+      "identityPrefixes": ["SDKWORK_AGENTS"],
+      "bindings": {
+        "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL",
+        "SDKWORK_AGENTS_APP_API_BASE_URL": ["VITE_SDKWORK_AGENTS_H5_APP_API_BASE_URL", "VITE_SDKWORK_AGENTS_PC_APP_API_BASE_URL"],
+        "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL": "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL"
+      }
+    },
+    {
+      "id": "sdkwork-agents-mini-program",
+      "root": "apps/sdkwork-agents-mini-program",
+      "format": "mini-program",
+      "runtimeTarget": "mini-program",
+      "identityPrefixes": ["SDKWORK_AGENTS"],
+      "bindings": {
+        "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL": "SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL",
+        "SDKWORK_AGENTS_APP_API_BASE_URL": ["VITE_SDKWORK_AGENTS_H5_APP_API_BASE_URL", "VITE_SDKWORK_AGENTS_PC_APP_API_BASE_URL"],
+        "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL": "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL"
+      }
+    }
+  ]
+}
