@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  collectLegacyProviderSessionIdentity,
+} from '../../sdkwork-specs/tools/lib/provider-session-identity.mjs';
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
 
@@ -94,6 +98,12 @@ for (const file of walk(repoRoot)) {
       failures.push(`${relative}: forbidden ${label}`);
     }
   }
+}
+
+for (const violation of collectLegacyProviderSessionIdentity(repoRoot)) {
+  const relative = path.relative(repoRoot, violation.filePath).replaceAll('\\', '/');
+  const location = violation.line > 0 ? `:${violation.line}` : '';
+  failures.push(`${relative}${location}: retired provider Session identity ${violation.legacy}`);
 }
 
 if (failures.length > 0) {

@@ -302,7 +302,25 @@ test("pre-launch PostgreSQL contract has no compatibility migrations", () => {
   const activeMigrations = readdirSync(migrationRoot).filter((fileName) =>
     /\.(?:up|down)\.sql$/u.test(fileName),
   );
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
+    "utf8",
+  );
+  const canonicalLineageColumns = [
+    "provider_session_id",
+    "provider_session_tree_id",
+    "provider_parent_session_id",
+    "provider_forked_from_session_id",
+  ];
+
   assert.deepEqual(activeMigrations, []);
+  for (const canonicalName of canonicalLineageColumns) {
+    assert.match(baseline, new RegExp(`\\b${canonicalName}\\s+VARCHAR\\(256\\)`, "u"));
+  }
+  assert.match(
+    baseline,
+    /CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_provider_session/iu,
+  );
 });
 
 test("every PostgreSQL up migration declares a governed rollback strategy", () => {

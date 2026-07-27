@@ -265,7 +265,7 @@ pub const SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS: &str = r#"WITH activity AS (
            last_item_at::text AS last_item_at, closed_at::text AS closed_at,
            archived_at::text AS archived_at, archived_by, deleted_at::text AS deleted_at,
            deleted_by, retention_until::text AS retention_until,
-           activity_at::text AS activity_at, activity_source, latest_turn_json,
+           activity_at, activity_source, latest_turn_json,
            pending_interaction_json, current_runtime_binding_json,
            latest_runtime_binding_json, user_state_json,
            latest_interaction_id, latest_interaction_version

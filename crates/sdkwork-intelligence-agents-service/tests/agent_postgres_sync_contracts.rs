@@ -44,6 +44,8 @@ fn session_activity_snapshot_is_one_bounded_projection_query() {
     assert!(sql.contains("THEN 'user_state'"));
     assert!(sql.contains("interaction_activity.interaction_id AS latest_interaction_id"));
     assert!(sql.contains("project_scope.workspace_id = $6"));
+    assert!(sql.contains("activity_at, activity_source"));
+    assert!(!sql.contains("activity_at::text AS activity_at"));
 }
 
 fn tenant_scoped_select_sql(sql: &str, table: &str) {

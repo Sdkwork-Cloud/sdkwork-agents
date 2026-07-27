@@ -19,8 +19,9 @@ use sdkwork_intelligence_agents_service::{
     CreateTurnCommand, DeleteProjectCompositionSlotCommand, GetAgentCommand,
     IamGatedPolicyProvider, InMemoryAgentAuditSink, ItemFeedbackListQuery, ListItemFeedbackCommand,
     ListProjectCompositionSlotsCommand, ListProjectsCommand, ListSessionItemsCommand,
-    ListSessionUserStatesCommand, ProjectCompositionSlotListQuery, ProjectListQuery,
-    ResourceUserStateListQuery, SessionItemListQuery, SqlAgentAuditSink, SqlAgentRepository,
+    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
+    ProjectCompositionSlotListQuery, ProjectListQuery, ResourceUserStateListQuery,
+    SessionItemListQuery, SessionRuntimeBindingListQuery, SqlAgentAuditSink, SqlAgentRepository,
     SyncPostgresAdapter, TurnExecutionInput, TurnExecutionOutput, TurnExecutor, TurnListQuery,
     UpdateItemFeedbackCommand, UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
     AUDIT_SINK_NODE_ID, RUNTIME_MODE_INFERENCE_ERROR,
@@ -726,6 +727,10 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             requested_at: "2026-07-19T00:01:10Z".to_string(),
         })
         .unwrap();
+    let provider_session_id = format!("provider_session.live.{suffix}");
+    let provider_session_tree_id = format!("provider_session_tree.live.{suffix}");
+    let provider_parent_session_id = format!("provider_session.parent.live.{suffix}");
+    let provider_forked_from_session_id = format!("provider_session.fork.live.{suffix}");
     let runtime_binding = service
         .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
             tenant_id: 700_001,
@@ -739,15 +744,52 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             provider_binding_id: provider_binding.binding_id,
             model_id: format!("model.live.{suffix}"),
             provider_id: provider_binding.provider_id,
-            provider_session_id: None,
-            provider_session_tree_id: None,
-            provider_parent_session_id: None,
-            provider_forked_from_session_id: None,
+            provider_session_id: Some(provider_session_id.clone()),
+            provider_session_tree_id: Some(provider_session_tree_id.clone()),
+            provider_parent_session_id: Some(provider_parent_session_id.clone()),
+            provider_forked_from_session_id: Some(provider_forked_from_session_id.clone()),
             owner_scope: Some(700),
             requested_by: subject(),
             requested_at: "2026-07-19T00:01:20Z".to_string(),
         })
         .unwrap();
+    let runtime_bindings = service
+        .list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+            query: SessionRuntimeBindingListQuery::for_session(700_001, 0, session_id.clone())
+                .current_only(),
+            path_agent_id: agent_id.clone(),
+            owner_scope: Some(700),
+            requested_by: subject(),
+        })
+        .unwrap();
+    assert_eq!(runtime_bindings.total_count, Some(1));
+    assert_eq!(runtime_bindings.items.len(), 1);
+    assert_eq!(
+        runtime_bindings.items[0].runtime_binding_id,
+        runtime_binding.runtime_binding_id,
+    );
+    assert_eq!(
+        runtime_bindings.items[0].provider_session_id.as_deref(),
+        Some(provider_session_id.as_str()),
+    );
+    assert_eq!(
+        runtime_bindings.items[0]
+            .provider_session_tree_id
+            .as_deref(),
+        Some(provider_session_tree_id.as_str()),
+    );
+    assert_eq!(
+        runtime_bindings.items[0]
+            .provider_parent_session_id
+            .as_deref(),
+        Some(provider_parent_session_id.as_str()),
+    );
+    assert_eq!(
+        runtime_bindings.items[0]
+            .provider_forked_from_session_id
+            .as_deref(),
+        Some(provider_forked_from_session_id.as_str()),
+    );
 
     let created = service
         .update_session_user_state(UpdateSessionUserStateCommand {

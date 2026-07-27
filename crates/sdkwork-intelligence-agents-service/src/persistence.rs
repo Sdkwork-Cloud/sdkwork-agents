@@ -41,6 +41,8 @@ use sdkwork_utils_rust::{is_blank, sha256_hash, trim};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "postgres-sync")]
 use sqlx::Row;
+#[cfg(feature = "postgres-sync")]
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[cfg(feature = "postgres-sync")]
 use std::future::Future;
@@ -5193,7 +5195,9 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             )?;
             rows.into_iter()
                 .map(|row| {
-                    let activity_at = row.try_get("activity_at").map_err(map_sqlx_error)?;
+                    let activity_at: OffsetDateTime =
+                        row.try_get("activity_at").map_err(map_sqlx_error)?;
+                    let activity_at = format_postgres_instant(activity_at, "Session activity")?;
                     let activity_source: String =
                         row.try_get("activity_source").map_err(map_sqlx_error)?;
                     let latest_turn = deserialize_optional_projection_row(
@@ -7665,6 +7669,15 @@ where
         .transpose()
 }
 
+#[cfg(feature = "postgres-sync")]
+fn format_postgres_instant(value: OffsetDateTime, label: &str) -> KernelResult<String> {
+    value
+        .format(&Rfc3339)
+        .map_err(|error| KernelError::Internal {
+            message: format!("failed to format stored {label} timestamp as RFC3339: {error}"),
+        })
+}
+
 fn deserialize_optional_interaction_projection_row(
     value: Option<String>,
 ) -> KernelResult<Option<AgentInteractionRow>> {
@@ -8142,16 +8155,39 @@ fn pg_row_to_agent_task_row(row: PgRow) -> KernelResult<AgentTaskRow> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "postgres-sync")]
+    use super::format_postgres_instant;
     use super::{
         audit_actor_from_subject_id, build_agent_business_uuid, build_agent_provider_binding_uuid,
         build_composition_slot_uuid, build_interaction_uuid, build_session_item_uuid,
         build_session_uuid, build_task_uuid, extract_event_context, AgentAuditEventRow,
         AgentProjectCompositionSlotRow,
     };
+    #[cfg(feature = "postgres-sync")]
+    use crate::session_activity::{
+        decode_session_activity_cursor, encode_session_activity_cursor, SessionActivityCursor,
+    };
     use crate::{
         AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProjectCompositionSlotRecord,
     };
     use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelEventSeverity, KernelEventSource};
+    #[cfg(feature = "postgres-sync")]
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+
+    #[cfg(feature = "postgres-sync")]
+    #[test]
+    fn postgres_session_activity_instant_produces_decodable_cursor() {
+        let value = OffsetDateTime::parse("2026-07-28T04:12:34.123456Z", &Rfc3339).unwrap();
+        let cursor = SessionActivityCursor {
+            activity_at: format_postgres_instant(value, "Session activity").unwrap(),
+            session_internal_id: 42,
+            scope_fingerprint: "scope-fingerprint".to_string(),
+        };
+        let encoded = encode_session_activity_cursor(&cursor).unwrap();
+
+        assert_eq!(cursor.activity_at, "2026-07-28T04:12:34.123456Z");
+        assert_eq!(decode_session_activity_cursor(&encoded).unwrap(), cursor);
+    }
 
     #[test]
     fn document_project_composition_slot_roundtrips_through_postgres_row_mapping() {

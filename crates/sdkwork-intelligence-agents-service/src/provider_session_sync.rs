@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use sdkwork_agent_kernel::{
-    AgentMessageRole, AgentPartKind, KernelError, KernelResult, PolicySubject,
+    AgentMessage, AgentMessageRole, AgentPart, AgentPartKind, KernelError, KernelResult,
+    PolicySubject,
 };
 use sdkwork_agents_runtime_facade::{
     AgentsSessionActor, AgentsSessionEntrySurface, AgentsSessionFacade, AgentsSessionKind,
@@ -11,9 +13,10 @@ use sdkwork_agents_runtime_facade::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::application::{
-    CreateSessionItemCommand, GetSessionCommand, ListSessionRuntimeBindingsCommand,
+    GetSessionCommand, ListSessionRuntimeBindingsCommand,
+    ReconcileProviderSessionHistoryItemCommand,
 };
-use crate::domain::AgentSessionItemKind;
+use crate::domain::{AgentSessionItemKind, AgentSessionItemStatus};
 use crate::http::{HttpAgentsSessionFacade, HttpService};
 use crate::ports::{PaginationParams, SessionRuntimeBindingListQuery};
 use crate::project::AgentProjectRecord;
@@ -147,54 +150,281 @@ pub(crate) fn synchronize_provider_session_transcript(
         .load_provider_session_messages(engine_key, provider_session_id)
         .map_err(runtime_facade_error)?;
     let mut synchronized = 0;
+    let mut tool_calls = HashMap::<String, (String, Option<String>)>::new();
     for message in messages {
-        let kind = match message.role {
-            AgentMessageRole::User => AgentSessionItemKind::UserInput,
-            AgentMessageRole::Agent | AgentMessageRole::Model => {
-                AgentSessionItemKind::AssistantOutput
+        let requested_at = message
+            .created_at
+            .clone()
+            .unwrap_or_else(|| session.updated_at.clone());
+        for mut item in provider_session_history_items(engine_key, &message) {
+            let item_key = stable_provider_session_item_key(
+                engine_key,
+                provider_session_id,
+                item.provider_item_key.as_str(),
+            );
+            let item_id = format!("item.provider.{engine_key}.{item_key}");
+            if item.kind == AgentSessionItemKind::ToolResult {
+                if let Some((parent_item_id, tool_name)) = item
+                    .tool_call_id
+                    .as_ref()
+                    .and_then(|tool_call_id| tool_calls.get(tool_call_id))
+                {
+                    item.parent_item_id = Some(parent_item_id.clone());
+                    if item.tool_name.as_deref().is_none_or(|name| name == "tool") {
+                        item.tool_name = tool_name.clone();
+                    }
+                }
             }
-            _ => continue,
-        };
-        let content = message
-            .parts
-            .iter()
-            .filter(|part| part.kind == AgentPartKind::Text)
-            .filter_map(|part| part.text.as_deref())
-            .filter(|text| !text.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        if content.is_empty() {
-            continue;
+            service.reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    tenant_id,
+                    organization_id,
+                    session_id: session_id.clone(),
+                    item_id: item_id.clone(),
+                    kind: item.kind,
+                    content: item.content,
+                    content_type: item.content_type,
+                    status: item.status,
+                    model_id: Some(binding.model_id.clone()),
+                    provider_id: Some(binding.provider_id.clone()),
+                    tool_name: item.tool_name.clone(),
+                    tool_call_id: item.tool_call_id.clone(),
+                    tool_arguments_json: item.tool_arguments_json,
+                    tool_result_json: item.tool_result_json,
+                    parent_item_id: item.parent_item_id,
+                    requested_by: subject.clone(),
+                    requested_at: requested_at.clone(),
+                },
+                engine_key,
+            )?;
+            if item.kind == AgentSessionItemKind::ToolCall {
+                if let Some(tool_call_id) = item.tool_call_id {
+                    tool_calls.insert(tool_call_id, (item_id, item.tool_name));
+                }
+            }
+            synchronized += 1;
         }
-        let item_key = stable_provider_session_item_key(
-            engine_key,
-            provider_session_id,
-            message.message_id.as_str(),
-        );
-        service.reconcile_provider_session_history_session_item(
-            CreateSessionItemCommand {
-                tenant_id,
-                organization_id,
-                session_id: session_id.clone(),
-                item_id: format!("item.provider.{engine_key}.{item_key}"),
-                kind,
-                content,
-                content_type: "text/plain".to_string(),
-                input_tokens: 0,
-                output_tokens: 0,
-                model_id: Some(binding.model_id.clone()),
-                provider_id: Some(binding.provider_id.clone()),
-                parent_item_id: None,
-                requested_by: subject.clone(),
-                requested_at: message
-                    .created_at
-                    .unwrap_or_else(|| session.updated_at.clone()),
-            },
-            engine_key,
-        )?;
-        synchronized += 1;
     }
     Ok(synchronized)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProviderSessionHistoryItem {
+    provider_item_key: String,
+    kind: AgentSessionItemKind,
+    content: Option<String>,
+    content_type: String,
+    status: AgentSessionItemStatus,
+    tool_name: Option<String>,
+    tool_call_id: Option<String>,
+    tool_arguments_json: Option<String>,
+    tool_result_json: Option<String>,
+    parent_item_id: Option<String>,
+}
+
+fn provider_session_history_items(
+    engine_key: &str,
+    message: &AgentMessage,
+) -> Vec<ProviderSessionHistoryItem> {
+    let mut legacy_text_item_available = true;
+    message
+        .parts
+        .iter()
+        .filter_map(|part| {
+            let content_type = provider_part_content_type(engine_key, part);
+            let kind = provider_session_item_kind(message.role, part.kind, content_type)?;
+            let uses_legacy_message_id = legacy_text_item_available
+                && part.kind == AgentPartKind::Text
+                && !matches!(kind, AgentSessionItemKind::Reasoning);
+            if uses_legacy_message_id {
+                legacy_text_item_available = false;
+            }
+            let provider_item_key = if uses_legacy_message_id {
+                message.message_id.clone()
+            } else {
+                format!("{}\u{0}{}", message.message_id, part.part_id)
+            };
+            let tool_call_id = part.tool_call_id.clone().or_else(|| {
+                provider_part_metadata(engine_key, part, "tool_call_id").map(str::to_string)
+            });
+            let has_result = provider_part_metadata(engine_key, part, "has_result") == Some("true");
+            let status = provider_session_item_status(engine_key, part, kind, has_result);
+            let provider_json = part.json.clone();
+            let tool_payload = if kind == AgentSessionItemKind::ToolCall
+                || kind == AgentSessionItemKind::ToolResult
+            {
+                provider_json.or_else(|| {
+                    Some(
+                        serde_json::json!({
+                            "id": tool_call_id.as_deref(),
+                            "type": kind.as_str(),
+                            "name": part.name.as_deref(),
+                            "output": part.text.as_deref(),
+                        })
+                        .to_string(),
+                    )
+                })
+            } else {
+                None
+            };
+            let content = match kind {
+                AgentSessionItemKind::ToolCall | AgentSessionItemKind::ToolResult => None,
+                AgentSessionItemKind::ArtifactReference | AgentSessionItemKind::StatusNotice => {
+                    part.json
+                        .clone()
+                        .or_else(|| part.content_ref.clone())
+                        .or_else(|| part.artifact_id.clone())
+                        .or_else(|| part.policy_decision_id.clone())
+                        .or_else(|| part.text.clone())
+                }
+                _ => part.text.clone().or_else(|| part.json.clone()),
+            }
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+            let item_content_type = if matches!(
+                kind,
+                AgentSessionItemKind::ToolCall
+                    | AgentSessionItemKind::ToolResult
+                    | AgentSessionItemKind::StatusNotice
+            ) || part.json.is_some()
+            {
+                "application/json".to_string()
+            } else {
+                part.mime_type
+                    .clone()
+                    .unwrap_or_else(|| "text/plain".to_string())
+            };
+            Some(ProviderSessionHistoryItem {
+                provider_item_key,
+                kind,
+                content,
+                content_type: item_content_type,
+                status,
+                tool_name: part.name.clone(),
+                tool_call_id,
+                tool_arguments_json: (kind == AgentSessionItemKind::ToolCall)
+                    .then(|| tool_payload.clone())
+                    .flatten(),
+                tool_result_json: ((kind == AgentSessionItemKind::ToolResult) || has_result)
+                    .then_some(tool_payload)
+                    .flatten(),
+                parent_item_id: None,
+            })
+        })
+        .collect()
+}
+
+fn provider_session_item_kind(
+    role: AgentMessageRole,
+    part_kind: AgentPartKind,
+    content_type: Option<&str>,
+) -> Option<AgentSessionItemKind> {
+    if matches!(content_type, Some("reasoning" | "thinking")) {
+        return Some(AgentSessionItemKind::Reasoning);
+    }
+    if content_type.is_some_and(|value| {
+        matches!(
+            value,
+            "advisor_tool_result"
+                | "bash_code_execution_tool_result"
+                | "code_execution_tool_result"
+                | "function_call_output"
+                | "custom_tool_call_output"
+                | "mcp_tool_result"
+                | "text_editor_code_execution_tool_result"
+                | "tool_result"
+                | "tool_search_tool_result"
+                | "web_fetch_tool_result"
+                | "web_search_tool_result"
+        )
+    }) {
+        return Some(AgentSessionItemKind::ToolResult);
+    }
+    if matches!(
+        content_type,
+        Some(
+            "compaction"
+                | "context_compacted"
+                | "queue-operation"
+                | "step-start"
+                | "step-finish"
+                | "task_complete"
+                | "task_started"
+        )
+    ) {
+        return Some(AgentSessionItemKind::StatusNotice);
+    }
+    if content_type.is_some_and(|value| {
+        matches!(
+            value,
+            "attachment" | "input_image" | "image" | "document" | "file"
+        )
+    }) {
+        return Some(AgentSessionItemKind::ArtifactReference);
+    }
+
+    match part_kind {
+        AgentPartKind::Text => match role {
+            AgentMessageRole::User => Some(AgentSessionItemKind::UserInput),
+            AgentMessageRole::Agent | AgentMessageRole::Model => {
+                Some(AgentSessionItemKind::AssistantOutput)
+            }
+            AgentMessageRole::System | AgentMessageRole::Policy => {
+                Some(AgentSessionItemKind::SystemInstruction)
+            }
+            AgentMessageRole::Tool => Some(AgentSessionItemKind::ToolResult),
+            AgentMessageRole::Adapter => Some(AgentSessionItemKind::StatusNotice),
+        },
+        AgentPartKind::ToolCallRef => Some(AgentSessionItemKind::ToolCall),
+        AgentPartKind::Error => Some(AgentSessionItemKind::ErrorNotice),
+        AgentPartKind::PolicyDecisionRef => Some(AgentSessionItemKind::StatusNotice),
+        AgentPartKind::Json => match role {
+            AgentMessageRole::Tool => Some(AgentSessionItemKind::ToolResult),
+            _ => Some(AgentSessionItemKind::ArtifactReference),
+        },
+        AgentPartKind::BinaryRef
+        | AgentPartKind::FileRef
+        | AgentPartKind::ArtifactRef
+        | AgentPartKind::ImageRef
+        | AgentPartKind::AudioRef
+        | AgentPartKind::VideoRef => Some(AgentSessionItemKind::ArtifactReference),
+    }
+}
+
+fn provider_session_item_status(
+    engine_key: &str,
+    part: &AgentPart,
+    kind: AgentSessionItemKind,
+    has_result: bool,
+) -> AgentSessionItemStatus {
+    match provider_part_metadata(engine_key, part, "status") {
+        Some("pending" | "queued" | "running" | "in_progress") => AgentSessionItemStatus::Pending,
+        Some("failed" | "error") => AgentSessionItemStatus::Failed,
+        Some("cancelled" | "canceled" | "aborted") => AgentSessionItemStatus::Cancelled,
+        Some("completed" | "complete" | "success" | "succeeded") => {
+            AgentSessionItemStatus::Completed
+        }
+        _ if kind == AgentSessionItemKind::ToolCall && !has_result => {
+            AgentSessionItemStatus::Pending
+        }
+        _ => AgentSessionItemStatus::Completed,
+    }
+}
+
+fn provider_part_content_type<'a>(engine_key: &str, part: &'a AgentPart) -> Option<&'a str> {
+    provider_part_metadata(engine_key, part, "content_type")
+}
+
+fn provider_part_metadata<'a>(
+    engine_key: &str,
+    part: &'a AgentPart,
+    field_name: &str,
+) -> Option<&'a str> {
+    let namespace = match engine_key {
+        "claude-code" => "claude",
+        other => other,
+    };
+    part.metadata_value(format!("{namespace}.{field_name}").as_str())
 }
 
 fn synchronize_provider_session_inventory(
@@ -393,6 +623,66 @@ mod tests {
         let first = stable_provider_session_key("codex", "provider-1");
         assert_eq!(first, stable_provider_session_key("codex", "provider-1"));
         assert_ne!(first, stable_provider_session_key("opencode", "provider-1"));
+    }
+
+    #[test]
+    fn projects_provider_parts_without_flattening_native_tool_payloads() {
+        let native_tool = serde_json::json!({
+            "type": "tool",
+            "callID": "call-1",
+            "tool": "mcp__docs__search",
+            "state": {
+                "status": "completed",
+                "input": { "q": "session items" },
+                "output": "found"
+            }
+        });
+        let native_tool_json = native_tool.to_string();
+        let mut tool_part = AgentPart::tool_call_ref("part-tool", "call-1")
+            .with_name("mcp__docs__search")
+            .from_provider("opencode")
+            .with_metadata("opencode.content_type", "tool")
+            .with_metadata("opencode.status", "completed")
+            .with_metadata("opencode.has_result", "true");
+        tool_part.json = Some(native_tool_json.clone());
+        let message = AgentMessage::new(
+            "message-1",
+            AgentMessageRole::Agent,
+            vec![
+                AgentPart::text("part-reasoning", "inspect the code")
+                    .from_provider("opencode")
+                    .with_metadata("opencode.content_type", "reasoning"),
+                tool_part,
+                AgentPart::text("part-text", "done")
+                    .from_provider("opencode")
+                    .with_metadata("opencode.content_type", "text"),
+                AgentPart::json(
+                    "part-step",
+                    serde_json::json!({ "type": "step-finish" }).to_string(),
+                )
+                .from_provider("opencode")
+                .with_metadata("opencode.content_type", "step-finish"),
+            ],
+        );
+
+        let items = provider_session_history_items("opencode", &message);
+        assert_eq!(
+            items.iter().map(|item| item.kind).collect::<Vec<_>>(),
+            vec![
+                AgentSessionItemKind::Reasoning,
+                AgentSessionItemKind::ToolCall,
+                AgentSessionItemKind::AssistantOutput,
+                AgentSessionItemKind::StatusNotice,
+            ]
+        );
+        assert_eq!(items[1].status, AgentSessionItemStatus::Completed);
+        assert_eq!(
+            items[1].tool_arguments_json.as_deref(),
+            Some(native_tool_json.as_str())
+        );
+        assert_eq!(items[1].tool_result_json, items[1].tool_arguments_json);
+        assert_eq!(items[2].provider_item_key, "message-1");
+        assert_eq!(items[3].content_type, "application/json");
     }
 
     #[test]
@@ -805,18 +1095,21 @@ mod tests {
             "item.provider.codex.{}",
             stable_provider_session_item_key("codex", "provider-session-transcript-1", "message-1")
         );
-        let command = CreateSessionItemCommand {
+        let command = ReconcileProviderSessionHistoryItemCommand {
             tenant_id: project.tenant_id,
             organization_id: project.organization_id,
             session_id: session.session_id.clone(),
             item_id: item_id.clone(),
             kind: AgentSessionItemKind::UserInput,
-            content: "provider user message".to_string(),
+            content: Some("provider user message".to_string()),
             content_type: "text/plain".to_string(),
-            input_tokens: 0,
-            output_tokens: 0,
+            status: AgentSessionItemStatus::Completed,
             model_id: Some(engine.models[0].model_id.clone()),
             provider_id: Some(engine.models[0].provider_id.clone()),
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
             parent_item_id: None,
             requested_by: read_subject(),
             requested_at: "2026-07-26T00:01:00Z".to_string(),
@@ -829,6 +1122,73 @@ mod tests {
             .service
             .reconcile_provider_session_history_session_item(command, "codex")
             .expect("idempotent provider transcript replay");
+        let tool_item_id = format!(
+            "item.provider.codex.{}",
+            stable_provider_session_item_key(
+                "codex",
+                "provider-session-transcript-1",
+                "tool-message-1\u{0}tool-part-1"
+            )
+        );
+        let pending_tool = serde_json::json!({
+            "type": "function_call",
+            "id": "provider-tool-item-1",
+            "call_id": "provider-tool-call-1",
+            "name": "shell_command",
+            "arguments": "{\"command\":\"cargo test\"}"
+        })
+        .to_string();
+        let tool_command = ReconcileProviderSessionHistoryItemCommand {
+            tenant_id: project.tenant_id,
+            organization_id: project.organization_id,
+            session_id: session.session_id.clone(),
+            item_id: tool_item_id.clone(),
+            kind: AgentSessionItemKind::ToolCall,
+            content: None,
+            content_type: "application/json".to_string(),
+            status: AgentSessionItemStatus::Pending,
+            model_id: Some(engine.models[0].model_id.clone()),
+            provider_id: Some(engine.models[0].provider_id.clone()),
+            tool_name: Some("shell_command".to_string()),
+            tool_call_id: Some("provider-tool-call-1".to_string()),
+            tool_arguments_json: Some(pending_tool),
+            tool_result_json: None,
+            parent_item_id: None,
+            requested_by: read_subject(),
+            requested_at: "2026-07-26T00:02:00Z".to_string(),
+        };
+        state
+            .service
+            .reconcile_provider_session_history_session_item(tool_command.clone(), "codex")
+            .expect("pending provider tool item");
+        let completed_tool = serde_json::json!({
+            "type": "function_call",
+            "id": "provider-tool-item-1",
+            "call_id": "provider-tool-call-1",
+            "name": "shell_command",
+            "arguments": "{\"command\":\"cargo test\"}",
+            "output": "ok",
+            "status": "completed"
+        })
+        .to_string();
+        let completed = state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    status: AgentSessionItemStatus::Completed,
+                    tool_result_json: Some(completed_tool.clone()),
+                    requested_at: "2026-07-26T00:03:00Z".to_string(),
+                    ..tool_command
+                },
+                "codex",
+            )
+            .expect("completed provider tool item");
+        assert_eq!(completed.version, 2);
+        assert_eq!(completed.status, AgentSessionItemStatus::Completed);
+        assert_eq!(
+            completed.tool_result_json.as_deref(),
+            Some(completed_tool.as_str())
+        );
         let items = state
             .service
             .list_session_items(ListSessionItemsCommand {
@@ -842,11 +1202,19 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("provider transcript items");
-        assert_eq!(items.total_count, Some(1));
-        assert_eq!(items.items[0].item_id, item_id);
-        assert_eq!(
-            items.items[0].content.as_deref(),
-            Some("provider user message")
-        );
+        assert_eq!(items.total_count, Some(2));
+        let user_item = items
+            .items
+            .iter()
+            .find(|item| item.item_id == item_id)
+            .expect("provider user item");
+        assert_eq!(user_item.content.as_deref(), Some("provider user message"));
+        let tool_item = items
+            .items
+            .iter()
+            .find(|item| item.item_id == tool_item_id)
+            .expect("provider tool item");
+        assert_eq!(tool_item.status, AgentSessionItemStatus::Completed);
+        assert_eq!(tool_item.version, 2);
     }
 }

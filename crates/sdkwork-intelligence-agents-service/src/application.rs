@@ -4669,7 +4669,7 @@ where
 
     pub(crate) fn reconcile_provider_session_history_session_item(
         &self,
-        command: CreateSessionItemCommand,
+        command: ReconcileProviderSessionHistoryItemCommand,
         engine_key: &str,
     ) -> KernelResult<AgentSessionItemRecord> {
         let expected_agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
@@ -4682,10 +4682,6 @@ where
             || !command
                 .item_id
                 .starts_with(&format!("item.provider.{engine_key}."))
-            || !matches!(
-                command.kind,
-                AgentSessionItemKind::UserInput | AgentSessionItemKind::AssistantOutput
-            )
         {
             return Err(KernelError::validation(
                 "provider Session history session item reconciliation is not canonical",
@@ -4709,20 +4705,80 @@ where
                 "provider Session history session item reconciliation is not canonical",
             ));
         }
-        if let Some(existing) = self.repository.get_session_item(
+        let content = command
+            .content
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if content
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_TURN_INPUT_CONTENT_BYTES)
+        {
+            return Err(KernelError::validation(format!(
+                "provider Session history content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
+            )));
+        }
+        for (field_name, value) in [
+            ("toolArgumentsJson", command.tool_arguments_json.as_deref()),
+            ("toolResultJson", command.tool_result_json.as_deref()),
+        ] {
+            if let Some(value) = value {
+                validate_json_payload(value, field_name)?;
+            }
+        }
+        if content.is_none()
+            && command.tool_arguments_json.is_none()
+            && command.tool_result_json.is_none()
+        {
+            return Err(KernelError::validation(
+                "provider Session history item has no content or structured payload",
+            ));
+        }
+        let content_type = default_plain_text_if_blank(command.content_type.as_str());
+        let completed_at = match command.status {
+            AgentSessionItemStatus::Pending => None,
+            AgentSessionItemStatus::Completed
+            | AgentSessionItemStatus::Failed
+            | AgentSessionItemStatus::Cancelled
+            | AgentSessionItemStatus::Redacted => Some(command.requested_at.clone()),
+        };
+        if let Some(mut existing) = self.repository.get_session_item(
             command.tenant_id,
             command.organization_id,
             command.session_id.as_str(),
             command.item_id.as_str(),
         )? {
+            let unchanged = existing.kind == command.kind
+                && existing.content == content
+                && existing.content_type == content_type
+                && existing.status == command.status
+                && existing.model_id == command.model_id
+                && existing.provider_id == command.provider_id
+                && existing.tool_name == command.tool_name
+                && existing.tool_call_id == command.tool_call_id
+                && existing.tool_arguments_json == command.tool_arguments_json
+                && existing.tool_result_json == command.tool_result_json
+                && existing.parent_item_id == command.parent_item_id;
+            if unchanged {
+                return Ok(existing);
+            }
+            existing.kind = command.kind;
+            existing.content = content;
+            existing.content_type = content_type;
+            existing.status = command.status;
+            existing.model_id = command.model_id;
+            existing.provider_id = command.provider_id;
+            existing.tool_name = command.tool_name;
+            existing.tool_call_id = command.tool_call_id;
+            existing.tool_arguments_json = command.tool_arguments_json;
+            existing.tool_result_json = command.tool_result_json;
+            existing.parent_item_id = command.parent_item_id;
+            existing.version += 1;
+            existing.updated_at = command.requested_at;
+            existing.completed_at = completed_at;
+            self.repository.update_session_item(existing.clone())?;
             return Ok(existing);
         }
-        require_non_blank(command.content.as_str(), "content")?;
-        if command.content.len() > MAX_TURN_INPUT_CONTENT_BYTES {
-            return Err(KernelError::validation(format!(
-                "provider Session history content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
-            )));
-        }
+        let requested_status = command.status;
         let record = AgentSessionItemRecord {
             id: self.repository.next_id()?,
             item_id: command.item_id.clone(),
@@ -4730,18 +4786,18 @@ where
             organization_id: command.organization_id,
             session_id: command.session_id.clone(),
             kind: command.kind,
-            content: Some(command.content),
-            content_type: default_plain_text_if_blank(command.content_type.as_str()),
+            content,
+            content_type,
             status: AgentSessionItemStatus::Completed,
             sequence: 0,
-            input_tokens: command.input_tokens,
-            output_tokens: command.output_tokens,
+            input_tokens: 0,
+            output_tokens: 0,
             model_id: command.model_id,
             provider_id: command.provider_id,
-            tool_name: None,
-            tool_call_id: None,
-            tool_arguments_json: None,
-            tool_result_json: None,
+            tool_name: command.tool_name,
+            tool_call_id: command.tool_call_id,
+            tool_arguments_json: command.tool_arguments_json,
+            tool_result_json: command.tool_result_json,
             parent_item_id: command.parent_item_id,
             turn_id: None,
             created_by: session.owner_user_id,
@@ -4753,7 +4809,7 @@ where
             redacted_by: None,
             retention_until: None,
         };
-        let record = match self.repository.append_session_item(record) {
+        let mut record = match self.repository.append_session_item(record) {
             Ok((_, record)) => record,
             Err(error) if error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict => self
                 .repository
@@ -4766,6 +4822,13 @@ where
                 .ok_or(error)?,
             Err(error) => return Err(error),
         };
+        if record.status != requested_status {
+            record.status = requested_status;
+            record.version += 1;
+            record.updated_at = command.requested_at.clone();
+            record.completed_at = completed_at;
+            self.repository.update_session_item(record.clone())?;
+        }
         self.emit_session_item_audit_event(
             AgentAuditAction::SessionItemCreated,
             &record,

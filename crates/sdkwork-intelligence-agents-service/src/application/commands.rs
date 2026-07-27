@@ -11,8 +11,8 @@ use crate::domain::{
     AgentImplementationKind, AgentImplementationType, AgentInteractionKind,
     AgentItemDriveRefRecord, AgentItemFeedbackRating, AgentItemFeedbackRecord,
     AgentItemResourceRole, AgentResourceUserStateRecord, AgentSessionCheckpointRecord,
-    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionKind,
-    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentVisibility,
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus,
+    AgentSessionKind, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentVisibility,
 };
 use crate::ports::{
     AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
@@ -656,6 +656,27 @@ pub struct CreateSessionItemCommand {
     pub output_tokens: u64,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
+    pub parent_item_id: Option<String>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconcileProviderSessionHistoryItemCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub item_id: String,
+    pub kind: AgentSessionItemKind,
+    pub content: Option<String>,
+    pub content_type: String,
+    pub status: AgentSessionItemStatus,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub tool_arguments_json: Option<String>,
+    pub tool_result_json: Option<String>,
     pub parent_item_id: Option<String>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
