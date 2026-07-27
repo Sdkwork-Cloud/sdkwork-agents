@@ -10,7 +10,9 @@ use axum::http::header::CONTENT_TYPE;
 use axum::http::{Request, StatusCode};
 use axum::Extension;
 use sdkwork_intelligence_agents_service::{
-    build_combined_routes, testing::test_web_context, AgentHttpState, AgentRequestContext,
+    build_combined_routes, testing::test_web_context, AgentHttpState, AgentRepository,
+    AgentRequestContext, AgentSessionEntrySurface, AgentSessionKind, AgentSessionRecord,
+    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentSessionStatus,
     DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
 };
 use serde_json::{json, Value};
@@ -136,6 +138,30 @@ async fn post_json(
         String::from_utf8_lossy(&body_bytes)
     );
     serde_json::from_slice(&body_bytes).expect("response body should be valid json")
+}
+
+async fn get_json_response(app: &axum::Router, uri: &str) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .expect("request should be built");
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("request should succeed");
+    let status = response.status();
+    let body_bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = serde_json::from_slice(&body_bytes).unwrap_or_else(|error| {
+        panic!(
+            "{uri}: response body should be valid json: {error}: {}",
+            String::from_utf8_lossy(&body_bytes)
+        )
+    });
+    (status, body)
 }
 
 async fn create_app_session(
@@ -396,6 +422,135 @@ async fn app_code_engine_catalog_should_return_engines() {
         serde_json::from_slice(&body_bytes).expect("response body should be valid json");
     assert_eq!(body_json["code"], 0, "envelope code must be 0");
     assert!(body_json["data"]["item"]["engines"].is_array());
+}
+
+#[tokio::test]
+async fn app_project_session_should_materialize_canonical_code_engine_identity() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let project_id = "project.339967887101923328";
+
+    post_json(
+        &app,
+        "/app/v3/api/ai/projects",
+        json!({
+            "projectId": project_id,
+            "name": "Canonical code engine session"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let created = post_json(
+        &app,
+        &format!("/app/v3/api/ai/projects/{project_id}/sessions"),
+        json!({
+            "agentId": "agent.intelligence.codex",
+            "sessionKind": "coding",
+            "entrySurface": "pc",
+            "sourceModule": "sdkwork-birdcoder",
+            "sourceContextKind": "agent-project",
+            "sourceContextId": project_id,
+            "title": "hi",
+            "idempotencyKey": "3bf76c8b-8b9c-4d1c-a183-9b0ae342004c",
+            "payloadHash": "sha256:89afc39f0d667fa874345a7cae2f6e01cfe74e4b8e0075453bd1d8b2a5ae6de5",
+            "requestedAt": "2026-07-27T07:36:34.892Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(
+        created["data"]["item"]["agentId"],
+        "agent.intelligence.codex"
+    );
+    assert_eq!(created["data"]["item"]["projectId"], project_id);
+
+    let bindings = get_json(
+        &app,
+        "/app/v3/api/ai/agents/agent.intelligence.codex/provider_bindings?page=1&page_size=20",
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(bindings["data"]["items"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        bindings["data"]["items"][0]["bindingId"],
+        "binding.agent-provider.codex"
+    );
+    assert_eq!(
+        bindings["data"]["items"][0]["providerId"],
+        "provider.model.codex"
+    );
+}
+
+#[tokio::test]
+async fn app_session_create_should_replay_by_idempotency_key() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.session.idempotent";
+    create_agent(&app, agent_id, "Idempotent Session Agent").await;
+    let uri = format!("/app/v3/api/ai/agents/{agent_id}/sessions");
+    let request = json!({
+        "sessionKind": "assistant",
+        "entrySurface": "api",
+        "title": "Idempotent session",
+        "idempotencyKey": "session-create-idempotency-contract",
+        "payloadHash": "sha256:session-create-idempotency-contract",
+        "requestedAt": "2026-07-27T08:00:00Z"
+    });
+
+    let (created, replayed) = tokio::join!(
+        post_json(&app, &uri, request.clone(), StatusCode::CREATED),
+        post_json(&app, &uri, request.clone(), StatusCode::CREATED),
+    );
+    assert_eq!(
+        replayed["data"]["item"]["sessionId"],
+        created["data"]["item"]["sessionId"]
+    );
+
+    let listed = get_json(
+        &app,
+        &format!("{uri}?page=1&page_size=20&include_archived=false"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["data"]["items"].as_array().map(Vec::len), Some(1));
+
+    let conflict = post_json(
+        &app,
+        &uri,
+        json!({
+            "sessionKind": "assistant",
+            "entrySurface": "api",
+            "title": "Different session",
+            "idempotencyKey": "session-create-idempotency-contract",
+            "payloadHash": "sha256:different-session-create-payload",
+            "requestedAt": "2026-07-27T08:00:01Z"
+        }),
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(conflict["code"], 40901);
+
+    let session_id = created["data"]["item"]["sessionId"]
+        .as_str()
+        .expect("created session id");
+    request_without_body(
+        &app,
+        "DELETE",
+        &format!("{uri}/{session_id}"),
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    let deleted_conflict = post_json(&app, &uri, request, StatusCode::CONFLICT).await;
+    assert_eq!(deleted_conflict["code"], 40901);
 }
 
 #[tokio::test]
@@ -4317,6 +4472,51 @@ async fn app_session_should_support_flat_create_rename_project_move_filter_and_d
     assert_eq!(created["data"]["item"]["sessionId"], session_id);
     assert_eq!(created["data"]["item"]["lastItemSequence"], "0");
 
+    let wrong_agent_id = "agent.session.commercial.other";
+    create_agent(&app, wrong_agent_id, "Other Commercial Session Agent").await;
+    let mismatch = patch_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{wrong_agent_id}/sessions/{session_id}"),
+        json!({
+            "expectedVersion": created["data"]["item"]["version"],
+            "title": "Must not change"
+        }),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+    assert_eq!(mismatch["code"], 40401);
+    let close_mismatch = post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{wrong_agent_id}/sessions/{session_id}/close"),
+        json!({
+            "expectedVersion": created["data"]["item"]["version"],
+            "requestedAt": "2026-06-28T12:00:01Z"
+        }),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+    assert_eq!(close_mismatch["code"], 40401);
+    get_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{wrong_agent_id}/sessions/{session_id}/items"),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+
+    let delete_request = Request::builder()
+        .method("DELETE")
+        .uri(format!(
+            "/app/v3/api/ai/agents/{wrong_agent_id}/sessions/{session_id}"
+        ))
+        .body(Body::empty())
+        .expect("delete mismatch request should be built");
+    let delete_response = app
+        .clone()
+        .oneshot(delete_request)
+        .await
+        .expect("delete mismatch request should complete");
+    assert_eq!(delete_response.status(), StatusCode::NOT_FOUND);
+
     let moved = patch_json(
         &app,
         &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}"),
@@ -4607,4 +4807,388 @@ async fn backend_archive_session_should_transition_status() {
     .await;
     assert_eq!(archived["data"]["item"]["sessionId"], session_id);
     assert_eq!(archived["data"]["item"]["status"], "archived");
+}
+
+#[tokio::test]
+async fn app_session_activity_snapshot_supports_newest_first_cursor_and_scope_binding() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.activity.http";
+    create_agent(&app, agent_id, "Activity HTTP Agent").await;
+    let low_session = create_app_session(
+        &app,
+        agent_id,
+        "session.activity.http.low",
+        "Low",
+        "2099-07-27T10:00:00Z",
+    )
+    .await;
+    create_app_session(
+        &app,
+        agent_id,
+        "session.activity.http.high",
+        "High",
+        "2099-07-27T10:00:00Z",
+    )
+    .await;
+
+    let (status, first) = get_json_response(
+        &app,
+        "/app/v3/api/ai/session_activity_summaries?page_size=1",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["data"]["pageInfo"]["mode"], "cursor");
+    assert_eq!(first["data"]["pageInfo"]["hasMore"], true);
+    assert_eq!(
+        first["data"]["items"][0]["session"]["sessionId"],
+        "session.activity.http.high"
+    );
+    let cursor = first["data"]["pageInfo"]["nextCursor"]
+        .as_str()
+        .expect("next cursor")
+        .to_string();
+
+    let (status, second) = get_json_response(
+        &app,
+        &format!("/app/v3/api/ai/session_activity_summaries?page_size=1&cursor={cursor}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        second["data"]["items"][0]["session"]["sessionId"],
+        "session.activity.http.low"
+    );
+
+    let (status, problem) = get_json_response(
+        &app,
+        &format!(
+            "/app/v3/api/ai/session_activity_summaries?page_size=1&agent_id={agent_id}&cursor={cursor}"
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(problem["code"], 40003);
+
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/session.activity.http.low/close"),
+        json!({
+            "expectedVersion": low_session["data"]["item"]["version"],
+            "requestedAt": "2099-07-27T11:00:00Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    let (status, exhausted) = get_json_response(
+        &app,
+        &format!("/app/v3/api/ai/session_activity_summaries?page_size=1&cursor={cursor}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(exhausted["data"]["items"]
+        .as_array()
+        .expect("items")
+        .is_empty());
+    assert_eq!(exhausted["data"]["pageInfo"]["hasMore"], false);
+    assert_eq!(exhausted["data"]["pageInfo"]["nextCursor"], cursor);
+
+    let (_, converged) = get_json_response(
+        &app,
+        "/app/v3/api/ai/session_activity_summaries?page_size=1",
+    )
+    .await;
+    assert_eq!(
+        converged["data"]["items"][0]["session"]["sessionId"],
+        "session.activity.http.low"
+    );
+
+    create_app_session(
+        &app,
+        agent_id,
+        "session.activity.http.new-head",
+        "New head",
+        "2099-07-27T12:00:00Z",
+    )
+    .await;
+    let (_, refreshed) = get_json_response(
+        &app,
+        "/app/v3/api/ai/session_activity_summaries?page_size=1",
+    )
+    .await;
+    assert_eq!(
+        refreshed["data"]["items"][0]["session"]["sessionId"],
+        "session.activity.http.new-head"
+    );
+}
+
+#[tokio::test]
+async fn app_session_activity_snapshot_rejects_invalid_pagination_parameters() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+
+    for page_size in [0, 201] {
+        let (status, problem) = get_json_response(
+            &app,
+            &format!("/app/v3/api/ai/session_activity_summaries?page_size={page_size}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(problem["code"], 40003);
+    }
+
+    for alias in [
+        "page=1",
+        "pageSize=20",
+        "limit=20",
+        "page_no=1",
+        "pageNo=1",
+        "per_page=20",
+        "size=20",
+    ] {
+        let (status, _) = get_json_response(
+            &app,
+            &format!("/app/v3/api/ai/session_activity_summaries?{alias}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "alias accepted: {alias}");
+    }
+
+    for empty_filter in ["workspace_id=", "project_id=", "agent_id="] {
+        let (status, problem) = get_json_response(
+            &app,
+            &format!("/app/v3/api/ai/session_activity_summaries?{empty_filter}"),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "empty filter accepted: {empty_filter}"
+        );
+        assert_eq!(problem["code"], 40003);
+    }
+
+    let oversized_cursor = "a".repeat(2049);
+    let (status, problem) = get_json_response(
+        &app,
+        &format!("/app/v3/api/ai/session_activity_summaries?cursor={oversized_cursor}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(problem["code"], 40003);
+}
+
+#[tokio::test]
+async fn app_session_activity_snapshot_preserves_latest_failed_runtime_binding() {
+    let repository = InMemoryAgentRepository::new();
+    let agent_id = "agent.activity.failed.binding";
+    let session_id = "session.activity.failed.binding";
+    repository
+        .insert_session(AgentSessionRecord {
+            id: 1,
+            session_id: session_id.to_string(),
+            tenant_id: 100001,
+            organization_id: 0,
+            agent_id: agent_id.to_string(),
+            owner_user_id: 100,
+            project_id: None,
+            session_kind: AgentSessionKind::Assistant,
+            entry_surface: AgentSessionEntrySurface::Api,
+            source_module: None,
+            source_context_kind: None,
+            source_context_id: None,
+            parent_session_id: None,
+            forked_from_turn_id: None,
+            title: Some("Failed binding".to_string()),
+            status: AgentSessionStatus::Active,
+            item_count: 0,
+            last_item_sequence: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            idempotency_key: None,
+            payload_hash: None,
+            created_by: 100,
+            updated_by: 100,
+            version: 0,
+            created_at: "2099-07-27T10:00:00Z".to_string(),
+            updated_at: "2099-07-27T10:00:00Z".to_string(),
+            last_item_at: None,
+            closed_at: None,
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        })
+        .expect("session should persist");
+    repository
+        .insert_session_runtime_binding(AgentSessionRuntimeBindingRecord {
+            id: 2,
+            tenant_id: 100001,
+            organization_id: 0,
+            session_id: session_id.to_string(),
+            runtime_binding_id: "runtime_binding.activity.failed".to_string(),
+            runtime_location_id: None,
+            host_mode: "managed".to_string(),
+            transport_kind: "in_process".to_string(),
+            provider_binding_id: "binding.activity.failed".to_string(),
+            model_id: "model.activity.failed".to_string(),
+            provider_id: "provider.activity.failed".to_string(),
+            provider_session_id: None,
+            provider_session_tree_id: None,
+            provider_parent_session_id: None,
+            provider_forked_from_session_id: None,
+            status: AgentSessionRuntimeBindingStatus::Failed,
+            is_current: false,
+            version: 1,
+            created_at: "2099-07-27T10:00:00Z".to_string(),
+            updated_at: "2099-07-27T10:01:00Z".to_string(),
+            activated_at: Some("2099-07-27T10:00:00Z".to_string()),
+            deactivated_at: None,
+        })
+        .expect("failed current binding should persist");
+    let state = AgentHttpState::new(
+        repository,
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+
+    let (status, response) = get_json_response(
+        &app,
+        &format!("/app/v3/api/ai/session_activity_summaries?agent_id={agent_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response["data"]["items"][0]["latestRuntimeBinding"]["status"],
+        "failed"
+    );
+    assert!(response["data"]["items"][0]["currentRuntimeBinding"].is_null());
+    assert_eq!(response["data"]["items"][0]["presentationPhase"], "failed");
+}
+
+#[tokio::test]
+async fn app_session_activity_snapshot_moves_user_state_updates_to_head() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.activity.user.state";
+    let low_session_id = "session.activity.user.state.low";
+    create_agent(&app, agent_id, "User State Activity Agent").await;
+    create_app_session(
+        &app,
+        agent_id,
+        low_session_id,
+        "Low before pin",
+        "2026-06-01T10:00:00Z",
+    )
+    .await;
+    create_app_session(
+        &app,
+        agent_id,
+        "session.activity.user.state.high",
+        "High before pin",
+        "2026-06-02T10:00:00Z",
+    )
+    .await;
+
+    patch_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{low_session_id}/user_state"),
+        json!({
+            "expectedVersion": null,
+            "pinned": true,
+            "customTitle": "Pinned in another app"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+
+    let (status, response) = get_json_response(
+        &app,
+        &format!("/app/v3/api/ai/session_activity_summaries?agent_id={agent_id}&page_size=1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let item = &response["data"]["items"][0];
+    assert_eq!(item["session"]["sessionId"], low_session_id);
+    assert_eq!(item["userState"]["resourceId"], low_session_id);
+    assert_eq!(item["userState"]["customTitle"], "Pinned in another app");
+    assert_eq!(item["freshness"]["source"], "user_state");
+    assert_eq!(item["freshness"]["userStateVersion"], "0");
+}
+
+#[tokio::test]
+async fn app_provider_session_without_live_evidence_is_unknown_not_ready() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.activity.provider";
+    create_agent(&app, agent_id, "Provider Activity Agent").await;
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/provider_bindings"),
+        json!({
+            "bindingId": "binding.agent-provider.codex",
+            "providerId": "provider.activity.codex",
+            "implementationKind": "typed-local-provider",
+            "configurationProfileId": "profile.activity.codex",
+            "capabilities": ["model.chat"],
+            "makeDefault": true,
+            "requestedAt": "2099-07-27T10:00:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let session_id = "session.activity.provider";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "Provider",
+        "2099-07-27T10:01:00Z",
+    )
+    .await;
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/runtime_bindings"),
+        json!({
+            "runtimeBindingId": "runtime_binding.activity.provider",
+            "hostMode": "local",
+            "transportKind": "provider-session-history",
+            "providerBindingId": "binding.agent-provider.codex",
+            "modelId": "model.activity.codex",
+            "providerId": "provider.activity.codex",
+            "providerSessionId": "provider.activity.missing",
+            "requestedAt": "2099-07-27T10:02:00Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+
+    let (status, body) = get_json_response(
+        &app,
+        &format!("/app/v3/api/ai/session_activity_summaries?agent_id={agent_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let item = &body["data"]["items"][0];
+    assert_eq!(item["presentationPhase"], "unknown");
+    assert_eq!(item["providerActivity"]["freshness"], "unsupported");
+    assert!(item["providerActivity"]["freshUntil"].is_null());
 }

@@ -1,6 +1,6 @@
 # SDKWork Agents Session Model Specification
 
-- Version: `5.1.0`
+- Version: `5.2.0`
 - Status: active
 - Owner: `agents-platform`
 - Authority: `AGENTS_DOMAIN_SPEC.md`
@@ -38,6 +38,20 @@ Creation is idempotent and requires `sessionKind`, `entrySurface`,
 `idempotencyKey`, `payloadHash` and `requestedAt`. Tenant, organization and
 owner are resolved only from trusted request context.
 
+A replay in the same tenant, organization and owner scope with the same
+idempotency key and payload hash returns the existing Session. Reusing the key
+with a different payload, agent, project or explicit Session id is a conflict.
+
+Every agent-nested Session lifecycle and child-resource operation validates
+that the `{agentId}` path identity matches the persisted Session. Mismatches
+fail as not found so callers cannot enumerate resources across agent paths.
+
+T1 code-engine identities advertised by the default runtime catalog are stable
+Kernel manifest identities. Before validating a new Session reference, Agents
+idempotently materializes the tenant business-agent projection and its provider
+binding. Arbitrary, unavailable and opt-in agent identities still fail closed;
+products never create these projections or substitute legacy aliases.
+
 A session does not contain IM resource identities, an embedded Workspace
 snapshot, filesystem paths, copied catalogs, raw credentials or unbounded
 provider metadata.
@@ -49,7 +63,7 @@ provider metadata.
 - Agents provider binding and model references;
 - an opaque `runtimeLocationId` supplied by a product;
 - host mode and transport kind;
-- provider-native session, tree, parent and fork identifiers;
+- provider session, tree, parent and fork identifiers;
 - lifecycle and optimistic version.
 
 Only one current binding may be active for a session. Runtime-location details
@@ -113,6 +127,98 @@ Restore validates tenant, organization, owner, agent, session, runtime binding,
 checkpoint lifecycle and expected version before invoking the runtime.
 
 ## 8. Product Integration
+
+### 8.1 Current-State Activity Snapshot
+
+The App API exposes `GET /app/v3/api/ai/session_activity_summaries` as the
+canonical owner-scoped Session list projection. It is a bounded current-state
+snapshot, not a second Session authority and not a durable change feed.
+
+Each row composes the durable Session, latest Turn, one deterministic pending
+Interaction, current runtime binding, the authenticated owner's Session
+resource user-state, provider session identity, revision freshness and an
+effective presentation phase. Pending approvals take priority over pending user
+questions; the newest Interaction wins within the same kind. User-state changes
+such as pin, hidden, unread position and custom title participate in
+`activityAt` with the `user_state` source, so cross-application presentation
+changes converge through the same head scan. Soft-deleted Sessions remain
+visible as `deleted` tombstones when they fall in the requested snapshot page.
+`latestInteractionId`/`latestInteractionVersion` and
+`latestRuntimeBindingId`/`latestRuntimeBindingVersion` remain present even when
+the corresponding `pendingInteraction` or `currentRuntimeBinding` becomes null.
+Versions are monotonic only within the matching identity, not across the
+Interaction or RuntimeBinding collection. Consumers compare the complete
+`activityAt + identity + version` evidence to reject stale snapshots and clear
+previous pending/current presentation state.
+`currentRuntimeBinding` follows the database invariant and is always active;
+`latestRuntimeBinding` retains the latest full binding record. When there is no
+active current binding and that latest record is `failed`, the presentation
+phase is `failed` only when its `updatedAt` is at least as recent as the
+canonical latest Turn. A later Turn may therefore supersede an older binding
+failure, while a later binding failure supersedes an older Turn phase. Latest
+`deactivated` or `deleted` records are tombstones for clearing current binding
+state and do not masquerade as failures.
+
+The canonical `latestTurn` is the Turn with the greatest immutable internal
+Turn id (the model has no separate Turn sequence field), independent of later
+updates to older Turns. A separate Turn activity projection allows any Turn
+update to advance `activityAt` without replacing the canonical latest Turn or
+changing the presentation phase to an older execution.
+
+Rows are ordered by `(activityAt DESC, internal Session id DESC)`. A null
+cursor starts a new head snapshot. An opaque cursor continues only the current
+bounded traversal and is bound to tenant, organization, owner, workspace,
+project and agent filters. Consumers must start each refresh cycle at the null
+cursor and may then follow `nextCursor`; they must not retain a cursor as a
+change-feed watermark. Moving heads converge on the next null-cursor refresh.
+
+Native runtime observations are query-time evidence and are never persisted as
+fake Turns, Interactions or shadow-table records. Only `fresh` provider status,
+event, lock or process evidence with both `observedAt` and a future bounded
+`freshUntil` may change the effective phase. `stale`,
+`unsupported` and `unavailable` observations project to `unknown`, never to
+`ready` or `idle`. Consumers must fail closed when `freshUntil` expires. Static
+history inventory and file modification timestamps are not live activity.
+Deleted, archived or closed Sessions, persisted pending Interactions, a latest
+failed runtime binding when no active current binding exists, and leased
+requested/running Turns outrank provider evidence. For an active Session otherwise projected as `ready`, `idle`,
+`completed` or `unknown`, fresh native `working`, `waiting` or `failed` evidence
+overrides the settled phase so another application's live execution remains
+visible.
+
+The provider activity interfaces currently define ingestion and lookup, but
+external Codex app-server, Claude hook, OpenCode event and Gemini AgentEvent
+collectors are separate runtime wiring. Without collector ingestion, the
+snapshot reports the provider observation as `unsupported` rather than guessing.
+
+The current PostgreSQL implementation performs one bounded-result projection
+query and removes application-layer N+1 reads, but the baseline schema does not
+provide an owner-scoped cross-component activity-head index. A large owner scope
+may therefore require a broad CTE scan and sort before applying the page limit.
+A production store-bounded plan requires human-reviewed schema work for a
+materialized/equivalent Session activity-head projection indexed by owner and
+`activityAt`; this contract does not authorize that migration.
+
+Provider observations are enriched only after the durable page is selected. A
+provider-only activity change therefore cannot promote an otherwise old
+Session into the durable head page; Turn ingestion remains the discovery path
+until the human-reviewed activity-head projection also ingests provider
+activity.
+
+The in-memory activity index normalizes RFC3339 offsets to UTC and retains the
+greatest observed activity time, but the persisted model currently stores
+client-supplied lifecycle timestamps without a server-owned monotonic activity
+revision. A regressing client clock can therefore weaken PostgreSQL ordering;
+closing that gap requires a contract and schema decision for a server-owned
+revision or strict cross-resource timestamp guards.
+
+Workspace filtering excludes deleted Projects. Because project deletion does
+not currently emit a Session-scope tombstone, a consumer caching a filtered
+workspace cannot infer removals from this snapshot alone. Project deletion
+cascade/tombstone semantics must be defined by the owning Project contract
+before that cache-eviction path is complete.
+
+### 8.2 Product Mapping
 
 Product applications map their domain context to stable Agents references:
 

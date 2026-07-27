@@ -395,6 +395,10 @@ fn resource_user_state_repository_filters_before_pagination() {
 
     let query = ResourceUserStateListQuery::for_user_sessions(10, 20, 30)
         .for_agent("agent.alpha")
+        .for_resource_ids(vec![
+            "session.alpha".to_string(),
+            "session.missing".to_string(),
+        ])
         .pinned_only()
         .with_pagination(PaginationParams::default().with_page_size(1));
     let records = repository.list_resource_user_states(&query).unwrap();
@@ -417,8 +421,9 @@ fn postgres_user_state_sql_is_scoped_parameterized_and_versioned() {
         assert!(sql.contains("session.owner_user_id = state.user_id"));
         assert!(sql.contains("session.agent_id = $5"));
         assert!(sql.contains("session.deleted_at IS NULL"));
+        assert!(sql.contains("state.resource_id = ANY($8::text[])"));
     }
-    assert!(SQL_LIST_AGENT_RESOURCE_USER_STATES.contains("LIMIT $8 OFFSET $9"));
+    assert!(SQL_LIST_AGENT_RESOURCE_USER_STATES.contains("LIMIT $9 OFFSET $10"));
 }
 
 #[test]

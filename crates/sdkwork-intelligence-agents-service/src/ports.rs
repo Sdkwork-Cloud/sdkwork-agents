@@ -7,6 +7,9 @@ use crate::domain::{
     AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentVisibility,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
+use crate::session_activity::{
+    session_activity_scope_fingerprint, SessionActivityCursor, SessionActivitySummaryRecord,
+};
 use crate::validation::optional_non_blank;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
@@ -367,6 +370,70 @@ pub struct SessionListQuery {
     pub pagination: PaginationParams,
 }
 
+/// Owner-scoped cursor query for the canonical Session activity projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionActivitySummaryListQuery {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub owner_user_id: u64,
+    pub agent_id: Option<String>,
+    pub project_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub cursor: Option<SessionActivityCursor>,
+    pub page_size: usize,
+}
+
+impl SessionActivitySummaryListQuery {
+    pub fn for_owner(tenant_id: u64, organization_id: u64, owner_user_id: u64) -> Self {
+        Self {
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            agent_id: None,
+            project_id: None,
+            workspace_id: None,
+            cursor: None,
+            page_size: DEFAULT_PAGE_SIZE,
+        }
+    }
+
+    pub fn for_agent(mut self, agent_id: impl Into<String>) -> Self {
+        self.agent_id = optional_non_blank(agent_id.into());
+        self
+    }
+
+    pub fn for_project(mut self, project_id: impl Into<String>) -> Self {
+        self.project_id = optional_non_blank(project_id.into());
+        self
+    }
+
+    pub fn for_workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = optional_non_blank(workspace_id.into());
+        self
+    }
+
+    pub fn after(mut self, cursor: SessionActivityCursor) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    pub fn with_page_size(mut self, page_size: usize) -> Self {
+        self.page_size = page_size;
+        self
+    }
+
+    pub fn scope_fingerprint(&self) -> String {
+        session_activity_scope_fingerprint(
+            self.tenant_id,
+            self.organization_id,
+            self.owner_user_id,
+            self.workspace_id.as_deref(),
+            self.project_id.as_deref(),
+            self.agent_id.as_deref(),
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectListQuery {
     pub tenant_id: u64,
@@ -542,6 +609,7 @@ pub struct ResourceUserStateListQuery {
     pub user_id: u64,
     pub resource_type: AgentResourceType,
     pub agent_id: Option<String>,
+    pub resource_ids: Vec<String>,
     pub pinned_only: bool,
     pub include_hidden: bool,
     pub pagination: PaginationParams,
@@ -555,6 +623,7 @@ impl ResourceUserStateListQuery {
             user_id,
             resource_type: AgentResourceType::Session,
             agent_id: None,
+            resource_ids: Vec::new(),
             pinned_only: false,
             include_hidden: false,
             pagination: PaginationParams::default(),
@@ -568,6 +637,11 @@ impl ResourceUserStateListQuery {
 
     pub fn for_agent(mut self, agent_id: impl Into<String>) -> Self {
         self.agent_id = Some(agent_id.into());
+        self
+    }
+
+    pub fn for_resource_ids(mut self, resource_ids: Vec<String>) -> Self {
+        self.resource_ids = resource_ids;
         self
     }
 
@@ -1123,9 +1197,22 @@ pub trait AgentRepository: Send + Sync {
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRecord>>;
 
+    fn get_session_by_creation_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentSessionRecord>>;
+
     fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>>;
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64>;
+
+    fn list_session_activity_summaries(
+        &self,
+        query: &SessionActivitySummaryListQuery,
+    ) -> KernelResult<PaginatedResult<SessionActivitySummaryRecord>>;
 
     fn insert_session_runtime_binding(
         &self,

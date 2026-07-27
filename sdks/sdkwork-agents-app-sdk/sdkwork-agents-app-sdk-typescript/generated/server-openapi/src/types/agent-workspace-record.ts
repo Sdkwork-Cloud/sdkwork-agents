@@ -14,5 +14,5 @@ export interface AgentWorkspaceRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  archivedAt?: string;
+  archivedAt?: string | null;
 }

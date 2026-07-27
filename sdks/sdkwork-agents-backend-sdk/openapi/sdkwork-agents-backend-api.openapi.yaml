@@ -4280,16 +4280,16 @@ components:
         providerId:
           type: string
           pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        nativeSessionId:
+        providerSessionId:
           type: [string, 'null']
           maxLength: 256
-        nativeSessionTreeId:
+        providerSessionTreeId:
           type: [string, 'null']
           maxLength: 256
-        nativeParentSessionId:
+        providerParentSessionId:
           type: [string, 'null']
           maxLength: 256
-        nativeForkedFromSessionId:
+        providerForkedFromSessionId:
           type: [string, 'null']
           maxLength: 256
         status:
@@ -4376,16 +4376,16 @@ components:
         providerId:
           type: string
           pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        nativeSessionId:
+        providerSessionId:
           type: string
           maxLength: 256
-        nativeSessionTreeId:
+        providerSessionTreeId:
           type: string
           maxLength: 256
-        nativeParentSessionId:
+        providerParentSessionId:
           type: string
           maxLength: 256
-        nativeForkedFromSessionId:
+        providerForkedFromSessionId:
           type: string
           maxLength: 256
         requestedAt:
@@ -4417,16 +4417,16 @@ components:
         providerId:
           type: string
           pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        nativeSessionId:
+        providerSessionId:
           type: string
           maxLength: 256
-        nativeSessionTreeId:
+        providerSessionTreeId:
           type: string
           maxLength: 256
-        nativeParentSessionId:
+        providerParentSessionId:
           type: string
           maxLength: 256
-        nativeForkedFromSessionId:
+        providerForkedFromSessionId:
           type: string
           maxLength: 256
         expectedVersion:

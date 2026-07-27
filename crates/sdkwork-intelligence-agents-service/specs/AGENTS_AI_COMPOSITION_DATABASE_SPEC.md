@@ -110,7 +110,7 @@ pair. The application service applies the same rule before persistence.
 | Table | Profile | Responsibility |
 | --- | --- | --- |
 | `ai_agent_session` | tenant entity | The sole durable agent execution session |
-| `ai_agent_session_runtime_binding` | tenant entity | Current/previous runtime selection and provider-native lineage |
+| `ai_agent_session_runtime_binding` | tenant entity | Current/previous runtime selection and provider Session lineage |
 | `ai_agent_turn` | operational state | One idempotent execution command with retry, lease and fencing state |
 | `ai_agent_session_item` | tenant entity | Ordered typed input, output, tool, artifact or status item |
 | `ai_agent_item_drive_ref` | relation entity | Typed relation from an item to Drive-owned resources |
@@ -121,7 +121,7 @@ pair. The application service applies the same rule before persistence.
 The aggregate relationships are tenant and organization scoped. Session
 lineage uses `parent_session_id` together with `forked_from_turn_id`; both are
 present or both are absent. Only one current runtime binding may exist for a
-session. Provider-native identifiers are opaque and unique only inside their
+session. Provider Session identifiers are opaque and unique only inside their
 provider/runtime scope.
 
 ### 4.4 Operational reliability

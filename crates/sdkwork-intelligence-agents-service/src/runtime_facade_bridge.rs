@@ -34,6 +34,25 @@ pub fn engine_key_for_binding_id(binding_id: &str) -> Option<&'static str> {
         .map(|v| v as _)
 }
 
+pub fn engine_key_for_provider_identity(
+    binding_id: Option<&str>,
+    provider_id: Option<&str>,
+) -> Option<&'static str> {
+    binding_id.and_then(engine_key_for_binding_id).or_else(|| {
+        let provider_id = provider_id?;
+        canonical_code_engine_keys()
+            .iter()
+            .copied()
+            .find(|engine_key| {
+                bootstrap_code_engine(engine_key).ok().is_some_and(|slot| {
+                    slot.list_model_descriptors()
+                        .iter()
+                        .any(|descriptor| descriptor.provider_id == provider_id)
+                })
+            })
+    })
+}
+
 fn resolve_engine_and_model(
     active_binding: Option<&AgentProviderBindingRecord>,
     requested_model: Option<&str>,
@@ -166,6 +185,14 @@ mod tests {
             Some("opencode")
         );
         assert!(engine_key_for_binding_id("binding.unknown").is_none());
+    }
+
+    #[test]
+    fn resolves_engine_from_provider_identity_when_binding_id_is_custom() {
+        assert_eq!(
+            engine_key_for_provider_identity(Some("binding.custom"), Some("provider.model.codex")),
+            Some("codex")
+        );
     }
 
     #[test]

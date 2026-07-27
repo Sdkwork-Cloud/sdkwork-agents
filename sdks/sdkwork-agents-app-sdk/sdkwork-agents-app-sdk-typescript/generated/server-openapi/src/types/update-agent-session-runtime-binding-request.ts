@@ -8,10 +8,10 @@ export interface UpdateAgentSessionRuntimeBindingRequest {
   providerBindingId?: string;
   modelId?: string;
   providerId?: string;
-  nativeSessionId?: string;
-  nativeSessionTreeId?: string;
-  nativeParentSessionId?: string;
-  nativeForkedFromSessionId?: string;
+  providerSessionId?: string;
+  providerSessionTreeId?: string;
+  providerParentSessionId?: string;
+  providerForkedFromSessionId?: string;
   expectedVersion: Int64String;
   requestedAt: string;
 }

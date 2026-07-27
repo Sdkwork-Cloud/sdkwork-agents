@@ -9,7 +9,7 @@ mod readiness;
 
 pub use bootstrap::{assemble_api_router, ApiAssembly};
 pub use contribution::{
-    assemble_app_api_contribution, assemble_app_api_contribution_with_native_session_cwd_resolver,
+    assemble_app_api_contribution, assemble_app_api_contribution_with_provider_session_cwd_resolver,
     assemble_app_runtime_contribution, ApiAssemblyContribution, AppRuntimeContribution,
 };
 

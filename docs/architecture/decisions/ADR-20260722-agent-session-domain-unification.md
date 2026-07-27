@@ -35,7 +35,7 @@ bindings and composition slots without changing its core vocabulary.
   SessionItem and Interaction consistently.
 - Products do not persist a second agent execution history.
 - IM and Agents keep separate data owners and transaction boundaries.
-- Provider-native identities remain opaque runtime references.
+- Provider Session identities remain opaque runtime references.
 - Skills, prompts, memory, knowledge, MCP, model profiles and Drive remain
   independent modules.
 - There is no compatibility facade, shadow persistence or cross-module SQL.

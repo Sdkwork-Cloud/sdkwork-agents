@@ -130,7 +130,7 @@ class AiApi {
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
-      QueryParameterSpec('includeDeleted', includeDeleted, 'form', true, false, null)
+      QueryParameterSpec('include_deleted', includeDeleted, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/workspaces'), query));
     return (() {
@@ -204,7 +204,7 @@ class AiApi {
       QueryParameterSpec('workspaceId', workspaceId, 'form', true, false, null),
       QueryParameterSpec('q', q, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
-      QueryParameterSpec('includeDeleted', includeDeleted, 'form', true, false, null)
+      QueryParameterSpec('include_deleted', includeDeleted, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/projects'), query));
     return (() {
@@ -335,14 +335,14 @@ class AiApi {
   }
 
   /// List agent sessions for one project
-  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [int? page, int? pageSize, String? status, bool? includeArchived, String? nativeDirectoryName, String? nativeDirectoryFingerprint]) async {
+  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [int? page, int? pageSize, String? status, bool? includeArchived, String? providerSessionDirectoryName, String? providerSessionDirectoryFingerprint]) async {
     final query = buildQueryString([
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
       QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null),
-      QueryParameterSpec('native_directory_name', nativeDirectoryName, 'form', true, false, null),
-      QueryParameterSpec('native_directory_fingerprint', nativeDirectoryFingerprint, 'form', true, false, null)
+      QueryParameterSpec('provider_session_directory_name', providerSessionDirectoryName, 'form', true, false, null),
+      QueryParameterSpec('provider_session_directory_fingerprint', providerSessionDirectoryFingerprint, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/sessions'), query));
     return (() {
@@ -358,6 +358,22 @@ class AiApi {
     return (() {
       final map = sdkworkResponseAsMap(response);
       return map == null ? null : AgentSessionResponse.fromJson(map);
+    })();
+  }
+
+  /// List the authenticated owner's current Session activity snapshot
+  Future<SessionActivitySummaryListResponse?> agentsSessionActivitySummariesList([String? cursor, int? pageSize, String? workspaceId, String? projectId, String? agentId]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
+      QueryParameterSpec('workspace_id', workspaceId, 'form', true, false, null),
+      QueryParameterSpec('project_id', projectId, 'form', true, false, null),
+      QueryParameterSpec('agent_id', agentId, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/session_activity_summaries'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : SessionActivitySummaryListResponse.fromJson(map);
     })();
   }
 
@@ -388,12 +404,13 @@ class AiApi {
   }
 
   /// List per-user state for agent sessions owned by the authenticated user
-  Future<AgentResourceUserStateListResponse?> agentsSessionUserStatesList(String agentId, [int? page, int? pageSize, bool? pinnedOnly, bool? includeHidden]) async {
+  Future<AgentResourceUserStateListResponse?> agentsSessionUserStatesList(String agentId, [int? page, int? pageSize, bool? pinnedOnly, bool? includeHidden, String? sessionIds]) async {
     final query = buildQueryString([
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
-      QueryParameterSpec('pinnedOnly', pinnedOnly, 'form', true, false, null),
-      QueryParameterSpec('includeHidden', includeHidden, 'form', true, false, null)
+      QueryParameterSpec('pinned_only', pinnedOnly, 'form', true, false, null),
+      QueryParameterSpec('include_hidden', includeHidden, 'form', true, false, null),
+      QueryParameterSpec('session_ids', sessionIds, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/user_states'), query));
     return (() {

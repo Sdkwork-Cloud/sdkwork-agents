@@ -36,7 +36,7 @@ Agents owns:
 - managed agent identity, lifecycle, runtime and composition bindings;
 - agent workspaces, Workspace-scoped projects, sessions, turns, session items
   and interactions;
-- provider-native session bindings, fork lineage and resumable checkpoints;
+- provider session bindings, fork lineage and resumable checkpoints;
 - turn idempotency, retry/lease state, usage, audit and outbox facts;
 - typed Drive references attached to session items;
 - scheduled agent tasks and per-user Agents resource state.
@@ -95,7 +95,7 @@ Consumers may supply these bounded references:
 
 - `sourceModule`, `sourceContextKind`, `sourceContextId` on session creation;
 - `runtimeLocationId` on a session runtime binding;
-- `providerBindingId`, `modelId` and provider-native session identifiers;
+- `providerBindingId`, `modelId` and provider session identifiers;
 - Drive resource identifiers on item relations.
 
 Agents stores no snapshot of the external resource and never resolves it with

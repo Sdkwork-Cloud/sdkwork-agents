@@ -14,15 +14,19 @@ use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
     InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery,
-    SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery,
-    TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
+    ResourceUserStateListQuery, SessionActivitySummaryListQuery, SessionCheckpointListQuery,
+    SessionItemListQuery, SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery,
+    TaskListQuery, TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
 use crate::project::{
     project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode,
     AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
+};
+use crate::session_activity::{
+    encode_session_activity_cursor, SessionActivityCursor, SessionActivitySource,
+    SessionActivitySummaryRecord,
 };
 use crate::validation::{validate_capabilities, validate_standard_id};
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
@@ -138,7 +142,8 @@ pub use sql::{
     SQL_INSERT_AGENT_WORKSPACE, SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
     SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
-    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS,
+    SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
     SQL_LIST_AGENT_WORKSPACES, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
@@ -147,7 +152,8 @@ pub use sql::{
     SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
     SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE, SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME,
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
-    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
+    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY,
+    SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
     SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
     SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
@@ -817,6 +823,20 @@ impl AgentSessionRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionActivityHeadRow {
+    pub session: AgentSessionRow,
+    pub activity_at: String,
+    pub activity_source: SessionActivitySource,
+    pub latest_turn: Option<AgentTurnRow>,
+    pub pending_interaction: Option<AgentInteractionRow>,
+    pub current_runtime_binding: Option<AgentSessionRuntimeBindingRow>,
+    pub latest_runtime_binding: Option<AgentSessionRuntimeBindingRow>,
+    pub user_state: Option<AgentResourceUserStateRow>,
+    pub latest_interaction_id: Option<String>,
+    pub latest_interaction_version: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionRuntimeBindingRow {
     pub id: u64,
     pub uuid: String,
@@ -830,10 +850,10 @@ pub struct AgentSessionRuntimeBindingRow {
     pub provider_binding_id: String,
     pub model_id: String,
     pub provider_id: String,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
     pub status: i16,
     pub is_current: bool,
     pub version: u64,
@@ -863,10 +883,10 @@ impl AgentSessionRuntimeBindingRow {
             provider_binding_id: record.provider_binding_id.clone(),
             model_id: record.model_id.clone(),
             provider_id: record.provider_id.clone(),
-            native_session_id: record.native_session_id.clone(),
-            native_session_tree_id: record.native_session_tree_id.clone(),
-            native_parent_session_id: record.native_parent_session_id.clone(),
-            native_forked_from_session_id: record.native_forked_from_session_id.clone(),
+            provider_session_id: record.provider_session_id.clone(),
+            provider_session_tree_id: record.provider_session_tree_id.clone(),
+            provider_parent_session_id: record.provider_parent_session_id.clone(),
+            provider_forked_from_session_id: record.provider_forked_from_session_id.clone(),
             status: record.status.as_db_code(),
             is_current: record.is_current,
             version: record.version,
@@ -890,10 +910,10 @@ impl AgentSessionRuntimeBindingRow {
             provider_binding_id: self.provider_binding_id,
             model_id: self.model_id,
             provider_id: self.provider_id,
-            native_session_id: self.native_session_id,
-            native_session_tree_id: self.native_session_tree_id,
-            native_parent_session_id: self.native_parent_session_id,
-            native_forked_from_session_id: self.native_forked_from_session_id,
+            provider_session_id: self.provider_session_id,
+            provider_session_tree_id: self.provider_session_tree_id,
+            provider_parent_session_id: self.provider_parent_session_id,
+            provider_forked_from_session_id: self.provider_forked_from_session_id,
             status: AgentSessionRuntimeBindingStatus::from_db_code(self.status)
                 .ok_or_else(|| KernelError::validation("invalid session runtime binding status"))?,
             is_current: self.is_current,
@@ -990,7 +1010,7 @@ impl AgentSessionCheckpointRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentResourceUserStateRow {
     pub id: u64,
     pub uuid: String,
@@ -1309,7 +1329,7 @@ impl AgentSessionItemRow {
 // AgentInteractionRow — persistence row for ai_agent_interaction
 // ============================================================================
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentTurnRow {
     pub id: u64,
     pub uuid: String,
@@ -1455,7 +1475,7 @@ impl AgentTurnRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentInteractionRow {
     pub id: u64,
     pub uuid: String,
@@ -2035,7 +2055,18 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRow>>;
+    fn get_session_row_by_creation_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentSessionRow>>;
     fn list_session_rows(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRow>>;
+    fn list_session_activity_head_rows(
+        &self,
+        query: &SessionActivitySummaryListQuery,
+    ) -> KernelResult<Vec<AgentSessionActivityHeadRow>>;
     fn count_session_rows(&self, query: &SessionListQuery) -> KernelResult<u64>;
     fn insert_session_runtime_binding_row(
         &self,
@@ -2626,6 +2657,24 @@ where
             .transpose()
     }
 
+    fn get_session_by_creation_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentSessionRecord>> {
+        self.adapter
+            .get_session_row_by_creation_idempotency(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                idempotency_key,
+            )?
+            .map(AgentSessionRow::into_record)
+            .transpose()
+    }
+
     fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>> {
         self.adapter
             .list_session_rows(query)?
@@ -2636,6 +2685,78 @@ where
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64> {
         self.adapter.count_session_rows(query)
+    }
+
+    fn list_session_activity_summaries(
+        &self,
+        query: &SessionActivitySummaryListQuery,
+    ) -> KernelResult<crate::ports::PaginatedResult<SessionActivitySummaryRecord>> {
+        let mut heads = self.adapter.list_session_activity_head_rows(query)?;
+        let has_more = heads.len() > query.page_size;
+        if has_more {
+            heads.pop();
+        }
+        let mut items = Vec::with_capacity(heads.len());
+        for head in heads {
+            let session = head.session.into_record()?;
+            let latest_turn = head
+                .latest_turn
+                .map(AgentTurnRow::into_record)
+                .transpose()?;
+            let pending_interaction = head
+                .pending_interaction
+                .map(AgentInteractionRow::into_record)
+                .transpose()?;
+            let current_runtime_binding = head
+                .current_runtime_binding
+                .map(AgentSessionRuntimeBindingRow::into_record)
+                .transpose()?;
+            let latest_runtime_binding = head
+                .latest_runtime_binding
+                .map(AgentSessionRuntimeBindingRow::into_record)
+                .transpose()?;
+            let user_state = head
+                .user_state
+                .map(AgentResourceUserStateRow::into_record)
+                .transpose()?;
+            items.push(SessionActivitySummaryRecord::from_parts(
+                session,
+                latest_turn,
+                pending_interaction,
+                current_runtime_binding,
+                latest_runtime_binding,
+                user_state,
+                head.latest_interaction_id
+                    .zip(head.latest_interaction_version),
+                head.activity_at,
+                head.activity_source,
+            ));
+        }
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|summary| SessionActivityCursor {
+                    activity_at: summary.freshness.activity_at.clone(),
+                    session_internal_id: summary.session.id,
+                    scope_fingerprint: query.scope_fingerprint(),
+                })
+                .map(|cursor| encode_session_activity_cursor(&cursor))
+                .transpose()?
+        } else if items.is_empty() {
+            query
+                .cursor
+                .as_ref()
+                .map(encode_session_activity_cursor)
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(crate::ports::PaginatedResult {
+            items,
+            next_page_token,
+            total_count: None,
+            has_more,
+        })
     }
 
     fn insert_session_runtime_binding(
@@ -4967,6 +5088,29 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn get_session_row_by_creation_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentSessionRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                idempotency_key
+            )?;
+            row.map(pg_row_to_agent_session_row).transpose()
+        })
+    }
+
     fn list_session_rows(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
         let organization_id = query
@@ -5005,6 +5149,97 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 offset
             )?;
             rows.into_iter().map(pg_row_to_agent_session_row).collect()
+        })
+    }
+
+    fn list_session_activity_head_rows(
+        &self,
+        query: &SessionActivitySummaryListQuery,
+    ) -> KernelResult<Vec<AgentSessionActivityHeadRow>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(query.owner_user_id, "owner_user_id")?;
+        let agent_id = query.agent_id.as_deref();
+        let project_id = query.project_id.as_deref();
+        let workspace_id = query.workspace_id.as_deref();
+        let cursor_activity_at = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.activity_at.as_str());
+        let cursor_session_internal_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.session_internal_id, "cursor.session_internal_id"))
+            .transpose()?;
+        let page_limit = query
+            .page_size
+            .checked_add(1)
+            .ok_or_else(|| KernelError::validation("page_size is too large"))?;
+        let page_limit = usize_to_i64(page_limit, "page_size")?;
+
+        self.with_pool(|pool| {
+            let rows = pg_query!(
+                pool,
+                SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                agent_id,
+                project_id,
+                workspace_id,
+                cursor_activity_at,
+                cursor_session_internal_id,
+                page_limit
+            )?;
+            rows.into_iter()
+                .map(|row| {
+                    let activity_at = row.try_get("activity_at").map_err(map_sqlx_error)?;
+                    let activity_source: String =
+                        row.try_get("activity_source").map_err(map_sqlx_error)?;
+                    let latest_turn = deserialize_optional_projection_row(
+                        row.try_get("latest_turn_json").map_err(map_sqlx_error)?,
+                        "latest Turn",
+                    )?;
+                    let pending_interaction = deserialize_optional_interaction_projection_row(
+                        row.try_get("pending_interaction_json")
+                            .map_err(map_sqlx_error)?,
+                    )?;
+                    let current_runtime_binding = deserialize_optional_projection_row(
+                        row.try_get("current_runtime_binding_json")
+                            .map_err(map_sqlx_error)?,
+                        "current runtime binding",
+                    )?;
+                    let latest_runtime_binding = deserialize_optional_projection_row(
+                        row.try_get("latest_runtime_binding_json")
+                            .map_err(map_sqlx_error)?,
+                        "latest runtime binding",
+                    )?;
+                    let user_state = deserialize_optional_projection_row(
+                        row.try_get("user_state_json").map_err(map_sqlx_error)?,
+                        "Session user state",
+                    )?;
+                    let latest_interaction_version = row
+                        .try_get::<Option<i64>, _>("latest_interaction_version")
+                        .map_err(map_sqlx_error)?
+                        .map(|value| int64_to_u64(value, "latest_interaction_version"))
+                        .transpose()?;
+                    let latest_interaction_id = row
+                        .try_get::<Option<String>, _>("latest_interaction_id")
+                        .map_err(map_sqlx_error)?;
+                    Ok(AgentSessionActivityHeadRow {
+                        session: pg_row_to_agent_session_row(row)?,
+                        activity_at,
+                        activity_source: SessionActivitySource::from_code(&activity_source)?,
+                        latest_turn,
+                        pending_interaction,
+                        current_runtime_binding,
+                        latest_runtime_binding,
+                        user_state,
+                        latest_interaction_id,
+                        latest_interaction_version,
+                    })
+                })
+                .collect()
         })
     }
 
@@ -5077,10 +5312,10 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.provider_binding_id,
                 row.model_id,
                 row.provider_id,
-                row.native_session_id,
-                row.native_session_tree_id,
-                row.native_parent_session_id,
-                row.native_forked_from_session_id,
+                row.provider_session_id,
+                row.provider_session_tree_id,
+                row.provider_parent_session_id,
+                row.provider_forked_from_session_id,
                 row.status,
                 row.is_current,
                 version,
@@ -5112,10 +5347,10 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.provider_binding_id,
                 row.model_id,
                 row.provider_id,
-                row.native_session_id,
-                row.native_session_tree_id,
-                row.native_parent_session_id,
-                row.native_forked_from_session_id,
+                row.provider_session_id,
+                row.provider_session_tree_id,
+                row.provider_parent_session_id,
+                row.provider_forked_from_session_id,
                 row.status,
                 row.is_current,
                 version,
@@ -5616,6 +5851,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 query.agent_id.as_deref(),
                 query.pinned_only,
                 query.include_hidden,
+                query.resource_ids.as_slice(),
                 page_size,
                 offset
             )?
@@ -5642,7 +5878,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 query.resource_type.as_db_code(),
                 query.agent_id.as_deref(),
                 query.pinned_only,
-                query.include_hidden
+                query.include_hidden,
+                query.resource_ids.as_slice()
             )?;
             let total = row
                 .map(|value| {
@@ -7412,6 +7649,49 @@ fn pg_row_to_agent_provider_binding_row(row: PgRow) -> KernelResult<AgentProvide
 }
 
 #[cfg(feature = "postgres-sync")]
+fn deserialize_optional_projection_row<T>(
+    value: Option<String>,
+    projection_name: &str,
+) -> KernelResult<Option<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    value
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|error| KernelError::Internal {
+                message: format!("stored Session activity {projection_name} is invalid: {error}"),
+            })
+        })
+        .transpose()
+}
+
+fn deserialize_optional_interaction_projection_row(
+    value: Option<String>,
+) -> KernelResult<Option<AgentInteractionRow>> {
+    value
+        .map(|value| {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&value).map_err(|error| KernelError::Internal {
+                    message: format!(
+                        "stored Session activity pending Interaction is invalid: {error}"
+                    ),
+                })?;
+            if let Some(record) = value.as_object_mut() {
+                for field in ["options_json", "resolution_json"] {
+                    if let Some(field_value) = record.get_mut(field) {
+                        if !field_value.is_null() && !field_value.is_string() {
+                            *field_value = serde_json::Value::String(field_value.to_string());
+                        }
+                    }
+                }
+            }
+            serde_json::from_value(value).map_err(|error| KernelError::Internal {
+                message: format!("stored Session activity pending Interaction is invalid: {error}"),
+            })
+        })
+        .transpose()
+}
+
 fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
     let archived_by: Option<i64> = row.try_get("archived_by").map_err(map_sqlx_error)?;
     let deleted_by: Option<i64> = row.try_get("deleted_by").map_err(map_sqlx_error)?;
@@ -7508,15 +7788,15 @@ fn pg_row_to_agent_session_runtime_binding_row(
         provider_binding_id: row.try_get("provider_binding_id").map_err(map_sqlx_error)?,
         model_id: row.try_get("model_id").map_err(map_sqlx_error)?,
         provider_id: row.try_get("provider_id").map_err(map_sqlx_error)?,
-        native_session_id: row.try_get("native_session_id").map_err(map_sqlx_error)?,
-        native_session_tree_id: row
-            .try_get("native_session_tree_id")
+        provider_session_id: row.try_get("provider_session_id").map_err(map_sqlx_error)?,
+        provider_session_tree_id: row
+            .try_get("provider_session_tree_id")
             .map_err(map_sqlx_error)?,
-        native_parent_session_id: row
-            .try_get("native_parent_session_id")
+        provider_parent_session_id: row
+            .try_get("provider_parent_session_id")
             .map_err(map_sqlx_error)?,
-        native_forked_from_session_id: row
-            .try_get("native_forked_from_session_id")
+        provider_forked_from_session_id: row
+            .try_get("provider_forked_from_session_id")
             .map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
         is_current: row.try_get("is_current").map_err(map_sqlx_error)?,

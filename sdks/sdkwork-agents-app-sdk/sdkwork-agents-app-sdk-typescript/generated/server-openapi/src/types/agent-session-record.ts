@@ -4,6 +4,7 @@ import type { AgentSessionStatus } from './agent-session-status';
 import type { Int64String } from './int64-string';
 
 export interface AgentSessionRecord {
+  id: Int64String;
   sessionId: string;
   tenantId: Int64String;
   organizationId: Int64String;
@@ -30,11 +31,11 @@ export interface AgentSessionRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  lastItemAt?: string;
-  closedAt?: string;
-  archivedAt?: string;
+  lastItemAt?: string | null;
+  closedAt?: string | null;
+  archivedAt?: string | null;
   archivedBy?: Int64String | null;
-  deletedAt?: string;
+  deletedAt?: string | null;
   deletedBy?: Int64String | null;
-  retentionUntil?: string;
+  retentionUntil?: string | null;
 }

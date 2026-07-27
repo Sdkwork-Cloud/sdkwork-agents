@@ -33,7 +33,7 @@ pub enum AgentsSessionEntrySurface {
 
 /// Optional runtime selection attached while resolving an Agents session.
 ///
-/// Provider and native runtime identifiers belong to this bounded binding
+/// Provider Session and runtime identifiers belong to this bounded binding
 /// contract. They must not be persisted directly on the session aggregate.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -45,10 +45,10 @@ pub struct AgentsSessionRuntimeBindingDescriptor {
     pub provider_binding_id: String,
     pub model_id: String,
     pub provider_id: String,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -245,20 +245,20 @@ fn validate_runtime_binding_descriptor(
             binding.runtime_location_id.as_deref(),
         ),
         (
-            "runtimeBinding.nativeSessionId",
-            binding.native_session_id.as_deref(),
+            "runtimeBinding.providerSessionId",
+            binding.provider_session_id.as_deref(),
         ),
         (
-            "runtimeBinding.nativeSessionTreeId",
-            binding.native_session_tree_id.as_deref(),
+            "runtimeBinding.providerSessionTreeId",
+            binding.provider_session_tree_id.as_deref(),
         ),
         (
-            "runtimeBinding.nativeParentSessionId",
-            binding.native_parent_session_id.as_deref(),
+            "runtimeBinding.providerParentSessionId",
+            binding.provider_parent_session_id.as_deref(),
         ),
         (
-            "runtimeBinding.nativeForkedFromSessionId",
-            binding.native_forked_from_session_id.as_deref(),
+            "runtimeBinding.providerForkedFromSessionId",
+            binding.provider_forked_from_session_id.as_deref(),
         ),
     ] {
         validate_optional_non_blank(field, value)?;
@@ -328,10 +328,10 @@ mod tests {
                 provider_binding_id: "binding.agent-provider.codex".to_string(),
                 model_id: "model.gpt-5".to_string(),
                 provider_id: "provider.openai".to_string(),
-                native_session_id: Some("native-session-001".to_string()),
-                native_session_tree_id: Some("native-tree-001".to_string()),
-                native_parent_session_id: Some("native-session-parent".to_string()),
-                native_forked_from_session_id: Some("native-session-origin".to_string()),
+                provider_session_id: Some("provider-session-001".to_string()),
+                provider_session_tree_id: Some("provider-tree-001".to_string()),
+                provider_parent_session_id: Some("provider-session-parent".to_string()),
+                provider_forked_from_session_id: Some("provider-session-origin".to_string()),
             }),
             actor: AgentsSessionActor {
                 subject_id: "user:300001".to_string(),
@@ -355,8 +355,8 @@ mod tests {
             "binding.agent-provider.codex"
         );
         assert_eq!(
-            value["runtimeBinding"]["nativeSessionTreeId"],
-            "native-tree-001"
+            value["runtimeBinding"]["providerSessionTreeId"],
+            "provider-tree-001"
         );
         assert!(value.get("providerBindingId").is_none());
     }

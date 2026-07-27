@@ -17,8 +17,9 @@ use crate::application::{
     GetTaskCommand, GetTurnByIdempotencyCommand, GetTurnCommand, GetWorkspaceCommand,
     ImportProjectCommand, ListAgentAuditEventsCommand, ListItemFeedbackCommand,
     ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand, ListProjectsCommand,
-    ListSessionCheckpointsCommand, ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
-    ListTurnsCommand, ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
+    ListSessionActivitySummariesCommand, ListSessionCheckpointsCommand,
+    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand, ListTurnsCommand,
+    ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
     UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
     UpdateSessionCommand, UpdateSessionUserStateCommand, UpdateWorkspaceCommand,
     WorkspaceMutationCommand,
@@ -45,7 +46,7 @@ use crate::dto::{
     CreateSessionRuntimeBindingRequestDto, CreateTaskRequestDto, DeleteAgentRequestDto,
     GetAgentRequestDto, InteractionClaimResultDto, ListAgentsRequestDto,
     ListInteractionsRequestDto, ListSessionItemsRequestDto, ListSessionsRequestDto,
-    ListTasksRequestDto, RestoreAgentRequestDto, UpdateAgentRequestDto,
+    ListTasksRequestDto, RestoreAgentRequestDto, SessionActivitySummaryDto, UpdateAgentRequestDto,
     UpdateAgentStatusRequestDto, UpdateSessionRuntimeBindingRequestDto,
 };
 use crate::mcp_marketplace::McpServerMarketplaceRecord;
@@ -53,8 +54,8 @@ use crate::ports::{
     AgentAuditSink, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
     ItemFeedbackListQuery, McpMarketplaceListQuery, PaginationParams,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionRuntimeBindingListQuery,
-    TurnListQuery, WorkspaceListQuery,
+    ResourceUserStateListQuery, SessionActivitySummaryListQuery, SessionCheckpointListQuery,
+    SessionRuntimeBindingListQuery, TurnListQuery, WorkspaceListQuery,
 };
 use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
@@ -63,6 +64,10 @@ use crate::project::{
 use crate::response::{
     created_json, finish_api_json, finish_created_api_json, no_content, success_json, ApiProblem,
     ApiResult, PageData, PageInfo, PageMode, ResourceData,
+};
+use crate::runtime_facade_bridge::{engine_key_for_provider_identity, shared_code_engine_host};
+use crate::session_activity::{
+    decode_session_activity_cursor, SessionActivitySummaryRecord, SessionProviderActivityObservation,
 };
 use crate::turn_runtime::{ContractTurnExecutor, TurnExecutor};
 use crate::validation::{
@@ -440,11 +445,33 @@ impl AgentRepository for DynAgentRepository {
         self.0.get_session(tenant_id, organization_id, session_id)
     }
 
+    fn get_session_by_creation_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<crate::domain::AgentSessionRecord>> {
+        self.0.get_session_by_creation_idempotency(
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            idempotency_key,
+        )
+    }
+
     fn list_sessions(
         &self,
         query: &crate::ports::SessionListQuery,
     ) -> KernelResult<Vec<crate::domain::AgentSessionRecord>> {
         self.0.list_sessions(query)
+    }
+
+    fn list_session_activity_summaries(
+        &self,
+        query: &crate::ports::SessionActivitySummaryListQuery,
+    ) -> KernelResult<crate::ports::PaginatedResult<crate::SessionActivitySummaryRecord>> {
+        self.0.list_session_activity_summaries(query)
     }
 
     fn count_sessions(&self, query: &crate::ports::SessionListQuery) -> KernelResult<u64> {
@@ -879,8 +906,8 @@ pub(crate) type HttpService =
 #[derive(Clone)]
 pub struct AgentHttpState {
     pub(crate) service: Arc<HttpService>,
-    native_session_cwd_resolver:
-        Option<Arc<dyn sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver>>,
+    provider_session_cwd_resolver:
+        Option<Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>>,
 }
 
 impl AgentHttpState {
@@ -917,15 +944,15 @@ impl AgentHttpState {
         .with_turn_executor(turn_executor);
         Self {
             service: Arc::new(service),
-            native_session_cwd_resolver: None,
+            provider_session_cwd_resolver: None,
         }
     }
 
-    pub fn with_native_session_cwd_resolver(
+    pub fn with_provider_session_cwd_resolver(
         mut self,
-        resolver: Arc<dyn sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver>,
+        resolver: Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>,
     ) -> Self {
-        self.native_session_cwd_resolver = Some(resolver);
+        self.provider_session_cwd_resolver = Some(resolver);
         self
     }
 
@@ -992,7 +1019,7 @@ impl AgentHttpState {
 
 pub(crate) struct HttpAgentsSessionFacade {
     pub(crate) service: Arc<HttpService>,
-    native_history_reconciliation: bool,
+    provider_session_history_reconciliation: bool,
 }
 
 struct EnsureRuntimeBindingRequest<'a> {
@@ -1010,14 +1037,14 @@ impl HttpAgentsSessionFacade {
     pub(crate) fn new(service: Arc<HttpService>) -> Self {
         Self {
             service,
-            native_history_reconciliation: false,
+            provider_session_history_reconciliation: false,
         }
     }
 
-    pub(crate) fn for_native_history_reconciliation(service: Arc<HttpService>) -> Self {
+    pub(crate) fn for_provider_session_history_reconciliation(service: Arc<HttpService>) -> Self {
         Self {
             service,
-            native_history_reconciliation: true,
+            provider_session_history_reconciliation: true,
         }
     }
 
@@ -1082,24 +1109,24 @@ impl HttpAgentsSessionFacade {
             provider_binding_id: descriptor.provider_binding_id.clone(),
             model_id: descriptor.model_id.clone(),
             provider_id: descriptor.provider_id.clone(),
-            native_session_id: descriptor.native_session_id.clone(),
-            native_session_tree_id: descriptor.native_session_tree_id.clone(),
-            native_parent_session_id: descriptor.native_parent_session_id.clone(),
-            native_forked_from_session_id: descriptor.native_forked_from_session_id.clone(),
+            provider_session_id: descriptor.provider_session_id.clone(),
+            provider_session_tree_id: descriptor.provider_session_tree_id.clone(),
+            provider_parent_session_id: descriptor.provider_parent_session_id.clone(),
+            provider_forked_from_session_id: descriptor.provider_forked_from_session_id.clone(),
             owner_scope: Some(owner_user_id),
             requested_by: subject.clone(),
             requested_at: requested_at.to_string(),
         };
-        let creation_result = if self.native_history_reconciliation {
+        let creation_result = if self.provider_session_history_reconciliation {
             self.service
-                .reconcile_native_history_runtime_binding(command)
+                .reconcile_provider_session_history_runtime_binding(command)
         } else {
             self.service.create_session_runtime_binding(command)
         };
         match creation_result {
             Ok(_) => {}
             Err(error)
-                if self.native_history_reconciliation
+                if self.provider_session_history_reconciliation
                     && error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
             {
                 let existing = self
@@ -1121,7 +1148,7 @@ impl HttpAgentsSessionFacade {
                 if !runtime_binding_matches_descriptor(&existing, descriptor) {
                     return Err(
                         sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
-                            "concurrent native runtime binding conflicts with the requested descriptor"
+                            "concurrent provider Session runtime binding conflicts with the requested descriptor"
                                 .into(),
                         ),
                     );
@@ -1150,10 +1177,10 @@ fn runtime_binding_matches_descriptor(
         && record.provider_binding_id == descriptor.provider_binding_id
         && record.model_id == descriptor.model_id
         && record.provider_id == descriptor.provider_id
-        && record.native_session_id == descriptor.native_session_id
-        && record.native_session_tree_id == descriptor.native_session_tree_id
-        && record.native_parent_session_id == descriptor.native_parent_session_id
-        && record.native_forked_from_session_id == descriptor.native_forked_from_session_id
+        && record.provider_session_id == descriptor.provider_session_id
+        && record.provider_session_tree_id == descriptor.provider_session_tree_id
+        && record.provider_parent_session_id == descriptor.provider_parent_session_id
+        && record.provider_forked_from_session_id == descriptor.provider_forked_from_session_id
 }
 
 fn map_facade_session_kind(
@@ -1220,7 +1247,7 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
             owner_scope: Some(request.owner_user_id),
             requested_by: subject.clone(),
         }) {
-            Ok(existing) => {
+            Ok(mut existing) => {
                 if existing.organization_id != request.organization_id {
                     return Err(
                         sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
@@ -1243,6 +1270,38 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                                 .into(),
                         ),
                     );
+                }
+                if self.provider_session_history_reconciliation
+                    && existing.title.as_deref() != Some(request.title.as_str())
+                {
+                    existing = match self.service.reconcile_provider_session_history_session_title(
+                        UpdateSessionCommand {
+                            tenant_id: request.tenant_id,
+                            organization_id: request.organization_id,
+                            path_agent_id: request.agent_id.clone(),
+                            session_id: request.session_id.clone(),
+                            title: Some(request.title.clone()),
+                            project_id: None,
+                            expected_version: Some(existing.version),
+                            owner_scope: Some(request.owner_user_id),
+                            requested_by: subject.clone(),
+                            requested_at: request.requested_at.clone(),
+                        },
+                    ) {
+                        Ok(updated) => updated,
+                        Err(error)
+                            if error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
+                        {
+                            return self.resolve_or_create_session(request);
+                        }
+                        Err(error) => {
+                            return Err(
+                                sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                                    error.to_string(),
+                                ),
+                            );
+                        }
+                    };
                 }
                 self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
                     tenant_id: request.tenant_id,
@@ -1287,15 +1346,15 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
             requested_by: subject.clone(),
             requested_at: request.requested_at.clone(),
         };
-        let creation_result = if self.native_history_reconciliation {
-            self.service.reconcile_native_history_session(command)
+        let creation_result = if self.provider_session_history_reconciliation {
+            self.service.reconcile_provider_session_history_session(command)
         } else {
             self.service.create_session(command)
         };
         let created = match creation_result {
             Ok(created) => created,
             Err(error)
-                if self.native_history_reconciliation
+                if self.provider_session_history_reconciliation
                     && error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
             {
                 return self.resolve_or_create_session(request);
@@ -1528,6 +1587,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/projects/{projectId}/sessions",
             get(app_list_project_sessions).post(app_create_project_session),
+        )
+        .route(
+            "/app/v3/api/ai/session_activity_summaries",
+            get(app_list_session_activity_summaries),
         )
         .route(
             "/app/v3/api/ai/agents",
@@ -2353,8 +2416,8 @@ pub(crate) struct ListSessionsQueryParams {
 struct ListProjectSessionsQueryParams {
     status: Option<String>,
     include_archived: Option<bool>,
-    native_directory_name: Option<String>,
-    native_directory_fingerprint: Option<String>,
+    provider_session_directory_name: Option<String>,
+    provider_session_directory_fingerprint: Option<String>,
     page: Option<usize>,
     page_size: Option<usize>,
 }
@@ -2371,9 +2434,20 @@ pub(crate) struct AppListSessionsQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct AppListSessionActivitySummariesQueryParams {
+    cursor: Option<String>,
+    page_size: Option<usize>,
+    workspace_id: Option<String>,
+    project_id: Option<String>,
+    agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AppListSessionUserStatesQueryParams {
     pinned_only: Option<bool>,
     include_hidden: Option<bool>,
+    session_ids: Option<String>,
     page: Option<usize>,
     page_size: Option<usize>,
 }
@@ -4942,6 +5016,142 @@ fn parse_project_drive_access(value: &str) -> ApiResult<AgentProjectDriveAccessM
 // Session handlers  - App API
 // ===========================================================================
 
+async fn app_list_session_activity_summaries(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    query: Result<Query<AppListSessionActivitySummariesQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<SessionActivitySummaryDto>> = async {
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let page_size = query.page_size.unwrap_or(20);
+        if page_size == 0 || page_size > MAX_PAGE_SIZE {
+            return Err(ApiProblem::invalid_parameter(
+                "page_size must be between 1 and 200",
+            ));
+        }
+
+        let scope = RequestScope::from_context(context);
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let cursor = match query.cursor.as_deref() {
+            Some(cursor) if !(1..=2048).contains(&cursor.chars().count()) => {
+                return Err(ApiProblem::invalid_parameter(
+                    "cursor must be between 1 and 2048 characters",
+                ));
+            }
+            cursor => cursor,
+        };
+        let cursor = cursor
+            .map(decode_session_activity_cursor)
+            .transpose()
+            .map_err(|error| ApiProblem::invalid_parameter(error.message()))?;
+
+        let validate_scope_id =
+            |value: Option<String>, field_name: &str, prefix: &str| -> ApiResult<Option<String>> {
+                if let Some(value) = value {
+                    validate_standard_id(&value, field_name, Some(prefix))
+                        .map_err(|error| ApiProblem::invalid_parameter(error.message()))?;
+                    Ok(Some(value))
+                } else {
+                    Ok(None)
+                }
+            };
+        let workspace_id = validate_scope_id(query.workspace_id, "workspace_id", "workspace.")?;
+        let project_id = validate_scope_id(query.project_id, "project_id", "project.")?;
+        let agent_id = validate_scope_id(query.agent_id, "agent_id", "agent.")?;
+
+        let mut activity_query =
+            SessionActivitySummaryListQuery::for_owner(tenant_id, organization_id, owner_user_id)
+                .with_page_size(page_size);
+        if let Some(workspace_id) = workspace_id {
+            activity_query = activity_query.for_workspace(workspace_id);
+        }
+        if let Some(project_id) = project_id {
+            activity_query = activity_query.for_project(project_id);
+        }
+        if let Some(agent_id) = agent_id {
+            activity_query = activity_query.for_agent(agent_id);
+        }
+        if let Some(cursor) = cursor {
+            if cursor.scope_fingerprint != activity_query.scope_fingerprint() {
+                return Err(ApiProblem::invalid_parameter(
+                    "cursor does not belong to the requested Session activity scope",
+                ));
+            }
+            activity_query = activity_query.after(cursor);
+        }
+
+        let records = with_service(&state, move |service| {
+            service.list_session_activity_summaries(ListSessionActivitySummariesCommand {
+                query: activity_query,
+                requested_by: scope.subject,
+            })
+        })
+        .await?;
+        let items = records
+            .items
+            .into_iter()
+            .map(enrich_provider_session_activity)
+            .map(|record| SessionActivitySummaryDto::from_record(&record))
+            .collect::<KernelResult<Vec<_>>>()
+            .map_err(ApiProblem::from_kernel_error)?;
+        Ok(PageData {
+            items,
+            page_info: PageInfo {
+                mode: PageMode::Cursor,
+                page: None,
+                page_size: Some(page_size as i32),
+                total_items: None,
+                total_pages: None,
+                next_cursor: records.next_page_token,
+                has_more: Some(records.has_more),
+            },
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+fn enrich_provider_session_activity(
+    summary: SessionActivitySummaryRecord,
+) -> SessionActivitySummaryRecord {
+    let Some(provider_session_id) = summary.provider_identity.provider_session_id.as_deref() else {
+        return summary;
+    };
+    let observation = engine_key_for_provider_identity(
+        summary.provider_identity.provider_binding_id.as_deref(),
+        summary.provider_identity.provider_id.as_deref(),
+    )
+    .and_then(|engine_key| {
+        shared_code_engine_host().map(|host| {
+            host.get_provider_session_activity(engine_key, provider_session_id)
+                .map(|snapshot| {
+                    SessionProviderActivityObservation::from_provider_snapshot(
+                        provider_session_id,
+                        snapshot,
+                    )
+                })
+                .unwrap_or_else(|error| {
+                    tracing::warn!(
+                        target: "sdkwork.agents.session_activity",
+                        engine_key,
+                        provider_session_id,
+                        error = %error,
+                        "provider Session activity observation is unavailable"
+                    );
+                    SessionProviderActivityObservation::unavailable(provider_session_id)
+                })
+        })
+    })
+    .unwrap_or_else(|| SessionProviderActivityObservation::unavailable(provider_session_id));
+    summary.with_provider_activity(observation)
+}
+
 async fn app_list_sessions(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
@@ -5014,38 +5224,38 @@ async fn app_list_project_sessions(
         let owner_user_id = scope
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
-        let native_directory_name = query
-            .native_directory_name
+        let provider_session_directory_name = query
+            .provider_session_directory_name
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        if native_directory_name
+        if provider_session_directory_name
             .as_ref()
             .is_some_and(|value| value.len() > 255)
         {
             return Err(ApiProblem::validation(
-                "native_directory_name exceeds 255 bytes",
+                "provider_session_directory_name exceeds 255 bytes",
             ));
         }
-        let native_directory_fingerprint = query
-            .native_directory_fingerprint
+        let provider_session_directory_fingerprint = query
+            .provider_session_directory_fingerprint
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_ascii_lowercase);
-        if native_directory_fingerprint.as_ref().is_some_and(|value| {
+        if provider_session_directory_fingerprint.as_ref().is_some_and(|value| {
             value.len() != 71
                 || !value.starts_with("sha256:")
                 || !value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
         }) {
             return Err(ApiProblem::validation(
-                "native_directory_fingerprint must be a sha256 digest",
+                "provider_session_directory_fingerprint must be a sha256 digest",
             ));
         }
-        if native_directory_fingerprint.is_some() && native_directory_name.is_none() {
+        if provider_session_directory_fingerprint.is_some() && provider_session_directory_name.is_none() {
             return Err(ApiProblem::validation(
-                "native_directory_name is required with native_directory_fingerprint",
+                "provider_session_directory_name is required with provider_session_directory_fingerprint",
             ));
         }
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
@@ -5067,8 +5277,8 @@ async fn app_list_project_sessions(
                     .with_page(page),
             );
         let service = state.service.clone();
-        let native_session_cwd_resolver = state.native_session_cwd_resolver.clone();
-        let native_sync_trace_id = trace_id.clone();
+        let provider_session_cwd_resolver = state.provider_session_cwd_resolver.clone();
+        let provider_session_sync_trace_id = trace_id.clone();
         let records = tokio::task::spawn_blocking(move || {
             let project = service.get_project(GetProjectCommand {
                 tenant_id,
@@ -5077,13 +5287,13 @@ async fn app_list_project_sessions(
                 owner_scope: Some(owner_user_id),
                 requested_by: scope.subject.clone(),
             })?;
-            if page == 1 {
-                let native_sync_result = (|| {
-                    let exact_cwd = native_session_cwd_resolver
+            let provider_session_sync_error = if page == 1 {
+                let provider_session_sync_result = (|| {
+                    let exact_cwd = provider_session_cwd_resolver
                         .as_ref()
                         .map(|resolver| {
                             resolver.resolve_project_cwd(
-                                &sdkwork_agents_runtime_facade::NativeSessionProjectCwdSelector {
+                                &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
                                     tenant_id: project.tenant_id,
                                     organization_id: project.organization_id,
                                     owner_user_id: project.owner_user_id,
@@ -5098,42 +5308,61 @@ async fn app_list_project_sessions(
                         })?
                         .flatten();
                     if exact_cwd.is_some() {
-                        crate::native_session_sync::synchronize_project_native_sessions_at_cwd(
+                        crate::provider_session_sync::synchronize_project_provider_sessions_at_cwd(
                             service.clone(),
                             &project,
                             scope.subject,
                             exact_cwd,
                         )
-                    } else if native_directory_fingerprint.is_some() {
-                        crate::native_session_sync::synchronize_project_native_sessions_with_selector(
+                    } else if provider_session_directory_fingerprint.is_some() {
+                        crate::provider_session_sync::synchronize_project_provider_sessions_with_selector(
                             service.clone(),
                             &project,
                             scope.subject,
                             None,
-                            native_directory_name,
-                            native_directory_fingerprint,
+                            provider_session_directory_name,
+                            provider_session_directory_fingerprint,
                         )
                     } else {
-                        crate::native_session_sync::synchronize_project_native_sessions(
+                        crate::provider_session_sync::synchronize_project_provider_sessions(
                             service.clone(),
                             &project,
                             scope.subject,
                         )
                     }
                 })();
-                if let Err(error) = native_sync_result {
+                provider_session_sync_result.err()
+            } else {
+                None
+            };
+            let records = service.list_sessions(command)?;
+            if let Some(error) = provider_session_sync_error {
+                let canonical_inventory_is_empty = records.total_count == Some(0)
+                    || (records.total_count.is_none() && records.items.is_empty());
+                if canonical_inventory_is_empty {
                     tracing::warn!(
-                        target: "sdkwork.agents.native_session_sync",
-                        trace_id = %native_sync_trace_id,
+                        target: "sdkwork.agents.provider_session_sync",
+                        trace_id = %provider_session_sync_trace_id,
                         operation_id = "agents.projectSessions.list",
-                        stage = "native_session_inventory_sync",
+                        stage = "provider_session_inventory_sync",
                         project_id = %project.project_id,
                         error = %error,
-                        "native session inventory synchronization failed; returning canonical project sessions"
+                        "provider session inventory synchronization failed and canonical project sessions are empty"
                     );
+                    return Err(error);
                 }
+
+                tracing::warn!(
+                    target: "sdkwork.agents.provider_session_sync",
+                    trace_id = %provider_session_sync_trace_id,
+                    operation_id = "agents.projectSessions.list",
+                    stage = "provider_session_inventory_sync",
+                    project_id = %project.project_id,
+                    error = %error,
+                    "provider session inventory synchronization failed; returning canonical project sessions"
+                );
             }
-            service.list_sessions(command)
+            Ok(records)
         })
         .await
         .map_err(|error| ApiProblem::internal(error.to_string()))?
@@ -5237,12 +5466,29 @@ async fn app_list_session_user_states(
         let organization_id =
             parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let session_ids = query
+            .session_ids
+            .as_deref()
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if session_ids.iter().any(String::is_empty) {
+            return Err(ApiProblem::validation(
+                "session_ids must contain only non-empty Session ids",
+            ));
+        }
         let mut state_query = ResourceUserStateListQuery::for_user_sessions(
             scope.tenant_id_u64()?,
             organization_id,
             owner_user_id,
         )
         .for_agent(agent_id.clone())
+        .for_resource_ids(session_ids)
         .with_pagination(
             PaginationParams::default()
                 .with_page_size(page_size)
@@ -5637,7 +5883,7 @@ async fn app_update_session(
     body: Result<Json<AppUpdateSessionBody>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         if body.title.is_none() && body.project_id.is_none() && !body.clear_project.unwrap_or(false)
         {
@@ -5660,6 +5906,7 @@ async fn app_update_session(
             tenant_id: scope.tenant_id_u64()?,
             organization_id: parse_organization_id(&scope.organization_id)
                 .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
             session_id,
             title: body.title,
             project_id,
@@ -5689,12 +5936,13 @@ async fn app_delete_session(
     path: Result<Path<(String, String)>, PathRejection>,
 ) -> Response {
     let result: ApiResult<()> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
         let command = DeleteSessionCommand {
             tenant_id: scope.tenant_id_u64()?,
             organization_id: parse_organization_id(&scope.organization_id)
                 .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
             session_id,
             owner_scope: scope.owner_scope()?,
             requested_by: scope.subject,
@@ -5720,7 +5968,7 @@ async fn app_close_session(
     body: Result<Json<CloseSessionRequestDto>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
@@ -5729,6 +5977,7 @@ async fn app_close_session(
                 scope.tenant_id_u64()?,
                 parse_organization_id(&scope.organization_id)
                     .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
                 session_id,
                 scope.subject,
             )
@@ -6156,13 +6405,13 @@ async fn app_list_session_items(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
-        let native_sync_tenant_id = scope.tenant_id_u64()?;
-        let native_sync_organization_id =
+        let provider_session_sync_tenant_id = scope.tenant_id_u64()?;
+        let provider_session_sync_organization_id =
             parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
-        let native_sync_subject = scope.subject.clone();
-        let native_sync_agent_id = agent_id.clone();
-        let native_sync_session_id = session_id.clone();
-        let native_sync_trace_id = trace_id.clone();
+        let provider_session_sync_subject = scope.subject.clone();
+        let provider_session_sync_agent_id = agent_id.clone();
+        let provider_session_sync_session_id = session_id.clone();
+        let provider_session_sync_trace_id = trace_id.clone();
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
@@ -6171,7 +6420,7 @@ async fn app_list_session_items(
             status: query.status,
             sort: query.sort,
         }
-        .into_command(session_id, scope.subject)
+        .into_command(agent_id, session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         command.query = command.query.with_pagination(
@@ -6183,24 +6432,24 @@ async fn app_list_session_items(
             if page == 1 {
                 if let Some(owner_user_id) = owner_scope {
                     if let Err(error) =
-                        crate::native_session_sync::synchronize_native_session_transcript(
+                        crate::provider_session_sync::synchronize_provider_session_transcript(
                         service,
-                        native_sync_tenant_id,
-                        native_sync_organization_id,
+                        provider_session_sync_tenant_id,
+                        provider_session_sync_organization_id,
                         owner_user_id,
-                        native_sync_agent_id.clone(),
-                        native_sync_session_id.clone(),
-                        native_sync_subject,
+                        provider_session_sync_agent_id.clone(),
+                        provider_session_sync_session_id.clone(),
+                        provider_session_sync_subject,
                     ) {
                         tracing::warn!(
-                            target: "sdkwork.agents.native_session_sync",
-                            trace_id = %native_sync_trace_id,
+                            target: "sdkwork.agents.provider_session_sync",
+                            trace_id = %provider_session_sync_trace_id,
                             operation_id = "agents.sessionItems.list",
-                            stage = "native_session_transcript_sync",
-                            agent_id = %native_sync_agent_id,
-                            session_id = %native_sync_session_id,
+                            stage = "provider_session_transcript_sync",
+                            agent_id = %provider_session_sync_agent_id,
+                            session_id = %provider_session_sync_session_id,
                             error = %error,
-                            "native session transcript synchronization failed; returning canonical session items"
+                            "provider session transcript synchronization failed; returning canonical session items"
                         );
                     }
                 }
@@ -7188,7 +7437,7 @@ async fn backend_close_session(
     body: Result<Json<CloseSessionRequestDto>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let command = body
@@ -7196,6 +7445,7 @@ async fn backend_close_session(
                 scope.tenant_id_u64()?,
                 parse_organization_id(&scope.organization_id)
                     .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
                 session_id,
                 scope.subject,
             )
@@ -7217,7 +7467,7 @@ async fn backend_archive_session(
     body: Result<Json<ArchiveSessionRequestDto>, JsonRejection>,
 ) -> Response {
     let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let command = body
@@ -7225,6 +7475,7 @@ async fn backend_archive_session(
                 scope.tenant_id_u64()?,
                 parse_organization_id(&scope.organization_id)
                     .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
                 session_id,
                 scope.subject,
             )
@@ -7250,7 +7501,7 @@ async fn backend_list_session_items(
     Extension(context): Extension<AgentRequestContext>,
 ) -> Response {
     let result: ApiResult<PageData<AgentSessionItemRecordDto>> = async {
-        let Path((_agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
@@ -7261,7 +7512,7 @@ async fn backend_list_session_items(
             status: query.status,
             sort: query.sort,
         }
-        .into_command(session_id, scope.subject)
+        .into_command(agent_id, session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = None;
         command.query = command.query.with_pagination(
@@ -8886,17 +9137,17 @@ mod tests {
     use axum::Extension;
     use tower::ServiceExt;
 
-    struct FailingNativeSessionProjectCwdResolver;
+    struct FailingProviderSessionProjectCwdResolver;
 
-    impl sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver
-        for FailingNativeSessionProjectCwdResolver
+    impl sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver
+        for FailingProviderSessionProjectCwdResolver
     {
         fn resolve_project_cwd(
             &self,
-            _selector: &sdkwork_agents_runtime_facade::NativeSessionProjectCwdSelector,
+            _selector: &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector,
         ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<Option<String>> {
             Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
-                "test native session cwd resolver failure".to_string(),
+                "test provider session cwd resolver failure".to_string(),
             ))
         }
     }
@@ -9017,10 +9268,10 @@ mod tests {
             provider_binding_id: "binding.agent-provider.codex".to_string(),
             model_id: "model.gpt-5".to_string(),
             provider_id: "provider.model.codex".to_string(),
-            native_session_id: Some(format!("native-{runtime_binding_id}")),
-            native_session_tree_id: Some("native-tree-001".to_string()),
-            native_parent_session_id: Some("native-parent-001".to_string()),
-            native_forked_from_session_id: Some("native-origin-001".to_string()),
+            provider_session_id: Some(format!("provider-{runtime_binding_id}")),
+            provider_session_tree_id: Some("provider-tree-001".to_string()),
+            provider_parent_session_id: Some("provider-parent-001".to_string()),
+            provider_forked_from_session_id: Some("provider-origin-001".to_string()),
         }
     }
 
@@ -9660,14 +9911,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_session_list_routes_survive_native_sync_failure_and_support_scopes() {
+    async fn app_session_list_routes_report_empty_sync_failure_and_preserve_canonical_data() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
             test_policy_provider(),
         )
-        .with_native_session_cwd_resolver(std::sync::Arc::new(
-            FailingNativeSessionProjectCwdResolver,
+        .with_provider_session_cwd_resolver(std::sync::Arc::new(
+            FailingProviderSessionProjectCwdResolver,
         ));
         let app = build_test_router(state);
         create_app_agent(&app, "agent.alpha", "alpha").await;
@@ -9693,6 +9944,14 @@ mod tests {
             .as_str()
             .expect("created project must expose its workspaceId")
             .to_string();
+
+        let empty_list = Request::builder()
+            .method("GET")
+            .uri("/app/v3/api/ai/projects/project.sessions/sessions?page=1&page_size=20")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(empty_list).await.unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let create_session = Request::builder()
             .method("POST")
@@ -9769,6 +10028,17 @@ mod tests {
             payload["data"]["items"][0]["sessionId"],
             "session.project-scoped"
         );
+
+        let missing_state_list = Request::builder()
+            .method("GET")
+            .uri("/app/v3/api/ai/agents/agent.alpha/sessions/user_states?session_ids=session.missing&include_hidden=true&page=1&page_size=20")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(missing_state_list).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert!(payload["data"]["items"].as_array().unwrap().is_empty());
 
         for (uri, expected_session_count) in [
             (

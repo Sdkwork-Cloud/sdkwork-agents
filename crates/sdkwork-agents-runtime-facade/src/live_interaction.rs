@@ -10,7 +10,7 @@ use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 #[serde(rename_all = "camelCase")]
 pub struct ApprovalDecision {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
     pub approval_id: String,
     pub decision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -22,7 +22,7 @@ pub struct ApprovalDecision {
 #[serde(rename_all = "camelCase")]
 pub struct UserQuestionAnswer {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
     pub question_id: String,
     pub answer: String,
     pub rejected: bool,

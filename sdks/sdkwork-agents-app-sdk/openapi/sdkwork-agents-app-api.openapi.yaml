@@ -602,11 +602,7 @@ paths:
         in: query
         schema:
           $ref: '#/components/schemas/AgentWorkspaceStatus'
-      - name: includeDeleted
-        in: query
-        schema:
-          type: boolean
-          default: false
+      - $ref: '#/components/parameters/IncludeDeleted'
       responses:
         '200':
           description: Paginated Workspace list
@@ -821,11 +817,7 @@ paths:
         in: query
         schema:
           $ref: '#/components/schemas/AgentProjectStatus'
-      - name: includeDeleted
-        in: query
-        schema:
-          type: boolean
-          default: false
+      - $ref: '#/components/parameters/IncludeDeleted'
       responses:
         '200':
           description: Paginated project list
@@ -1221,15 +1213,15 @@ paths:
         schema:
           type: boolean
           default: false
-      - name: native_directory_name
+      - name: provider_session_directory_name
         in: query
         required: false
-        description: Device-local directory basename used only to reconcile provider-native sessions.
+        description: Device-local directory basename used only to reconcile provider sessions.
         schema:
           type: string
           minLength: 1
           maxLength: 255
-      - name: native_directory_fingerprint
+      - name: provider_session_directory_fingerprint
         in: query
         required: false
         description: Opaque manifest digest used only to disambiguate same-name local directories.
@@ -1274,6 +1266,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/session_activity_summaries:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List the authenticated owner's current Session activity snapshot
+      description: >-
+        Returns a bounded, newest-first current-state projection. A null cursor
+        starts a fresh head snapshot; nextCursor is only continuation within that
+        traversal and is not a durable change-feed watermark. Native runtime
+        activity is opportunistically enriched for returned rows and remains
+        authoritative only until providerActivity.freshUntil. The authenticated
+        owner's Session user-state is included and participates in activityAt.
+      operationId: agents.sessionActivitySummaries.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionActivitySummaries
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-pagination-mode: cursor
+      x-sdkwork-performance-class: P1
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        description: Opaque continuation token bound to the authenticated owner and all filters.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 2048
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 20
+      - name: workspace_id
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^workspace\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+      - name: agent_id
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+      responses:
+        '200':
+          description: Current Session activity snapshot page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionActivitySummaryListResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/sessions:
@@ -1371,18 +1431,26 @@ paths:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/PageSize'
-      - name: pinnedOnly
+      - name: pinned_only
         in: query
         required: false
         schema:
           type: boolean
           default: false
-      - name: includeHidden
+      - name: include_hidden
         in: query
         required: false
         schema:
           type: boolean
           default: false
+      - name: session_ids
+        in: query
+        required: false
+        description: Comma-separated Session ids to resolve in one bounded request. Maximum 100 ids.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 6400
       responses:
         '200':
           description: Paginated per-user agent session state
@@ -4864,6 +4932,7 @@ components:
       type: object
       additionalProperties: false
       required:
+      - id
       - sessionId
       - tenantId
       - organizationId
@@ -4882,6 +4951,8 @@ components:
       - createdAt
       - updatedAt
       properties:
+        id:
+          $ref: '#/components/schemas/Int64String'
         sessionId:
           type: string
           pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
@@ -4977,6 +5048,220 @@ components:
         retentionUntil:
           type: [string, 'null']
           format: date-time
+    SessionProviderIdentity:
+      type: object
+      additionalProperties: false
+      required:
+      - runtimeBindingId
+      - providerBindingId
+      - providerId
+      - modelId
+      - providerSessionId
+      - providerSessionTreeId
+      - providerParentSessionId
+      - providerForkedFromSessionId
+      properties:
+        runtimeBindingId:
+          type: [string, 'null']
+        providerBindingId:
+          type: [string, 'null']
+        providerId:
+          type: [string, 'null']
+        modelId:
+          type: [string, 'null']
+        providerSessionId:
+          type: [string, 'null']
+        providerSessionTreeId:
+          type: [string, 'null']
+        providerParentSessionId:
+          type: [string, 'null']
+        providerForkedFromSessionId:
+          type: [string, 'null']
+    SessionActivityFreshness:
+      type: object
+      additionalProperties: false
+      required:
+      - activityAt
+      - source
+      - observedAt
+      - freshUntil
+      - sessionVersion
+      - latestTurnVersion
+      - latestInteractionId
+      - latestInteractionVersion
+      - latestRuntimeBindingId
+      - latestRuntimeBindingVersion
+      - pendingInteractionVersion
+      - currentRuntimeBindingVersion
+      - userStateVersion
+      properties:
+        activityAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [session, turn, interaction, runtime_binding, user_state]
+        observedAt:
+          type: [string, 'null']
+          format: date-time
+        freshUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Expiry of the effective non-terminal evidence when an authoritative lease exists.
+        sessionVersion:
+          $ref: '#/components/schemas/Int64String'
+        latestTurnVersion:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+        latestInteractionId:
+          type: [string, 'null']
+        latestInteractionVersion:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+          description: Per-identity version of the latest Interaction, including resolved-state tombstones.
+        latestRuntimeBindingId:
+          type: [string, 'null']
+        latestRuntimeBindingVersion:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+          description: Per-identity version of the latest RuntimeBinding, including deactivation tombstones.
+        pendingInteractionVersion:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+        currentRuntimeBindingVersion:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+        userStateVersion:
+          oneOf:
+          - $ref: '#/components/schemas/Int64String'
+          - type: 'null'
+    SessionProviderActivityObservation:
+      type: object
+      additionalProperties: false
+      required:
+      - providerSessionId
+      - state
+      - freshness
+      - evidenceKind
+      - interactionHint
+      - observedAt
+      - freshUntil
+      properties:
+        providerSessionId:
+          type: string
+        state:
+          type: [string, 'null']
+          enum: [idle, working, waiting, failed, null]
+        freshness:
+          type: string
+          enum: [fresh, stale, unsupported, unavailable]
+        evidenceKind:
+          type: [string, 'null']
+          enum: [provider_status, provider_event, provider_lock, provider_process, null]
+        interactionHint:
+          type: [string, 'null']
+          enum: [approval_required, user_input_required, null]
+        observedAt:
+          type: [string, 'null']
+          format: date-time
+        freshUntil:
+          type: [string, 'null']
+          format: date-time
+    SessionPresentationPhase:
+      type: string
+      enum:
+      - ready
+      - queued
+      - running
+      - waiting
+      - awaiting_input
+      - completed
+      - failed
+      - cancelled
+      - idle
+      - closed
+      - archived
+      - deleted
+      - unknown
+    SessionActivitySummary:
+      type: object
+      additionalProperties: false
+      required:
+      - session
+      - latestTurn
+      - pendingInteraction
+      - currentRuntimeBinding
+      - latestRuntimeBinding
+      - userState
+      - providerIdentity
+      - freshness
+      - providerActivity
+      - presentationPhase
+      properties:
+        session:
+          $ref: '#/components/schemas/AgentSessionRecord'
+        latestTurn:
+          oneOf:
+          - $ref: '#/components/schemas/AgentTurnRecord'
+          - type: 'null'
+        pendingInteraction:
+          oneOf:
+          - $ref: '#/components/schemas/AgentInteractionRecord'
+          - type: 'null'
+        currentRuntimeBinding:
+          oneOf:
+          - $ref: '#/components/schemas/AgentSessionRuntimeBindingRecord'
+          - type: 'null'
+        latestRuntimeBinding:
+          oneOf:
+          - $ref: '#/components/schemas/AgentSessionRuntimeBindingRecord'
+          - type: 'null'
+          description: Latest RuntimeBinding by activity time, including failed or deactivated tombstone state.
+        userState:
+          oneOf:
+          - $ref: '#/components/schemas/AgentResourceUserStateRecord'
+          - type: 'null'
+        providerIdentity:
+          $ref: '#/components/schemas/SessionProviderIdentity'
+        freshness:
+          $ref: '#/components/schemas/SessionActivityFreshness'
+        providerActivity:
+          oneOf:
+          - $ref: '#/components/schemas/SessionProviderActivityObservation'
+          - type: 'null'
+        presentationPhase:
+          $ref: '#/components/schemas/SessionPresentationPhase'
+    SessionActivitySummaryListResponse:
+      description: Bounded current-state Session activity snapshot page.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items, pageInfo]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SessionActivitySummary'
+                pageInfo:
+                  allOf:
+                  - $ref: '#/components/schemas/PageInfo'
+                  - type: object
+                    required: [mode, pageSize, hasMore]
+                    properties:
+                      mode:
+                        type: string
+                        const: cursor
     AgentSessionResponse:
       description: Single agent session response following the SDKWork resource envelope.
       allOf:
@@ -6073,16 +6358,16 @@ components:
         providerId:
           type: string
           pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        nativeSessionId:
+        providerSessionId:
           type: [string, 'null']
           maxLength: 256
-        nativeSessionTreeId:
+        providerSessionTreeId:
           type: [string, 'null']
           maxLength: 256
-        nativeParentSessionId:
+        providerParentSessionId:
           type: [string, 'null']
           maxLength: 256
-        nativeForkedFromSessionId:
+        providerForkedFromSessionId:
           type: [string, 'null']
           maxLength: 256
         status:
@@ -6169,16 +6454,16 @@ components:
         providerId:
           type: string
           pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        nativeSessionId:
+        providerSessionId:
           type: string
           maxLength: 256
-        nativeSessionTreeId:
+        providerSessionTreeId:
           type: string
           maxLength: 256
-        nativeParentSessionId:
+        providerParentSessionId:
           type: string
           maxLength: 256
-        nativeForkedFromSessionId:
+        providerForkedFromSessionId:
           type: string
           maxLength: 256
         requestedAt:
@@ -6210,16 +6495,16 @@ components:
         providerId:
           type: string
           pattern: '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
-        nativeSessionId:
+        providerSessionId:
           type: string
           maxLength: 256
-        nativeSessionTreeId:
+        providerSessionTreeId:
           type: string
           maxLength: 256
-        nativeParentSessionId:
+        providerParentSessionId:
           type: string
           maxLength: 256
-        nativeForkedFromSessionId:
+        providerForkedFromSessionId:
           type: string
           maxLength: 256
         expectedVersion:

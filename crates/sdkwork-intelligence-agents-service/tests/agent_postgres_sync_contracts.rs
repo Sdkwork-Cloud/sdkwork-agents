@@ -7,7 +7,8 @@ use sdkwork_intelligence_agents_service::{
     SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION, SQL_INSERT_AGENT_SESSION_ITEM,
     SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN, SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT,
     SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_INTERACTIONS,
-    SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS,
+    SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS, SQL_LIST_AGENT_SESSION_ITEMS,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
     SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
@@ -18,6 +19,32 @@ use sdkwork_intelligence_agents_service::{
     SQL_UPDATE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT_SESSION, SQL_UPDATE_AGENT_SESSION_ITEM,
     SQL_UPDATE_AGENT_TASK,
 };
+
+#[test]
+fn session_activity_snapshot_is_one_bounded_projection_query() {
+    let sql = SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS;
+    assert!(sql.contains("ORDER BY activity_at DESC, id DESC"));
+    assert!(sql.contains("(activity_at, id) <"));
+    assert!(sql.contains("LIMIT $9"));
+    assert!(sql.contains("row_to_json(latest_turn)"));
+    assert!(sql.contains("ORDER BY turn_row.id DESC"));
+    assert!(sql.contains(") turn_activity ON TRUE"));
+    assert!(sql.contains("ORDER BY turn_row.updated_at DESC, turn_row.id DESC"));
+    assert!(sql.contains("row_to_json(pending_interaction)"));
+    assert!(sql.contains("row_to_json(current_runtime_binding)"));
+    assert!(sql.contains("row_to_json(binding_activity)"));
+    assert!(sql.contains("row_to_json(session_user_state)"));
+    assert!(sql.contains("interaction_row.status = 0"));
+    assert!(sql.contains("interaction_row.kind ASC"));
+    assert!(sql.contains("binding_row.is_current = TRUE"));
+    assert!(sql.contains("AND binding_row.status = 0"));
+    assert!(sql.contains("user_state_row.user_id = s.owner_user_id"));
+    assert!(sql.contains("user_state_row.resource_type = 0"));
+    assert!(sql.contains("user_state_row.resource_id = s.session_id"));
+    assert!(sql.contains("THEN 'user_state'"));
+    assert!(sql.contains("interaction_activity.interaction_id AS latest_interaction_id"));
+    assert!(sql.contains("project_scope.workspace_id = $6"));
+}
 
 fn tenant_scoped_select_sql(sql: &str, table: &str) {
     assert!(

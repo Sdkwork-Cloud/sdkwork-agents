@@ -12,15 +12,15 @@ export interface AgentSessionRuntimeBindingRecord {
   providerBindingId: string;
   modelId: string;
   providerId: string;
-  nativeSessionId?: string | null;
-  nativeSessionTreeId?: string | null;
-  nativeParentSessionId?: string | null;
-  nativeForkedFromSessionId?: string | null;
+  providerSessionId?: string | null;
+  providerSessionTreeId?: string | null;
+  providerParentSessionId?: string | null;
+  providerForkedFromSessionId?: string | null;
   status: AgentSessionRuntimeBindingStatus;
   isCurrent: boolean;
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  activatedAt?: string;
-  deactivatedAt?: string;
+  activatedAt?: string | null;
+  deactivatedAt?: string | null;
 }

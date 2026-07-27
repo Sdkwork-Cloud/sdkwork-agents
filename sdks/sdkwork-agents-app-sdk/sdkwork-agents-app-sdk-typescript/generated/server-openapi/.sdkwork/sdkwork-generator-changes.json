@@ -9,11 +9,19 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "ce0a9701677c96d27be23bba0e30f35b7fc41a97e2143191d6f181830594aa5f",
+  "changeFingerprint": "31255954cb5f7d8bb639c1bbfb9fb2b8ceec609e4eb62c870d310e6d0b733c0c",
   "changes": {
-    "createdGeneratedFiles": [],
+    "createdGeneratedFiles": [
+      "src/types/session-provider-activity-observation.ts"
+    ],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts"
+      "src/api/ai.ts",
+      "src/types/agent-session-runtime-binding-record.ts",
+      "src/types/create-agent-session-runtime-binding-request.ts",
+      "src/types/index.ts",
+      "src/types/session-activity-summary.ts",
+      "src/types/session-provider-identity.ts",
+      "src/types/update-agent-session-runtime-binding-request.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -91,7 +99,6 @@
       "src/types/agent-session-record.ts",
       "src/types/agent-session-response.ts",
       "src/types/agent-session-runtime-binding-list-response.ts",
-      "src/types/agent-session-runtime-binding-record.ts",
       "src/types/agent-session-runtime-binding-response.ts",
       "src/types/agent-session-runtime-binding-status.ts",
       "src/types/agent-session-status.ts",
@@ -135,14 +142,12 @@
       "src/types/create-agent-request.ts",
       "src/types/create-agent-session-checkpoint-request.ts",
       "src/types/create-agent-session-request.ts",
-      "src/types/create-agent-session-runtime-binding-request.ts",
       "src/types/create-agent-task-request.ts",
       "src/types/create-agent-turn-request.ts",
       "src/types/create-agent-workspace-request.ts",
       "src/types/ensure-default-agent-workspace-request.ts",
       "src/types/field-error.ts",
       "src/types/import-agent-project-request.ts",
-      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
       "src/types/mcp-server-marketplace-list-response.ts",
@@ -154,17 +159,21 @@
       "src/types/sdk-work-api-response.ts",
       "src/types/sdk-work-page-data.ts",
       "src/types/sdk-work-resource-data.ts",
+      "src/types/session-activity-freshness.ts",
+      "src/types/session-activity-summary-list-response.ts",
+      "src/types/session-presentation-phase.ts",
       "src/types/update-agent-composition-slot-request.ts",
       "src/types/update-agent-item-feedback-request.ts",
       "src/types/update-agent-project-composition-slot-request.ts",
       "src/types/update-agent-project-request.ts",
       "src/types/update-agent-request.ts",
-      "src/types/update-agent-session-runtime-binding-request.ts",
       "src/types/update-agent-session-user-state-request.ts",
       "src/types/update-agent-workspace-request.ts",
       "tsconfig.json"
     ],
-    "deletedGeneratedFiles": [],
+    "deletedGeneratedFiles": [
+      "src/types/session-native-activity-observation.ts"
+    ],
     "scaffoldedFiles": [],
     "preservedScaffoldFiles": [
       "custom/build-runtime.mjs",
@@ -175,7 +184,8 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface"
+      "api-surface",
+      "models"
     ],
     "details": [
       {
@@ -183,21 +193,34 @@
         "paths": [
           "src/api/ai.ts"
         ]
+      },
+      {
+        "area": "models",
+        "paths": [
+          "src/types/agent-session-runtime-binding-record.ts",
+          "src/types/create-agent-session-runtime-binding-request.ts",
+          "src/types/index.ts",
+          "src/types/session-activity-summary.ts",
+          "src/types/session-native-activity-observation.ts",
+          "src/types/session-provider-activity-observation.ts",
+          "src/types/session-provider-identity.ts",
+          "src/types/update-agent-session-runtime-binding-request.ts"
+        ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface. Verification is required."
+    "summary": "Detected impact areas: api-surface, models. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -215,7 +238,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -233,12 +256,14 @@
   },
   "executionDecision": {
     "schemaVersion": 1,
-    "riskLevel": "medium",
+    "riskLevel": "high",
     "nextAction": "verify",
     "requiresManualReview": false,
     "applyRequiresExpectedFingerprint": false,
     "summary": "Changes have been applied. Run the required verification plan now.",
     "reasons": [
+      "deleted-generated-files",
+      "manual-review-required",
       "verification-required"
     ]
   },

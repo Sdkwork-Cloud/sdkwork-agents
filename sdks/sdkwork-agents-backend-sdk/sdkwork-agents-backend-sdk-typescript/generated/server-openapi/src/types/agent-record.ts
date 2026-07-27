@@ -26,5 +26,5 @@ export interface AgentRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string;
+  deletedAt?: string | null;
 }

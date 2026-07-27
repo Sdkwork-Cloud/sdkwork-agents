@@ -30,6 +30,20 @@ const openSdkGeneratorManifest = JSON.parse(
     'utf8',
   ),
 );
+const appSdkAi = fs.readFileSync(
+  path.join(
+    root,
+    'sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi/src/api/ai.ts',
+  ),
+  'utf8',
+);
+const appSdkFlutterAi = fs.readFileSync(
+  path.join(
+    root,
+    'sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi/lib/src/api/ai.dart',
+  ),
+  'utf8',
+);
 const serviceHttp = fs.readFileSync(
   path.join(root, 'crates/sdkwork-intelligence-agents-service/src/http.rs'),
   'utf8',
@@ -56,13 +70,41 @@ assert.doesNotMatch(openSdkAi, /AiAgentsCodeEnginesApi|AiAgentsMcpServersApi/);
 assert.doesNotMatch(openSdkAi, /AiAgentsProjectsApi|AiAgentsProjectCompositionSlotsApi/);
 assert.doesNotMatch(openSdkAi, /AiAgentsSessionUserStatesApi|AiAgentsItemFeedbackApi/);
 
+for (const className of ['AiAgentsProjectsApi', 'AiAgentsWorkspacesApi']) {
+  const classBlock = extractClassBlock(appSdkAi, className);
+  assert.match(
+    classBlock,
+    /\{ name: 'include_deleted', value: params\?\.includeDeleted,/,
+    `${className} must serialize includeDeleted as include_deleted`,
+  );
+  assert.doesNotMatch(
+    classBlock,
+    /\{ name: 'includeDeleted',/,
+    `${className} must not emit the camelCase query parameter`,
+  );
+}
+
+for (const methodName of ['agentsProjectsList', 'agentsWorkspacesList']) {
+  const methodBlock = extractDartMethodBlock(appSdkFlutterAi, methodName);
+  assert.match(
+    methodBlock,
+    /QueryParameterSpec\('include_deleted', includeDeleted,/,
+    `${methodName} must serialize includeDeleted as include_deleted`,
+  );
+  assert.doesNotMatch(
+    methodBlock,
+    /QueryParameterSpec\('includeDeleted',/,
+    `${methodName} must not emit the camelCase query parameter`,
+  );
+}
+
 assert.doesNotMatch(
   serviceHttp.match(/pub fn build_open_routes[\s\S]*?^}/m)?.[0] ?? serviceHttp,
   /\/agent\/v3\/api\/ai\/agents\/\{agentId\}\/restore/,
 );
 
 const openApiContracts = [
-  ['app', 'agents-app-api.openapi.yaml', 79],
+  ['app', 'agents-app-api.openapi.yaml', 80],
   ['backend', 'agents-backend-api.openapi.yaml', 48],
   ['open', 'agents-open-api.openapi.yaml', 47],
 ];
@@ -123,6 +165,28 @@ for (const [surface, basename, expectedOperationCount] of openApiContracts) {
     'integer',
     `${surface} composition-slot priority must use its native integer type`,
   );
+
+  if (surface === 'app') {
+    for (const [pathName, operationId] of [
+      ['/app/v3/api/ai/projects', 'agents.projects.list'],
+      ['/app/v3/api/ai/workspaces', 'agents.workspaces.list'],
+    ]) {
+      const parameters = (contract.paths?.[pathName]?.get?.parameters ?? []).map(
+        (parameter) =>
+          parameter.$ref
+            ? contract.components?.parameters?.[parameter.$ref.split('/').at(-1)]
+            : parameter,
+      );
+      assert.ok(
+        parameters.some((parameter) => parameter?.name === 'include_deleted'),
+        `${operationId} must declare the include_deleted wire parameter`,
+      );
+      assert.ok(
+        parameters.every((parameter) => parameter?.name !== 'includeDeleted'),
+        `${operationId} must not declare a camelCase query parameter`,
+      );
+    }
+  }
 
   const sessionRequest = schemas.CreateAgentSessionRequest;
   for (const required of [
@@ -285,6 +349,14 @@ function extractClassBlock(source, className) {
     new RegExp(`export class ${className}[\\s\\S]*?^}\\r?\\n`, 'm'),
   );
   assert.ok(match, `generated open SDK must expose ${className}`);
+  return match[0];
+}
+
+function extractDartMethodBlock(source, methodName) {
+  const match = source.match(
+    new RegExp(`^  Future<[^\\n]+> ${methodName}\\([^\\n]*\\) async \\{[\\s\\S]*?^  \\}`, 'm'),
+  );
+  assert.ok(match, `generated app Flutter SDK must expose ${methodName}`);
   return match[0];
 }
 

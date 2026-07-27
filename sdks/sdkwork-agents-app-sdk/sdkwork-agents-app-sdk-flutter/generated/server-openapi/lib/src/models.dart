@@ -4231,6 +4231,7 @@ class McpServerMarketplaceRecord {
 }
 
 class AgentSessionRecord {
+  final String id;
   final String sessionId;
   final String tenantId;
   final String organizationId;
@@ -4266,6 +4267,7 @@ class AgentSessionRecord {
   final String? retentionUntil;
 
   AgentSessionRecord({
+    required this.id,
     required this.sessionId,
     required this.tenantId,
     required this.organizationId,
@@ -4303,6 +4305,13 @@ class AgentSessionRecord {
 
   factory AgentSessionRecord.fromJson(Map<String, dynamic> json) {
     return AgentSessionRecord(
+      id: (() {
+        final value = json['id']?.toString();
+        if (value == null) {
+          throw FormatException('AgentSessionRecord.id is required');
+        }
+        return value;
+      })(),
       sessionId: (() {
         final value = json['sessionId']?.toString();
         if (value == null) {
@@ -4443,6 +4452,7 @@ class AgentSessionRecord {
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
+      'id': id,
       'sessionId': sessionId,
       'tenantId': tenantId,
       'organizationId': organizationId,
@@ -4476,6 +4486,757 @@ class AgentSessionRecord {
       'deletedAt': deletedAt,
       'deletedBy': deletedBy,
       'retentionUntil': retentionUntil,
+    };
+  }
+}
+
+class SessionProviderIdentity {
+  final String? runtimeBindingId;
+  final String? providerBindingId;
+  final String? providerId;
+  final String? modelId;
+  final String? providerSessionId;
+  final String? providerSessionTreeId;
+  final String? providerParentSessionId;
+  final String? providerForkedFromSessionId;
+
+  SessionProviderIdentity({
+    required this.runtimeBindingId,
+    required this.providerBindingId,
+    required this.providerId,
+    required this.modelId,
+    required this.providerSessionId,
+    required this.providerSessionTreeId,
+    required this.providerParentSessionId,
+    required this.providerForkedFromSessionId
+  });
+
+  factory SessionProviderIdentity.fromJson(Map<String, dynamic> json) {
+    return SessionProviderIdentity(
+      runtimeBindingId: (() {
+        if (!json.containsKey('runtimeBindingId')) {
+          throw FormatException('SessionProviderIdentity.runtimeBindingId is required');
+        }
+        final _sdkworkRequiredValue = json['runtimeBindingId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.runtimeBindingId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerBindingId: (() {
+        if (!json.containsKey('providerBindingId')) {
+          throw FormatException('SessionProviderIdentity.providerBindingId is required');
+        }
+        final _sdkworkRequiredValue = json['providerBindingId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.providerBindingId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerId: (() {
+        if (!json.containsKey('providerId')) {
+          throw FormatException('SessionProviderIdentity.providerId is required');
+        }
+        final _sdkworkRequiredValue = json['providerId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.providerId is required');
+        }
+        return value;
+      })();
+      })(),
+      modelId: (() {
+        if (!json.containsKey('modelId')) {
+          throw FormatException('SessionProviderIdentity.modelId is required');
+        }
+        final _sdkworkRequiredValue = json['modelId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.modelId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerSessionId: (() {
+        if (!json.containsKey('providerSessionId')) {
+          throw FormatException('SessionProviderIdentity.providerSessionId is required');
+        }
+        final _sdkworkRequiredValue = json['providerSessionId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.providerSessionId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerSessionTreeId: (() {
+        if (!json.containsKey('providerSessionTreeId')) {
+          throw FormatException('SessionProviderIdentity.providerSessionTreeId is required');
+        }
+        final _sdkworkRequiredValue = json['providerSessionTreeId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.providerSessionTreeId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerParentSessionId: (() {
+        if (!json.containsKey('providerParentSessionId')) {
+          throw FormatException('SessionProviderIdentity.providerParentSessionId is required');
+        }
+        final _sdkworkRequiredValue = json['providerParentSessionId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.providerParentSessionId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerForkedFromSessionId: (() {
+        if (!json.containsKey('providerForkedFromSessionId')) {
+          throw FormatException('SessionProviderIdentity.providerForkedFromSessionId is required');
+        }
+        final _sdkworkRequiredValue = json['providerForkedFromSessionId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderIdentity.providerForkedFromSessionId is required');
+        }
+        return value;
+      })();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'runtimeBindingId': runtimeBindingId,
+      'providerBindingId': providerBindingId,
+      'providerId': providerId,
+      'modelId': modelId,
+      'providerSessionId': providerSessionId,
+      'providerSessionTreeId': providerSessionTreeId,
+      'providerParentSessionId': providerParentSessionId,
+      'providerForkedFromSessionId': providerForkedFromSessionId,
+    };
+  }
+}
+
+class SessionActivityFreshness {
+  final String activityAt;
+  final String source;
+  final String? observedAt;
+  final String? freshUntil;
+  final String sessionVersion;
+  final String? latestTurnVersion;
+  final String? latestInteractionId;
+  final String? latestInteractionVersion;
+  final String? latestRuntimeBindingId;
+  final String? latestRuntimeBindingVersion;
+  final String? pendingInteractionVersion;
+  final String? currentRuntimeBindingVersion;
+  final String? userStateVersion;
+
+  SessionActivityFreshness({
+    required this.activityAt,
+    required this.source,
+    required this.observedAt,
+    required this.freshUntil,
+    required this.sessionVersion,
+    required this.latestTurnVersion,
+    required this.latestInteractionId,
+    required this.latestInteractionVersion,
+    required this.latestRuntimeBindingId,
+    required this.latestRuntimeBindingVersion,
+    required this.pendingInteractionVersion,
+    required this.currentRuntimeBindingVersion,
+    required this.userStateVersion
+  });
+
+  factory SessionActivityFreshness.fromJson(Map<String, dynamic> json) {
+    return SessionActivityFreshness(
+      activityAt: (() {
+        final value = json['activityAt']?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.activityAt is required');
+        }
+        return value;
+      })(),
+      source: (() {
+        final value = json['source']?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.source is required');
+        }
+        return value;
+      })(),
+      observedAt: (() {
+        if (!json.containsKey('observedAt')) {
+          throw FormatException('SessionActivityFreshness.observedAt is required');
+        }
+        final _sdkworkRequiredValue = json['observedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.observedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      freshUntil: (() {
+        if (!json.containsKey('freshUntil')) {
+          throw FormatException('SessionActivityFreshness.freshUntil is required');
+        }
+        final _sdkworkRequiredValue = json['freshUntil'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.freshUntil is required');
+        }
+        return value;
+      })();
+      })(),
+      sessionVersion: (() {
+        final value = json['sessionVersion']?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.sessionVersion is required');
+        }
+        return value;
+      })(),
+      latestTurnVersion: (() {
+        if (!json.containsKey('latestTurnVersion')) {
+          throw FormatException('SessionActivityFreshness.latestTurnVersion is required');
+        }
+        final _sdkworkRequiredValue = json['latestTurnVersion'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.latestTurnVersion is required');
+        }
+        return value;
+      })();
+      })(),
+      latestInteractionId: (() {
+        if (!json.containsKey('latestInteractionId')) {
+          throw FormatException('SessionActivityFreshness.latestInteractionId is required');
+        }
+        final _sdkworkRequiredValue = json['latestInteractionId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.latestInteractionId is required');
+        }
+        return value;
+      })();
+      })(),
+      latestInteractionVersion: (() {
+        if (!json.containsKey('latestInteractionVersion')) {
+          throw FormatException('SessionActivityFreshness.latestInteractionVersion is required');
+        }
+        final _sdkworkRequiredValue = json['latestInteractionVersion'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.latestInteractionVersion is required');
+        }
+        return value;
+      })();
+      })(),
+      latestRuntimeBindingId: (() {
+        if (!json.containsKey('latestRuntimeBindingId')) {
+          throw FormatException('SessionActivityFreshness.latestRuntimeBindingId is required');
+        }
+        final _sdkworkRequiredValue = json['latestRuntimeBindingId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.latestRuntimeBindingId is required');
+        }
+        return value;
+      })();
+      })(),
+      latestRuntimeBindingVersion: (() {
+        if (!json.containsKey('latestRuntimeBindingVersion')) {
+          throw FormatException('SessionActivityFreshness.latestRuntimeBindingVersion is required');
+        }
+        final _sdkworkRequiredValue = json['latestRuntimeBindingVersion'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.latestRuntimeBindingVersion is required');
+        }
+        return value;
+      })();
+      })(),
+      pendingInteractionVersion: (() {
+        if (!json.containsKey('pendingInteractionVersion')) {
+          throw FormatException('SessionActivityFreshness.pendingInteractionVersion is required');
+        }
+        final _sdkworkRequiredValue = json['pendingInteractionVersion'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.pendingInteractionVersion is required');
+        }
+        return value;
+      })();
+      })(),
+      currentRuntimeBindingVersion: (() {
+        if (!json.containsKey('currentRuntimeBindingVersion')) {
+          throw FormatException('SessionActivityFreshness.currentRuntimeBindingVersion is required');
+        }
+        final _sdkworkRequiredValue = json['currentRuntimeBindingVersion'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.currentRuntimeBindingVersion is required');
+        }
+        return value;
+      })();
+      })(),
+      userStateVersion: (() {
+        if (!json.containsKey('userStateVersion')) {
+          throw FormatException('SessionActivityFreshness.userStateVersion is required');
+        }
+        final _sdkworkRequiredValue = json['userStateVersion'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivityFreshness.userStateVersion is required');
+        }
+        return value;
+      })();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'activityAt': activityAt,
+      'source': source,
+      'observedAt': observedAt,
+      'freshUntil': freshUntil,
+      'sessionVersion': sessionVersion,
+      'latestTurnVersion': latestTurnVersion,
+      'latestInteractionId': latestInteractionId,
+      'latestInteractionVersion': latestInteractionVersion,
+      'latestRuntimeBindingId': latestRuntimeBindingId,
+      'latestRuntimeBindingVersion': latestRuntimeBindingVersion,
+      'pendingInteractionVersion': pendingInteractionVersion,
+      'currentRuntimeBindingVersion': currentRuntimeBindingVersion,
+      'userStateVersion': userStateVersion,
+    };
+  }
+}
+
+class SessionProviderActivityObservation {
+  final String providerSessionId;
+  final String? state;
+  final String freshness;
+  final String? evidenceKind;
+  final String? interactionHint;
+  final String? observedAt;
+  final String? freshUntil;
+
+  SessionProviderActivityObservation({
+    required this.providerSessionId,
+    required this.state,
+    required this.freshness,
+    required this.evidenceKind,
+    required this.interactionHint,
+    required this.observedAt,
+    required this.freshUntil
+  });
+
+  factory SessionProviderActivityObservation.fromJson(Map<String, dynamic> json) {
+    return SessionProviderActivityObservation(
+      providerSessionId: (() {
+        final value = json['providerSessionId']?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.providerSessionId is required');
+        }
+        return value;
+      })(),
+      state: (() {
+        if (!json.containsKey('state')) {
+          throw FormatException('SessionProviderActivityObservation.state is required');
+        }
+        final _sdkworkRequiredValue = json['state'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.state is required');
+        }
+        return value;
+      })();
+      })(),
+      freshness: (() {
+        final value = json['freshness']?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.freshness is required');
+        }
+        return value;
+      })(),
+      evidenceKind: (() {
+        if (!json.containsKey('evidenceKind')) {
+          throw FormatException('SessionProviderActivityObservation.evidenceKind is required');
+        }
+        final _sdkworkRequiredValue = json['evidenceKind'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.evidenceKind is required');
+        }
+        return value;
+      })();
+      })(),
+      interactionHint: (() {
+        if (!json.containsKey('interactionHint')) {
+          throw FormatException('SessionProviderActivityObservation.interactionHint is required');
+        }
+        final _sdkworkRequiredValue = json['interactionHint'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.interactionHint is required');
+        }
+        return value;
+      })();
+      })(),
+      observedAt: (() {
+        if (!json.containsKey('observedAt')) {
+          throw FormatException('SessionProviderActivityObservation.observedAt is required');
+        }
+        final _sdkworkRequiredValue = json['observedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.observedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      freshUntil: (() {
+        if (!json.containsKey('freshUntil')) {
+          throw FormatException('SessionProviderActivityObservation.freshUntil is required');
+        }
+        final _sdkworkRequiredValue = json['freshUntil'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('SessionProviderActivityObservation.freshUntil is required');
+        }
+        return value;
+      })();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'providerSessionId': providerSessionId,
+      'state': state,
+      'freshness': freshness,
+      'evidenceKind': evidenceKind,
+      'interactionHint': interactionHint,
+      'observedAt': observedAt,
+      'freshUntil': freshUntil,
+    };
+  }
+}
+
+class SessionActivitySummary {
+  final AgentSessionRecord session;
+  final AgentTurnRecord? latestTurn;
+  final AgentInteractionRecord? pendingInteraction;
+  final AgentSessionRuntimeBindingRecord? currentRuntimeBinding;
+  final AgentSessionRuntimeBindingRecord? latestRuntimeBinding;
+  final AgentResourceUserStateRecord? userState;
+  final SessionProviderIdentity providerIdentity;
+  final SessionActivityFreshness freshness;
+  final SessionProviderActivityObservation? providerActivity;
+  final String presentationPhase;
+
+  SessionActivitySummary({
+    required this.session,
+    required this.latestTurn,
+    required this.pendingInteraction,
+    required this.currentRuntimeBinding,
+    required this.latestRuntimeBinding,
+    required this.userState,
+    required this.providerIdentity,
+    required this.freshness,
+    required this.providerActivity,
+    required this.presentationPhase
+  });
+
+  factory SessionActivitySummary.fromJson(Map<String, dynamic> json) {
+    return SessionActivitySummary(
+      session: (() {
+        final map = _sdkworkAsMap(json['session']);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.session is required');
+        }
+        return AgentSessionRecord.fromJson(map);
+      })(),
+      latestTurn: (() {
+        if (!json.containsKey('latestTurn')) {
+          throw FormatException('SessionActivitySummary.latestTurn is required');
+        }
+        final _sdkworkRequiredValue = json['latestTurn'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.latestTurn is required');
+        }
+        return AgentTurnRecord.fromJson(map);
+      })();
+      })(),
+      pendingInteraction: (() {
+        if (!json.containsKey('pendingInteraction')) {
+          throw FormatException('SessionActivitySummary.pendingInteraction is required');
+        }
+        final _sdkworkRequiredValue = json['pendingInteraction'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.pendingInteraction is required');
+        }
+        return AgentInteractionRecord.fromJson(map);
+      })();
+      })(),
+      currentRuntimeBinding: (() {
+        if (!json.containsKey('currentRuntimeBinding')) {
+          throw FormatException('SessionActivitySummary.currentRuntimeBinding is required');
+        }
+        final _sdkworkRequiredValue = json['currentRuntimeBinding'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.currentRuntimeBinding is required');
+        }
+        return AgentSessionRuntimeBindingRecord.fromJson(map);
+      })();
+      })(),
+      latestRuntimeBinding: (() {
+        if (!json.containsKey('latestRuntimeBinding')) {
+          throw FormatException('SessionActivitySummary.latestRuntimeBinding is required');
+        }
+        final _sdkworkRequiredValue = json['latestRuntimeBinding'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.latestRuntimeBinding is required');
+        }
+        return AgentSessionRuntimeBindingRecord.fromJson(map);
+      })();
+      })(),
+      userState: (() {
+        if (!json.containsKey('userState')) {
+          throw FormatException('SessionActivitySummary.userState is required');
+        }
+        final _sdkworkRequiredValue = json['userState'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.userState is required');
+        }
+        return AgentResourceUserStateRecord.fromJson(map);
+      })();
+      })(),
+      providerIdentity: (() {
+        final map = _sdkworkAsMap(json['providerIdentity']);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.providerIdentity is required');
+        }
+        return SessionProviderIdentity.fromJson(map);
+      })(),
+      freshness: (() {
+        final map = _sdkworkAsMap(json['freshness']);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.freshness is required');
+        }
+        return SessionActivityFreshness.fromJson(map);
+      })(),
+      providerActivity: (() {
+        if (!json.containsKey('providerActivity')) {
+          throw FormatException('SessionActivitySummary.providerActivity is required');
+        }
+        final _sdkworkRequiredValue = json['providerActivity'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('SessionActivitySummary.providerActivity is required');
+        }
+        return SessionProviderActivityObservation.fromJson(map);
+      })();
+      })(),
+      presentationPhase: (() {
+        final value = json['presentationPhase']?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivitySummary.presentationPhase is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'session': session.toJson(),
+      'latestTurn': latestTurn?.toJson(),
+      'pendingInteraction': pendingInteraction?.toJson(),
+      'currentRuntimeBinding': currentRuntimeBinding?.toJson(),
+      'latestRuntimeBinding': latestRuntimeBinding?.toJson(),
+      'userState': userState?.toJson(),
+      'providerIdentity': providerIdentity.toJson(),
+      'freshness': freshness.toJson(),
+      'providerActivity': providerActivity?.toJson(),
+      'presentationPhase': presentationPhase,
+    };
+  }
+}
+
+class SessionActivitySummaryListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  SessionActivitySummaryListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory SessionActivitySummaryListResponse.fromJson(Map<String, dynamic> json) {
+    return SessionActivitySummaryListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('SessionActivitySummaryListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('SessionActivitySummaryListResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('SessionActivitySummaryListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
     };
   }
 }
@@ -6838,10 +7599,10 @@ class AgentSessionRuntimeBindingRecord {
   final String providerBindingId;
   final String modelId;
   final String providerId;
-  final String? nativeSessionId;
-  final String? nativeSessionTreeId;
-  final String? nativeParentSessionId;
-  final String? nativeForkedFromSessionId;
+  final String? providerSessionId;
+  final String? providerSessionTreeId;
+  final String? providerParentSessionId;
+  final String? providerForkedFromSessionId;
   final String status;
   final bool isCurrent;
   final String version;
@@ -6861,10 +7622,10 @@ class AgentSessionRuntimeBindingRecord {
     required this.providerBindingId,
     required this.modelId,
     required this.providerId,
-    this.nativeSessionId,
-    this.nativeSessionTreeId,
-    this.nativeParentSessionId,
-    this.nativeForkedFromSessionId,
+    this.providerSessionId,
+    this.providerSessionTreeId,
+    this.providerParentSessionId,
+    this.providerForkedFromSessionId,
     required this.status,
     required this.isCurrent,
     required this.version,
@@ -6940,10 +7701,10 @@ class AgentSessionRuntimeBindingRecord {
         }
         return value;
       })(),
-      nativeSessionId: json['nativeSessionId']?.toString(),
-      nativeSessionTreeId: json['nativeSessionTreeId']?.toString(),
-      nativeParentSessionId: json['nativeParentSessionId']?.toString(),
-      nativeForkedFromSessionId: json['nativeForkedFromSessionId']?.toString(),
+      providerSessionId: json['providerSessionId']?.toString(),
+      providerSessionTreeId: json['providerSessionTreeId']?.toString(),
+      providerParentSessionId: json['providerParentSessionId']?.toString(),
+      providerForkedFromSessionId: json['providerForkedFromSessionId']?.toString(),
       status: (() {
         final value = json['status']?.toString();
         if (value == null) {
@@ -6996,10 +7757,10 @@ class AgentSessionRuntimeBindingRecord {
       'providerBindingId': providerBindingId,
       'modelId': modelId,
       'providerId': providerId,
-      'nativeSessionId': nativeSessionId,
-      'nativeSessionTreeId': nativeSessionTreeId,
-      'nativeParentSessionId': nativeParentSessionId,
-      'nativeForkedFromSessionId': nativeForkedFromSessionId,
+      'providerSessionId': providerSessionId,
+      'providerSessionTreeId': providerSessionTreeId,
+      'providerParentSessionId': providerParentSessionId,
+      'providerForkedFromSessionId': providerForkedFromSessionId,
       'status': status,
       'isCurrent': isCurrent,
       'version': version,
@@ -7111,10 +7872,10 @@ class CreateAgentSessionRuntimeBindingRequest {
   final String providerBindingId;
   final String modelId;
   final String providerId;
-  final String? nativeSessionId;
-  final String? nativeSessionTreeId;
-  final String? nativeParentSessionId;
-  final String? nativeForkedFromSessionId;
+  final String? providerSessionId;
+  final String? providerSessionTreeId;
+  final String? providerParentSessionId;
+  final String? providerForkedFromSessionId;
   final String requestedAt;
 
   CreateAgentSessionRuntimeBindingRequest({
@@ -7125,10 +7886,10 @@ class CreateAgentSessionRuntimeBindingRequest {
     required this.providerBindingId,
     required this.modelId,
     required this.providerId,
-    this.nativeSessionId,
-    this.nativeSessionTreeId,
-    this.nativeParentSessionId,
-    this.nativeForkedFromSessionId,
+    this.providerSessionId,
+    this.providerSessionTreeId,
+    this.providerParentSessionId,
+    this.providerForkedFromSessionId,
     required this.requestedAt
   });
 
@@ -7171,10 +7932,10 @@ class CreateAgentSessionRuntimeBindingRequest {
         }
         return value;
       })(),
-      nativeSessionId: json['nativeSessionId']?.toString(),
-      nativeSessionTreeId: json['nativeSessionTreeId']?.toString(),
-      nativeParentSessionId: json['nativeParentSessionId']?.toString(),
-      nativeForkedFromSessionId: json['nativeForkedFromSessionId']?.toString(),
+      providerSessionId: json['providerSessionId']?.toString(),
+      providerSessionTreeId: json['providerSessionTreeId']?.toString(),
+      providerParentSessionId: json['providerParentSessionId']?.toString(),
+      providerForkedFromSessionId: json['providerForkedFromSessionId']?.toString(),
       requestedAt: (() {
         final value = json['requestedAt']?.toString();
         if (value == null) {
@@ -7194,10 +7955,10 @@ class CreateAgentSessionRuntimeBindingRequest {
       'providerBindingId': providerBindingId,
       'modelId': modelId,
       'providerId': providerId,
-      'nativeSessionId': nativeSessionId,
-      'nativeSessionTreeId': nativeSessionTreeId,
-      'nativeParentSessionId': nativeParentSessionId,
-      'nativeForkedFromSessionId': nativeForkedFromSessionId,
+      'providerSessionId': providerSessionId,
+      'providerSessionTreeId': providerSessionTreeId,
+      'providerParentSessionId': providerParentSessionId,
+      'providerForkedFromSessionId': providerForkedFromSessionId,
       'requestedAt': requestedAt,
     };
   }
@@ -7211,10 +7972,10 @@ class UpdateAgentSessionRuntimeBindingRequest {
   final String? providerBindingId;
   final String? modelId;
   final String? providerId;
-  final String? nativeSessionId;
-  final String? nativeSessionTreeId;
-  final String? nativeParentSessionId;
-  final String? nativeForkedFromSessionId;
+  final String? providerSessionId;
+  final String? providerSessionTreeId;
+  final String? providerParentSessionId;
+  final String? providerForkedFromSessionId;
   final String expectedVersion;
   final String requestedAt;
 
@@ -7226,10 +7987,10 @@ class UpdateAgentSessionRuntimeBindingRequest {
     this.providerBindingId,
     this.modelId,
     this.providerId,
-    this.nativeSessionId,
-    this.nativeSessionTreeId,
-    this.nativeParentSessionId,
-    this.nativeForkedFromSessionId,
+    this.providerSessionId,
+    this.providerSessionTreeId,
+    this.providerParentSessionId,
+    this.providerForkedFromSessionId,
     required this.expectedVersion,
     required this.requestedAt
   });
@@ -7243,10 +8004,10 @@ class UpdateAgentSessionRuntimeBindingRequest {
       providerBindingId: json['providerBindingId']?.toString(),
       modelId: json['modelId']?.toString(),
       providerId: json['providerId']?.toString(),
-      nativeSessionId: json['nativeSessionId']?.toString(),
-      nativeSessionTreeId: json['nativeSessionTreeId']?.toString(),
-      nativeParentSessionId: json['nativeParentSessionId']?.toString(),
-      nativeForkedFromSessionId: json['nativeForkedFromSessionId']?.toString(),
+      providerSessionId: json['providerSessionId']?.toString(),
+      providerSessionTreeId: json['providerSessionTreeId']?.toString(),
+      providerParentSessionId: json['providerParentSessionId']?.toString(),
+      providerForkedFromSessionId: json['providerForkedFromSessionId']?.toString(),
       expectedVersion: (() {
         final value = json['expectedVersion']?.toString();
         if (value == null) {
@@ -7273,10 +8034,10 @@ class UpdateAgentSessionRuntimeBindingRequest {
       'providerBindingId': providerBindingId,
       'modelId': modelId,
       'providerId': providerId,
-      'nativeSessionId': nativeSessionId,
-      'nativeSessionTreeId': nativeSessionTreeId,
-      'nativeParentSessionId': nativeParentSessionId,
-      'nativeForkedFromSessionId': nativeForkedFromSessionId,
+      'providerSessionId': providerSessionId,
+      'providerSessionTreeId': providerSessionTreeId,
+      'providerParentSessionId': providerParentSessionId,
+      'providerForkedFromSessionId': providerForkedFromSessionId,
       'expectedVersion': expectedVersion,
       'requestedAt': requestedAt,
     };

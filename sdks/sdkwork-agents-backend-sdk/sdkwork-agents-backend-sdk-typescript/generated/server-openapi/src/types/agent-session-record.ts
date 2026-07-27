@@ -30,11 +30,11 @@ export interface AgentSessionRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  lastItemAt?: string;
-  closedAt?: string;
-  archivedAt?: string;
+  lastItemAt?: string | null;
+  closedAt?: string | null;
+  archivedAt?: string | null;
   archivedBy?: Int64String | null;
-  deletedAt?: string;
+  deletedAt?: string | null;
   deletedBy?: Int64String | null;
-  retentionUntil?: string;
+  retentionUntil?: string | null;
 }

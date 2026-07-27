@@ -574,10 +574,10 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_runtime_binding (
     provider_binding_id VARCHAR(128) NOT NULL,
     model_id VARCHAR(128) NOT NULL,
     provider_id VARCHAR(128) NOT NULL,
-    native_session_id VARCHAR(256),
-    native_session_tree_id VARCHAR(256),
-    native_parent_session_id VARCHAR(256),
-    native_forked_from_session_id VARCHAR(256),
+    provider_session_id VARCHAR(256),
+    provider_session_tree_id VARCHAR(256),
+    provider_parent_session_id VARCHAR(256),
+    provider_forked_from_session_id VARCHAR(256),
     status SMALLINT NOT NULL DEFAULT 0,
     is_current BOOLEAN NOT NULL DEFAULT TRUE,
     version BIGINT NOT NULL DEFAULT 0,
@@ -613,10 +613,10 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_runtime_binding (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_current
     ON ai_agent_session_runtime_binding (tenant_id, organization_id, session_id)
     WHERE is_current = TRUE;
-CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_native
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_provider_session
     ON ai_agent_session_runtime_binding (
-        tenant_id, organization_id, provider_id, native_session_id
-    ) WHERE native_session_id IS NOT NULL AND status <> 3;
+        tenant_id, organization_id, provider_id, provider_session_id
+    ) WHERE provider_session_id IS NOT NULL AND status <> 3;
 CREATE INDEX IF NOT EXISTS idx_ai_agent_session_runtime_binding_list
     ON ai_agent_session_runtime_binding (
         tenant_id, organization_id, session_id, is_current DESC, updated_at DESC, id DESC

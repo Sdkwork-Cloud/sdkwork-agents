@@ -25,5 +25,5 @@ export interface AgentProjectRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  archivedAt?: string;
+  archivedAt?: string | null;
 }

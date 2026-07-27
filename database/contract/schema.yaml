@@ -79,7 +79,7 @@ tables:
     profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: Selected runtime, provider-native lineage, and runtime-location reference for a session.
+    description: Selected runtime, provider Session lineage, and runtime-location reference for a session.
   - name: ai_agent_turn
     profile: operational_state
     lifecycle_status: active

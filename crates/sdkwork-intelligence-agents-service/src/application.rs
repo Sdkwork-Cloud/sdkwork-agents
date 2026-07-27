@@ -33,6 +33,7 @@ use crate::project::{
 use crate::runtime_facade_bridge::{
     execute_preview_response, execute_prompt_optimization, RUNTIME_MODE_CONTRACT_FALLBACK,
 };
+use crate::session_activity::SessionActivitySummaryRecord;
 use crate::turn_runtime::{
     complete_with_timeout, is_capacity_error, is_inference_error, ContractTurnExecutor,
     TurnExecutionInput, TurnExecutor, TURN_EXECUTION_TIMEOUT,
@@ -552,7 +553,7 @@ where
                     binding_id: binding_id.to_string(),
                     provider_id: provider_id.to_string(),
                     implementation_kind: AgentImplementationKind::TypedLocalProvider,
-                    configuration_profile_id: format!("profile.native.{engine_key}"),
+                    configuration_profile_id: format!("profile.provider.{engine_key}"),
                     capabilities: vec!["model.chat".to_string(), "session.resume".to_string()],
                     active: true,
                     version: 1,
@@ -2503,6 +2504,79 @@ where
     // Session management
     // -----------------------------------------------------------------------
 
+    fn ensure_session_agent_identity(&self, command: &CreateSessionCommand) -> KernelResult<()> {
+        let canonical_engine_key = command
+            .agent_id
+            .strip_prefix("agent.intelligence.")
+            .filter(|engine_key| {
+                sdkwork_agents_runtime_facade::is_canonical_code_engine(engine_key)
+            })
+            .filter(|engine_key| {
+                sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+                    == Some(command.agent_id.as_str())
+            });
+        if canonical_engine_key.is_some() {
+            let identity = sdkwork_agents_runtime_facade::resolve_code_engine_runtime_identity(
+                command.agent_id.as_str(),
+            )
+            .map_err(|error| {
+                KernelError::provider_error("code_engine_runtime_identity", error.to_string())
+            })?
+            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            return self.ensure_code_engine_runtime_identity(
+                command.tenant_id,
+                command.organization_id,
+                command.owner_user_id,
+                identity.engine_key.as_str(),
+                identity.agent_id.as_str(),
+                identity.binding_id.as_str(),
+                identity.provider_id.as_str(),
+                command.requested_by.clone(),
+                command.requested_at.as_str(),
+            );
+        }
+
+        self.repository
+            .get(command.tenant_id, command.agent_id.as_str())?
+            .filter(|agent| !agent.is_deleted())
+            .map(|_| ())
+            .ok_or_else(|| KernelError::validation("agent not found"))
+    }
+
+    fn find_session_creation_replay(
+        &self,
+        command: &CreateSessionCommand,
+    ) -> KernelResult<Option<AgentSessionRecord>> {
+        let Some(idempotency_key) = command.idempotency_key.as_deref() else {
+            return Ok(None);
+        };
+        let Some(existing) = self.repository.get_session_by_creation_idempotency(
+            command.tenant_id,
+            command.organization_id,
+            command.owner_user_id,
+            idempotency_key,
+        )?
+        else {
+            return Ok(None);
+        };
+        if existing.deleted_at.is_some() {
+            return Err(KernelError::conflict(
+                "session creation idempotency key belongs to a deleted session",
+            ));
+        }
+        if existing.payload_hash.as_deref() != command.payload_hash.as_deref()
+            || existing.agent_id != command.agent_id
+            || existing.project_id != command.project_id
+            || (!is_trimmed_blank(command.session_id.as_str())
+                && existing.session_id != command.session_id)
+        {
+            return Err(KernelError::conflict(
+                "session creation idempotency payload conflicts with the existing session",
+            ));
+        }
+        Ok(Some(existing))
+    }
+
     pub fn create_session(
         &self,
         command: CreateSessionCommand,
@@ -2510,25 +2584,25 @@ where
         self.create_session_with_authorization(command, true)
     }
 
-    pub(crate) fn reconcile_native_history_session(
+    pub(crate) fn reconcile_provider_session_history_session(
         &self,
         command: CreateSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
         let engine_key = command
             .agent_id
             .strip_prefix("agent.intelligence.")
-            .ok_or_else(|| KernelError::validation("native history agent is not canonical"))?;
+            .ok_or_else(|| KernelError::validation("provider Session history agent is not canonical"))?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.agent_id.as_str())
             || command.project_id.is_none()
             || command.source_module.as_deref() != Some("birdcoder")
-            || command.source_context_kind.as_deref() != Some("provider_native_session")
+            || command.source_context_kind.as_deref() != Some("provider_session")
             || !command
                 .session_id
-                .starts_with(&format!("session.native.{engine_key}."))
+                .starts_with(&format!("session.provider.{engine_key}."))
         {
             return Err(KernelError::validation(
-                "native history session reconciliation is not canonical",
+                "provider Session history session reconciliation is not canonical",
             ));
         }
         self.create_session_with_authorization(command, false)
@@ -2555,10 +2629,33 @@ where
             )?;
         }
 
-        // Ensure the agent exists
-        self.repository
-            .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+        if command.idempotency_key.is_some() != command.payload_hash.is_some() {
+            return Err(KernelError::validation(
+                "idempotencyKey and payloadHash must be supplied together",
+            ));
+        }
+        if let Some(idempotency_key) = command.idempotency_key.as_deref() {
+            require_non_blank(idempotency_key, "idempotencyKey")?;
+            require_non_blank(
+                command.payload_hash.as_deref().unwrap_or_default(),
+                "payloadHash",
+            )?;
+            if idempotency_key.len() > 256 {
+                return Err(KernelError::validation("idempotencyKey exceeds 256 bytes"));
+            }
+            if command.payload_hash.as_deref().unwrap_or_default().len() > 128 {
+                return Err(KernelError::validation("payloadHash exceeds 128 bytes"));
+            }
+        }
+        if let Some(title) = command.title.as_deref() {
+            require_non_blank(title, "title")?;
+            if title.len() > 512 {
+                return Err(KernelError::validation("title exceeds 512 bytes"));
+            }
+        }
+        if let Some(existing) = self.find_session_creation_replay(&command)? {
+            return Ok(existing);
+        }
 
         // Ensure session does not already exist
         if self
@@ -2633,12 +2730,6 @@ where
                 ));
             }
         }
-        if command.idempotency_key.is_some() != command.payload_hash.is_some() {
-            return Err(KernelError::validation(
-                "idempotencyKey and payloadHash must be supplied together",
-            ));
-        }
-
         if let Some(project_id) = command.project_id.as_deref() {
             validate_standard_id(project_id, "projectId", Some("project."))?;
             let project = self
@@ -2650,6 +2741,9 @@ where
                 return Err(KernelError::validation("project is not active"));
             }
         }
+
+        self.ensure_session_agent_identity(&command)?;
+        let replay_command = command.clone();
 
         let record = AgentSessionRecord {
             id: self.repository.next_id()?,
@@ -2666,7 +2760,7 @@ where
             source_context_id: command.source_context_id,
             parent_session_id: command.parent_session_id,
             forked_from_turn_id: command.forked_from_turn_id,
-            title: command.title,
+            title: command.title.map(|title| trim(&title).to_string()),
             status: AgentSessionStatus::Active,
             item_count: 0,
             last_item_sequence: 0,
@@ -2688,7 +2782,15 @@ where
             retention_until: None,
         };
 
-        self.repository.insert_session(record.clone())?;
+        if let Err(error) = self.repository.insert_session(record.clone()) {
+            if error.kind() == KernelErrorKind::Conflict && replay_command.idempotency_key.is_some()
+            {
+                if let Some(existing) = self.find_session_creation_replay(&replay_command)? {
+                    return Ok(existing);
+                }
+            }
+            return Err(error);
+        }
         self.emit_session_audit_event(
             AgentAuditAction::SessionCreated,
             &record,
@@ -2702,13 +2804,48 @@ where
         &self,
         command: UpdateSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
+        self.update_session_with_authorization(command, true, false)
+    }
+
+    pub(crate) fn reconcile_provider_session_history_session_title(
+        &self,
+        command: UpdateSessionCommand,
+    ) -> KernelResult<AgentSessionRecord> {
+        let engine_key = command
+            .path_agent_id
+            .strip_prefix("agent.intelligence.")
+            .ok_or_else(|| KernelError::validation("provider Session history agent is not canonical"))?;
+        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+            != Some(command.path_agent_id.as_str())
+            || !command
+                .session_id
+                .starts_with(&format!("session.provider.{engine_key}."))
+            || command.title.is_none()
+            || command.project_id.is_some()
+        {
+            return Err(KernelError::validation(
+                "provider Session history session title reconciliation is not canonical",
+            ));
+        }
+        self.update_session_with_authorization(command, false, true)
+    }
+
+    fn update_session_with_authorization(
+        &self,
+        command: UpdateSessionCommand,
+        authorize: bool,
+        require_provider_session_history: bool,
+    ) -> KernelResult<AgentSessionRecord> {
+        validate_agent_id(command.path_agent_id.as_str())?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
-        self.authorize(
-            "agent.business.session.update",
-            command.requested_by.clone(),
-            format!("agent.business.session.{}", command.session_id),
-            "session.update",
-        )?;
+        if authorize {
+            self.authorize(
+                "agent.business.session.update",
+                command.requested_by.clone(),
+                format!("agent.business.session.{}", command.session_id),
+                "session.update",
+            )?;
+        }
         let mut record = self
             .repository
             .get_session(
@@ -2718,6 +2855,7 @@ where
             )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
         if record.organization_id != command.organization_id {
             return Err(KernelError::validation("session organization mismatch"));
         }
@@ -2727,6 +2865,16 @@ where
         if record.deleted_at.is_some() {
             return Err(KernelError::validation("session not found"));
         }
+        if require_provider_session_history
+            && (record.source_module.as_deref() != Some("birdcoder")
+                || record.source_context_kind.as_deref() != Some("provider_session")
+                || record.project_id.is_none()
+                || record.source_context_id != record.project_id)
+        {
+            return Err(KernelError::validation(
+                "provider Session history session title reconciliation target is not canonical",
+            ));
+        }
 
         let mut audit_action = AgentAuditAction::SessionRenamed;
         if let Some(title) = command.title {
@@ -2734,7 +2882,11 @@ where
             if title.len() > 512 {
                 return Err(KernelError::validation("title exceeds 512 bytes"));
             }
-            record.title = Some(trim(&title).to_string());
+            let title = trim(&title).to_string();
+            if require_provider_session_history && record.title.as_deref() == Some(title.as_str()) {
+                return Ok(record);
+            }
+            record.title = Some(title);
         }
         if let Some(project_id) = command.project_id {
             audit_action = AgentAuditAction::SessionMoved;
@@ -2766,6 +2918,7 @@ where
         &self,
         command: DeleteSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
+        validate_agent_id(command.path_agent_id.as_str())?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.authorize(
             "agent.business.session.delete",
@@ -2782,6 +2935,7 @@ where
             )?
             .ok_or_else(|| KernelError::validation("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
         if record.organization_id != command.organization_id {
             return Err(KernelError::validation("session organization mismatch"));
         }
@@ -2797,6 +2951,7 @@ where
     }
 
     pub fn close_session(&self, command: CloseSessionCommand) -> KernelResult<AgentSessionRecord> {
+        validate_agent_id(command.path_agent_id.as_str())?;
         self.authorize(
             "agent.business.session.close",
             command.requested_by.clone(),
@@ -2815,6 +2970,7 @@ where
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
 
         if !record.status.is_active() {
             return Err(KernelError::validation("session is not active"));
@@ -2837,6 +2993,7 @@ where
         &self,
         command: ArchiveSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
+        validate_agent_id(command.path_agent_id.as_str())?;
         self.authorize(
             "agent.business.session.archive",
             command.requested_by.clone(),
@@ -2855,6 +3012,7 @@ where
             .ok_or_else(|| KernelError::validation("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
 
         if record.status == AgentSessionStatus::Archived {
             return Err(KernelError::validation("session is already archived"));
@@ -2879,6 +3037,7 @@ where
     }
 
     pub fn get_session(&self, command: GetSessionCommand) -> KernelResult<AgentSessionRecord> {
+        validate_agent_id(command.path_agent_id.as_str())?;
         self.authorize(
             "agent.business.session.retrieve",
             command.requested_by,
@@ -2923,11 +3082,60 @@ where
         ))
     }
 
+    pub fn list_session_activity_summaries(
+        &self,
+        command: ListSessionActivitySummariesCommand,
+    ) -> KernelResult<PaginatedResult<SessionActivitySummaryRecord>> {
+        if command.query.page_size == 0 || command.query.page_size > MAX_PAGE_SIZE {
+            return Err(KernelError::validation(
+                "page_size must be between 1 and 200",
+            ));
+        }
+        if let Some(agent_id) = command.query.agent_id.as_deref() {
+            validate_standard_id(agent_id, "agentId", Some("agent."))?;
+        }
+        if let Some(project_id) = command.query.project_id.as_deref() {
+            validate_standard_id(project_id, "projectId", Some("project."))?;
+        }
+        if let Some(workspace_id) = command.query.workspace_id.as_deref() {
+            validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
+        }
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != command.query.scope_fingerprint())
+        {
+            return Err(KernelError::validation(
+                "cursor does not belong to the requested Session activity scope",
+            ));
+        }
+        self.authorize(
+            "agent.business.session.activity.list",
+            command.requested_by,
+            format!(
+                "agent.business.session_activity.owner.{}",
+                command.query.owner_user_id
+            ),
+            "session_activity.list",
+        )?;
+        self.repository
+            .list_session_activity_summaries(&command.query)
+    }
+
     pub fn list_session_user_states(
         &self,
         command: ListSessionUserStatesCommand,
     ) -> KernelResult<PaginatedResult<AgentResourceUserStateRecord>> {
         validate_agent_id(command.path_agent_id.as_str())?;
+        if command.query.resource_ids.len() > 100 {
+            return Err(KernelError::validation(
+                "session user state list accepts at most 100 session ids",
+            ));
+        }
+        for session_id in &command.query.resource_ids {
+            validate_standard_id(session_id, "sessionIds", Some("session."))?;
+        }
         self.authorize(
             "agent.business.session.user_state.list",
             command.requested_by,
@@ -3621,30 +3829,30 @@ where
         self.create_session_runtime_binding_with_authorization(command, true)
     }
 
-    pub(crate) fn reconcile_native_history_runtime_binding(
+    pub(crate) fn reconcile_provider_session_history_runtime_binding(
         &self,
         command: CreateSessionRuntimeBindingCommand,
     ) -> KernelResult<SessionRuntimeBindingResult> {
         let engine_key = command
             .path_agent_id
             .strip_prefix("agent.intelligence.")
-            .ok_or_else(|| KernelError::validation("native history agent is not canonical"))?;
+            .ok_or_else(|| KernelError::validation("provider Session history agent is not canonical"))?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
             || sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key)
                 != Some(command.provider_binding_id.as_str())
             || command.host_mode != "server"
-            || command.transport_kind != "native-history"
+            || command.transport_kind != "provider-session-history"
             || command
-                .native_session_id
+                .provider_session_id
                 .as_deref()
                 .is_none_or(str::is_empty)
             || !command
                 .session_id
-                .starts_with(&format!("session.native.{engine_key}."))
+                .starts_with(&format!("session.provider.{engine_key}."))
         {
             return Err(KernelError::validation(
-                "native history runtime binding reconciliation is not canonical",
+                "provider Session history runtime binding reconciliation is not canonical",
             ));
         }
         self.create_session_runtime_binding_with_authorization(command, false)
@@ -3739,16 +3947,16 @@ where
             ));
         }
         validate_optional_bounded(&command.runtime_location_id, "runtimeLocationId", 256)?;
-        validate_optional_bounded(&command.native_session_id, "nativeSessionId", 256)?;
-        validate_optional_bounded(&command.native_session_tree_id, "nativeSessionTreeId", 256)?;
+        validate_optional_bounded(&command.provider_session_id, "providerSessionId", 256)?;
+        validate_optional_bounded(&command.provider_session_tree_id, "providerSessionTreeId", 256)?;
         validate_optional_bounded(
-            &command.native_parent_session_id,
-            "nativeParentSessionId",
+            &command.provider_parent_session_id,
+            "providerParentSessionId",
             256,
         )?;
         validate_optional_bounded(
-            &command.native_forked_from_session_id,
-            "nativeForkedFromSessionId",
+            &command.provider_forked_from_session_id,
+            "providerForkedFromSessionId",
             256,
         )?;
         let record = AgentSessionRuntimeBindingRecord {
@@ -3763,10 +3971,10 @@ where
             provider_binding_id: command.provider_binding_id,
             model_id: command.model_id,
             provider_id: command.provider_id,
-            native_session_id: command.native_session_id,
-            native_session_tree_id: command.native_session_tree_id,
-            native_parent_session_id: command.native_parent_session_id,
-            native_forked_from_session_id: command.native_forked_from_session_id,
+            provider_session_id: command.provider_session_id,
+            provider_session_tree_id: command.provider_session_tree_id,
+            provider_parent_session_id: command.provider_parent_session_id,
+            provider_forked_from_session_id: command.provider_forked_from_session_id,
             status: AgentSessionRuntimeBindingStatus::Active,
             is_current: true,
             version: 0,
@@ -3936,24 +4144,24 @@ where
         }
         for (target, value, field) in [
             (
-                &mut record.native_session_id,
-                command.native_session_id,
-                "nativeSessionId",
+                &mut record.provider_session_id,
+                command.provider_session_id,
+                "providerSessionId",
             ),
             (
-                &mut record.native_session_tree_id,
-                command.native_session_tree_id,
-                "nativeSessionTreeId",
+                &mut record.provider_session_tree_id,
+                command.provider_session_tree_id,
+                "providerSessionTreeId",
             ),
             (
-                &mut record.native_parent_session_id,
-                command.native_parent_session_id,
-                "nativeParentSessionId",
+                &mut record.provider_parent_session_id,
+                command.provider_parent_session_id,
+                "providerParentSessionId",
             ),
             (
-                &mut record.native_forked_from_session_id,
-                command.native_forked_from_session_id,
-                "nativeForkedFromSessionId",
+                &mut record.provider_forked_from_session_id,
+                command.provider_forked_from_session_id,
+                "providerForkedFromSessionId",
             ),
         ] {
             if let Some(value) = value {
@@ -4449,26 +4657,26 @@ where
         Ok(record)
     }
 
-    pub(crate) fn reconcile_native_history_session_item(
+    pub(crate) fn reconcile_provider_session_history_session_item(
         &self,
         command: CreateSessionItemCommand,
         engine_key: &str,
     ) -> KernelResult<AgentSessionItemRecord> {
         let expected_agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
-            .ok_or_else(|| KernelError::validation("native history engine is not canonical"))?;
+            .ok_or_else(|| KernelError::validation("provider Session history engine is not canonical"))?;
         if !command
             .session_id
-            .starts_with(&format!("session.native.{engine_key}."))
+            .starts_with(&format!("session.provider.{engine_key}."))
             || !command
                 .item_id
-                .starts_with(&format!("item.native.{engine_key}."))
+                .starts_with(&format!("item.provider.{engine_key}."))
             || !matches!(
                 command.kind,
                 AgentSessionItemKind::UserInput | AgentSessionItemKind::AssistantOutput
             )
         {
             return Err(KernelError::validation(
-                "native history session item reconciliation is not canonical",
+                "provider Session history session item reconciliation is not canonical",
             ));
         }
         validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
@@ -4482,11 +4690,11 @@ where
             .ok_or_else(|| KernelError::validation("session not found"))?;
         if session.agent_id != expected_agent_id
             || session.source_module.as_deref() != Some("birdcoder")
-            || session.source_context_kind.as_deref() != Some("provider_native_session")
+            || session.source_context_kind.as_deref() != Some("provider_session")
             || !session.status.is_active()
         {
             return Err(KernelError::validation(
-                "native history session item reconciliation is not canonical",
+                "provider Session history session item reconciliation is not canonical",
             ));
         }
         if let Some(existing) = self.repository.get_session_item(
@@ -4500,7 +4708,7 @@ where
         require_non_blank(command.content.as_str(), "content")?;
         if command.content.len() > MAX_TURN_INPUT_CONTENT_BYTES {
             return Err(KernelError::validation(format!(
-                "native history content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
+                "provider Session history content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
         let record = AgentSessionItemRecord {
@@ -4590,21 +4798,20 @@ where
         &self,
         command: ListSessionItemsCommand,
     ) -> KernelResult<PaginatedResult<AgentSessionItemRecord>> {
+        validate_agent_id(command.path_agent_id.as_str())?;
         self.authorize(
             "agent.business.session_item.list",
             command.requested_by,
             format!("agent.business.session.{}", command.query.session_id),
             "session_item.list",
         )?;
-        let session = self
-            .repository
-            .get_session(
-                command.query.tenant_id,
-                command.query.organization_id,
-                command.query.session_id.as_str(),
-            )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
-        Self::ensure_session_owner_scope(&session, command.owner_scope)?;
+        self.load_session_for_nested_route(
+            command.query.tenant_id,
+            command.query.organization_id,
+            command.query.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            command.owner_scope,
+        )?;
         let total_count = self.repository.count_session_items(&command.query)?;
         let items = self.repository.list_session_items(&command.query)?;
         Ok(offset_paginated_result(

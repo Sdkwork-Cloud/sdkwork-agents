@@ -397,10 +397,10 @@ fn create_live_turn_session(
             provider_binding_id: provider_binding_id.to_string(),
             model_id: model_id.clone(),
             provider_id: provider_id.to_string(),
-            native_session_id: None,
-            native_session_tree_id: None,
-            native_parent_session_id: None,
-            native_forked_from_session_id: None,
+            provider_session_id: None,
+            provider_session_tree_id: None,
+            provider_parent_session_id: None,
+            provider_forked_from_session_id: None,
             owner_scope: Some(700),
             requested_by: subject(),
             requested_at: "2026-07-20T00:00:03Z".to_string(),
@@ -739,10 +739,10 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             provider_binding_id: provider_binding.binding_id,
             model_id: format!("model.live.{suffix}"),
             provider_id: provider_binding.provider_id,
-            native_session_id: None,
-            native_session_tree_id: None,
-            native_parent_session_id: None,
-            native_forked_from_session_id: None,
+            provider_session_id: None,
+            provider_session_tree_id: None,
+            provider_parent_session_id: None,
+            provider_forked_from_session_id: None,
             owner_scope: Some(700),
             requested_by: subject(),
             requested_at: "2026-07-19T00:01:20Z".to_string(),
@@ -861,6 +861,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     let page = service
         .list_session_items_with_drive_refs(ListSessionItemsCommand {
             query: SessionItemListQuery::for_session(700_001, 0, session_id.clone()),
+            path_agent_id: agent_id.clone(),
             owner_scope: Some(700),
             requested_by: subject(),
         })
@@ -924,6 +925,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     let page_after_rejections = service
         .list_session_items_with_drive_refs(ListSessionItemsCommand {
             query: SessionItemListQuery::for_session(700_001, 0, session_id.clone()),
+            path_agent_id: agent_id.clone(),
             owner_scope: Some(700),
             requested_by: subject(),
         })

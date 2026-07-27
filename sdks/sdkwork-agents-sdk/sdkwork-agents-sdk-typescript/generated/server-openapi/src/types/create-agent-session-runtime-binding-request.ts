@@ -6,9 +6,9 @@ export interface CreateAgentSessionRuntimeBindingRequest {
   providerBindingId: string;
   modelId: string;
   providerId: string;
-  nativeSessionId?: string;
-  nativeSessionTreeId?: string;
-  nativeParentSessionId?: string;
-  nativeForkedFromSessionId?: string;
+  providerSessionId?: string;
+  providerSessionTreeId?: string;
+  providerParentSessionId?: string;
+  providerForkedFromSessionId?: string;
   requestedAt: string;
 }

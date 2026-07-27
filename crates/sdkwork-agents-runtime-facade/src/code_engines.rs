@@ -1,6 +1,6 @@
 use sdkwork_agent_kernel::{
     KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
-    ModelStreamSink,
+    ModelStreamSink, ProviderSessionActivityProvider, SessionActivitySnapshot,
 };
 use sdkwork_agent_provider_claude_code::ClaudeCodeSdkIntegration;
 use sdkwork_agent_provider_codex::CodexSdkIntegration;
@@ -68,6 +68,42 @@ pub fn code_engine_binding_id(engine_key: &str) -> Option<&'static str> {
         "hermes" => Some(HERMES_BINDING_ID),
         _ => None,
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodeEngineRuntimeIdentity {
+    pub engine_key: String,
+    pub agent_id: String,
+    pub binding_id: String,
+    pub provider_id: String,
+}
+
+pub fn resolve_code_engine_runtime_identity(
+    agent_id: &str,
+) -> Result<Option<CodeEngineRuntimeIdentity>, CodeEngineBootstrapError> {
+    let Some(engine_key) = bootstrappable_engine_keys()
+        .into_iter()
+        .find(|engine_key| code_engine_agent_id(engine_key) == Some(agent_id))
+    else {
+        return Ok(None);
+    };
+    let slot = bootstrap_code_engine(engine_key)?;
+    let provider_id = slot
+        .list_model_descriptors()
+        .into_iter()
+        .next()
+        .map(|descriptor| descriptor.provider_id)
+        .ok_or_else(|| {
+            CodeEngineBootstrapError::Bootstrap(format!(
+                "code engine {engine_key} did not publish a model provider"
+            ))
+        })?;
+    Ok(Some(CodeEngineRuntimeIdentity {
+        engine_key: engine_key.to_string(),
+        agent_id: agent_id.to_string(),
+        binding_id: slot.binding_id().to_string(),
+        provider_id,
+    }))
 }
 
 #[derive(Debug)]
@@ -153,7 +189,26 @@ impl CodeEngineSlot {
         self.model_provider().stream_into(request, sink)
     }
 
-    /// Whether this engine can establish a new native session from a verified
+    pub fn get_provider_session_activity(
+        &self,
+        provider_session_id: &str,
+    ) -> KernelResult<SessionActivitySnapshot> {
+        match self {
+            Self::Codex(integration) => integration.get_provider_session_activity(provider_session_id),
+            Self::ClaudeCode(integration) => {
+                integration.get_provider_session_activity(provider_session_id)
+            }
+            Self::Gemini(integration) => integration.get_provider_session_activity(provider_session_id),
+            Self::OpenCode(integration) => {
+                integration.get_provider_session_activity(provider_session_id)
+            }
+            Self::OpenClaw(_) | Self::Hermes(_) => {
+                Ok(SessionActivitySnapshot::unsupported(provider_session_id))
+            }
+        }
+    }
+
+    /// Whether this engine can establish a new provider session from a verified
     /// runtime stream completion. Codex is the first provider with that
     /// end-to-end contract; other providers remain invoke-only for initial
     /// turns until their runtime can prove the same identity.
@@ -248,5 +303,27 @@ mod tests {
 
         assert!(codex.supports_first_turn_streaming_completion());
         assert!(!gemini.supports_first_turn_streaming_completion());
+    }
+
+    #[test]
+    fn runtime_identity_resolves_every_bootstrappable_agent_id() {
+        for engine_key in bootstrappable_engine_keys() {
+            let agent_id = code_engine_agent_id(engine_key).expect("agent id");
+            let identity = resolve_code_engine_runtime_identity(agent_id)
+                .expect("identity resolution")
+                .expect("known identity");
+            assert_eq!(identity.engine_key, engine_key);
+            assert_eq!(identity.agent_id, agent_id);
+            assert_eq!(
+                identity.binding_id,
+                code_engine_binding_id(engine_key).unwrap()
+            );
+            assert!(!identity.provider_id.is_empty());
+        }
+        assert!(
+            resolve_code_engine_runtime_identity("agent.intelligence.unknown")
+                .expect("unknown identity resolution")
+                .is_none()
+        );
     }
 }

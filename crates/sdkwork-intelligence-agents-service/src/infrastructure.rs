@@ -1,7 +1,7 @@
 use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
-    AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
+    AgentInteractionKind, AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
     AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionItemStatus,
     AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
@@ -13,12 +13,16 @@ use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
     InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionCheckpointListQuery, SessionItemListQuery, SessionListQuery,
-    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery, TurnRequestWriteOutcome,
-    WorkspaceListQuery,
+    ResourceUserStateListQuery, SessionActivitySummaryListQuery, SessionCheckpointListQuery,
+    SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery,
+    TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
 };
 use crate::project::{
     project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus,
+};
+use crate::session_activity::{
+    encode_session_activity_cursor, SessionActivityCursor, SessionActivitySource,
+    SessionActivitySummaryRecord,
 };
 use crate::validation::parse_rfc3339_datetime;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
@@ -332,18 +336,22 @@ type ProviderBindingIndexKey = (u64, String, Reverse<bool>, Reverse<String>, Str
 type CompositionSlotPrimaryKey = (u64, String, String);
 type CompositionSlotIndexKey = (u64, String, i32, String);
 type SessionPrimaryKey = (u64, u64, String);
+type SessionIdempotencyKey = (u64, u64, u64, String);
 type SessionRuntimeBindingPrimaryKey = (u64, u64, String, String);
 type SessionCheckpointPrimaryKey = (u64, u64, String, String);
 type ResourceUserStatePrimaryKey = (u64, u64, u64, i16, String);
 type SessionIndexKey = (u64, u64, Reverse<String>, String);
+type SessionActivityIndexKey = (u64, u64, u64, String, u64);
 type SessionItemPrimaryKey = (u64, u64, String, String);
 type ItemFeedbackPrimaryKey = (u64, u64, String, u64);
 type ItemDriveRefPrimaryKey = (u64, u64, String, String, String);
 type SessionItemIndexKey = (u64, u64, String, u64, String);
 type TurnPrimaryKey = (u64, u64, String);
 type TurnIdempotencyKey = (u64, u64, u64, String);
+type TurnIndexKey = (u64, u64, String, Reverse<String>, Reverse<u64>);
 type InteractionPrimaryKey = (u64, u64, String, String);
 type InteractionIndexKey = (u64, u64, String, Reverse<String>, String);
+type PendingInteractionIndexKey = (u64, u64, String, i16, Reverse<String>, String);
 type TaskPrimaryKey = (u64, String);
 type TaskIndexKey = (u64, Reverse<String>, String);
 
@@ -412,8 +420,14 @@ pub struct InMemoryAgentRepository {
     composition_slot_index: RwLock<BTreeMap<CompositionSlotIndexKey, CompositionSlotPrimaryKey>>,
     sessions: RwLock<HashMap<SessionPrimaryKey, AgentSessionRecord>>,
     session_index: RwLock<BTreeMap<SessionIndexKey, SessionPrimaryKey>>,
+    session_activity_index:
+        RwLock<BTreeMap<SessionActivityIndexKey, (SessionPrimaryKey, SessionActivitySource)>>,
+    session_activity_keys: RwLock<HashMap<SessionPrimaryKey, SessionActivityIndexKey>>,
+    session_idempotency: RwLock<HashMap<SessionIdempotencyKey, SessionPrimaryKey>>,
     session_runtime_bindings:
         RwLock<HashMap<SessionRuntimeBindingPrimaryKey, AgentSessionRuntimeBindingRecord>>,
+    current_session_runtime_bindings:
+        RwLock<HashMap<SessionPrimaryKey, SessionRuntimeBindingPrimaryKey>>,
     session_checkpoints: RwLock<HashMap<SessionCheckpointPrimaryKey, AgentSessionCheckpointRecord>>,
     resource_user_states:
         RwLock<HashMap<ResourceUserStatePrimaryKey, AgentResourceUserStateRecord>>,
@@ -423,8 +437,10 @@ pub struct InMemoryAgentRepository {
     session_item_index: RwLock<BTreeMap<SessionItemIndexKey, SessionItemPrimaryKey>>,
     turns: RwLock<HashMap<TurnPrimaryKey, AgentTurnRecord>>,
     turn_idempotency: RwLock<HashMap<TurnIdempotencyKey, TurnPrimaryKey>>,
+    turn_index: RwLock<BTreeMap<TurnIndexKey, TurnPrimaryKey>>,
     interactions: RwLock<HashMap<InteractionPrimaryKey, AgentInteractionRecord>>,
     interaction_index: RwLock<BTreeMap<InteractionIndexKey, InteractionPrimaryKey>>,
+    pending_interaction_index: RwLock<BTreeMap<PendingInteractionIndexKey, InteractionPrimaryKey>>,
     tasks: RwLock<HashMap<TaskPrimaryKey, AgentTaskRecord>>,
     task_index: RwLock<BTreeMap<TaskIndexKey, TaskPrimaryKey>>,
 }
@@ -456,7 +472,11 @@ impl InMemoryAgentRepository {
             composition_slot_index: RwLock::new(BTreeMap::new()),
             sessions: RwLock::new(HashMap::new()),
             session_index: RwLock::new(BTreeMap::new()),
+            session_activity_index: RwLock::new(BTreeMap::new()),
+            session_activity_keys: RwLock::new(HashMap::new()),
+            session_idempotency: RwLock::new(HashMap::new()),
             session_runtime_bindings: RwLock::new(HashMap::new()),
+            current_session_runtime_bindings: RwLock::new(HashMap::new()),
             session_checkpoints: RwLock::new(HashMap::new()),
             resource_user_states: RwLock::new(HashMap::new()),
             items: RwLock::new(HashMap::new()),
@@ -465,8 +485,10 @@ impl InMemoryAgentRepository {
             session_item_index: RwLock::new(BTreeMap::new()),
             turns: RwLock::new(HashMap::new()),
             turn_idempotency: RwLock::new(HashMap::new()),
+            turn_index: RwLock::new(BTreeMap::new()),
             interactions: RwLock::new(HashMap::new()),
             interaction_index: RwLock::new(BTreeMap::new()),
+            pending_interaction_index: RwLock::new(BTreeMap::new()),
             tasks: RwLock::new(HashMap::new()),
             task_index: RwLock::new(BTreeMap::new()),
         }
@@ -489,6 +511,187 @@ impl InMemoryAgentRepository {
                 .map(|project| project.project_id.clone())
                 .collect(),
         )
+    }
+
+    fn advance_session_activity(
+        &self,
+        session: &AgentSessionRecord,
+        occurred_at: &str,
+        source: SessionActivitySource,
+    ) {
+        let normalized_occurred_at = parse_rfc3339_datetime(occurred_at, "activity occurredAt")
+            .ok()
+            .and_then(|timestamp| {
+                timestamp
+                    .to_offset(time::UtcOffset::UTC)
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .ok()
+            })
+            .unwrap_or_else(|| occurred_at.to_string());
+        let occurred_at = normalized_occurred_at.as_str();
+        let primary_key = session_primary_key(session);
+        let mut keys = self.session_activity_keys.recovering_write();
+        let mut index = self.session_activity_index.recovering_write();
+        let (next_activity_at, next_source) = keys
+            .get(&primary_key)
+            .and_then(|key| {
+                index.get(key).and_then(|(_, current_source)| {
+                    (key.3.as_str() > occurred_at
+                        || (key.3.as_str() == occurred_at
+                            && current_source.precedence() >= source.precedence()))
+                    .then_some((key.3.clone(), *current_source))
+                })
+            })
+            .unwrap_or_else(|| (occurred_at.to_string(), source));
+        if let Some(previous_key) = keys.remove(&primary_key) {
+            index.remove(&previous_key);
+        }
+        let next_key = (
+            session.tenant_id,
+            session.organization_id,
+            session.owner_user_id,
+            next_activity_at,
+            session.id,
+        );
+        index.insert(next_key.clone(), (primary_key.clone(), next_source));
+        keys.insert(primary_key, next_key);
+    }
+
+    fn latest_turn_for_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> Option<AgentTurnRecord> {
+        self.turns
+            .recovering_read()
+            .values()
+            .filter(|turn| {
+                turn.tenant_id == tenant_id
+                    && turn.organization_id == organization_id
+                    && turn.session_id == session_id
+            })
+            .max_by_key(|turn| turn.id)
+            .cloned()
+    }
+
+    fn pending_interaction_for_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> Option<AgentInteractionRecord> {
+        let interactions = self.interactions.recovering_read();
+        let index = self.pending_interaction_index.recovering_read();
+        for kind in [
+            AgentInteractionKind::Approval.as_db_code(),
+            AgentInteractionKind::UserQuestion.as_db_code(),
+        ] {
+            let lower = (
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                kind,
+                Reverse("~".to_string()),
+                String::new(),
+            );
+            let upper = (
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                kind,
+                Reverse(String::new()),
+                "~".to_string(),
+            );
+            if let Some(interaction) = index
+                .range(lower..=upper)
+                .find_map(|(_, primary_key)| interactions.get(primary_key))
+            {
+                return Some(interaction.clone());
+            }
+        }
+        None
+    }
+
+    fn latest_interaction_component_for_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> Option<(String, u64)> {
+        self.interactions
+            .recovering_read()
+            .values()
+            .filter(|interaction| {
+                interaction.tenant_id == tenant_id
+                    && interaction.organization_id == organization_id
+                    && interaction.session_id == session_id
+            })
+            .max_by(|left, right| {
+                left.updated_at
+                    .cmp(&right.updated_at)
+                    .then_with(|| left.id.cmp(&right.id))
+            })
+            .map(|interaction| (interaction.interaction_id.clone(), interaction.version))
+    }
+
+    fn current_runtime_binding_for_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> Option<AgentSessionRuntimeBindingRecord> {
+        let session_key = (tenant_id, organization_id, session_id.to_string());
+        let binding_key = self
+            .current_session_runtime_bindings
+            .recovering_read()
+            .get(&session_key)
+            .cloned()?;
+        self.session_runtime_bindings
+            .recovering_read()
+            .get(&binding_key)
+            .filter(|binding| {
+                binding.is_current && binding.status == AgentSessionRuntimeBindingStatus::Active
+            })
+            .cloned()
+    }
+
+    fn latest_runtime_binding_for_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+    ) -> Option<AgentSessionRuntimeBindingRecord> {
+        self.session_runtime_bindings
+            .recovering_read()
+            .values()
+            .filter(|binding| {
+                binding.tenant_id == tenant_id
+                    && binding.organization_id == organization_id
+                    && binding.session_id == session_id
+            })
+            .max_by(|left, right| {
+                left.updated_at
+                    .cmp(&right.updated_at)
+                    .then_with(|| left.id.cmp(&right.id))
+            })
+            .cloned()
+    }
+
+    fn session_user_state_for_owner(
+        &self,
+        session: &AgentSessionRecord,
+    ) -> Option<AgentResourceUserStateRecord> {
+        self.resource_user_states
+            .recovering_read()
+            .get(&(
+                session.tenant_id,
+                session.organization_id,
+                session.owner_user_id,
+                AgentResourceType::Session.as_db_code(),
+                session.session_id.clone(),
+            ))
+            .cloned()
     }
 
     pub fn records(&self) -> Vec<AgentBusinessRecord> {
@@ -679,6 +882,17 @@ fn interaction_index_key(record: &AgentInteractionRecord) -> InteractionIndexKey
         record.organization_id,
         record.session_id.clone(),
         Reverse(record.created_at.clone()),
+        record.interaction_id.clone(),
+    )
+}
+
+fn pending_interaction_index_key(record: &AgentInteractionRecord) -> PendingInteractionIndexKey {
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.session_id.clone(),
+        record.kind.as_db_code(),
+        Reverse(record.updated_at.clone()),
         record.interaction_id.clone(),
     )
 }
@@ -1481,20 +1695,47 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn insert_session(&self, record: AgentSessionRecord) -> KernelResult<()> {
+        let activity_record = record.clone();
         let primary_key = session_primary_key(&record);
         let mut sessions = self.sessions.recovering_write();
         if sessions.contains_key(&primary_key) {
             return Err(KernelError::conflict("session already exists"));
         }
+        let idempotency_key = record.idempotency_key.as_ref().map(|idempotency_key| {
+            (
+                record.tenant_id,
+                record.organization_id,
+                record.owner_user_id,
+                idempotency_key.clone(),
+            )
+        });
+        let mut session_idempotency = self.session_idempotency.recovering_write();
+        if idempotency_key
+            .as_ref()
+            .is_some_and(|key| session_idempotency.contains_key(key))
+        {
+            return Err(KernelError::conflict(
+                "session creation idempotency key already exists",
+            ));
+        }
         let index_key = session_index_key(&record);
         sessions.insert(primary_key.clone(), record);
         self.session_index
             .recovering_write()
-            .insert(index_key, primary_key);
+            .insert(index_key, primary_key.clone());
+        if let Some(idempotency_key) = idempotency_key {
+            session_idempotency.insert(idempotency_key, primary_key);
+        }
+        self.advance_session_activity(
+            &activity_record,
+            &activity_record.updated_at,
+            SessionActivitySource::Session,
+        );
         Ok(())
     }
 
     fn update_session(&self, record: AgentSessionRecord) -> KernelResult<()> {
+        let activity_record = record.clone();
         let primary_key = session_primary_key(&record);
         let mut sessions = self.sessions.recovering_write();
         let existing = sessions
@@ -1513,6 +1754,11 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut index = self.session_index.recovering_write();
         index.remove(&previous_index_key);
         index.insert(next_index_key, primary_key);
+        self.advance_session_activity(
+            &activity_record,
+            &activity_record.updated_at,
+            SessionActivitySource::Session,
+        );
         Ok(())
     }
 
@@ -1528,6 +1774,26 @@ impl AgentRepository for InMemoryAgentRepository {
             .get(&(tenant_id, organization_id, session_id.to_string()))
             .filter(|record| record.deleted_at.is_none())
             .cloned())
+    }
+
+    fn get_session_by_creation_idempotency(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        idempotency_key: &str,
+    ) -> KernelResult<Option<AgentSessionRecord>> {
+        let primary_key = self
+            .session_idempotency
+            .recovering_read()
+            .get(&(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                idempotency_key.to_string(),
+            ))
+            .cloned();
+        Ok(primary_key.and_then(|key| self.sessions.recovering_read().get(&key).cloned()))
     }
 
     fn list_sessions(&self, query: &SessionListQuery) -> KernelResult<Vec<AgentSessionRecord>> {
@@ -1560,10 +1826,159 @@ impl AgentRepository for InMemoryAgentRepository {
         ))
     }
 
+    fn list_session_activity_summaries(
+        &self,
+        query: &SessionActivitySummaryListQuery,
+    ) -> KernelResult<crate::ports::PaginatedResult<SessionActivitySummaryRecord>> {
+        let sessions = self.sessions.recovering_read();
+        let projects = self.projects.recovering_read();
+        let activity_index = self.session_activity_index.recovering_read();
+        let lower = (
+            query.tenant_id,
+            query.organization_id,
+            query.owner_user_id,
+            String::new(),
+            0,
+        );
+        let upper = query.cursor.as_ref().map_or_else(
+            || {
+                std::ops::Bound::Included((
+                    query.tenant_id,
+                    query.organization_id,
+                    query.owner_user_id,
+                    "~".to_string(),
+                    u64::MAX,
+                ))
+            },
+            |cursor| {
+                std::ops::Bound::Excluded((
+                    query.tenant_id,
+                    query.organization_id,
+                    query.owner_user_id,
+                    cursor.activity_at.clone(),
+                    cursor.session_internal_id,
+                ))
+            },
+        );
+        let mut heads = activity_index
+            .range((std::ops::Bound::Included(lower), upper))
+            .rev()
+            .filter_map(|(index_key, (primary_key, source))| {
+                sessions
+                    .get(primary_key)
+                    .map(|session| (index_key.3.clone(), *source, session.clone()))
+            })
+            .filter(|(_, _, session)| {
+                query
+                    .agent_id
+                    .as_ref()
+                    .is_none_or(|agent_id| session.agent_id == *agent_id)
+                    && query
+                        .project_id
+                        .as_ref()
+                        .is_none_or(|project_id| session.project_id.as_ref() == Some(project_id))
+                    && query.workspace_id.as_ref().is_none_or(|workspace_id| {
+                        session.project_id.as_ref().is_some_and(|project_id| {
+                            projects
+                                .get(&(
+                                    session.tenant_id,
+                                    session.organization_id,
+                                    project_id.clone(),
+                                ))
+                                .is_some_and(|project| {
+                                    project.deleted_at.is_none()
+                                        && project.workspace_id == *workspace_id
+                                })
+                        })
+                    })
+            })
+            .take(query.page_size.saturating_add(1))
+            .collect::<Vec<_>>();
+        drop(activity_index);
+        drop(projects);
+        drop(sessions);
+
+        let has_more = heads.len() > query.page_size;
+        if has_more {
+            heads.pop();
+        }
+        let mut items = Vec::with_capacity(heads.len());
+        for (activity_at, source, session) in heads {
+            let latest_turn = self.latest_turn_for_session(
+                session.tenant_id,
+                session.organization_id,
+                &session.session_id,
+            );
+            let pending_interaction = self.pending_interaction_for_session(
+                session.tenant_id,
+                session.organization_id,
+                &session.session_id,
+            );
+            let current_runtime_binding = self.current_runtime_binding_for_session(
+                session.tenant_id,
+                session.organization_id,
+                &session.session_id,
+            );
+            let latest_runtime_binding = self.latest_runtime_binding_for_session(
+                session.tenant_id,
+                session.organization_id,
+                &session.session_id,
+            );
+            let user_state = self.session_user_state_for_owner(&session);
+            let latest_interaction_component = self.latest_interaction_component_for_session(
+                session.tenant_id,
+                session.organization_id,
+                &session.session_id,
+            );
+            items.push(SessionActivitySummaryRecord::from_parts(
+                session,
+                latest_turn,
+                pending_interaction,
+                current_runtime_binding,
+                latest_runtime_binding,
+                user_state,
+                latest_interaction_component,
+                activity_at,
+                source,
+            ));
+        }
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|summary| SessionActivityCursor {
+                    activity_at: summary.freshness.activity_at.clone(),
+                    session_internal_id: summary.session.id,
+                    scope_fingerprint: query.scope_fingerprint(),
+                })
+                .map(|cursor| encode_session_activity_cursor(&cursor))
+                .transpose()?
+        } else if items.is_empty() {
+            query
+                .cursor
+                .as_ref()
+                .map(encode_session_activity_cursor)
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(crate::ports::PaginatedResult {
+            items,
+            next_page_token,
+            total_count: None,
+            has_more,
+        })
+    }
+
     fn insert_session_runtime_binding(
         &self,
         record: AgentSessionRuntimeBindingRecord,
     ) -> KernelResult<()> {
+        let activity_at = record.updated_at.clone();
+        let session_key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+        );
         let key = (
             record.tenant_id,
             record.organization_id,
@@ -1588,7 +2003,20 @@ impl AgentRepository for InMemoryAgentRepository {
                 "session already has a current runtime binding",
             ));
         }
-        bindings.insert(key, record);
+        let is_current = record.is_current;
+        bindings.insert(key.clone(), record);
+        if is_current {
+            self.current_session_runtime_bindings
+                .recovering_write()
+                .insert(session_key.clone(), key);
+        }
+        if let Some(session) = self.sessions.recovering_read().get(&session_key).cloned() {
+            self.advance_session_activity(
+                &session,
+                &activity_at,
+                SessionActivitySource::RuntimeBinding,
+            );
+        }
         Ok(())
     }
 
@@ -1596,6 +2024,12 @@ impl AgentRepository for InMemoryAgentRepository {
         &self,
         record: AgentSessionRuntimeBindingRecord,
     ) -> KernelResult<()> {
+        let activity_at = record.updated_at.clone();
+        let session_key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+        );
         let key = (
             record.tenant_id,
             record.organization_id,
@@ -1624,7 +2058,22 @@ impl AgentRepository for InMemoryAgentRepository {
                 "session already has a current runtime binding",
             ));
         }
-        bindings.insert(key, record);
+        let is_current = record.is_current;
+        bindings.insert(key.clone(), record);
+        let mut current = self.current_session_runtime_bindings.recovering_write();
+        if is_current {
+            current.insert(session_key.clone(), key);
+        } else if current.get(&session_key) == Some(&key) {
+            current.remove(&session_key);
+        }
+        drop(current);
+        if let Some(session) = self.sessions.recovering_read().get(&session_key).cloned() {
+            self.advance_session_activity(
+                &session,
+                &activity_at,
+                SessionActivitySource::RuntimeBinding,
+            );
+        }
         Ok(())
     }
 
@@ -1653,18 +2102,7 @@ impl AgentRepository for InMemoryAgentRepository {
         organization_id: u64,
         session_id: &str,
     ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
-        Ok(self
-            .session_runtime_bindings
-            .recovering_read()
-            .values()
-            .find(|record| {
-                record.tenant_id == tenant_id
-                    && record.organization_id == organization_id
-                    && record.session_id == session_id
-                    && record.is_current
-                    && record.status == AgentSessionRuntimeBindingStatus::Active
-            })
-            .cloned())
+        Ok(self.current_runtime_binding_for_session(tenant_id, organization_id, session_id))
     }
 
     fn list_session_runtime_bindings(
@@ -1764,7 +2202,26 @@ impl AgentRepository for InMemoryAgentRepository {
             .get_mut(&target_key)
             .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
         target.activate(updated_at);
-        Ok(target.clone())
+        let target = target.clone();
+        self.current_session_runtime_bindings
+            .recovering_write()
+            .insert(
+                (tenant_id, organization_id, session_id.to_string()),
+                target_key,
+            );
+        if let Some(session) = self
+            .sessions
+            .recovering_read()
+            .get(&(tenant_id, organization_id, session_id.to_string()))
+            .cloned()
+        {
+            self.advance_session_activity(
+                &session,
+                &target.updated_at,
+                SessionActivitySource::RuntimeBinding,
+            );
+        }
+        Ok(target)
     }
 
     fn insert_session_checkpoint(&self, record: AgentSessionCheckpointRecord) -> KernelResult<()> {
@@ -1895,6 +2352,23 @@ impl AgentRepository for InMemoryAgentRepository {
             }
         }
         states.insert(key, record.clone());
+        drop(states);
+        if record.resource_type == AgentResourceType::Session {
+            let session_key = (
+                record.tenant_id,
+                record.organization_id,
+                record.resource_id.clone(),
+            );
+            if let Some(session) = self.sessions.recovering_read().get(&session_key).cloned() {
+                if session.owner_user_id == record.user_id {
+                    self.advance_session_activity(
+                        &session,
+                        &record.updated_at,
+                        SessionActivitySource::UserState,
+                    );
+                }
+            }
+        }
         Ok(record)
     }
 
@@ -1933,6 +2407,8 @@ impl AgentRepository for InMemoryAgentRepository {
                     && record.organization_id == query.organization_id
                     && record.user_id == query.user_id
                     && record.resource_type == query.resource_type
+                    && (query.resource_ids.is_empty()
+                        || query.resource_ids.contains(&record.resource_id))
                     && (!query.pinned_only || record.pinned_at.is_some())
                     && (query.include_hidden || record.hidden_at.is_none())
             })
@@ -1964,6 +2440,8 @@ impl AgentRepository for InMemoryAgentRepository {
                     && record.organization_id == query.organization_id
                     && record.user_id == query.user_id
                     && record.resource_type == query.resource_type
+                    && (query.resource_ids.is_empty()
+                        || query.resource_ids.contains(&record.resource_id))
                     && (!query.pinned_only || record.pinned_at.is_some())
                     && (query.include_hidden || record.hidden_at.is_none())
             })
@@ -2026,6 +2504,11 @@ impl AgentRepository for InMemoryAgentRepository {
         sessions.insert(session_primary_key.clone(), updated_session.clone());
         session_index.remove(&previous_session_index_key);
         session_index.insert(next_session_index_key, session_primary_key);
+        self.advance_session_activity(
+            &updated_session,
+            &record.updated_at,
+            SessionActivitySource::Session,
+        );
         Ok((updated_session, record))
     }
 
@@ -2306,6 +2789,7 @@ impl AgentRepository for InMemoryAgentRepository {
         mut request_item: AgentSessionItemRecord,
         drive_refs: Vec<AgentItemDriveRefRecord>,
     ) -> KernelResult<TurnRequestWriteOutcome> {
+        let activity_turn = turn.clone();
         if turn.status != AgentTurnStatus::Requested
             || turn.version != 0
             || turn.response_item_id.is_some()
@@ -2362,6 +2846,7 @@ impl AgentRepository for InMemoryAgentRepository {
 
         let mut turns = self.turns.recovering_write();
         let mut turn_idempotency = self.turn_idempotency.recovering_write();
+        let mut turn_index = self.turn_index.recovering_write();
         let mut sessions = self.sessions.recovering_write();
         let mut session_index = self.session_index.recovering_write();
         let mut items = self.items.recovering_write();
@@ -2422,6 +2907,16 @@ impl AgentRepository for InMemoryAgentRepository {
         let previous_session_index_key = session_index_key(&existing_session);
         let next_session_index_key = session_index_key(&updated_session);
         turns.insert(primary_key.clone(), turn);
+        turn_index.insert(
+            (
+                activity_turn.tenant_id,
+                activity_turn.organization_id,
+                activity_turn.session_id.clone(),
+                Reverse(activity_turn.created_at.clone()),
+                Reverse(activity_turn.id),
+            ),
+            primary_key.clone(),
+        );
         turn_idempotency.insert(idempotency_key, primary_key);
         items.insert(request_primary_key.clone(), request_item.clone());
         session_item_index.insert(request_index_key, request_primary_key);
@@ -2431,6 +2926,11 @@ impl AgentRepository for InMemoryAgentRepository {
         for (key, record) in pending_drive_refs {
             item_drive_refs.insert(key, record);
         }
+        self.advance_session_activity(
+            &updated_session,
+            &activity_turn.updated_at,
+            SessionActivitySource::Turn,
+        );
 
         Ok(TurnRequestWriteOutcome::Inserted {
             session: Box::new(updated_session),
@@ -2462,6 +2962,18 @@ impl AgentRepository for InMemoryAgentRepository {
             return Err(KernelError::validation("turn immutable scope mismatch"));
         }
         turns.insert(primary_key, turn.clone());
+        if let Some(session) = self
+            .sessions
+            .recovering_read()
+            .get(&(
+                turn.tenant_id,
+                turn.organization_id,
+                turn.session_id.clone(),
+            ))
+            .cloned()
+        {
+            self.advance_session_activity(&session, &turn.updated_at, SessionActivitySource::Turn);
+        }
         Ok(turn)
     }
 
@@ -2545,7 +3057,9 @@ impl AgentRepository for InMemoryAgentRepository {
         sessions.insert(session_primary_key.clone(), updated_session.clone());
         session_index.remove(&previous_session_index_key);
         session_index.insert(next_session_index_key, session_primary_key);
+        let activity_at = turn.updated_at.clone();
         turns.insert(turn_primary_key, turn);
+        self.advance_session_activity(&updated_session, &activity_at, SessionActivitySource::Turn);
 
         Ok((updated_session, response_item))
     }
@@ -2603,6 +3117,7 @@ impl AgentRepository for InMemoryAgentRepository {
     }
 
     fn insert_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
+        let activity_record = record.clone();
         let primary_key = interaction_primary_key(&record);
         let mut interactions = self.interactions.recovering_write();
         if interactions.contains_key(&primary_key) {
@@ -2615,11 +3130,33 @@ impl AgentRepository for InMemoryAgentRepository {
         interactions.insert(primary_key.clone(), record);
         self.interaction_index
             .recovering_write()
-            .insert(index_key, primary_key);
+            .insert(index_key, primary_key.clone());
+        if activity_record.status.is_pending() {
+            self.pending_interaction_index
+                .recovering_write()
+                .insert(pending_interaction_index_key(&activity_record), primary_key);
+        }
+        if let Some(session) = self
+            .sessions
+            .recovering_read()
+            .get(&(
+                activity_record.tenant_id,
+                activity_record.organization_id,
+                activity_record.session_id.clone(),
+            ))
+            .cloned()
+        {
+            self.advance_session_activity(
+                &session,
+                &activity_record.updated_at,
+                SessionActivitySource::Interaction,
+            );
+        }
         Ok(())
     }
 
     fn update_interaction(&self, record: AgentInteractionRecord) -> KernelResult<()> {
+        let activity_record = record.clone();
         let primary_key = interaction_primary_key(&record);
         let mut interactions = self.interactions.recovering_write();
         let existing = interactions.get(&primary_key).ok_or_else(|| {
@@ -2636,11 +3173,42 @@ impl AgentRepository for InMemoryAgentRepository {
             )));
         }
         let previous_index_key = interaction_index_key(existing);
+        let previous_pending_index_key = existing
+            .status
+            .is_pending()
+            .then(|| pending_interaction_index_key(existing));
         let next_index_key = interaction_index_key(&record);
+        let next_pending_index_key = record
+            .status
+            .is_pending()
+            .then(|| pending_interaction_index_key(&record));
         interactions.insert(primary_key.clone(), record);
         let mut index = self.interaction_index.recovering_write();
         index.remove(&previous_index_key);
-        index.insert(next_index_key, primary_key);
+        index.insert(next_index_key, primary_key.clone());
+        let mut pending_index = self.pending_interaction_index.recovering_write();
+        if let Some(previous_pending_index_key) = previous_pending_index_key {
+            pending_index.remove(&previous_pending_index_key);
+        }
+        if let Some(next_pending_index_key) = next_pending_index_key {
+            pending_index.insert(next_pending_index_key, primary_key);
+        }
+        if let Some(session) = self
+            .sessions
+            .recovering_read()
+            .get(&(
+                activity_record.tenant_id,
+                activity_record.organization_id,
+                activity_record.session_id.clone(),
+            ))
+            .cloned()
+        {
+            self.advance_session_activity(
+                &session,
+                &activity_record.updated_at,
+                SessionActivitySource::Interaction,
+            );
+        }
         Ok(())
     }
 
@@ -4176,6 +4744,539 @@ mod tests {
         let provider = DenyAllPolicyProvider::default();
         assert!(!provider.reason.is_empty());
         assert!(!provider.provider_id.is_empty());
+    }
+
+    fn activity_session(id: u64, session_id: &str, updated_at: &str) -> AgentSessionRecord {
+        AgentSessionRecord {
+            id,
+            session_id: session_id.to_string(),
+            tenant_id: 10,
+            organization_id: 20,
+            agent_id: "agent.activity".to_string(),
+            owner_user_id: 30,
+            project_id: None,
+            session_kind: crate::domain::AgentSessionKind::Coding,
+            entry_surface: crate::domain::AgentSessionEntrySurface::Pc,
+            source_module: None,
+            source_context_kind: None,
+            source_context_id: None,
+            parent_session_id: None,
+            forked_from_turn_id: None,
+            title: Some(session_id.to_string()),
+            status: crate::domain::AgentSessionStatus::Active,
+            item_count: 0,
+            last_item_sequence: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            idempotency_key: None,
+            payload_hash: None,
+            created_by: 30,
+            updated_by: 30,
+            version: 0,
+            created_at: updated_at.to_string(),
+            updated_at: updated_at.to_string(),
+            last_item_at: None,
+            closed_at: None,
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        }
+    }
+
+    fn activity_turn(
+        id: u64,
+        turn_id: &str,
+        status: AgentTurnStatus,
+        updated_at: &str,
+    ) -> AgentTurnRecord {
+        AgentTurnRecord {
+            id,
+            turn_id: turn_id.to_string(),
+            tenant_id: 10,
+            organization_id: 20,
+            session_id: "session.activity.turn-order".to_string(),
+            agent_id: "agent.activity".to_string(),
+            owner_user_id: 30,
+            runtime_binding_id: None,
+            client_request_id: None,
+            idempotency_key: format!("idempotency.{turn_id}"),
+            payload_hash: format!("sha256:{turn_id}"),
+            request_item_id: format!("item.request.{id}"),
+            response_item_id: None,
+            turn_mode: crate::agent_turn::AgentTurnMode::Interactive,
+            status,
+            requested_model_id: None,
+            provider_binding_id: None,
+            model_id: None,
+            provider_id: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            cached_tokens: 0,
+            finish_reason: None,
+            error_code: None,
+            error_detail: None,
+            trace_id: None,
+            attempt_count: 0,
+            max_attempts: 1,
+            next_retry_at: None,
+            available_at: updated_at.to_string(),
+            lease_owner: None,
+            lease_token: None,
+            lease_expires_at: (status == AgentTurnStatus::Running)
+                .then(|| "2099-07-27T13:00:00Z".to_string()),
+            fencing_token: 0,
+            version: 0,
+            created_at: updated_at.to_string(),
+            updated_at: updated_at.to_string(),
+            started_at: None,
+            completed_at: None,
+            cancel_requested_at: None,
+            cancelled_at: None,
+            retention_until: None,
+        }
+    }
+
+    #[test]
+    fn canonical_latest_turn_uses_creation_identity_not_update_recency() {
+        let repository = InMemoryAgentRepository::new();
+        let session = activity_session(1, "session.activity.turn-order", "2099-07-27T09:00:00Z");
+        repository.insert_session(session.clone()).unwrap();
+        let mut older = activity_turn(
+            2,
+            "turn.activity.older",
+            AgentTurnStatus::Completed,
+            "2099-07-27T09:01:00Z",
+        );
+        let latest = activity_turn(
+            3,
+            "turn.activity.latest",
+            AgentTurnStatus::Running,
+            "2099-07-27T09:02:00Z",
+        );
+        {
+            let mut turns = repository.turns.recovering_write();
+            turns.insert((10, 20, older.turn_id.clone()), older.clone());
+            turns.insert((10, 20, latest.turn_id.clone()), latest);
+        }
+        repository.advance_session_activity(
+            &session,
+            "2099-07-27T09:02:00Z",
+            SessionActivitySource::Turn,
+        );
+        older.updated_at = "2099-07-27T09:03:00Z".to_string();
+        older.version = older.version.saturating_add(1);
+        repository
+            .turns
+            .recovering_write()
+            .insert((10, 20, older.turn_id.clone()), older);
+        repository.advance_session_activity(
+            &session,
+            "2099-07-27T09:03:00Z",
+            SessionActivitySource::Turn,
+        );
+
+        let page = repository
+            .list_session_activity_summaries(&SessionActivitySummaryListQuery::for_owner(
+                10, 20, 30,
+            ))
+            .unwrap();
+        assert_eq!(
+            page.items[0]
+                .latest_turn
+                .as_ref()
+                .map(|turn| turn.turn_id.as_str()),
+            Some("turn.activity.latest")
+        );
+        assert_eq!(
+            page.items[0].presentation_phase,
+            crate::session_activity::SessionPresentationPhase::Running
+        );
+        assert_eq!(page.items[0].freshness.activity_at, "2099-07-27T09:03:00Z");
+    }
+
+    #[test]
+    fn session_activity_snapshot_is_newest_first_and_cursor_is_stable() {
+        let repository = InMemoryAgentRepository::new();
+        repository
+            .insert_session(activity_session(
+                1,
+                "session.activity.old",
+                "2099-07-27T09:00:00Z",
+            ))
+            .unwrap();
+        repository
+            .insert_session(activity_session(
+                2,
+                "session.activity.tie-low",
+                "2099-07-27T10:00:00Z",
+            ))
+            .unwrap();
+        repository
+            .insert_session(activity_session(
+                3,
+                "session.activity.tie-high",
+                "2099-07-27T10:00:00Z",
+            ))
+            .unwrap();
+
+        let query = SessionActivitySummaryListQuery::for_owner(10, 20, 30).with_page_size(2);
+        let first = repository.list_session_activity_summaries(&query).unwrap();
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .map(|item| item.session.id)
+                .collect::<Vec<_>>(),
+            vec![3, 2]
+        );
+        assert!(first.has_more);
+        let first_cursor = first.next_page_token.expect("continuation cursor");
+
+        let cursor = crate::session_activity::decode_session_activity_cursor(&first_cursor)
+            .expect("decode cursor");
+        let second = repository
+            .list_session_activity_summaries(&query.clone().after(cursor))
+            .unwrap();
+        assert_eq!(
+            second
+                .items
+                .iter()
+                .map(|item| item.session.id)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert!(!second.has_more);
+        assert!(second.next_page_token.is_none());
+
+        let exhausted_cursor = crate::session_activity::SessionActivityCursor {
+            activity_at: second.items[0].freshness.activity_at.clone(),
+            session_internal_id: second.items[0].session.id,
+            scope_fingerprint: query.scope_fingerprint(),
+        };
+        let exhausted_token =
+            encode_session_activity_cursor(&exhausted_cursor).expect("encode exhausted cursor");
+        let exhausted = repository
+            .list_session_activity_summaries(&query.clone().after(exhausted_cursor))
+            .unwrap();
+        assert!(exhausted.items.is_empty());
+        assert_eq!(
+            exhausted.next_page_token.as_deref(),
+            Some(exhausted_token.as_str())
+        );
+
+        repository
+            .insert_session(activity_session(
+                4,
+                "session.activity.new-head",
+                "2099-07-27T11:00:00Z",
+            ))
+            .unwrap();
+        let refreshed = repository.list_session_activity_summaries(&query).unwrap();
+        assert_eq!(refreshed.items[0].session.id, 4);
+
+        repository
+            .upsert_resource_user_state(
+                AgentResourceUserStateRecord {
+                    id: 5,
+                    tenant_id: 10,
+                    organization_id: 20,
+                    user_id: 30,
+                    resource_type: AgentResourceType::Session,
+                    resource_id: "session.activity.old".to_string(),
+                    pinned_at: Some("2099-07-27T12:00:00Z".to_string()),
+                    hidden_at: None,
+                    last_opened_at: None,
+                    last_read_item_sequence: Some(0),
+                    custom_title: Some("Pinned from another app".to_string()),
+                    version: 0,
+                    created_at: "2099-07-27T12:00:00Z".to_string(),
+                    updated_at: "2099-07-27T12:00:00Z".to_string(),
+                },
+                None,
+            )
+            .unwrap();
+        let user_state_refreshed = repository.list_session_activity_summaries(&query).unwrap();
+        assert_eq!(user_state_refreshed.items[0].session.id, 1);
+        assert_eq!(
+            user_state_refreshed.items[0].freshness.source,
+            SessionActivitySource::UserState
+        );
+        assert_eq!(
+            user_state_refreshed.items[0].freshness.user_state_version,
+            Some(0)
+        );
+        assert_eq!(
+            user_state_refreshed.items[0]
+                .user_state
+                .as_ref()
+                .and_then(|state| state.custom_title.as_deref()),
+            Some("Pinned from another app")
+        );
+    }
+
+    #[test]
+    fn in_memory_activity_index_normalizes_offsets_and_rejects_head_regression() {
+        let repository = InMemoryAgentRepository::new();
+        let offset_session =
+            activity_session(1, "session.activity.offset", "2099-07-27T17:00:00+08:00");
+        repository.insert_session(offset_session.clone()).unwrap();
+        repository
+            .insert_session(activity_session(
+                2,
+                "session.activity.utc",
+                "2099-07-27T09:30:00Z",
+            ))
+            .unwrap();
+        let query = SessionActivitySummaryListQuery::for_owner(10, 20, 30);
+        let first = repository.list_session_activity_summaries(&query).unwrap();
+        assert_eq!(first.items[0].session.id, 2);
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .find(|item| item.session.id == 1)
+                .map(|item| item.freshness.activity_at.as_str()),
+            Some("2099-07-27T09:00:00Z")
+        );
+
+        let mut regressed = offset_session;
+        regressed.version = 1;
+        regressed.updated_at = "2099-07-27T08:00:00Z".to_string();
+        repository.update_session(regressed).unwrap();
+        let after_regression = repository.list_session_activity_summaries(&query).unwrap();
+        assert_eq!(after_regression.items[0].session.id, 2);
+        assert_eq!(
+            after_regression
+                .items
+                .iter()
+                .find(|item| item.session.id == 1)
+                .map(|item| item.freshness.activity_at.as_str()),
+            Some("2099-07-27T09:00:00Z")
+        );
+    }
+
+    #[test]
+    fn pending_approval_precedes_newer_pending_question() {
+        let repository = InMemoryAgentRepository::new();
+        repository
+            .insert_session(activity_session(
+                1,
+                "session.activity.interaction",
+                "2099-07-27T09:00:00Z",
+            ))
+            .unwrap();
+        let interaction =
+            |id, interaction_id: &str, kind, updated_at: &str| AgentInteractionRecord {
+                id,
+                interaction_id: interaction_id.to_string(),
+                tenant_id: 10,
+                organization_id: 20,
+                session_id: "session.activity.interaction".to_string(),
+                turn_id: None,
+                runtime_binding_id: None,
+                provider_interaction_id: None,
+                kind,
+                status: crate::domain::AgentInteractionStatus::Pending,
+                prompt: interaction_id.to_string(),
+                options_json: "[]".to_string(),
+                resolution_json: None,
+                claim_owner: None,
+                claim_token_hash: None,
+                claim_expires_at: None,
+                fencing_token: 0,
+                version: 0,
+                created_at: updated_at.to_string(),
+                updated_at: updated_at.to_string(),
+                resolved_at: None,
+                retention_until: None,
+            };
+        repository
+            .insert_interaction(interaction(
+                1,
+                "interaction.approval",
+                AgentInteractionKind::Approval,
+                "2099-07-27T09:01:00Z",
+            ))
+            .unwrap();
+        repository
+            .insert_interaction(interaction(
+                2,
+                "interaction.question",
+                AgentInteractionKind::UserQuestion,
+                "2099-07-27T09:02:00Z",
+            ))
+            .unwrap();
+
+        let page = repository
+            .list_session_activity_summaries(&SessionActivitySummaryListQuery::for_owner(
+                10, 20, 30,
+            ))
+            .unwrap();
+        assert_eq!(
+            page.items[0]
+                .pending_interaction
+                .as_ref()
+                .map(|interaction| interaction.kind),
+            Some(AgentInteractionKind::Approval)
+        );
+        assert_eq!(
+            page.items[0].presentation_phase,
+            crate::session_activity::SessionPresentationPhase::AwaitingInput
+        );
+        assert!(page.items[0].freshness.fresh_until.is_none());
+
+        let mut approval = repository
+            .get_interaction(
+                10,
+                20,
+                "session.activity.interaction",
+                "interaction.approval",
+            )
+            .unwrap()
+            .unwrap();
+        approval.resolve(
+            crate::domain::AgentInteractionStatus::Resolved,
+            "{}",
+            "2099-07-27T09:03:00Z",
+        );
+        repository.update_interaction(approval).unwrap();
+        let mut question = repository
+            .get_interaction(
+                10,
+                20,
+                "session.activity.interaction",
+                "interaction.question",
+            )
+            .unwrap()
+            .unwrap();
+        question.resolve(
+            crate::domain::AgentInteractionStatus::Resolved,
+            "{}",
+            "2099-07-27T09:04:00Z",
+        );
+        repository.update_interaction(question).unwrap();
+
+        let resolved_page = repository
+            .list_session_activity_summaries(&SessionActivitySummaryListQuery::for_owner(
+                10, 20, 30,
+            ))
+            .unwrap();
+        assert!(resolved_page.items[0].pending_interaction.is_none());
+        assert_eq!(
+            resolved_page.items[0]
+                .freshness
+                .latest_interaction_id
+                .as_deref(),
+            Some("interaction.question")
+        );
+        assert_eq!(
+            resolved_page.items[0].freshness.latest_interaction_version,
+            Some(1)
+        );
+        assert_eq!(
+            resolved_page.items[0].freshness.source,
+            SessionActivitySource::Interaction
+        );
+    }
+
+    #[test]
+    fn latest_failed_runtime_binding_is_preserved_and_drives_failed_phase() {
+        let repository = InMemoryAgentRepository::new();
+        repository
+            .insert_session(activity_session(
+                1,
+                "session.activity.failed-binding",
+                "2099-07-27T09:00:00Z",
+            ))
+            .unwrap();
+        repository
+            .insert_session_runtime_binding(AgentSessionRuntimeBindingRecord {
+                id: 2,
+                tenant_id: 10,
+                organization_id: 20,
+                session_id: "session.activity.failed-binding".to_string(),
+                runtime_binding_id: "runtime_binding.activity.failed".to_string(),
+                runtime_location_id: None,
+                host_mode: "managed".to_string(),
+                transport_kind: "in_process".to_string(),
+                provider_binding_id: "binding.activity.failed".to_string(),
+                model_id: "model.activity.failed".to_string(),
+                provider_id: "provider.activity.failed".to_string(),
+                provider_session_id: None,
+                provider_session_tree_id: None,
+                provider_parent_session_id: None,
+                provider_forked_from_session_id: None,
+                status: AgentSessionRuntimeBindingStatus::Failed,
+                is_current: false,
+                version: 1,
+                created_at: "2099-07-27T09:00:00Z".to_string(),
+                updated_at: "2099-07-27T09:01:00Z".to_string(),
+                activated_at: Some("2099-07-27T09:00:00Z".to_string()),
+                deactivated_at: None,
+            })
+            .unwrap();
+
+        let page = repository
+            .list_session_activity_summaries(&SessionActivitySummaryListQuery::for_owner(
+                10, 20, 30,
+            ))
+            .unwrap();
+        assert!(page.items[0].current_runtime_binding.is_none());
+        assert_eq!(
+            page.items[0]
+                .latest_runtime_binding
+                .as_ref()
+                .map(|binding| binding.status),
+            Some(AgentSessionRuntimeBindingStatus::Failed)
+        );
+        assert_eq!(
+            page.items[0].presentation_phase,
+            crate::session_activity::SessionPresentationPhase::Failed
+        );
+
+        let mut binding = repository
+            .get_session_runtime_binding(
+                10,
+                20,
+                "session.activity.failed-binding",
+                "runtime_binding.activity.failed",
+            )
+            .unwrap()
+            .unwrap();
+        binding.deactivate(
+            AgentSessionRuntimeBindingStatus::Deactivated,
+            "2099-07-27T09:02:00Z",
+        );
+        repository.update_session_runtime_binding(binding).unwrap();
+        let deactivated_page = repository
+            .list_session_activity_summaries(&SessionActivitySummaryListQuery::for_owner(
+                10, 20, 30,
+            ))
+            .unwrap();
+        assert!(deactivated_page.items[0].current_runtime_binding.is_none());
+        assert_eq!(
+            deactivated_page.items[0]
+                .freshness
+                .latest_runtime_binding_id
+                .as_deref(),
+            Some("runtime_binding.activity.failed")
+        );
+        assert_eq!(
+            deactivated_page.items[0]
+                .freshness
+                .latest_runtime_binding_version,
+            Some(2)
+        );
+        assert_eq!(
+            deactivated_page.items[0].freshness.source,
+            SessionActivitySource::RuntimeBinding
+        );
+        assert_ne!(
+            deactivated_page.items[0].presentation_phase,
+            crate::session_activity::SessionPresentationPhase::Failed
+        );
     }
 
     fn restore_optional_env(key: &str, value: Option<String>) {

@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "8f0d25b50b2890caf9e0f763a8b2e421cc7c0b66613e653434aae692b37b4608"
+      "sha256": "5b567969edf763422d9caed946f3bbfbf90800af1aabccc3135bd5e296e79aac"
     },
     {
       "path": "src/api/base.ts",
@@ -72,7 +72,7 @@
     },
     {
       "path": "src/http/client.ts",
-      "sha256": "a400aaa79494485aecb46e21b6662c0bbb9315fe2bd4cbef86abe82b96964dda"
+      "sha256": "76535919e618fc20622129e92e469d0d2110eb030cb73213278277b3c22e503a"
     },
     {
       "path": "src/http/index.ts",
@@ -100,7 +100,7 @@
     },
     {
       "path": "src/types/agent-composition-slot-record.ts",
-      "sha256": "36b6a9c87fa5128affd3e296310ce1e79e8cdd1b748384bb4f79eccb5095702e"
+      "sha256": "ecee43c8b492158e20d23eb0f3d5facb63f6daa8a79760c121a671a9a427a124"
     },
     {
       "path": "src/types/agent-composition-slot-response.ts",
@@ -136,7 +136,7 @@
     },
     {
       "path": "src/types/agent-interaction-record.ts",
-      "sha256": "c8830f44415a5de7305a84c712d4dc4846cecef10af5737afe4e0ac3618af3fd"
+      "sha256": "cebb7ed95be0e158252e85a80a37ecdf3d9246753314ccdc75f611811e1e83b1"
     },
     {
       "path": "src/types/agent-interaction-resolution.ts",
@@ -152,7 +152,7 @@
     },
     {
       "path": "src/types/agent-item-drive-ref-record.ts",
-      "sha256": "1e13549974959180cab3d0b89f6d49de103f1bbf69c3fc32490c6f7f9eff888b"
+      "sha256": "e0badd913b0315ad0a00570394bb5a1e2e10dfbb5a0e2d673c847cd59ce1079c"
     },
     {
       "path": "src/types/agent-item-feedback-list-response.ts",
@@ -200,7 +200,7 @@
     },
     {
       "path": "src/types/agent-project-record.ts",
-      "sha256": "0370b5bb05173c406f8519d5fda7507a938dc22ef0625e9396eb1330d8a672db"
+      "sha256": "6a969df2b25270b03b666ca674e8799a3483b41ba9825ee3bd0e741a93465915"
     },
     {
       "path": "src/types/agent-project-response.ts",
@@ -228,7 +228,7 @@
     },
     {
       "path": "src/types/agent-record.ts",
-      "sha256": "77db7eebe8e6827e2514527b7f2c91fdfce747fcb60ebce1c7426dfac967e647"
+      "sha256": "4e5697b2904827ac8882e5369449622db381fcf341a034139c14b441ecf65712"
     },
     {
       "path": "src/types/agent-resource-user-state-list-response.ts",
@@ -260,7 +260,7 @@
     },
     {
       "path": "src/types/agent-session-checkpoint-record.ts",
-      "sha256": "d33f708748cf999a8c5f7d5072f4a6dcbc3193164c15cfc16163c2685edc8980"
+      "sha256": "6fa33c499ec3182c5a60ff7af0d63be8b0da670a759bdd6e6492ba56f9b905c4"
     },
     {
       "path": "src/types/agent-session-checkpoint-response.ts",
@@ -284,7 +284,7 @@
     },
     {
       "path": "src/types/agent-session-item-record.ts",
-      "sha256": "e10ff2cfeabd9bb11d04340cba77c85a6378a99fb6280c55ddeae1fa297f2c4a"
+      "sha256": "e5ee0418d3cdfe654731435f100fd2a955d586d4b0d187a1e377e1821b4a8566"
     },
     {
       "path": "src/types/agent-session-item-response.ts",
@@ -304,7 +304,7 @@
     },
     {
       "path": "src/types/agent-session-record.ts",
-      "sha256": "c60238808c5fc545223e6a135f2ed388d447f94d6e2145f43375d004aca12520"
+      "sha256": "81856d1ae0f80f9414d60be6595d19216e29fe5ed74e215d0d45a61601b47cf2"
     },
     {
       "path": "src/types/agent-session-response.ts",
@@ -316,7 +316,7 @@
     },
     {
       "path": "src/types/agent-session-runtime-binding-record.ts",
-      "sha256": "d27e3b6948944177b82b5ecf43240b6b0380e06dc7bf53d3dbf4d68186699b6c"
+      "sha256": "ae58bbe8e9651058fbdeb52e170252b2e09f2da458cc9d80680d008d3bba1b7c"
     },
     {
       "path": "src/types/agent-session-runtime-binding-response.ts",
@@ -360,7 +360,7 @@
     },
     {
       "path": "src/types/agent-turn-record.ts",
-      "sha256": "ca0b1a9cec737f55ebd5340824e934a2a1ec9cd003e06da156aafa26237c808e"
+      "sha256": "44e630f9ed5965d63fa74740fd1b3f079d7eef6fa7fe29f7fe65b307e5281555"
     },
     {
       "path": "src/types/agent-turn-response.ts",
@@ -388,7 +388,7 @@
     },
     {
       "path": "src/types/agent-workspace-record.ts",
-      "sha256": "ace7732ad44d3eddd78977a33ac713e8d1602637b36f5992d30e21ab7ab9d381"
+      "sha256": "2f3dfb4fdde31ff3c08a0e5051db1b4bb56754f7c8eeecfaef7c6653de198253"
     },
     {
       "path": "src/types/agent-workspace-response.ts",
@@ -492,7 +492,7 @@
     },
     {
       "path": "src/types/create-agent-session-runtime-binding-request.ts",
-      "sha256": "c42ba244beea6fcc01dce0335d947c5422f3f901538b7dcdb4cd813eb70932c1"
+      "sha256": "0e82ccff598943eceea92da9abafc93de117c178fed1d75306a48ccb2e1a208f"
     },
     {
       "path": "src/types/create-agent-task-request.ts",
@@ -520,7 +520,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "fb86c6aca83c5f2f5406bfdb7085c986b71f15b60ba4478018b410b94612aa8b"
+      "sha256": "97896bd2650b4e3c2dc3749e8ab465f9bb043a66b965056494d7fd779c6415ea"
     },
     {
       "path": "src/types/int64-string.ts",
@@ -567,6 +567,30 @@
       "sha256": "1a516bad32e93d6190a6cf44fd406181a0d21f5f5adb8be0d31dd8054914975a"
     },
     {
+      "path": "src/types/session-activity-freshness.ts",
+      "sha256": "7491ed448b335c649d99369e3a4be9b05c1962b75a74af5a98b2cefa27dfc146"
+    },
+    {
+      "path": "src/types/session-activity-summary-list-response.ts",
+      "sha256": "99355eb7ed54a39f2080656ececbd8ee6b9c466ce5980d35a8d8318eff5a7dec"
+    },
+    {
+      "path": "src/types/session-activity-summary.ts",
+      "sha256": "be712a38eb7ad9ac92a975f2c4428ae627aa3f988c212dc5032d64ad9d85d892"
+    },
+    {
+      "path": "src/types/session-presentation-phase.ts",
+      "sha256": "858f2030cb1aa5adccfcce2d0c6a9bb9db31934fb5c2b6c3d48e85aa3345051a"
+    },
+    {
+      "path": "src/types/session-provider-activity-observation.ts",
+      "sha256": "70592fe6cf1ebd92985e87aa430d93f363165a68079b2963038fb27f82489056"
+    },
+    {
+      "path": "src/types/session-provider-identity.ts",
+      "sha256": "87f3c86b89e442617378b4be999f8b084060bfdc74dad030dccfc138b78ad751"
+    },
+    {
       "path": "src/types/update-agent-composition-slot-request.ts",
       "sha256": "1ce9b8f77d319493cb16c56e691e9a5873c551be03fe85e3c25ddfd57899354a"
     },
@@ -588,7 +612,7 @@
     },
     {
       "path": "src/types/update-agent-session-runtime-binding-request.ts",
-      "sha256": "6fe790e1fdb0ad412e15232a8287de940ceb652b58485dcabc432519f3d4c63f"
+      "sha256": "055eb90d2997b9d039525a7342d32bb5269a701aee918b90d6269e4c54bb3437"
     },
     {
       "path": "src/types/update-agent-session-user-state-request.ts",

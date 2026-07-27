@@ -496,6 +496,12 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
+        path: "/app/v3/api/ai/session_activity_summaries",
+        tag: "ai",
+        operation_id: "agents.sessionActivitySummaries.list",
+    },
+    ApiOperation {
+        method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions",
         tag: "ai",
         operation_id: "agents.sessions.list",
@@ -1484,7 +1490,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 47);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 79);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 80);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 48);
 
         assert_eq!(

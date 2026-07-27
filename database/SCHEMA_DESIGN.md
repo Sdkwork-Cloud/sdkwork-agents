@@ -24,7 +24,7 @@ stable reference columns.
 | `ai_agent_project` | Reusable orchestration project and access policy |
 | `ai_agent_project_composition_slot` | Project references to sibling-owned capabilities |
 | `ai_agent_session` | Single durable execution session authority |
-| `ai_agent_session_runtime_binding` | Session runtime selection and provider-native lineage |
+| `ai_agent_session_runtime_binding` | Session runtime selection and provider Session lineage |
 | `ai_agent_turn` | Idempotent turn, retry, lease, fencing, usage, and terminal state |
 | `ai_agent_session_item` | Ordered typed transcript or execution item |
 | `ai_agent_item_drive_ref` | Typed relation to Drive-owned resources |

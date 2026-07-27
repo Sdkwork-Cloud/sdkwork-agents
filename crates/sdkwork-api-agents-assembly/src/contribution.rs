@@ -31,12 +31,12 @@ pub async fn assemble_app_api_contribution() -> anyhow::Result<ApiAssemblyContri
     Ok(contribution_from_state(state))
 }
 
-pub async fn assemble_app_api_contribution_with_native_session_cwd_resolver(
-    resolver: Arc<dyn sdkwork_agents_runtime_facade::NativeSessionProjectCwdResolver>,
+pub async fn assemble_app_api_contribution_with_provider_session_cwd_resolver(
+    resolver: Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>,
 ) -> anyhow::Result<ApiAssemblyContribution> {
     let state = build_agent_http_state()
         .await?
-        .with_native_session_cwd_resolver(resolver);
+        .with_provider_session_cwd_resolver(resolver);
     Ok(contribution_from_state(state))
 }
 

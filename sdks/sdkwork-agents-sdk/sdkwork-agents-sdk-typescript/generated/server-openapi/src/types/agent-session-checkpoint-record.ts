@@ -18,7 +18,7 @@ export interface AgentSessionCheckpointRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  restoredAt?: string;
-  invalidatedAt?: string;
-  retentionUntil?: string;
+  restoredAt?: string | null;
+  invalidatedAt?: string | null;
+  retentionUntil?: string | null;
 }

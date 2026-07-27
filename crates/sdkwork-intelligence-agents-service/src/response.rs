@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use sdkwork_utils_rust::SdkWorkApiResponse;
+use sdkwork_utils_rust::{SdkWorkApiResponse, SdkWorkProblemDetail, SdkWorkResultCode};
 use sdkwork_web_core::{
     problem_response, WebFrameworkError, WebFrameworkErrorKind, WebRequestContext,
 };
@@ -78,6 +78,7 @@ fn attach_trace_header(response: &mut Response, trace_id: &str) {
 pub struct ApiProblem {
     pub message: String,
     status: StatusCode,
+    result_code: Option<SdkWorkResultCode>,
 }
 
 impl ApiProblem {
@@ -85,6 +86,15 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::BAD_REQUEST,
+            result_code: None,
+        }
+    }
+
+    pub fn invalid_parameter(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            status: StatusCode::BAD_REQUEST,
+            result_code: Some(SdkWorkResultCode::InvalidParameter),
         }
     }
 
@@ -92,6 +102,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::FORBIDDEN,
+            result_code: None,
         }
     }
 
@@ -99,6 +110,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::NOT_FOUND,
+            result_code: None,
         }
     }
 
@@ -106,6 +118,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::CONFLICT,
+            result_code: None,
         }
     }
 
@@ -113,6 +126,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::UNPROCESSABLE_ENTITY,
+            result_code: None,
         }
     }
 
@@ -120,6 +134,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::PAYLOAD_TOO_LARGE,
+            result_code: None,
         }
     }
 
@@ -127,6 +142,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::TOO_MANY_REQUESTS,
+            result_code: None,
         }
     }
 
@@ -134,6 +150,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::SERVICE_UNAVAILABLE,
+            result_code: None,
         }
     }
 
@@ -141,6 +158,7 @@ impl ApiProblem {
         Self {
             message: message.into(),
             status: StatusCode::INTERNAL_SERVER_ERROR,
+            result_code: None,
         }
     }
 
@@ -169,6 +187,7 @@ impl ApiProblem {
         Self {
             message: error.message,
             status,
+            result_code: None,
         }
     }
 
@@ -194,6 +213,23 @@ impl ApiProblem {
     }
 
     pub fn into_response_for(&self, ctx: &WebRequestContext) -> Response {
+        if let Some(result_code) = self.result_code {
+            let trace_id = ctx.resolved_trace_id();
+            let problem = SdkWorkProblemDetail::platform_enriched(
+                result_code,
+                self.message.clone(),
+                trace_id.clone(),
+                ctx.problem_correlation().routing(),
+            );
+            let mut response = (
+                self.status,
+                [(axum::http::header::CONTENT_TYPE, "application/problem+json")],
+                Json(problem),
+            )
+                .into_response();
+            attach_trace_header(&mut response, &trace_id);
+            return response;
+        }
         problem_response(&self.framework_error(), ctx.problem_correlation())
     }
 

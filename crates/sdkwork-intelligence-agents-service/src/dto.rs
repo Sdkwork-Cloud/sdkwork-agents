@@ -19,6 +19,9 @@ use crate::ports::{
     AgentListQuery, InteractionListQuery, PaginationParams, SessionItemListQuery,
     SessionItemListSort, SessionListQuery, TaskListQuery,
 };
+use crate::session_activity::{
+    SessionActivitySummaryRecord, SessionProviderActivityObservation, SessionProviderIdentity,
+};
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id,
     parse_tenant_id, validate_requested_at,
@@ -934,6 +937,7 @@ impl CloseSessionRequestDto {
         self,
         tenant_id: u64,
         organization_id: u64,
+        path_agent_id: String,
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<CloseSessionCommand> {
@@ -946,6 +950,7 @@ impl CloseSessionRequestDto {
         Ok(CloseSessionCommand {
             tenant_id,
             organization_id,
+            path_agent_id,
             session_id,
             expected_version,
             owner_scope: None,
@@ -967,6 +972,7 @@ impl ArchiveSessionRequestDto {
         self,
         tenant_id: u64,
         organization_id: u64,
+        path_agent_id: String,
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<ArchiveSessionCommand> {
@@ -979,6 +985,7 @@ impl ArchiveSessionRequestDto {
         Ok(ArchiveSessionCommand {
             tenant_id,
             organization_id,
+            path_agent_id,
             session_id,
             expected_version,
             owner_scope: None,
@@ -1047,6 +1054,7 @@ pub struct AgentSessionRecordDto {
     pub closed_at: Option<String>,
     pub archived_at: Option<String>,
     pub archived_by: Option<String>,
+    pub deleted_at: Option<String>,
     pub retention_until: Option<String>,
 }
 
@@ -1082,8 +1090,166 @@ impl AgentSessionRecordDto {
             closed_at: record.closed_at.clone(),
             archived_at: record.archived_at.clone(),
             archived_by: record.archived_by.map(|value| value.to_string()),
+            deleted_at: record.deleted_at.clone(),
             retention_until: record.retention_until.clone(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionProviderIdentityDto {
+    pub runtime_binding_id: Option<String>,
+    pub provider_binding_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
+}
+
+impl SessionProviderIdentityDto {
+    fn from_record(record: &SessionProviderIdentity) -> Self {
+        Self {
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            provider_binding_id: record.provider_binding_id.clone(),
+            provider_id: record.provider_id.clone(),
+            model_id: record.model_id.clone(),
+            provider_session_id: record.provider_session_id.clone(),
+            provider_session_tree_id: record.provider_session_tree_id.clone(),
+            provider_parent_session_id: record.provider_parent_session_id.clone(),
+            provider_forked_from_session_id: record.provider_forked_from_session_id.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionActivityFreshnessDto {
+    pub activity_at: String,
+    pub source: String,
+    pub observed_at: Option<String>,
+    pub fresh_until: Option<String>,
+    pub session_version: String,
+    pub latest_turn_version: Option<String>,
+    pub latest_interaction_id: Option<String>,
+    pub latest_interaction_version: Option<String>,
+    pub latest_runtime_binding_id: Option<String>,
+    pub latest_runtime_binding_version: Option<String>,
+    pub pending_interaction_version: Option<String>,
+    pub current_runtime_binding_version: Option<String>,
+    pub user_state_version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionProviderActivityObservationDto {
+    pub provider_session_id: String,
+    pub state: Option<String>,
+    pub freshness: String,
+    pub evidence_kind: Option<String>,
+    pub interaction_hint: Option<String>,
+    pub observed_at: Option<String>,
+    pub fresh_until: Option<String>,
+}
+
+impl SessionProviderActivityObservationDto {
+    fn from_record(record: &SessionProviderActivityObservation) -> Self {
+        Self {
+            provider_session_id: record.provider_session_id.clone(),
+            state: record.state.map(|value| value.as_str().to_string()),
+            freshness: record.freshness.as_str().to_string(),
+            evidence_kind: record.evidence_kind.map(|value| value.as_str().to_string()),
+            interaction_hint: record
+                .interaction_hint
+                .map(|value| value.as_str().to_string()),
+            observed_at: record.observed_at.clone(),
+            fresh_until: record.fresh_until.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionActivitySummaryDto {
+    pub session: AgentSessionRecordDto,
+    pub latest_turn: Option<AgentTurnRecordDto>,
+    pub pending_interaction: Option<AgentInteractionRecordDto>,
+    pub current_runtime_binding: Option<AgentSessionRuntimeBindingRecordDto>,
+    pub latest_runtime_binding: Option<AgentSessionRuntimeBindingRecordDto>,
+    pub user_state: Option<AgentResourceUserStateRecordDto>,
+    pub provider_identity: SessionProviderIdentityDto,
+    pub freshness: SessionActivityFreshnessDto,
+    pub provider_activity: Option<SessionProviderActivityObservationDto>,
+    pub presentation_phase: String,
+}
+
+impl SessionActivitySummaryDto {
+    pub fn from_record(record: &SessionActivitySummaryRecord) -> KernelResult<Self> {
+        Ok(Self {
+            session: AgentSessionRecordDto::from_record(&record.session),
+            latest_turn: record
+                .latest_turn
+                .as_ref()
+                .map(AgentTurnRecordDto::from_record),
+            pending_interaction: record
+                .pending_interaction
+                .as_ref()
+                .map(AgentInteractionRecordDto::from_record)
+                .transpose()?,
+            current_runtime_binding: record
+                .current_runtime_binding
+                .as_ref()
+                .map(AgentSessionRuntimeBindingRecordDto::from_record),
+            latest_runtime_binding: record
+                .latest_runtime_binding
+                .as_ref()
+                .map(AgentSessionRuntimeBindingRecordDto::from_record),
+            user_state: record
+                .user_state
+                .as_ref()
+                .map(AgentResourceUserStateRecordDto::from_record),
+            provider_identity: SessionProviderIdentityDto::from_record(&record.provider_identity),
+            freshness: SessionActivityFreshnessDto {
+                activity_at: record.freshness.activity_at.clone(),
+                source: record.freshness.source.as_str().to_string(),
+                observed_at: record.freshness.observed_at.clone(),
+                fresh_until: record.freshness.fresh_until.clone(),
+                session_version: record.freshness.session_version.to_string(),
+                latest_turn_version: record
+                    .freshness
+                    .latest_turn_version
+                    .map(|value| value.to_string()),
+                latest_interaction_id: record.freshness.latest_interaction_id.clone(),
+                latest_interaction_version: record
+                    .freshness
+                    .latest_interaction_version
+                    .map(|value| value.to_string()),
+                latest_runtime_binding_id: record.freshness.latest_runtime_binding_id.clone(),
+                latest_runtime_binding_version: record
+                    .freshness
+                    .latest_runtime_binding_version
+                    .map(|value| value.to_string()),
+                pending_interaction_version: record
+                    .freshness
+                    .pending_interaction_version
+                    .map(|value| value.to_string()),
+                current_runtime_binding_version: record
+                    .freshness
+                    .current_runtime_binding_version
+                    .map(|value| value.to_string()),
+                user_state_version: record
+                    .freshness
+                    .user_state_version
+                    .map(|value| value.to_string()),
+            },
+            provider_activity: record
+                .provider_activity
+                .as_ref()
+                .map(SessionProviderActivityObservationDto::from_record),
+            presentation_phase: record.presentation_phase.as_str().to_string(),
+        })
     }
 }
 
@@ -1780,6 +1946,7 @@ pub struct ListSessionItemsRequestDto {
 impl ListSessionItemsRequestDto {
     pub fn into_command(
         self,
+        path_agent_id: String,
         session_id: String,
         requested_by: PolicySubject,
     ) -> KernelResult<ListSessionItemsCommand> {
@@ -1799,6 +1966,7 @@ impl ListSessionItemsRequestDto {
         }
         Ok(ListSessionItemsCommand {
             query,
+            path_agent_id,
             owner_scope: None,
             requested_by,
         })
@@ -2272,10 +2440,10 @@ pub struct AgentSessionRuntimeBindingRecordDto {
     pub provider_binding_id: String,
     pub model_id: String,
     pub provider_id: String,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
     pub status: String,
     pub is_current: bool,
     pub version: String,
@@ -2298,10 +2466,10 @@ impl AgentSessionRuntimeBindingRecordDto {
             provider_binding_id: record.provider_binding_id.clone(),
             model_id: record.model_id.clone(),
             provider_id: record.provider_id.clone(),
-            native_session_id: record.native_session_id.clone(),
-            native_session_tree_id: record.native_session_tree_id.clone(),
-            native_parent_session_id: record.native_parent_session_id.clone(),
-            native_forked_from_session_id: record.native_forked_from_session_id.clone(),
+            provider_session_id: record.provider_session_id.clone(),
+            provider_session_tree_id: record.provider_session_tree_id.clone(),
+            provider_parent_session_id: record.provider_parent_session_id.clone(),
+            provider_forked_from_session_id: record.provider_forked_from_session_id.clone(),
             status: record.status.as_str().to_string(),
             is_current: record.is_current,
             version: record.version.to_string(),
@@ -2323,10 +2491,10 @@ pub struct CreateSessionRuntimeBindingRequestDto {
     pub provider_binding_id: String,
     pub model_id: String,
     pub provider_id: String,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
     pub requested_at: String,
 }
 
@@ -2352,10 +2520,10 @@ impl CreateSessionRuntimeBindingRequestDto {
             provider_binding_id: self.provider_binding_id,
             model_id: self.model_id,
             provider_id: self.provider_id,
-            native_session_id: self.native_session_id,
-            native_session_tree_id: self.native_session_tree_id,
-            native_parent_session_id: self.native_parent_session_id,
-            native_forked_from_session_id: self.native_forked_from_session_id,
+            provider_session_id: self.provider_session_id,
+            provider_session_tree_id: self.provider_session_tree_id,
+            provider_parent_session_id: self.provider_parent_session_id,
+            provider_forked_from_session_id: self.provider_forked_from_session_id,
             owner_scope: None,
             requested_by,
             requested_at: self.requested_at,
@@ -2374,10 +2542,10 @@ pub struct UpdateSessionRuntimeBindingRequestDto {
     pub provider_binding_id: Option<String>,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
     pub expected_version: String,
     pub requested_at: String,
 }
@@ -2415,10 +2583,10 @@ impl UpdateSessionRuntimeBindingRequestDto {
             provider_binding_id: self.provider_binding_id,
             model_id: self.model_id,
             provider_id: self.provider_id,
-            native_session_id: self.native_session_id,
-            native_session_tree_id: self.native_session_tree_id,
-            native_parent_session_id: self.native_parent_session_id,
-            native_forked_from_session_id: self.native_forked_from_session_id,
+            provider_session_id: self.provider_session_id,
+            provider_session_tree_id: self.provider_session_tree_id,
+            provider_parent_session_id: self.provider_parent_session_id,
+            provider_forked_from_session_id: self.provider_forked_from_session_id,
             expected_version: parse_expected_version(&self.expected_version)?,
             owner_scope: None,
             requested_by,

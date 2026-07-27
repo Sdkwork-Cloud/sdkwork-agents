@@ -27,13 +27,13 @@ const MAX_OUTPUT_BYTES_METADATA_KEY: &str = "sdkwork.code_engine.max_output_byte
 const TEMPERATURE_METADATA_KEY: &str = "sdkwork.code_engine.temperature";
 const TOP_P_METADATA_KEY: &str = "sdkwork.code_engine.top_p";
 const MAX_TOKENS_METADATA_KEY: &str = "sdkwork.code_engine.max_tokens";
-const NATIVE_SESSION_DIAGNOSTIC_KEYS: [&str; 6] = [
+const PROVIDER_SESSION_DIAGNOSTIC_KEYS: [&str; 6] = [
     "sdk_runtime_session_id",
-    "sdk_runtime_native_session_id",
-    "sdkwork.code_engine.native_session_id",
+    "sdk_runtime_provider_session_id",
+    "sdkwork.code_engine.provider_session_id",
     "sdkwork.provider.session_id",
     "provider_session_id",
-    "native_session_id",
+    "provider_session_id",
 ];
 
 /// Product-neutral code-engine turn input consumed by the agents runtime facade.
@@ -41,7 +41,7 @@ const NATIVE_SESSION_DIAGNOSTIC_KEYS: [&str; 6] = [
 pub struct CodeEngineTurnInput {
     pub engine_key: String,
     pub model_id: String,
-    pub native_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
     pub prompt: String,
     pub working_directory: Option<PathBuf>,
     pub timeout_ms: Option<u64>,
@@ -61,20 +61,20 @@ pub struct CodeEngineTurnInput {
 ///
 /// The facade constructs this value only after the runtime verifies that the
 /// terminal `model_request_id` belongs to the active turn and that the
-/// provider supplied a non-empty native session id. Product callers therefore
+/// provider supplied a non-empty provider session id. Product callers therefore
 /// never inspect provider diagnostics or transport frames to resume a turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeEngineTurnStreamCompletion {
     pub model_request_id: String,
     pub finish_reason: String,
-    pub native_session_id: String,
+    pub provider_session_id: String,
 }
 
 /// Product-neutral code-engine turn output produced by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeEngineTurnOutput {
     pub assistant_content: String,
-    pub native_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
     /// Provider-neutral tool calls returned by the kernel model provider.
     pub tool_calls: Vec<ToolCall>,
     /// Token/word deltas when streaming is available; empty when invoke-only.
@@ -119,7 +119,7 @@ fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> Co
     let assistant_content = response.messages.join("\n");
     CodeEngineTurnOutput {
         assistant_content,
-        native_session_id: resolve_native_session_id(&response, input),
+        provider_session_id: resolve_provider_session_id(&response, input),
         tool_calls: response.tool_calls,
         stream_deltas: Vec::new(),
         stream_completion: None,
@@ -132,8 +132,8 @@ fn build_model_request(input: &CodeEngineTurnInput) -> ModelRequest {
     if !is_blank(Some(input.model_id.as_str())) {
         model_request.model_id = Some(input.model_id.clone());
     }
-    if let Some(native_session_id) = input.native_session_id.as_ref() {
-        model_request.session_id = Some(native_session_id.clone());
+    if let Some(provider_session_id) = input.provider_session_id.as_ref() {
+        model_request.session_id = Some(provider_session_id.clone());
     }
     if let Some(timeout_ms) = input.timeout_ms {
         model_request.timeout_ms = Some(timeout_ms);
@@ -206,7 +206,7 @@ fn validate_output_size(output_bytes: usize, max_output_bytes: usize) -> Runtime
     Ok(())
 }
 
-fn resolve_native_session_id(
+fn resolve_provider_session_id(
     response: &ModelResponse,
     input: &CodeEngineTurnInput,
 ) -> Option<String> {
@@ -215,13 +215,13 @@ fn resolve_native_session_id(
         .iter()
         .find_map(|diagnostic| {
             let (key, value) = diagnostic.split_once('=')?;
-            NATIVE_SESSION_DIAGNOSTIC_KEYS
+            PROVIDER_SESSION_DIAGNOSTIC_KEYS
                 .contains(&key.trim())
                 .then(|| value.trim())
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
         })
-        .or_else(|| input.native_session_id.clone())
+        .or_else(|| input.provider_session_id.clone())
 }
 
 /// Execute a turn preferring provider stream chunks when supported.
@@ -235,10 +235,10 @@ pub fn execute_code_engine_turn_with_stream(
 
 /// Execute a turn and forward each provider-neutral model chunk as it arrives.
 /// The caller owns its product representation; this facade owns the kernel SPI
-/// boundary, ordering, output budget enforcement, and native-session proof.
+/// boundary, ordering, output budget enforcement, and provider-session proof.
 ///
 /// Codex initial turns can stream only because its runtime terminal frame
-/// carries a correlated native session id. Other engines remain invoke-only
+/// carries a correlated provider session id. Other engines remain invoke-only
 /// until they offer the same proof. Once a chunk is delivered, this function
 /// never invokes the provider again as a fallback.
 pub fn execute_code_engine_turn_with_stream_sink(
@@ -260,7 +260,7 @@ pub fn execute_code_engine_turn_with_stream_sink(
             "prompt exceeds maximum size of {MAX_CODE_ENGINE_PROMPT_BYTES} bytes"
         )));
     }
-    if input.native_session_id.is_none() {
+    if input.provider_session_id.is_none() {
         if slot.supports_first_turn_streaming_completion() {
             return execute_first_turn_with_stream_completion(slot, input, sink);
         }
@@ -306,19 +306,19 @@ fn execute_first_turn_with_stream_completion(
 fn code_engine_stream_completion(
     runtime_completion: SdkRuntimeStreamCompletion,
 ) -> RuntimeFacadeResult<CodeEngineTurnStreamCompletion> {
-    let native_session_id = runtime_completion
-        .native_session_id
+    let provider_session_id = runtime_completion
+        .provider_session_id
         .filter(|value| !is_blank(Some(value.as_str())))
         .ok_or_else(|| {
             RuntimeFacadeError::Kernel(
-                "provider stream completed without a verified native session id".to_string(),
+                "provider stream completed without a verified provider session id".to_string(),
             )
         })?;
 
     Ok(CodeEngineTurnStreamCompletion {
         model_request_id: runtime_completion.model_request_id,
         finish_reason: runtime_completion.finish_reason,
-        native_session_id,
+        provider_session_id,
     })
 }
 
@@ -341,19 +341,19 @@ fn build_streamed_turn_output(
         ));
     }
 
-    let native_session_id = stream_completion
+    let provider_session_id = stream_completion
         .as_ref()
-        .map(|completion| completion.native_session_id.clone())
-        .or_else(|| input.native_session_id.clone())
+        .map(|completion| completion.provider_session_id.clone())
+        .or_else(|| input.provider_session_id.clone())
         .ok_or_else(|| {
             RuntimeFacadeError::Kernel(
-                "provider stream completed without a native session id".to_string(),
+                "provider stream completed without a provider session id".to_string(),
             )
         })?;
 
     Ok(CodeEngineTurnOutput {
         assistant_content,
-        native_session_id: Some(native_session_id),
+        provider_session_id: Some(provider_session_id),
         tool_calls: Vec::new(),
         stream_deltas,
         stream_completion,
@@ -520,7 +520,7 @@ mod tests {
                 "event": "stream.done",
                 "model_request_id": model_request_id,
                 "finish_reason": "stop",
-                "native_session_id": "thread-controlled",
+                "provider_session_id": "thread-controlled",
             }))?;
             Ok(())
         }
@@ -603,13 +603,13 @@ mod tests {
         let completion = code_engine_stream_completion(SdkRuntimeStreamCompletion {
             model_request_id: "request-1".to_string(),
             finish_reason: "stop".to_string(),
-            native_session_id: Some("thread-1".to_string()),
+            provider_session_id: Some("thread-1".to_string()),
         })
-        .expect("native session completion");
+        .expect("provider session completion");
 
         assert_eq!(completion.model_request_id, "request-1");
         assert_eq!(completion.finish_reason, "stop");
-        assert_eq!(completion.native_session_id, "thread-1");
+        assert_eq!(completion.provider_session_id, "thread-1");
     }
 
     #[test]
@@ -617,7 +617,7 @@ mod tests {
         let result = code_engine_stream_completion(SdkRuntimeStreamCompletion {
             model_request_id: "request-1".to_string(),
             finish_reason: "stop".to_string(),
-            native_session_id: None,
+            provider_session_id: None,
         });
 
         assert!(matches!(result, Err(RuntimeFacadeError::Kernel(_))));
@@ -633,7 +633,7 @@ mod tests {
         let completion = CodeEngineTurnStreamCompletion {
             model_request_id: "request-1".to_string(),
             finish_reason: "stop".to_string(),
-            native_session_id: "thread-1".to_string(),
+            provider_session_id: "thread-1".to_string(),
         };
 
         let output = build_streamed_turn_output(
@@ -644,13 +644,13 @@ mod tests {
         .expect("streamed output");
 
         assert_eq!(output.assistant_content, "first second");
-        assert_eq!(output.native_session_id.as_deref(), Some("thread-1"));
+        assert_eq!(output.provider_session_id.as_deref(), Some("thread-1"));
         assert_eq!(output.stream_deltas, ["first ", "second"]);
         assert_eq!(output.stream_completion, Some(completion));
     }
 
     #[test]
-    fn codex_first_turn_completion_binds_native_session_and_resume_does_not_invoke() {
+    fn codex_first_turn_completion_binds_provider_session_and_resume_does_not_invoke() {
         let invoke_count = Arc::new(AtomicUsize::new(0));
         let stream_count = Arc::new(AtomicUsize::new(0));
         let slot = controlled_codex_slot(invoke_count.clone(), stream_count.clone());
@@ -671,14 +671,14 @@ mod tests {
         assert_eq!(first_sink.contents, ["streamed response"]);
         assert_eq!(first.assistant_content, "streamed response");
         assert_eq!(
-            first.native_session_id.as_deref(),
+            first.provider_session_id.as_deref(),
             Some("thread-controlled")
         );
         assert_eq!(
             first
                 .stream_completion
                 .as_ref()
-                .map(|completion| completion.native_session_id.as_str()),
+                .map(|completion| completion.provider_session_id.as_str()),
             Some("thread-controlled")
         );
 
@@ -688,7 +688,7 @@ mod tests {
             &CodeEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-test".to_string(),
-                native_session_id: first.native_session_id.clone(),
+                provider_session_id: first.provider_session_id.clone(),
                 prompt: "resumed turn".to_string(),
                 require_live_provider: true,
                 ..Default::default()
@@ -698,7 +698,7 @@ mod tests {
         .expect("resumed streamed turn");
         assert_eq!(resumed_sink.contents, ["streamed response"]);
         assert_eq!(
-            resumed.native_session_id.as_deref(),
+            resumed.provider_session_id.as_deref(),
             Some("thread-controlled")
         );
         assert_eq!(resumed.stream_completion, None);
@@ -780,7 +780,7 @@ mod tests {
         let request = build_model_request(&CodeEngineTurnInput {
             engine_key: "codex".to_string(),
             model_id: "gpt-5-codex".to_string(),
-            native_session_id: Some("session-existing".to_string()),
+            provider_session_id: Some("session-existing".to_string()),
             prompt: "implement the change".to_string(),
             working_directory: Some(PathBuf::from("C:/workspace/project")),
             timeout_ms: Some(90_000),
@@ -837,31 +837,31 @@ mod tests {
     }
 
     #[test]
-    fn provider_native_session_diagnostic_overrides_input_session() {
+    fn provider_session_diagnostic_overrides_input_session() {
         let response = ModelResponse::text("request-1", "provider.model.codex", "done")
             .with_diagnostic("sdk_runtime_session_id=session-provider");
         let input = CodeEngineTurnInput {
-            native_session_id: Some("session-input".to_string()),
+            provider_session_id: Some("session-input".to_string()),
             ..Default::default()
         };
 
         assert_eq!(
-            resolve_native_session_id(&response, &input).as_deref(),
+            resolve_provider_session_id(&response, &input).as_deref(),
             Some("session-provider")
         );
     }
 
     #[test]
-    fn native_session_resolution_falls_back_to_input_session() {
+    fn provider_session_resolution_falls_back_to_input_session() {
         let response = ModelResponse::text("request-1", "provider.model.codex", "done")
             .with_diagnostic("sdk_runtime_mode=sdk_live");
         let input = CodeEngineTurnInput {
-            native_session_id: Some("session-input".to_string()),
+            provider_session_id: Some("session-input".to_string()),
             ..Default::default()
         };
 
         assert_eq!(
-            resolve_native_session_id(&response, &input).as_deref(),
+            resolve_provider_session_id(&response, &input).as_deref(),
             Some("session-input")
         );
     }

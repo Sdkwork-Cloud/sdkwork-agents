@@ -248,7 +248,7 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
         let turn_input = CodeEngineTurnInput {
             engine_key: engine_key.to_string(),
             model_id: model_id.clone(),
-            native_session_id: Some(input.session.session_id.clone()),
+            provider_session_id: Some(input.session.session_id.clone()),
             prompt,
             ..Default::default()
         };

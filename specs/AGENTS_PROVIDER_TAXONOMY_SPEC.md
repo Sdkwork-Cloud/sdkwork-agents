@@ -70,7 +70,7 @@ references and orchestration policy only.
 | Human pause and resolution | `AgentInteraction` |
 | Scheduled command | `AgentTask` |
 
-Provider-native identifiers remain inside runtime bindings, turns, checkpoints
+Provider Session identifiers remain inside runtime bindings, turns, checkpoints
 or interactions as opaque values.
 
 ## 6. Implementation Type

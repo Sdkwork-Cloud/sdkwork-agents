@@ -18,8 +18,8 @@ use crate::ports::{
     AgentListQuery, AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery,
     ItemFeedbackListQuery, McpMarketplaceListQuery, ProjectCompositionSlotListQuery,
     ProjectListQuery, ProviderBindingListQuery, ResourceUserStateListQuery,
-    SessionCheckpointListQuery, SessionItemListQuery, SessionListQuery,
-    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
+    SessionActivitySummaryListQuery, SessionCheckpointListQuery, SessionItemListQuery,
+    SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectDriveAccessMode, AgentProjectVisibility};
 use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
@@ -504,6 +504,8 @@ pub struct CreateSessionCommand {
 pub struct UpdateSessionCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded session.
+    pub path_agent_id: String,
     pub session_id: String,
     pub title: Option<String>,
     pub project_id: Option<Option<String>>,
@@ -517,6 +519,8 @@ pub struct UpdateSessionCommand {
 pub struct DeleteSessionCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded session.
+    pub path_agent_id: String,
     pub session_id: String,
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
@@ -527,6 +531,8 @@ pub struct DeleteSessionCommand {
 pub struct CloseSessionCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded session.
+    pub path_agent_id: String,
     pub session_id: String,
     pub expected_version: Option<u64>,
     /// When set, the session must belong to this owner (app-api scope).
@@ -539,6 +545,8 @@ pub struct CloseSessionCommand {
 pub struct ArchiveSessionCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
+    /// Agent id from the nested HTTP path; must match the loaded session.
+    pub path_agent_id: String,
     pub session_id: String,
     pub expected_version: Option<u64>,
     /// When set, the session must belong to this owner (app-api scope).
@@ -562,6 +570,12 @@ pub struct GetSessionCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListSessionsCommand {
     pub query: SessionListQuery,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListSessionActivitySummariesCommand {
+    pub query: SessionActivitySummaryListQuery,
     pub requested_by: PolicySubject,
 }
 
@@ -663,6 +677,8 @@ pub struct GetSessionItemCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListSessionItemsCommand {
     pub query: SessionItemListQuery,
+    /// Agent id from the nested HTTP path; must match the loaded session.
+    pub path_agent_id: String,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
@@ -954,10 +970,10 @@ pub struct CreateSessionRuntimeBindingCommand {
     pub provider_binding_id: String,
     pub model_id: String,
     pub provider_id: String,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
@@ -995,10 +1011,10 @@ pub struct UpdateSessionRuntimeBindingCommand {
     pub provider_binding_id: Option<String>,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
-    pub native_session_id: Option<String>,
-    pub native_session_tree_id: Option<String>,
-    pub native_parent_session_id: Option<String>,
-    pub native_forked_from_session_id: Option<String>,
+    pub provider_session_id: Option<String>,
+    pub provider_session_tree_id: Option<String>,
+    pub provider_parent_session_id: Option<String>,
+    pub provider_forked_from_session_id: Option<String>,
     pub expected_version: u64,
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,

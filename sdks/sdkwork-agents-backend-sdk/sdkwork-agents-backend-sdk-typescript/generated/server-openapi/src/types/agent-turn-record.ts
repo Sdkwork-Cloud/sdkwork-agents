@@ -31,17 +31,17 @@ export interface AgentTurnRecord {
   traceId?: string | null;
   attemptCount: number;
   maxAttempts: number;
-  nextRetryAt?: string;
+  nextRetryAt?: string | null;
   availableAt: string;
   leaseOwner?: string | null;
-  leaseExpiresAt?: string;
+  leaseExpiresAt?: string | null;
   fencingToken: Int64String;
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  startedAt?: string;
-  completedAt?: string;
-  cancelRequestedAt?: string;
-  cancelledAt?: string;
-  retentionUntil?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  cancelRequestedAt?: string | null;
+  cancelledAt?: string | null;
+  retentionUntil?: string | null;
 }

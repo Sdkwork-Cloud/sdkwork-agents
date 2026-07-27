@@ -13,6 +13,6 @@ export interface AgentItemDriveRefRecord {
   createdBy: Int64String;
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string;
-  retentionUntil?: string;
+  deletedAt?: string | null;
+  retentionUntil?: string | null;
 }

@@ -28,8 +28,8 @@ export interface AgentSessionItemRecord {
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  completedAt?: string;
-  redactedAt?: string;
+  completedAt?: string | null;
+  redactedAt?: string | null;
   redactedBy?: Int64String | null;
-  retentionUntil?: string;
+  retentionUntil?: string | null;
 }

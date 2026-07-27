@@ -11,7 +11,7 @@ mod in_memory_pagination;
 mod infrastructure;
 mod mcp_marketplace;
 #[cfg(feature = "http-axum")]
-mod native_session_sync;
+mod provider_session_sync;
 mod persistence;
 mod ports;
 #[cfg(feature = "postgres-sync")]
@@ -20,6 +20,7 @@ mod project;
 #[cfg(feature = "http-axum")]
 pub mod response;
 mod runtime_facade_bridge;
+mod session_activity;
 mod turn_runtime;
 mod validation;
 mod workspace;
@@ -134,15 +135,15 @@ pub use persistence::{
     SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
     SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
-    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ITEMS, SQL_LIST_AGENT_SESSION_ITEMS_DESC,
-    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_TASKS,
-    SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID, SQL_RECORD_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
-    SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
-    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY,
-    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
-    SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
+    SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
+    SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
+    SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK,
+    SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME,
+    SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
+    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_TASK,
+    SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_UPDATE_AGENT_INTERACTION,
+    SQL_UPDATE_AGENT_PROJECT, SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_ITEM, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
     SQL_UPDATE_AGENT_WORKSPACE, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
     SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
@@ -152,13 +153,20 @@ pub use ports::{
     offset_paginated_result, AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery,
     CompositionSlotListQuery, InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
     PaginatedResult, PaginationParams, ProjectCompositionSlotListQuery, ProjectListQuery,
-    ProviderBindingListQuery, ResourceUserStateListQuery, SessionItemListQuery,
-    SessionItemListSort, SessionListQuery, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE,
+    ProviderBindingListQuery, ResourceUserStateListQuery, SessionActivitySummaryListQuery,
+    SessionItemListQuery, SessionItemListSort, SessionListQuery, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE,
     MAX_TURN_INPUT_CONTENT_BYTES, TURN_CONTEXT_ITEM_LIMIT,
 };
 pub use ports::{SessionCheckpointListQuery, SessionRuntimeBindingListQuery, TurnListQuery};
 pub use project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
     AgentProjectStatus, AgentProjectVisibility,
+};
+pub use session_activity::{
+    SessionActivityCursor, SessionActivityFreshness, SessionActivitySource,
+    SessionActivitySummaryRecord, SessionProviderActivityEvidenceKind,
+    SessionProviderActivityFreshness, SessionProviderActivityInteractionHint,
+    SessionProviderActivityObservation, SessionProviderActivityState, SessionPresentationPhase,
+    SessionProviderIdentity,
 };
 pub use workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};

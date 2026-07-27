@@ -18,11 +18,11 @@ export interface AgentInteractionRecord {
   options: AgentInteractionOption[];
   resolution?: AgentInteractionResolution | null;
   claimOwner?: string | null;
-  claimExpiresAt?: string;
+  claimExpiresAt?: string | null;
   fencingToken: Int64String;
   version: Int64String;
   createdAt: string;
   updatedAt: string;
-  resolvedAt?: string;
-  retentionUntil?: string;
+  resolvedAt?: string | null;
+  retentionUntil?: string | null;
 }

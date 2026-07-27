@@ -7,27 +7,28 @@ mod code_engines;
 mod engine_catalog;
 mod error;
 mod live_interaction;
-mod native_sessions;
+mod provider_sessions;
 mod runtime_host;
 mod sessions;
 mod turn;
 
 pub use code_engines::{
     bootstrap_code_engine, canonical_code_engine_keys, code_engine_agent_id,
-    code_engine_binding_id, is_canonical_code_engine, CodeEngineBootstrapError, CodeEngineSlot,
+    code_engine_binding_id, is_canonical_code_engine, resolve_code_engine_runtime_identity,
+    CodeEngineBootstrapError, CodeEngineRuntimeIdentity, CodeEngineSlot,
 };
 pub use engine_catalog::{
-    bootstrap_canonical_code_engine_catalog, build_code_engine_catalog, list_slot_catalog_entries,
-    model_descriptor_to_catalog_entry, CodeEngineCatalog, CodeEngineCatalogEngine,
-    CodeEngineModelCatalogEntry,
+    bootstrap_bootstrappable_code_engine_catalog, bootstrap_canonical_code_engine_catalog,
+    build_code_engine_catalog, list_slot_catalog_entries, model_descriptor_to_catalog_entry,
+    CodeEngineCatalog, CodeEngineCatalogEngine, CodeEngineModelCatalogEntry,
 };
 pub use error::{RuntimeFacadeError, RuntimeFacadeResult};
 pub use live_interaction::{
     ApprovalDecision, EngineLiveInteraction, LiveInteractionRegistry, UserQuestionAnswer,
 };
-pub use native_sessions::{
-    NativeSessionInventoryItem, NativeSessionInventorySelector, NativeSessionProjectCwdResolver,
-    NativeSessionProjectCwdSelector,
+pub use provider_sessions::{
+    ProviderSessionInventoryItem, ProviderSessionInventorySelector, ProviderSessionProjectCwdResolver,
+    ProviderSessionProjectCwdSelector,
 };
 pub use runtime_host::AgentsCodeEngineHost;
 pub use sdkwork_agent_kernel::{
