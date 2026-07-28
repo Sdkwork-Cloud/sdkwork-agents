@@ -26,7 +26,7 @@ use crate::project::{
 };
 use crate::session_activity::{
     encode_session_activity_cursor, SessionActivityCursor, SessionActivitySource,
-    SessionActivitySummaryRecord,
+    SessionActivitySummaryParts, SessionActivitySummaryRecord,
 };
 use crate::validation::{validate_capabilities, validate_standard_id};
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
@@ -2731,16 +2731,19 @@ where
                 .map(AgentResourceUserStateRow::into_record)
                 .transpose()?;
             items.push(SessionActivitySummaryRecord::from_parts(
-                session,
-                latest_turn,
-                pending_interaction,
-                current_runtime_binding,
-                latest_runtime_binding,
-                user_state,
-                head.latest_interaction_id
-                    .zip(head.latest_interaction_version),
-                head.activity_at,
-                head.activity_source,
+                SessionActivitySummaryParts {
+                    session,
+                    latest_turn,
+                    pending_interaction,
+                    current_runtime_binding,
+                    latest_runtime_binding,
+                    user_state,
+                    latest_interaction_component: head
+                        .latest_interaction_id
+                        .zip(head.latest_interaction_version),
+                    activity_at: head.activity_at,
+                    activity_source: head.activity_source,
+                },
             ));
         }
         let next_page_token = if has_more {

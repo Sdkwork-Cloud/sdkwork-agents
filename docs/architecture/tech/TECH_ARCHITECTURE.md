@@ -3,7 +3,7 @@
 - Version: `5.1.0`
 - Status: active
 - Owner: `agents-platform`
-- Updated: `2026-07-23`
+- Updated: `2026-07-28`
 - Specs: [ARCHITECTURE_DECISION_SPEC.md](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [DOCUMENTATION_SPEC.md](../../../../sdkwork-specs/DOCUMENTATION_SPEC.md)
 - API Reference: [TECH-api-reference.md](TECH-api-reference.md)
 
@@ -23,8 +23,10 @@ PC / H5 / Flutter / product integrations / sdkwork-im
                             sdkwork-agents-runtime-facade
                                        |
                                 sdkwork-kernel SPI
-                                       |
-                              provider plugins
+                                  |           |
+                    Agent Provider plugins   Sandbox lifecycle adapter
+                                              |
+                                      sdkwork-sandbox
 ```
 
 The durable business aggregate is:
@@ -50,7 +52,8 @@ No other module owns a durable agent execution Session or transcript.
 | Application | Rust service/use-case layer | authorization, orchestration, transactions |
 | Persistence | PostgreSQL, `sdkwork-database` | 20-table managed module and lifecycle |
 | Runtime | `sdkwork-agents-runtime-facade` | product-safe kernel adapter |
-| Provider mechanism | `sdkwork-kernel` | provider SPI, plugins and transient events |
+| Agent Provider mechanism | `sdkwork-kernel` | model/agent-engine SPI, plugins and transient events |
+| Sandbox execution mechanism | `sdkwork-sandbox` through Kernel | `SandboxSession`, `SandboxRuntimeBinding`, execution-environment Provider SPI |
 | SDK | canonical `sdkgen` | TypeScript and Flutter generated clients |
 | Clients | React PC/H5 and Flutter | services over injected App SDK clients |
 
@@ -69,9 +72,24 @@ No other module owns a durable agent execution Session or transcript.
 The dependency direction is:
 
 ```text
-product and IM -> sdkwork-agents -> sdkwork-kernel
+product and IM -> sdkwork-agents -> sdkwork-kernel -> sdkwork-sandbox
                               `-> independent capability SDKs
 ```
+
+`sdkwork-agents` owns `AgentWorkspace` and `AgentSession`. Kernel maps the
+authorized business identifiers into `SandboxWorkspaceId`/`SandboxSessionId`,
+consumes `SandboxSessionLifecyclePort`, and maps `SandboxRuntimeBindingId` back
+to the opaque Agents `runtimeLocationId`. Sandbox never owns a second Workspace
+registry and never depends back on Agents.
+
+Agents public contracts keep their Agents-owned field names such as
+`workspaceId`, `sessionId` and `runtimeLocationId`. These fields must not be
+renamed to Sandbox fields because they describe Agents resources. At the Kernel
+to Sandbox boundary, Rust fields and variables use `sandbox_workspace_id`,
+`sandbox_session_id`, `sandbox_runtime_binding_id`, `sandbox_operation_id` and
+other `sandbox_`-qualified names; future Sandbox Wire contracts use the matching
+`sandboxWorkspaceId`, `sandboxSessionId`, `sandboxRuntimeBindingId` and
+`sandboxOperationId` names.
 
 ## 4. Directory And Package Layout
 

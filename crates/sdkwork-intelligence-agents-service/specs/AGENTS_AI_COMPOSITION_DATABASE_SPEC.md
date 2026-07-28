@@ -294,6 +294,10 @@ partial indexes declared by the baseline.
 
 - Audit rows are append-only, carry trusted actor/request/trace scope and store
   bounded change summaries rather than full item content.
+- Agent composition mutations emit the exact audit actions
+  `composition_slot_created`, `composition_slot_updated` and
+  `composition_slot_deleted`; project-scoped composition uses the corresponding
+  `project_composition_slot_*` actions.
 - Outbox payloads contain stable Agents identifiers and the minimum bounded
   event data required by a consumer.
 - Claim tokens, share tokens, access credentials, provider secrets, signed

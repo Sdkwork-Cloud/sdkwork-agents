@@ -4,15 +4,17 @@
 - Status: draft
 - Release Stage: pre-launch release candidate
 - Owner: `agents-platform`
-- Updated: `2026-07-23`
+- Updated: `2026-07-28`
 - Specs: [REQUIREMENTS_SPEC.md](../../../../sdkwork-specs/REQUIREMENTS_SPEC.md), [DOCUMENTATION_SPEC.md](../../../../sdkwork-specs/DOCUMENTATION_SPEC.md)
 
 ## 1. Background And Problem
 
 SDKWork products need a common managed-agent service that can execute multiple
 provider engines, retain durable execution history, enforce tenant policy and
-support user-facing, operator and integration surfaces. Provider mechanisms
-belong to `sdkwork-kernel`; managed business state belongs to `sdkwork-agents`.
+support user-facing, operator and integration surfaces. Agent Provider
+mechanisms belong to `sdkwork-kernel`; managed business state belongs to
+`sdkwork-agents`; execution-environment `SandboxSession` lifecycle and Sandbox
+Provider mechanisms belong to `sdkwork-sandbox`.
 
 The product uses one execution vocabulary:
 
@@ -49,7 +51,7 @@ Goals:
 Non-goals:
 
 - generic IM conversations, delivery, read state, presence or reactions;
-- provider runtime SPI implementation inside the product service;
+- Agent Provider SPI or Sandbox Provider SPI implementation inside the product service;
 - skill package content, installation records or marketplace ownership;
 - copied model catalogs, prompt bodies, document content, memory records or Drive bytes;
 - product-local duplicate Workspace authorities, filesystem paths or UI state persistence.
@@ -65,7 +67,7 @@ Non-goals:
 | Turns | Idempotent execution, retry, cancellation and usage | `AgentTurn` |
 | Session items | Ordered input/output/tool/artifact facts | `AgentSessionItem` |
 | Human interaction | Claim and resolve approval or user question | `AgentInteraction` |
-| Runtime continuity | Runtime bindings and checkpoints | Session aggregate |
+| Runtime continuity | `AgentSessionRuntimeBinding` and checkpoints; active `SandboxRuntimeBindingId` is retained only as opaque `runtimeLocationId` | `AgentSession` aggregate |
 | Tasks | Scheduled or deferred agent commands | `AgentTask` |
 | User state | Pin, hide and resource-specific preferences | Agents user-state table |
 | Operations | Audit, outbox, metrics, health and reconciliation | Agents service |
@@ -80,10 +82,13 @@ completion events.
 
 ### 5.2 Coding product integration
 
-A coding product selects an Agent Workspace, uses its Workspace-scoped Agent
-Projects, and calls the same Session and Turn APIs. Product-owned
-runtime-location and repository state remain local; only bounded opaque
-references are supplied to Agents.
+A coding product selects an `AgentWorkspace`, uses its Workspace-scoped
+`AgentProject` records, and calls the same `AgentSession` and `AgentTurn` APIs.
+Agents remains the Workspace and Session business authority. Kernel maps the
+authorized identities to `SandboxWorkspaceId`/`SandboxSessionId`; the resulting
+`SandboxRuntimeBindingId` returns to Agents only as opaque `runtimeLocationId`.
+Provider allocation references, host paths and Sandbox lifecycle state never
+become Agents business fields.
 
 ### 5.3 IM dispatch
 
@@ -100,7 +105,10 @@ claim token.
 ### 5.5 Resume and recovery
 
 The user restores a validated checkpoint. The service verifies trusted scope,
-runtime binding, lifecycle and expected version before provider invocation.
+the `AgentSessionRuntimeBinding`, lifecycle and expected version before Kernel
+invocation. Agents passes `runtimeLocationId` only as an opaque reference;
+Kernel must validate and map it to an active `SandboxRuntimeBindingId` before a
+Sandbox resume operation. Agents does not inspect Sandbox Provider metadata.
 
 ## 6. Functional Requirements
 
@@ -136,7 +144,10 @@ Agents owns 20 PostgreSQL tables under prefix `ai_`. The canonical design is
 
 All cross-domain links are identifiers validated through public contracts.
 There are no cross-module foreign keys, shared write owners, alternate session
-stores, or copied dependency entities.
+stores, or copied dependency entities. `AgentWorkspace` and `AgentSession` are
+the only Agents business authorities. `SandboxWorkspaceId`, `SandboxSessionId`
+and `SandboxRuntimeBindingId` are boundary identifiers consumed through Kernel,
+not alternate Agents aggregates or foreign-key targets.
 
 ## 9. Quality Requirements
 
@@ -179,6 +190,7 @@ isolated from app/backend session tokens. The exact commands are maintained in
 - [ADR-20260722-agent-session-domain-unification.md](../../architecture/decisions/ADR-20260722-agent-session-domain-unification.md)
 - [AGENTS_SESSION_MODEL_SPEC.md](../../../specs/AGENTS_SESSION_MODEL_SPEC.md)
 - [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](../../../specs/AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md)
+- [SDKWork Sandbox PRD](../../../../sdkwork-sandbox/docs/product/prd/PRD.md)
 
 ## 13. Open Questions
 

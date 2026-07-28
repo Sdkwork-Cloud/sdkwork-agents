@@ -22,7 +22,7 @@ use crate::project::{
 };
 use crate::session_activity::{
     encode_session_activity_cursor, SessionActivityCursor, SessionActivitySource,
-    SessionActivitySummaryRecord,
+    SessionActivitySummaryParts, SessionActivitySummaryRecord,
 };
 use crate::validation::parse_rfc3339_datetime;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
@@ -1931,15 +1931,17 @@ impl AgentRepository for InMemoryAgentRepository {
                 &session.session_id,
             );
             items.push(SessionActivitySummaryRecord::from_parts(
-                session,
-                latest_turn,
-                pending_interaction,
-                current_runtime_binding,
-                latest_runtime_binding,
-                user_state,
-                latest_interaction_component,
-                activity_at,
-                source,
+                SessionActivitySummaryParts {
+                    session,
+                    latest_turn,
+                    pending_interaction,
+                    current_runtime_binding,
+                    latest_runtime_binding,
+                    user_state,
+                    latest_interaction_component,
+                    activity_at,
+                    activity_source: source,
+                },
             ));
         }
         let next_page_token = if has_more {

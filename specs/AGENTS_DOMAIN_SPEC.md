@@ -75,7 +75,7 @@ owner retains resource content, versions, authorization and lifecycle.
 ## 4. Dependency Direction
 
 ```text
-product applications -----> sdkwork-agents -----> sdkwork-kernel
+product applications -----> sdkwork-agents -----> sdkwork-kernel -----> sdkwork-sandbox
 sdkwork-im ----------------^          |
                                       +-----> independent capability SDKs
 ```
@@ -83,7 +83,7 @@ sdkwork-im ----------------^          |
 The mandatory communication dependency is:
 
 ```text
-sdkwork-im -> sdkwork-agents -> sdkwork-kernel
+sdkwork-im -> sdkwork-agents -> sdkwork-kernel -> sdkwork-sandbox
 ```
 
 Agents never imports IM packages, SDKs, repositories, routes or tables. IM owns
@@ -97,6 +97,12 @@ Consumers may supply these bounded references:
 - `runtimeLocationId` on a session runtime binding;
 - `providerBindingId`, `modelId` and provider session identifiers;
 - Drive resource identifiers on item relations.
+
+`AgentWorkspace` and `AgentSession` remain the only durable business
+authorities. Kernel maps their authorized IDs to the Sandbox-qualified opaque
+contexts `SandboxWorkspaceId` and `SandboxSessionId`; Sandbox does not create a
+Workspace registry or import Agents models. Kernel maps the active
+`SandboxRuntimeBindingId` back to the opaque Agents `runtimeLocationId`.
 
 Agents stores no snapshot of the external resource and never resolves it with
 cross-domain SQL. The caller performs its own product authorization and Agents

@@ -61,7 +61,8 @@ provider metadata.
 `AgentSessionRuntimeBinding` records the selected runtime for one session:
 
 - Agents provider binding and model references;
-- an opaque `runtimeLocationId` supplied by a product;
+- an opaque `runtimeLocationId` mapped by Kernel from the active
+  `SandboxRuntimeBindingId` when Sandbox execution is used;
 - host mode and transport kind;
 - provider session, tree, parent and fork identifiers;
 - lifecycle and optimistic version.

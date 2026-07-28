@@ -335,18 +335,31 @@ pub struct SessionActivitySummaryRecord {
     pub presentation_phase: SessionPresentationPhase,
 }
 
+pub(crate) struct SessionActivitySummaryParts {
+    pub session: AgentSessionRecord,
+    pub latest_turn: Option<AgentTurnRecord>,
+    pub pending_interaction: Option<AgentInteractionRecord>,
+    pub current_runtime_binding: Option<AgentSessionRuntimeBindingRecord>,
+    pub latest_runtime_binding: Option<AgentSessionRuntimeBindingRecord>,
+    pub user_state: Option<AgentResourceUserStateRecord>,
+    pub latest_interaction_component: Option<(String, u64)>,
+    pub activity_at: String,
+    pub activity_source: SessionActivitySource,
+}
+
 impl SessionActivitySummaryRecord {
-    pub(crate) fn from_parts(
-        session: AgentSessionRecord,
-        latest_turn: Option<AgentTurnRecord>,
-        pending_interaction: Option<AgentInteractionRecord>,
-        current_runtime_binding: Option<AgentSessionRuntimeBindingRecord>,
-        latest_runtime_binding: Option<AgentSessionRuntimeBindingRecord>,
-        user_state: Option<AgentResourceUserStateRecord>,
-        latest_interaction_component: Option<(String, u64)>,
-        activity_at: String,
-        activity_source: SessionActivitySource,
-    ) -> Self {
+    pub(crate) fn from_parts(parts: SessionActivitySummaryParts) -> Self {
+        let SessionActivitySummaryParts {
+            session,
+            latest_turn,
+            pending_interaction,
+            current_runtime_binding,
+            latest_runtime_binding,
+            user_state,
+            latest_interaction_component,
+            activity_at,
+            activity_source,
+        } = parts;
         let provider_identity =
             provider_identity(current_runtime_binding.as_ref(), latest_turn.as_ref());
         let (observed_at, fresh_until) = effective_activity_timing(
