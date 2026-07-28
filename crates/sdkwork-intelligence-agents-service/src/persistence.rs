@@ -1801,19 +1801,28 @@ impl AgentAuditEventRow {
         let organization_id = extract_event_context(event.payload.as_str(), "organization_id")
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0);
-        let agent_internal_id = extract_event_context(event.payload.as_str(), "agent_internal_id")
-            .and_then(|value| value.parse::<u64>().ok());
-        let agent_id = extract_event_context(event.payload.as_str(), "agent_id");
+        let context_agent_internal_id =
+            extract_event_context(event.payload.as_str(), "agent_internal_id")
+                .and_then(|value| value.parse::<u64>().ok());
+        let context_agent_id = extract_event_context(event.payload.as_str(), "agent_id");
         let aggregate_type = extract_event_context(event.payload.as_str(), "aggregate_type")
             .unwrap_or_else(|| "agent".to_string());
         let aggregate_id = extract_event_context(event.payload.as_str(), "aggregate_id")
-            .or_else(|| agent_id.clone())
+            .or_else(|| context_agent_id.clone())
             .ok_or_else(|| KernelError::validation("audit aggregate_id context is required"))?;
-        if aggregate_type == "agent" && agent_id.is_none() {
+        if aggregate_type == "agent" && context_agent_id.is_none() {
             return Err(KernelError::validation(
                 "agent audit context requires agent_id",
             ));
         }
+        // The audit table's agent scope is exclusive to agent aggregates. Other
+        // aggregates retain agent context in payload_json without populating the
+        // constrained agent_id and agent_internal_id columns.
+        let (agent_internal_id, agent_id) = if aggregate_type == "agent" {
+            (context_agent_internal_id, context_agent_id)
+        } else {
+            (None, None)
+        };
         let subject_id = extract_event_context(event.payload.as_str(), "subject_id")
             .or_else(|| event.correlation_id.clone())
             .unwrap_or_else(|| "unknown".to_string());
@@ -8291,6 +8300,74 @@ mod tests {
         assert_eq!(row.uuid.len(), 64);
         assert_eq!(row.agent_id.as_deref(), Some(agent_id.as_str()));
         assert_eq!((row.actor_type, row.actor_id), (0, 700));
+    }
+
+    #[test]
+    fn turn_audit_event_keeps_agent_context_out_of_agent_scope_columns() {
+        let event = KernelEvent::new(
+            "agent_turn_turn.123_requested_0",
+            "agent.business.turn.requested",
+            KernelEventSeverity::Info,
+            serde_json::json!({
+                "_context": {
+                    "aggregate_type": "turn",
+                    "aggregate_id": "turn.123",
+                    "tenant_id": "100",
+                    "organization_id": "200",
+                    "agent_id": "agent.birdcoder",
+                    "agent_internal_id": "300",
+                    "subject_id": "700"
+                }
+            })
+            .to_string(),
+        )
+        .from_source(KernelEventSource::Runtime)
+        .occurred_at("2026-07-28T00:00:00Z");
+
+        let row = AgentAuditEventRow::from_kernel_event(&event, 1)
+            .expect("turn audit event should satisfy the non-agent scope constraint");
+
+        assert_eq!(row.aggregate_type, "turn");
+        assert_eq!(row.aggregate_id, "turn.123");
+        assert_eq!(row.agent_id, None);
+        assert_eq!(row.agent_internal_id, None);
+        let payload_snapshot: serde_json::Value = serde_json::from_str(row.payload_json.as_str())
+            .expect("audit payload snapshot should remain valid JSON");
+        let original_payload = payload_snapshot["payload"]
+            .as_str()
+            .expect("audit payload snapshot should retain the original payload");
+        assert_eq!(
+            extract_event_context(original_payload, "agent_id"),
+            Some("agent.birdcoder".to_string())
+        );
+    }
+
+    #[test]
+    fn agent_audit_event_preserves_agent_scope_columns() {
+        let event = KernelEvent::new(
+            "agent_audit_agent.birdcoder_1",
+            "agent.business.updated",
+            KernelEventSeverity::Info,
+            serde_json::json!({
+                "_context": {
+                    "aggregate_type": "agent",
+                    "aggregate_id": "agent.birdcoder",
+                    "tenant_id": "100",
+                    "agent_id": "agent.birdcoder",
+                    "agent_internal_id": "300",
+                    "subject_id": "700"
+                }
+            })
+            .to_string(),
+        )
+        .from_source(KernelEventSource::Runtime)
+        .occurred_at("2026-07-28T00:00:00Z");
+
+        let row = AgentAuditEventRow::from_kernel_event(&event, 1)
+            .expect("agent audit event should preserve its agent scope");
+
+        assert_eq!(row.agent_id.as_deref(), Some("agent.birdcoder"));
+        assert_eq!(row.agent_internal_id, Some(300));
     }
 
     #[test]
