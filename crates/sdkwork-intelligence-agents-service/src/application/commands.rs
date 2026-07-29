@@ -725,6 +725,7 @@ pub struct CreateTurnCommand {
     pub turn_mode: crate::agent_turn::AgentTurnMode,
     pub runtime_binding_id: Option<String>,
     pub requested_model_id: Option<String>,
+    pub access_mode_id: Option<String>,
     pub idempotency_key: String,
     pub payload_hash: String,
     pub client_request_id: Option<String>,

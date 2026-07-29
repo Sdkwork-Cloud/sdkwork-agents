@@ -1208,6 +1208,7 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         turn_mode: AgentTurnMode::Interactive,
         runtime_binding_id: Some(runtime_binding.runtime_binding_id),
         requested_model_id: Some("model.turn.contract".to_string()),
+        access_mode_id: None,
         idempotency_key: "turn-test-idempotency-1".to_string(),
         payload_hash: "sha256:turn-test-payload-1".to_string(),
         client_request_id: Some("request.turn.1".to_string()),

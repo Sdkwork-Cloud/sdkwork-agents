@@ -181,8 +181,23 @@ impl CodeEngineSlot {
                 capability_id: format!("agent.configure.execution.{}", self.engine_key()),
             }
         })?;
-        self.configuration_provider()
-            .execution_settings_spec(agent_id)
+        match self {
+            Self::Codex(_) => CodexConfigurationProvider::new().execution_settings_spec(agent_id),
+            Self::ClaudeCode(_) => {
+                ClaudeCodeConfigurationProvider::new().execution_settings_spec(agent_id)
+            }
+            Self::Gemini(_) => {
+                GeminiCliConfigurationProvider::new().execution_settings_spec(agent_id)
+            }
+            Self::OpenCode(_) => {
+                OpenCodeConfigurationProvider::new().execution_settings_spec(agent_id)
+            }
+            Self::OpenClaw(_) | Self::Hermes(_) => {
+                Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
+                    capability_id: format!("agent.configure.execution.{}", self.engine_key()),
+                })
+            }
+        }
     }
 
     pub fn resolve_execution_settings(
@@ -194,9 +209,27 @@ impl CodeEngineSlot {
                 capability_id: format!("agent.configure.execution.{}", self.engine_key()),
             }
         })?;
-        self.configuration_provider().resolve_execution_settings(
-            &AgentExecutionSettingsRequest::new(agent_id).with_access_mode(access_mode_id),
-        )
+        let request =
+            AgentExecutionSettingsRequest::new(agent_id).with_access_mode(access_mode_id);
+        match self {
+            Self::Codex(_) => {
+                CodexConfigurationProvider::new().resolve_execution_settings(&request)
+            }
+            Self::ClaudeCode(_) => {
+                ClaudeCodeConfigurationProvider::new().resolve_execution_settings(&request)
+            }
+            Self::Gemini(_) => {
+                GeminiCliConfigurationProvider::new().resolve_execution_settings(&request)
+            }
+            Self::OpenCode(_) => {
+                OpenCodeConfigurationProvider::new().resolve_execution_settings(&request)
+            }
+            Self::OpenClaw(_) | Self::Hermes(_) => {
+                Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
+                    capability_id: format!("agent.configure.execution.{}", self.engine_key()),
+                })
+            }
+        }
     }
 
     pub fn invoke_model(&self, request: ModelRequest) -> KernelResult<ModelResponse> {
@@ -280,19 +313,6 @@ impl CodeEngineSlot {
         }
     }
 
-    fn configuration_provider(&self) -> Box<dyn AgentConfigurationProvider> {
-        match self {
-            Self::Codex(_) => Box::new(CodexConfigurationProvider::new()),
-            Self::ClaudeCode(_) => Box::new(ClaudeCodeConfigurationProvider::new()),
-            Self::Gemini(_) => Box::new(GeminiCliConfigurationProvider::new()),
-            Self::OpenCode(_) => Box::new(OpenCodeConfigurationProvider::new()),
-            Self::OpenClaw(_) | Self::Hermes(_) => Box::new(
-                sdkwork_agent_plugin_core::ProcessAdapterConfigurationProvider::new(
-                    code_engine_agent_id(self.engine_key()).unwrap_or_default(),
-                ),
-            ),
-        }
-    }
 }
 
 pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEngineBootstrapError> {

@@ -7,6 +7,7 @@ export interface CreateAgentTurnRequest {
   turnMode: AgentTurnMode;
   runtimeBindingId?: string;
   requestedModelId?: string;
+  accessModeId?: string;
   idempotencyKey: string;
   payloadHash: string;
   clientRequestId?: string;

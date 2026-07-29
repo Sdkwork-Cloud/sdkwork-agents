@@ -71,6 +71,7 @@ export type { AppUpdateAgentSessionRequest } from './app-update-agent-session-re
 export type { CodeEngineCatalogListResponse } from './code-engine-catalog-list-response';
 export type { CodeEngineCatalog } from './code-engine-catalog';
 export type { CodeEngineCatalogEngine } from './code-engine-catalog-engine';
+export type { CodeEngineAccessModeCatalogEntry } from './code-engine-access-mode-catalog-entry';
 export type { CodeEngineModelCatalogEntry } from './code-engine-model-catalog-entry';
 export type { McpServerMarketplaceListResponse } from './mcp-server-marketplace-list-response';
 export type { McpServerMarketplaceRecord } from './mcp-server-marketplace-record';

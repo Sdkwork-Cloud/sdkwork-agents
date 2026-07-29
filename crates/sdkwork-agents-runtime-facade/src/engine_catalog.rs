@@ -212,7 +212,25 @@ mod tests {
         for engine in &catalog.engines {
             assert!(!engine.models.is_empty());
             assert!(!engine.tier.is_empty());
+            assert!(!engine.default_access_mode_id.is_empty());
+            assert!(!engine.access_modes.is_empty());
         }
+
+        let codex = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("Codex catalog entry");
+        assert_eq!(codex.default_access_mode_id, "ask_for_approval");
+        assert_eq!(codex.access_modes.len(), 3);
+
+        let gemini = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "gemini")
+            .expect("Gemini catalog entry");
+        assert_eq!(gemini.default_access_mode_id, "sdk_default");
+        assert_eq!(gemini.access_modes.len(), 1);
     }
 
     #[test]

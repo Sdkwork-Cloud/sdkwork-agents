@@ -4845,11 +4845,16 @@ components:
       additionalProperties: false
       required:
       - engineKey
+      - tier
       - agentId
       - bindingId
       - models
+      - defaultAccessModeId
+      - accessModes
       properties:
         engineKey:
+          type: string
+        tier:
           type: string
         agentId:
           type: string
@@ -4859,6 +4864,47 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CodeEngineModelCatalogEntry'
+        defaultAccessModeId:
+          type: string
+        accessModes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeEngineAccessModeCatalogEntry'
+    CodeEngineAccessModeCatalogEntry:
+      type: object
+      additionalProperties: false
+      required:
+      - modeId
+      - displayName
+      - description
+      - approvalBehavior
+      - workspaceAccess
+      - networkAccess
+      - riskLevel
+      - enabled
+      properties:
+        modeId:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        approvalBehavior:
+          type: string
+          enum: [user_review, automatic_review, never, provider_default]
+        workspaceAccess:
+          type: string
+          enum: [read_only, workspace_write, full_access, provider_default]
+        networkAccess:
+          type: string
+          enum: [restricted, enabled, provider_default]
+        riskLevel:
+          type: string
+          enum: [scoped, elevated, unrestricted]
+        enabled:
+          type: boolean
+        disabledReason:
+          type: string
     CodeEngineModelCatalogEntry:
       type: object
       additionalProperties: false
@@ -5831,6 +5877,11 @@ components:
         requestedModelId:
           type: string
           maxLength: 128
+        accessModeId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9_-]*$'
         idempotencyKey:
           type: string
           minLength: 1

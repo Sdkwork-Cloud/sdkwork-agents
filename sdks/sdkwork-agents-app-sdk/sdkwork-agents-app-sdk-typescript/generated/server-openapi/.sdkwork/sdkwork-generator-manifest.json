@@ -435,8 +435,12 @@
       "sha256": "e6af1e6a2fb8a9195f0c18a67381e566cb7d5c7b249cd6d010daa519ec87714d"
     },
     {
+      "path": "src/types/code-engine-access-mode-catalog-entry.ts",
+      "sha256": "975b7080c7bd4aa16b2af682d7a1d8a0827b2f183d6976340cfc7dba9716e486"
+    },
+    {
       "path": "src/types/code-engine-catalog-engine.ts",
-      "sha256": "d5b98e575d78a6a1b40447900012b4362b6cad5161610080879a7c6d70af5d76"
+      "sha256": "abc65e05994a937db70b2b497e0b80a16dad2471362967aee82975438462d38f"
     },
     {
       "path": "src/types/code-engine-catalog-list-response.ts",
@@ -504,7 +508,7 @@
     },
     {
       "path": "src/types/create-agent-turn-request.ts",
-      "sha256": "dd6c5940af6c8a1e2b8b02524d3a8e2dc5ea58b4f03093f69aeb79f37c52716e"
+      "sha256": "13fb447362cd8b98e45a93b637e2653b5b6854233a70b135fe9a3342819472bf"
     },
     {
       "path": "src/types/create-agent-workspace-request.ts",
@@ -524,7 +528,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "d7c6366b73ce28280691a45330ea8920aa10610ae3111b6f717483e0d13c630b"
+      "sha256": "20821c5d95a5afd9922c19239b917db47642eeefb79aa675fce720802a153a1b"
     },
     {
       "path": "src/types/int64-string.ts",

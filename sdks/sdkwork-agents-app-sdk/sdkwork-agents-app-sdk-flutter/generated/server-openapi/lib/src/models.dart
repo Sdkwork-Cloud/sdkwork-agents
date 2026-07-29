@@ -3948,15 +3948,21 @@ class CodeEngineCatalog {
 
 class CodeEngineCatalogEngine {
   final String engineKey;
+  final String tier;
   final String agentId;
   final String bindingId;
   final List<CodeEngineModelCatalogEntry> models;
+  final String defaultAccessModeId;
+  final List<CodeEngineAccessModeCatalogEntry> accessModes;
 
   CodeEngineCatalogEngine({
     required this.engineKey,
+    required this.tier,
     required this.agentId,
     required this.bindingId,
-    required this.models
+    required this.models,
+    required this.defaultAccessModeId,
+    required this.accessModes
   });
 
   factory CodeEngineCatalogEngine.fromJson(Map<String, dynamic> json) {
@@ -3965,6 +3971,13 @@ class CodeEngineCatalogEngine {
         final value = json['engineKey']?.toString();
         if (value == null) {
           throw FormatException('CodeEngineCatalogEngine.engineKey is required');
+        }
+        return value;
+      })(),
+      tier: (() {
+        final value = json['tier']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineCatalogEngine.tier is required');
         }
         return value;
       })(),
@@ -3994,6 +4007,26 @@ class CodeEngineCatalogEngine {
       })())
             .whereType<CodeEngineModelCatalogEntry>()
             .toList();
+      })(),
+      defaultAccessModeId: (() {
+        final value = json['defaultAccessModeId']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineCatalogEngine.defaultAccessModeId is required');
+        }
+        return value;
+      })(),
+      accessModes: (() {
+        final list = _sdkworkAsList(json['accessModes']);
+        if (list == null) {
+          throw FormatException('CodeEngineCatalogEngine.accessModes is required');
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : CodeEngineAccessModeCatalogEntry.fromJson(map);
+      })())
+            .whereType<CodeEngineAccessModeCatalogEntry>()
+            .toList();
       })()
     );
   }
@@ -4001,9 +4034,112 @@ class CodeEngineCatalogEngine {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'engineKey': engineKey,
+      'tier': tier,
       'agentId': agentId,
       'bindingId': bindingId,
       'models': models.map((item) => item.toJson()).toList(),
+      'defaultAccessModeId': defaultAccessModeId,
+      'accessModes': accessModes.map((item) => item.toJson()).toList(),
+    };
+  }
+}
+
+class CodeEngineAccessModeCatalogEntry {
+  final String modeId;
+  final String displayName;
+  final String description;
+  final String approvalBehavior;
+  final String workspaceAccess;
+  final String networkAccess;
+  final String riskLevel;
+  final bool enabled;
+  final String? disabledReason;
+
+  CodeEngineAccessModeCatalogEntry({
+    required this.modeId,
+    required this.displayName,
+    required this.description,
+    required this.approvalBehavior,
+    required this.workspaceAccess,
+    required this.networkAccess,
+    required this.riskLevel,
+    required this.enabled,
+    this.disabledReason
+  });
+
+  factory CodeEngineAccessModeCatalogEntry.fromJson(Map<String, dynamic> json) {
+    return CodeEngineAccessModeCatalogEntry(
+      modeId: (() {
+        final value = json['modeId']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.modeId is required');
+        }
+        return value;
+      })(),
+      displayName: (() {
+        final value = json['displayName']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.displayName is required');
+        }
+        return value;
+      })(),
+      description: (() {
+        final value = json['description']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.description is required');
+        }
+        return value;
+      })(),
+      approvalBehavior: (() {
+        final value = json['approvalBehavior']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.approvalBehavior is required');
+        }
+        return value;
+      })(),
+      workspaceAccess: (() {
+        final value = json['workspaceAccess']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.workspaceAccess is required');
+        }
+        return value;
+      })(),
+      networkAccess: (() {
+        final value = json['networkAccess']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.networkAccess is required');
+        }
+        return value;
+      })(),
+      riskLevel: (() {
+        final value = json['riskLevel']?.toString();
+        if (value == null) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.riskLevel is required');
+        }
+        return value;
+      })(),
+      enabled: (() {
+        final value = json['enabled'];
+        if (value is! bool) {
+          throw FormatException('CodeEngineAccessModeCatalogEntry.enabled is required');
+        }
+        return value;
+      })(),
+      disabledReason: json['disabledReason']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'modeId': modeId,
+      'displayName': displayName,
+      'description': description,
+      'approvalBehavior': approvalBehavior,
+      'workspaceAccess': workspaceAccess,
+      'networkAccess': networkAccess,
+      'riskLevel': riskLevel,
+      'enabled': enabled,
+      'disabledReason': disabledReason,
     };
   }
 }
@@ -6394,6 +6530,7 @@ class CreateAgentTurnRequest {
   final String turnMode;
   final String? runtimeBindingId;
   final String? requestedModelId;
+  final String? accessModeId;
   final String idempotencyKey;
   final String payloadHash;
   final String? clientRequestId;
@@ -6407,6 +6544,7 @@ class CreateAgentTurnRequest {
     required this.turnMode,
     this.runtimeBindingId,
     this.requestedModelId,
+    this.accessModeId,
     required this.idempotencyKey,
     required this.payloadHash,
     this.clientRequestId,
@@ -6434,6 +6572,7 @@ class CreateAgentTurnRequest {
       })(),
       runtimeBindingId: json['runtimeBindingId']?.toString(),
       requestedModelId: json['requestedModelId']?.toString(),
+      accessModeId: json['accessModeId']?.toString(),
       idempotencyKey: (() {
         final value = json['idempotencyKey']?.toString();
         if (value == null) {
@@ -6477,6 +6616,7 @@ class CreateAgentTurnRequest {
       'turnMode': turnMode,
       'runtimeBindingId': runtimeBindingId,
       'requestedModelId': requestedModelId,
+      'accessModeId': accessModeId,
       'idempotencyKey': idempotencyKey,
       'payloadHash': payloadHash,
       'clientRequestId': clientRequestId,

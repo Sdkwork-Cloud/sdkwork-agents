@@ -132,6 +132,16 @@ fn build_model_request(
     slot: &CodeEngineSlot,
     input: &CodeEngineTurnInput,
 ) -> RuntimeFacadeResult<ModelRequest> {
+    let resolved_execution_settings = input
+        .access_mode_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|access_mode_id| !access_mode_id.is_empty())
+        .map(|access_mode_id| {
+            slot.resolve_execution_settings(access_mode_id)
+                .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))
+        })
+        .transpose()?;
     let model_request_id = format!("agents-turn-{}", sdkwork_utils_rust::uuid());
     let mut model_request = ModelRequest::new(model_request_id, vec![input.prompt.clone()]);
     if !is_blank(Some(input.model_id.as_str())) {
@@ -149,16 +159,18 @@ fn build_model_request(
             model_request = model_request.with_metadata(WORKING_DIRECTORY_METADATA_KEY, value);
         }
     }
-    model_request = with_optional_metadata(
-        model_request,
-        APPROVAL_POLICY_METADATA_KEY,
-        input.approval_policy.as_deref(),
-    );
-    model_request = with_optional_metadata(
-        model_request,
-        SANDBOX_MODE_METADATA_KEY,
-        input.sandbox_mode.as_deref(),
-    );
+    if resolved_execution_settings.is_none() {
+        model_request = with_optional_metadata(
+            model_request,
+            APPROVAL_POLICY_METADATA_KEY,
+            input.approval_policy.as_deref(),
+        );
+        model_request = with_optional_metadata(
+            model_request,
+            SANDBOX_MODE_METADATA_KEY,
+            input.sandbox_mode.as_deref(),
+        );
+    }
     model_request = model_request
         .with_metadata(FULL_AUTO_METADATA_KEY, input.full_auto.to_string())
         .with_metadata(
@@ -185,15 +197,7 @@ fn build_model_request(
         model_request =
             model_request.with_metadata(MAX_TOKENS_METADATA_KEY, max_tokens.to_string());
     }
-    if let Some(access_mode_id) = input
-        .access_mode_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|access_mode_id| !access_mode_id.is_empty())
-    {
-        let resolved = slot
-            .resolve_execution_settings(access_mode_id)
-            .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
+    if let Some(resolved) = resolved_execution_settings {
         for option in resolved.provider_options {
             let value = match option.value {
                 AgentExecutionProviderOptionValue::String(value) => value,
@@ -858,6 +862,37 @@ mod tests {
         assert_eq!(
             request.metadata_value(MAX_TOKENS_METADATA_KEY),
             Some("4096")
+        );
+    }
+
+    #[test]
+    fn access_mode_resolution_overrides_legacy_execution_fields() {
+        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let request = build_model_request(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt: "implement the change".to_string(),
+                approval_policy: Some("never".to_string()),
+                sandbox_mode: Some("danger-full-access".to_string()),
+                access_mode_id: Some("approve_for_me".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("model request");
+
+        assert_eq!(
+            request.metadata_value(APPROVAL_POLICY_METADATA_KEY),
+            Some("on-request")
+        );
+        assert_eq!(
+            request.metadata_value(SANDBOX_MODE_METADATA_KEY),
+            Some("workspace-write")
+        );
+        assert_eq!(
+            request.metadata_value("sdkwork.code_engine.approvals_reviewer"),
+            Some("auto_review")
         );
     }
 

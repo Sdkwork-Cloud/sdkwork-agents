@@ -53,6 +53,7 @@ pub struct TurnExecutionInput {
     pub user_content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
+    pub access_mode_id: Option<String>,
     /// Active provider binding id (used to resolve canonical code-engine keys).
     pub binding_id: Option<String>,
     /// When true, an active binding exposes `model.chat` and the gateway may
@@ -250,6 +251,7 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
             model_id: model_id.clone(),
             provider_session_id: Some(input.session.session_id.clone()),
             prompt,
+            access_mode_id: input.access_mode_id.clone(),
             ..Default::default()
         };
 
@@ -535,6 +537,7 @@ mod tests {
             model_id: None,
             provider_id: None,
             binding_id: None,
+            access_mode_id: None,
             provider_has_model_chat: false,
         });
         assert!(output.content.contains("Hello"));
@@ -554,6 +557,7 @@ mod tests {
             model_id: None,
             provider_id: Some("provider.model.rig".to_string()),
             binding_id: None,
+            access_mode_id: None,
             provider_has_model_chat: true,
         });
         assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
@@ -599,6 +603,7 @@ mod tests {
             model_id: Some("model.fake".to_string()),
             provider_id: Some("provider.model.fake".to_string()),
             binding_id: None,
+            access_mode_id: None,
             provider_has_model_chat: true,
         });
         assert_eq!(output.content, "kernel reply");

@@ -31,7 +31,8 @@ use crate::project::{
     AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
 };
 use crate::runtime_facade_bridge::{
-    execute_preview_response, execute_prompt_optimization, RUNTIME_MODE_CONTRACT_FALLBACK,
+    engine_key_for_binding_id, execute_preview_response, execute_prompt_optimization,
+    RUNTIME_MODE_CONTRACT_FALLBACK,
 };
 use crate::session_activity::SessionActivitySummaryRecord;
 use crate::turn_runtime::{
@@ -3712,6 +3713,7 @@ where
                 binding_id: active_binding
                     .as_ref()
                     .map(|binding| binding.binding_id.clone()),
+                access_mode_id: None,
                 provider_has_model_chat,
             },
             false,
@@ -5372,6 +5374,23 @@ where
                 "session runtime binding references an inactive provider binding",
             ));
         }
+        validate_optional_bounded(&command.access_mode_id, "accessModeId", 64)?;
+        if let Some(access_mode_id) = command.access_mode_id.as_deref() {
+            let engine_key = engine_key_for_binding_id(&provider_binding.binding_id).ok_or_else(|| {
+                KernelError::validation(
+                    "accessModeId is not supported by the active provider binding",
+                )
+            })?;
+            let slot = sdkwork_agents_runtime_facade::bootstrap_code_engine(engine_key).map_err(
+                |error| {
+                    KernelError::provider_error(
+                        "code_engine_bootstrap_failed",
+                        error.to_string(),
+                    )
+                },
+            )?;
+            slot.resolve_execution_settings(access_mode_id)?;
+        }
         let history_items =
             self.repository
                 .list_session_items(&SessionItemListQuery::for_recent_turn_context(
@@ -5541,6 +5560,7 @@ where
                 model_id: Some(session_runtime_binding.model_id.clone()),
                 provider_id: Some(session_runtime_binding.provider_id.clone()),
                 binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
+                access_mode_id: command.access_mode_id.clone(),
                 provider_has_model_chat,
             },
             command.prefer_stream,

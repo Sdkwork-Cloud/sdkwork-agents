@@ -9,16 +9,14 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "f8e5e498837abd5cd9afcc8db8cdf4bb23ce19520e5350ebf57329d7ee34bbc7",
+  "changeFingerprint": "b1a5131bd1dd3d3cef3433edff178ea584a1a6a1d8816060d348985fb1afe7ac",
   "changes": {
     "createdGeneratedFiles": [
-      "src/types/agent-session-title-source.ts",
-      "src/types/project-session-synchronization-response.ts",
-      "src/types/project-session-synchronization-result.ts"
+      "src/types/code-engine-access-mode-catalog-entry.ts"
     ],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts",
-      "src/types/agent-session-record.ts",
+      "src/types/code-engine-catalog-engine.ts",
+      "src/types/create-agent-turn-request.ts",
       "src/types/index.ts"
     ],
     "unchangedGeneratedFiles": [
@@ -32,6 +30,7 @@
       "package.json",
       "README.md",
       "sdkwork-sdk.json",
+      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
@@ -94,12 +93,14 @@
       "src/types/agent-session-item-status.ts",
       "src/types/agent-session-kind.ts",
       "src/types/agent-session-list-response.ts",
+      "src/types/agent-session-record.ts",
       "src/types/agent-session-response.ts",
       "src/types/agent-session-runtime-binding-list-response.ts",
       "src/types/agent-session-runtime-binding-record.ts",
       "src/types/agent-session-runtime-binding-response.ts",
       "src/types/agent-session-runtime-binding-status.ts",
       "src/types/agent-session-status.ts",
+      "src/types/agent-session-title-source.ts",
       "src/types/agent-status.ts",
       "src/types/agent-task-list-response.ts",
       "src/types/agent-task-record.ts",
@@ -125,7 +126,6 @@
       "src/types/change-agent-session-runtime-binding-status-request.ts",
       "src/types/claim-agent-interaction-request.ts",
       "src/types/close-agent-session-request.ts",
-      "src/types/code-engine-catalog-engine.ts",
       "src/types/code-engine-catalog-list-response.ts",
       "src/types/code-engine-catalog.ts",
       "src/types/code-engine-model-catalog-entry.ts",
@@ -142,7 +142,6 @@
       "src/types/create-agent-session-request.ts",
       "src/types/create-agent-session-runtime-binding-request.ts",
       "src/types/create-agent-task-request.ts",
-      "src/types/create-agent-turn-request.ts",
       "src/types/create-agent-workspace-request.ts",
       "src/types/ensure-default-agent-workspace-request.ts",
       "src/types/field-error.ts",
@@ -153,6 +152,8 @@
       "src/types/mcp-server-marketplace-record.ts",
       "src/types/page-info.ts",
       "src/types/problem-detail.ts",
+      "src/types/project-session-synchronization-response.ts",
+      "src/types/project-session-synchronization-result.ts",
       "src/types/restore-agent-request.ts",
       "src/types/restore-agent-session-checkpoint-request.ts",
       "src/types/sdk-work-api-response.ts",
@@ -185,40 +186,32 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface",
       "models"
     ],
     "details": [
       {
-        "area": "api-surface",
-        "paths": [
-          "src/api/ai.ts"
-        ]
-      },
-      {
         "area": "models",
         "paths": [
-          "src/types/agent-session-record.ts",
-          "src/types/agent-session-title-source.ts",
-          "src/types/index.ts",
-          "src/types/project-session-synchronization-response.ts",
-          "src/types/project-session-synchronization-result.ts"
+          "src/types/code-engine-access-mode-catalog-entry.ts",
+          "src/types/code-engine-catalog-engine.ts",
+          "src/types/create-agent-turn-request.ts",
+          "src/types/index.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models. Verification is required."
+    "summary": "Detected impact areas: models. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -236,7 +229,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
