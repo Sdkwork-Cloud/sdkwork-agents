@@ -31,7 +31,7 @@ pnpm check:docs
 
 Pass criteria:
 
-- operation counts are App 79, Backend 48 and Open 47;
+- operation counts are App 81, Backend 48 and Open 47;
 - no client-writable tenant, organization or user selector exists;
 - all list operations use store-level pagination;
 - Session, Turn, SessionItem and Interaction naming is consistent;

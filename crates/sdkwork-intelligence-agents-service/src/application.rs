@@ -15,8 +15,8 @@ use crate::domain::{
     AgentRuntimeExecutionStatus, AgentSessionCheckpointRecord, AgentSessionCheckpointStatus,
     AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus,
     AgentSessionKind, AgentSessionRecord, AgentSessionRuntimeBindingRecord,
-    AgentSessionRuntimeBindingStatus, AgentSessionStatus, AgentTaskRecord, AgentTaskStatus,
-    AgentVisibility, MarketplaceAuditPayload, ProviderBindingAuditPayload,
+    AgentSessionRuntimeBindingStatus, AgentSessionStatus, AgentSessionTitleSource, AgentTaskRecord,
+    AgentTaskStatus, AgentVisibility, MarketplaceAuditPayload, ProviderBindingAuditPayload,
     RuntimeExecutionAuditPayload, SessionAuditPayload, SessionItemAuditPayload, TaskAuditPayload,
     DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
@@ -2765,6 +2765,13 @@ where
         self.ensure_session_agent_identity(&command)?;
         let replay_command = command.clone();
 
+        let title_source = if command.source_module.as_deref() == Some("birdcoder")
+            && command.source_context_kind.as_deref() == Some("provider_session")
+        {
+            AgentSessionTitleSource::Provider
+        } else {
+            AgentSessionTitleSource::User
+        };
         let record = AgentSessionRecord {
             id: self.repository.next_id()?,
             session_id,
@@ -2781,6 +2788,7 @@ where
             parent_session_id: command.parent_session_id,
             forked_from_turn_id: command.forked_from_turn_id,
             title: command.title.map(|title| trim(&title).to_string()),
+            title_source,
             status: AgentSessionStatus::Active,
             item_count: 0,
             last_item_sequence: 0,
@@ -2905,10 +2913,16 @@ where
                 return Err(KernelError::validation("title exceeds 512 bytes"));
             }
             let title = trim(&title).to_string();
-            if require_provider_session_history && record.title.as_deref() == Some(title.as_str()) {
+            if require_provider_session_history
+                && (record.title_source != AgentSessionTitleSource::Provider
+                    || record.title.as_deref() == Some(title.as_str()))
+            {
                 return Ok(record);
             }
             record.title = Some(title);
+            if !require_provider_session_history {
+                record.title_source = AgentSessionTitleSource::User;
+            }
         }
         if let Some(project_id) = command.project_id {
             audit_action = AgentAuditAction::SessionMoved;
@@ -3660,6 +3674,7 @@ where
             parent_session_id: None,
             forked_from_turn_id: None,
             title: record.title.clone(),
+            title_source: AgentSessionTitleSource::System,
             status: AgentSessionStatus::Active,
             item_count: 0,
             last_item_sequence: 0,
@@ -3993,6 +4008,7 @@ where
             id: self.repository.next_id()?,
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
+            owner_user_id: session.owner_user_id,
             session_id: command.session_id,
             runtime_binding_id,
             runtime_location_id: command.runtime_location_id,

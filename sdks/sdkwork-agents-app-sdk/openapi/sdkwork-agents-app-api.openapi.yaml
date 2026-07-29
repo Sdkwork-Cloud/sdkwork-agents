@@ -1213,21 +1213,6 @@ paths:
         schema:
           type: boolean
           default: false
-      - name: provider_session_directory_name
-        in: query
-        required: false
-        description: Device-local directory basename used only to reconcile provider sessions.
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 255
-      - name: provider_session_directory_fingerprint
-        in: query
-        required: false
-        description: Opaque manifest digest used only to disambiguate same-name local directories.
-        schema:
-          type: string
-          pattern: '^sha256:[0-9a-f]{64}$'
       responses:
         '200':
           description: Project-scoped agent session list response
@@ -1266,6 +1251,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/projects/{projectId}/sessions/synchronize:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags: [ai]
+      summary: Synchronize provider Session inventory for one project
+      description: >-
+        Explicitly reconciles the project runtime's provider Session inventory.
+        This command never accepts device paths, directory names, or local
+        filesystem fingerprints from a client.
+      operationId: agents.projectSessions.synchronize
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: organization
+      x-sdkwork-audit-event: agent.business.session_inventory_synchronized
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      responses:
+        '200':
+          description: Provider Session inventory synchronization result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSessionSynchronizationResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/session_activity_summaries:
@@ -4928,6 +4943,9 @@ components:
     AgentSessionStatus:
       type: string
       enum: [active, idle, closed, archived]
+    AgentSessionTitleSource:
+      type: string
+      enum: [provider, user, system]
     AgentSessionRecord:
       type: object
       additionalProperties: false
@@ -4940,6 +4958,7 @@ components:
       - ownerUserId
       - sessionKind
       - entrySurface
+      - titleSource
       - status
       - itemCount
       - lastItemSequence
@@ -4995,6 +5014,8 @@ components:
         title:
           type: [string, 'null']
           maxLength: 512
+        titleSource:
+          $ref: '#/components/schemas/AgentSessionTitleSource'
         status:
           $ref: '#/components/schemas/AgentSessionStatus'
         itemCount:
@@ -5294,6 +5315,31 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentSessionRecord'
+    ProjectSessionSynchronizationResult:
+      type: object
+      additionalProperties: false
+      required: [projectId, synchronizedSessionCount]
+      properties:
+        projectId:
+          type: string
+          pattern: '^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        synchronizedSessionCount:
+          $ref: '#/components/schemas/Int64String'
+    ProjectSessionSynchronizationResponse:
+      description: Explicit provider Session inventory synchronization result.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/ProjectSessionSynchronizationResult'
     CreateAgentSessionRequest:
       type: object
       additionalProperties: false

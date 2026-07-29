@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "app": "agents",
-  "mode": "apply",
+  "mode": "dry-run",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-29T02:00:23.258Z",
+  "startedAt": "2026-07-29T12:06:01.872Z",
   "families": [
     {
       "key": "open",
@@ -114,9 +114,9 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "d4f73d4da5441f9d6002eac137ca25aa7faa16cef3b1c7149105a913e8d15feb",
+      "fingerprint": "607e363eccb44dcf14b526e391e3b540de14a74861c1d8a833ba297aca7179fd",
       "fingerprints": {
-        "typescript": "d4f73d4da5441f9d6002eac137ca25aa7faa16cef3b1c7149105a913e8d15feb",
+        "typescript": "607e363eccb44dcf14b526e391e3b540de14a74861c1d8a833ba297aca7179fd",
         "flutter": "614a545ec713c87a3fa01815575cad7c15af66ef558a38e42760cd7641208374"
       },
       "hasChanges": false,
@@ -129,7 +129,7 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi",
           "packageName": "@sdkwork/agents-app-sdk",
           "version": "0.1.0",
-          "fingerprint": "d4f73d4da5441f9d6002eac137ca25aa7faa16cef3b1c7149105a913e8d15feb",
+          "fingerprint": "607e363eccb44dcf14b526e391e3b540de14a74861c1d8a833ba297aca7179fd",
           "hasChanges": false,
           "riskLevel": "low",
           "generated": false
@@ -195,5 +195,5 @@
       ]
     }
   ],
-  "finishedAt": "2026-07-29T02:00:25.916Z"
+  "finishedAt": "2026-07-29T12:06:02.910Z"
 }

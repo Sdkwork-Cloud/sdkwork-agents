@@ -2,7 +2,7 @@ schema_version: 1
 kind: sdkwork.database.schema
 database_role: authoritative-server
 module_id: agents
-contract_version: 6.0.0
+contract_version: 6.0.2
 owner_team: agents-platform
 compliance_level: L2
 engines:
@@ -74,12 +74,12 @@ tables:
     profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: Single durable agent execution session system of record.
+    description: Single durable agent execution session system of record with provider- or user-owned title authority.
   - name: ai_agent_session_runtime_binding
     profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: Selected runtime, provider Session lineage, and runtime-location reference for a session.
+    description: Selected runtime, owner-scoped provider Session lineage with database-enforced uniqueness, and runtime-location reference for a session.
   - name: ai_agent_turn
     profile: operational_state
     lifecycle_status: active

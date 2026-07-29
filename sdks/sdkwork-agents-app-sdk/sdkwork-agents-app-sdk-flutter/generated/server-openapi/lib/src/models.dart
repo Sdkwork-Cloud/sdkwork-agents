@@ -4246,6 +4246,7 @@ class AgentSessionRecord {
   final String? parentSessionId;
   final String? forkedFromTurnId;
   final String? title;
+  final String titleSource;
   final String status;
   final String itemCount;
   final String lastItemSequence;
@@ -4282,6 +4283,7 @@ class AgentSessionRecord {
     this.parentSessionId,
     this.forkedFromTurnId,
     this.title,
+    required this.titleSource,
     required this.status,
     required this.itemCount,
     required this.lastItemSequence,
@@ -4368,6 +4370,13 @@ class AgentSessionRecord {
       parentSessionId: json['parentSessionId']?.toString(),
       forkedFromTurnId: json['forkedFromTurnId']?.toString(),
       title: json['title']?.toString(),
+      titleSource: (() {
+        final value = json['titleSource']?.toString();
+        if (value == null) {
+          throw FormatException('AgentSessionRecord.titleSource is required');
+        }
+        return value;
+      })(),
       status: (() {
         final value = json['status']?.toString();
         if (value == null) {
@@ -4467,6 +4476,7 @@ class AgentSessionRecord {
       'parentSessionId': parentSessionId,
       'forkedFromTurnId': forkedFromTurnId,
       'title': title,
+      'titleSource': titleSource,
       'status': status,
       'itemCount': itemCount,
       'lastItemSequence': lastItemSequence,
@@ -5318,6 +5328,88 @@ class AgentSessionListResponse {
         final value = json['traceId']?.toString();
         if (value == null) {
           throw FormatException('AgentSessionListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ProjectSessionSynchronizationResult {
+  final String projectId;
+  final String synchronizedSessionCount;
+
+  ProjectSessionSynchronizationResult({
+    required this.projectId,
+    required this.synchronizedSessionCount
+  });
+
+  factory ProjectSessionSynchronizationResult.fromJson(Map<String, dynamic> json) {
+    return ProjectSessionSynchronizationResult(
+      projectId: (() {
+        final value = json['projectId']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationResult.projectId is required');
+        }
+        return value;
+      })(),
+      synchronizedSessionCount: (() {
+        final value = json['synchronizedSessionCount']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationResult.synchronizedSessionCount is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'projectId': projectId,
+      'synchronizedSessionCount': synchronizedSessionCount,
+    };
+  }
+}
+
+class ProjectSessionSynchronizationResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ProjectSessionSynchronizationResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ProjectSessionSynchronizationResponse.fromJson(Map<String, dynamic> json) {
+    return ProjectSessionSynchronizationResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ProjectSessionSynchronizationResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('ProjectSessionSynchronizationResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationResponse.traceId is required');
         }
         return value;
       })()

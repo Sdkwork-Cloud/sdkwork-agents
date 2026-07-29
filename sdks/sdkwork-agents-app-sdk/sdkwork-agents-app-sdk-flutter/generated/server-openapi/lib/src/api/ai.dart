@@ -335,14 +335,12 @@ class AiApi {
   }
 
   /// List agent sessions for one project
-  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [int? page, int? pageSize, String? status, bool? includeArchived, String? providerSessionDirectoryName, String? providerSessionDirectoryFingerprint]) async {
+  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [int? page, int? pageSize, String? status, bool? includeArchived]) async {
     final query = buildQueryString([
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
-      QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null),
-      QueryParameterSpec('provider_session_directory_name', providerSessionDirectoryName, 'form', true, false, null),
-      QueryParameterSpec('provider_session_directory_fingerprint', providerSessionDirectoryFingerprint, 'form', true, false, null)
+      QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/sessions'), query));
     return (() {
@@ -358,6 +356,15 @@ class AiApi {
     return (() {
       final map = sdkworkResponseAsMap(response);
       return map == null ? null : AgentSessionResponse.fromJson(map);
+    })();
+  }
+
+  /// Synchronize provider Session inventory for one project
+  Future<ProjectSessionSynchronizationResponse?> agentsProjectSessionsSynchronize(String projectId) async {
+    final response = await _client.post(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/sessions/synchronize'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ProjectSessionSynchronizationResponse.fromJson(map);
     })();
   }
 

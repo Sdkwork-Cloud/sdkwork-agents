@@ -333,7 +333,7 @@ for (const targetTable of [
   );
 }
 assert(
-  agentsTableRegistry.contractVersion === '6.0.0'
+  agentsTableRegistry.contractVersion === '6.0.2'
     && agentTableNames.length === 20
     && agentsDatabaseSpec.includes('owns exactly 20 tables'),
   'Agents database contract 6.0 must declare the active 20-table inventory',

@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use sdkwork_agent_kernel::{
-    KernelResult, ModelRequest, ModelResponse, ModelStreamChunk, ModelStreamSink, ToolCall,
+    AgentExecutionProviderOptionValue, KernelResult, ModelRequest, ModelResponse, ModelStreamChunk,
+    ModelStreamSink, ToolCall,
 };
 use sdkwork_agent_provider_spi::SdkRuntimeStreamCompletion;
 use sdkwork_utils_rust::string::is_blank;
@@ -55,6 +56,7 @@ pub struct CodeEngineTurnInput {
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
     pub max_tokens: Option<i64>,
+    pub access_mode_id: Option<String>,
 }
 
 /// Provider-neutral terminal metadata for a streamed code-engine turn.
@@ -103,7 +105,7 @@ pub fn execute_code_engine_turn(
         )));
     }
 
-    let model_request = build_model_request(input);
+    let model_request = build_model_request(slot, input)?;
 
     let response = slot
         .invoke_model(model_request)
@@ -126,7 +128,10 @@ fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> Co
     }
 }
 
-fn build_model_request(input: &CodeEngineTurnInput) -> ModelRequest {
+fn build_model_request(
+    slot: &CodeEngineSlot,
+    input: &CodeEngineTurnInput,
+) -> RuntimeFacadeResult<ModelRequest> {
     let model_request_id = format!("agents-turn-{}", sdkwork_utils_rust::uuid());
     let mut model_request = ModelRequest::new(model_request_id, vec![input.prompt.clone()]);
     if !is_blank(Some(input.model_id.as_str())) {
@@ -180,7 +185,24 @@ fn build_model_request(input: &CodeEngineTurnInput) -> ModelRequest {
         model_request =
             model_request.with_metadata(MAX_TOKENS_METADATA_KEY, max_tokens.to_string());
     }
-    model_request
+    if let Some(access_mode_id) = input
+        .access_mode_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|access_mode_id| !access_mode_id.is_empty())
+    {
+        let resolved = slot
+            .resolve_execution_settings(access_mode_id)
+            .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
+        for option in resolved.provider_options {
+            let value = match option.value {
+                AgentExecutionProviderOptionValue::String(value) => value,
+                AgentExecutionProviderOptionValue::Boolean(value) => value.to_string(),
+            };
+            model_request = model_request.with_metadata(option.key, value);
+        }
+    }
+    Ok(model_request)
 }
 
 fn with_optional_metadata(request: ModelRequest, key: &str, value: Option<&str>) -> ModelRequest {
@@ -267,7 +289,7 @@ pub fn execute_code_engine_turn_with_stream_sink(
         return execute_code_engine_turn(slot, input);
     }
 
-    let model_request = build_model_request(input);
+    let model_request = build_model_request(slot, input)?;
     let mut collector = ForwardingStreamCollector::new(sink);
     match slot.stream_model_into(model_request, &mut collector) {
         Ok(()) if !collector.is_empty() => {
@@ -293,7 +315,7 @@ fn execute_first_turn_with_stream_completion(
     input: &CodeEngineTurnInput,
     sink: &mut dyn ModelStreamSink,
 ) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
-    let model_request = build_model_request(input);
+    let model_request = build_model_request(slot, input)?;
     let mut collector = ForwardingStreamCollector::new(sink);
     let runtime_completion = slot
         .stream_first_turn_model_into(model_request, &mut collector)
@@ -777,7 +799,8 @@ mod tests {
 
     #[test]
     fn build_model_request_preserves_execution_context_and_budget() {
-        let request = build_model_request(&CodeEngineTurnInput {
+        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let request = build_model_request(&slot, &CodeEngineTurnInput {
             engine_key: "codex".to_string(),
             model_id: "gpt-5-codex".to_string(),
             provider_session_id: Some("session-existing".to_string()),
@@ -794,7 +817,9 @@ mod tests {
             temperature: Some(0.2),
             top_p: Some(0.9),
             max_tokens: Some(4_096),
-        });
+            access_mode_id: None,
+        })
+        .expect("model request");
 
         assert_eq!(request.model_id.as_deref(), Some("gpt-5-codex"));
         assert_eq!(request.session_id.as_deref(), Some("session-existing"));

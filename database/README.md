@@ -2,7 +2,7 @@
 
 Owner: `agents-platform`
 
-Canonical contract: `database/contract/schema.yaml` (`6.0.0`)
+Canonical contract: `database/contract/schema.yaml` (`6.0.2`)
 
 Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 
@@ -23,12 +23,13 @@ remain owned by their respective modules.
 
 ## Engine And Lifecycle
 
-PostgreSQL is the only managed-store engine. The `6.0.0` greenfield baseline
+PostgreSQL is the only managed-store engine. The `6.0.2` greenfield baseline
 contains the complete Workspace-scoped Project model and canonical provider
 Session lineage names. It is the only database state supported before the first
 release. `baseline-plus-migrations` remains the lifecycle strategy so ordered
-forward migrations can be added after the schema is released; the migration
-directory is intentionally empty while the application is still pre-launch.
+forward migrations can be added after the schema is released. The migration
+directory remains empty while the application is pre-launch; local development
+installations are rebuilt from the current baseline.
 
 Lifecycle `init` atomically materializes the consolidated baseline only when the
 completion anchor is absent. Automatic pending-migration execution defaults to

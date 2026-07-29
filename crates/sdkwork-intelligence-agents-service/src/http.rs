@@ -1591,6 +1591,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             get(app_list_project_sessions).post(app_create_project_session),
         )
         .route(
+            "/app/v3/api/ai/projects/{projectId}/sessions/synchronize",
+            post(app_synchronize_project_sessions),
+        )
+        .route(
             "/app/v3/api/ai/session_activity_summaries",
             get(app_list_session_activity_summaries),
         )
@@ -2418,10 +2422,15 @@ pub(crate) struct ListSessionsQueryParams {
 struct ListProjectSessionsQueryParams {
     status: Option<String>,
     include_archived: Option<bool>,
-    provider_session_directory_name: Option<String>,
-    provider_session_directory_fingerprint: Option<String>,
     page: Option<usize>,
     page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectSessionSynchronizationResultDto {
+    project_id: String,
+    synchronized_session_count: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -5215,51 +5224,15 @@ async fn app_list_project_sessions(
     project_id: Result<Path<String>, PathRejection>,
     query: Result<Query<ListProjectSessionsQueryParams>, QueryRejection>,
 ) -> Response {
-    let trace_id = web_ctx.resolved_trace_id();
     let result: ApiResult<PageData<AgentSessionRecordDto>> = async {
         let Path(project_id) = project_id.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let tenant_id = scope.tenant_id_u64()?;
         let organization_id =
             parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
         let owner_user_id = scope
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
-        let provider_session_directory_name = query
-            .provider_session_directory_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        if provider_session_directory_name
-            .as_ref()
-            .is_some_and(|value| value.len() > 255)
-        {
-            return Err(ApiProblem::validation(
-                "provider_session_directory_name exceeds 255 bytes",
-            ));
-        }
-        let provider_session_directory_fingerprint = query
-            .provider_session_directory_fingerprint
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_ascii_lowercase);
-        if provider_session_directory_fingerprint.as_ref().is_some_and(|value| {
-            value.len() != 71
-                || !value.starts_with("sha256:")
-                || !value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
-        }) {
-            return Err(ApiProblem::validation(
-                "provider_session_directory_fingerprint must be a sha256 digest",
-            ));
-        }
-        if provider_session_directory_fingerprint.is_some() && provider_session_directory_name.is_none() {
-            return Err(ApiProblem::validation(
-                "provider_session_directory_name is required with provider_session_directory_fingerprint",
-            ));
-        }
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListSessionsRequestDto {
             tenant_id: scope.tenant_id,
@@ -5278,97 +5251,7 @@ async fn app_list_project_sessions(
                     .with_page_size(page_size)
                     .with_page(page),
             );
-        let service = state.service.clone();
-        let provider_session_cwd_resolver = state.provider_session_cwd_resolver.clone();
-        let provider_session_sync_trace_id = trace_id.clone();
-        let records = tokio::task::spawn_blocking(move || {
-            let project = service.get_project(GetProjectCommand {
-                tenant_id,
-                organization_id,
-                project_id: project_id.clone(),
-                owner_scope: Some(owner_user_id),
-                requested_by: scope.subject.clone(),
-            })?;
-            let provider_session_sync_error = if page == 1 {
-                let provider_session_sync_result = (|| {
-                    let exact_cwd = provider_session_cwd_resolver
-                        .as_ref()
-                        .map(|resolver| {
-                            resolver.resolve_project_cwd(
-                                &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
-                                    tenant_id: project.tenant_id,
-                                    organization_id: project.organization_id,
-                                    owner_user_id: project.owner_user_id,
-                                    project_id: project.project_id.clone(),
-                                    project_name: project.name.clone(),
-                                },
-                            )
-                        })
-                        .transpose()
-                        .map_err(|error| KernelError::Internal {
-                            message: error.to_string(),
-                        })?
-                        .flatten();
-                    if exact_cwd.is_some() {
-                        crate::provider_session_sync::synchronize_project_provider_sessions_at_cwd(
-                            service.clone(),
-                            &project,
-                            scope.subject,
-                            exact_cwd,
-                        )
-                    } else if provider_session_directory_fingerprint.is_some() {
-                        crate::provider_session_sync::synchronize_project_provider_sessions_with_selector(
-                            service.clone(),
-                            &project,
-                            scope.subject,
-                            None,
-                            provider_session_directory_name,
-                            provider_session_directory_fingerprint,
-                        )
-                    } else {
-                        crate::provider_session_sync::synchronize_project_provider_sessions(
-                            service.clone(),
-                            &project,
-                            scope.subject,
-                        )
-                    }
-                })();
-                provider_session_sync_result.err()
-            } else {
-                None
-            };
-            let records = service.list_sessions(command)?;
-            if let Some(error) = provider_session_sync_error {
-                let canonical_inventory_is_empty = records.total_count == Some(0)
-                    || (records.total_count.is_none() && records.items.is_empty());
-                if canonical_inventory_is_empty {
-                    tracing::warn!(
-                        target: "sdkwork.agents.provider_session_sync",
-                        trace_id = %provider_session_sync_trace_id,
-                        operation_id = "agents.projectSessions.list",
-                        stage = "provider_session_inventory_sync",
-                        project_id = %project.project_id,
-                        error = %error,
-                        "provider session inventory synchronization failed and canonical project sessions are empty"
-                    );
-                    return Err(error);
-                }
-
-                tracing::warn!(
-                    target: "sdkwork.agents.provider_session_sync",
-                    trace_id = %provider_session_sync_trace_id,
-                    operation_id = "agents.projectSessions.list",
-                    stage = "provider_session_inventory_sync",
-                    project_id = %project.project_id,
-                    error = %error,
-                    "provider session inventory synchronization failed; returning canonical project sessions"
-                );
-            }
-            Ok(records)
-        })
-        .await
-        .map_err(|error| ApiProblem::internal(error.to_string()))?
-        .map_err(ApiProblem::from_kernel_error)?;
+        let records = with_service(&state, move |service| service.list_sessions(command)).await?;
         Ok(PageData {
             items: records
                 .items
@@ -5381,6 +5264,86 @@ async fn app_list_project_sessions(
                 records.total_count.unwrap_or(0),
                 records.has_more,
             ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_synchronize_project_sessions(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    project_id: Result<Path<String>, PathRejection>,
+) -> Response {
+    let trace_id = web_ctx.resolved_trace_id();
+    let result: ApiResult<ResourceData<ProjectSessionSynchronizationResultDto>> = async {
+        let Path(project_id) = project_id.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let subject = scope.subject;
+        let provider_session_cwd_resolver = state.provider_session_cwd_resolver.clone();
+        let synchronization = with_owned_service(&state, move |service| {
+            let project = service.get_project(GetProjectCommand {
+                tenant_id,
+                organization_id,
+                project_id: project_id.clone(),
+                owner_scope: Some(owner_user_id),
+                requested_by: subject.clone(),
+            })?;
+            let exact_cwd = provider_session_cwd_resolver
+                .as_ref()
+                .map(|resolver| {
+                    resolver.resolve_project_cwd(
+                        &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
+                            tenant_id: project.tenant_id,
+                            organization_id: project.organization_id,
+                            owner_user_id: project.owner_user_id,
+                            project_id: project.project_id.clone(),
+                            project_name: project.name.clone(),
+                        },
+                    )
+                })
+                .transpose()
+                .map_err(|error| KernelError::Internal {
+                    message: error.to_string(),
+                })?
+                .flatten();
+            let synchronized_session_count = if exact_cwd.is_some() {
+                crate::provider_session_sync::synchronize_project_provider_sessions_at_cwd(
+                    Arc::clone(&service),
+                    &project,
+                    subject,
+                    exact_cwd,
+                )?
+            } else {
+                crate::provider_session_sync::synchronize_project_provider_sessions(
+                    Arc::clone(&service),
+                    &project,
+                    subject,
+                )?
+            };
+            Ok(ProjectSessionSynchronizationResultDto {
+                project_id: project.project_id,
+                synchronized_session_count: synchronized_session_count.to_string(),
+            })
+        })
+        .await?;
+        tracing::info!(
+            target: "sdkwork.agents.provider_session_sync",
+            trace_id = %trace_id,
+            operation_id = "agents.projectSessions.synchronize",
+            project_id = %synchronization.project_id,
+            synchronized_session_count = %synchronization.synchronized_session_count,
+            "provider session inventory synchronization completed"
+        );
+        Ok(ResourceData {
+            item: synchronization,
         })
     }
     .await;
@@ -8427,6 +8390,16 @@ pub(crate) async fn with_service<T>(
 where
     T: Send + 'static,
 {
+    with_owned_service(state, move |service| action(service.as_ref())).await
+}
+
+async fn with_owned_service<T>(
+    state: &AgentHttpState,
+    action: impl FnOnce(Arc<HttpService>) -> KernelResult<T> + Send + 'static,
+) -> Result<T, ApiProblem>
+where
+    T: Send + 'static,
+{
     let permit = SERVICE_WORKER_LIMIT
         .clone()
         .try_acquire_owned()
@@ -8437,7 +8410,7 @@ where
     let service = Arc::clone(&state.service);
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        action(service.as_ref())
+        action(service)
     })
     .await
     .map_err(|error| ApiProblem::internal(format!("agents service worker failed: {error}")))?
@@ -9913,7 +9886,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_session_list_routes_report_empty_sync_failure_and_preserve_canonical_data() {
+    async fn app_session_list_routes_are_read_only_and_explicit_sync_reports_failure() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -9953,6 +9926,17 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let response = app.clone().oneshot(empty_list).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert!(payload["data"]["items"].as_array().unwrap().is_empty());
+
+        let synchronize = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects/project.sessions/sessions/synchronize")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(synchronize).await.unwrap();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let create_session = Request::builder()

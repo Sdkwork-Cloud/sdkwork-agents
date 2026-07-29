@@ -1,6 +1,7 @@
 import type { AgentSessionEntrySurface } from './agent-session-entry-surface';
 import type { AgentSessionKind } from './agent-session-kind';
 import type { AgentSessionStatus } from './agent-session-status';
+import type { AgentSessionTitleSource } from './agent-session-title-source';
 import type { Int64String } from './int64-string';
 
 export interface AgentSessionRecord {
@@ -19,6 +20,7 @@ export interface AgentSessionRecord {
   parentSessionId?: string | null;
   forkedFromTurnId?: string | null;
   title?: string | null;
+  titleSource: AgentSessionTitleSource;
   status: AgentSessionStatus;
   itemCount: Int64String;
   lastItemSequence: Int64String;

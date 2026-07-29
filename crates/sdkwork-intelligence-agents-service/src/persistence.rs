@@ -8,7 +8,7 @@ use crate::domain::{
     AgentSessionCheckpointRecord, AgentSessionCheckpointStatus, AgentSessionEntrySurface,
     AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind,
     AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
-    AgentSessionStatus, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
+    AgentSessionStatus, AgentSessionTitleSource, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
     AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
@@ -706,6 +706,7 @@ pub struct AgentSessionRow {
     pub parent_session_id: Option<String>,
     pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
+    pub title_source: i16,
     pub status: i16,
     pub item_count: u64,
     pub last_item_sequence: u64,
@@ -746,6 +747,7 @@ impl AgentSessionRow {
             parent_session_id: record.parent_session_id.clone(),
             forked_from_turn_id: record.forked_from_turn_id.clone(),
             title: record.title.clone(),
+            title_source: record.title_source.as_db_code(),
             status: record.status.as_db_code(),
             item_count: record.item_count,
             last_item_sequence: record.last_item_sequence,
@@ -785,6 +787,13 @@ impl AgentSessionRow {
                     self.entry_surface
                 ))
             })?;
+        let title_source =
+            AgentSessionTitleSource::from_db_code(self.title_source).ok_or_else(|| {
+                KernelError::validation(format!(
+                    "invalid session title source db code: {}",
+                    self.title_source
+                ))
+            })?;
         Ok(AgentSessionRecord {
             id: self.id,
             session_id: self.session_id,
@@ -801,6 +810,7 @@ impl AgentSessionRow {
             parent_session_id: self.parent_session_id,
             forked_from_turn_id: self.forked_from_turn_id,
             title: self.title,
+            title_source,
             status,
             item_count: self.item_count,
             last_item_sequence: self.last_item_sequence,
@@ -844,6 +854,7 @@ pub struct AgentSessionRuntimeBindingRow {
     pub uuid: String,
     pub tenant_id: u64,
     pub organization_id: u64,
+    pub owner_user_id: u64,
     pub session_id: String,
     pub runtime_binding_id: String,
     pub runtime_location_id: Option<String>,
@@ -877,6 +888,7 @@ impl AgentSessionRuntimeBindingRow {
             ),
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
+            owner_user_id: record.owner_user_id,
             session_id: record.session_id.clone(),
             runtime_binding_id: record.runtime_binding_id.clone(),
             runtime_location_id: record.runtime_location_id.clone(),
@@ -904,6 +916,7 @@ impl AgentSessionRuntimeBindingRow {
             id: self.id,
             tenant_id: self.tenant_id,
             organization_id: self.organization_id,
+            owner_user_id: self.owner_user_id,
             session_id: self.session_id,
             runtime_binding_id: self.runtime_binding_id,
             runtime_location_id: self.runtime_location_id,
@@ -4982,6 +4995,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.uuid,
                 tenant_id,
                 organization_id,
+                owner_user_id,
                 row.session_id,
                 row.agent_id,
                 owner_user_id,
@@ -4994,6 +5008,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.parent_session_id,
                 row.forked_from_turn_id,
                 row.title,
+                row.title_source,
                 row.status,
                 item_count,
                 last_item_sequence,
@@ -5044,6 +5059,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 SQL_UPDATE_AGENT_SESSION,
                 row.project_id,
                 row.title,
+                row.title_source,
                 row.status,
                 item_count,
                 last_item_sequence,
@@ -5312,6 +5328,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let id = u64_to_i64(row.id, "id")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
         let version = u64_to_i64(row.version, "version")?;
         self.with_pool(|pool| {
             pg_execute!(
@@ -5321,6 +5338,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.uuid,
                 tenant_id,
                 organization_id,
+                owner_user_id,
                 row.session_id,
                 row.runtime_binding_id,
                 row.runtime_location_id,
@@ -7747,6 +7765,7 @@ fn pg_row_to_agent_session_row(row: PgRow) -> KernelResult<AgentSessionRow> {
         parent_session_id: row.try_get("parent_session_id").map_err(map_sqlx_error)?,
         forked_from_turn_id: row.try_get("forked_from_turn_id").map_err(map_sqlx_error)?,
         title: row.try_get("title").map_err(map_sqlx_error)?,
+        title_source: row.try_get("title_source").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
         item_count: int64_to_u64(
             row.try_get("item_count").map_err(map_sqlx_error)?,
@@ -7805,6 +7824,10 @@ fn pg_row_to_agent_session_runtime_binding_row(
         organization_id: int64_to_u64(
             row.try_get("organization_id").map_err(map_sqlx_error)?,
             "organization_id",
+        )?,
+        owner_user_id: int64_to_u64(
+            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
+            "owner_user_id",
         )?,
         session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
         runtime_binding_id: row.try_get("runtime_binding_id").map_err(map_sqlx_error)?,

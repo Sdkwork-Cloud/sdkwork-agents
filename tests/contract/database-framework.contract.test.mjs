@@ -34,7 +34,7 @@ test("agents database manifest declares one canonical PostgreSQL engine", () => 
   assert.deepEqual(manifest.engines, ["postgres"]);
   assert.equal(manifest.defaultEngine, "postgres");
   assert.equal(manifest.tablePrefix, "ai_");
-  assert.equal(manifest.contractVersion, "6.0.0");
+  assert.equal(manifest.contractVersion, "6.0.2");
   assert.equal(manifest.baselineStrategy, "baseline-plus-migrations");
   assert.equal(
     manifest.lifecycle.autoMigrate,
@@ -66,7 +66,7 @@ test("agents database contract is materialized without placeholders", () => {
   const schema = readFileSync(schemaPath, "utf8");
   assert.doesNotMatch(schema, /<module-id>/);
   assert.match(schema, /table_prefix: ai_/u);
-  assert.match(schema, /contract_version: 6\.0\.0/u);
+  assert.match(schema, /contract_version: 6\.0\.2/u);
   assert.match(
     schema,
     /ddl_authority: ddl\/baseline\/postgres\/0001_agents_baseline\.sql/u,
@@ -87,7 +87,7 @@ test("agents database contract is materialized without placeholders", () => {
   const registry = JSON.parse(
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
   );
-  assert.equal(registry.contractVersion, "6.0.0");
+  assert.equal(registry.contractVersion, "6.0.2");
   assert.equal(registry.tables.length, 20);
   assert.ok(
     registry.tables.every((entry) => entry.lifecycle_status === "active"),
@@ -366,7 +366,7 @@ test("provider session identity stays normalized and unique for its full lifecyc
   );
   assert.match(
     baseline,
-    /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_ai_agent_session_runtime_binding_provider_session[\s\S]*?\(\s*tenant_id,\s*organization_id,\s*provider_id,\s*provider_session_id\s*\)\s+WHERE\s+provider_session_id\s+IS\s+NOT\s+NULL\s*;/iu,
+    /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_ai_agent_session_runtime_binding_provider_session[\s\S]*?\(\s*tenant_id,\s*organization_id,\s*owner_user_id,\s*provider_binding_id,\s*provider_id,\s*provider_session_id\s*\)\s+WHERE\s+provider_session_id\s+IS\s+NOT\s+NULL\s*;/iu,
   );
   assert.doesNotMatch(
     baseline,

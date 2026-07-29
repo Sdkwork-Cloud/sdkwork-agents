@@ -77,6 +77,7 @@ export type { McpServerMarketplaceRecord } from './mcp-server-marketplace-record
 export type { AgentSessionKind } from './agent-session-kind';
 export type { AgentSessionEntrySurface } from './agent-session-entry-surface';
 export type { AgentSessionStatus } from './agent-session-status';
+export type { AgentSessionTitleSource } from './agent-session-title-source';
 export type { AgentSessionRecord } from './agent-session-record';
 export type { SessionProviderIdentity } from './session-provider-identity';
 export type { SessionActivityFreshness } from './session-activity-freshness';
@@ -86,6 +87,8 @@ export type { SessionActivitySummary } from './session-activity-summary';
 export type { SessionActivitySummaryListResponse } from './session-activity-summary-list-response';
 export type { AgentSessionResponse } from './agent-session-response';
 export type { AgentSessionListResponse } from './agent-session-list-response';
+export type { ProjectSessionSynchronizationResult } from './project-session-synchronization-result';
+export type { ProjectSessionSynchronizationResponse } from './project-session-synchronization-response';
 export type { CreateAgentSessionRequest } from './create-agent-session-request';
 export type { CloseAgentSessionRequest } from './close-agent-session-request';
 export type { AgentItemDriveRefRecord } from './agent-item-drive-ref-record';

@@ -18,6 +18,11 @@ use sdkwork_agent_provider_opencode::{
 use crate::code_engines::CodeEngineSlot;
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 
+/// Prevent a corrupt provider history directory from retaining an unbounded
+/// cross-provider inventory in the runtime process. Callers receive an
+/// explicit failure and can narrow the project selector before retrying.
+const MAX_PROVIDER_SESSION_INVENTORY_ITEMS: usize = 10_000;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProviderSessionProjectCwdSelector {
     pub tenant_id: u64,
@@ -78,6 +83,11 @@ pub(crate) fn discover_provider_sessions(
             continue;
         };
         for session in sessions {
+            if candidates.len() >= MAX_PROVIDER_SESSION_INVENTORY_ITEMS {
+                return Err(RuntimeFacadeError::InvalidInput(format!(
+                    "provider session inventory exceeds {MAX_PROVIDER_SESSION_INVENTORY_ITEMS} items"
+                )));
+            }
             candidates.push(ProviderSessionInventoryItem {
                 engine_key: engine_key.to_string(),
                 agent_id: agent_id.to_string(),
@@ -116,6 +126,7 @@ fn select_top_level_provider_sessions(
         })
         .filter(|item| {
             dedupe.insert((
+                item.binding_id.trim().to_string(),
                 item.provider_id.trim().to_string(),
                 item.session.session_id.trim().to_string(),
             ))
@@ -274,9 +285,9 @@ mod tests {
     }
 
     #[test]
-    fn top_level_inventory_deduplicates_provider_identity_and_excludes_subagents() {
+    fn top_level_inventory_deduplicates_runtime_scoped_provider_identity_and_excludes_subagents() {
         let root = item("codex", "root-session", r"E:\Work\BirdCoder");
-        let mut duplicate = item("opencode", " root-session ", r"E:\Work\BirdCoder");
+        let mut duplicate = item("codex", " root-session ", r"E:\Work\BirdCoder");
         duplicate.provider_id = root.provider_id.clone();
         let mut subagent = item("codex", "child-session", r"E:\Work\BirdCoder");
         subagent.session.kind = SessionKind::Subagent;
@@ -289,6 +300,21 @@ mod tests {
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].session.session_id, "root-session");
+    }
+
+    #[test]
+    fn top_level_inventory_keeps_the_same_provider_session_from_distinct_runtime_bindings() {
+        let root = item("codex", "shared-session", r"E:\Work\BirdCoder");
+        let mut distinct_runtime = item("opencode", "shared-session", r"E:\Work\BirdCoder");
+        distinct_runtime.provider_id = root.provider_id.clone();
+
+        let selected = select_top_level_provider_sessions(
+            vec![root, distinct_runtime],
+            Some("e:/work/birdcoder"),
+        );
+
+        assert_eq!(selected.len(), 2);
+        assert_ne!(selected[0].binding_id, selected[1].binding_id);
     }
 
     #[test]

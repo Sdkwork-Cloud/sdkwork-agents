@@ -1,5 +1,5 @@
 -- SDKWork Agents PostgreSQL greenfield baseline.
--- Contract: database/contract/schema.yaml (6.0.0)
+-- Contract: database/contract/schema.yaml (6.0.2)
 -- PostgreSQL is the only managed-store authority for this contract.
 -- Sibling modules own memory, knowledge, skills, prompts, MCP, model catalogs,
 -- runtime-location details, and Drive bytes. Agents stores stable references only.
@@ -477,6 +477,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_session (
     parent_session_id VARCHAR(128),
     forked_from_turn_id VARCHAR(128),
     title VARCHAR(512),
+    title_source SMALLINT NOT NULL DEFAULT 1,
     status SMALLINT NOT NULL DEFAULT 0,
     item_count BIGINT NOT NULL DEFAULT 0,
     last_item_sequence BIGINT NOT NULL DEFAULT 0,
@@ -504,6 +505,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_session (
     CONSTRAINT ck_ai_agent_session_kind CHECK (session_kind IN (0, 1, 2, 3)),
     CONSTRAINT ck_ai_agent_session_entry_surface CHECK (entry_surface IN (0, 1, 2, 3, 4, 5, 6)),
     CONSTRAINT ck_ai_agent_session_status CHECK (status IN (0, 1, 2, 3)),
+    CONSTRAINT ck_ai_agent_session_title_source CHECK (title_source IN (0, 1, 2)),
     CONSTRAINT ck_ai_agent_session_counts CHECK (
         item_count >= 0 AND last_item_sequence >= 0
         AND total_input_tokens >= 0 AND total_output_tokens >= 0
@@ -566,6 +568,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_runtime_binding (
     uuid VARCHAR(96) NOT NULL,
     tenant_id BIGINT NOT NULL,
     organization_id BIGINT NOT NULL DEFAULT 0,
+    owner_user_id BIGINT NOT NULL,
     session_id VARCHAR(128) NOT NULL,
     runtime_binding_id VARCHAR(128) NOT NULL,
     runtime_location_id VARCHAR(256),
@@ -610,8 +613,8 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_runtime_binding (
     ),
     CONSTRAINT ck_ai_agent_session_runtime_binding_version CHECK (version >= 0),
     CONSTRAINT fk_ai_agent_session_runtime_binding_session FOREIGN KEY (
-        tenant_id, organization_id, session_id
-    ) REFERENCES ai_agent_session (tenant_id, organization_id, session_id)
+        tenant_id, organization_id, session_id, owner_user_id
+    ) REFERENCES ai_agent_session (tenant_id, organization_id, session_id, owner_user_id)
         ON DELETE RESTRICT
 );
 
@@ -620,7 +623,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_current
     WHERE is_current = TRUE;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_provider_session
     ON ai_agent_session_runtime_binding (
-        tenant_id, organization_id, provider_id, provider_session_id
+        tenant_id, organization_id, owner_user_id, provider_binding_id, provider_id, provider_session_id
     ) WHERE provider_session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_agent_session_runtime_binding_list
     ON ai_agent_session_runtime_binding (

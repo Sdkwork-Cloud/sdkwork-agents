@@ -481,6 +481,7 @@ mod tests {
     use super::*;
     use crate::domain::{
         AgentSessionEntrySurface, AgentSessionKind, AgentSessionRecord, AgentSessionStatus,
+        AgentSessionTitleSource,
     };
 
     fn sample_session() -> AgentSessionRecord {
@@ -500,6 +501,7 @@ mod tests {
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Test".to_string()),
+            title_source: AgentSessionTitleSource::System,
             status: AgentSessionStatus::Active,
             item_count: 0,
             last_item_sequence: 0,

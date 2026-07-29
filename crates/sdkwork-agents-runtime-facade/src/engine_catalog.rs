@@ -1,4 +1,8 @@
-use sdkwork_agent_kernel::ModelDescriptor;
+use sdkwork_agent_kernel::{
+    AgentExecutionAccessModeDescriptor, AgentExecutionApprovalBehavior,
+    AgentExecutionNetworkAccess, AgentExecutionRiskLevel, AgentExecutionWorkspaceAccess,
+    ModelDescriptor,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::code_engines::{
@@ -33,6 +37,61 @@ pub struct CodeEngineCatalogEngine {
     pub agent_id: String,
     pub binding_id: String,
     pub models: Vec<CodeEngineModelCatalogEntry>,
+    pub default_access_mode_id: String,
+    pub access_modes: Vec<CodeEngineAccessModeCatalogEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeEngineAccessModeCatalogEntry {
+    pub mode_id: String,
+    pub display_name: String,
+    pub description: String,
+    pub approval_behavior: String,
+    pub workspace_access: String,
+    pub network_access: String,
+    pub risk_level: String,
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
+}
+
+fn access_mode_to_catalog_entry(
+    access_mode: &AgentExecutionAccessModeDescriptor,
+) -> CodeEngineAccessModeCatalogEntry {
+    CodeEngineAccessModeCatalogEntry {
+        mode_id: access_mode.mode_id.clone(),
+        display_name: access_mode.display_name.clone(),
+        description: access_mode.description.clone(),
+        approval_behavior: match access_mode.approval_behavior {
+            AgentExecutionApprovalBehavior::UserReview => "user_review",
+            AgentExecutionApprovalBehavior::AutomaticReview => "automatic_review",
+            AgentExecutionApprovalBehavior::Never => "never",
+            AgentExecutionApprovalBehavior::ProviderDefault => "provider_default",
+        }
+        .to_string(),
+        workspace_access: match access_mode.workspace_access {
+            AgentExecutionWorkspaceAccess::ReadOnly => "read_only",
+            AgentExecutionWorkspaceAccess::WorkspaceWrite => "workspace_write",
+            AgentExecutionWorkspaceAccess::FullAccess => "full_access",
+            AgentExecutionWorkspaceAccess::ProviderDefault => "provider_default",
+        }
+        .to_string(),
+        network_access: match access_mode.network_access {
+            AgentExecutionNetworkAccess::Restricted => "restricted",
+            AgentExecutionNetworkAccess::Enabled => "enabled",
+            AgentExecutionNetworkAccess::ProviderDefault => "provider_default",
+        }
+        .to_string(),
+        risk_level: match access_mode.risk_level {
+            AgentExecutionRiskLevel::Scoped => "scoped",
+            AgentExecutionRiskLevel::Elevated => "elevated",
+            AgentExecutionRiskLevel::Unrestricted => "unrestricted",
+        }
+        .to_string(),
+        enabled: access_mode.enabled,
+        disabled_reason: access_mode.disabled_reason.clone(),
+    }
 }
 
 pub fn model_descriptor_to_catalog_entry(
@@ -75,12 +134,25 @@ pub fn build_code_engine_catalog(slots: &[&CodeEngineSlot]) -> CodeEngineCatalog
             let tier = super::code_engines::engine_catalog_tier(slot.engine_key())
                 .unwrap_or("unknown")
                 .to_string();
+            let execution_settings = slot.execution_settings_spec().ok();
             Some(CodeEngineCatalogEngine {
                 engine_key: slot.engine_key().to_string(),
                 tier,
                 agent_id: agent_id.to_string(),
                 binding_id: slot.binding_id().to_string(),
                 models: list_slot_catalog_entries(slot),
+                default_access_mode_id: execution_settings
+                    .as_ref()
+                    .map(|spec| spec.default_access_mode_id.clone())
+                    .unwrap_or_default(),
+                access_modes: execution_settings
+                    .map(|spec| {
+                        spec.access_modes
+                            .iter()
+                            .map(access_mode_to_catalog_entry)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             })
         })
         .collect();

@@ -20,7 +20,8 @@ pub use code_engines::{
 pub use engine_catalog::{
     bootstrap_bootstrappable_code_engine_catalog, bootstrap_canonical_code_engine_catalog,
     build_code_engine_catalog, list_slot_catalog_entries, model_descriptor_to_catalog_entry,
-    CodeEngineCatalog, CodeEngineCatalogEngine, CodeEngineModelCatalogEntry,
+    CodeEngineAccessModeCatalogEntry, CodeEngineCatalog, CodeEngineCatalogEngine,
+    CodeEngineModelCatalogEntry,
 };
 pub use error::{RuntimeFacadeError, RuntimeFacadeResult};
 pub use live_interaction::{

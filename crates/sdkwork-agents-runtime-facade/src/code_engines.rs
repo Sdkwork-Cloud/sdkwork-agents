@@ -1,13 +1,19 @@
 use sdkwork_agent_kernel::{
-    KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
-    ModelStreamSink, ProviderSessionActivityProvider, SessionActivitySnapshot,
+    AgentConfigurationProvider, AgentExecutionSettingsRequest, AgentExecutionSettingsResolution,
+    AgentExecutionSettingsSpec, KernelResult, ModelDescriptor, ModelProvider, ModelRequest,
+    ModelResponse, ModelStreamChunk, ModelStreamSink, ProviderSessionActivityProvider,
+    SessionActivitySnapshot,
 };
-use sdkwork_agent_provider_claude_code::ClaudeCodeSdkIntegration;
-use sdkwork_agent_provider_codex::CodexSdkIntegration;
-use sdkwork_agent_provider_gemini_cli::GeminiCliSdkIntegration;
+use sdkwork_agent_provider_claude_code::{
+    ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
+};
+use sdkwork_agent_provider_codex::{CodexConfigurationProvider, CodexSdkIntegration};
+use sdkwork_agent_provider_gemini_cli::{
+    GeminiCliConfigurationProvider, GeminiCliSdkIntegration,
+};
 use sdkwork_agent_provider_hermes::HermesSdkIntegration;
 use sdkwork_agent_provider_openclaw::OpenClawSdkIntegration;
-use sdkwork_agent_provider_opencode::OpenCodeSdkIntegration;
+use sdkwork_agent_provider_opencode::{OpenCodeConfigurationProvider, OpenCodeSdkIntegration};
 use sdkwork_agent_provider_spi::{
     SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
     HERMES_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
@@ -169,6 +175,30 @@ impl CodeEngineSlot {
         self.model_provider().list_models()
     }
 
+    pub fn execution_settings_spec(&self) -> KernelResult<AgentExecutionSettingsSpec> {
+        let agent_id = code_engine_agent_id(self.engine_key()).ok_or_else(|| {
+            sdkwork_agent_kernel::KernelError::CapabilityMissing {
+                capability_id: format!("agent.configure.execution.{}", self.engine_key()),
+            }
+        })?;
+        self.configuration_provider()
+            .execution_settings_spec(agent_id)
+    }
+
+    pub fn resolve_execution_settings(
+        &self,
+        access_mode_id: &str,
+    ) -> KernelResult<AgentExecutionSettingsResolution> {
+        let agent_id = code_engine_agent_id(self.engine_key()).ok_or_else(|| {
+            sdkwork_agent_kernel::KernelError::CapabilityMissing {
+                capability_id: format!("agent.configure.execution.{}", self.engine_key()),
+            }
+        })?;
+        self.configuration_provider().resolve_execution_settings(
+            &AgentExecutionSettingsRequest::new(agent_id).with_access_mode(access_mode_id),
+        )
+    }
+
     pub fn invoke_model(&self, request: ModelRequest) -> KernelResult<ModelResponse> {
         self.model_provider().invoke(request)
     }
@@ -247,6 +277,20 @@ impl CodeEngineSlot {
             Self::OpenCode(integration) => &integration.model,
             Self::OpenClaw(integration) => &integration.model,
             Self::Hermes(integration) => &integration.model,
+        }
+    }
+
+    fn configuration_provider(&self) -> Box<dyn AgentConfigurationProvider> {
+        match self {
+            Self::Codex(_) => Box::new(CodexConfigurationProvider::new()),
+            Self::ClaudeCode(_) => Box::new(ClaudeCodeConfigurationProvider::new()),
+            Self::Gemini(_) => Box::new(GeminiCliConfigurationProvider::new()),
+            Self::OpenCode(_) => Box::new(OpenCodeConfigurationProvider::new()),
+            Self::OpenClaw(_) | Self::Hermes(_) => Box::new(
+                sdkwork_agent_plugin_core::ProcessAdapterConfigurationProvider::new(
+                    code_engine_agent_id(self.engine_key()).unwrap_or_default(),
+                ),
+            ),
         }
     }
 }

@@ -452,7 +452,17 @@ fn synchronize_provider_session_inventory(
                 "provider session inventory identity must not be blank",
             ));
         }
-        if !seen_provider_sessions.insert((provider_id.clone(), provider_session_id.clone())) {
+        let provider_binding_id = item.binding_id.trim().to_string();
+        if provider_binding_id.is_empty() {
+            return Err(KernelError::validation(
+                "provider session inventory runtime binding identity must not be blank",
+            ));
+        }
+        if !seen_provider_sessions.insert((
+            provider_binding_id.clone(),
+            provider_id.clone(),
+            provider_session_id.clone(),
+        )) {
             continue;
         }
         let requested_at = provider_session_requested_at(&item, project)?;
@@ -462,12 +472,20 @@ fn synchronize_provider_session_inventory(
             project.owner_user_id,
             &item.engine_key,
             &item.agent_id,
-            &item.binding_id,
+            &provider_binding_id,
             &provider_id,
             subject.clone(),
             &requested_at,
         )?;
-        let stable_key = stable_provider_session_key(&provider_id, &provider_session_id);
+        let stable_key = stable_provider_session_key(
+            project.tenant_id,
+            project.organization_id,
+            project.owner_user_id,
+            &item.engine_key,
+            &provider_binding_id,
+            &provider_id,
+            &provider_session_id,
+        );
         let session_id = format!("session.provider.{}.{}", item.engine_key, stable_key);
         let runtime_binding_id = format!(
             "runtime_binding.provider.{}.{}",
@@ -503,7 +521,7 @@ fn synchronize_provider_session_inventory(
                     runtime_location_id: None,
                     host_mode: "server".to_string(),
                     transport_kind: "provider-session-history".to_string(),
-                    provider_binding_id: item.binding_id.clone(),
+                    provider_binding_id,
                     model_id,
                     provider_id,
                     provider_session_id: Some(provider_session_id.clone()),
@@ -587,9 +605,20 @@ fn provider_session_title(value: Option<&str>, engine_key: &str) -> String {
     value[..end].trim_end().to_string()
 }
 
-fn stable_provider_session_key(provider_id: &str, provider_session_id: &str) -> String {
+fn stable_provider_session_key(
+    tenant_id: u64,
+    organization_id: u64,
+    owner_user_id: u64,
+    engine_key: &str,
+    provider_binding_id: &str,
+    provider_id: &str,
+    provider_session_id: &str,
+) -> String {
     let digest = sdkwork_utils_rust::sha256_hash(
-        format!("provider-session-v2\u{0}{provider_id}\u{0}{provider_session_id}").as_bytes(),
+        format!(
+            "provider-session-v3\u{0}{tenant_id}\u{0}{organization_id}\u{0}{owner_user_id}\u{0}{engine_key}\u{0}{provider_binding_id}\u{0}{provider_id}\u{0}{provider_session_id}"
+        )
+        .as_bytes(),
     );
     digest[..32].to_string()
 }
@@ -619,7 +648,7 @@ mod tests {
     use super::*;
     use crate::application::{
         CreateProjectCommand, ListSessionActivitySummariesCommand, ListSessionItemsCommand,
-        ListSessionRuntimeBindingsCommand, ListSessionsCommand,
+        ListSessionRuntimeBindingsCommand, ListSessionsCommand, UpdateSessionCommand,
     };
     use crate::http::AgentHttpState;
     use crate::infrastructure::{
@@ -634,15 +663,51 @@ mod tests {
     use sdkwork_agents_runtime_facade::CodeEngineCatalogEngine;
 
     #[test]
-    fn provider_session_ids_are_stable_and_provider_scoped() {
-        let first = stable_provider_session_key("provider.model.codex", "provider-1");
+    fn provider_session_ids_are_stable_and_runtime_scoped() {
+        let first = stable_provider_session_key(
+            100001,
+            0,
+            42,
+            "codex",
+            "binding.agent-provider.codex",
+            "provider.model.codex",
+            "provider-1",
+        );
         assert_eq!(
             first,
-            stable_provider_session_key("provider.model.codex", "provider-1")
+            stable_provider_session_key(
+                100001,
+                0,
+                42,
+                "codex",
+                "binding.agent-provider.codex",
+                "provider.model.codex",
+                "provider-1",
+            )
         );
         assert_ne!(
             first,
-            stable_provider_session_key("provider.model.opencode", "provider-1")
+            stable_provider_session_key(
+                100001,
+                0,
+                42,
+                "opencode",
+                "binding.agent-provider.opencode",
+                "provider.model.opencode",
+                "provider-1",
+            )
+        );
+        assert_ne!(
+            first,
+            stable_provider_session_key(
+                100001,
+                0,
+                43,
+                "codex",
+                "binding.agent-provider.codex",
+                "provider.model.codex",
+                "provider-1",
+            )
         );
     }
 
@@ -1140,6 +1205,97 @@ mod tests {
         assert_eq!(
             sessions.items[0].title.as_deref(),
             Some("Renamed provider title")
+        );
+    }
+
+    #[test]
+    fn provider_inventory_never_overwrites_a_user_renamed_session_title() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let engine = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        let mut item = inventory_item(engine, "codex-user-title".to_string(), 1);
+        item.session.title = Some("Provider title".to_string());
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![item.clone()],
+        )
+        .expect("initial provider inventory sync");
+
+        let session = state
+            .service
+            .list_sessions(ListSessionsCommand {
+                query: SessionListQuery::for_tenant(project.tenant_id)
+                    .for_organization(project.organization_id)
+                    .for_owner(project.owner_user_id)
+                    .for_project(project.project_id.clone()),
+                requested_by: read_subject(),
+            })
+            .expect("provider session")
+            .items
+            .into_iter()
+            .next()
+            .expect("one provider session");
+        let renamed = state
+            .service
+            .update_session(UpdateSessionCommand {
+                tenant_id: project.tenant_id,
+                organization_id: project.organization_id,
+                path_agent_id: session.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                title: Some("User-owned title".to_string()),
+                project_id: None,
+                expected_version: Some(session.version),
+                owner_scope: Some(project.owner_user_id),
+                requested_by: PolicySubject {
+                    subject_id: "100".to_string(),
+                    tenant_id: "100001".to_string(),
+                    roles: vec!["ai.agents.use".to_string()],
+                },
+                requested_at: "2026-07-27T12:00:00Z".to_string(),
+            })
+            .expect("user rename");
+        assert_eq!(
+            renamed.title_source,
+            crate::domain::AgentSessionTitleSource::User
+        );
+
+        item.session.title = Some("Provider title after user rename".to_string());
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![item],
+        )
+        .expect("provider inventory refresh");
+
+        let refreshed = state
+            .service
+            .get_session(crate::application::GetSessionCommand {
+                tenant_id: project.tenant_id,
+                organization_id: project.organization_id,
+                path_agent_id: session.agent_id,
+                session_id: session.session_id,
+                owner_scope: Some(project.owner_user_id),
+                requested_by: read_subject(),
+            })
+            .expect("refreshed provider session");
+        assert_eq!(refreshed.title.as_deref(), Some("User-owned title"));
+        assert_eq!(
+            refreshed.title_source,
+            crate::domain::AgentSessionTitleSource::User
         );
     }
 

@@ -1067,6 +1067,7 @@ pub struct AgentSessionRecord {
     pub parent_session_id: Option<String>,
     pub forked_from_turn_id: Option<String>,
     pub title: Option<String>,
+    pub title_source: AgentSessionTitleSource,
     pub status: AgentSessionStatus,
     pub item_count: u64,
     pub last_item_sequence: u64,
@@ -1086,6 +1087,45 @@ pub struct AgentSessionRecord {
     pub deleted_at: Option<String>,
     pub deleted_by: Option<u64>,
     pub retention_until: Option<String>,
+}
+
+/// Identifies the authority that may update a Session display title.
+///
+/// Provider history reconciliation may update titles only while the provider
+/// remains authoritative. A user rename switches the authority permanently to
+/// `User`, preventing later provider inventory refreshes from overwriting it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentSessionTitleSource {
+    Provider,
+    User,
+    System,
+}
+
+impl AgentSessionTitleSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Provider => "provider",
+            Self::User => "user",
+            Self::System => "system",
+        }
+    }
+
+    pub fn as_db_code(self) -> i16 {
+        match self {
+            Self::Provider => 0,
+            Self::User => 1,
+            Self::System => 2,
+        }
+    }
+
+    pub fn from_db_code(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Provider),
+            1 => Some(Self::User),
+            2 => Some(Self::System),
+            _ => None,
+        }
+    }
 }
 
 impl AgentSessionRecord {
@@ -1198,6 +1238,7 @@ pub struct AgentSessionRuntimeBindingRecord {
     pub id: u64,
     pub tenant_id: u64,
     pub organization_id: u64,
+    pub owner_user_id: u64,
     pub session_id: String,
     pub runtime_binding_id: String,
     pub runtime_location_id: Option<String>,

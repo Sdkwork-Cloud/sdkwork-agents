@@ -13,7 +13,8 @@ use sdkwork_intelligence_agents_service::{
     build_combined_routes, testing::test_web_context, AgentHttpState, AgentRepository,
     AgentRequestContext, AgentSessionEntrySurface, AgentSessionKind, AgentSessionRecord,
     AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentSessionStatus,
-    DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
+    AgentSessionTitleSource, DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink,
+    InMemoryAgentRepository,
 };
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -5058,6 +5059,7 @@ async fn app_session_activity_snapshot_preserves_latest_failed_runtime_binding()
             parent_session_id: None,
             forked_from_turn_id: None,
             title: Some("Failed binding".to_string()),
+            title_source: AgentSessionTitleSource::System,
             status: AgentSessionStatus::Active,
             item_count: 0,
             last_item_sequence: 0,
@@ -5084,6 +5086,7 @@ async fn app_session_activity_snapshot_preserves_latest_failed_runtime_binding()
             id: 2,
             tenant_id: 100001,
             organization_id: 0,
+            owner_user_id: 100,
             session_id: session_id.to_string(),
             runtime_binding_id: "runtime_binding.activity.failed".to_string(),
             runtime_location_id: None,
