@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use sdkwork_agent_kernel::{
     AgentMessage, AgentMessageRole, AgentPart, AgentPartKind, KernelError, KernelResult,
-    PolicySubject,
+    PolicySubject, SessionKind,
 };
 use sdkwork_agents_runtime_facade::{
     AgentsSessionActor, AgentsSessionEntrySurface, AgentsSessionFacade, AgentsSessionKind,
@@ -440,7 +440,21 @@ fn synchronize_provider_session_inventory(
         roles: subject.roles.clone(),
     };
     let mut synchronized = 0;
+    let mut seen_provider_sessions = HashSet::new();
     for item in inventory {
+        if item.session.kind == SessionKind::Subagent || item.session.parent_session_id.is_some() {
+            continue;
+        }
+        let provider_id = item.provider_id.trim().to_string();
+        let provider_session_id = item.session.session_id.trim().to_string();
+        if provider_id.is_empty() || provider_session_id.is_empty() {
+            return Err(KernelError::validation(
+                "provider session inventory identity must not be blank",
+            ));
+        }
+        if !seen_provider_sessions.insert((provider_id.clone(), provider_session_id.clone())) {
+            continue;
+        }
         let requested_at = provider_session_requested_at(&item, project)?;
         service.ensure_code_engine_runtime_identity(
             project.tenant_id,
@@ -449,11 +463,11 @@ fn synchronize_provider_session_inventory(
             &item.engine_key,
             &item.agent_id,
             &item.binding_id,
-            &item.provider_id,
+            &provider_id,
             subject.clone(),
             &requested_at,
         )?;
-        let stable_key = stable_provider_session_key(&item.engine_key, &item.session.session_id);
+        let stable_key = stable_provider_session_key(&provider_id, &provider_session_id);
         let session_id = format!("session.provider.{}.{}", item.engine_key, stable_key);
         let runtime_binding_id = format!(
             "runtime_binding.provider.{}.{}",
@@ -491,9 +505,9 @@ fn synchronize_provider_session_inventory(
                     transport_kind: "provider-session-history".to_string(),
                     provider_binding_id: item.binding_id.clone(),
                     model_id,
-                    provider_id: item.provider_id.clone(),
-                    provider_session_id: Some(item.session.session_id.clone()),
-                    provider_session_tree_id: None,
+                    provider_id,
+                    provider_session_id: Some(provider_session_id.clone()),
+                    provider_session_tree_id: Some(provider_session_id),
                     provider_parent_session_id: item.session.parent_session_id.clone(),
                     provider_forked_from_session_id: item.session.forked_from_id.clone(),
                 }),
@@ -573,9 +587,9 @@ fn provider_session_title(value: Option<&str>, engine_key: &str) -> String {
     value[..end].trim_end().to_string()
 }
 
-fn stable_provider_session_key(engine_key: &str, provider_session_id: &str) -> String {
+fn stable_provider_session_key(provider_id: &str, provider_session_id: &str) -> String {
     let digest = sdkwork_utils_rust::sha256_hash(
-        format!("provider-session-v1\u{0}{engine_key}\u{0}{provider_session_id}").as_bytes(),
+        format!("provider-session-v2\u{0}{provider_id}\u{0}{provider_session_id}").as_bytes(),
     );
     digest[..32].to_string()
 }
@@ -604,25 +618,32 @@ fn runtime_facade_error(error: impl std::fmt::Display) -> KernelError {
 mod tests {
     use super::*;
     use crate::application::{
-        CreateProjectCommand, ListSessionItemsCommand, ListSessionRuntimeBindingsCommand,
-        ListSessionsCommand,
+        CreateProjectCommand, ListSessionActivitySummariesCommand, ListSessionItemsCommand,
+        ListSessionRuntimeBindingsCommand, ListSessionsCommand,
     };
     use crate::http::AgentHttpState;
     use crate::infrastructure::{
         IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
     };
     use crate::ports::{
-        PaginationParams, SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery,
+        PaginationParams, SessionActivitySummaryListQuery, SessionItemListQuery, SessionListQuery,
+        SessionRuntimeBindingListQuery,
     };
     use crate::{AgentProjectDriveAccessMode, AgentProjectVisibility};
-    use sdkwork_agent_kernel::AgentSession;
+    use sdkwork_agent_kernel::{AgentSession, SessionKind};
     use sdkwork_agents_runtime_facade::CodeEngineCatalogEngine;
 
     #[test]
     fn provider_session_ids_are_stable_and_provider_scoped() {
-        let first = stable_provider_session_key("codex", "provider-1");
-        assert_eq!(first, stable_provider_session_key("codex", "provider-1"));
-        assert_ne!(first, stable_provider_session_key("opencode", "provider-1"));
+        let first = stable_provider_session_key("provider.model.codex", "provider-1");
+        assert_eq!(
+            first,
+            stable_provider_session_key("provider.model.codex", "provider-1")
+        );
+        assert_ne!(
+            first,
+            stable_provider_session_key("provider.model.opencode", "provider-1")
+        );
     }
 
     #[test]
@@ -861,6 +882,53 @@ mod tests {
         assert_eq!(second_page.total_count, Some(227));
         assert!(!second_page.has_more);
 
+        let activity_query = SessionActivitySummaryListQuery::for_owner(
+            project.tenant_id,
+            project.organization_id,
+            project.owner_user_id,
+        )
+        .for_project(project.project_id.clone())
+        .with_page_size(200);
+        let first_activity_page = state
+            .service
+            .list_session_activity_summaries(ListSessionActivitySummariesCommand {
+                query: activity_query.clone(),
+                requested_by: subject.clone(),
+            })
+            .expect("first synchronized provider Session activity page");
+        assert_eq!(first_activity_page.items.len(), 200);
+        assert!(first_activity_page.has_more);
+        let activity_cursor = crate::session_activity::decode_session_activity_cursor(
+            first_activity_page
+                .next_page_token
+                .as_deref()
+                .expect("provider Session activity cursor"),
+        )
+        .expect("decode provider Session activity cursor");
+        let second_activity_page = state
+            .service
+            .list_session_activity_summaries(ListSessionActivitySummariesCommand {
+                query: activity_query.after(activity_cursor),
+                requested_by: subject.clone(),
+            })
+            .expect("second synchronized provider Session activity page");
+        assert_eq!(second_activity_page.items.len(), 27);
+        assert!(!second_activity_page.has_more);
+
+        let synchronized_session_ids = first_page
+            .items
+            .iter()
+            .chain(second_page.items.iter())
+            .map(|session| session.session_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let activity_session_ids = first_activity_page
+            .items
+            .iter()
+            .chain(second_activity_page.items.iter())
+            .map(|summary| summary.session.session_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(activity_session_ids, synchronized_session_ids);
+
         for engine_key in ["codex", "claude-code", "opencode"] {
             let session = first_page
                 .items
@@ -950,6 +1018,77 @@ mod tests {
             })
             .expect("concurrent inventory result");
         assert_eq!(sessions.total_count, Some(3));
+    }
+
+    #[test]
+    fn provider_inventory_deduplicates_normalized_identity_and_skips_subagents() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let engine = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        let root = inventory_item(engine, " provider-session-1 ".to_string(), 1);
+        let mut duplicate = root.clone();
+        duplicate.session.session_id = "provider-session-1".to_string();
+        duplicate.session.title = Some("Duplicate title must not create a row".to_string());
+        let mut subagent = inventory_item(engine, "provider-subagent-1".to_string(), 2);
+        subagent.session.kind = SessionKind::Subagent;
+        subagent.session.parent_session_id = Some("provider-session-1".to_string());
+
+        assert_eq!(
+            synchronize_provider_session_inventory(
+                state.service.clone(),
+                &project,
+                read_subject(),
+                vec![root, duplicate, subagent],
+            )
+            .expect("normalized provider inventory sync"),
+            1
+        );
+
+        let sessions = state
+            .service
+            .list_sessions(ListSessionsCommand {
+                query: SessionListQuery::for_tenant(project.tenant_id)
+                    .for_organization(project.organization_id)
+                    .for_owner(project.owner_user_id)
+                    .for_project(project.project_id.clone()),
+                requested_by: read_subject(),
+            })
+            .expect("deduplicated provider sessions");
+        assert_eq!(sessions.total_count, Some(1));
+        let session = sessions.items.first().expect("root provider session");
+        let bindings = state
+            .service
+            .list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+                query: SessionRuntimeBindingListQuery::for_session(
+                    project.tenant_id,
+                    project.organization_id,
+                    session.session_id.clone(),
+                ),
+                path_agent_id: session.agent_id.clone(),
+                owner_scope: Some(project.owner_user_id),
+                requested_by: read_subject(),
+            })
+            .expect("normalized provider binding");
+        let binding = bindings.items.first().expect("provider binding");
+        assert_eq!(
+            binding.provider_session_id.as_deref(),
+            Some("provider-session-1")
+        );
+        assert_eq!(
+            binding.provider_session_tree_id.as_deref(),
+            Some("provider-session-1")
+        );
     }
 
     #[test]

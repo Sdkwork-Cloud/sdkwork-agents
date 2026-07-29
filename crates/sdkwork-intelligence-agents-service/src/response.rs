@@ -5,7 +5,7 @@
 //! （含 numeric `code` 与 `traceId`）。handlers 不再手写信封。
 
 use axum::{
-    http::{HeaderName, HeaderValue, StatusCode},
+    http::{header::CACHE_CONTROL, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -48,9 +48,10 @@ pub fn created_json<T: Serialize>(
 
 /// 构造 204 无 body + `x-sdkwork-trace-id` 响应头。
 pub fn no_content(ctx: &WebRequestContext) -> Result<Response, ApiProblem> {
-    let mut response = StatusCode::NO_CONTENT.into_response();
-    attach_trace_header(&mut response, &ctx.resolved_trace_id());
-    Ok(response)
+    Ok(finalize_response(
+        ctx,
+        StatusCode::NO_CONTENT.into_response(),
+    ))
 }
 
 fn success_response<T: Serialize>(
@@ -60,9 +61,24 @@ fn success_response<T: Serialize>(
 ) -> Result<Response, ApiProblem> {
     let trace_id = ctx.resolved_trace_id();
     let envelope = SdkWorkApiResponse::success(data, trace_id.clone());
-    let mut response = (status, Json(envelope)).into_response();
-    attach_trace_header(&mut response, &trace_id);
-    Ok(response)
+    Ok(finalize_response(
+        ctx,
+        (status, Json(envelope)).into_response(),
+    ))
+}
+
+fn finalize_response(ctx: &WebRequestContext, mut response: Response) -> Response {
+    attach_trace_header(&mut response, &ctx.resolved_trace_id());
+    if !ctx.is_public() {
+        attach_private_no_store(&mut response);
+    }
+    response
+}
+
+fn attach_private_no_store(response: &mut Response) {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
 }
 
 fn attach_trace_header(response: &mut Response, trace_id: &str) {
@@ -221,16 +237,18 @@ impl ApiProblem {
                 trace_id.clone(),
                 ctx.problem_correlation().routing(),
             );
-            let mut response = (
+            let response = (
                 self.status,
                 [(axum::http::header::CONTENT_TYPE, "application/problem+json")],
                 Json(problem),
             )
                 .into_response();
-            attach_trace_header(&mut response, &trace_id);
-            return response;
+            return finalize_response(ctx, response);
         }
-        problem_response(&self.framework_error(), ctx.problem_correlation())
+        finalize_response(
+            ctx,
+            problem_response(&self.framework_error(), ctx.problem_correlation()),
+        )
     }
 
     /// Render the problem without a request context.
@@ -241,7 +259,9 @@ impl ApiProblem {
     /// correlation. Handlers MUST prefer `into_response_for(ctx)` / `finish_api_json`.
     pub fn into_response_fallback(self) -> Response {
         let correlation = sdkwork_web_core::ProblemCorrelation::new(None, None);
-        problem_response(&self.framework_error(), correlation)
+        let mut response = problem_response(&self.framework_error(), correlation);
+        attach_private_no_store(&mut response);
+        response
     }
 
     pub fn status(&self) -> StatusCode {
@@ -278,7 +298,7 @@ pub fn finish_api_response(
     result: Result<Response, ApiProblem>,
 ) -> Response {
     match result {
-        Ok(response) => response,
+        Ok(response) => finalize_response(ctx, response),
         Err(problem) => problem.into_response_for(ctx),
     }
 }
@@ -317,6 +337,13 @@ mod tests {
     async fn success_json_uses_sdkwork_api_response_envelope() {
         let response =
             success_json(&test_context(), serde_json::json!({ "item": 1 })).expect("response");
+        assert_eq!(
+            Some("private, no-store"),
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok())
+        );
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -333,6 +360,13 @@ mod tests {
     async fn api_problem_uses_problem_json_content_type() {
         let response =
             ApiProblem::forbidden("missing permission").into_response_for(&test_context());
+        assert_eq!(
+            Some("private, no-store"),
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok())
+        );
         assert_eq!(
             "application/problem+json",
             response
@@ -389,6 +423,13 @@ mod tests {
         let response = no_content(&test_context()).expect("response");
         assert_eq!(StatusCode::NO_CONTENT, response.status());
         assert!(response.headers().get("x-sdkwork-trace-id").is_some());
+        assert_eq!(
+            Some("private, no-store"),
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok())
+        );
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -417,5 +458,32 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(503, payload["status"].as_u64().unwrap());
         assert_eq!(50301, payload["code"].as_i64().unwrap());
+    }
+
+    #[test]
+    fn finish_api_response_applies_authenticated_cache_policy() {
+        let response =
+            finish_api_response(&test_context(), Ok(StatusCode::ACCEPTED.into_response()));
+
+        assert_eq!(StatusCode::ACCEPTED, response.status());
+        assert_eq!(
+            Some("private, no-store"),
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok())
+        );
+        assert!(response.headers().get("x-sdkwork-trace-id").is_some());
+    }
+
+    #[test]
+    fn public_response_does_not_force_private_cache_policy() {
+        let mut context = test_context();
+        context.auth_mode = WebAuthMode::Public;
+
+        let response =
+            success_json(&context, serde_json::json!({ "item": 1 })).expect("public response");
+
+        assert!(response.headers().get(CACHE_CONTROL).is_none());
     }
 }

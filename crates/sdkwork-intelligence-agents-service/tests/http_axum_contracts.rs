@@ -6,7 +6,7 @@
 //! types at the raw route boundary.
 
 use axum::body::{to_bytes, Body};
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{Request, StatusCode};
 use axum::Extension;
 use sdkwork_intelligence_agents_service::{
@@ -4639,6 +4639,56 @@ async fn app_turn_should_return_ordered_session_items() {
         StatusCode::BAD_REQUEST,
     )
     .await;
+}
+
+#[tokio::test]
+async fn missing_provider_session_items_returns_uncacheable_problem_details() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let request = Request::builder()
+        .method("GET")
+        .uri(concat!(
+            "/app/v3/api/ai/agents/agent.intelligence.codex/sessions/",
+            "session.provider.codex.3b00d973230618c73d7e78b3faa78287/items",
+            "?page=1&page_size=50&sort=-sequence"
+        ))
+        .body(Body::empty())
+        .expect("provider session items request should be built");
+
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("provider session items request should complete");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response
+            .headers()
+            .get(CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("private, no-store")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/problem+json")
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("problem response body should be readable");
+    let problem: Value =
+        serde_json::from_slice(&body).expect("problem response should be valid json");
+    assert_eq!(problem["status"], 404);
+    assert_eq!(problem["code"], 40401);
+    assert!(problem["detail"]
+        .as_str()
+        .is_some_and(|detail| detail.contains("session not found")));
 }
 
 #[tokio::test]

@@ -350,6 +350,30 @@ test("baseline outbox dedupe is tenant and organization scoped", () => {
   );
 });
 
+test("provider session identity stays normalized and unique for its full lifecycle", () => {
+  const baseline = readFileSync(
+    path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
+    "utf8",
+  );
+  const tableSql = extractCreateTableSql(
+    baseline,
+    "ai_agent_session_runtime_binding",
+  );
+
+  assert.match(
+    tableSql,
+    /provider_session_id\s+IS\s+NULL\s+OR\s*\(\s*provider_session_id\s+<>\s+''\s+AND\s+provider_session_id\s*=\s*BTRIM\(provider_session_id\)/iu,
+  );
+  assert.match(
+    baseline,
+    /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_ai_agent_session_runtime_binding_provider_session[\s\S]*?\(\s*tenant_id,\s*organization_id,\s*provider_id,\s*provider_session_id\s*\)\s+WHERE\s+provider_session_id\s+IS\s+NOT\s+NULL\s*;/iu,
+  );
+  assert.doesNotMatch(
+    baseline,
+    /uk_ai_agent_session_runtime_binding_provider_session[\s\S]*?status\s*<>\s*3/iu,
+  );
+});
+
 test("resource user-state baseline uses the canonical last-read item sequence", () => {
   const baseline = readFileSync(
     path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),

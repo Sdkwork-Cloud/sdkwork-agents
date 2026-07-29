@@ -106,6 +106,24 @@ fn validate_optional_bounded(
     Ok(())
 }
 
+fn normalize_optional_bounded(
+    value: Option<String>,
+    field_name: &str,
+    max_bytes: usize,
+) -> KernelResult<Option<String>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = trim(&value);
+    require_non_blank(&value, field_name)?;
+    if value.len() > max_bytes {
+        return Err(KernelError::validation(format!(
+            "{field_name} exceeds {max_bytes} bytes"
+        )));
+    }
+    Ok(Some(value.to_string()))
+}
+
 fn format_utc_seconds(value: OffsetDateTime) -> String {
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
@@ -3869,6 +3887,24 @@ where
         command: CreateSessionRuntimeBindingCommand,
         authorize: bool,
     ) -> KernelResult<SessionRuntimeBindingResult> {
+        let mut command = command;
+        command.provider_session_id =
+            normalize_optional_bounded(command.provider_session_id, "providerSessionId", 256)?;
+        command.provider_session_tree_id = normalize_optional_bounded(
+            command.provider_session_tree_id,
+            "providerSessionTreeId",
+            256,
+        )?;
+        command.provider_parent_session_id = normalize_optional_bounded(
+            command.provider_parent_session_id,
+            "providerParentSessionId",
+            256,
+        )?;
+        command.provider_forked_from_session_id = normalize_optional_bounded(
+            command.provider_forked_from_session_id,
+            "providerForkedFromSessionId",
+            256,
+        )?;
         validate_requested_at(&command.requested_at)?;
         let session = self.load_session_for_nested_route(
             command.tenant_id,
@@ -3953,22 +3989,6 @@ where
             ));
         }
         validate_optional_bounded(&command.runtime_location_id, "runtimeLocationId", 256)?;
-        validate_optional_bounded(&command.provider_session_id, "providerSessionId", 256)?;
-        validate_optional_bounded(
-            &command.provider_session_tree_id,
-            "providerSessionTreeId",
-            256,
-        )?;
-        validate_optional_bounded(
-            &command.provider_parent_session_id,
-            "providerParentSessionId",
-            256,
-        )?;
-        validate_optional_bounded(
-            &command.provider_forked_from_session_id,
-            "providerForkedFromSessionId",
-            256,
-        )?;
         let record = AgentSessionRuntimeBindingRecord {
             id: self.repository.next_id()?,
             tenant_id: command.tenant_id,
@@ -5670,13 +5690,12 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", AgentAuditPayload::SCHEMA_VERSION)
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "agent")
+        .with_context("aggregate_id", record.agent_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
         .with_context("tenant_id", record.tenant_id.to_string().as_str())
-        .with_context(
-            "organization_id",
-            record.organization_id.to_string().as_str(),
-        )
         .with_context(
             "organization_id",
             record.organization_id.to_string().as_str(),
@@ -5685,7 +5704,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.audit.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn deactivate_provider_bindings(
@@ -5744,7 +5763,7 @@ where
         )
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.project.audit.v1");
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_workspace_audit_event(
@@ -5786,7 +5805,7 @@ where
         )
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.workspace.audit.v1");
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_project_composition_slot_audit_event(
@@ -5821,7 +5840,7 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", "v1")
         .with_context("audit_action", action.action_code())
-        .with_context("aggregate_type", "project_composition_slot")
+        .with_context("aggregate_type", "composition_slot")
         .with_context("aggregate_id", record.slot_id.as_str())
         .with_context("project_id", record.project_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
@@ -5833,7 +5852,7 @@ where
         )
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.project-composition-slot.audit.v1");
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_turn_audit_event(
@@ -5881,7 +5900,7 @@ where
         )
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.chat-turn.audit.v1");
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_binding_audit_event(
@@ -5910,6 +5929,8 @@ where
             ProviderBindingAuditPayload::SCHEMA_VERSION,
         )
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "agent")
+        .with_context("aggregate_id", record.agent_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -5918,7 +5939,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.provider_binding.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_runtime_execution_audit_event(
@@ -5949,6 +5970,8 @@ where
             RuntimeExecutionAuditPayload::SCHEMA_VERSION,
         )
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "agent")
+        .with_context("aggregate_id", record.agent_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("agent_id", record.agent_id.as_str())
@@ -5956,7 +5979,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.runtime_execution.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_marketplace_audit_event(
@@ -5992,7 +6015,7 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", MarketplaceAuditPayload::SCHEMA_VERSION)
         .with_context("audit_action", input.action.action_code())
-        .with_context("aggregate_type", "marketplace")
+        .with_context("aggregate_type", input.item_kind)
         .with_context("aggregate_id", input.item_id)
         .with_context("subject_id", input.subject.subject_id.as_str())
         .with_context("subject_tenant_id", input.subject.tenant_id.as_str())
@@ -6004,7 +6027,7 @@ where
         .occurred_at(input.occurred_at)
         .with_payload_schema("sdkwork.agent.business.marketplace.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_session_audit_event(
@@ -6029,6 +6052,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", SessionAuditPayload::SCHEMA_VERSION)
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "session")
+        .with_context("aggregate_id", record.session_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("session_id", record.session_id.as_str())
@@ -6041,7 +6066,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.session.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_session_item_audit_event(
@@ -6066,6 +6091,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", SessionItemAuditPayload::SCHEMA_VERSION)
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "session_item")
+        .with_context("aggregate_id", record.item_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("item_id", record.item_id.as_str())
@@ -6078,7 +6105,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.session_item.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     fn emit_task_audit_event(
@@ -6103,6 +6130,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", TaskAuditPayload::SCHEMA_VERSION)
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "task")
+        .with_context("aggregate_id", record.task_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("task_id", record.task_id.as_str())
@@ -6115,7 +6144,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.task.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     // -----------------------------------------------------------------------
@@ -6624,6 +6653,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", "v1")
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "interaction")
+        .with_context("aggregate_id", record.interaction_id.as_str())
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("interaction_id", record.interaction_id.as_str())
@@ -6636,7 +6667,7 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.interaction.v1");
 
-        self.audit_sink.record(event)
+        self.record_audit_event(event)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6673,6 +6704,8 @@ where
         .with_redaction(KernelEventRedaction::TenantSensitive)
         .with_context("schema_version", "v1")
         .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", resource_kind)
+        .with_context("aggregate_id", resource_id)
         .with_context("subject_id", subject.subject_id.as_str())
         .with_context("subject_tenant_id", subject.tenant_id.as_str())
         .with_context("resource_kind", resource_kind)
@@ -6682,6 +6715,11 @@ where
         .with_context("organization_id", organization_id.to_string().as_str())
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.session-resource.v1");
+        self.record_audit_event(event)
+    }
+
+    fn record_audit_event(&self, event: KernelEvent) -> KernelResult<()> {
+        validate_audit_aggregate_context(&event)?;
         self.audit_sink.record(event)
     }
 }
@@ -6694,6 +6732,52 @@ where
 /// agent_id, subject_id, etc.).  Keeping the context in a dedicated
 /// sub-object preserves the integrity of the outer JSON payload.
 const AUDIT_CONTEXT_FIELD: &str = "_context";
+
+fn validate_audit_aggregate_context(event: &KernelEvent) -> KernelResult<()> {
+    let payload = serde_json::from_str::<serde_json::Value>(event.payload.as_str())
+        .map_err(|_| KernelError::validation("audit event payload must be valid JSON"))?;
+    let context = payload
+        .get(AUDIT_CONTEXT_FIELD)
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| KernelError::validation("audit event context is required"))?;
+    let aggregate_type = context
+        .get("aggregate_type")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| KernelError::validation("audit aggregate_type context is required"))?;
+    let aggregate_id = context
+        .get("aggregate_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| KernelError::validation("audit aggregate_id context is required"))?;
+    if !matches!(
+        aggregate_type,
+        "agent"
+            | "runtime_binding"
+            | "composition_slot"
+            | "workspace"
+            | "project"
+            | "project_member"
+            | "session"
+            | "turn"
+            | "session_item"
+            | "item_feedback"
+            | "interaction"
+            | "checkpoint"
+            | "task"
+            | "share_link"
+    ) {
+        return Err(KernelError::validation(format!(
+            "unsupported audit aggregate_type context: {aggregate_type}"
+        )));
+    }
+    if aggregate_id.len() > 128 {
+        return Err(KernelError::validation(
+            "audit aggregate_id context exceeds 128 bytes",
+        ));
+    }
+    Ok(())
+}
 
 /// Extension trait that attaches structured context metadata to a
 /// [`KernelEvent`] without corrupting its JSON payload.

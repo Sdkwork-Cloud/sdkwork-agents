@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "app": "agents",
-  "mode": "dry-run",
+  "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-27T16:08:23.417Z",
+  "startedAt": "2026-07-29T02:00:23.258Z",
   "families": [
     {
       "key": "open",
@@ -195,5 +195,5 @@
       ]
     }
   ],
-  "finishedAt": "2026-07-27T16:08:25.319Z"
+  "finishedAt": "2026-07-29T02:00:25.916Z"
 }

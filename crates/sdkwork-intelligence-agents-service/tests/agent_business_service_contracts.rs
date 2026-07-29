@@ -1111,7 +1111,7 @@ fn list_agent_audit_events_returns_events_for_agent() {
 #[test]
 fn execute_turn_persists_user_input_and_assistant_output() {
     let repository = InMemoryAgentRepository::new();
-    let (audit_sink, _events) = RecordingAuditSink::new();
+    let (audit_sink, audit_events) = RecordingAuditSink::new();
     let policy_provider = test_policy_provider();
     let service = AgentsService::new(repository, audit_sink, policy_provider);
 
@@ -1240,6 +1240,23 @@ fn execute_turn_persists_user_input_and_assistant_output() {
         .as_deref()
         .is_some_and(|content| !content.is_empty()));
     assert_eq!(result.session.item_count, 2);
+    {
+        let events = audit_events.lock().expect("recording audit mutex poisoned");
+        assert!(events.iter().any(|event| {
+            extract_event_context(event.payload.as_str(), "aggregate_type").as_deref()
+                == Some("turn")
+                && extract_event_context(event.payload.as_str(), "aggregate_id").as_deref()
+                    == Some(result.turn.turn_id.as_str())
+        }));
+        for item in [&result.user_input_item, &result.assistant_output_item] {
+            assert!(events.iter().any(|event| {
+                extract_event_context(event.payload.as_str(), "aggregate_type").as_deref()
+                    == Some("session_item")
+                    && extract_event_context(event.payload.as_str(), "aggregate_id").as_deref()
+                        == Some(item.item_id.as_str())
+            }));
+        }
+    }
     let completed_turn = service
         .get_turn(GetTurnCommand {
             tenant_id: 100_001,

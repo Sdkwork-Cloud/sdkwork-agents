@@ -52,12 +52,11 @@ impl GatewayTestEnvironment {
         environment.set("SDKWORK_KERNEL_METRICS_AUTH_MODE", "open");
         environment.set("SDKWORK_AGENT_RUNTIME_DATABASE_ENGINE", "sqlite");
         environment.set("SDKWORK_DATABASE_PATH", database_path.to_string_lossy());
-        let iam_database_url = format!(
-            "sqlite://{}?mode=rwc",
-            database_path.to_string_lossy().replace('\\', "/")
-        );
+        let iam_database_url = std::env::var("SDKWORK_DATABASE_TEST_POSTGRES_URL")
+            .expect("SDKWORK_DATABASE_TEST_POSTGRES_URL must be set for ignored IAM gateway tests");
         environment.set("SDKWORK_IAM_DATABASE_URL", iam_database_url);
-        environment.set("SDKWORK_IAM_DATABASE_ENGINE", "sqlite");
+        environment.set("SDKWORK_IAM_DATABASE_ENGINE", "postgres");
+        environment.set("SDKWORK_IAM_DATABASE_AUTO_MIGRATE", "false");
         environment.set("SDKWORK_IAM_DATABASE_MAX_CONNECTIONS", "1");
         environment.set("SDKWORK_IAM_DATABASE_MIN_CONNECTIONS", "0");
         environment.set("SDKWORK_IAM_DATABASE_ACQUIRE_TIMEOUT", "60");
@@ -102,6 +101,7 @@ impl Drop for GatewayTestEnvironment {
 }
 
 #[test]
+#[ignore = "requires SDKWORK_DATABASE_TEST_POSTGRES_URL with an initialized IAM PostgreSQL schema"]
 fn api_server_bootstrap_health_and_metrics_contracts() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("bootstrap-health");
@@ -144,6 +144,7 @@ fn api_server_bootstrap_health_and_metrics_contracts() {
 }
 
 #[test]
+#[ignore = "requires SDKWORK_DATABASE_TEST_POSTGRES_URL with an initialized IAM PostgreSQL schema"]
 fn gateway_assembly_composes_kernel_router() {
     let _guard = env_test_lock();
     let _environment = GatewayTestEnvironment::new("gateway-assembly");

@@ -24,7 +24,7 @@ fn open_route_manifest_covers_all_openapi_operations() {
                     entry.method, entry.path
                 );
             });
-        assert_eq!(matched.auth, RouteAuth::DualToken);
+        assert_eq!(matched.auth, RouteAuth::ApiKey);
         assert_eq!(matched.operation_id, entry.operation_id);
     }
 }

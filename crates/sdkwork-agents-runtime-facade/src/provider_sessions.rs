@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use sdkwork_agent_kernel::{AgentMessage, AgentSession};
+use sdkwork_agent_kernel::{AgentMessage, AgentSession, SessionKind};
 use sdkwork_agent_provider_claude_code::{
     discover_claude_code_provider_session_messages, discover_claude_code_provider_sessions,
 };
@@ -90,6 +90,16 @@ pub(crate) fn discover_provider_sessions(
     }
 
     let selected_cwd = resolve_selected_cwd(&candidates, selector)?;
+    Ok(select_top_level_provider_sessions(
+        candidates,
+        selected_cwd.as_deref(),
+    ))
+}
+
+fn select_top_level_provider_sessions(
+    candidates: Vec<ProviderSessionInventoryItem>,
+    selected_cwd: Option<&str>,
+) -> Vec<ProviderSessionInventoryItem> {
     let mut dedupe = HashSet::new();
     let mut selected = candidates
         .into_iter()
@@ -99,9 +109,17 @@ pub(crate) fn discover_provider_sessions(
                 .as_deref()
                 .map(normalize_provider_session_path)
                 .as_deref()
-                == selected_cwd.as_deref()
+                == selected_cwd
         })
-        .filter(|item| dedupe.insert((item.engine_key.clone(), item.session.session_id.clone())))
+        .filter(|item| {
+            item.session.kind != SessionKind::Subagent && item.session.parent_session_id.is_none()
+        })
+        .filter(|item| {
+            dedupe.insert((
+                item.provider_id.trim().to_string(),
+                item.session.session_id.trim().to_string(),
+            ))
+        })
         .collect::<Vec<_>>();
     selected.sort_by(|left, right| {
         right
@@ -113,7 +131,7 @@ pub(crate) fn discover_provider_sessions(
             .then_with(|| left.engine_key.cmp(&right.engine_key))
             .then_with(|| left.session.session_id.cmp(&right.session.session_id))
     });
-    Ok(selected)
+    selected
 }
 
 pub(crate) fn load_provider_session_messages(
@@ -253,6 +271,24 @@ mod tests {
             },
         );
         assert!(matches!(result, Err(RuntimeFacadeError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn top_level_inventory_deduplicates_provider_identity_and_excludes_subagents() {
+        let root = item("codex", "root-session", r"E:\Work\BirdCoder");
+        let mut duplicate = item("opencode", " root-session ", r"E:\Work\BirdCoder");
+        duplicate.provider_id = root.provider_id.clone();
+        let mut subagent = item("codex", "child-session", r"E:\Work\BirdCoder");
+        subagent.session.kind = SessionKind::Subagent;
+        subagent.session.parent_session_id = Some("root-session".to_string());
+
+        let selected = select_top_level_provider_sessions(
+            vec![root, duplicate, subagent],
+            Some("e:/work/birdcoder"),
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].session.session_id, "root-session");
     }
 
     #[test]

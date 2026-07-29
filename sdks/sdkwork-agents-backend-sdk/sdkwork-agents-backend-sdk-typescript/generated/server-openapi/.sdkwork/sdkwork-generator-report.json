@@ -12,35 +12,19 @@
   "mode": "apply",
   "hasChanges": true,
   "hasDestructiveChanges": false,
-  "changeFingerprint": "8b468b66a1889aad93639cd7fd17916de96cb369e9f37e08fac79173a7f0da65",
+  "changeFingerprint": "253af27a1f1a948928298d6110638b8b0d4c830753b1b0cb58522ceaa7a5911d",
   "changeImpact": {
     "schemaVersion": 1,
     "areas": [
       "api-surface",
-      "models",
       "runtime"
     ],
     "details": [
       {
         "area": "api-surface",
         "paths": [
+          "src/api/ai.ts",
           "src/http/client.ts"
-        ]
-      },
-      {
-        "area": "models",
-        "paths": [
-          "src/types/agent-composition-slot-record.ts",
-          "src/types/agent-interaction-record.ts",
-          "src/types/agent-item-drive-ref-record.ts",
-          "src/types/agent-record.ts",
-          "src/types/agent-session-checkpoint-record.ts",
-          "src/types/agent-session-item-record.ts",
-          "src/types/agent-session-record.ts",
-          "src/types/agent-session-runtime-binding-record.ts",
-          "src/types/agent-turn-record.ts",
-          "src/types/create-agent-session-runtime-binding-request.ts",
-          "src/types/update-agent-session-runtime-binding-request.ts"
         ]
       },
       {
@@ -51,7 +35,7 @@
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models, runtime. Verification is required."
+    "summary": "Detected impact areas: api-surface, runtime. Verification is required."
   },
   "executionDecision": {
     "schemaVersion": 1,
@@ -72,7 +56,7 @@
         "id": "verify-check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -90,7 +74,7 @@
         "id": "verify-build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -109,13 +93,13 @@
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models, runtime. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, runtime. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -133,7 +117,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -172,27 +156,17 @@
   "syncSummary": {
     "dryRun": false,
     "controlPlaneEnabled": true,
-    "writtenFiles": 12,
+    "writtenFiles": 2,
     "skippedScaffoldFiles": 2,
-    "skippedUnchangedGeneratedFiles": 99,
+    "skippedUnchangedGeneratedFiles": 109,
     "deletedGeneratedFiles": 0,
     "changeSummaryPath": ".sdkwork/sdkwork-generator-changes.json",
-    "changeFingerprint": "8b468b66a1889aad93639cd7fd17916de96cb369e9f37e08fac79173a7f0da65",
+    "changeFingerprint": "253af27a1f1a948928298d6110638b8b0d4c830753b1b0cb58522ceaa7a5911d",
     "changes": {
       "createdGeneratedFiles": [],
       "updatedGeneratedFiles": [
-        "src/http/client.ts",
-        "src/types/agent-composition-slot-record.ts",
-        "src/types/agent-interaction-record.ts",
-        "src/types/agent-item-drive-ref-record.ts",
-        "src/types/agent-record.ts",
-        "src/types/agent-session-checkpoint-record.ts",
-        "src/types/agent-session-item-record.ts",
-        "src/types/agent-session-record.ts",
-        "src/types/agent-session-runtime-binding-record.ts",
-        "src/types/agent-turn-record.ts",
-        "src/types/create-agent-session-runtime-binding-request.ts",
-        "src/types/update-agent-session-runtime-binding-request.ts"
+        "src/api/ai.ts",
+        "src/http/client.ts"
       ],
       "unchangedGeneratedFiles": [
         "bin/publish-core.mjs",
@@ -205,7 +179,6 @@
         "package.json",
         "README.md",
         "sdkwork-sdk.json",
-        "src/api/ai.ts",
         "src/api/base.ts",
         "src/api/index.ts",
         "src/api/paths.ts",
@@ -218,6 +191,7 @@
         "src/types/agent-audit-event.ts",
         "src/types/agent-composition-slot-kind.ts",
         "src/types/agent-composition-slot-list-response.ts",
+        "src/types/agent-composition-slot-record.ts",
         "src/types/agent-composition-slot-response.ts",
         "src/types/agent-composition-target-module.ts",
         "src/types/agent-implementation-kind.ts",
@@ -226,27 +200,34 @@
         "src/types/agent-interaction-kind.ts",
         "src/types/agent-interaction-list-response.ts",
         "src/types/agent-interaction-option.ts",
+        "src/types/agent-interaction-record.ts",
         "src/types/agent-interaction-resolution.ts",
         "src/types/agent-interaction-response.ts",
         "src/types/agent-interaction-status.ts",
+        "src/types/agent-item-drive-ref-record.ts",
         "src/types/agent-list-response.ts",
         "src/types/agent-management-profile.ts",
         "src/types/agent-provider-binding-list-response.ts",
         "src/types/agent-provider-binding-record.ts",
         "src/types/agent-provider-binding-response.ts",
+        "src/types/agent-record.ts",
         "src/types/agent-response.ts",
         "src/types/agent-session-checkpoint-list-response.ts",
+        "src/types/agent-session-checkpoint-record.ts",
         "src/types/agent-session-checkpoint-response.ts",
         "src/types/agent-session-checkpoint-status.ts",
         "src/types/agent-session-entry-surface.ts",
         "src/types/agent-session-item-kind.ts",
         "src/types/agent-session-item-list-response.ts",
+        "src/types/agent-session-item-record.ts",
         "src/types/agent-session-item-response.ts",
         "src/types/agent-session-item-status.ts",
         "src/types/agent-session-kind.ts",
         "src/types/agent-session-list-response.ts",
+        "src/types/agent-session-record.ts",
         "src/types/agent-session-response.ts",
         "src/types/agent-session-runtime-binding-list-response.ts",
+        "src/types/agent-session-runtime-binding-record.ts",
         "src/types/agent-session-runtime-binding-response.ts",
         "src/types/agent-session-runtime-binding-status.ts",
         "src/types/agent-session-status.ts",
@@ -257,6 +238,7 @@
         "src/types/agent-turn-execution-response.ts",
         "src/types/agent-turn-list-response.ts",
         "src/types/agent-turn-mode.ts",
+        "src/types/agent-turn-record.ts",
         "src/types/agent-turn-response.ts",
         "src/types/agent-turn-status.ts",
         "src/types/agent-turn-stream-event.ts",
@@ -277,6 +259,7 @@
         "src/types/create-agent-request.ts",
         "src/types/create-agent-session-checkpoint-request.ts",
         "src/types/create-agent-session-request.ts",
+        "src/types/create-agent-session-runtime-binding-request.ts",
         "src/types/create-agent-task-request.ts",
         "src/types/create-agent-turn-request.ts",
         "src/types/field-error.ts",
@@ -292,6 +275,7 @@
         "src/types/sdk-work-resource-data.ts",
         "src/types/update-agent-composition-slot-request.ts",
         "src/types/update-agent-request.ts",
+        "src/types/update-agent-session-runtime-binding-request.ts",
         "src/types/update-agent-status-request.ts",
         "tsconfig.json"
       ],
@@ -307,30 +291,14 @@
       "schemaVersion": 1,
       "areas": [
         "api-surface",
-        "models",
         "runtime"
       ],
       "details": [
         {
           "area": "api-surface",
           "paths": [
+            "src/api/ai.ts",
             "src/http/client.ts"
-          ]
-        },
-        {
-          "area": "models",
-          "paths": [
-            "src/types/agent-composition-slot-record.ts",
-            "src/types/agent-interaction-record.ts",
-            "src/types/agent-item-drive-ref-record.ts",
-            "src/types/agent-record.ts",
-            "src/types/agent-session-checkpoint-record.ts",
-            "src/types/agent-session-item-record.ts",
-            "src/types/agent-session-record.ts",
-            "src/types/agent-session-runtime-binding-record.ts",
-            "src/types/agent-turn-record.ts",
-            "src/types/create-agent-session-runtime-binding-request.ts",
-            "src/types/update-agent-session-runtime-binding-request.ts"
           ]
         },
         {
@@ -341,18 +309,18 @@
         }
       ],
       "requiresVerification": true,
-      "summary": "Detected impact areas: api-surface, models, runtime. Verification is required."
+      "summary": "Detected impact areas: api-surface, runtime. Verification is required."
     },
     "verificationPlan": {
       "shouldRun": true,
       "runPhase": "now",
-      "summary": "Detected impact areas: api-surface, models, runtime. Verification is required. Run the required verification commands now against the generated SDK output.",
+      "summary": "Detected impact areas: api-surface, runtime. Verification is required. Run the required verification commands now against the generated SDK output.",
       "steps": [
         {
           "id": "check",
           "title": "Unified package check",
           "required": true,
-          "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime.",
+          "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime.",
           "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
           "command": "node",
           "args": [
@@ -370,7 +338,7 @@
           "id": "build",
           "title": "Unified package build",
           "required": true,
-          "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime.",
+          "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime.",
           "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
           "command": "node",
           "args": [

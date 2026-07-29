@@ -173,7 +173,7 @@ project and agent filters. Consumers must start each refresh cycle at the null
 cursor and may then follow `nextCursor`; they must not retain a cursor as a
 change-feed watermark. Moving heads converge on the next null-cursor refresh.
 
-Native runtime observations are query-time evidence and are never persisted as
+Provider Session runtime observations are query-time evidence and are never persisted as
 fake Turns, Interactions or shadow-table records. Only `fresh` provider status,
 event, lock or process evidence with both `observedAt` and a future bounded
 `freshUntil` may change the effective phase. `stale`,
@@ -183,7 +183,7 @@ history inventory and file modification timestamps are not live activity.
 Deleted, archived or closed Sessions, persisted pending Interactions, a latest
 failed runtime binding when no active current binding exists, and leased
 requested/running Turns outrank provider evidence. For an active Session otherwise projected as `ready`, `idle`,
-`completed` or `unknown`, fresh native `working`, `waiting` or `failed` evidence
+`completed` or `unknown`, fresh provider `working`, `waiting` or `failed` evidence
 overrides the settled phase so another application's live execution remains
 visible.
 

@@ -598,6 +598,11 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_runtime_binding (
     CONSTRAINT ck_ai_agent_session_runtime_binding_provider CHECK (
         provider_id ~ '^provider\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     ),
+    CONSTRAINT ck_ai_agent_session_runtime_binding_provider_session CHECK (
+        provider_session_id IS NULL OR (
+            provider_session_id <> '' AND provider_session_id = BTRIM(provider_session_id)
+        )
+    ),
     CONSTRAINT ck_ai_agent_session_runtime_binding_status CHECK (status IN (0, 1, 2, 3)),
     CONSTRAINT ck_ai_agent_session_runtime_binding_current CHECK (
         (is_current = TRUE AND status = 0 AND deactivated_at IS NULL)
@@ -616,7 +621,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_current
 CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_provider_session
     ON ai_agent_session_runtime_binding (
         tenant_id, organization_id, provider_id, provider_session_id
-    ) WHERE provider_session_id IS NOT NULL AND status <> 3;
+    ) WHERE provider_session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_agent_session_runtime_binding_list
     ON ai_agent_session_runtime_binding (
         tenant_id, organization_id, session_id, is_current DESC, updated_at DESC, id DESC

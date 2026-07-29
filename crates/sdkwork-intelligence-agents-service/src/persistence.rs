@@ -1806,9 +1806,10 @@ impl AgentAuditEventRow {
                 .and_then(|value| value.parse::<u64>().ok());
         let context_agent_id = extract_event_context(event.payload.as_str(), "agent_id");
         let aggregate_type = extract_event_context(event.payload.as_str(), "aggregate_type")
-            .unwrap_or_else(|| "agent".to_string());
+            .filter(|value| !is_blank(Some(value.as_str())))
+            .ok_or_else(|| KernelError::validation("audit aggregate_type context is required"))?;
         let aggregate_id = extract_event_context(event.payload.as_str(), "aggregate_id")
-            .or_else(|| context_agent_id.clone())
+            .filter(|value| !is_blank(Some(value.as_str())))
             .ok_or_else(|| KernelError::validation("audit aggregate_id context is required"))?;
         if aggregate_type == "agent" && context_agent_id.is_none() {
             return Err(KernelError::validation(
@@ -8286,6 +8287,8 @@ mod tests {
             KernelEventSeverity::Info,
             serde_json::json!({
                 "_context": {
+                    "aggregate_type": "agent",
+                    "aggregate_id": agent_id,
                     "tenant_id": tenant_id.to_string(),
                     "agent_id": agent_id,
                     "agent_internal_id": "4096123456789012346",
@@ -8371,6 +8374,33 @@ mod tests {
 
         assert_eq!(row.agent_id.as_deref(), Some("agent.birdcoder"));
         assert_eq!(row.agent_internal_id, Some(300));
+    }
+
+    #[test]
+    fn audit_event_rejects_implicit_agent_aggregate_fallback() {
+        let event = KernelEvent::new(
+            "agent_audit_agent.birdcoder_1",
+            "agent.business.updated",
+            KernelEventSeverity::Info,
+            serde_json::json!({
+                "_context": {
+                    "tenant_id": "100",
+                    "agent_id": "agent.birdcoder",
+                    "agent_internal_id": "300",
+                    "subject_id": "700"
+                }
+            })
+            .to_string(),
+        )
+        .from_source(KernelEventSource::Runtime)
+        .occurred_at("2026-07-28T00:00:00Z");
+
+        let error = AgentAuditEventRow::from_kernel_event(&event, 1)
+            .expect_err("audit aggregates must always be explicit");
+
+        assert!(error
+            .to_string()
+            .contains("audit aggregate_type context is required"));
     }
 
     #[test]

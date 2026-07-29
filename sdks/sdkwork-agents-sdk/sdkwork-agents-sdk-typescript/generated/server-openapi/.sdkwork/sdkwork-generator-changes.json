@@ -9,10 +9,11 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-sdk"
   },
-  "changeFingerprint": "226884bdc50be2868fb6f50978e4e1ce01deb3115439a82bbc25b1e8d608f0d4",
+  "changeFingerprint": "2c0dd60328142b45ef99510003de83923f7a8ebff4b383afac776b93bab199dd",
   "changes": {
     "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
+      "src/api/ai.ts",
       "src/http/client.ts"
     ],
     "unchangedGeneratedFiles": [
@@ -26,7 +27,6 @@
       "package.json",
       "README.md",
       "sdkwork-sdk.json",
-      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
@@ -143,6 +143,7 @@
       {
         "area": "api-surface",
         "paths": [
+          "src/api/ai.ts",
           "src/http/client.ts"
         ]
       },
