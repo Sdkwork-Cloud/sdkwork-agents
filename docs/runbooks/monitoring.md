@@ -22,6 +22,7 @@ publicly without platform authentication.
 | HTTP request count/latency | surface, route template, method, status | SLO and regression detection |
 | Turn lifecycle count/latency | mode, status, provider class | execution health |
 | Provider failures/timeouts | provider class, normalized error | dependency health |
+| Project Session synchronization | provider class, outcome, normalized issue code | explicit import health and partial-result rate |
 | Database pool | total, active, idle, wait, timeout | saturation and leak detection |
 | Interaction backlog | kind, age bucket | blocked human workflows |
 | Outbox backlog | status, age bucket, attempt bucket | delivery reliability |
@@ -38,6 +39,7 @@ claim tokens as metric labels.
 | Auth rejection spike | abnormal 401/403 by surface | verify credential provider and gateway classification |
 | Database saturation | high pool utilization or wait timeout | stop rollout; inspect slow queries and pool limits |
 | Turn timeout spike | runtime timeout above baseline | inspect provider health and binding rollout |
+| Synchronization failure spike | failed outcome or elevated bounded issue counts | inspect runtime binding, provider collector, server-derived working directory and provider health by trace |
 | Interaction age | pending age exceeds product SLO | verify resolver clients and claim flow |
 | Outbox backlog | oldest pending age exceeds delivery SLO | inspect dispatcher and retry policy |
 | No traffic | expected traffic absent | ingress, discovery, base URL and release routing |
@@ -48,6 +50,15 @@ Structured records include server-owned `traceId`, route template, method,
 surface, normalized status, duration and bounded resource type/id. Sensitive
 content is redacted. Use the response `traceId` to correlate client, gateway,
 service, database and provider spans.
+
+For `agents.projectSessions.synchronize`, record bounded aggregate issue codes
+and counts, never provider payloads, local paths, Session content, or client
+device paths. A `50001` response indicates that the command failed before a
+typed partial result could be returned. Correlate its `traceId` across runtime
+binding resolution, provider collector execution, server-derived working
+directory validation, persistence, and gateway spans. Keep ordinary
+Project/Session inventory reads independent so operators can distinguish an
+import failure from a list availability incident.
 
 Audit events are business evidence and are not replaced by application logs.
 

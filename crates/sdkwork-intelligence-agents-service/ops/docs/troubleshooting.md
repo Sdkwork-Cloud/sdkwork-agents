@@ -27,7 +27,7 @@ kubectl logs -l app=sdkwork-intelligence-agents -n sdkwork | grep "request_id=ab
 
 ```bash
 # Connect to database
-psql $SDKWORK_AGENTS_DATABASE_URL
+psql $SDKWORK_DATABASE_URL
 
 # Check table sizes
 SELECT 
@@ -125,7 +125,7 @@ relation "ai_agent" does not exist
 **Resolution**:
 ```bash
 # Run schema migration
-psql $SDKWORK_AGENTS_DATABASE_URL -f database/ddl/baseline/postgres/0001_agents_baseline.sql
+psql $SDKWORK_DATABASE_URL -f database/ddl/baseline/postgres/0001_agents_baseline.sql
 ```
 
 ### 2. High Error Rate

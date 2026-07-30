@@ -14,8 +14,8 @@ use crate::ports::{
     InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
     ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
     ResourceUserStateListQuery, SessionActivitySummaryListQuery, SessionCheckpointListQuery,
-    SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery,
-    TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
+    SessionItemListQuery, SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery,
+    TaskListQuery, TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
 };
 use crate::project::{
     project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus,
@@ -345,7 +345,7 @@ type SessionActivityIndexKey = (u64, u64, u64, String, u64);
 type SessionItemPrimaryKey = (u64, u64, String, String);
 type ItemFeedbackPrimaryKey = (u64, u64, String, u64);
 type ItemDriveRefPrimaryKey = (u64, u64, String, String, String);
-type SessionItemIndexKey = (u64, u64, String, u64, String);
+type SessionItemIndexKey = (u64, u64, String, u64, u64);
 type TurnPrimaryKey = (u64, u64, String);
 type TurnIdempotencyKey = (u64, u64, u64, String);
 type TurnIndexKey = (u64, u64, String, Reverse<String>, Reverse<u64>);
@@ -863,7 +863,7 @@ fn session_item_index_key(record: &AgentSessionItemRecord) -> SessionItemIndexKe
         record.organization_id,
         record.session_id.clone(),
         record.sequence,
-        record.item_id.clone(),
+        record.id,
     )
 }
 
@@ -2554,13 +2554,72 @@ impl AgentRepository for InMemoryAgentRepository {
     ) -> KernelResult<Vec<AgentSessionItemRecord>> {
         let items = self.items.recovering_read();
         let index = self.session_item_index.recovering_read();
+        let scope_start = (
+            query.tenant_id,
+            query.organization_id,
+            query.session_id.clone(),
+            0,
+            0,
+        );
+        let scope_end = (
+            query.tenant_id,
+            query.organization_id,
+            query.session_id.clone(),
+            u64::MAX,
+            u64::MAX,
+        );
+
+        if query.cursor_mode {
+            use std::ops::Bound::{Excluded, Included};
+
+            let boundary = query.cursor.as_ref().map(|cursor| {
+                (
+                    query.tenant_id,
+                    query.organization_id,
+                    query.session_id.clone(),
+                    cursor.sequence,
+                    cursor.item_internal_id,
+                )
+            });
+            let records = match query.sort {
+                SessionItemListSort::SequenceAsc => {
+                    let start = boundary.as_ref().map_or_else(
+                        || Included(scope_start.clone()),
+                        |value| Excluded(value.clone()),
+                    );
+                    index
+                        .range((start, Included(scope_end.clone())))
+                        .filter_map(|(_, primary_key)| items.get(primary_key))
+                        .filter(|record| message_matches_list_query(record, query))
+                        .take(query.repository_page_size())
+                        .cloned()
+                        .collect()
+                }
+                SessionItemListSort::SequenceDesc => {
+                    let end = boundary.as_ref().map_or_else(
+                        || Included(scope_end.clone()),
+                        |value| Excluded(value.clone()),
+                    );
+                    index
+                        .range((Included(scope_start.clone()), end))
+                        .rev()
+                        .filter_map(|(_, primary_key)| items.get(primary_key))
+                        .filter(|record| message_matches_list_query(record, query))
+                        .take(query.repository_page_size())
+                        .cloned()
+                        .collect()
+                }
+                SessionItemListSort::RecentContextDesc => {
+                    return Err(KernelError::validation(
+                        "recent context pagination does not accept a cursor",
+                    ));
+                }
+            };
+            return Ok(records);
+        }
+
         let iter = index
-            .iter()
-            .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
-                *tenant_id == query.tenant_id
-                    && *organization_id == query.organization_id
-                    && session_id == &query.session_id
-            })
+            .range(scope_start..=scope_end)
             .filter_map(|(_, primary_key)| items.get(primary_key))
             .filter(|record| message_matches_list_query(record, query))
             .cloned();
@@ -2570,14 +2629,23 @@ impl AgentRepository for InMemoryAgentRepository {
     fn count_session_items(&self, query: &SessionItemListQuery) -> KernelResult<u64> {
         let items = self.items.recovering_read();
         let index = self.session_item_index.recovering_read();
+        let scope_start = (
+            query.tenant_id,
+            query.organization_id,
+            query.session_id.clone(),
+            0,
+            0,
+        );
+        let scope_end = (
+            query.tenant_id,
+            query.organization_id,
+            query.session_id.clone(),
+            u64::MAX,
+            u64::MAX,
+        );
         Ok(count_iterator(
             index
-                .iter()
-                .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
-                    *tenant_id == query.tenant_id
-                        && *organization_id == query.organization_id
-                        && session_id == &query.session_id
-                })
+                .range(scope_start..=scope_end)
                 .filter_map(|(_, primary_key)| items.get(primary_key))
                 .filter(|record| message_matches_list_query(record, query)),
         ))
@@ -3889,6 +3957,11 @@ fn project_matches_list_query(record: &AgentProjectRecord, query: &ProjectListQu
             return false;
         }
     }
+    if let Some(exact_name) = query.exact_name.as_deref() {
+        if !project_names_equal(&record.name, exact_name) {
+            return false;
+        }
+    }
     if let Some(status) = query.status {
         if record.status != status {
             return false;
@@ -4746,6 +4819,86 @@ mod tests {
         let provider = DenyAllPolicyProvider::default();
         assert!(!provider.reason.is_empty());
         assert!(!provider.provider_id.is_empty());
+    }
+
+    fn cursor_session_item(id: u64, sequence: u64) -> AgentSessionItemRecord {
+        AgentSessionItemRecord {
+            id,
+            item_id: format!("item.cursor.{id}"),
+            tenant_id: 10,
+            organization_id: 20,
+            session_id: "session.cursor".to_string(),
+            kind: crate::domain::AgentSessionItemKind::AssistantOutput,
+            content: Some(format!("message {sequence}")),
+            content_type: "text/plain".to_string(),
+            status: AgentSessionItemStatus::Completed,
+            sequence,
+            input_tokens: 0,
+            output_tokens: 0,
+            model_id: None,
+            provider_id: None,
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            parent_item_id: None,
+            turn_id: None,
+            created_by: 30,
+            version: 0,
+            created_at: "2026-07-30T09:00:00Z".to_string(),
+            updated_at: "2026-07-30T09:00:00Z".to_string(),
+            completed_at: Some("2026-07-30T09:00:00Z".to_string()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
+        }
+    }
+
+    fn insert_cursor_session_item(
+        repository: &InMemoryAgentRepository,
+        record: AgentSessionItemRecord,
+    ) {
+        let primary_key = session_item_primary_key(&record);
+        repository
+            .session_item_index
+            .recovering_write()
+            .insert(session_item_index_key(&record), primary_key.clone());
+        repository
+            .items
+            .recovering_write()
+            .insert(primary_key, record);
+    }
+
+    #[test]
+    fn session_item_cursor_keyset_is_stable_when_new_head_items_arrive() {
+        let repository = InMemoryAgentRepository::new();
+        for sequence in 1..=5 {
+            insert_cursor_session_item(&repository, cursor_session_item(100 + sequence, sequence));
+        }
+        let first_query = SessionItemListQuery::for_session(10, 20, "session.cursor")
+            .with_sort(SessionItemListSort::SequenceDesc)
+            .with_cursor_page(2, None);
+        let first = repository.list_session_items(&first_query).unwrap();
+        assert_eq!(
+            first.iter().map(|item| item.sequence).collect::<Vec<_>>(),
+            vec![5, 4, 3]
+        );
+
+        let boundary = &first[1];
+        let cursor = crate::session_item_cursor::SessionItemCursor {
+            sequence: boundary.sequence,
+            item_internal_id: boundary.id,
+            scope_fingerprint: first_query.cursor_scope_fingerprint(),
+        };
+        insert_cursor_session_item(&repository, cursor_session_item(106, 6));
+
+        let second = repository
+            .list_session_items(&first_query.with_cursor_page(2, Some(cursor)))
+            .unwrap();
+        assert_eq!(
+            second.iter().map(|item| item.sequence).collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
     }
 
     fn activity_session(id: u64, session_id: &str, updated_at: &str) -> AgentSessionRecord {

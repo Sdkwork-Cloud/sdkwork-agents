@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "b66c2d671b6ce7ee5a536061f7a4d734f5864bbedc363a6df46f35b5bfca3311"
+      "sha256": "9c98ebae14f85384497dd2f641a9451dcda0c6d250dd63761115806f19de5cd9"
     },
     {
       "path": "src/api/base.ts",
@@ -528,7 +528,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "20821c5d95a5afd9922c19239b917db47642eeefb79aa675fce720802a153a1b"
+      "sha256": "ffe49a155f9bfb8fd78e4202a434ef868923b5d3b9d5bf17ead5a768ec4af6df"
     },
     {
       "path": "src/types/int64-string.ts",
@@ -555,12 +555,16 @@
       "sha256": "ee5d3d04cec827933250794cf8051230dab439ace3eed0e82ce4fe7d38797880"
     },
     {
+      "path": "src/types/project-session-synchronization-issue.ts",
+      "sha256": "bce6ff17af1ea11bcf72944c20b6ef4e5145ddea460b1be23348a2f8fd90d82a"
+    },
+    {
       "path": "src/types/project-session-synchronization-response.ts",
       "sha256": "b100d532dc76cb46c2bf0ca407d9d47d77eaf973b8e8bd4ad63e69faea2ded5f"
     },
     {
       "path": "src/types/project-session-synchronization-result.ts",
-      "sha256": "8904c147f46949bb734cb87ff48eef253e92807e9fd11297a9f64eb95f992c39"
+      "sha256": "46e78bf10411b29294cb44ba1697720daebe1d8549ce1c93163bf0f0c9c5437a"
     },
     {
       "path": "src/types/restore-agent-request.ts",

@@ -10,7 +10,7 @@ pub async fn build_router() -> anyhow::Result<Router> {
 }
 
 pub async fn run_agents_app_database_migrate_only() -> Result<(), String> {
-    std::env::set_var("SDKWORK_AGENTS_DATABASE_AUTO_MIGRATE", "true");
+    std::env::set_var("SDKWORK_DATABASE_AUTO_MIGRATE", "true");
     sdkwork_agents_database_host::bootstrap_agents_database_from_env().await?;
     tracing::info!("sdkwork-agents application database migration completed");
     Ok(())

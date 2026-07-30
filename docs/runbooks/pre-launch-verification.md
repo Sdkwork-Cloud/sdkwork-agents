@@ -31,9 +31,12 @@ pnpm check:docs
 
 Pass criteria:
 
-- operation counts are App 81, Backend 48 and Open 47;
+- operation counts are App 82, Backend 48 and Open 47;
 - no client-writable tenant, organization or user selector exists;
 - all list operations use store-level pagination;
+- offset and cursor list declarations match their `PageInfo` mode;
+- Session Item pagination uses opaque keyset cursors bound to owner, Session,
+  filters, and sort order;
 - Session, Turn, SessionItem and Interaction naming is consistent;
 - IM reverse dependencies and IM-owned persistence are absent.
 
@@ -118,8 +121,13 @@ Deploy the exact candidate artifact, then execute
 - health and metrics;
 - App/Backend dual-token enforcement and Open API-key enforcement;
 - create/retrieve Session;
+- Workspace-scoped Project search, exact-name lookup, Project Session listing,
+  and exact Project Session retrieval;
+- explicit import-only Project Session synchronization with partial-result
+  counts and bounded issue accounting;
 - execute/retrieve/cancel Turn;
-- ordered Session Item pagination;
+- newest-first opaque-cursor Session Item retrieval with chronological client
+  presentation and earlier-page continuation;
 - Interaction claim and resolution;
 - restart persistence and idempotent retry;
 - no secret or item content in logs/metrics.

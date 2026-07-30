@@ -19,7 +19,7 @@ const surfaces = [
     name: 'App API',
     key: 'app',
     prefix: '/app/v3/api',
-    expectedCount: 81,
+    expectedCount: 82,
     auth: '`Authorization` and `Access-Token` through the global app session',
     sdk: '`@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk`',
     source:
@@ -124,7 +124,7 @@ function renderDocument(apiSurfaces) {
     '- Tenant, organization and user scope come from trusted request context; callers do not send scope selectors.',
     '- JSON success uses `SdkWorkApiResponse` with numeric `code: 0`, typed `data` and server-owned `traceId`.',
     '- Errors use RFC 9457 `application/problem+json` with numeric `code` and `traceId`.',
-    '- List operations use `page` and `page_size`; `page_size` is at most 200 and results include `PageInfo`.',
+    '- Offset lists use `page` and `page_size`; cursor lists use an opaque `cursor` and `page_size`. `page_size` is at most 200 and list results include mode-specific `PageInfo`.',
     '- Create Session and Turn commands are idempotent through `idempotencyKey`, `payloadHash` and `requestedAt`.',
     '- Optimistic mutations use `expectedVersion`; delete success is HTTP 204 without a JSON body.',
     '- Turn SSE uses typed `AgentTurnStreamEvent` values. A terminal `completion` event contains `AgentTurnExecutionResponse`.',

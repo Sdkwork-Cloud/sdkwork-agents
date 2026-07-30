@@ -80,7 +80,7 @@
       "SDKWORK_APP_ROOT",
       "SDKWORK_AGENTS_APP_ROOT",
       "SDKWORK_IAM_APP_ROOT",
-      "SDKWORK_IAM_DATABASE_URL"
+      "SDKWORK_DATABASE_URL"
     ]
   },
   "integration": {

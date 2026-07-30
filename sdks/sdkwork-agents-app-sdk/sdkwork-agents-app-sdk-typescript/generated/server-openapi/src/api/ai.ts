@@ -318,7 +318,7 @@ export class AiAgentsTurnsApi {
 }
 
 export interface AiAgentsSessionItemsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   kind?: AgentSessionItemKind;
   status?: AgentSessionItemStatus;
@@ -336,7 +336,7 @@ export class AiAgentsSessionItemsApi {
 /** List ordered items for one agent session */
   async list(agentId: string, sessionId: string, params?: AiAgentsSessionItemsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionItemRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'kind', value: params?.kind, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
@@ -536,6 +536,11 @@ export class AiAgentsProjectSessionsApi {
   async synchronize(projectId: string, requestOptions?: ApiRequestOptions): Promise<ProjectSessionSynchronizationResult> {
     return this.client.request<ProjectSessionSynchronizationResult>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/sessions/synchronize`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, sdkworkUnwrapKind: 'item' });
   }
+
+/** Retrieve one project-scoped agent Session */
+  async retrieve(projectId: string, sessionId: string, requestOptions?: ApiRequestOptions): Promise<AgentSessionRecord> {
+    return this.client.request<AgentSessionRecord>(appApiPath(`/ai/projects/${serializePathParameter(projectId, { name: 'projectId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
 }
 
 export interface AiAgentsWorkspaceSessionsListParams {
@@ -624,6 +629,7 @@ export interface AiAgentsProjectsListParams {
   pageSize?: number;
   workspaceId?: string;
   q?: string;
+  nameExact?: string;
   status?: AgentProjectStatus;
   includeDeleted?: boolean;
 }
@@ -643,6 +649,7 @@ export class AiAgentsProjectsApi {
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'workspaceId', value: params?.workspaceId, style: 'form', explode: true, allowReserved: false },
       { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
+      { name: 'name_exact', value: params?.nameExact, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'include_deleted', value: params?.includeDeleted, style: 'form', explode: true, allowReserved: false },
     ]);

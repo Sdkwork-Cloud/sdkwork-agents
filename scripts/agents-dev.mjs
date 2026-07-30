@@ -119,8 +119,8 @@ function ensureBuildCriticalSources() {
 }
 
 function describeDatabaseProfile() {
-  if (runtimeEnv.SDKWORK_AGENTS_DATABASE_ENGINE) return runtimeEnv.SDKWORK_AGENTS_DATABASE_ENGINE;
-  return runtimeEnv.SDKWORK_AGENTS_DATABASE_URL?.startsWith('sqlite:') ? 'sqlite' : 'operator-configured';
+  if (runtimeEnv.SDKWORK_DATABASE_ENGINE) return runtimeEnv.SDKWORK_DATABASE_ENGINE;
+  return runtimeEnv.SDKWORK_DATABASE_URL?.startsWith('sqlite:') ? 'sqlite' : 'operator-configured';
 }
 
 function reportResolvedProfile() {

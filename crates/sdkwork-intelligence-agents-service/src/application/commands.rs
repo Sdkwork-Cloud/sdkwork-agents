@@ -568,6 +568,17 @@ pub struct GetSessionCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetProjectSessionCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub project_id: String,
+    pub session_id: String,
+    /// When set, the session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListSessionsCommand {
     pub query: SessionListQuery,
     pub requested_by: PolicySubject,

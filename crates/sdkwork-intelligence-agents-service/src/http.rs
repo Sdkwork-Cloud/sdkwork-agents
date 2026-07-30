@@ -12,12 +12,12 @@ use crate::application::{
     CreateProjectCommand, CreateProjectCompositionSlotCommand, CreateSessionCommand,
     CreateTurnCommand, CreateWorkspaceCommand, DeleteProjectCompositionSlotCommand,
     DeleteSessionCommand, EnsureDefaultWorkspaceCommand, GetInteractionCommand, GetProjectCommand,
-    GetProjectCompositionSlotCommand, GetSessionCheckpointCommand, GetSessionCommand,
-    GetSessionItemCommand, GetSessionRuntimeBindingCommand, GetSessionUserStateCommand,
-    GetTaskCommand, GetTurnByIdempotencyCommand, GetTurnCommand, GetWorkspaceCommand,
-    ImportProjectCommand, ListAgentAuditEventsCommand, ListItemFeedbackCommand,
-    ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand, ListProjectsCommand,
-    ListSessionActivitySummariesCommand, ListSessionCheckpointsCommand,
+    GetProjectCompositionSlotCommand, GetProjectSessionCommand, GetSessionCheckpointCommand,
+    GetSessionCommand, GetSessionItemCommand, GetSessionRuntimeBindingCommand,
+    GetSessionUserStateCommand, GetTaskCommand, GetTurnByIdempotencyCommand, GetTurnCommand,
+    GetWorkspaceCommand, ImportProjectCommand, ListAgentAuditEventsCommand,
+    ListItemFeedbackCommand, ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand,
+    ListProjectsCommand, ListSessionActivitySummariesCommand, ListSessionCheckpointsCommand,
     ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand, ListTurnsCommand,
     ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
     UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
@@ -70,6 +70,7 @@ use crate::session_activity::{
     decode_session_activity_cursor, SessionActivitySummaryRecord,
     SessionProviderActivityObservation,
 };
+use crate::session_item_cursor::decode_session_item_cursor;
 use crate::turn_runtime::{ContractTurnExecutor, TurnExecutor};
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
@@ -1596,6 +1597,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             post(app_synchronize_project_sessions),
         )
         .route(
+            "/app/v3/api/ai/projects/{projectId}/sessions/{sessionId}",
+            get(app_get_project_session),
+        )
+        .route(
             "/app/v3/api/ai/session_activity_summaries",
             get(app_list_session_activity_summaries),
         )
@@ -2127,6 +2132,7 @@ struct AppListProjectsQueryParams {
     #[serde(rename = "workspaceId", alias = "workspace_id")]
     workspace_id: Option<String>,
     q: Option<String>,
+    name_exact: Option<String>,
     status: Option<String>,
     include_deleted: Option<bool>,
     page: Option<usize>,
@@ -2430,8 +2436,19 @@ struct ListProjectSessionsQueryParams {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectSessionSynchronizationResultDto {
+    failed_session_count: String,
+    issues: Vec<ProjectSessionSynchronizationIssueDto>,
     project_id: String,
+    skipped_session_count: String,
     synchronized_session_count: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectSessionSynchronizationIssueDto {
+    code: String,
+    count: String,
+    disposition: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2503,7 +2520,7 @@ pub(crate) struct AppListItemsQueryParams {
     pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) sort: Option<String>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -3059,6 +3076,9 @@ impl ApiProblem {
             }
             KernelErrorKind::PermissionRequired | KernelErrorKind::PolicyDenied => {
                 Self::permission(error.safe_message())
+            }
+            KernelErrorKind::ProviderUnavailable | KernelErrorKind::ProviderError => {
+                Self::dependency_unavailable(error.safe_message())
             }
             _ => Self::internal(error.safe_message()),
         }
@@ -4393,8 +4413,19 @@ async fn app_list_projects(
                     .with_page_size(page_size)
                     .with_page(page),
             );
+        if query.name_exact.is_some() && query.workspace_id.is_none() {
+            return Err(ApiProblem::validation(
+                "workspaceId is required when name_exact is provided",
+            ));
+        }
         if let Some(workspace_id) = query.workspace_id {
             project_query = project_query.for_workspace(workspace_id);
+        }
+        if let Some(exact_name) = query.name_exact {
+            if exact_name.trim().len() > 255 {
+                return Err(ApiProblem::validation("name_exact exceeds 255 bytes"));
+            }
+            project_query = project_query.with_exact_name(exact_name);
         }
         if let Some(search) = query.q {
             project_query = project_query.with_search(search);
@@ -5312,11 +5343,9 @@ async fn app_synchronize_project_sessions(
                     )
                 })
                 .transpose()
-                .map_err(|error| KernelError::Internal {
-                    message: error.to_string(),
-                })?
+                .map_err(crate::provider_session_sync::runtime_facade_error)?
                 .flatten();
-            let synchronized_session_count = if exact_cwd.is_some() {
+            let synchronization_result = if exact_cwd.is_some() {
                 crate::provider_session_sync::synchronize_project_provider_sessions_at_cwd(
                     Arc::clone(&service),
                     &project,
@@ -5331,8 +5360,21 @@ async fn app_synchronize_project_sessions(
                 )?
             };
             Ok(ProjectSessionSynchronizationResultDto {
+                failed_session_count: synchronization_result.failed_session_count.to_string(),
+                issues: synchronization_result
+                    .issues
+                    .into_iter()
+                    .map(|issue| ProjectSessionSynchronizationIssueDto {
+                        code: issue.code.to_string(),
+                        count: issue.count.to_string(),
+                        disposition: issue.disposition.as_str().to_string(),
+                    })
+                    .collect(),
                 project_id: project.project_id,
-                synchronized_session_count: synchronized_session_count.to_string(),
+                skipped_session_count: synchronization_result.skipped_session_count.to_string(),
+                synchronized_session_count: synchronization_result
+                    .synchronized_session_count
+                    .to_string(),
             })
         })
         .await?;
@@ -5341,11 +5383,48 @@ async fn app_synchronize_project_sessions(
             trace_id = %trace_id,
             operation_id = "agents.projectSessions.synchronize",
             project_id = %synchronization.project_id,
+            failed_session_count = %synchronization.failed_session_count,
+            issue_count = synchronization.issues.len(),
+            skipped_session_count = %synchronization.skipped_session_count,
             synchronized_session_count = %synchronization.synchronized_session_count,
             "provider session inventory synchronization completed"
         );
         Ok(ResourceData {
             item: synchronization,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_get_project_session(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentSessionRecordDto>> = async {
+        let Path((project_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id = scope
+            .owner_scope()?
+            .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let record = with_service(&state, move |service| {
+            service.get_project_session(GetProjectSessionCommand {
+                tenant_id,
+                organization_id,
+                project_id,
+                session_id,
+                owner_scope: Some(owner_user_id),
+                requested_by: scope.subject,
+            })
+        })
+        .await?;
+        Ok(ResourceData {
+            item: AgentSessionRecordDto::from_record(&record),
         })
     }
     .await;
@@ -6379,7 +6458,14 @@ async fn app_list_session_items(
         let provider_session_sync_agent_id = agent_id.clone();
         let provider_session_sync_session_id = session_id.clone();
         let provider_session_sync_trace_id = trace_id.clone();
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_session_item_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
+        let is_first_window = cursor.is_none();
         let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -6390,13 +6476,9 @@ async fn app_list_session_items(
         .into_command(agent_id, session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
-        command.query = command.query.with_pagination(
-            PaginationParams::default()
-                .with_page_size(page_size)
-                .with_page(page),
-        );
+        command.query = command.query.with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| {
-            if page == 1 {
+            if is_first_window {
                 if let Some(owner_user_id) = owner_scope {
                     if let Err(error) =
                         crate::provider_session_sync::synchronize_provider_session_transcript(
@@ -6436,10 +6518,9 @@ async fn app_list_session_items(
                     .map_err(ApiProblem::from_kernel_error)
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -9024,6 +9105,16 @@ pub(crate) fn normalized_pagination(
     Ok((params.page as usize, params.page_size as usize))
 }
 
+fn normalized_cursor_page_size(page_size: Option<usize>) -> Result<usize, ApiProblem> {
+    let page_size = page_size.unwrap_or(crate::ports::DEFAULT_PAGE_SIZE);
+    if !(1..=MAX_PAGE_SIZE).contains(&page_size) {
+        return Err(ApiProblem::validation(format!(
+            "page_size must be between 1 and {MAX_PAGE_SIZE}",
+        )));
+    }
+    Ok(page_size)
+}
+
 /// Build the durable turn execution response.
 /// Non-streaming returns `200 OK` with the SDKWork response envelope.
 /// Streaming returns ordered delta events followed by a completion envelope.
@@ -9116,18 +9207,20 @@ mod tests {
     use axum::Extension;
     use tower::ServiceExt;
 
-    struct FailingProviderSessionProjectCwdResolver;
+    struct AmbiguousProviderSessionProjectCwdResolver;
 
     impl sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver
-        for FailingProviderSessionProjectCwdResolver
+        for AmbiguousProviderSessionProjectCwdResolver
     {
         fn resolve_project_cwd(
             &self,
             _selector: &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector,
         ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<Option<String>> {
-            Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
-                "test provider session cwd resolver failure".to_string(),
-            ))
+            Err(
+                sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                    "multiple desktop roots are bound to this project".to_string(),
+                ),
+            )
         }
     }
 
@@ -9890,14 +9983,79 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_session_list_routes_are_read_only_and_explicit_sync_reports_failure() {
+    async fn app_project_list_supports_workspace_scoped_exact_name_lookup() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app_user_context = AgentRequestContext::new("100001", "100")
+            .with_organization_id("0")
+            .with_subject_id("100")
+            .with_roles(["ai.agents.read", "ai.agents.use"]);
+        let app = build_test_router_with_context(state, app_user_context);
+
+        let mut workspace_id = String::new();
+        for (project_id, name) in [
+            ("project.exact-name", "Alpha Project"),
+            ("project.exact-name-prefix", "Alpha Project Extra"),
+        ] {
+            let request = Request::builder()
+                .method("POST")
+                .uri("/app/v3/api/ai/projects")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "projectId": project_id,
+                        "name": name
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let payload: Value = serde_json::from_slice(&body).unwrap();
+            workspace_id = payload["data"]["item"]["workspaceId"]
+                .as_str()
+                .unwrap()
+                .to_string();
+        }
+
+        let request = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/app/v3/api/ai/projects?workspaceId={workspace_id}&name_exact=alpha%20project&page=1&page_size=20"
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        let items = payload["data"]["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["projectId"], "project.exact-name");
+        assert_eq!(payload["data"]["pageInfo"]["totalItems"], "1");
+
+        let request = Request::builder()
+            .method("GET")
+            .uri("/app/v3/api/ai/projects?name_exact=Alpha%20Project&page=1&page_size=20")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn app_session_list_routes_are_read_only_and_cwd_ambiguity_is_a_client_error() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
             test_policy_provider(),
         )
         .with_provider_session_cwd_resolver(std::sync::Arc::new(
-            FailingProviderSessionProjectCwdResolver,
+            AmbiguousProviderSessionProjectCwdResolver,
         ));
         let app = build_test_router(state);
         create_app_agent(&app, "agent.alpha", "alpha").await;
@@ -9941,7 +10099,13 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let response = app.clone().oneshot(synchronize).await.unwrap();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let problem: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(problem["status"], StatusCode::BAD_REQUEST.as_u16());
+        assert!(problem["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("multiple desktop roots")));
 
         let create_session = Request::builder()
             .method("POST")
@@ -9965,6 +10129,33 @@ mod tests {
         let payload: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["data"]["item"]["projectId"], "project.sessions");
         assert_eq!(payload["data"]["item"]["agentId"], "agent.alpha");
+
+        let retrieve_project_session = Request::builder()
+            .method("GET")
+            .uri("/app/v3/api/ai/projects/project.sessions/sessions/session.project-scoped")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(retrieve_project_session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload["data"]["item"]["sessionId"],
+            "session.project-scoped"
+        );
+        assert_eq!(payload["data"]["item"]["projectId"], "project.sessions");
+
+        let retrieve_from_wrong_project = Request::builder()
+            .method("GET")
+            .uri("/app/v3/api/ai/projects/project.other/sessions/session.project-scoped")
+            .body(Body::empty())
+            .unwrap();
+        let response = app
+            .clone()
+            .oneshot(retrieve_from_wrong_project)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
         let create_second_project = Request::builder()
             .method("POST")

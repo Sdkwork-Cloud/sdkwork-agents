@@ -79,9 +79,9 @@
     "events": [],
     "configKeys": [
       "SDKWORK_AGENTS_APP_ROOT",
-      "SDKWORK_AGENTS_DATABASE_URL",
-      "SDKWORK_AGENTS_DATABASE_AUTO_MIGRATE",
-      "SDKWORK_AGENTS_DATABASE_SCHEMA"
+      "SDKWORK_DATABASE_URL",
+      "SDKWORK_DATABASE_AUTO_MIGRATE",
+      "SDKWORK_DATABASE_SCHEMA"
     ]
   },
   "integration": {

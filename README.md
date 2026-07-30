@@ -49,8 +49,9 @@ pnpm db:materialize:contract
 cargo run -p sdkwork-api-agents-standalone-gateway -- db-migrate
 ```
 
-The complete Agents domain uses one `SDKWORK_AGENTS_DATABASE_*` profile. Kernel
-runtime persistence remains kernel-owned and uses its own configuration.
+The complete Agents domain uses the workspace `SDKWORK_DATABASE_*` profile.
+Kernel runtime persistence keeps its own table ownership while sharing that
+database and schema identity.
 
 ## Deployment
 

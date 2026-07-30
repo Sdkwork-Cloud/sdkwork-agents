@@ -218,14 +218,14 @@ test('source topology profiles project exact CORS and IAM origins from etc', () 
       assert.equal(env.SDKWORK_CORS_ALLOWED_ORIGINS, undefined);
       if (deploymentProfile === 'standalone') {
         assert.equal(env.SDKWORK_AGENTS_DEV_AUTH_BYPASS, 'false');
-        assert.equal(env.SDKWORK_AGENTS_DATABASE_ENGINE, 'postgresql');
-        assert.equal(env.SDKWORK_AGENTS_DATABASE_SCHEMA, 'public');
-        assert.equal(env.SDKWORK_AGENTS_DATABASE_SSL_MODE, 'disable');
-        assert.equal(env.SDKWORK_AGENTS_DATABASE_URL, undefined);
+        assert.equal(env.SDKWORK_DATABASE_ENGINE, 'postgresql');
+        assert.equal(env.SDKWORK_DATABASE_SCHEMA, 'public');
+        assert.equal(env.SDKWORK_DATABASE_SSL_MODE, 'disable');
+        assert.equal(env.SDKWORK_DATABASE_URL, undefined);
         assert.equal(env.SDKWORK_DATABASE_PATH, undefined);
       } else {
-        assert.equal(env.SDKWORK_AGENTS_DATABASE_ENGINE, undefined);
-        assert.equal(env.SDKWORK_AGENTS_DATABASE_URL, undefined);
+        assert.equal(env.SDKWORK_DATABASE_ENGINE, undefined);
+        assert.equal(env.SDKWORK_DATABASE_URL, undefined);
       }
       continue;
     }

@@ -34,15 +34,18 @@ pnpm smoke:live
 | Step | Action | Pass criterion |
 | ---: | --- | --- |
 | 1 | Sign in through appbase IAM | App SDK has current dual-token session |
-| 2 | List/retrieve a managed Agent | `code: 0`, typed resource and `traceId` |
-| 3 | Create a Session | Required kind/surface/idempotency fields accepted; Session id returned |
-| 4 | Retry Session creation | Same key/hash returns the same logical result |
-| 5 | Execute a Turn as JSON | Response contains Session, Turn and ordered Session Items; `runtimeMode` is `agents-runtime-facade`, never a contract stub |
-| 6 | Execute a Turn as SSE | Delta events followed by one typed completion event |
-| 7 | List Session Items | Stable ascending sequence with `PageInfo` |
-| 8 | Create and claim an Interaction | One claim succeeds; competing claim fails safely |
-| 9 | Resolve the Interaction | Version and claim token enforced |
-| 10 | Cancel an eligible Turn | Lifecycle becomes cancelled without duplicate execution |
+| 2 | List Projects with Workspace scope, `q`, and `name_exact` | Offset `PageInfo`, bounded search results, and case-insensitive exact resolution are correct |
+| 3 | List Project Sessions and retrieve one by Project/Session identity | Read-only inventory is returned without invoking provider synchronization |
+| 4 | Explicitly import or re-import a folder and call `projectSessions.synchronize` | Response reports synchronized/skipped/failed counts and bounded aggregate issues; one malformed provider row does not discard valid rows |
+| 5 | List/retrieve a managed Agent | `code: 0`, typed resource and `traceId` |
+| 6 | Create a Session | Required kind/surface/idempotency fields accepted; Session id returned |
+| 7 | Retry Session creation | Same key/hash returns the same logical result |
+| 8 | Execute a Turn as JSON | Response contains Session, Turn and ordered Session Items; `runtimeMode` is `agents-runtime-facade`, never a contract stub |
+| 9 | Execute a Turn as SSE | Delta events followed by one typed completion event |
+| 10 | List newest Session Items with `sort=-sequence`, then continue with `nextCursor` | Cursor is opaque and progressing; pages are stable and client presentation is chronological |
+| 11 | Create and claim an Interaction | One claim succeeds; competing claim fails safely |
+| 12 | Resolve the Interaction | Version and claim token enforced |
+| 13 | Cancel an eligible Turn | Lifecycle becomes cancelled without duplicate execution |
 
 ## 4. Security Surfaces
 
@@ -71,8 +74,9 @@ pnpm smoke:live
 | 404 | surface base URL and route assembly |
 | 409 | idempotency payload hash or optimistic version |
 | 5xx on Session/Turn | PostgreSQL status, provider binding, runtime facade and trace |
+| 50001 on Project Session synchronization | Preserve `traceId`; verify the Project runtime binding resolves to the intended host, the provider collector is registered and healthy, and the server-derived working directory is valid and accessible. Do not request or log a client device path. Confirm read-only Project/Session refresh still succeeds before retrying explicit import. |
 | Missing SSE completion | gateway buffering, timeout, runtime error and HTTP contract |
-| Item order mismatch | Session sequence constraint and repository query order |
+| Item order or continuation mismatch | Session sequence constraint, requested sort, opaque cursor binding, and repository keyset query order |
 
 See [monitoring.md](./monitoring.md) and
 [incident-rollback.md](./incident-rollback.md).

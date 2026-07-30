@@ -61,7 +61,7 @@ kubectl get hpa sdkwork-api-agents-standalone-gateway
 |----------|----------|-------------|
 | `SDKWORK_DEPLOYMENT_ENV` | Yes | Must be `production` for prod deployments |
 | `SDKWORK_AGENTS_DEV_AUTH_BYPASS` | Yes | Must be `false` in production |
-| `SDKWORK_AGENTS_DATABASE_URL` | Yes | Canonical Agents PostgreSQL connection string |
+| `SDKWORK_DATABASE_URL` | Yes | Canonical Agents PostgreSQL connection string |
 | `SDKWORK_AGENTS_SERVICE_WORKER_LIMIT` | Yes | Maximum concurrent synchronous service workers; production profile default `128` |
 | `SDKWORK_AGENTS_PROVIDER_WORKER_LIMIT` | Yes | Maximum concurrent provider executions; production profile default `32` |
 | `SDKWORK_TENANT_ID` | No | Default tenant for bootstrap |
@@ -154,7 +154,7 @@ sdkwork_db_pool_utilization
 
 Run schema migrations before deployment:
 ```bash
-psql "$SDKWORK_AGENTS_DATABASE_URL" -f database/ddl/baseline/postgres/0001_agents_baseline.sql
+psql "$SDKWORK_DATABASE_URL" -f database/ddl/baseline/postgres/0001_agents_baseline.sql
 ```
 
 ### Backup Procedures

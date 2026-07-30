@@ -5479,13 +5479,65 @@ class AgentSessionListResponse {
   }
 }
 
+class ProjectSessionSynchronizationIssue {
+  final String code;
+  final String count;
+  final String disposition;
+
+  ProjectSessionSynchronizationIssue({
+    required this.code,
+    required this.count,
+    required this.disposition
+  });
+
+  factory ProjectSessionSynchronizationIssue.fromJson(Map<String, dynamic> json) {
+    return ProjectSessionSynchronizationIssue(
+      code: (() {
+        final value = json['code']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationIssue.code is required');
+        }
+        return value;
+      })(),
+      count: (() {
+        final value = json['count']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationIssue.count is required');
+        }
+        return value;
+      })(),
+      disposition: (() {
+        final value = json['disposition']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationIssue.disposition is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'count': count,
+      'disposition': disposition,
+    };
+  }
+}
+
 class ProjectSessionSynchronizationResult {
   final String projectId;
   final String synchronizedSessionCount;
+  final String skippedSessionCount;
+  final String failedSessionCount;
+  final List<ProjectSessionSynchronizationIssue> issues;
 
   ProjectSessionSynchronizationResult({
     required this.projectId,
-    required this.synchronizedSessionCount
+    required this.synchronizedSessionCount,
+    required this.skippedSessionCount,
+    required this.failedSessionCount,
+    required this.issues
   });
 
   factory ProjectSessionSynchronizationResult.fromJson(Map<String, dynamic> json) {
@@ -5503,6 +5555,33 @@ class ProjectSessionSynchronizationResult {
           throw FormatException('ProjectSessionSynchronizationResult.synchronizedSessionCount is required');
         }
         return value;
+      })(),
+      skippedSessionCount: (() {
+        final value = json['skippedSessionCount']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationResult.skippedSessionCount is required');
+        }
+        return value;
+      })(),
+      failedSessionCount: (() {
+        final value = json['failedSessionCount']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationResult.failedSessionCount is required');
+        }
+        return value;
+      })(),
+      issues: (() {
+        final list = _sdkworkAsList(json['issues']);
+        if (list == null) {
+          throw FormatException('ProjectSessionSynchronizationResult.issues is required');
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : ProjectSessionSynchronizationIssue.fromJson(map);
+      })())
+            .whereType<ProjectSessionSynchronizationIssue>()
+            .toList();
       })()
     );
   }
@@ -5511,6 +5590,9 @@ class ProjectSessionSynchronizationResult {
     return <String, dynamic>{
       'projectId': projectId,
       'synchronizedSessionCount': synchronizedSessionCount,
+      'skippedSessionCount': skippedSessionCount,
+      'failedSessionCount': failedSessionCount,
+      'issues': issues.map((item) => item.toJson()).toList(),
     };
   }
 }

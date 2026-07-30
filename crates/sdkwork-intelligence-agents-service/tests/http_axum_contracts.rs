@@ -4612,27 +4612,85 @@ async fn app_turn_should_return_ordered_session_items() {
     let newest_page = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page=1&page_size=1"
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page_size=1"
         ),
         StatusCode::OK,
     )
     .await;
     assert_eq!(newest_page["data"]["items"][0]["kind"], "assistant_output");
-    assert_eq!(newest_page["data"]["pageInfo"]["page"], 1);
+    assert_eq!(newest_page["data"]["pageInfo"]["mode"], "cursor");
     assert_eq!(newest_page["data"]["pageInfo"]["pageSize"], 1);
-    assert_eq!(newest_page["data"]["pageInfo"]["totalItems"], "2");
     assert_eq!(newest_page["data"]["pageInfo"]["hasMore"], true);
+    assert!(newest_page["data"]["pageInfo"].get("page").is_none());
+    assert!(newest_page["data"]["pageInfo"].get("totalItems").is_none());
+    let next_cursor = newest_page["data"]["pageInfo"]["nextCursor"]
+        .as_str()
+        .expect("newest page should expose a continuation cursor");
+
+    let earlier_page = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page_size=1&cursor={next_cursor}"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(earlier_page["data"]["items"][0]["kind"], "user_input");
+    assert_eq!(earlier_page["data"]["pageInfo"]["mode"], "cursor");
+    assert_eq!(earlier_page["data"]["pageInfo"]["hasMore"], false);
+    assert!(earlier_page["data"]["pageInfo"].get("nextCursor").is_none());
 
     let filtered_page = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?kind=user_input&status=completed&sort=sequence&page=1&page_size=1"
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?kind=user_input&status=completed&sort=sequence&page_size=1"
         ),
         StatusCode::OK,
     )
     .await;
     assert_eq!(filtered_page["data"]["items"][0]["kind"], "user_input");
-    assert_eq!(filtered_page["data"]["pageInfo"]["totalItems"], "1");
+    assert_eq!(filtered_page["data"]["pageInfo"]["hasMore"], false);
+
+    get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page=1&page_size=1"
+        ),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page_size=201"
+        ),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&limit=1"
+        ),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?status=completed&sort=-sequence&page_size=1&cursor=invalid"
+        ),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/items?kind=user_input&status=completed&sort=-sequence&page_size=1&cursor={next_cursor}"
+        ),
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
 
     get_json(
         &app,
@@ -4655,7 +4713,7 @@ async fn missing_provider_session_items_returns_uncacheable_problem_details() {
         .uri(concat!(
             "/app/v3/api/ai/agents/agent.intelligence.codex/sessions/",
             "session.provider.codex.3b00d973230618c73d7e78b3faa78287/items",
-            "?page=1&page_size=50&sort=-sequence"
+            "?page_size=50&sort=-sequence"
         ))
         .body(Body::empty())
         .expect("provider session items request should be built");

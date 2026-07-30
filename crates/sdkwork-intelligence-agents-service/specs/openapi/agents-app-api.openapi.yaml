@@ -774,6 +774,13 @@ paths:
         schema:
           type: string
           maxLength: 255
+      - name: name_exact
+        in: query
+        description: Case-insensitive exact project name lookup within the requested Workspace.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 255
       - name: status
         in: query
         schema:
@@ -1193,7 +1200,9 @@ paths:
       description: >-
         Explicitly reconciles the project runtime's provider Session inventory.
         This command never accepts device paths, directory names, or local
-        filesystem fingerprints from a client.
+        filesystem fingerprints from a client. Individual invalid provider
+        records are isolated and reported as bounded aggregate issues, so one
+        malformed record does not discard valid reconciliation work.
       operationId: agents.projectSessions.synchronize
       security:
       - AuthToken: []
@@ -1212,6 +1221,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProjectSessionSynchronizationResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/projects/{projectId}/sessions/{sessionId}:
+    get:
+      tags: [ai]
+      summary: Retrieve one project-scoped agent Session
+      description: >-
+        Retrieves one non-deleted Session by its canonical project and Session
+        identities without requiring a client to discover or guess the Agent identity.
+      operationId: agents.projectSessions.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessions
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: organization
+      parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Project-scoped managed agent Session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/session_activity_summaries:
@@ -1593,8 +1629,10 @@ paths:
       - ai
       summary: List ordered items for one agent session
       description: >-
-        P1 interactive offset list. Supports kind and status filters. The default
-        sort is sequence ascending; use -sequence to fetch the newest items first.
+        P1 interactive keyset cursor list. Supports kind and status filters. The
+        default sort is sequence ascending; use -sequence to fetch the newest items
+        first. Cursor tokens are opaque and bound to the authenticated scope,
+        Session, filters, and sort order.
       operationId: agents.sessionItems.list
       security:
       - AuthToken: []
@@ -1606,7 +1644,14 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
+      - name: cursor
+        in: query
+        required: false
+        description: Opaque keyset continuation token returned by pageInfo.nextCursor.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 2048
       - $ref: '#/components/parameters/PageSize'
       - name: kind
         in: query
@@ -5198,16 +5243,52 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentSessionRecord'
+    ProjectSessionSynchronizationIssue:
+      type: object
+      additionalProperties: false
+      required: [code, count, disposition]
+      properties:
+        code:
+          type: string
+          enum:
+          - non_root_session
+          - duplicate_provider_session
+          - invalid_provider_session_identity
+          - invalid_runtime_binding_identity
+          - invalid_synchronization_timestamp
+          - runtime_identity_reconciliation_failed
+          - session_reconciliation_failed
+          - inventory_item_limit_exceeded
+          - synchronization_time_budget_exceeded
+        count:
+          $ref: '#/components/schemas/Int64String'
+        disposition:
+          type: string
+          enum: [skipped, failed]
     ProjectSessionSynchronizationResult:
       type: object
       additionalProperties: false
-      required: [projectId, synchronizedSessionCount]
+      required:
+      - projectId
+      - synchronizedSessionCount
+      - skippedSessionCount
+      - failedSessionCount
+      - issues
       properties:
         projectId:
           type: string
           pattern: '^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
         synchronizedSessionCount:
           $ref: '#/components/schemas/Int64String'
+        skippedSessionCount:
+          $ref: '#/components/schemas/Int64String'
+        failedSessionCount:
+          $ref: '#/components/schemas/Int64String'
+        issues:
+          type: array
+          maxItems: 9
+          items:
+            $ref: '#/components/schemas/ProjectSessionSynchronizationIssue'
     ProjectSessionSynchronizationResponse:
       description: Explicit provider Session inventory synchronization result.
       allOf:

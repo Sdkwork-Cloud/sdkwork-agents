@@ -50,17 +50,17 @@ impl GatewayTestEnvironment {
         environment.remove("SDKWORK_KERNEL_PROFILE_ID");
         environment.set("SDKWORK_KERNEL_INGRESS_AUTH_MODE", "open");
         environment.set("SDKWORK_KERNEL_METRICS_AUTH_MODE", "open");
-        environment.set("SDKWORK_AGENT_RUNTIME_DATABASE_ENGINE", "sqlite");
+        environment.set("SDKWORK_DATABASE_ENGINE", "sqlite");
         environment.set("SDKWORK_DATABASE_PATH", database_path.to_string_lossy());
         let iam_database_url = std::env::var("SDKWORK_DATABASE_TEST_POSTGRES_URL")
             .expect("SDKWORK_DATABASE_TEST_POSTGRES_URL must be set for ignored IAM gateway tests");
-        environment.set("SDKWORK_IAM_DATABASE_URL", iam_database_url);
-        environment.set("SDKWORK_IAM_DATABASE_ENGINE", "postgres");
-        environment.set("SDKWORK_IAM_DATABASE_AUTO_MIGRATE", "false");
-        environment.set("SDKWORK_IAM_DATABASE_MAX_CONNECTIONS", "1");
-        environment.set("SDKWORK_IAM_DATABASE_MIN_CONNECTIONS", "0");
-        environment.set("SDKWORK_IAM_DATABASE_ACQUIRE_TIMEOUT", "60");
-        environment.remove("SDKWORK_AGENT_RUNTIME_DATABASE_URL");
+        environment.set("SDKWORK_DATABASE_URL", iam_database_url);
+        environment.set("SDKWORK_DATABASE_ENGINE", "postgres");
+        environment.set("SDKWORK_DATABASE_AUTO_MIGRATE", "false");
+        environment.set("SDKWORK_DATABASE_MAX_CONNECTIONS", "1");
+        environment.set("SDKWORK_DATABASE_MIN_CONNECTIONS", "0");
+        environment.set("SDKWORK_DATABASE_ACQUIRE_TIMEOUT", "60");
+        environment.remove("SDKWORK_DATABASE_URL");
         environment.remove("SDKWORK_AGENT_RUNTIME_POSTGRES_URI");
 
         environment

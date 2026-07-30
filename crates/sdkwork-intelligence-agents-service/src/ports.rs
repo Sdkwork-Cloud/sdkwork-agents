@@ -10,6 +10,7 @@ use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, Agen
 use crate::session_activity::{
     session_activity_scope_fingerprint, SessionActivityCursor, SessionActivitySummaryRecord,
 };
+use crate::session_item_cursor::{session_item_scope_fingerprint, SessionItemCursor};
 use crate::validation::optional_non_blank;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
@@ -356,6 +357,16 @@ pub enum SessionItemListSort {
     RecentContextDesc,
 }
 
+impl SessionItemListSort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SequenceAsc => "sequence",
+            Self::SequenceDesc => "-sequence",
+            Self::RecentContextDesc => "recent-context",
+        }
+    }
+}
+
 /// Query parameters for listing agent sessions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionListQuery {
@@ -440,6 +451,7 @@ pub struct ProjectListQuery {
     pub organization_id: u64,
     pub owner_user_id: Option<u64>,
     pub workspace_id: Option<String>,
+    pub exact_name: Option<String>,
     pub status: Option<AgentProjectStatus>,
     pub search_query: Option<String>,
     pub include_deleted: bool,
@@ -453,6 +465,7 @@ impl ProjectListQuery {
             organization_id,
             owner_user_id: None,
             workspace_id: None,
+            exact_name: None,
             status: None,
             search_query: None,
             include_deleted: false,
@@ -472,6 +485,11 @@ impl ProjectListQuery {
 
     pub fn with_status(mut self, status: AgentProjectStatus) -> Self {
         self.status = Some(status);
+        self
+    }
+
+    pub fn with_exact_name(mut self, exact_name: impl Into<String>) -> Self {
+        self.exact_name = optional_non_blank(exact_name.into());
         self
     }
 
@@ -660,6 +678,8 @@ pub struct SessionItemListQuery {
     pub kind: Option<String>,
     pub status: Option<String>,
     pub sort: SessionItemListSort,
+    pub(crate) cursor_mode: bool,
+    pub(crate) cursor: Option<SessionItemCursor>,
     pub pagination: PaginationParams,
 }
 
@@ -707,6 +727,8 @@ impl SessionItemListQuery {
             kind: None,
             status: None,
             sort: SessionItemListSort::default(),
+            cursor_mode: false,
+            cursor: None,
             pagination: PaginationParams::default(),
         }
     }
@@ -731,6 +753,34 @@ impl SessionItemListQuery {
         self
     }
 
+    pub(crate) fn with_cursor_page(
+        mut self,
+        page_size: usize,
+        cursor: Option<SessionItemCursor>,
+    ) -> Self {
+        self.cursor_mode = true;
+        self.cursor = cursor;
+        self.pagination = PaginationParams::default().with_page_size(page_size);
+        self
+    }
+
+    pub(crate) fn repository_page_size(&self) -> usize {
+        self.pagination
+            .page_size
+            .saturating_add(usize::from(self.cursor_mode))
+    }
+
+    pub(crate) fn cursor_scope_fingerprint(&self) -> String {
+        session_item_scope_fingerprint(
+            self.tenant_id,
+            self.organization_id,
+            &self.session_id,
+            self.kind.as_deref(),
+            self.status.as_deref(),
+            self.sort.as_str(),
+        )
+    }
+
     /// Load the most recent items for turn execution context.
     pub fn for_recent_turn_context(
         tenant_id: u64,
@@ -745,6 +795,8 @@ impl SessionItemListQuery {
             kind: None,
             status: None,
             sort: SessionItemListSort::RecentContextDesc,
+            cursor_mode: false,
+            cursor: None,
             pagination: PaginationParams::default().with_page_size(limit),
         }
     }

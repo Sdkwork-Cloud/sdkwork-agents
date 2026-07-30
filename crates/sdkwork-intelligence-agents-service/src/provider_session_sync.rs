@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use sdkwork_agent_kernel::{
-    AgentMessage, AgentMessageRole, AgentPart, AgentPartKind, KernelError, KernelResult,
-    PolicySubject, SessionKind,
+    AgentMessage, AgentMessageRole, AgentPart, AgentPartKind, KernelError, KernelErrorKind,
+    KernelResult, PolicySubject, SessionKind,
 };
 use sdkwork_agents_runtime_facade::{
     AgentsSessionActor, AgentsSessionEntrySurface, AgentsSessionFacade, AgentsSessionKind,
     AgentsSessionRuntimeBindingDescriptor, ProviderSessionInventoryItem,
-    ProviderSessionInventorySelector, ResolveAgentsSessionRequest,
+    ProviderSessionInventorySelector, ResolveAgentsSessionRequest, RuntimeFacadeError,
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -23,12 +24,94 @@ use crate::project::AgentProjectRecord;
 use crate::runtime_facade_bridge::shared_code_engine_host;
 
 const PROVIDER_SESSION_TITLE_MAX_BYTES: usize = 512;
+const PROVIDER_SESSION_RECONCILIATION_MAX_ITEMS: usize = 10_000;
+const PROVIDER_SESSION_RECONCILIATION_TIMEOUT: Duration = Duration::from_secs(15);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderSessionSynchronizationIssueDisposition {
+    Skipped,
+    Failed,
+}
+
+impl ProviderSessionSynchronizationIssueDisposition {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skipped => "skipped",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProviderSessionSynchronizationIssue {
+    pub(crate) code: &'static str,
+    pub(crate) count: usize,
+    pub(crate) disposition: ProviderSessionSynchronizationIssueDisposition,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProviderSessionSynchronizationResult {
+    pub(crate) failed_session_count: usize,
+    pub(crate) issues: Vec<ProviderSessionSynchronizationIssue>,
+    pub(crate) skipped_session_count: usize,
+    pub(crate) synchronized_session_count: usize,
+}
+
+impl ProviderSessionSynchronizationResult {
+    fn record_issue(
+        &mut self,
+        code: &'static str,
+        disposition: ProviderSessionSynchronizationIssueDisposition,
+        count: usize,
+    ) {
+        if count == 0 {
+            return;
+        }
+        if let Some(issue) = self
+            .issues
+            .iter_mut()
+            .find(|issue| issue.code == code && issue.disposition == disposition)
+        {
+            issue.count += count;
+        } else {
+            self.issues.push(ProviderSessionSynchronizationIssue {
+                code,
+                count,
+                disposition,
+            });
+        }
+        match disposition {
+            ProviderSessionSynchronizationIssueDisposition::Skipped => {
+                self.skipped_session_count += count;
+            }
+            ProviderSessionSynchronizationIssueDisposition::Failed => {
+                self.failed_session_count += count;
+            }
+        }
+    }
+
+    fn record_skipped(&mut self, code: &'static str) {
+        self.record_issue(
+            code,
+            ProviderSessionSynchronizationIssueDisposition::Skipped,
+            1,
+        );
+    }
+
+    fn record_failed(&mut self, code: &'static str) {
+        self.record_issue(
+            code,
+            ProviderSessionSynchronizationIssueDisposition::Failed,
+            1,
+        );
+    }
+}
 
 pub(crate) fn synchronize_project_provider_sessions(
     service: Arc<HttpService>,
     project: &AgentProjectRecord,
     subject: PolicySubject,
-) -> KernelResult<usize> {
+) -> KernelResult<ProviderSessionSynchronizationResult> {
     let exact_cwd = std::env::current_dir()
         .ok()
         .filter(|cwd| {
@@ -52,7 +135,7 @@ pub(crate) fn synchronize_project_provider_sessions_at_cwd(
     project: &AgentProjectRecord,
     subject: PolicySubject,
     exact_cwd: Option<String>,
-) -> KernelResult<usize> {
+) -> KernelResult<ProviderSessionSynchronizationResult> {
     synchronize_project_provider_sessions_with_selector(
         service,
         project,
@@ -70,9 +153,9 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
     exact_cwd: Option<String>,
     unique_basename: Option<String>,
     directory_fingerprint: Option<String>,
-) -> KernelResult<usize> {
+) -> KernelResult<ProviderSessionSynchronizationResult> {
     let Some(host) = shared_code_engine_host() else {
-        return Ok(0);
+        return Ok(ProviderSessionSynchronizationResult::default());
     };
     let inventory = host
         .discover_provider_sessions(&ProviderSessionInventorySelector {
@@ -82,7 +165,7 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
         })
         .map_err(runtime_facade_error)?;
     if inventory.is_empty() {
-        return Ok(0);
+        return Ok(ProviderSessionSynchronizationResult::default());
     }
 
     synchronize_provider_session_inventory(service, project, subject, inventory)
@@ -432,41 +515,65 @@ fn synchronize_provider_session_inventory(
     project: &AgentProjectRecord,
     subject: PolicySubject,
     inventory: Vec<ProviderSessionInventoryItem>,
-) -> KernelResult<usize> {
+) -> KernelResult<ProviderSessionSynchronizationResult> {
     let facade =
         HttpAgentsSessionFacade::for_provider_session_history_reconciliation(service.clone());
     let actor = AgentsSessionActor {
         subject_id: subject.subject_id.clone(),
         roles: subject.roles.clone(),
     };
-    let mut synchronized = 0;
+    let started_at = Instant::now();
+    let inventory_len = inventory.len();
+    let mut result = ProviderSessionSynchronizationResult::default();
     let mut seen_provider_sessions = HashSet::new();
-    for item in inventory {
+    for (index, item) in inventory.into_iter().enumerate() {
+        if index >= PROVIDER_SESSION_RECONCILIATION_MAX_ITEMS {
+            result.record_issue(
+                "inventory_item_limit_exceeded",
+                ProviderSessionSynchronizationIssueDisposition::Failed,
+                inventory_len - index,
+            );
+            break;
+        }
+        if started_at.elapsed() >= PROVIDER_SESSION_RECONCILIATION_TIMEOUT {
+            result.record_issue(
+                "synchronization_time_budget_exceeded",
+                ProviderSessionSynchronizationIssueDisposition::Failed,
+                inventory_len - index,
+            );
+            break;
+        }
         if item.session.kind == SessionKind::Subagent || item.session.parent_session_id.is_some() {
+            result.record_skipped("non_root_session");
             continue;
         }
         let provider_id = item.provider_id.trim().to_string();
         let provider_session_id = item.session.session_id.trim().to_string();
         if provider_id.is_empty() || provider_session_id.is_empty() {
-            return Err(KernelError::validation(
-                "provider session inventory identity must not be blank",
-            ));
+            result.record_failed("invalid_provider_session_identity");
+            continue;
         }
         let provider_binding_id = item.binding_id.trim().to_string();
         if provider_binding_id.is_empty() {
-            return Err(KernelError::validation(
-                "provider session inventory runtime binding identity must not be blank",
-            ));
+            result.record_failed("invalid_runtime_binding_identity");
+            continue;
         }
         if !seen_provider_sessions.insert((
             provider_binding_id.clone(),
             provider_id.clone(),
             provider_session_id.clone(),
         )) {
+            result.record_skipped("duplicate_provider_session");
             continue;
         }
-        let requested_at = provider_session_requested_at(&item, project)?;
-        service.ensure_code_engine_runtime_identity(
+        let requested_at = match provider_session_requested_at(&item, project) {
+            Ok(requested_at) => requested_at,
+            Err(_) => {
+                result.record_failed("invalid_synchronization_timestamp");
+                continue;
+            }
+        };
+        if let Err(error) = service.ensure_code_engine_runtime_identity(
             project.tenant_id,
             project.organization_id,
             project.owner_user_id,
@@ -476,7 +583,19 @@ fn synchronize_provider_session_inventory(
             &provider_id,
             subject.clone(),
             &requested_at,
-        )?;
+        ) {
+            if is_fatal_provider_session_synchronization_error(&error) {
+                return Err(error);
+            }
+            record_provider_session_reconciliation_failure(
+                project,
+                &item.engine_key,
+                "runtime_identity_reconciliation_failed",
+                &error,
+            );
+            result.record_failed("runtime_identity_reconciliation_failed");
+            continue;
+        }
         let stable_key = stable_provider_session_key(
             project.tenant_id,
             project.organization_id,
@@ -498,44 +617,82 @@ fn synchronize_provider_session_inventory(
             .clone()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| item.default_model_id.clone());
-        facade
-            .resolve_or_create_session(ResolveAgentsSessionRequest {
-                tenant_id: project.tenant_id,
-                organization_id: project.organization_id,
-                owner_user_id: project.owner_user_id,
-                agent_id: item.agent_id.clone(),
-                session_id,
-                project_id: Some(project.project_id.clone()),
-                session_kind: AgentsSessionKind::Coding,
-                entry_surface: AgentsSessionEntrySurface::Pc,
-                source_module: Some("birdcoder".to_string()),
-                source_context_kind: Some("provider_session".to_string()),
-                source_context_id: Some(project.project_id.clone()),
-                parent_session_id: None,
-                forked_from_turn_id: None,
-                title,
-                idempotency_key: format!("provider-session:{}:{}", item.engine_key, stable_key),
-                payload_hash: format!("provider-session-v1:{}:{}", item.engine_key, stable_key),
-                runtime_binding: Some(AgentsSessionRuntimeBindingDescriptor {
-                    runtime_binding_id,
-                    runtime_location_id: None,
-                    host_mode: "server".to_string(),
-                    transport_kind: "provider-session-history".to_string(),
-                    provider_binding_id,
-                    model_id,
-                    provider_id,
-                    provider_session_id: Some(provider_session_id.clone()),
-                    provider_session_tree_id: Some(provider_session_id),
-                    provider_parent_session_id: item.session.parent_session_id.clone(),
-                    provider_forked_from_session_id: item.session.forked_from_id.clone(),
-                }),
-                actor: actor.clone(),
-                requested_at,
-            })
-            .map_err(runtime_facade_error)?;
-        synchronized += 1;
+        let reconciliation = facade.resolve_or_create_session(ResolveAgentsSessionRequest {
+            tenant_id: project.tenant_id,
+            organization_id: project.organization_id,
+            owner_user_id: project.owner_user_id,
+            agent_id: item.agent_id.clone(),
+            session_id,
+            project_id: Some(project.project_id.clone()),
+            session_kind: AgentsSessionKind::Coding,
+            entry_surface: AgentsSessionEntrySurface::Pc,
+            source_module: Some("birdcoder".to_string()),
+            source_context_kind: Some("provider_session".to_string()),
+            source_context_id: Some(project.project_id.clone()),
+            parent_session_id: None,
+            forked_from_turn_id: None,
+            title,
+            idempotency_key: format!("provider-session:{}:{}", item.engine_key, stable_key),
+            payload_hash: format!("provider-session-v1:{}:{}", item.engine_key, stable_key),
+            runtime_binding: Some(AgentsSessionRuntimeBindingDescriptor {
+                runtime_binding_id,
+                runtime_location_id: None,
+                host_mode: "server".to_string(),
+                transport_kind: "provider-session-history".to_string(),
+                provider_binding_id,
+                model_id,
+                provider_id,
+                provider_session_id: Some(provider_session_id.clone()),
+                provider_session_tree_id: Some(provider_session_id),
+                provider_parent_session_id: item.session.parent_session_id.clone(),
+                provider_forked_from_session_id: item.session.forked_from_id.clone(),
+            }),
+            actor: actor.clone(),
+            requested_at,
+        });
+        if let Err(error) = reconciliation {
+            let error = runtime_facade_error(error);
+            if is_fatal_provider_session_synchronization_error(&error) {
+                return Err(error);
+            }
+            record_provider_session_reconciliation_failure(
+                project,
+                &item.engine_key,
+                "session_reconciliation_failed",
+                &error,
+            );
+            result.record_failed("session_reconciliation_failed");
+            continue;
+        }
+        result.synchronized_session_count += 1;
     }
-    Ok(synchronized)
+    Ok(result)
+}
+
+fn is_fatal_provider_session_synchronization_error(error: &KernelError) -> bool {
+    matches!(
+        error.kind(),
+        KernelErrorKind::PermissionRequired
+            | KernelErrorKind::PolicyDenied
+            | KernelErrorKind::SecurityViolation
+    )
+}
+
+fn record_provider_session_reconciliation_failure(
+    project: &AgentProjectRecord,
+    engine_key: &str,
+    issue_code: &'static str,
+    error: &KernelError,
+) {
+    tracing::warn!(
+        target: "sdkwork.agents.provider_session_sync",
+        project_id = %project.project_id,
+        engine_key = %engine_key,
+        issue_code,
+        error_code = error.code(),
+        error_kind = error.kind().as_str(),
+        "provider session inventory item reconciliation failed"
+    );
 }
 
 fn provider_session_requested_at(
@@ -637,9 +794,26 @@ fn stable_provider_session_item_key(
     digest[..32].to_string()
 }
 
-fn runtime_facade_error(error: impl std::fmt::Display) -> KernelError {
-    KernelError::Internal {
-        message: error.to_string(),
+pub(crate) fn runtime_facade_error(error: RuntimeFacadeError) -> KernelError {
+    match error {
+        RuntimeFacadeError::InvalidInput(message)
+        | RuntimeFacadeError::EngineMismatch {
+            slot_engine: message,
+            ..
+        } => KernelError::validation(message),
+        RuntimeFacadeError::UnsupportedEngine { engine_key }
+        | RuntimeFacadeError::UnsupportedLiveInteraction { engine_key, .. } => {
+            KernelError::validation(format!("unsupported engineId \"{engine_key}\""))
+        }
+        RuntimeFacadeError::BlankPrompt => KernelError::validation("prompt must not be blank"),
+        RuntimeFacadeError::EngineUnavailable { engine_key, .. } => {
+            KernelError::ProviderUnavailable {
+                provider_id: engine_key,
+            }
+        }
+        RuntimeFacadeError::Kernel(message) | RuntimeFacadeError::Handler(message) => {
+            KernelError::Internal { message }
+        }
     }
 }
 
@@ -909,7 +1083,7 @@ mod tests {
             inventory.clone(),
         )
         .expect("complete provider inventory sync");
-        assert_eq!(synchronized, 227);
+        assert_eq!(synchronized.synchronized_session_count, 227);
         assert_eq!(
             synchronize_provider_session_inventory(
                 state.service.clone(),
@@ -917,7 +1091,8 @@ mod tests {
                 subject.clone(),
                 inventory,
             )
-            .expect("idempotent provider inventory replay"),
+            .expect("idempotent provider inventory replay")
+            .synchronized_session_count,
             227,
         );
 
@@ -1069,7 +1244,14 @@ mod tests {
             })
             .collect::<Vec<_>>();
         for worker in workers {
-            assert_eq!(worker.join().expect("refresh worker").expect("refresh"), 3);
+            assert_eq!(
+                worker
+                    .join()
+                    .expect("refresh worker")
+                    .expect("refresh")
+                    .synchronized_session_count,
+                3
+            );
         }
 
         let sessions = state
@@ -1109,16 +1291,16 @@ mod tests {
         subagent.session.kind = SessionKind::Subagent;
         subagent.session.parent_session_id = Some("provider-session-1".to_string());
 
-        assert_eq!(
-            synchronize_provider_session_inventory(
-                state.service.clone(),
-                &project,
-                read_subject(),
-                vec![root, duplicate, subagent],
-            )
-            .expect("normalized provider inventory sync"),
-            1
-        );
+        let synchronization = synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![root, duplicate, subagent],
+        )
+        .expect("normalized provider inventory sync");
+        assert_eq!(synchronization.synchronized_session_count, 1);
+        assert_eq!(synchronization.skipped_session_count, 2);
+        assert_eq!(synchronization.failed_session_count, 0);
 
         let sessions = state
             .service
@@ -1153,6 +1335,47 @@ mod tests {
         assert_eq!(
             binding.provider_session_tree_id.as_deref(),
             Some("provider-session-1")
+        );
+    }
+
+    #[test]
+    fn provider_inventory_reports_invalid_items_without_aborting_valid_reconciliation() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let engine = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        let valid = inventory_item(engine, "provider-session-valid".to_string(), 1);
+        let mut invalid = inventory_item(engine, "provider-session-invalid".to_string(), 2);
+        invalid.provider_id = " ".to_string();
+
+        let synchronization = synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![invalid, valid],
+        )
+        .expect("dirty inventory item must not abort valid reconciliation");
+
+        assert_eq!(synchronization.synchronized_session_count, 1);
+        assert_eq!(synchronization.skipped_session_count, 0);
+        assert_eq!(synchronization.failed_session_count, 1);
+        assert_eq!(
+            synchronization.issues,
+            vec![ProviderSessionSynchronizationIssue {
+                code: "invalid_provider_session_identity",
+                count: 1,
+                disposition: ProviderSessionSynchronizationIssueDisposition::Failed,
+            }]
         );
     }
 
@@ -1328,7 +1551,8 @@ mod tests {
                 read_subject(),
                 vec![item],
             )
-            .expect("PostgreSQL project time fallback"),
+            .expect("PostgreSQL project time fallback")
+            .synchronized_session_count,
             1
         );
         let sessions = state

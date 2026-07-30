@@ -36,8 +36,8 @@ Internal runtime SDK (`sdkwork-agent-internal-sdk`) remains kernel-owned.
 
 | Store | Table prefix | Env prefix |
 | --- | --- | --- |
-| Application database host | app metadata | `SDKWORK_AGENTS_DATABASE_*` |
-| Managed agents store (composition plane) | `ai_*` | `SDKWORK_AGENTS_STORE_DATABASE_*` (`AGENTS_STORE` service in `sdkwork-database-config`) |
-| Kernel runtime sessions | kernel-owned | `SDKWORK_AGENT_SERVER_DATABASE_*` |
+| Application database host | app metadata | `SDKWORK_DATABASE_*` |
+| Managed agents store (composition plane) | `ai_*` | `SDKWORK_DATABASE_*` (`AGENTS_STORE` is table ownership metadata only) |
+| Kernel runtime sessions | kernel-owned | `SDKWORK_DATABASE_*` with kernel-owned tables |
 
 All agents-owned business tables use the `ai_` prefix per `DATABASE_SPEC.md`.

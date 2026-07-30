@@ -146,6 +146,7 @@ pub use sql::{
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
     SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS,
     SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC, SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
     SQL_LIST_AGENT_WORKSPACES, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
@@ -4304,6 +4305,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .map(|value| u64_to_i64(value, "owner_user_id"))
             .transpose()?;
         let workspace_id = query.workspace_id.as_deref();
+        let exact_name = query.exact_name.as_deref();
         let status = query.status.map(AgentProjectStatus::as_db_code);
         let search = query
             .search_query
@@ -4319,6 +4321,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 organization_id,
                 owner_user_id,
                 workspace_id,
+                exact_name,
                 status,
                 search,
                 query.include_deleted,
@@ -4339,6 +4342,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .map(|value| u64_to_i64(value, "owner_user_id"))
             .transpose()?;
         let workspace_id = query.workspace_id.as_deref();
+        let exact_name = query.exact_name.as_deref();
         let status = query.status.map(AgentProjectStatus::as_db_code);
         let search = query
             .search_query
@@ -4352,6 +4356,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 organization_id,
                 owner_user_id,
                 workspace_id,
+                exact_name,
                 status,
                 search,
                 query.include_deleted
@@ -6062,38 +6067,72 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentSessionItemStatus::from_code)
             .map(|s| s.as_db_code());
-        let page_size = query.pagination.page_size as i64;
+        let page_size = query.repository_page_size() as i64;
 
         self.with_pool(|pool| {
-            let rows = match query.sort {
-                SessionItemListSort::RecentContextDesc => pg_query!(
+            let rows = if query.cursor_mode {
+                let cursor_sequence = query
+                    .cursor
+                    .as_ref()
+                    .map(|cursor| u64_to_i64(cursor.sequence, "cursor.sequence"))
+                    .transpose()?;
+                let cursor_item_id = query
+                    .cursor
+                    .as_ref()
+                    .map(|cursor| u64_to_i64(cursor.item_internal_id, "cursor.itemInternalId"))
+                    .transpose()?;
+                let sql = match query.sort {
+                    SessionItemListSort::SequenceAsc => SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC,
+                    SessionItemListSort::SequenceDesc => SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC,
+                    SessionItemListSort::RecentContextDesc => {
+                        return Err(KernelError::validation(
+                            "recent context pagination does not accept a cursor",
+                        ));
+                    }
+                };
+                pg_query!(
                     pool,
-                    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
+                    sql,
                     tenant_id,
                     organization_id,
                     query.session_id,
                     kind_code,
                     status_code,
+                    cursor_sequence,
+                    cursor_item_id,
                     page_size
-                )?,
-                SessionItemListSort::SequenceAsc | SessionItemListSort::SequenceDesc => {
-                    let offset = query.pagination.offset as i64;
-                    let sql = match query.sort {
-                        SessionItemListSort::SequenceAsc => SQL_LIST_AGENT_SESSION_ITEMS,
-                        SessionItemListSort::SequenceDesc => SQL_LIST_AGENT_SESSION_ITEMS_DESC,
-                        SessionItemListSort::RecentContextDesc => unreachable!(),
-                    };
-                    pg_query!(
+                )?
+            } else {
+                match query.sort {
+                    SessionItemListSort::RecentContextDesc => pg_query!(
                         pool,
-                        sql,
+                        SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
                         tenant_id,
                         organization_id,
                         query.session_id,
                         kind_code,
                         status_code,
-                        page_size,
-                        offset
-                    )?
+                        page_size
+                    )?,
+                    SessionItemListSort::SequenceAsc | SessionItemListSort::SequenceDesc => {
+                        let offset = query.pagination.offset as i64;
+                        let sql = match query.sort {
+                            SessionItemListSort::SequenceAsc => SQL_LIST_AGENT_SESSION_ITEMS,
+                            SessionItemListSort::SequenceDesc => SQL_LIST_AGENT_SESSION_ITEMS_DESC,
+                            SessionItemListSort::RecentContextDesc => unreachable!(),
+                        };
+                        pg_query!(
+                            pool,
+                            sql,
+                            tenant_id,
+                            organization_id,
+                            query.session_id,
+                            kind_code,
+                            status_code,
+                            page_size,
+                            offset
+                        )?
+                    }
                 }
             };
             let mut rows: Vec<AgentSessionItemRow> = rows

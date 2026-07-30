@@ -88,6 +88,7 @@ export type { SessionActivitySummary } from './session-activity-summary';
 export type { SessionActivitySummaryListResponse } from './session-activity-summary-list-response';
 export type { AgentSessionResponse } from './agent-session-response';
 export type { AgentSessionListResponse } from './agent-session-list-response';
+export type { ProjectSessionSynchronizationIssue } from './project-session-synchronization-issue';
 export type { ProjectSessionSynchronizationResult } from './project-session-synchronization-result';
 export type { ProjectSessionSynchronizationResponse } from './project-session-synchronization-response';
 export type { CreateAgentSessionRequest } from './create-agent-session-request';

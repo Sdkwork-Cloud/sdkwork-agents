@@ -197,12 +197,13 @@ class AiApi {
   }
 
   /// List agent projects for the current user
-  Future<AgentProjectListResponse?> agentsProjectsList([int? page, int? pageSize, String? workspaceId, String? q, String? status, bool? includeDeleted]) async {
+  Future<AgentProjectListResponse?> agentsProjectsList([int? page, int? pageSize, String? workspaceId, String? q, String? nameExact, String? status, bool? includeDeleted]) async {
     final query = buildQueryString([
       QueryParameterSpec('page', page, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('workspaceId', workspaceId, 'form', true, false, null),
       QueryParameterSpec('q', q, 'form', true, false, null),
+      QueryParameterSpec('name_exact', nameExact, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
       QueryParameterSpec('include_deleted', includeDeleted, 'form', true, false, null)
     ]);
@@ -368,6 +369,15 @@ class AiApi {
     })();
   }
 
+  /// Retrieve one project-scoped agent Session
+  Future<AgentSessionResponse?> agentsProjectSessionsRetrieve(String projectId, String sessionId) async {
+    final response = await _client.get(ApiPaths.appPath('/ai/projects/${serializePathParameter(projectId, const PathParameterSpec('projectId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentSessionResponse.fromJson(map);
+    })();
+  }
+
   /// List the authenticated owner's current Session activity snapshot
   Future<SessionActivitySummaryListResponse?> agentsSessionActivitySummariesList([String? cursor, int? pageSize, String? workspaceId, String? projectId, String? agentId]) async {
     final query = buildQueryString([
@@ -493,9 +503,9 @@ class AiApi {
   }
 
   /// List ordered items for one agent session
-  Future<AgentSessionItemListResponse?> agentsSessionItemsList(String agentId, String sessionId, [int? page, int? pageSize, String? kind, String? status, String? sort]) async {
+  Future<AgentSessionItemListResponse?> agentsSessionItemsList(String agentId, String sessionId, [String? cursor, int? pageSize, String? kind, String? status, String? sort]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('kind', kind, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),

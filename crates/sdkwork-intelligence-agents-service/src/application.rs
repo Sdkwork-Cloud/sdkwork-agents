@@ -35,6 +35,7 @@ use crate::runtime_facade_bridge::{
     RUNTIME_MODE_CONTRACT_FALLBACK,
 };
 use crate::session_activity::SessionActivitySummaryRecord;
+use crate::session_item_cursor::{encode_session_item_cursor, SessionItemCursor};
 use crate::turn_runtime::{
     complete_with_timeout, is_capacity_error, is_inference_error, ContractTurnExecutor,
     TurnExecutionInput, TurnExecutor, TURN_EXECUTION_TIMEOUT,
@@ -3100,6 +3101,35 @@ where
             })
     }
 
+    pub fn get_project_session(
+        &self,
+        command: GetProjectSessionCommand,
+    ) -> KernelResult<AgentSessionRecord> {
+        validate_standard_id(command.project_id.as_str(), "projectId", Some("project."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        self.authorize(
+            "agent.business.session.retrieve",
+            command.requested_by,
+            format!("agent.business.session.{}", command.session_id),
+            "session.retrieve",
+        )?;
+        let record = self
+            .repository
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        Self::ensure_session_owner_scope(&record, command.owner_scope)?;
+        if record.project_id.as_deref() != Some(command.project_id.as_str())
+            || record.deleted_at.is_some()
+        {
+            return Err(KernelError::validation("session not found"));
+        }
+        Ok(record)
+    }
+
     pub fn list_sessions(
         &self,
         command: ListSessionsCommand,
@@ -4925,6 +4955,39 @@ where
             command.path_agent_id.as_str(),
             command.owner_scope,
         )?;
+        if command.query.cursor_mode {
+            let scope_fingerprint = command.query.cursor_scope_fingerprint();
+            if command
+                .query
+                .cursor
+                .as_ref()
+                .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+            {
+                return Err(KernelError::validation(
+                    "cursor does not match the requested session item scope",
+                ));
+            }
+            let page_size = command.query.pagination.page_size;
+            let mut items = self.repository.list_session_items(&command.query)?;
+            let has_more = items.len() > page_size;
+            items.truncate(page_size);
+            let next_page_token = if has_more {
+                items
+                    .last()
+                    .map(|item| {
+                        encode_session_item_cursor(&SessionItemCursor {
+                            sequence: item.sequence,
+                            item_internal_id: item.id,
+                            scope_fingerprint,
+                        })
+                    })
+                    .transpose()?
+            } else {
+                None
+            };
+            return Ok(PaginatedResult::new(items, next_page_token, None));
+        }
+
         let total_count = self.repository.count_session_items(&command.query)?;
         let items = self.repository.list_session_items(&command.query)?;
         Ok(offset_paginated_result(
@@ -5376,17 +5439,15 @@ where
         }
         validate_optional_bounded(&command.access_mode_id, "accessModeId", 64)?;
         if let Some(access_mode_id) = command.access_mode_id.as_deref() {
-            let engine_key = engine_key_for_binding_id(&provider_binding.binding_id).ok_or_else(|| {
-                KernelError::validation(
-                    "accessModeId is not supported by the active provider binding",
-                )
-            })?;
+            let engine_key =
+                engine_key_for_binding_id(&provider_binding.binding_id).ok_or_else(|| {
+                    KernelError::validation(
+                        "accessModeId is not supported by the active provider binding",
+                    )
+                })?;
             let slot = sdkwork_agents_runtime_facade::bootstrap_code_engine(engine_key).map_err(
                 |error| {
-                    KernelError::provider_error(
-                        "code_engine_bootstrap_failed",
-                        error.to_string(),
-                    )
+                    KernelError::provider_error("code_engine_bootstrap_failed", error.to_string())
                 },
             )?;
             slot.resolve_execution_settings(access_mode_id)?;

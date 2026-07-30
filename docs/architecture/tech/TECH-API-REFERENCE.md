@@ -77,13 +77,34 @@ const result = await completeAgentTurn(
 ```
 
 `result` is `{ session, turn, items }`. List/retrieve operations use
-`client.ai.sessions`, `client.ai.turns`, `client.ai.sessionItems`,
-`client.ai.itemFeedback` and `client.ai.interactions`.
+`client.ai.agents.sessions`, `client.ai.agents.turns`,
+`client.ai.agents.sessionItems`, `client.ai.agents.itemFeedback` and
+`client.ai.agents.interactions`.
+
+Session Item history is an opaque keyset cursor list. Fetch the newest page
+with `sort: '-sequence'`, render accepted records back in chronological order,
+and continue only with the returned `pageInfo.nextCursor`. Never decode a
+cursor or substitute an offset:
+
+```typescript
+const page = await client.ai.agents.sessionItems.list(agentId, sessionId, {
+  pageSize: 50,
+  sort: '-sequence',
+});
+
+const earlier = page.pageInfo.hasMore && page.pageInfo.nextCursor
+  ? await client.ai.agents.sessionItems.list(agentId, sessionId, {
+      cursor: page.pageInfo.nextCursor,
+      pageSize: 50,
+      sort: '-sequence',
+    })
+  : null;
+```
 
 Streaming:
 
 ```typescript
-for await (const event of client.ai.turns.stream(
+for await (const event of client.ai.agents.turns.stream(
   agentId,
   sessionId,
   turnInput,
@@ -136,7 +157,25 @@ The Agents Flutter mobile core accepts the canonical full App surface URL and
 normalizes it before constructing this generated client. Feature code receives
 the client through bootstrap injection.
 
-## 5. Contract Rules
+## 5. Project Discovery And Import
+
+Project lists are Workspace-scoped offset pages. Use
+`client.ai.agents.projects.list({ workspaceId, q })` for bounded server search
+and `nameExact` for case-insensitive exact-name resolution. Retrieve a known
+Session directly with
+`client.ai.agents.projectSessions.retrieve(projectId, sessionId)` instead of
+scanning every Project Session page.
+
+Normal Project and Session refresh is read-only. Only an explicit folder
+import or re-import invokes
+`client.ai.agents.projectSessions.synchronize(projectId)`. The command derives the
+working directory from the trusted server-side runtime binding and returns
+`synchronizedSessionCount`, `skippedSessionCount`, `failedSessionCount`, and
+bounded aggregate `issues`. A nonzero skipped or failed count is a completed
+partial result that the client must surface; it is not transport success for
+every provider record.
+
+## 6. Contract Rules
 
 - Session creation requires `sessionKind`, `entrySurface`, `idempotencyKey`,
   `payloadHash` and `requestedAt`.
@@ -145,12 +184,14 @@ the client through bootstrap injection.
 - Retry the same command with the same key and hash.
 - Treat a key/hash conflict as a client correctness error.
 - Use `expectedVersion` for optimistic commands.
-- Page with `page` and language-level `pageSize`; the SDK serializes
-  `page_size`.
+- Offset lists use `page` and language-level `pageSize`; cursor lists use only
+  the returned opaque `cursor` and `pageSize`. The SDK serializes `page_size`.
+- Validate `PageInfo.mode` and mode-specific continuation fields before
+  committing list state. Reject a non-progressing cursor.
 - Treat Session Items as execution facts, not IM communication resources.
 - Persist only stable Agents identifiers in a consuming product.
 
-## 6. Authorities And Verification
+## 7. Authorities And Verification
 
 - Authored OpenAPI:
   `crates/sdkwork-intelligence-agents-service/specs/openapi/`

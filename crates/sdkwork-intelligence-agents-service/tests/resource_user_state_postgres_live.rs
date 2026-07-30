@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sdkwork_agent_kernel::{AgentManifest, KernelErrorKind, PolicySubject};
-use sdkwork_database_config::claw_database::postgres_url_with_search_path;
+use sdkwork_database_config::workspace_database::workspace_postgres_test_database_url;
 use sdkwork_intelligence_agents_service::{
     AgentBusinessIdGenerator, AgentCompositionSlotKind, AgentCompositionTargetModule,
     AgentImplementationKind, AgentItemDriveRefInput, AgentItemFeedbackRating,
@@ -71,11 +71,11 @@ impl BlockingTurnExecutor {
     }
 }
 
-const AGENTS_DATABASE_SCHEMA_ENV: &str = "SDKWORK_AGENTS_DATABASE_SCHEMA";
-const CANONICAL_DATABASE_SCHEMA_ENV: &str = "SDKWORK_DATABASE_SCHEMA";
-const CLAW_DATABASE_SCHEMA_ENV: &str = "SDKWORK_CLAW_DATABASE_SCHEMA";
+const DATABASE_URL_ENV: &str = "SDKWORK_DATABASE_URL";
+const DATABASE_ADMIN_URL_ENV: &str = "SDKWORK_DATABASE_ADMIN_URL";
+const DATABASE_SCHEMA_ENV: &str = "SDKWORK_DATABASE_SCHEMA";
 const DATABASE_SCHEMA_FALLBACK_PUBLIC_ENV: &str = "SDKWORK_DATABASE_SCHEMA_FALLBACK_PUBLIC";
-const DATABASE_AUTO_MIGRATE_ENV: &str = "SDKWORK_AGENTS_DATABASE_AUTO_MIGRATE";
+const DATABASE_AUTO_MIGRATE_ENV: &str = "SDKWORK_DATABASE_AUTO_MIGRATE";
 
 impl TurnExecutor for FailingTurnExecutor {
     fn complete(&self, _input: &TurnExecutionInput) -> TurnExecutionOutput {
@@ -116,8 +116,9 @@ impl TurnExecutor for BlockingTurnExecutor {
     }
 }
 
-struct IsolatedPostgresSchema {
+struct IsolatedPostgresDatabase {
     admin: SyncPostgresAdapter,
+    database: String,
     schema: String,
     _environment: Vec<EnvironmentVariableGuard>,
 }
@@ -147,14 +148,14 @@ impl Drop for EnvironmentVariableGuard {
     }
 }
 
-impl Drop for IsolatedPostgresSchema {
+impl Drop for IsolatedPostgresDatabase {
     fn drop(&mut self) {
-        let drop_schema = format!("DROP SCHEMA IF EXISTS {} CASCADE", self.schema);
+        let drop_database = format!("DROP DATABASE IF EXISTS {} WITH (FORCE)", self.database);
         let pool = self.admin.pool();
-        if let Err(error) = pool.run(sqlx::query(&drop_schema).execute(pool.pool())) {
+        if let Err(error) = pool.run(sqlx::query(&drop_database).execute(pool.pool())) {
             eprintln!(
-                "failed to drop isolated Agents schema {}: {error}",
-                self.schema
+                "failed to drop ephemeral workspace test database {}: {error}",
+                self.database
             );
         }
     }
@@ -165,40 +166,53 @@ fn database_environment_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-fn create_isolated_schema(
+fn create_isolated_database(
     base_url: &str,
     suffix: u128,
-) -> (IsolatedPostgresSchema, String, SyncPostgresAdapter) {
-    let admin =
-        SyncPostgresAdapter::connect(base_url).expect("postgres admin adapter should connect");
-    let schema = format!("agents_live_{suffix}");
-    let create_schema = format!("CREATE SCHEMA {schema}");
+) -> (IsolatedPostgresDatabase, String, SyncPostgresAdapter) {
+    let admin_url = std::env::var(DATABASE_ADMIN_URL_ENV)
+        .expect("SDKWORK_DATABASE_ADMIN_URL must be set for ephemeral test provisioning");
+    let admin = SyncPostgresAdapter::connect(&admin_url)
+        .expect("workspace postgres admin adapter should connect");
+    let database = format!("sdkwork_ai_test_{suffix}");
+    let create_database = format!("CREATE DATABASE {database} OWNER sdkwork_ai_test");
     admin
         .pool()
-        .run(sqlx::query(&create_schema).execute(admin.pool().pool()))
-        .expect("isolated postgres schema should be created");
+        .run(sqlx::query(&create_database).execute(admin.pool().pool()))
+        .expect("ephemeral workspace test database should be created");
+
+    let isolated_url = workspace_postgres_test_database_url(base_url, &database)
+        .expect("workspace test database URL should normalize");
+    let schema = database.clone();
+    let schema_owner = SyncPostgresAdapter::connect(&isolated_url)
+        .expect("workspace test database owner should connect");
+    let create_schema = format!("CREATE SCHEMA {schema} AUTHORIZATION sdkwork_ai_test");
+    schema_owner
+        .pool()
+        .run(sqlx::query(&create_schema).execute(schema_owner.pool().pool()))
+        .expect("same-named workspace test schema should be created");
+    drop(schema_owner);
 
     let environment = vec![
-        EnvironmentVariableGuard::set(AGENTS_DATABASE_SCHEMA_ENV, &schema),
-        EnvironmentVariableGuard::set(CANONICAL_DATABASE_SCHEMA_ENV, &schema),
-        EnvironmentVariableGuard::set(CLAW_DATABASE_SCHEMA_ENV, &schema),
+        EnvironmentVariableGuard::set(DATABASE_URL_ENV, &isolated_url),
+        EnvironmentVariableGuard::set(DATABASE_SCHEMA_ENV, &schema),
         EnvironmentVariableGuard::set(DATABASE_SCHEMA_FALLBACK_PUBLIC_ENV, "false"),
         EnvironmentVariableGuard::set(DATABASE_AUTO_MIGRATE_ENV, "false"),
     ];
-    let isolated_schema = IsolatedPostgresSchema {
+    let isolated_database = IsolatedPostgresDatabase {
         admin,
+        database,
         schema,
         _environment: environment,
     };
-    let isolated_url = postgres_url_with_search_path(base_url, "SDKWORK_AGENTS");
     let isolated = SyncPostgresAdapter::connect(&isolated_url)
-        .expect("isolated postgres adapter should connect");
+        .expect("workspace test postgres adapter should connect");
 
-    (isolated_schema, isolated_url, isolated)
+    (isolated_database, isolated_url, isolated)
 }
 
-fn bootstrap_isolated_schema(base_url: &str, suffix: u128) -> (IsolatedPostgresSchema, String) {
-    let (isolated_schema, isolated_url, isolated) = create_isolated_schema(base_url, suffix);
+fn bootstrap_isolated_database(base_url: &str, suffix: u128) -> (IsolatedPostgresDatabase, String) {
+    let (isolated_database, isolated_url, isolated) = create_isolated_database(base_url, suffix);
     let database_pool = isolated.pool().database_pool().clone();
     isolated
         .pool()
@@ -207,12 +221,12 @@ fn bootstrap_isolated_schema(base_url: &str, suffix: u128) -> (IsolatedPostgresS
         ))
         .expect("agents database lifecycle should bootstrap the isolated schema");
     assert_eq!(
-        authoritative_agent_table_count(&isolated, &isolated_schema.schema),
+        authoritative_agent_table_count(&isolated, &isolated_database.schema),
         20,
         "greenfield init must materialize exactly 20 authoritative Agents baseline tables without enabling auto-migrate",
     );
 
-    (isolated_schema, isolated_url)
+    (isolated_database, isolated_url)
 }
 
 fn authoritative_agent_table_count(adapter: &SyncPostgresAdapter, schema: &str) -> i64 {
@@ -481,19 +495,19 @@ fn read_session_aggregate(
 }
 
 #[test]
-#[ignore = "requires SDKWORK_AGENTS_TEST_POSTGRES_URL with schema create/drop permission"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
 fn postgres_partial_schema_fails_closed_without_auto_migrate_authorization() {
     let _environment_lock = database_environment_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let base_database_url = std::env::var("SDKWORK_AGENTS_TEST_POSTGRES_URL")
-        .expect("SDKWORK_AGENTS_TEST_POSTGRES_URL must be set");
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let (isolated_schema, _database_url, isolated) =
-        create_isolated_schema(&base_database_url, suffix);
+    let (isolated_database, _database_url, isolated) =
+        create_isolated_database(&base_database_url, suffix);
     isolated
         .pool()
         .run(
@@ -516,25 +530,26 @@ fn postgres_partial_schema_fails_closed_without_auto_migrate_authorization() {
     assert!(error.contains("agents database schema is incomplete"));
     assert!(error.contains("missing table: ai_agent"));
     assert_eq!(
-        authoritative_agent_table_count(&isolated, &isolated_schema.schema),
+        authoritative_agent_table_count(&isolated, &isolated_database.schema),
         1,
         "init must preserve an anchored partial schema for drift rejection instead of replaying the greenfield baseline",
     );
 }
 
 #[test]
-#[ignore = "requires SDKWORK_AGENTS_TEST_POSTGRES_URL with schema create/drop permission"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
 fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     let _environment_lock = database_environment_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let base_database_url = std::env::var("SDKWORK_AGENTS_TEST_POSTGRES_URL")
-        .expect("SDKWORK_AGENTS_TEST_POSTGRES_URL must be set");
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let (_isolated_schema, database_url) = bootstrap_isolated_schema(&base_database_url, suffix);
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
     let repository = SqlAgentRepository::new(
         SyncPostgresAdapter::connect(&database_url).expect("postgres adapter should connect"),
     );
@@ -1191,18 +1206,19 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_AGENTS_TEST_POSTGRES_URL with schema create/drop permission"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
 fn postgres_project_create_persists_sql_audit_events() {
     let _environment_lock = database_environment_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let base_database_url = std::env::var("SDKWORK_AGENTS_TEST_POSTGRES_URL")
-        .expect("SDKWORK_AGENTS_TEST_POSTGRES_URL must be set");
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    let (_isolated_schema, database_url) = bootstrap_isolated_schema(&base_database_url, suffix);
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
     let repository_adapter =
         SyncPostgresAdapter::connect(&database_url).expect("postgres adapter should connect");
     let audit_adapter = SyncPostgresAdapter::with_pool_and_id_generator(
@@ -1238,18 +1254,19 @@ fn postgres_project_create_persists_sql_audit_events() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_AGENTS_TEST_POSTGRES_URL with schema create/drop permission"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
 fn postgres_turn_idempotency_and_session_sequences_are_concurrency_safe() {
     let _environment_lock = database_environment_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let base_database_url = std::env::var("SDKWORK_AGENTS_TEST_POSTGRES_URL")
-        .expect("SDKWORK_AGENTS_TEST_POSTGRES_URL must be set");
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after the Unix epoch")
         .as_nanos();
-    let (_isolated_schema, database_url) = bootstrap_isolated_schema(&base_database_url, suffix);
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
     let (service, agent_id, provider_binding_id, provider_id) =
         create_live_turn_service(&database_url, suffix, None);
 
@@ -1461,18 +1478,19 @@ fn postgres_turn_idempotency_and_session_sequences_are_concurrency_safe() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_AGENTS_TEST_POSTGRES_URL with schema create/drop permission"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
 fn postgres_cancel_wins_completion_race_without_partial_response_state() {
     let _environment_lock = database_environment_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let base_database_url = std::env::var("SDKWORK_AGENTS_TEST_POSTGRES_URL")
-        .expect("SDKWORK_AGENTS_TEST_POSTGRES_URL must be set");
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after the Unix epoch")
         .as_nanos();
-    let (_isolated_schema, database_url) = bootstrap_isolated_schema(&base_database_url, suffix);
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
     let blocking_executor = Arc::new(BlockingTurnExecutor::default());
     let (service, agent_id, provider_binding_id, provider_id) =
         create_live_turn_service(&database_url, suffix, Some(blocking_executor.clone()));
