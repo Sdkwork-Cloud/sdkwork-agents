@@ -330,7 +330,7 @@ cargo test -p sdkwork-intelligence-agents-service
 pnpm test:database:postgres-live
 ```
 
-The live PostgreSQL test requires `SDKWORK_AGENTS_TEST_POSTGRES_URL` and creates
+The live PostgreSQL test requires `SDKWORK_DATABASE_TEST_POSTGRES_URL` and creates
 an isolated schema. The contract is complete only when table inventory, DDL,
 repository behavior, API resources and generated SDK vocabulary all agree on
 Project, Session, Turn, Session Item and Interaction.

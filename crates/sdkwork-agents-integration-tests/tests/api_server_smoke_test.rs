@@ -61,7 +61,6 @@ impl GatewayTestEnvironment {
         environment.set("SDKWORK_DATABASE_MIN_CONNECTIONS", "0");
         environment.set("SDKWORK_DATABASE_ACQUIRE_TIMEOUT", "60");
         environment.remove("SDKWORK_DATABASE_URL");
-        environment.remove("SDKWORK_AGENT_RUNTIME_POSTGRES_URI");
 
         environment
     }

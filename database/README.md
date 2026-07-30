@@ -56,7 +56,7 @@ pnpm db:drift:check
 pnpm test:database:postgres-live
 ```
 
-The live PostgreSQL test requires `SDKWORK_AGENTS_TEST_POSTGRES_URL` with
+The live PostgreSQL test requires `SDKWORK_DATABASE_TEST_POSTGRES_URL` with
 permission to create and drop an isolated test schema. Credentials belong in
 operator or CI secret storage and must not be committed.
 
