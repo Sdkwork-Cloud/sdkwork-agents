@@ -6647,10 +6647,8 @@ async fn app_create_turn(
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let stream_requested = query.stream.unwrap_or(false);
-        let rich_events_requested = resolve_rich_turn_event_protocol(
-            stream_requested,
-            query.event_protocol.as_deref(),
-        )?;
+        let rich_events_requested =
+            resolve_rich_turn_event_protocol(stream_requested, query.event_protocol.as_deref())?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
         let drive_refs = body
             .drive_refs
@@ -7724,10 +7722,8 @@ async fn backend_create_turn(
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let stream_requested = query.stream.unwrap_or(false);
-        let rich_events_requested = resolve_rich_turn_event_protocol(
-            stream_requested,
-            query.event_protocol.as_deref(),
-        )?;
+        let rich_events_requested =
+            resolve_rich_turn_event_protocol(stream_requested, query.event_protocol.as_deref())?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
         let drive_refs = body
             .drive_refs
@@ -9269,7 +9265,9 @@ fn resolve_rich_turn_event_protocol(
     stream_requested: bool,
     event_protocol: Option<&str>,
 ) -> Result<bool, ApiProblem> {
-    let Some(event_protocol) = event_protocol.map(str::trim).filter(|value| !value.is_empty())
+    let Some(event_protocol) = event_protocol
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
     else {
         return Ok(false);
     };
@@ -9307,11 +9305,7 @@ fn append_rich_turn_events(
     Ok(())
 }
 
-fn append_turn_delta_event(
-    body: &mut String,
-    index: usize,
-    delta: &str,
-) -> Result<(), ApiProblem> {
+fn append_turn_delta_event(body: &mut String, index: usize, delta: &str) -> Result<(), ApiProblem> {
     append_sse_json_event(
         body,
         "delta",
@@ -9348,7 +9342,13 @@ fn kernel_event_is_agent_message_update(event: &sdkwork_agent_kernel::KernelEven
     }
     serde_json::from_str::<Value>(&event.payload)
         .ok()
-        .and_then(|payload| payload.get("item")?.get("type")?.as_str().map(str::to_string))
+        .and_then(|payload| {
+            payload
+                .get("item")?
+                .get("type")?
+                .as_str()
+                .map(str::to_string)
+        })
         .as_deref()
         == Some("agent_message")
 }
@@ -9362,7 +9362,9 @@ fn agent_turn_runtime_event_json(
         sdkwork_agent_kernel::KernelEventRedaction::Secret
         | sdkwork_agent_kernel::KernelEventRedaction::Regulated => json!({ "redacted": true }),
         _ => serde_json::from_str(&event.payload).map_err(|error| {
-            ApiProblem::internal(format!("turn runtime event payload is invalid JSON: {error}"))
+            ApiProblem::internal(format!(
+                "turn runtime event payload is invalid JSON: {error}"
+            ))
         })?,
     };
     let trace_context = event.trace_context.as_ref().map(|trace| {
@@ -9418,9 +9420,7 @@ fn kernel_event_source(source: sdkwork_agent_kernel::KernelEventSource) -> &'sta
     }
 }
 
-fn kernel_event_redaction(
-    redaction: sdkwork_agent_kernel::KernelEventRedaction,
-) -> &'static str {
+fn kernel_event_redaction(redaction: sdkwork_agent_kernel::KernelEventRedaction) -> &'static str {
     match redaction {
         sdkwork_agent_kernel::KernelEventRedaction::Public => "public",
         sdkwork_agent_kernel::KernelEventRedaction::Internal => "internal",

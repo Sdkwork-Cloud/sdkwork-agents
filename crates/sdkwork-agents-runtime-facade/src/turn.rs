@@ -331,12 +331,7 @@ fn execute_first_turn_with_stream_completion(
     let completion = code_engine_stream_completion(runtime_completion)?;
 
     let (stream_deltas, stream_events) = collector.into_parts();
-    build_streamed_turn_output(
-        input,
-        stream_deltas,
-        stream_events,
-        Some(completion),
-    )
+    build_streamed_turn_output(input, stream_deltas, stream_events, Some(completion))
 }
 
 fn code_engine_stream_completion(
