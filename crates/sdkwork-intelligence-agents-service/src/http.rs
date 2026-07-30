@@ -2383,6 +2383,8 @@ struct AgentProjectCompositionSlotRecordResponse {
 struct AppCreateTurnQueryParams {
     #[serde(default)]
     stream: Option<bool>,
+    #[serde(default)]
+    event_protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -2390,6 +2392,8 @@ struct AppCreateTurnQueryParams {
 pub(crate) struct BackendCreateTurnQueryParams {
     #[serde(default)]
     pub(crate) stream: Option<bool>,
+    #[serde(default)]
+    pub(crate) event_protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -6642,6 +6646,11 @@ async fn app_create_turn(
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
+        let stream_requested = query.stream.unwrap_or(false);
+        let rich_events_requested = resolve_rich_turn_event_protocol(
+            stream_requested,
+            query.event_protocol.as_deref(),
+        )?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
         let drive_refs = body
             .drive_refs
@@ -6671,11 +6680,16 @@ async fn app_create_turn(
             owner_scope,
             requested_by: scope.subject,
             requested_at: body.requested_at,
-            prefer_stream: query.stream.unwrap_or(false),
+            prefer_stream: stream_requested,
         };
         let turn_result =
             with_service(&state, move |service| service.execute_turn(command)).await?;
-        turn_execution_http_response(&web_ctx, &turn_result, query.stream.unwrap_or(false))
+        turn_execution_http_response(
+            &web_ctx,
+            &turn_result,
+            stream_requested,
+            rich_events_requested,
+        )
     }
     .await;
     crate::response::finish_api_response(&web_ctx, result)
@@ -7738,11 +7752,16 @@ async fn backend_create_turn(
             owner_scope: None,
             requested_by: scope.subject,
             requested_at: body.requested_at,
-            prefer_stream: query.stream.unwrap_or(false),
+            prefer_stream: stream_requested,
         };
         let turn_result =
             with_service(&state, move |service| service.execute_turn(command)).await?;
-        turn_execution_http_response(&web_ctx, &turn_result, query.stream.unwrap_or(false))
+        turn_execution_http_response(
+            &web_ctx,
+            &turn_result,
+            stream_requested,
+            rich_events_requested,
+        )
     }
     .await;
     crate::response::finish_api_response(&web_ctx, result)
@@ -9191,6 +9210,7 @@ fn turn_execution_http_response(
     ctx: &sdkwork_web_core::WebRequestContext,
     result: &crate::application::TurnExecutionResult,
     stream_requested: bool,
+    rich_events_requested: bool,
 ) -> Result<Response, ApiProblem> {
     let execution =
         AgentTurnExecutionDto::from_result(result).map_err(ApiProblem::from_kernel_error)?;
@@ -9209,19 +9229,12 @@ fn turn_execution_http_response(
             ApiProblem::internal(format!("failed to encode turn completion: {error}"))
         })?;
         let mut body = String::new();
-        for (index, delta) in result.stream_deltas.iter().enumerate() {
-            let payload = serde_json::to_string(&json!({
-                "eventType": "delta",
-                "index": index,
-                "delta": delta,
-            }))
-            .map_err(|error| {
-                ApiProblem::internal(format!("failed to encode turn delta: {error}"))
-            })?;
-            body.push_str("event: delta\n");
-            body.push_str("data: ");
-            body.push_str(&payload);
-            body.push_str("\n\n");
+        if rich_events_requested {
+            append_rich_turn_events(&mut body, result)?;
+        } else {
+            for (index, delta) in result.stream_deltas.iter().enumerate() {
+                append_turn_delta_event(&mut body, index, delta)?;
+            }
         }
         body.push_str("event: completion\n");
         body.push_str("data: ");
@@ -9243,6 +9256,175 @@ fn turn_execution_http_response(
     }
 
     success_json(ctx, ResourceData { item: execution })
+}
+
+const TURN_EVENT_PROTOCOL_KERNEL_V1: &str = "kernel-v1";
+
+fn resolve_rich_turn_event_protocol(
+    stream_requested: bool,
+    event_protocol: Option<&str>,
+) -> Result<bool, ApiProblem> {
+    let Some(event_protocol) = event_protocol.map(str::trim).filter(|value| !value.is_empty())
+    else {
+        return Ok(false);
+    };
+    if !stream_requested {
+        return Err(ApiProblem::validation(
+            "event_protocol requires stream=true",
+        ));
+    }
+    if event_protocol != TURN_EVENT_PROTOCOL_KERNEL_V1 {
+        return Err(ApiProblem::validation(format!(
+            "event_protocol must be {TURN_EVENT_PROTOCOL_KERNEL_V1}",
+        )));
+    }
+    Ok(true)
+}
+
+fn append_rich_turn_events(
+    body: &mut String,
+    result: &crate::application::TurnExecutionResult,
+) -> Result<(), ApiProblem> {
+    let mut delta_index = 0usize;
+    for (event_index, event) in result.stream_events.iter().enumerate() {
+        if kernel_event_is_agent_message_update(event) {
+            if let Some(delta) = result.stream_deltas.get(delta_index) {
+                append_turn_delta_event(body, delta_index, delta)?;
+                delta_index += 1;
+            }
+        }
+        let payload = agent_turn_runtime_event_json(event_index, event, result)?;
+        append_sse_json_event(body, "event", &payload, "turn runtime event")?;
+    }
+    for (index, delta) in result.stream_deltas.iter().enumerate().skip(delta_index) {
+        append_turn_delta_event(body, index, delta)?;
+    }
+    Ok(())
+}
+
+fn append_turn_delta_event(
+    body: &mut String,
+    index: usize,
+    delta: &str,
+) -> Result<(), ApiProblem> {
+    append_sse_json_event(
+        body,
+        "delta",
+        &json!({
+            "eventType": "delta",
+            "index": index,
+            "delta": delta,
+        }),
+        "turn delta",
+    )
+}
+
+fn append_sse_json_event(
+    body: &mut String,
+    event_name: &str,
+    value: &Value,
+    description: &str,
+) -> Result<(), ApiProblem> {
+    let payload = serde_json::to_string(value).map_err(|error| {
+        ApiProblem::internal(format!("failed to encode {description}: {error}"))
+    })?;
+    body.push_str("event: ");
+    body.push_str(event_name);
+    body.push('\n');
+    body.push_str("data: ");
+    body.push_str(&payload);
+    body.push_str("\n\n");
+    Ok(())
+}
+
+fn kernel_event_is_agent_message_update(event: &sdkwork_agent_kernel::KernelEvent) -> bool {
+    if !event.event_type.starts_with("agent.message.") {
+        return false;
+    }
+    serde_json::from_str::<Value>(&event.payload)
+        .ok()
+        .and_then(|payload| payload.get("item")?.get("type")?.as_str().map(str::to_string))
+        .as_deref()
+        == Some("agent_message")
+}
+
+fn agent_turn_runtime_event_json(
+    sequence: usize,
+    event: &sdkwork_agent_kernel::KernelEvent,
+    result: &crate::application::TurnExecutionResult,
+) -> Result<Value, ApiProblem> {
+    let payload = match event.redaction_classification {
+        sdkwork_agent_kernel::KernelEventRedaction::Secret
+        | sdkwork_agent_kernel::KernelEventRedaction::Regulated => json!({ "redacted": true }),
+        _ => serde_json::from_str(&event.payload).map_err(|error| {
+            ApiProblem::internal(format!("turn runtime event payload is invalid JSON: {error}"))
+        })?,
+    };
+    let trace_context = event.trace_context.as_ref().map(|trace| {
+        json!({
+            "traceId": trace.trace_id,
+            "spanId": trace.span_id,
+            "parentSpanId": trace.parent_span_id,
+        })
+    });
+    Ok(json!({
+        "eventType": "event",
+        "event": {
+            "eventId": event.event_id,
+            "type": event.event_type,
+            "version": event.event_version,
+            "sequence": sequence,
+            "occurredAt": event.occurred_at,
+            "source": kernel_event_source(event.source),
+            "severity": kernel_event_severity(event.severity),
+            "sessionId": result.session.session_id,
+            "turnId": result.turn.turn_id,
+            "providerSessionId": event.session_id,
+            "taskId": event.task_id,
+            "runId": event.run_id,
+            "itemId": event.step_id,
+            "traceContext": trace_context,
+            "correlationId": event.correlation_id,
+            "causationId": event.causation_id,
+            "redactionClassification": kernel_event_redaction(event.redaction_classification),
+            "payloadSchema": event.payload_schema,
+            "payload": payload,
+            "replay": event.replay,
+        }
+    }))
+}
+
+fn kernel_event_source(source: sdkwork_agent_kernel::KernelEventSource) -> &'static str {
+    match source {
+        sdkwork_agent_kernel::KernelEventSource::Runtime => "runtime",
+        sdkwork_agent_kernel::KernelEventSource::Manifest => "manifest",
+        sdkwork_agent_kernel::KernelEventSource::Provider => "provider",
+        sdkwork_agent_kernel::KernelEventSource::Model => "model",
+        sdkwork_agent_kernel::KernelEventSource::Tool => "tool",
+        sdkwork_agent_kernel::KernelEventSource::Context => "context",
+        sdkwork_agent_kernel::KernelEventSource::Memory => "memory",
+        sdkwork_agent_kernel::KernelEventSource::Policy => "policy",
+        sdkwork_agent_kernel::KernelEventSource::Host => "host",
+        sdkwork_agent_kernel::KernelEventSource::ProtocolAdapter => "protocol_adapter",
+        sdkwork_agent_kernel::KernelEventSource::KernelUi => "kernel_ui",
+        sdkwork_agent_kernel::KernelEventSource::CodeKernel => "code_kernel",
+        sdkwork_agent_kernel::KernelEventSource::Telemetry => "telemetry",
+        sdkwork_agent_kernel::KernelEventSource::Unknown => "unknown",
+    }
+}
+
+fn kernel_event_redaction(
+    redaction: sdkwork_agent_kernel::KernelEventRedaction,
+) -> &'static str {
+    match redaction {
+        sdkwork_agent_kernel::KernelEventRedaction::Public => "public",
+        sdkwork_agent_kernel::KernelEventRedaction::Internal => "internal",
+        sdkwork_agent_kernel::KernelEventRedaction::TenantSensitive => "tenant_sensitive",
+        sdkwork_agent_kernel::KernelEventRedaction::PersonalData => "personal_data",
+        sdkwork_agent_kernel::KernelEventRedaction::Secret => "secret",
+        sdkwork_agent_kernel::KernelEventRedaction::Regulated => "regulated",
+        sdkwork_agent_kernel::KernelEventRedaction::Unknown => "unknown",
+    }
 }
 
 fn total_pages(total_items: usize, page_size: usize) -> usize {
