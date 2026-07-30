@@ -1959,12 +1959,6 @@ impl AgentRepository for InMemoryAgentRepository {
                 })
                 .map(|cursor| encode_session_activity_cursor(&cursor))
                 .transpose()?
-        } else if items.is_empty() {
-            query
-                .cursor
-                .as_ref()
-                .map(encode_session_activity_cursor)
-                .transpose()?
         } else {
             None
         };
