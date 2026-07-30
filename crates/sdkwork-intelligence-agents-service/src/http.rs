@@ -7723,6 +7723,11 @@ async fn backend_create_turn(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
+        let stream_requested = query.stream.unwrap_or(false);
+        let rich_events_requested = resolve_rich_turn_event_protocol(
+            stream_requested,
+            query.event_protocol.as_deref(),
+        )?;
         validate_requested_at(body.requested_at.as_str()).map_err(ApiProblem::from_kernel_error)?;
         let drive_refs = body
             .drive_refs
