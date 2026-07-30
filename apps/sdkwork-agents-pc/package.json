@@ -10,7 +10,7 @@
     "clean": "node scripts/clean.mjs",
     "lint": "tsc --noEmit",
     "typecheck": "pnpm run lint",
-    "test:agent-contract": "tsx --test tests/agent-catalog.test.ts tests/package-alignment.contract.test.mjs tests/workbench-modules.test.ts",
+    "test:agent-contract": "tsx --test tests/agent-catalog.test.ts tests/package-alignment.contract.test.mjs tests/sdk-services.contract.test.ts tests/workbench-modules.test.ts",
     "test:iam-contract": "node --test tests/iam-integration.contract.test.mjs && tsx --test tests/auth-routing.test.ts tests/runtime-config.test.ts",
     "test:drive-contract": "tsx --test tests/drive-upload.contract.test.ts",
     "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
@@ -64,6 +64,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@types/react-syntax-highlighter": "^15.5.13",
     "autoprefixer": "^10.4.21",
     "tsx": "^4.21.0",

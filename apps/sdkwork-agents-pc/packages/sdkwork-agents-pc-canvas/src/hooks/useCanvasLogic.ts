@@ -1777,12 +1777,20 @@ export function useCanvasLogic() {
         setNodes(prev => prev.map(n => n.id === id ? { ...n, progress: p, content: msg } : n));
       }).then((url) => {
         setNodes(prev => prev.map(n => n.id === id ? { ...n, status: 'completed', progress: 100, mediaUrl: url } : n));
+      }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : '图片生成失败';
+        setNodes(prev => prev.map(n => n.id === id ? { ...n, status: 'failed', progress: 0 } : n));
+        showToastMessage(message, 'error');
       });
     } else if (node.type === 'video-gen') {
       CanvasService.generateVideo(finalPrompt, (p, msg) => {
         setNodes(prev => prev.map(n => n.id === id ? { ...n, progress: p, content: msg } : n));
       }).then((url) => {
         setNodes(prev => prev.map(n => n.id === id ? { ...n, status: 'completed', progress: 100, mediaUrl: url } : n));
+      }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : '视频生成失败';
+        setNodes(prev => prev.map(n => n.id === id ? { ...n, status: 'failed', progress: 0 } : n));
+        showToastMessage(message, 'error');
       });
     }
   };

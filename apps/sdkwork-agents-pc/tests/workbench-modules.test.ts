@@ -238,7 +238,7 @@ test('removes Presentation from the workbench application composition', () => {
   assert.doesNotMatch(moduleRegistrySource, /agents-pc-presentation|presentation:/);
 });
 
-test('resolves packaged Assets media without depending on the host source root', () => {
+test('loads Assets through the composed Drive SDK service', () => {
   const assetsServiceSource = readFileSync(
     new URL(
       '../packages/sdkwork-agents-pc-assets/src/services/AssetsService.ts',
@@ -247,9 +247,11 @@ test('resolves packaged Assets media without depending on the host source root',
     'utf8',
   );
 
-  assert.match(assetsServiceSource, /new URL\(/);
-  assert.match(assetsServiceSource, /import\.meta\.url/);
-  assert.doesNotMatch(assetsServiceSource, /['"]\/src\/assets\//);
+  assert.match(assetsServiceSource, /getDriveAppSdkClientWithSession/);
+  assert.match(assetsServiceSource, /drive\.assets\.list/);
+  assert.match(assetsServiceSource, /agentsDriveUploadService\.resolvePreviewUrl/);
+  assert.doesNotMatch(assetsServiceSource, /new URL\(|import\.meta\.url/);
+  assert.doesNotMatch(assetsServiceSource, /MOCK_|picsum|unsplash|mixkit/i);
 });
 
 test('accepts only registered workbench tab events', () => {

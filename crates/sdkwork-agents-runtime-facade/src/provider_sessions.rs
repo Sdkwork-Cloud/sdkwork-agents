@@ -165,8 +165,9 @@ pub(crate) fn load_provider_session_messages(
         "claude-code" => discover_claude_code_provider_session_messages(provider_session_id),
         "opencode" => discover_opencode_provider_session_messages(provider_session_id),
         _ => {
-            return Err(RuntimeFacadeError::UnsupportedEngine {
+            return Err(RuntimeFacadeError::UnsupportedCapability {
                 engine_key: engine_key.to_string(),
+                capability_id: "sdk.session.history".to_string(),
             })
         }
     }
@@ -240,6 +241,7 @@ fn resolve_selected_cwd(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code_engines::bootstrap_code_engine;
 
     fn item(engine: &str, session_id: &str, cwd: &str) -> ProviderSessionInventoryItem {
         ProviderSessionInventoryItem {
@@ -315,6 +317,36 @@ mod tests {
 
         assert_eq!(selected.len(), 2);
         assert_ne!(selected[0].binding_id, selected[1].binding_id);
+    }
+
+    #[test]
+    fn registered_engine_without_history_reports_missing_capability() {
+        let mut slots = HashMap::new();
+        slots.insert(
+            "gemini".to_string(),
+            bootstrap_code_engine("gemini").expect("Gemini bootstrap"),
+        );
+
+        let error = load_provider_session_messages(&slots, "gemini", "session-1")
+            .expect_err("Gemini history is not implemented");
+        assert!(matches!(
+            error,
+            RuntimeFacadeError::UnsupportedCapability {
+                ref engine_key,
+                ref capability_id,
+            } if engine_key == "gemini" && capability_id == "sdk.session.history"
+        ));
+    }
+
+    #[test]
+    fn unknown_engine_still_reports_unsupported_engine() {
+        let error = load_provider_session_messages(&HashMap::new(), "unknown", "session-1")
+            .expect_err("unknown engine must fail");
+        assert!(matches!(
+            error,
+            RuntimeFacadeError::UnsupportedEngine { ref engine_key }
+                if engine_key == "unknown"
+        ));
     }
 
     #[test]

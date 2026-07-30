@@ -24,7 +24,7 @@
     "layerRole": "frontend-feature",
     "publicExports": ["."],
     "providedPorts": ["agents.canvas.view"],
-    "requiredPorts": ["agents.commons"],
+    "requiredPorts": ["agents.commons", "agents.sdk"],
     "sdkClients": [],
     "sdkDependencies": [],
     "dependencyApiExports": [],

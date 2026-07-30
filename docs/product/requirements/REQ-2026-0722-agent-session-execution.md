@@ -1,7 +1,7 @@
 # REQ-2026-0722 Canonical Agent Session Execution
 
 - Owner: `agents-platform`
-- Status: approved
+- Status: accepted
 - Priority: P0
 - Review: human-approved `2026-07-22`
 
@@ -21,7 +21,7 @@ independent capability entities remain outside the Agents persistence boundary.
 - Turn completion persists ordered typed Session Items, usage, audit and outbox
   facts consistently.
 - Interaction claim and resolution are race-safe and versioned.
-- App, Backend and Open OpenAPI authorities expose 79, 48 and 47 operations
+- App, Backend and Open OpenAPI authorities expose 83, 48 and 47 operations
   respectively with standard envelopes, problem details and pagination.
 - TypeScript and Flutter App SDKs expose Session, Turn, SessionItem, feedback and
   Interaction resources from package roots.

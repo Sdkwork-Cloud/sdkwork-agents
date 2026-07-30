@@ -11,13 +11,13 @@ import { ActivitiesTab } from './components/tabs/ActivitiesTab';
 import { InspirationFeatureCards } from './components/InspirationFeatureCards';
 import { InspirationTabs } from './components/InspirationTabs';
 import { InspirationService } from './services/InspirationService';
-import { 
-  ShortVideo, 
-  Activity, 
+import type {
+  Activity,
   ActivityWork,
+  DiscoverData,
+  ShortVideo,
   SkillCategory,
-  DiscoverData
-} from './mockData';
+} from './types';
 
 export const InspirationView = () => {
   const [activeTab, setActiveTab] = useState<string>('发现');

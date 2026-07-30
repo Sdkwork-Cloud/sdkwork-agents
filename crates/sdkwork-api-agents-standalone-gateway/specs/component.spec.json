@@ -48,6 +48,12 @@
       "src/bootstrap.rs#build_router",
       "Cargo.toml[[bin]].sdkwork-api-agents-standalone-gateway"
     ],
+    "requiredPorts": [
+      {
+        "name": "agentsApiAssemblyRouter",
+        "export": "sdkwork_api_agents_assembly::assemble_api_router"
+      }
+    ],
     "routeManifest": null,
     "sdkClients": [],
     "sdkDependencies": [
@@ -68,7 +74,10 @@
         "apiPrefix": "/app/v3/api",
         "runtimeMode": "same-origin-mounted",
         "cargoDependency": "sdkwork-api-agents-assembly",
-        "embeddedExecutableExport": "sdkwork_api_agents_standalone_gateway::build_router",
+        "embeddedExecutableExport": "sdkwork_api_agents_assembly::assemble_api_router",
+        "profileCoverage": [
+          "standalone"
+        ],
         "coverageEvidence": [
           "../sdkwork-api-agents-assembly/src/bootstrap/iam.rs#wire_iam_app_router",
           "src/bootstrap.rs#build_router"

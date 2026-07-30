@@ -21,8 +21,8 @@ export interface ChatProjectCompositionSlot {
   id: string;
   projectId: string;
   slotId: string;
-  slotKind: 'prompt' | 'memory' | 'knowledge' | 'skill' | 'mcp' | 'drive' | 'tool';
-  targetModule: 'prompts' | 'memory' | 'knowledgebase' | 'skills' | 'mcp' | 'drive' | 'tools';
+  slotKind: 'prompt' | 'memory' | 'knowledge' | 'skill' | 'mcp' | 'drive' | 'document' | 'tool';
+  targetModule: 'prompts' | 'memory' | 'knowledgebase' | 'skills' | 'mcp' | 'drive' | 'documents' | 'tools';
   targetRef: string;
   targetVersionRef?: string;
   priority: number;

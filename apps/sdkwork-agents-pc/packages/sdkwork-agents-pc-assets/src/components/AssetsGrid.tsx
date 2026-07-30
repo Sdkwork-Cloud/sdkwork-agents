@@ -19,9 +19,7 @@ export const AssetsGrid: React.FC<AssetsGridProps> = ({ groups, activeFilter, on
       <div className="max-w-[1600px] mx-auto space-y-8">
         {groups.map((group, index) => {
           const filteredItems = group.items.filter(item => {
-            if (activeFilter === 'image') return item.type === 'image';
-            if (activeFilter === 'video') return item.type === 'video';
-            return false;
+            return item.type === activeFilter;
           });
 
           if (filteredItems.length === 0) return null;

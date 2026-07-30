@@ -14,7 +14,13 @@
     "appId": "sdkwork-agents",
     "platform": "WEB",
     "organizationId": "0",
-    "tenantId": "100001"
+    "tenantId": "100001",
+    "accessTokenPermissionScope": [
+      "iam.users.read",
+      "iam.organizations.read",
+      "iam.roles.read",
+      "iam.permissions.read"
+    ]
   },
   "runtime": {
     "family": "web",

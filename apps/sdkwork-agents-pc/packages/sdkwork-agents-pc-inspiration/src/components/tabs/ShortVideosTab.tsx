@@ -1,6 +1,6 @@
 import React from 'react';
 import { Play, Heart } from 'lucide-react';
-import { ShortVideo } from '../../mockData';
+import type { ShortVideo } from '../../types';
 
 interface ShortVideosTabProps {
   filteredVideos: ShortVideo[];

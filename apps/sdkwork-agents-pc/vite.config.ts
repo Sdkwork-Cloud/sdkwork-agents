@@ -63,6 +63,8 @@ export default defineConfig(({ mode }) => {
             if (normalizedId.includes('/sdks/sdkwork-agents-app-sdk/')) return 'sdk-agents';
             if (normalizedId.includes('/sdkwork-iam/sdks/sdkwork-iam-app-sdk/')) return 'sdk-iam';
             if (normalizedId.includes('/sdkwork-drive/sdks/sdkwork-drive-app-sdk/')) return 'sdk-drive';
+            if (normalizedId.includes('/sdkwork-community/sdks/sdkwork-community-app-sdk/')) return 'sdk-community';
+            if (normalizedId.includes('/sdkwork-generations/sdks/sdkwork-generations-app-sdk/')) return 'sdk-generations';
             if (normalizedId.includes('/sdkwork-knowledgebase/')) return 'sdk-knowledgebase';
             if (normalizedId.includes('/sdkwork-skills/')) return 'sdk-skills';
             if (normalizedId.includes('/sdkwork-voice/')) return 'sdk-voice';

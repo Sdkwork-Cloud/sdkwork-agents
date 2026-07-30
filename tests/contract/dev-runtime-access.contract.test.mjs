@@ -190,11 +190,16 @@ test('source topology profiles project exact CORS and IAM origins from etc', () 
     assert.equal(env.SDKWORK_AGENTS_ENVIRONMENT, environment);
     assert.equal(env.SDKWORK_ENVIRONMENT, environment);
     assert.equal(env.SDKWORK_AGENTS_PROFILE_ID, profile);
-    assert.equal(
-      env.VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
-      env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
-      `${profile} must project the platform IAM gateway to generic browser runtime config`,
-    );
+    if (deploymentProfile === 'standalone') {
+      assert.equal(env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL, undefined);
+      assert.equal(env.VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL, undefined);
+    } else {
+      assert.equal(
+        env.VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+        env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL,
+        `${profile} must project the platform IAM gateway to generic browser runtime config`,
+      );
+    }
     const expectedIamGateway = deploymentProfile === 'standalone'
       ? env.SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL
       : env.SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL;
@@ -219,7 +224,7 @@ test('source topology profiles project exact CORS and IAM origins from etc', () 
       if (deploymentProfile === 'standalone') {
         assert.equal(env.SDKWORK_AGENTS_DEV_AUTH_BYPASS, 'false');
         assert.equal(env.SDKWORK_DATABASE_ENGINE, 'postgresql');
-        assert.equal(env.SDKWORK_DATABASE_SCHEMA, 'public');
+        assert.equal(env.SDKWORK_DATABASE_SCHEMA, 'sdkwork_ai_dev');
         assert.equal(env.SDKWORK_DATABASE_SSL_MODE, 'disable');
         assert.equal(env.SDKWORK_DATABASE_URL, undefined);
         assert.equal(env.SDKWORK_DATABASE_PATH, undefined);

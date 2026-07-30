@@ -1,18 +1,7 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
 
-interface SkillItem {
-  id: string;
-  title: string;
-  desc: string;
-  likes: number;
-  author: string;
-}
-
-interface SkillCategory {
-  category: string;
-  items: SkillItem[];
-}
+import type { SkillCategory } from '../../types';
 
 interface SkillsTabProps {
   filteredSkills: SkillCategory[];

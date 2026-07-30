@@ -1618,7 +1618,7 @@ impl AgentTaskRow {
     pub fn from_record(record: &AgentTaskRecord) -> KernelResult<Self> {
         Ok(Self {
             id: record.id,
-            uuid: build_task_uuid(record.tenant_id, &record.task_id),
+            uuid: build_task_uuid(record.tenant_id, record.organization_id, &record.task_id),
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
             agent_id: record.agent_id.clone(),
@@ -1702,8 +1702,9 @@ fn build_interaction_uuid(tenant_id: u64, session_id: &str, interaction_id: &str
     build_storage_uuid("interaction", tenant_id, &[session_id, interaction_id])
 }
 
-fn build_task_uuid(tenant_id: u64, task_id: &str) -> String {
-    build_storage_uuid("task", tenant_id, &[task_id])
+fn build_task_uuid(tenant_id: u64, organization_id: u64, task_id: &str) -> String {
+    let organization_id = organization_id.to_string();
+    build_storage_uuid("task", tenant_id, &[&organization_id, task_id])
 }
 
 fn build_project_uuid(tenant_id: u64, organization_id: u64, project_id: &str) -> String {
@@ -2318,7 +2319,12 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     // Task operations
     fn insert_task_row(&self, row: AgentTaskRow) -> KernelResult<()>;
     fn update_task_row(&self, row: AgentTaskRow) -> KernelResult<()>;
-    fn get_task_row(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRow>>;
+    fn get_task_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        task_id: &str,
+    ) -> KernelResult<Option<AgentTaskRow>>;
     fn list_task_rows(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRow>>;
     fn count_task_rows(&self, query: &TaskListQuery) -> KernelResult<u64>;
 }
@@ -2770,12 +2776,6 @@ where
                     scope_fingerprint: query.scope_fingerprint(),
                 })
                 .map(|cursor| encode_session_activity_cursor(&cursor))
-                .transpose()?
-        } else if items.is_empty() {
-            query
-                .cursor
-                .as_ref()
-                .map(encode_session_activity_cursor)
                 .transpose()?
         } else {
             None
@@ -3246,9 +3246,14 @@ where
             .update_task_row(AgentTaskRow::from_record(&record)?)
     }
 
-    fn get_task(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRecord>> {
+    fn get_task(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        task_id: &str,
+    ) -> KernelResult<Option<AgentTaskRecord>> {
         self.adapter
-            .get_task_row(tenant_id, task_id)?
+            .get_task_row(tenant_id, organization_id, task_id)?
             .map(AgentTaskRow::into_record)
             .transpose()
     }
@@ -5943,10 +5948,10 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
     ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)> {
         if row.sequence != 0
             || row.turn_id.is_some()
-            || row.status != AgentSessionItemStatus::Completed.as_db_code()
+            || row.status == AgentSessionItemStatus::Redacted.as_db_code()
         {
             return Err(KernelError::validation(
-                "standalone session item must be an unsequenced completed item without a turn",
+                "standalone session item must be unsequenced, non-redacted, and without a turn",
             ));
         }
         self.with_pool(|pool| {
@@ -6889,6 +6894,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let previous_version =
             u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
 
         self.with_pool(|pool| {
             let updated_rows = pg_execute!(
@@ -6905,14 +6911,20 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.completed_at,
                 row.cancelled_at,
                 tenant_id,
+                organization_id,
                 row.task_id,
                 previous_version
             )?;
 
             if updated_rows == 0 {
-                let exists =
-                    pg_query_optional!(pool, SQL_SELECT_AGENT_TASK, tenant_id, row.task_id)?
-                        .is_some();
+                let exists = pg_query_optional!(
+                    pool,
+                    SQL_SELECT_AGENT_TASK,
+                    tenant_id,
+                    organization_id,
+                    row.task_id
+                )?
+                .is_some();
                 if exists {
                     return Err(KernelError::conflict("task version mismatch"));
                 }
@@ -6922,16 +6934,29 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
-    fn get_task_row(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRow>> {
+    fn get_task_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        task_id: &str,
+    ) -> KernelResult<Option<AgentTaskRow>> {
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
         self.with_pool(|pool| {
-            let row = pg_query_optional!(pool, SQL_SELECT_AGENT_TASK, tenant_id, task_id)?;
+            let row = pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_TASK,
+                tenant_id,
+                organization_id,
+                task_id
+            )?;
             row.map(pg_row_to_agent_task_row).transpose()
         })
     }
 
     fn list_task_rows(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let agent_id: Option<&str> = query.agent_id.as_deref();
         let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
         let status_code: Option<i16> = query
@@ -6947,6 +6972,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 pool,
                 SQL_LIST_AGENT_TASKS,
                 tenant_id,
+                organization_id,
                 agent_id,
                 owner_user_id,
                 status_code,
@@ -6959,6 +6985,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn count_task_rows(&self, query: &TaskListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
         let agent_id: Option<&str> = query.agent_id.as_deref();
         let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
         let status_code: Option<i16> = query
@@ -6972,6 +6999,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 pool,
                 SQL_COUNT_AGENT_TASKS,
                 tenant_id,
+                organization_id,
                 agent_id,
                 owner_user_id,
                 status_code
@@ -8320,7 +8348,7 @@ mod tests {
             build_session_uuid(tenant_id, &session_id),
             build_session_item_uuid(tenant_id, &session_id, &item_id),
             build_interaction_uuid(tenant_id, &session_id, &interaction_id),
-            build_task_uuid(tenant_id, &task_id),
+            build_task_uuid(tenant_id, 42, &task_id),
         ];
 
         assert!(uuids.iter().all(|uuid| uuid.len() == 64));
@@ -8329,6 +8357,18 @@ mod tests {
         distinct.sort();
         distinct.dedup();
         assert_eq!(distinct.len(), uuids.len());
+    }
+
+    #[test]
+    fn task_storage_uuid_is_organization_scoped() {
+        let organization_one_uuid = build_task_uuid(100_001, 10, "task.shared-id");
+        let organization_two_uuid = build_task_uuid(100_001, 20, "task.shared-id");
+
+        assert_ne!(organization_one_uuid, organization_two_uuid);
+        assert_eq!(
+            organization_one_uuid,
+            build_task_uuid(100_001, 10, "task.shared-id")
+        );
     }
 
     #[test]

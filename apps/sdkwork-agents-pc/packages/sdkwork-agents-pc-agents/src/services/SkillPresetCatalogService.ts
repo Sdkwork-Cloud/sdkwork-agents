@@ -1,11 +1,9 @@
 import { Blocks } from "lucide-react";
 import { createElement } from "react";
 
-import {
-  getSkillsAppSdkClient,
-  isSkillsAppSdkConfigured,
-  type SkillPackageRecord,
-  type SkillRecord,
+import type {
+  SkillPackageRecord,
+  SkillRecord,
 } from "@sdkwork/agents-pc-core/sdk/skillsAppSdkClient";
 
 import type { SkillItem } from "../components/SelectSkillsModal";
@@ -46,6 +44,10 @@ export async function loadSkillCatalogPageByCategory(
   pageSize = DEFAULT_LIST_PAGE_SIZE,
   q?: string,
 ): Promise<SkillCatalogPage> {
+  const {
+    getSkillsAppSdkClient,
+    isSkillsAppSdkConfigured,
+  } = await import("@sdkwork/agents-pc-core/sdk/skillsAppSdkClient");
   if (!isSkillsAppSdkConfigured()) {
     throw new Error("Skills catalog SDK is not configured for this deployment.");
   }

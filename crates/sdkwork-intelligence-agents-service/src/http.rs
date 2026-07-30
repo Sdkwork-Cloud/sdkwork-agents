@@ -815,9 +815,10 @@ impl AgentRepository for DynAgentRepository {
     fn get_task(
         &self,
         tenant_id: u64,
+        organization_id: u64,
         task_id: &str,
     ) -> KernelResult<Option<crate::domain::AgentTaskRecord>> {
-        self.0.get_task(tenant_id, task_id)
+        self.0.get_task(tenant_id, organization_id, task_id)
     }
 
     fn list_tasks(
@@ -1673,6 +1674,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items",
             get(app_list_session_items),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/synchronize",
+            post(app_synchronize_session_items),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}",
@@ -6056,6 +6061,7 @@ async fn app_list_tasks(
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListTasksRequestDto {
             tenant_id: scope.tenant_id,
+            organization_id: scope.organization_id,
             owner_user_id: Some(scope.owner_user_id),
             status: query.status,
         }
@@ -6133,6 +6139,8 @@ async fn app_get_task(
         let owner_scope = scope.owner_scope()?;
         let command = GetTaskCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             task_id,
             owner_scope,
@@ -6160,7 +6168,14 @@ async fn app_cancel_task(
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_command(scope.tenant_id_u64()?, agent_id, task_id, scope.subject)
+            .into_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record = with_service(&state, move |service| service.cancel_task(command)).await?;
@@ -6185,7 +6200,14 @@ async fn app_execute_task(
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_execute_command(scope.tenant_id_u64()?, agent_id, task_id, scope.subject)
+            .into_execute_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record = with_service(&state, move |service| service.execute_task(command)).await?;
@@ -6445,19 +6467,37 @@ async fn app_list_session_items(
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
 ) -> Response {
-    let trace_id = web_ctx.resolved_trace_id();
+    app_session_items_window(state, context, web_ctx, path, query, false).await
+}
+
+async fn app_synchronize_session_items(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
+) -> Response {
+    app_session_items_window(state, context, web_ctx, path, query, true).await
+}
+
+async fn app_session_items_window(
+    state: AgentHttpState,
+    context: AgentRequestContext,
+    web_ctx: sdkwork_web_core::WebRequestContext,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
+    synchronize: bool,
+) -> Response {
     let result: ApiResult<PageData<AgentSessionItemRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
-        let provider_session_sync_tenant_id = scope.tenant_id_u64()?;
-        let provider_session_sync_organization_id =
-            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
-        let provider_session_sync_subject = scope.subject.clone();
-        let provider_session_sync_agent_id = agent_id.clone();
-        let provider_session_sync_session_id = session_id.clone();
-        let provider_session_sync_trace_id = trace_id.clone();
+        if synchronize && query.cursor.is_some() {
+            return Err(ApiProblem::validation(
+                "Session Item synchronization does not accept a continuation cursor",
+            ));
+        }
         let page_size = normalized_cursor_page_size(query.page_size)?;
         let cursor = query
             .cursor
@@ -6465,7 +6505,19 @@ async fn app_list_session_items(
             .map(decode_session_item_cursor)
             .transpose()
             .map_err(ApiProblem::from_kernel_error)?;
-        let is_first_window = cursor.is_none();
+        let synchronization_scope = if synchronize {
+            Some((
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                owner_scope.ok_or_else(|| ApiProblem::validation("owner user id is required"))?,
+                agent_id.clone(),
+                session_id.clone(),
+                scope.subject.clone(),
+            ))
+        } else {
+            None
+        };
         let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -6477,35 +6529,35 @@ async fn app_list_session_items(
         .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         command.query = command.query.with_cursor_page(page_size, cursor);
-        let records = with_service(&state, move |service| {
-            if is_first_window {
-                if let Some(owner_user_id) = owner_scope {
-                    if let Err(error) =
+        let (records, synchronized_item_count) = with_service(&state, move |service| {
+            let synchronized_item_count = synchronization_scope
+                .map(
+                    |(tenant_id, organization_id, owner_user_id, agent_id, session_id, subject)| {
                         crate::provider_session_sync::synchronize_provider_session_transcript(
-                        service,
-                        provider_session_sync_tenant_id,
-                        provider_session_sync_organization_id,
-                        owner_user_id,
-                        provider_session_sync_agent_id.clone(),
-                        provider_session_sync_session_id.clone(),
-                        provider_session_sync_subject,
-                    ) {
-                        tracing::warn!(
-                            target: "sdkwork.agents.provider_session_sync",
-                            trace_id = %provider_session_sync_trace_id,
-                            operation_id = "agents.sessionItems.list",
-                            stage = "provider_session_transcript_sync",
-                            agent_id = %provider_session_sync_agent_id,
-                            session_id = %provider_session_sync_session_id,
-                            error = %error,
-                            "provider session transcript synchronization failed; returning canonical session items"
-                        );
-                    }
-                }
-            }
-            service.list_session_items_with_drive_refs(command)
+                            service,
+                            tenant_id,
+                            organization_id,
+                            owner_user_id,
+                            agent_id,
+                            session_id,
+                            subject,
+                        )
+                    },
+                )
+                .transpose()?;
+            let records = service.list_session_items_with_drive_refs(command)?;
+            Ok((records, synchronized_item_count))
         })
         .await?;
+        if let Some(synchronized_item_count) = synchronized_item_count {
+            tracing::info!(
+                target: "sdkwork.agents.provider_session_sync",
+                trace_id = %web_ctx.resolved_trace_id(),
+                operation_id = "agents.sessionItems.synchronize",
+                synchronized_item_count,
+                "provider Session transcript synchronization completed"
+            );
+        }
         Ok(PageData {
             items: records
                 .items
@@ -8096,6 +8148,7 @@ async fn backend_list_tasks(
         let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
         let mut command = ListTasksRequestDto {
             tenant_id: scope.tenant_id,
+            organization_id: scope.organization_id,
             owner_user_id: Some(scope.owner_user_id),
             status: query.status,
         }
@@ -8172,6 +8225,8 @@ async fn backend_get_task(
         let scope = RequestScope::from_context(context);
         let command = GetTaskCommand {
             tenant_id: parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
             path_agent_id: agent_id,
             task_id,
             owner_scope: scope.owner_scope()?,
@@ -8199,7 +8254,14 @@ async fn backend_cancel_task(
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_command(scope.tenant_id_u64()?, agent_id, task_id, scope.subject)
+            .into_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record = with_service(&state, move |service| service.cancel_task(command)).await?;
@@ -8224,7 +8286,14 @@ async fn backend_execute_task(
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_execute_command(scope.tenant_id_u64()?, agent_id, task_id, scope.subject)
+            .into_execute_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.subject,
+            )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         let record = with_service(&state, move |service| service.execute_task(command)).await?;
@@ -10434,5 +10503,116 @@ mod tests {
         let payload: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["data"]["item"]["version"], "1");
         assert!(payload["data"]["item"]["deletedAt"].is_string());
+    }
+
+    #[tokio::test]
+    async fn app_session_item_get_is_read_only_and_post_synchronization_is_cursor_bounded() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state.clone());
+        create_app_agent(&app, "agent.alpha", "alpha").await;
+
+        let create_session = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/agents/agent.alpha/sessions")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "sessionId": "session.item-sync-contract",
+                    "sessionKind": "assistant",
+                    "entrySurface": "api",
+                    "title": "Session item synchronization contract",
+                    "idempotencyKey": "create-session.item-sync-contract",
+                    "payloadHash": "sha256:create-session.item-sync-contract",
+                    "requestedAt": "2026-07-30T00:00:00Z"
+                })
+                .to_string(),
+            ))
+            .expect("create Session request");
+        let response = app.clone().oneshot(create_session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        with_service(&state, |service| {
+            service.create_session_item(crate::application::CreateSessionItemCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                session_id: "session.item-sync-contract".to_string(),
+                item_id: "item.item-sync-contract".to_string(),
+                kind: crate::domain::AgentSessionItemKind::AssistantOutput,
+                content: "Canonical Session Item".to_string(),
+                content_type: "text/plain".to_string(),
+                input_tokens: 0,
+                output_tokens: 3,
+                model_id: None,
+                provider_id: None,
+                parent_item_id: None,
+                requested_by: sdkwork_agent_kernel::PolicySubject::new("100", "100001")
+                    .with_role("ai.agents.manage"),
+                requested_at: "2026-07-30T00:00:01Z".to_string(),
+            })
+        })
+        .await
+        .expect("Session Item fixture");
+
+        let item_window_uri = "/app/v3/api/ai/agents/agent.alpha/sessions/\
+            session.item-sync-contract/items?page_size=50&sort=-sequence"
+            .replace(char::is_whitespace, "");
+        let synchronization_window_uri = "/app/v3/api/ai/agents/agent.alpha/sessions/\
+            session.item-sync-contract/items/synchronize?page_size=50&sort=-sequence"
+            .replace(char::is_whitespace, "");
+        let read_window = |method: &str, uri: &str| {
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(Body::empty())
+                .expect("Session Item window request")
+        };
+
+        let response = app
+            .clone()
+            .oneshot(read_window("GET", &item_window_uri))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let get_payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(get_payload["data"]["pageInfo"]["mode"], "cursor");
+        assert_eq!(get_payload["data"]["pageInfo"]["hasMore"], false);
+        assert_eq!(
+            get_payload["data"]["items"][0]["itemId"],
+            "item.item-sync-contract"
+        );
+
+        let response = app
+            .clone()
+            .oneshot(read_window("POST", &synchronization_window_uri))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let synchronization_payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(synchronization_payload["data"], get_payload["data"]);
+
+        let response = app
+            .clone()
+            .oneshot(read_window(
+                "POST",
+                &format!("{synchronization_window_uri}&cursor=continuation-token"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response = app
+            .oneshot(read_window("GET", &item_window_uri))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let repeated_get_payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(repeated_get_payload["data"], get_payload["data"]);
     }
 }

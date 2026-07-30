@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@sdkwork/agents-pc-commons": "workspace:*",
+    "@sdkwork/agents-pc-core": "workspace:*",
     "lucide-react": "catalog:",
     "react": "catalog:"
   }

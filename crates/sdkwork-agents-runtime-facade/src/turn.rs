@@ -804,25 +804,28 @@ mod tests {
     #[test]
     fn build_model_request_preserves_execution_context_and_budget() {
         let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
-        let request = build_model_request(&slot, &CodeEngineTurnInput {
-            engine_key: "codex".to_string(),
-            model_id: "gpt-5-codex".to_string(),
-            provider_session_id: Some("session-existing".to_string()),
-            prompt: "implement the change".to_string(),
-            working_directory: Some(PathBuf::from("C:/workspace/project")),
-            timeout_ms: Some(90_000),
-            approval_policy: Some("on-request".to_string()),
-            sandbox_mode: Some("workspace-write".to_string()),
-            full_auto: true,
-            skip_git_repo_check: true,
-            ephemeral: true,
-            require_live_provider: true,
-            max_output_bytes: Some(65_536),
-            temperature: Some(0.2),
-            top_p: Some(0.9),
-            max_tokens: Some(4_096),
-            access_mode_id: None,
-        })
+        let request = build_model_request(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                provider_session_id: Some("session-existing".to_string()),
+                prompt: "implement the change".to_string(),
+                working_directory: Some(PathBuf::from("C:/workspace/project")),
+                timeout_ms: Some(90_000),
+                approval_policy: Some("on-request".to_string()),
+                sandbox_mode: Some("workspace-write".to_string()),
+                full_auto: true,
+                skip_git_repo_check: true,
+                ephemeral: true,
+                require_live_provider: true,
+                max_output_bytes: Some(65_536),
+                temperature: Some(0.2),
+                top_p: Some(0.9),
+                max_tokens: Some(4_096),
+                access_mode_id: None,
+            },
+        )
         .expect("model request");
 
         assert_eq!(request.model_id.as_deref(), Some("gpt-5-codex"));

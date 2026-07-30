@@ -612,6 +612,7 @@ pub struct CreateTaskCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CancelTaskCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     /// Nested route `{agentId}`; must match the loaded task.
     pub path_agent_id: String,
     pub task_id: String,
@@ -625,6 +626,7 @@ pub struct CancelTaskCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecuteTaskCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub path_agent_id: String,
     pub task_id: String,
     pub expected_version: Option<u64>,
@@ -636,6 +638,7 @@ pub struct ExecuteTaskCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetTaskCommand {
     pub tenant_id: u64,
+    pub organization_id: u64,
     /// Agent id from the nested HTTP path; must match the loaded task.
     pub path_agent_id: String,
     pub task_id: String,

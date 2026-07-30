@@ -1,23 +1,10 @@
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use axum::Router;
 use sdkwork_intelligence_agents_service::AgentHttpState;
 use sdkwork_routes_agents_http_shared::{agent_request_context_injector, app_route_manifest};
-use sdkwork_web_bootstrap::ReadinessCheck;
-use sdkwork_web_core::{DomainContextInjector, HttpRoute, HttpRouteManifest};
+pub use sdkwork_web_bootstrap::ApiAssemblyContribution;
 
 use crate::readiness::AgentHttpReadinessCheck;
-
-/// Host-neutral Agents App API contribution assembled from one repository-backed state.
-pub struct ApiAssemblyContribution {
-    pub router: Router,
-    pub route_manifest: HttpRouteManifest,
-    pub openapi: serde_json::Value,
-    pub permission_catalog: Vec<&'static str>,
-    pub domain_context_injectors: Vec<Arc<dyn DomainContextInjector>>,
-    pub readiness_check: Arc<dyn ReadinessCheck>,
-}
 
 /// App-host runtime ports backed by the same Agents repository state.
 pub struct AppRuntimeContribution {
@@ -28,7 +15,7 @@ pub struct AppRuntimeContribution {
 /// Builds the unwrapped Agents App API for a gateway that owns the single Web Framework layer.
 pub async fn assemble_app_api_contribution() -> anyhow::Result<ApiAssemblyContribution> {
     let state = build_agent_http_state().await?;
-    Ok(contribution_from_state(state))
+    contribution_from_state(state)
 }
 
 pub async fn assemble_app_api_contribution_with_provider_session_cwd_resolver(
@@ -37,14 +24,14 @@ pub async fn assemble_app_api_contribution_with_provider_session_cwd_resolver(
     let state = build_agent_http_state()
         .await?
         .with_provider_session_cwd_resolver(resolver);
-    Ok(contribution_from_state(state))
+    contribution_from_state(state)
 }
 
 /// Builds the App API contribution and approved in-process facade from one state.
 pub async fn assemble_app_runtime_contribution() -> anyhow::Result<AppRuntimeContribution> {
     let state = build_agent_http_state().await?;
     let session_facade = state.session_facade();
-    let api = contribution_from_state(state);
+    let api = contribution_from_state(state)?;
     Ok(AppRuntimeContribution {
         api,
         session_facade,
@@ -57,44 +44,27 @@ async fn build_agent_http_state() -> anyhow::Result<AgentHttpState> {
         .map_err(|error| anyhow::anyhow!("agents state bootstrap worker failed: {error}"))?
 }
 
-fn contribution_from_state(state: AgentHttpState) -> ApiAssemblyContribution {
+fn contribution_from_state(state: AgentHttpState) -> anyhow::Result<ApiAssemblyContribution> {
     let route_manifest = app_route_manifest();
-    let openapi = sdkwork_web_contract::build_openapi_document(
-        "SDKWork Agents App API",
-        route_manifest.routes(),
-    );
-    let permission_catalog = permission_catalog(route_manifest.routes());
     let readiness_check = Arc::new(AgentHttpReadinessCheck::new(state.clone()));
     start_owner_background_tasks(&state);
     let router = sdkwork_routes_agents_app_api::build_router().with_state(state);
 
-    ApiAssemblyContribution {
+    ApiAssemblyContribution::from_manifest(
+        "sdkwork-agents",
+        "SDKWork Agents App API",
         router,
         route_manifest,
-        openapi,
-        permission_catalog,
-        domain_context_injectors: vec![agent_request_context_injector()],
+        vec![agent_request_context_injector()],
         readiness_check,
-    }
+    )
+    .map_err(anyhow::Error::msg)
 }
 
 fn start_owner_background_tasks(state: &AgentHttpState) {
     // Dropping a Tokio JoinHandle detaches the process-lifetime task. Runtime shutdown still
     // terminates it, while the composing gateway remains independent of Agents worker internals.
     drop(state.spawn_turn_reconciliation_worker());
-}
-
-fn permission_catalog(routes: &[HttpRoute]) -> Vec<&'static str> {
-    let mut permissions = BTreeSet::new();
-    for route in routes {
-        if let Some(permission) = route.required_permission {
-            permissions.insert(permission);
-        }
-        if let Some(alternate_permissions) = route.alternate_permissions {
-            permissions.extend(alternate_permissions.iter().copied());
-        }
-    }
-    permissions.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -119,7 +89,7 @@ mod tests {
     #[test]
     fn app_api_permission_catalog_is_the_manifest_permission_union() {
         let manifest = app_route_manifest();
-        let catalog = permission_catalog(manifest.routes());
+        let catalog = sdkwork_web_bootstrap::permission_catalog(manifest.routes());
         let mut expected = manifest
             .routes()
             .iter()

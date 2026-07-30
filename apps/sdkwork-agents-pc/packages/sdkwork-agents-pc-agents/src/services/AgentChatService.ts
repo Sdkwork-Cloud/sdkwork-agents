@@ -7,7 +7,6 @@ import {
   type AgentSessionRecord,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
-import { toOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-pc-core/sdk/pagination";
 import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 import { sha256Hash, uuid } from "@sdkwork/utils";
 
@@ -21,7 +20,10 @@ export interface ChatMessage {
 
 export interface ChatMessageListPage {
   items: ChatMessage[];
-  pageInfo: OffsetPageInfo;
+  pageInfo: {
+    hasMore: boolean;
+    nextCursor?: string;
+  };
 }
 
 export interface ChatSessionSummary {
@@ -288,26 +290,25 @@ export class AgentChatService {
   async listMessagesPage(
     agentId: string,
     sessionId: string,
-    page = 1,
+    cursor?: string,
   ): Promise<ChatMessageListPage> {
     const response = await this.getClient().ai.agents.sessionItems.list(agentId, sessionId, {
-      page,
+      ...(cursor ? { cursor } : {}),
       pageSize: SESSION_ITEM_PAGE_SIZE,
+      sort: "-sequence",
     });
     return {
       items: this.normalizeMessages(response.items as AgentSessionItemRecord[]),
-      pageInfo: toOffsetPageInfo(response.pageInfo),
+      pageInfo: {
+        hasMore: response.pageInfo.hasMore ?? false,
+        nextCursor: response.pageInfo.nextCursor ?? undefined,
+      },
     };
   }
 
-  /** Load the newest transcript window (last offset page when history spans multiple pages). */
+  /** Load the newest transcript window; the cursor continues toward older items. */
   async loadRecentMessages(agentId: string, sessionId: string): Promise<ChatMessageListPage> {
-    const probe = await this.listMessagesPage(agentId, sessionId, 1);
-    const targetPage = probe.pageInfo.totalPages > 0 ? probe.pageInfo.totalPages : 1;
-    if (targetPage === 1) {
-      return probe;
-    }
-    return this.listMessagesPage(agentId, sessionId, targetPage);
+    return this.listMessagesPage(agentId, sessionId);
   }
 
   async listMessages(agentId: string, sessionId: string): Promise<ChatMessage[]> {

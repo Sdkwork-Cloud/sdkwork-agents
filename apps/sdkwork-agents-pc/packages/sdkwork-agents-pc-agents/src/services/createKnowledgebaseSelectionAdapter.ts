@@ -1,4 +1,7 @@
-import type { KnowledgeMarketCatalogItem, SdkworkKnowledgebaseAppClient } from "@sdkwork/agents-pc-core/sdk";
+import type {
+  KnowledgeMarketCatalogItem,
+  SdkworkKnowledgebaseAppClient,
+} from "@sdkwork/agents-pc-core/sdk/knowledgebaseAppSdkClient";
 import {
   DEFAULT_LIST_PAGE_SIZE,
   extractCursorPageInfo,
@@ -25,7 +28,7 @@ export function createKnowledgebaseSelectionAdapter(
 ): KnowledgeSelectionAdapter {
   return {
     async getBasesPage(params?: { cursor?: string; pageSize?: number }): Promise<KnowledgeBasesPage> {
-      const response = await client.knowledge.marketListingsList({
+      const response = await client.knowledge.market.listings.list({
         cursor: params?.cursor,
         pageSize: params?.pageSize ?? DEFAULT_LIST_PAGE_SIZE,
       });

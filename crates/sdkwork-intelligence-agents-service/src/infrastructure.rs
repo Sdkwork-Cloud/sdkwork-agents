@@ -352,8 +352,8 @@ type TurnIndexKey = (u64, u64, String, Reverse<String>, Reverse<u64>);
 type InteractionPrimaryKey = (u64, u64, String, String);
 type InteractionIndexKey = (u64, u64, String, Reverse<String>, String);
 type PendingInteractionIndexKey = (u64, u64, String, i16, Reverse<String>, String);
-type TaskPrimaryKey = (u64, String);
-type TaskIndexKey = (u64, Reverse<String>, String);
+type TaskPrimaryKey = (u64, u64, String);
+type TaskIndexKey = (u64, u64, Reverse<String>, String);
 
 trait RecoveringRwLock<T> {
     fn recovering_read(&self) -> RwLockReadGuard<'_, T>;
@@ -898,12 +898,17 @@ fn pending_interaction_index_key(record: &AgentInteractionRecord) -> PendingInte
 }
 
 fn task_primary_key(record: &AgentTaskRecord) -> TaskPrimaryKey {
-    (record.tenant_id, record.task_id.clone())
+    (
+        record.tenant_id,
+        record.organization_id,
+        record.task_id.clone(),
+    )
 }
 
 fn task_index_key(record: &AgentTaskRecord) -> TaskIndexKey {
     (
         record.tenant_id,
+        record.organization_id,
         Reverse(record.updated_at.clone()),
         record.task_id.clone(),
     )
@@ -2457,10 +2462,10 @@ impl AgentRepository for InMemoryAgentRepository {
     ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
         if record.sequence != 0
             || record.turn_id.is_some()
-            || record.status != AgentSessionItemStatus::Completed
+            || record.status == AgentSessionItemStatus::Redacted
         {
             return Err(KernelError::validation(
-                "standalone session item must be an unsequenced completed item without a turn",
+                "standalone session item must be unsequenced, non-redacted, and without a turn",
             ));
         }
         let session_primary_key = (
@@ -2520,6 +2525,13 @@ impl AgentRepository for InMemoryAgentRepository {
         let Some(existing) = items.get(&primary_key) else {
             return Err(KernelError::validation("session item not found"));
         };
+        let expected_version = existing
+            .version
+            .checked_add(1)
+            .ok_or_else(|| KernelError::conflict("session item version overflow"))?;
+        if record.version != expected_version {
+            return Err(KernelError::conflict("session item version conflict"));
+        }
         let previous_index_key = session_item_index_key(existing);
         let next_index_key = session_item_index_key(&record);
         items.insert(primary_key.clone(), record);
@@ -3372,11 +3384,16 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(())
     }
 
-    fn get_task(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRecord>> {
+    fn get_task(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        task_id: &str,
+    ) -> KernelResult<Option<AgentTaskRecord>> {
         Ok(self
             .tasks
             .recovering_read()
-            .get(&(tenant_id, task_id.to_string()))
+            .get(&(tenant_id, organization_id, task_id.to_string()))
             .cloned())
     }
 
@@ -3385,7 +3402,9 @@ impl AgentRepository for InMemoryAgentRepository {
         let index = self.task_index.recovering_read();
         let iter = index
             .iter()
-            .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
+            .filter(|((tenant_id, organization_id, _, _), _)| {
+                *tenant_id == query.tenant_id && *organization_id == query.organization_id
+            })
             .filter_map(|(_, primary_key)| tasks.get(primary_key))
             .filter(|record| task_matches_list_query(record, query))
             .cloned();
@@ -3398,7 +3417,9 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(count_iterator(
             index
                 .iter()
-                .filter(|((tenant_id, _, _), _)| *tenant_id == query.tenant_id)
+                .filter(|((tenant_id, organization_id, _, _), _)| {
+                    *tenant_id == query.tenant_id && *organization_id == query.organization_id
+                })
                 .filter_map(|(_, primary_key)| tasks.get(primary_key))
                 .filter(|record| task_matches_list_query(record, query)),
         ))
@@ -4044,7 +4065,7 @@ fn interaction_matches_list_query(
 }
 
 fn task_matches_list_query(record: &AgentTaskRecord, query: &TaskListQuery) -> bool {
-    if record.tenant_id != query.tenant_id {
+    if record.tenant_id != query.tenant_id || record.organization_id != query.organization_id {
         return false;
     }
     if let Some(agent_id) = query.agent_id.as_ref() {
@@ -5111,16 +5132,11 @@ mod tests {
             session_internal_id: second.items[0].session.id,
             scope_fingerprint: query.scope_fingerprint(),
         };
-        let exhausted_token =
-            encode_session_activity_cursor(&exhausted_cursor).expect("encode exhausted cursor");
         let exhausted = repository
             .list_session_activity_summaries(&query.clone().after(exhausted_cursor))
             .unwrap();
         assert!(exhausted.items.is_empty());
-        assert_eq!(
-            exhausted.next_page_token.as_deref(),
-            Some(exhausted_token.as_str())
-        );
+        assert!(exhausted.next_page_token.is_none());
 
         repository
             .insert_session(activity_session(

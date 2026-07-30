@@ -4,7 +4,14 @@ import { GlobalSidebar } from './GlobalSidebar';
 import { AgentStatusIndicator } from './AgentStatusIndicator';
 import { DEFAULT_WORKBENCH_TAB, isWorkbenchTab, type WorkbenchTab } from './workbenchTabs';
 
-const AgentWorkspace = lazy(() => import('../agents').then((module) => ({ default: module.AgentWorkspace })));
+const AgentWorkspace = lazy(async () => {
+  const [agentsModule, knowledgebaseRuntime] = await Promise.all([
+    import('../agents'),
+    import('../bootstrap/knowledgebaseRuntime'),
+  ]);
+  knowledgebaseRuntime.initializeAgentsKnowledgebaseRuntime();
+  return { default: agentsModule.AgentWorkspace };
+});
 const ChatView = lazy(() => import('@sdkwork/agents-pc-chat').then((module) => ({ default: module.ChatView })));
 const InspirationView = lazy(() => import('@sdkwork/agents-pc-inspiration').then((module) => ({ default: module.InspirationView })));
 const CreativeView = lazy(() => import('@sdkwork/agents-pc-creative').then((module) => ({ default: module.CreativeView })));

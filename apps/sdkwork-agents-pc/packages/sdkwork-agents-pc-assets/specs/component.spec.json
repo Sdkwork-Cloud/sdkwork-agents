@@ -24,7 +24,7 @@
     "layerRole": "frontend-feature",
     "publicExports": ["."],
     "providedPorts": ["agents.assets.view"],
-    "requiredPorts": ["agents.commons"],
+    "requiredPorts": ["agents.commons", "agents.drive"],
     "sdkClients": [],
     "sdkDependencies": [],
     "dependencyApiExports": [],

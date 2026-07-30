@@ -961,6 +961,7 @@ impl TurnListQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskListQuery {
     pub tenant_id: u64,
+    pub organization_id: u64,
     pub agent_id: Option<String>,
     pub owner_user_id: Option<u64>,
     pub status: Option<String>,
@@ -968,9 +969,10 @@ pub struct TaskListQuery {
 }
 
 impl TaskListQuery {
-    pub fn for_tenant(tenant_id: u64) -> Self {
+    pub fn for_organization(tenant_id: u64, organization_id: u64) -> Self {
         Self {
             tenant_id,
+            organization_id,
             agent_id: None,
             owner_user_id: None,
             status: None,
@@ -1502,7 +1504,12 @@ pub trait AgentRepository: Send + Sync {
 
     fn update_task(&self, record: AgentTaskRecord) -> KernelResult<()>;
 
-    fn get_task(&self, tenant_id: u64, task_id: &str) -> KernelResult<Option<AgentTaskRecord>>;
+    fn get_task(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        task_id: &str,
+    ) -> KernelResult<Option<AgentTaskRecord>>;
 
     fn list_tasks(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRecord>>;
 

@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.agents.execution-placement-orchestration-contract",
+  "status": "draft",
+  "requirementId": "REQ-2026-0730",
+  "decisionId": "ADR-20260730-hybrid-execution-placement-orchestration",
+  "reviewId": "REVIEW-20260730-hybrid-execution-contract",
+  "implementationAuthorized": false,
+  "x-sdkwork-no-public-api-change": true,
+  "x-sdkwork-no-sdk-generation": true,
+  "x-sdkwork-no-database-migration": true,
+  "x-sdkwork-no-kernel-port-implementation": true,
+  "ownership": {
+    "executionIntentAndProductLifecycle": "sdkwork-agents",
+    "executionPlacementLeaseRoutingAndFencing": "sdkwork-kernel",
+    "sandboxAdmissionPoolAttachmentAndCleanup": "sdkwork-sandbox",
+    "workspaceBytes": "sdkwork-drive-or-approved-workspace-volume-owner",
+    "clientComposition": "product-application",
+    "agentsMayCallSandboxDirectly": false,
+    "productMayCallKernelOrSandboxDirectly": false
+  },
+  "executionTargetCandidate": {
+    "typeName": "ExecutionTarget",
+    "values": [
+      "LOCAL",
+      "CLOUD"
+    ],
+    "sessionCreateRequired": true,
+    "taskOverrideField": "executionTargetOverride",
+    "taskOverrideRequired": false,
+    "taskWithoutOverrideInheritsSession": true,
+    "activeAttemptTargetMutable": false,
+    "hostModeInferenceAllowed": false,
+    "deploymentProfileInferenceAllowed": false,
+    "coordinationModeInferenceAllowed": false
+  },
+  "canonicalTaskRule": {
+    "persistedSessionReferenceRequired": true,
+    "workspaceProjectAndOwnerResolvedThroughSession": true,
+    "sessionStubAllowed": false,
+    "effectiveTargetResolvedPerExecutionAttempt": true
+  },
+  "executionPlacementIntentCandidate": {
+    "typeName": "ExecutionPlacementIntent",
+    "clientWritable": true,
+    "allowedFields": [
+      "executionTarget",
+      "runtimeProfileId",
+      "resourceClassId",
+      "dataResidencyPolicyId",
+      "networkPolicyId",
+      "deadlineAt",
+      "idempotencyKey",
+      "payloadHash",
+      "requestedAt"
+    ],
+    "trustedContextFields": [
+      "tenantId",
+      "organizationId",
+      "ownerUserId",
+      "agentId",
+      "workspaceId",
+      "projectId",
+      "sessionId"
+    ],
+    "forbiddenClientFields": [
+      "nodeId",
+      "nodePoolId",
+      "sandboxId",
+      "sandboxSessionId",
+      "sandboxRuntimeBindingId",
+      "providerAllocationRef",
+      "hostMode",
+      "transportKind",
+      "hostPath",
+      "mountPath",
+      "volumeId",
+      "deviceId",
+      "leaseToken",
+      "fencingToken"
+    ]
+  },
+  "bindingSeparationCandidate": {
+    "executionPlacementBinding": {
+      "typeName": "AgentExecutionPlacementBinding",
+      "clientWritable": false,
+      "fields": [
+        "executionPlacementBindingId",
+        "sessionId",
+        "executionKind",
+        "executionId",
+        "effectiveExecutionTarget",
+        "kernelPlacementId",
+        "state",
+        "capabilityVersion",
+        "leaseExpiresAt",
+        "kernelFencingGeneration",
+        "createdAt",
+        "updatedAt",
+        "version"
+      ]
+    },
+    "providerSessionBinding": {
+      "typeName": "AgentProviderSessionBinding",
+      "clientPlacementWritable": false,
+      "fields": [
+        "providerSessionBindingId",
+        "sessionId",
+        "providerBindingId",
+        "providerId",
+        "modelId",
+        "providerSessionId",
+        "providerParentSessionId",
+        "providerForkedFromSessionId",
+        "state",
+        "createdAt",
+        "updatedAt",
+        "version"
+      ]
+    },
+    "combinedRuntimeBindingMayGainPhysicalFields": false,
+    "currentClientCreatedRuntimeBinding": {
+      "status": "transitional-local-pre-launch",
+      "commercialPlacementEvidence": false,
+      "mustBeRemovedByReviewedMigration": true
+    }
+  },
+  "kernelPlacementPortCandidate": {
+    "typeName": "AgentExecutionPlacementPort",
+    "owner": "sdkwork-kernel",
+    "consumer": "sdkwork-agents",
+    "operations": [
+      {
+        "name": "getExecutionTargetCapabilities",
+        "idempotency": "read-only",
+        "requestFields": [
+          "trustedScope",
+          "executionTarget",
+          "runtimeProfileId",
+          "resourceClassId",
+          "dataResidencyPolicyId",
+          "networkPolicyId",
+          "deadlineAt",
+          "traceId"
+        ],
+        "responseFields": [
+          "contractVersion",
+          "available",
+          "unavailableReason",
+          "effectiveUntil",
+          "policySummary"
+        ]
+      },
+      {
+        "name": "reserveExecutionPlacement",
+        "idempotency": "required",
+        "requestFields": [
+          "trustedScope",
+          "executionKind",
+          "executionId",
+          "executionPlacementIntent",
+          "idempotencyKey",
+          "payloadHash",
+          "deadlineAt",
+          "traceId"
+        ],
+        "responseFields": [
+          "kernelPlacementId",
+          "state",
+          "internalLeaseCredential",
+          "fencingGeneration",
+          "leaseExpiresAt",
+          "capabilityVersion",
+          "readinessEvidenceRef"
+        ]
+      },
+      {
+        "name": "renewExecutionPlacement",
+        "idempotency": "required",
+        "requestFields": [
+          "trustedScope",
+          "kernelPlacementId",
+          "internalLeaseCredential",
+          "expectedFencingGeneration",
+          "idempotencyKey",
+          "deadlineAt",
+          "traceId"
+        ],
+        "responseFields": [
+          "state",
+          "internalLeaseCredential",
+          "fencingGeneration",
+          "leaseExpiresAt"
+        ]
+      },
+      {
+        "name": "cancelExecution",
+        "idempotency": "required",
+        "requestFields": [
+          "trustedScope",
+          "kernelPlacementId",
+          "internalLeaseCredential",
+          "expectedFencingGeneration",
+          "reasonCode",
+          "idempotencyKey",
+          "deadlineAt",
+          "traceId"
+        ],
+        "responseFields": [
+          "state",
+          "deliveryStatus",
+          "reconciliationRequired",
+          "fencingGeneration"
+        ]
+      },
+      {
+        "name": "restoreExecutionCheckpoint",
+        "idempotency": "required-new-attempt",
+        "requestFields": [
+          "trustedScope",
+          "sourceExecutionId",
+          "checkpointId",
+          "workspaceRevisionRef",
+          "executionPlacementIntent",
+          "idempotencyKey",
+          "payloadHash",
+          "deadlineAt",
+          "traceId"
+        ],
+        "responseFields": [
+          "kernelPlacementId",
+          "state",
+          "internalLeaseCredential",
+          "fencingGeneration",
+          "leaseExpiresAt",
+          "readinessEvidenceRef"
+        ]
+      },
+      {
+        "name": "releaseExecutionPlacement",
+        "idempotency": "required",
+        "requestFields": [
+          "trustedScope",
+          "kernelPlacementId",
+          "internalLeaseCredential",
+          "expectedFencingGeneration",
+          "releaseReason",
+          "idempotencyKey",
+          "deadlineAt",
+          "traceId"
+        ],
+        "responseFields": [
+          "state",
+          "releaseStatus",
+          "cleanupEvidenceRef",
+          "reconciliationRequired"
+        ]
+      }
+    ],
+    "internalLeaseCredentialMayEnterProductApi": false,
+    "fencingGenerationClientWritable": false
+  },
+  "placementLifecycleCandidate": {
+    "states": [
+      "REQUESTED",
+      "ALLOCATING",
+      "READY",
+      "ACTIVE",
+      "RELEASING",
+      "RELEASED",
+      "FAILED",
+      "EXPIRED"
+    ],
+    "terminalStates": [
+      "RELEASED"
+    ],
+    "versionCompareAndSetRequired": true,
+    "leaseAndFencingRequiredForRuntimeTransitions": true,
+    "failedOrExpiredRequiresReleaseOrReconciliation": true
+  },
+  "capabilityNegotiationCandidate": {
+    "authenticated": true,
+    "policyScoped": true,
+    "contractVersionRequired": true,
+    "expiryRequired": true,
+    "stableUnavailableReasons": [
+      "TARGET_NOT_SUPPORTED",
+      "POLICY_NOT_SUPPORTED",
+      "DEPENDENCY_UNAVAILABLE",
+      "CAPACITY_UNAVAILABLE",
+      "REVIEW_GATE_NOT_READY"
+    ],
+    "availabilityGuaranteesAdmission": false,
+    "derivedFromKernelEvidence": true,
+    "environmentFlagIsEvidence": false
+  },
+  "errorTaxonomyCandidate": [
+    "EXECUTION_TARGET_INVALID",
+    "EXECUTION_TARGET_UNAVAILABLE",
+    "EXECUTION_POLICY_DENIED",
+    "EXECUTION_QUOTA_EXCEEDED",
+    "EXECUTION_QUEUE_DEADLINE_EXCEEDED",
+    "EXECUTION_CAPACITY_UNAVAILABLE",
+    "EXECUTION_PLACEMENT_FAILED",
+    "EXECUTION_LEASE_LOST",
+    "EXECUTION_FENCING_CONFLICT",
+    "EXECUTION_CANCELLED",
+    "EXECUTION_DEPENDENCY_UNAVAILABLE"
+  ],
+  "localResidencyCandidate": {
+    "businessDataOwner": "local-sdkwork-agents",
+    "businessStore": "local-postgresql",
+    "projectBytes": "user-authorized-local-filesystem-or-local-persistent-volume",
+    "birdcoderSqliteMayStoreBusinessFacts": false,
+    "processMemoryMayBeProductionBusinessAuthority": false,
+    "implicitWorkspaceUploadAllowed": false,
+    "backupRestorePurgeUpgradeAndUninstallPolicyRequired": true
+  },
+  "transactionAndIsolationCandidate": {
+    "tenantAndOrganizationScopeRequiredOnEveryRepositoryOperation": true,
+    "taskSessionWorkspaceProjectOwnerLinkRequired": true,
+    "aggregateAuditAndOutboxAtomicityRequired": true,
+    "outboxConsumerIdempotencyRequired": true,
+    "realCancelRestoreAndReconciliationRequired": true,
+    "processLocalSemaphoreAcceptedAsDistributedAdmissionEvidence": false
+  },
+  "humanReview": {
+    "required": true,
+    "protectedAreas": [
+      "public naming and inheritance",
+      "OpenAPI and generated SDKs",
+      "PostgreSQL schema and migration",
+      "tenant and organization authorization",
+      "Kernel port and RPC",
+      "local persistence and data residency",
+      "workspace byte authority",
+      "production topology and SLO",
+      "security and release"
+    ]
+  }
+}

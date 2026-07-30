@@ -5004,7 +5004,7 @@ async fn app_session_activity_snapshot_supports_newest_first_cursor_and_scope_bi
         .expect("items")
         .is_empty());
     assert_eq!(exhausted["data"]["pageInfo"]["hasMore"], false);
-    assert_eq!(exhausted["data"]["pageInfo"]["nextCursor"], cursor);
+    assert!(exhausted["data"]["pageInfo"].get("nextCursor").is_none());
 
     let (_, converged) = get_json_response(
         &app,

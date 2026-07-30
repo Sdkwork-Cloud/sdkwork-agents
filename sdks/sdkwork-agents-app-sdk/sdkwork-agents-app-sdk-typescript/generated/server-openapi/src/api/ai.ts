@@ -325,6 +325,13 @@ export interface AiAgentsSessionItemsListParams {
   sort?: 'sequence' | '-sequence';
 }
 
+export interface AiAgentsSessionItemsSynchronizeParams {
+  pageSize?: number;
+  kind?: AgentSessionItemKind;
+  status?: AgentSessionItemStatus;
+  sort?: 'sequence' | '-sequence';
+}
+
 export class AiAgentsSessionItemsApi {
   private client: HttpClient;
 
@@ -343,6 +350,17 @@ export class AiAgentsSessionItemsApi {
       { name: 'sort', value: params?.sort, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.request<SdkWorkPageData & { items: AgentSessionItemRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/items`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Synchronize provider history and return one Session Item window */
+  async synchronize(agentId: string, sessionId: string, params?: AiAgentsSessionItemsSynchronizeParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionItemRecord[]; }> {
+    const query = buildQueryString([
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'kind', value: params?.kind, style: 'form', explode: true, allowReserved: false },
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'sort', value: params?.sort, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentSessionItemRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/items/synchronize`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, sdkworkUnwrapKind: 'page' });
   }
 
 /** Retrieve one agent session item */

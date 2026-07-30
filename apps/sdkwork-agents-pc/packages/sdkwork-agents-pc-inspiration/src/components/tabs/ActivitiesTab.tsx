@@ -1,6 +1,6 @@
 import React from 'react';
 import { Clock, Award, Users } from 'lucide-react';
-import { Activity } from '../../mockData';
+import type { Activity } from '../../types';
 
 interface ActivitiesTabProps {
   filteredActivities: Activity[];

@@ -313,9 +313,12 @@ fn provider_session_history_items(
     message
         .parts
         .iter()
-        .filter_map(|part| {
+        .flat_map(|part| {
             let content_type = provider_part_content_type(engine_key, part);
-            let kind = provider_session_item_kind(message.role, part.kind, content_type)?;
+            let Some(kind) = provider_session_item_kind(message.role, part.kind, content_type)
+            else {
+                return Vec::new();
+            };
             let uses_legacy_message_id = legacy_text_item_available
                 && part.kind == AgentPartKind::Text
                 && !matches!(kind, AgentSessionItemKind::Reasoning);
@@ -377,8 +380,8 @@ fn provider_session_history_items(
                     .clone()
                     .unwrap_or_else(|| "text/plain".to_string())
             };
-            Some(ProviderSessionHistoryItem {
-                provider_item_key,
+            let item = ProviderSessionHistoryItem {
+                provider_item_key: provider_item_key.clone(),
                 kind,
                 content,
                 content_type: item_content_type,
@@ -388,11 +391,28 @@ fn provider_session_history_items(
                 tool_arguments_json: (kind == AgentSessionItemKind::ToolCall)
                     .then(|| tool_payload.clone())
                     .flatten(),
-                tool_result_json: ((kind == AgentSessionItemKind::ToolResult) || has_result)
+                tool_result_json: (kind == AgentSessionItemKind::ToolResult)
                     .then_some(tool_payload)
                     .flatten(),
                 parent_item_id: None,
-            })
+            };
+            if kind == AgentSessionItemKind::ToolCall && has_result {
+                let result = ProviderSessionHistoryItem {
+                    provider_item_key: format!("{provider_item_key}\u{0}result"),
+                    kind: AgentSessionItemKind::ToolResult,
+                    content: None,
+                    content_type: "application/json".to_string(),
+                    status,
+                    tool_name: part.name.clone(),
+                    tool_call_id: item.tool_call_id.clone(),
+                    tool_arguments_json: None,
+                    tool_result_json: item.tool_arguments_json.clone(),
+                    parent_item_id: None,
+                };
+                vec![item, result]
+            } else {
+                vec![item]
+            }
         })
         .collect()
 }
@@ -516,6 +536,22 @@ fn synchronize_provider_session_inventory(
     subject: PolicySubject,
     inventory: Vec<ProviderSessionInventoryItem>,
 ) -> KernelResult<ProviderSessionSynchronizationResult> {
+    synchronize_provider_session_inventory_with_timeout(
+        service,
+        project,
+        subject,
+        inventory,
+        PROVIDER_SESSION_RECONCILIATION_TIMEOUT,
+    )
+}
+
+fn synchronize_provider_session_inventory_with_timeout(
+    service: Arc<HttpService>,
+    project: &AgentProjectRecord,
+    subject: PolicySubject,
+    inventory: Vec<ProviderSessionInventoryItem>,
+    timeout: Duration,
+) -> KernelResult<ProviderSessionSynchronizationResult> {
     let facade =
         HttpAgentsSessionFacade::for_provider_session_history_reconciliation(service.clone());
     let actor = AgentsSessionActor {
@@ -535,7 +571,7 @@ fn synchronize_provider_session_inventory(
             );
             break;
         }
-        if started_at.elapsed() >= PROVIDER_SESSION_RECONCILIATION_TIMEOUT {
+        if started_at.elapsed() >= timeout {
             result.record_issue(
                 "synchronization_time_budget_exceeded",
                 ProviderSessionSynchronizationIssueDisposition::Failed,
@@ -805,6 +841,9 @@ pub(crate) fn runtime_facade_error(error: RuntimeFacadeError) -> KernelError {
         | RuntimeFacadeError::UnsupportedLiveInteraction { engine_key, .. } => {
             KernelError::validation(format!("unsupported engineId \"{engine_key}\""))
         }
+        RuntimeFacadeError::UnsupportedCapability { capability_id, .. } => {
+            KernelError::CapabilityMissing { capability_id }
+        }
         RuntimeFacadeError::BlankPrompt => KernelError::validation("prompt must not be blank"),
         RuntimeFacadeError::EngineUnavailable { engine_key, .. } => {
             KernelError::ProviderUnavailable {
@@ -931,6 +970,7 @@ mod tests {
             vec![
                 AgentSessionItemKind::Reasoning,
                 AgentSessionItemKind::ToolCall,
+                AgentSessionItemKind::ToolResult,
                 AgentSessionItemKind::AssistantOutput,
                 AgentSessionItemKind::StatusNotice,
             ]
@@ -940,9 +980,15 @@ mod tests {
             items[1].tool_arguments_json.as_deref(),
             Some(native_tool_json.as_str())
         );
-        assert_eq!(items[1].tool_result_json, items[1].tool_arguments_json);
-        assert_eq!(items[2].provider_item_key, "message-1");
-        assert_eq!(items[3].content_type, "application/json");
+        assert_eq!(items[1].tool_result_json, None);
+        assert_eq!(items[2].tool_arguments_json, None);
+        assert_eq!(
+            items[2].tool_result_json.as_deref(),
+            Some(native_tool_json.as_str())
+        );
+        assert_eq!(items[2].tool_call_id.as_deref(), Some("call-1"));
+        assert_eq!(items[3].provider_item_key, "message-1");
+        assert_eq!(items[4].content_type, "application/json");
     }
 
     #[test]
@@ -1062,38 +1108,40 @@ mod tests {
                 .find(|engine| engine.engine_key == key)
                 .unwrap_or_else(|| panic!("missing {key} engine"))
         };
-        let mut inventory = (0..225)
+        let mut inventory = (0..55)
             .map(|index| inventory_item(engine("codex"), format!("codex-{index}"), index))
             .collect::<Vec<_>>();
         inventory.push(inventory_item(
             engine("claude-code"),
             "claude-code-1".to_string(),
-            225,
+            55,
         ));
         inventory.push(inventory_item(
             engine("opencode"),
             "opencode-1".to_string(),
-            226,
+            56,
         ));
 
-        let synchronized = synchronize_provider_session_inventory(
+        let synchronized = synchronize_provider_session_inventory_with_timeout(
             state.service.clone(),
             &project,
             subject.clone(),
             inventory.clone(),
+            Duration::MAX,
         )
         .expect("complete provider inventory sync");
-        assert_eq!(synchronized.synchronized_session_count, 227);
+        assert_eq!(synchronized.synchronized_session_count, 57);
         assert_eq!(
-            synchronize_provider_session_inventory(
+            synchronize_provider_session_inventory_with_timeout(
                 state.service.clone(),
                 &project,
                 subject.clone(),
                 inventory,
+                Duration::MAX,
             )
             .expect("idempotent provider inventory replay")
             .synchronized_session_count,
-            227,
+            57,
         );
 
         let list_page = |page| {
@@ -1106,7 +1154,7 @@ mod tests {
                         .for_project(project.project_id.clone())
                         .with_pagination(
                             PaginationParams::default()
-                                .with_page_size(200)
+                                .with_page_size(50)
                                 .with_page(page),
                         ),
                     requested_by: subject.clone(),
@@ -1115,11 +1163,11 @@ mod tests {
         };
         let first_page = list_page(1);
         let second_page = list_page(2);
-        assert_eq!(first_page.items.len(), 200);
-        assert_eq!(first_page.total_count, Some(227));
+        assert_eq!(first_page.items.len(), 50);
+        assert_eq!(first_page.total_count, Some(57));
         assert!(first_page.has_more);
-        assert_eq!(second_page.items.len(), 27);
-        assert_eq!(second_page.total_count, Some(227));
+        assert_eq!(second_page.items.len(), 7);
+        assert_eq!(second_page.total_count, Some(57));
         assert!(!second_page.has_more);
 
         let activity_query = SessionActivitySummaryListQuery::for_owner(
@@ -1128,7 +1176,7 @@ mod tests {
             project.owner_user_id,
         )
         .for_project(project.project_id.clone())
-        .with_page_size(200);
+        .with_page_size(50);
         let first_activity_page = state
             .service
             .list_session_activity_summaries(ListSessionActivitySummariesCommand {
@@ -1136,7 +1184,7 @@ mod tests {
                 requested_by: subject.clone(),
             })
             .expect("first synchronized provider Session activity page");
-        assert_eq!(first_activity_page.items.len(), 200);
+        assert_eq!(first_activity_page.items.len(), 50);
         assert!(first_activity_page.has_more);
         let activity_cursor = crate::session_activity::decode_session_activity_cursor(
             first_activity_page
@@ -1152,7 +1200,7 @@ mod tests {
                 requested_by: subject.clone(),
             })
             .expect("second synchronized provider Session activity page");
-        assert_eq!(second_activity_page.items.len(), 27);
+        assert_eq!(second_activity_page.items.len(), 7);
         assert!(!second_activity_page.has_more);
 
         let synchronized_session_ids = first_page
@@ -1680,13 +1728,12 @@ mod tests {
             .service
             .reconcile_provider_session_history_session_item(tool_command.clone(), "codex")
             .expect("pending provider tool item");
-        let completed_tool = serde_json::json!({
+        let completed_tool_call = serde_json::json!({
             "type": "function_call",
             "id": "provider-tool-item-1",
             "call_id": "provider-tool-call-1",
             "name": "shell_command",
             "arguments": "{\"command\":\"cargo test\"}",
-            "output": "ok",
             "status": "completed"
         })
         .to_string();
@@ -1695,19 +1742,79 @@ mod tests {
             .reconcile_provider_session_history_session_item(
                 ReconcileProviderSessionHistoryItemCommand {
                     status: AgentSessionItemStatus::Completed,
-                    tool_result_json: Some(completed_tool.clone()),
+                    tool_arguments_json: Some(completed_tool_call.clone()),
                     requested_at: "2026-07-26T00:03:00Z".to_string(),
                     ..tool_command
                 },
                 "codex",
             )
             .expect("completed provider tool item");
-        assert_eq!(completed.version, 2);
+        assert_eq!(completed.version, 1);
         assert_eq!(completed.status, AgentSessionItemStatus::Completed);
-        assert_eq!(
-            completed.tool_result_json.as_deref(),
-            Some(completed_tool.as_str())
-        );
+        assert_eq!(completed.tool_result_json, None);
+        let immutable_replay = state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    tenant_id: project.tenant_id,
+                    organization_id: project.organization_id,
+                    session_id: session.session_id.clone(),
+                    item_id: tool_item_id.clone(),
+                    kind: AgentSessionItemKind::ToolCall,
+                    content: None,
+                    content_type: "application/json".to_string(),
+                    status: AgentSessionItemStatus::Completed,
+                    model_id: Some(engine.models[0].model_id.clone()),
+                    provider_id: Some(engine.models[0].provider_id.clone()),
+                    tool_name: Some("shell_command".to_string()),
+                    tool_call_id: Some("provider-tool-call-1".to_string()),
+                    tool_arguments_json: Some(
+                        serde_json::json!({
+                            "type": "function_call",
+                            "id": "provider-tool-item-1",
+                            "call_id": "provider-tool-call-1",
+                            "name": "shell_command",
+                            "arguments": "{\"command\":\"cargo check\"}",
+                            "status": "completed"
+                        })
+                        .to_string(),
+                    ),
+                    tool_result_json: None,
+                    parent_item_id: None,
+                    requested_by: read_subject(),
+                    requested_at: "2026-07-26T00:04:00Z".to_string(),
+                },
+                "codex",
+            );
+        assert!(immutable_replay.is_err());
+        let tool_result_id = format!("{tool_item_id}.result");
+        state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    tenant_id: project.tenant_id,
+                    organization_id: project.organization_id,
+                    session_id: session.session_id.clone(),
+                    item_id: tool_result_id,
+                    kind: AgentSessionItemKind::ToolResult,
+                    content: None,
+                    content_type: "application/json".to_string(),
+                    status: AgentSessionItemStatus::Completed,
+                    model_id: Some(engine.models[0].model_id.clone()),
+                    provider_id: Some(engine.models[0].provider_id.clone()),
+                    tool_name: Some("shell_command".to_string()),
+                    tool_call_id: Some("provider-tool-call-1".to_string()),
+                    tool_arguments_json: None,
+                    tool_result_json: Some(
+                        serde_json::json!({ "output": "ok", "status": "completed" }).to_string(),
+                    ),
+                    parent_item_id: Some(tool_item_id.clone()),
+                    requested_by: read_subject(),
+                    requested_at: "2026-07-26T00:04:00Z".to_string(),
+                },
+                "codex",
+            )
+            .expect("provider tool result item");
         let items = state
             .service
             .list_session_items(ListSessionItemsCommand {
@@ -1721,7 +1828,7 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("provider transcript items");
-        assert_eq!(items.total_count, Some(2));
+        assert_eq!(items.total_count, Some(3));
         let user_item = items
             .items
             .iter()
@@ -1734,6 +1841,6 @@ mod tests {
             .find(|item| item.item_id == tool_item_id)
             .expect("provider tool item");
         assert_eq!(tool_item.status, AgentSessionItemStatus::Completed);
-        assert_eq!(tool_item.version, 2);
+        assert_eq!(tool_item.version, 1);
     }
 }

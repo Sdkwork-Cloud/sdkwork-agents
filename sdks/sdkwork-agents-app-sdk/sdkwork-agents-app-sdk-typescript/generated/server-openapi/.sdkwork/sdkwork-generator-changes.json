@@ -9,7 +9,7 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "2777b8eb60be1e396f905bc7f010d346bd307744a2b12ac2aa90ed1cc1632958",
+  "changeFingerprint": "88d941c0d47346ede5e0589818f487f7550251f70af89aac2e59659c6c379874",
   "changes": {
     "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [

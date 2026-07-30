@@ -12,6 +12,8 @@ use thiserror::Error;
 ///
 /// - [`UnsupportedEngine`](Self::UnsupportedEngine) — the engine key is
 ///   not registered in the host or not recognised as canonical.
+/// - [`UnsupportedCapability`](Self::UnsupportedCapability) — the engine is
+///   registered but does not expose the requested capability.
 /// - [`EngineMismatch`](Self::EngineMismatch) — the engine key in the
 ///   turn input does not match the slot's engine key.
 /// - [`BlankPrompt`](Self::BlankPrompt) — the prompt is empty or
@@ -30,6 +32,13 @@ pub enum RuntimeFacadeError {
     /// The requested engine key is not supported or not registered.
     #[error("unsupported engineId \"{engine_key}\"")]
     UnsupportedEngine { engine_key: String },
+
+    /// The engine is registered but does not expose the requested capability.
+    #[error("engineId \"{engine_key}\" does not support capability \"{capability_id}\"")]
+    UnsupportedCapability {
+        engine_key: String,
+        capability_id: String,
+    },
 
     /// The requested engine was selected for this host but failed to bootstrap.
     #[error("engineId \"{engine_key}\" is unavailable: {reason}")]

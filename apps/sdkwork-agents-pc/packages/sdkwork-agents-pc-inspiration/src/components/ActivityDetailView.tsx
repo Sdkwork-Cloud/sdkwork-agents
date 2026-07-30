@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Clock, Calendar, ChevronDown, Flame, Award, ThumbsUp, Play } from 'lucide-react';
-import { Activity, ActivityWork } from '../mockData';
+import type { Activity, ActivityWork } from '../types';
 import { cn } from '@sdkwork/agents-pc-commons';
 
 interface ActivityDetailViewProps {
@@ -14,45 +14,8 @@ export const ActivityDetailView: React.FC<ActivityDetailViewProps> = ({ activity
   const [activeSubTab, setActiveSubTab] = useState<'全部' | '获奖作品'>('全部');
   const [sortBy, setSortBy] = useState<'time' | 'likes'>('likes');
 
-  // If no works exist, generate some fallback works so the page never looks empty!
-  const displayWorks = activity.works && activity.works.length > 0 ? activity.works : [
-    {
-      id: `${activity.id}-w-1`,
-      title: `《${activity.title.slice(0, 4)}》AI艺术创想录`,
-      author: "创作者AI",
-      avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80",
-      likes: 182,
-      duration: "03:15",
-      cover: "https://images.unsplash.com/photo-1490730141103-6cac27aaab94?w=800&q=80",
-      videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-space-exploration-with-a-retro-futuristic-computer-43180-large.mp4",
-      desc: "融合了最新深度视觉算法和情感生成模型制作而成的精品创意短片。"
-    },
-    {
-      id: `${activity.id}-w-2`,
-      title: "未来的重叠时空",
-      author: "时空旅人",
-      avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&q=80",
-      likes: 95,
-      duration: "01:40",
-      cover: "https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=800&q=80",
-      videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-girl-running-on-the-wet-grass-at-sunrise-44754-large.mp4",
-      desc: "这件作品描绘了多维度宇宙空间的层叠与交织，具有极强的视觉冲击力。"
-    },
-    {
-      id: `${activity.id}-w-3`,
-      title: "光影之隙",
-      author: "灵动粒子",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80",
-      likes: 64,
-      duration: "04:50",
-      cover: "https://images.unsplash.com/photo-1514539079130-25950c84af65?w=800&q=80",
-      videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-forest-stream-in-the-sunlight-529-large.mp4",
-      desc: "利用粒子运动和流体渲染，重塑光影照射进尘埃中的微观梦境。"
-    }
-  ];
-
   // Sort works
-  const sortedWorks = [...displayWorks].sort((a, b) => {
+  const sortedWorks = [...activity.works].sort((a, b) => {
     if (sortBy === 'likes') return b.likes - a.likes;
     return b.id.localeCompare(a.id); // Dummy time sort
   });

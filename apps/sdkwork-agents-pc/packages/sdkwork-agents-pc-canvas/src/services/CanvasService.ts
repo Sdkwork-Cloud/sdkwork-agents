@@ -1,4 +1,15 @@
+import type {
+  GenerationRecord,
+} from '@sdkwork/agents-pc-core/sdk/generationsService';
+
 import type { CanvasGroup, CanvasNode, Connection } from '../types';
+
+async function loadGenerationsService() {
+  const { agentsGenerationsService } = await import(
+    '@sdkwork/agents-pc-core/sdk/generationsService'
+  );
+  return agentsGenerationsService;
+}
 
 const INITIAL_NODES: CanvasNode[] = [
   {
@@ -23,8 +34,7 @@ const INITIAL_NODES: CanvasNode[] = [
     prompt: '在一个充满赛博朋克霓虹的未来都市中，一个小型的发光Octo章鱼侦探，正在雨夜中寻找神秘的代码卷轴...',
     model: '5.0-lite',
     ratio: '16:9',
-    status: 'completed',
-    mediaUrl: 'https://picsum.photos/seed/octodetective/800/450',
+    status: 'idle',
     groupId: 'group-initial'
   },
   {
@@ -67,7 +77,6 @@ export class CanvasService {
    * Fetch initial workflow state
    */
   static async getInitialWorkflow() {
-    await new Promise(resolve => setTimeout(resolve, 300));
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
@@ -125,45 +134,62 @@ export class CanvasService {
     }
   }
 
-  /**
-   * Mock Image Generation
-   */
-  static async generateImage(prompt: string, ratio: string, onProgress: (p: number, msg: string) => void): Promise<string> {
-    const steps = [
-      { p: 15, msg: '精简自然语言...' },
-      { p: 35, msg: '解耦潜在空间 (Latent Space)...' },
-      { p: 60, msg: '像素着色与融合...' },
-      { p: 85, msg: '画质超分 polish...' },
-      { p: 100, msg: '生成完毕' }
-    ];
-
-    for (const step of steps) {
-      await new Promise(resolve => setTimeout(resolve, 900));
-      onProgress(step.p, step.msg);
-    }
-    
-    const seed = Math.floor(Math.random() * 1000);
-    const randAspect = ratio === '16:9' ? '800/450' : ratio === '9:16' ? '450/800' : '600/600';
-    return `https://picsum.photos/seed/canvas-${seed}/${randAspect}`;
+  private static toProgress(record: GenerationRecord): number {
+    if (record.status === 'succeeded') return 100;
+    if (record.status === 'running') return 67;
+    return 29;
   }
 
-  /**
-   * Mock Video Generation
-   */
-  static async generateVideo(prompt: string, onProgress: (p: number, msg: string) => void): Promise<string> {
-    const steps = [
-      { p: 15, msg: '分析文本语义与空间结构...' },
-      { p: 35, msg: '生成初始帧向量特征...' },
-      { p: 60, msg: '渲染时序连贯性 (Temporal Consistency)...' },
-      { p: 85, msg: '增加动态模糊与光影细节...' },
-      { p: 100, msg: '生成完毕' }
-    ];
+  private static toProgressMessage(record: GenerationRecord): string {
+    if (record.status === 'succeeded') return '生成完毕';
+    if (record.status === 'running') return '正在渲染生成结果...';
+    return '生成任务已进入队列...';
+  }
 
-    for (const step of steps) {
-      await new Promise(resolve => setTimeout(resolve, 900));
-      onProgress(step.p, step.msg);
+  static async generateImage(prompt: string, ratio: string, onProgress: (p: number, msg: string) => void): Promise<string> {
+    const generationsService = await loadGenerationsService();
+    const command = await generationsService.create({
+      modality: 'image',
+      operationType: 'text_to_image',
+      prompt,
+      parameters: { aspectRatio: ratio },
+    });
+    const record = await generationsService.waitForCompletion(command.generation, {
+      onStatus(current) {
+        onProgress(
+          CanvasService.toProgress(current),
+          CanvasService.toProgressMessage(current),
+        );
+      },
+    });
+    const media = await generationsService.listMediaResults(record.id);
+    const image = media.find(item => item.kind === 'image');
+    if (!image) {
+      throw new Error('图片生成完成，但未返回可预览的图片资源。');
     }
-    
-    return 'https://assets.mixkit.co/videos/preview/mixkit-waterfall-in-forest-2213-large.mp4';
+    return image.url;
+  }
+
+  static async generateVideo(prompt: string, onProgress: (p: number, msg: string) => void): Promise<string> {
+    const generationsService = await loadGenerationsService();
+    const command = await generationsService.create({
+      modality: 'video',
+      operationType: 'text_to_video',
+      prompt,
+    });
+    const record = await generationsService.waitForCompletion(command.generation, {
+      onStatus(current) {
+        onProgress(
+          CanvasService.toProgress(current),
+          CanvasService.toProgressMessage(current),
+        );
+      },
+    });
+    const media = await generationsService.listMediaResults(record.id);
+    const video = media.find(item => item.kind === 'video');
+    if (!video) {
+      throw new Error('视频生成完成，但未返回可预览的视频资源。');
+    }
+    return video.url;
   }
 }

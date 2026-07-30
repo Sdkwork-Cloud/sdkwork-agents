@@ -6,26 +6,32 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createTopologyRuntime, loadTopologySpec } from '@sdkwork/app-topology';
 import { mergeRepoDevBootstrapAccessTokenEnv } from '../../sdkwork-iam/scripts/dev/create-dev-bootstrap-access-token-env.mjs';
+import { ensurePostgresDevDatabaseReady } from '../../sdkwork-specs/tools/postgres/ensure-postgres-dev-database.mjs';
+import { ensureRustToolchain, withRustToolchainPath } from './rust-toolchain.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const pcAppRoot = path.join(repoRoot, 'apps', 'sdkwork-agents-pc');
 const topology = createTopologyRuntime(
   loadTopologySpec(path.join(repoRoot, 'specs/topology.spec.json')),
   repoRoot,
 );
 const developmentProfileId = topology.defaults.developmentProfileId;
 const selectedProfile = resolveSelectedProfile();
-const runtimeEnv = mergeRepoDevBootstrapAccessTokenEnv({
+const profileEnv = topology.mergeRuntimeEnv(
+  topology.loadProfile(selectedProfile.profileId),
+  process.env,
+  topology.applyProfileEnv(selectedProfile.profileId),
+);
+const runtimeEnv = withRustToolchainPath(mergeRepoDevBootstrapAccessTokenEnv({
   repoRoot,
-  env: topology.mergeRuntimeEnv(
-    topology.loadProfile(selectedProfile.profileId),
-    process.env,
-    topology.applyProfileEnv(selectedProfile.profileId),
-  ),
-});
+  env: selectedProfile.deploymentProfile === 'standalone'
+    ? topology.resolveIamDevEnv(profileEnv, { stdout: process.stdout })
+    : profileEnv,
+}));
 runtimeEnv.SDKWORK_ENVIRONMENT = selectedProfile.environment;
-runtimeEnv.SDKWORK_APP_ROOT = repoRoot;
+runtimeEnv.SDKWORK_AGENTS_APP_ROOT = repoRoot;
+runtimeEnv.SDKWORK_APP_ROOT = pcAppRoot;
 runtimeEnv.SDKWORK_IAM_APP_ROOT = process.env.SDKWORK_IAM_APP_ROOT
-  ?? runtimeEnv.SDKWORK_IAM_APP_ROOT
   ?? path.resolve(repoRoot, '../sdkwork-iam');
 const selectedProcesses = topology.listOrchestrationProcesses(selectedProfile.profileId);
 const applicationIngressProcess = selectedProcesses.find(
@@ -55,11 +61,14 @@ const requiredSourceFiles = [
 ];
 
 function resolveSelectedProfile() {
+  const args = process.argv.slice(2);
+  if (args[0] === '--') args.shift();
   const { values } = parseArgs({
-    args: process.argv.slice(2),
+    args,
     options: {
       'deployment-profile': { type: 'string' },
       environment: { type: 'string' },
+      'runtime-target': { type: 'string' },
     },
     strict: true,
   });
@@ -68,9 +77,13 @@ function resolveSelectedProfile() {
     values['deployment-profile'] ?? defaultProfile.deploymentProfile,
   );
   const environment = topology.assertEnvironment(values.environment ?? defaultProfile.environment);
+  const runtimeTarget = values['runtime-target'] ?? 'browser';
+  if (runtimeTarget !== 'browser') {
+    throw new Error(`Agents PC development requires runtimeTarget=browser, received ${runtimeTarget}.`);
+  }
   const profileId = `${deploymentProfile}.${environment}`;
   topology.assertProfileId(profileId);
-  return { deploymentProfile, environment, profileId };
+  return { deploymentProfile, environment, profileId, runtimeTarget };
 }
 
 function assertLocallyRunnableProfile() {
@@ -118,6 +131,11 @@ function ensureBuildCriticalSources() {
   }
 }
 
+function ensureStandaloneRustToolchain() {
+  if (selectedProfile.deploymentProfile !== 'standalone') return;
+  ensureRustToolchain({ cwd: repoRoot, env: runtimeEnv });
+}
+
 function describeDatabaseProfile() {
   if (runtimeEnv.SDKWORK_DATABASE_ENGINE) return runtimeEnv.SDKWORK_DATABASE_ENGINE;
   return runtimeEnv.SDKWORK_DATABASE_URL?.startsWith('sqlite:') ? 'sqlite' : 'operator-configured';
@@ -125,8 +143,27 @@ function describeDatabaseProfile() {
 
 function reportResolvedProfile() {
   console.log(
-    `[sdkwork-agents-dev] resolved deploymentProfile=${selectedProfile.deploymentProfile} environment=${selectedProfile.environment} runtimeTarget=${runtimeEnv.SDKWORK_AGENTS_RUNTIME_TARGET ?? 'unknown'} databaseProfile=${describeDatabaseProfile()} profileId=${selectedProfile.profileId}`,
+    `[sdkwork-agents-dev] resolved deploymentProfile=${selectedProfile.deploymentProfile} environment=${selectedProfile.environment} runtimeTarget=${selectedProfile.runtimeTarget} databaseProfile=${describeDatabaseProfile()} profileId=${selectedProfile.profileId}`,
   );
+}
+
+async function prepareStandaloneDatabase() {
+  if (selectedProfile.deploymentProfile !== 'standalone') return;
+  await ensurePostgresDevDatabaseReady({
+    env: runtimeEnv,
+    repoRoot,
+    runMigrations(profile) {
+      execFileSync(
+        process.execPath,
+        [path.join(repoRoot, 'scripts/agents-database.mjs'), 'bootstrap'],
+        {
+          cwd: repoRoot,
+          env: profile.env,
+          stdio: 'inherit',
+        },
+      );
+    },
+  });
 }
 
 const children = new Set();
@@ -191,7 +228,7 @@ function writeGatewayProfileMarker() {
   );
 }
 
-async function waitForGateway(timeoutMs = 60_000) {
+async function waitForGateway(timeoutMs = 300_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (startupFailure) throw startupFailure;
@@ -249,6 +286,8 @@ try {
   reportResolvedProfile();
   assertLocallyRunnableProfile();
   ensureBuildCriticalSources();
+  ensureStandaloneRustToolchain();
+  await prepareStandaloneDatabase();
   if (selectedProfile.deploymentProfile === 'standalone') {
     const healthyGateway = await gatewayIsHealthy();
     if (healthyGateway && gatewayProfileMatchesRuntime()) {
@@ -260,7 +299,7 @@ try {
         );
       }
       ownsGateway = true;
-      start('cargo', ['run', '-p', applicationIngressProcess.crate, '--quiet'], {
+      start('cargo', ['run', '-p', applicationIngressProcess.crate], {
         env: {
           SDKWORK_AGENTS_APPLICATION_PUBLIC_INGRESS_BIND: gatewayBind,
           SDKWORK_AGENT_SERVER_BIND: gatewayBind,

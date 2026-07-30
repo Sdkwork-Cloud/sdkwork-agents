@@ -261,21 +261,32 @@ export const CreativeView = () => {
       return s;
     }));
 
-    // Trigger service generation
-    await CreativeService.generateContent(text, mode, (assistantMsg) => {
-      setSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) {
-          const exists = s.messages.some(m => m.id === assistantMsg.id);
-          return {
-            ...s,
-            messages: exists 
-              ? s.messages.map(m => m.id === assistantMsg.id ? assistantMsg : m)
-              : [...s.messages, assistantMsg]
-          };
-        }
-        return s;
-      }));
-    });
+    let assistantMessageId: string | null = null;
+    try {
+      await CreativeService.generateContent(text, mode, (assistantMsg) => {
+        assistantMessageId = assistantMsg.id;
+        setSessions(prev => prev.map(s => {
+          if (s.id === activeSessionId) {
+            const exists = s.messages.some(m => m.id === assistantMsg.id);
+            return {
+              ...s,
+              messages: exists
+                ? s.messages.map(m => m.id === assistantMsg.id ? assistantMsg : m)
+                : [...s.messages, assistantMsg]
+            };
+          }
+          return s;
+        }));
+      });
+    } catch (error) {
+      if (assistantMessageId) {
+        setSessions(prev => prev.map(s => s.id === activeSessionId
+          ? { ...s, messages: s.messages.filter(message => message.id !== assistantMessageId) }
+          : s));
+      }
+      const message = error instanceof Error ? error.message : '未知错误';
+      showToast(`生成失败：${message}`);
+    }
   };
 
   return (
@@ -360,8 +371,8 @@ export const CreativeView = () => {
                           likes: 88,
                           duration: '00:05',
                           desc: message.text || '通过 AI 智能生成的创意视频片段。',
-                          cover: message.imageUrls?.[idx] || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800&q=80',
-                          videoUrl: message.videoUrls?.[idx] || 'https://assets.mixkit.co/videos/preview/mixkit-space-exploration-with-a-retro-futuristic-computer-43180-large.mp4'
+                          cover: message.imageUrls?.[idx] || message.imageUrl || '',
+                          videoUrl: message.videoUrls?.[idx] || message.videoUrl || ''
                         });
                       } else {
                         setSelectedImage({

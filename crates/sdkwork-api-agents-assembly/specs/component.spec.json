@@ -100,11 +100,7 @@
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::domain_context_injectors",
       "sdkwork_api_agents_assembly::ApiAssemblyContribution::readiness_check",
       "sdkwork_api_agents_assembly::AppRuntimeContribution::api",
-      "sdkwork_api_agents_assembly::AppRuntimeContribution::session_facade",
-      "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness",
-      "sdkwork_routes_agents_app_api::build_router",
-      "sdkwork_routes_agents_http_shared::app_route_manifest",
-      "sdkwork_routes_agents_http_shared::agent_request_context_injector"
+      "sdkwork_api_agents_assembly::AppRuntimeContribution::session_facade"
     ],
     "runtimeEntrypoints": [
       "src/bootstrap.rs#assemble_api_router",
@@ -163,6 +159,10 @@
       {
         "name": "agentsDomainContextInjector",
         "export": "sdkwork_routes_agents_http_shared::agent_request_context_injector"
+      },
+      {
+        "name": "iamAppApiRouter",
+        "export": "sdkwork_routes_iam_app_api::build_sdkwork_iam_app_api_router"
       }
     ],
     "routeManifest": "assembly-manifest.json",
@@ -185,7 +185,10 @@
         "apiPrefix": "/app/v3/api",
         "runtimeMode": "same-origin-mounted",
         "cargoDependency": "sdkwork-routes-iam-app-api",
-        "embeddedExecutableExport": "sdkwork_api_agents_assembly::assemble_api_router",
+        "embeddedExecutableExport": "sdkwork_routes_iam_app_api::build_sdkwork_iam_app_api_router",
+        "profileCoverage": [
+          "standalone"
+        ],
         "coverageEvidence": [
           "src/bootstrap/iam.rs#wire_iam_app_router",
           "src/bootstrap.rs#assemble_api_router"

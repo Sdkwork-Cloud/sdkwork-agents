@@ -23,6 +23,14 @@ export type SdkworkSkillsAppClientConfig = SdkworkAppConfig & {
 const APP_API_SUFFIX = "/app/v3/api";
 
 let skillsAppSdkClient: SdkworkSkillsAppClient | null = null;
+let skillsAppSdkClientProvider: (() => SdkworkSkillsAppClient) | null = null;
+
+export function configureSkillsAppSdkClientProvider(
+  provider: () => SdkworkSkillsAppClient,
+): void {
+  skillsAppSdkClientProvider = provider;
+  skillsAppSdkClient = null;
+}
 
 function normalizeGeneratedSdkBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.replace(/\/+$/u, "");
@@ -73,11 +81,15 @@ export function initSkillsAppSdkClient(
 }
 
 export function getSkillsAppSdkClient(): SdkworkSkillsAppClient {
+  if (skillsAppSdkClientProvider) {
+    return skillsAppSdkClientProvider();
+  }
   return skillsAppSdkClient ?? initSkillsAppSdkClient();
 }
 
 export function resetSkillsAppSdkClient(): void {
   skillsAppSdkClient = null;
+  skillsAppSdkClientProvider = null;
 }
 
 export type { SkillPackageRecord, SkillRecord } from "@sdkwork/skills-app-sdk";

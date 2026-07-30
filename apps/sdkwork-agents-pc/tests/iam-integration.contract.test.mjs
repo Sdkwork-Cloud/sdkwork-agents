@@ -59,13 +59,22 @@ test('pc auth appearance uses the public IAM theme surface', () => {
   assert.doesNotMatch(appearance, /querySelector|document\./);
 });
 
-test('pc shares IAM credentials across authenticated SDK clients', () => {
+test('pc shares IAM credentials across eager and feature SDK clients', () => {
   const bootstrap = read('src/bootstrap/index.ts');
+  const knowledgebaseRuntime = read('src/bootstrap/knowledgebaseRuntime.ts');
+  const workbench = read('src/components/WorkbenchLayout.tsx');
+  const communitySdk = read('packages/sdkwork-agents-pc-core/src/sdk/communityAppSdkClient.ts');
+  const generationsSdk = read('packages/sdkwork-agents-pc-core/src/sdk/generationsAppSdkClient.ts');
+  const skillsSdk = read('packages/sdkwork-agents-pc-core/src/sdk/skillsAppSdkClient.ts');
   assert.match(bootstrap, /sdkClients.*initAgentsAppSdkClient/s);
-  assert.match(bootstrap, /sdkClients\.push\(knowledgebaseClient\)/);
-  assert.match(bootstrap, /sdkClients\.push\(initSkillsAppSdkClient\(\)\)/);
   assert.match(bootstrap, /sdkClients\.push\(initVoiceAppSdkClient\(\)\)/);
   assert.match(bootstrap, /initializeAgentsPcIamRuntime\(sdkClients\)/);
+  assert.match(workbench, /import\('\.\.\/bootstrap\/knowledgebaseRuntime'\)/);
+  assert.match(knowledgebaseRuntime, /initKnowledgebaseAppSdkClient\(\)/);
+  assert.match(knowledgebaseRuntime, /configureKnowledgeSelectionAdapter/);
+  assert.match(communitySdk, /tokenManager: getSdkworkChatGlobalTokenManager\(\)/);
+  assert.match(generationsSdk, /tokenManager: getSdkworkChatGlobalTokenManager\(\)/);
+  assert.match(skillsSdk, /tokenManager: getSdkworkChatGlobalTokenManager\(\)/);
 });
 
 test('pc keeps IAM configurable while standalone development uses one application ingress', () => {
@@ -83,7 +92,7 @@ test('pc keeps IAM configurable while standalone development uses one applicatio
     env,
     /VITE_SDKWORK_AGENTS_PC_APPBASE_APP_API_BASE_URL="http:\/\/127\.0\.0\.1:8095"/,
   );
-  assert.match(env, /VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL="http:\/\/127\.0\.0\.1:3900"/);
+  assert.doesNotMatch(env, /VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL/);
   assert.match(vite, /'\/app\/v3\/api': 'http:\/\/127\.0\.0\.1:8095'/);
   assert.match(vite, /__SDKWORK_CREDENTIAL_ENTRY_BOOTSTRAP_ACCESS_TOKEN__/);
   assert.match(vite, /transformIndexHtml/);

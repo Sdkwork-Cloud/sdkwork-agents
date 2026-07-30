@@ -1432,6 +1432,7 @@ impl CancelTaskRequestDto {
     pub fn into_command(
         self,
         tenant_id: u64,
+        organization_id: u64,
         path_agent_id: String,
         task_id: String,
         requested_by: PolicySubject,
@@ -1444,6 +1445,7 @@ impl CancelTaskRequestDto {
             .transpose()?;
         Ok(CancelTaskCommand {
             tenant_id,
+            organization_id,
             path_agent_id,
             task_id,
             expected_version,
@@ -1456,6 +1458,7 @@ impl CancelTaskRequestDto {
     pub fn into_execute_command(
         self,
         tenant_id: u64,
+        organization_id: u64,
         path_agent_id: String,
         task_id: String,
         requested_by: PolicySubject,
@@ -1468,6 +1471,7 @@ impl CancelTaskRequestDto {
             .transpose()?;
         Ok(ExecuteTaskCommand {
             tenant_id,
+            organization_id,
             path_agent_id,
             task_id,
             expected_version,
@@ -1481,13 +1485,17 @@ impl CancelTaskRequestDto {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListTasksRequestDto {
     pub tenant_id: String,
+    pub organization_id: String,
     pub owner_user_id: Option<String>,
     pub status: Option<String>,
 }
 
 impl ListTasksRequestDto {
     pub fn into_command(self, requested_by: PolicySubject) -> KernelResult<ListTasksCommand> {
-        let mut query = TaskListQuery::for_tenant(parse_tenant_id(&self.tenant_id)?);
+        let mut query = TaskListQuery::for_organization(
+            parse_tenant_id(&self.tenant_id)?,
+            parse_organization_id(&self.organization_id)?,
+        );
         if let Some(owner_user_id) = self.owner_user_id {
             query = query.for_owner(parse_owner_user_id(&owner_user_id)?);
         }

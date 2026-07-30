@@ -47,6 +47,9 @@ Goals:
 - independent provider, skill, prompt, document, memory, knowledge, MCP, LLM and Drive
   capability modules;
 - tenant isolation, trusted context, auditability and operational recovery.
+- explicit local/cloud Session intent and reviewed Task override, orchestrated
+  through one Kernel placement boundary without exposing physical placement to
+  product clients.
 
 Non-goals:
 
@@ -110,6 +113,19 @@ invocation. Agents passes `runtimeLocationId` only as an opaque reference;
 Kernel must validate and map it to an active `SandboxRuntimeBindingId` before a
 Sandbox resume operation. Agents does not inspect Sandbox Provider metadata.
 
+### 5.6 Hybrid local and cloud execution
+
+A generated SDK consumer selects an approved execution target when creating a
+Session. A Task may use a reviewed override or inherit its Session target.
+Agents durably authorizes the effective intent and asks Kernel to resolve
+placement. Local topology keeps owner data and Workspace bytes local by
+default. Cloud topology uses a Kernel placement backed by an isolated Sandbox
+and approved opaque Workspace attachment capability. Agents never calls
+Sandbox directly and clients never write resolved placement facts.
+
+This scenario remains blocked under REQ-2026-0730. It is product scope, not a
+claim that the current runtime implements placement.
+
 ## 6. Functional Requirements
 
 | ID | Requirement | Acceptance evidence |
@@ -125,12 +141,13 @@ Sandbox resume operation. Agents does not inspect Sandbox Provider metadata.
 | FR-9 | Skills remain independently owned | Agents stores stable skill/version references only |
 | FR-10 | Files use Drive references | No raw bytes, credentials or signed URLs in Agents rows |
 | FR-11 | Documents use canonical composition references | Only `document/documents` is accepted; content remains in `sdkwork-documents` |
+| FR-12 | Hybrid execution intent is durable and server-placed | Reviewed Session target/Task inheritance, split placement/provider bindings, one Kernel port, and real cancel/restore evidence |
 
 ## 7. API And SDK Product Surface
 
 | Surface | Prefix | Operations | Credential mode | SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 79 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 83 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 48 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
 | Open API | `/agent/v3/api` | 47 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
@@ -184,16 +201,26 @@ PostgreSQL is the production persistence authority. Open API credentials are
 isolated from app/backend session tokens. The exact commands are maintained in
 [pre-launch-verification.md](../../runbooks/pre-launch-verification.md).
 
+Hybrid execution release additionally requires REQ-2026-0730 to be accepted,
+its ADR and review to be approved, Kernel PRD-05 and placement control plane to
+be accepted and proven, required Sandbox contracts to authorize runtime
+implementation, and real local/cloud residency, isolation, load, failure,
+recovery, migration, and rollback evidence.
+
 ## 12. Linked Requirements And Decisions
 
 - [REQ-2026-0722-agent-session-execution.md](../requirements/REQ-2026-0722-agent-session-execution.md)
+- [REQ-2026-0730-hybrid-agent-execution-orchestration.md](../requirements/REQ-2026-0730-hybrid-agent-execution-orchestration.md)
 - [ADR-20260722-agent-session-domain-unification.md](../../architecture/decisions/ADR-20260722-agent-session-domain-unification.md)
+- [ADR-20260730-hybrid-execution-placement-orchestration.md](../../architecture/decisions/ADR-20260730-hybrid-execution-placement-orchestration.md)
 - [AGENTS_SESSION_MODEL_SPEC.md](../../../specs/AGENTS_SESSION_MODEL_SPEC.md)
 - [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](../../../specs/AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md)
 - [SDKWork Sandbox PRD](../../../../sdkwork-sandbox/docs/product/prd/PRD.md)
 
 ## 13. Open Questions
 
-None for the canonical domain, persistence or public SDK boundary. New provider
-families and optional independent capabilities follow their existing extension
-contracts and conformance gates.
+The canonical Session ownership boundary is closed. Hybrid local/cloud
+execution remains open under REQ-2026-0730: public target/override naming,
+placement/provider binding separation, Kernel port/RPC, local persistence and
+data residency, cloud Workspace byte authority, migration, SLO, and release
+evidence require owner review before implementation.

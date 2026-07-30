@@ -5,7 +5,8 @@ import { cn } from '@sdkwork/agents-pc-commons';
 export interface AssetItem {
   id: string;
   imageUrl: string;
-  type: 'image' | 'video';
+  mediaUrl?: string;
+  type: 'image' | 'video' | 'audio' | 'document';
   prompt: string;
   model: string;
   aspectRatio: string;
@@ -65,7 +66,9 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
     }
   };
 
-  const currentDisplayUrl = currentItem.thumbnails[activeThumbnailIndex] || currentItem.imageUrl;
+  const currentDisplayUrl = currentItem.thumbnails[activeThumbnailIndex]
+    || currentItem.mediaUrl
+    || currentItem.imageUrl;
 
   return (
     <div id="asset-detail-modal-root" className="fixed inset-0 z-50 flex bg-[#0a0a0c] animate-in fade-in duration-200">
@@ -114,6 +117,14 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                 autoPlay
                 loop
                 muted
+              />
+            ) : currentItem.type === 'audio' ? (
+              <audio src={currentDisplayUrl} className="w-[80%]" controls autoPlay />
+            ) : currentItem.type === 'document' ? (
+              <iframe
+                src={currentDisplayUrl}
+                title={currentItem.prompt}
+                className="h-[80vh] w-[70vw] max-w-full rounded-2xl bg-white"
               />
             ) : (
               <img 

@@ -57,6 +57,14 @@ use time::OffsetDateTime;
 
 const MAX_TURN_DRIVE_REFS: usize = 64;
 const MAX_INTERACTION_LEASE_SECONDS: u32 = 300;
+const MAX_JSON_PAYLOAD_BYTES: usize = 1024 * 1024;
+const MAX_METADATA_JSON_BYTES: usize = 64 * 1024;
+const MAX_TOOL_ARGUMENTS_JSON_BYTES: usize = 256 * 1024;
+const MAX_TOOL_RESULT_JSON_BYTES: usize = 1024 * 1024;
+
+fn task_execution_session_id(task: &AgentTaskRecord) -> String {
+    format!("task.session.{}", task.id)
+}
 
 fn code_engine_runtime_manifest(engine_key: &str, agent_id: &str) -> AgentManifest {
     AgentManifest {
@@ -3576,20 +3584,28 @@ where
             )));
         }
 
-        self.repository
+        let agent = self
+            .repository
             .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::validation("agent not found"))?;
+        if agent.organization_id != command.organization_id {
+            return Err(KernelError::validation("agent not found"));
+        }
 
         if self
             .repository
-            .get_task(command.tenant_id, task_id.as_str())?
+            .get_task(command.tenant_id, command.organization_id, task_id.as_str())?
             .is_some()
         {
             return Err(KernelError::conflict("task already exists"));
         }
 
         if !is_trimmed_blank(command.metadata_json.as_str()) {
-            validate_json_payload(command.metadata_json.as_str(), "metadataJson")?;
+            validate_bounded_json_payload(
+                command.metadata_json.as_str(),
+                "metadataJson",
+                MAX_METADATA_JSON_BYTES,
+            )?;
         }
 
         let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
@@ -3691,7 +3707,7 @@ where
 
         let session_stub = AgentSessionRecord {
             id: record.id,
-            session_id: format!("task.session.{}", record.task_id),
+            session_id: task_execution_session_id(&record),
             tenant_id: record.tenant_id,
             organization_id: record.organization_id,
             agent_id: record.agent_id.clone(),
@@ -3793,7 +3809,11 @@ where
 
         let mut record = self
             .repository
-            .get_task(command.tenant_id, command.task_id.as_str())?
+            .get_task(
+                command.tenant_id,
+                command.organization_id,
+                command.task_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("task not found"))?;
 
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
@@ -3829,7 +3849,11 @@ where
 
         let record = self
             .repository
-            .get_task(command.tenant_id, command.task_id.as_str())?
+            .get_task(
+                command.tenant_id,
+                command.organization_id,
+                command.task_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("task not found"))?;
 
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
@@ -3855,7 +3879,11 @@ where
         )?;
         validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
         self.repository
-            .get_task(command.tenant_id, command.task_id.as_str())?
+            .get_task(
+                command.tenant_id,
+                command.organization_id,
+                command.task_id.as_str(),
+            )?
             .ok_or_else(|| KernelError::validation("task not found"))
             .and_then(|record| {
                 Self::ensure_task_owner_scope(&record, command.owner_scope)?;
@@ -4775,6 +4803,7 @@ where
         }
         let content = command
             .content
+            .as_deref()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
         if content
@@ -4785,14 +4814,23 @@ where
                 "provider Session history content exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
-        for (field_name, value) in [
-            ("toolArgumentsJson", command.tool_arguments_json.as_deref()),
-            ("toolResultJson", command.tool_result_json.as_deref()),
+        for (field_name, value, max_bytes) in [
+            (
+                "toolArgumentsJson",
+                command.tool_arguments_json.as_deref(),
+                MAX_TOOL_ARGUMENTS_JSON_BYTES,
+            ),
+            (
+                "toolResultJson",
+                command.tool_result_json.as_deref(),
+                MAX_TOOL_RESULT_JSON_BYTES,
+            ),
         ] {
             if let Some(value) = value {
-                validate_json_payload(value, field_name)?;
+                validate_bounded_json_payload(value, field_name, max_bytes)?;
             }
         }
+        validate_provider_session_item_payload(&command, content.as_deref())?;
         if content.is_none()
             && command.tool_arguments_json.is_none()
             && command.tool_result_json.is_none()
@@ -4829,6 +4867,28 @@ where
             if unchanged {
                 return Ok(existing);
             }
+            if existing.status != AgentSessionItemStatus::Pending {
+                return Err(KernelError::conflict(
+                    "terminal provider Session history item is immutable",
+                ));
+            }
+            if command.status == AgentSessionItemStatus::Redacted {
+                return Err(KernelError::validation(
+                    "provider synchronization cannot redact a Session history item",
+                ));
+            }
+            if existing.kind != command.kind
+                || existing.content_type != content_type
+                || existing.model_id != command.model_id
+                || existing.provider_id != command.provider_id
+                || existing.tool_name != command.tool_name
+                || existing.tool_call_id != command.tool_call_id
+                || existing.parent_item_id != command.parent_item_id
+            {
+                return Err(KernelError::conflict(
+                    "provider Session history item identity is immutable",
+                ));
+            }
             existing.kind = command.kind;
             existing.content = content;
             existing.content_type = content_type;
@@ -4840,13 +4900,14 @@ where
             existing.tool_arguments_json = command.tool_arguments_json;
             existing.tool_result_json = command.tool_result_json;
             existing.parent_item_id = command.parent_item_id;
-            existing.version += 1;
+            existing.version = existing.version.checked_add(1).ok_or_else(|| {
+                KernelError::conflict("provider Session history item version overflow")
+            })?;
             existing.updated_at = command.requested_at;
             existing.completed_at = completed_at;
             self.repository.update_session_item(existing.clone())?;
             return Ok(existing);
         }
-        let requested_status = command.status;
         let record = AgentSessionItemRecord {
             id: self.repository.next_id()?,
             item_id: command.item_id.clone(),
@@ -4856,7 +4917,7 @@ where
             kind: command.kind,
             content,
             content_type,
-            status: AgentSessionItemStatus::Completed,
+            status: command.status,
             sequence: 0,
             input_tokens: 0,
             output_tokens: 0,
@@ -4872,12 +4933,12 @@ where
             version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
-            completed_at: Some(command.requested_at.clone()),
+            completed_at,
             redacted_at: None,
             redacted_by: None,
             retention_until: None,
         };
-        let mut record = match self.repository.append_session_item(record) {
+        let record = match self.repository.append_session_item(record) {
             Ok((_, record)) => record,
             Err(error) if error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict => self
                 .repository
@@ -4890,13 +4951,6 @@ where
                 .ok_or(error)?,
             Err(error) => return Err(error),
         };
-        if record.status != requested_status {
-            record.status = requested_status;
-            record.version += 1;
-            record.updated_at = command.requested_at.clone();
-            record.completed_at = completed_at;
-            self.repository.update_session_item(record.clone())?;
-        }
         self.emit_session_item_audit_event(
             AgentAuditAction::SessionItemCreated,
             &record,
@@ -7048,9 +7102,75 @@ fn validate_non_empty(value: &str, field_name: &str) -> KernelResult<()> {
 }
 
 fn validate_json_payload(value: &str, field_name: &str) -> KernelResult<()> {
+    validate_bounded_json_payload(value, field_name, MAX_JSON_PAYLOAD_BYTES)
+}
+
+fn validate_bounded_json_payload(
+    value: &str,
+    field_name: &str,
+    max_bytes: usize,
+) -> KernelResult<()> {
+    if value.len() > max_bytes {
+        return Err(KernelError::validation(format!(
+            "{field_name} exceeds {max_bytes} bytes"
+        )));
+    }
     let _: serde_json::Value = serde_json::from_str(value).map_err(|error| {
         KernelError::validation(format!("{field_name} must be valid JSON: {error}"))
     })?;
+    Ok(())
+}
+
+fn validate_provider_session_item_payload(
+    command: &ReconcileProviderSessionHistoryItemCommand,
+    content: Option<&str>,
+) -> KernelResult<()> {
+    match command.kind {
+        AgentSessionItemKind::ToolCall => {
+            if command.tool_name.as_deref().is_none_or(str::is_empty)
+                || command.tool_call_id.as_deref().is_none_or(str::is_empty)
+                || command.tool_arguments_json.is_none()
+                || command.tool_result_json.is_some()
+                || content.is_some()
+            {
+                return Err(KernelError::validation(
+                    "provider tool call payload is invalid",
+                ));
+            }
+        }
+        AgentSessionItemKind::ToolResult => {
+            if command.tool_call_id.as_deref().is_none_or(str::is_empty)
+                || command.tool_arguments_json.is_some()
+                || command.tool_result_json.is_none()
+                || content.is_some()
+            {
+                return Err(KernelError::validation(
+                    "provider tool result payload is invalid",
+                ));
+            }
+        }
+        AgentSessionItemKind::ArtifactReference => {
+            if command.tool_name.is_some()
+                || command.tool_call_id.is_some()
+                || command.tool_arguments_json.is_some()
+                || command.tool_result_json.is_some()
+            {
+                return Err(KernelError::validation(
+                    "provider artifact payload must not contain tool fields",
+                ));
+            }
+        }
+        _ => {
+            if content.is_none()
+                || command.tool_name.is_some()
+                || command.tool_call_id.is_some()
+                || command.tool_arguments_json.is_some()
+                || command.tool_result_json.is_some()
+            {
+                return Err(KernelError::validation("provider text payload is invalid"));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -7249,7 +7369,7 @@ mod task_tests {
 
         let listed = service
             .list_tasks(ListTasksCommand {
-                query: TaskListQuery::for_tenant(100_001).for_agent(created.agent_id),
+                query: TaskListQuery::for_organization(100_001, 0).for_agent(created.agent_id),
                 requested_by: sample_subject(),
             })
             .expect("list tasks");
@@ -7295,6 +7415,7 @@ mod task_tests {
         let cancelled = service
             .cancel_task(CancelTaskCommand {
                 tenant_id: 100_001,
+                organization_id: 0,
                 path_agent_id: task.agent_id.clone(),
                 task_id: task.task_id.clone(),
                 expected_version: Some(task.version),
@@ -7308,6 +7429,7 @@ mod task_tests {
         let error = service
             .cancel_task(CancelTaskCommand {
                 tenant_id: 100_001,
+                organization_id: 0,
                 path_agent_id: cancelled.agent_id.clone(),
                 task_id: task.task_id,
                 expected_version: Some(cancelled.version),
@@ -7358,6 +7480,7 @@ mod task_tests {
         let executed = service
             .execute_task(ExecuteTaskCommand {
                 tenant_id: 100_001,
+                organization_id: 0,
                 path_agent_id: created.agent_id.clone(),
                 task_id: task.task_id.clone(),
                 expected_version: Some(task.version),
@@ -7408,6 +7531,7 @@ mod task_tests {
         let error = service
             .get_task(GetTaskCommand {
                 tenant_id: 100_001,
+                organization_id: 0,
                 path_agent_id,
                 task_id: task.task_id,
                 owner_scope: Some(999),
@@ -7415,5 +7539,199 @@ mod task_tests {
             })
             .expect_err("foreign owner must not read task");
         assert!(error.to_string().contains("task not found"));
+    }
+
+    #[test]
+    fn task_operations_are_isolated_by_organization_within_a_tenant() {
+        let repository = InMemoryAgentRepository::new();
+        let audit_sink = InMemoryAgentAuditSink::default();
+        let policy_provider = test_policy_provider();
+        let service = AgentsService::new(repository, audit_sink, policy_provider);
+
+        let organization_one_agent = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.org-one",
+                100_001,
+                10,
+                100,
+                "tasks-org-one",
+                "Tasks Org One",
+                "2026-06-01T06:00:00Z",
+            ))
+            .expect("create organization one agent");
+        let organization_two_agent = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.org-two",
+                100_001,
+                20,
+                200,
+                "tasks-org-two",
+                "Tasks Org Two",
+                "2026-06-01T06:00:01Z",
+            ))
+            .expect("create organization two agent");
+
+        let cross_organization_create = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 20,
+                agent_id: organization_one_agent.agent_id.clone(),
+                owner_user_id: 200,
+                task_id: "task.cross-organization".to_string(),
+                title: None,
+                prompt: "Must not be created".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"deferExecution":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T06:01:00Z".to_string(),
+            })
+            .expect_err("an agent from another organization must not be accepted");
+        assert!(cross_organization_create
+            .to_string()
+            .contains("agent not found"));
+
+        let organization_one_task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 10,
+                agent_id: organization_one_agent.agent_id.clone(),
+                owner_user_id: 100,
+                task_id: "task.shared-id".to_string(),
+                title: None,
+                prompt: "Organization one work".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"deferExecution":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T06:02:00Z".to_string(),
+            })
+            .expect("create organization one task");
+        let organization_two_task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 20,
+                agent_id: organization_two_agent.agent_id.clone(),
+                owner_user_id: 200,
+                task_id: "task.shared-id".to_string(),
+                title: None,
+                prompt: "Organization two work".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"deferExecution":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T06:02:01Z".to_string(),
+            })
+            .expect("the same task id is valid in another organization");
+        assert_ne!(
+            task_execution_session_id(&organization_one_task),
+            task_execution_session_id(&organization_two_task)
+        );
+
+        let organization_one_tasks = service
+            .list_tasks(ListTasksCommand {
+                query: TaskListQuery::for_organization(100_001, 10),
+                requested_by: sample_subject(),
+            })
+            .expect("list organization one tasks");
+        assert_eq!(organization_one_tasks.total_count, Some(1));
+        assert_eq!(organization_one_tasks.items[0].organization_id, 10);
+        let organization_two_tasks = service
+            .list_tasks(ListTasksCommand {
+                query: TaskListQuery::for_organization(100_001, 20),
+                requested_by: sample_subject(),
+            })
+            .expect("list organization two tasks");
+        assert_eq!(organization_two_tasks.total_count, Some(1));
+        assert_eq!(organization_two_tasks.items[0].organization_id, 20);
+
+        let organization_one_read = service
+            .get_task(GetTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 10,
+                path_agent_id: organization_one_agent.agent_id.clone(),
+                task_id: organization_one_task.task_id.clone(),
+                owner_scope: None,
+                requested_by: sample_subject(),
+            })
+            .expect("read organization one task");
+        assert_eq!(organization_one_read.prompt, "Organization one work");
+        let organization_two_read = service
+            .get_task(GetTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 20,
+                path_agent_id: organization_two_agent.agent_id.clone(),
+                task_id: organization_two_task.task_id.clone(),
+                owner_scope: None,
+                requested_by: sample_subject(),
+            })
+            .expect("read organization two task");
+        assert_eq!(organization_two_read.prompt, "Organization two work");
+
+        let organization_one_only_task = service
+            .create_task(CreateTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 10,
+                agent_id: organization_one_agent.agent_id.clone(),
+                owner_user_id: 100,
+                task_id: "task.organization-one-only".to_string(),
+                title: None,
+                prompt: "Organization one private work".to_string(),
+                external_ref: None,
+                metadata_json: r#"{"deferExecution":true}"#.to_string(),
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T06:03:00Z".to_string(),
+            })
+            .expect("create organization one private task");
+
+        let foreign_read = service
+            .get_task(GetTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 20,
+                path_agent_id: organization_one_agent.agent_id.clone(),
+                task_id: organization_one_only_task.task_id.clone(),
+                owner_scope: None,
+                requested_by: sample_subject(),
+            })
+            .expect_err("another organization must not read the task");
+        assert!(foreign_read.to_string().contains("task not found"));
+
+        let foreign_cancel = service
+            .cancel_task(CancelTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 20,
+                path_agent_id: organization_one_agent.agent_id.clone(),
+                task_id: organization_one_only_task.task_id.clone(),
+                expected_version: Some(organization_one_only_task.version),
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T06:04:00Z".to_string(),
+            })
+            .expect_err("another organization must not cancel the task");
+        assert!(foreign_cancel.to_string().contains("task not found"));
+
+        let foreign_execute = service
+            .execute_task(ExecuteTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 20,
+                path_agent_id: organization_one_agent.agent_id.clone(),
+                task_id: organization_one_only_task.task_id.clone(),
+                expected_version: Some(organization_one_only_task.version),
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T06:05:00Z".to_string(),
+            })
+            .expect_err("another organization must not execute the task");
+        assert!(foreign_execute.to_string().contains("task not found"));
+
+        let unchanged = service
+            .get_task(GetTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 10,
+                path_agent_id: organization_one_agent.agent_id,
+                task_id: organization_one_only_task.task_id,
+                owner_scope: None,
+                requested_by: sample_subject(),
+            })
+            .expect("the owning organization still sees its task");
+        assert_eq!(unchanged.status, AgentTaskStatus::Pending);
+        assert_eq!(unchanged.version, organization_one_only_task.version);
     }
 }

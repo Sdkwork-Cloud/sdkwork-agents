@@ -157,7 +157,9 @@ export function AgentsTokenPlanRedeemModal({ isOpen, onClose }: SdkworkSubscript
     setError('');
     try {
       const result = await service.redeem(code.trim());
-      setGrantAmount(result.grantAmount);
+      setGrantAmount(
+        result.benefitKind === 'token_bank_credit' ? result.grantAmount : result.totalQuota,
+      );
       setCode('');
     } catch (reason) {
       setError(reason instanceof Error && reason.message.trim() ? reason.message : '兑换失败，请检查兑换码后重试。');

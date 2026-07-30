@@ -48,6 +48,7 @@ export type ProjectCompositionSlotKind =
   | 'skill'
   | 'mcp'
   | 'drive'
+  | 'document'
   | 'tool';
 export type ProjectCompositionTargetModule =
   | 'prompts'
@@ -56,6 +57,7 @@ export type ProjectCompositionTargetModule =
   | 'skills'
   | 'mcp'
   | 'drive'
+  | 'documents'
   | 'tools';
 
 export interface AgentProjectCompositionSlot {

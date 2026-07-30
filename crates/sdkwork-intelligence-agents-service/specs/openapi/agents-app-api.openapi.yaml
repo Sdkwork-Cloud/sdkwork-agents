@@ -1680,6 +1680,57 @@ paths:
                 $ref: '#/components/schemas/AgentSessionItemListResponse'
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/synchronize:
+    post:
+      tags:
+      - ai
+      summary: Synchronize provider history and return one Session Item window
+      description: >-
+        Explicitly imports bounded provider Session history into the Agents
+        authority and returns a canonical keyset window. The operation rejects
+        provider histories that exceed runtime record or byte budgets instead
+        of returning a silently truncated transcript. Continuation traversal
+        uses agents.sessionItems.list and its opaque cursor.
+      operationId: agents.sessionItems.synchronize
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.sessionItems
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.session_item_created
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/PageSize'
+      - name: kind
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionItemKind'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AgentSessionItemStatus'
+      - name: sort
+        in: query
+        required: false
+        description: Stable item sequence order.
+        schema:
+          type: string
+          enum: [sequence, '-sequence']
+          default: sequence
+      responses:
+        '200':
+          description: Synchronized agent Session Item page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionItemListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}:
     get:
       tags:

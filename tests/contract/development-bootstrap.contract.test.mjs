@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { mergeRepoDevBootstrapAccessTokenEnv } from '../../../sdkwork-iam/scripts/dev/create-dev-bootstrap-access-token-env.mjs';
+import { ensureRustToolchain } from '../../scripts/rust-toolchain.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -35,13 +37,55 @@ test('development bootstrap access tokens come from the canonical IAM helper', (
 
 test('root dev runner registers the application root and supplies private bootstrap credentials', () => {
   const runner = read('scripts/agents-dev.mjs');
+  const databaseRunner = read('scripts/agents-database.mjs');
+  const rootPackage = JSON.parse(read('package.json'));
+  const pcManifest = JSON.parse(read('apps/sdkwork-agents-pc/sdkwork.app.config.json'));
 
   assert.match(runner, /create-dev-bootstrap-access-token-env\.mjs/);
   assert.match(runner, /mergeRepoDevBootstrapAccessTokenEnv/);
+  assert.match(runner, /resolveIamDevEnv/);
+  assert.match(runner, /ensurePostgresDevDatabaseReady/);
+  assert.match(runner, /ensureRustToolchain/);
+  assert.match(runner, /waitForGateway\(timeoutMs = 300_000\)/);
+  assert.doesNotMatch(runner, /applicationIngressProcess\.crate, '--quiet'/);
+  assert.match(databaseRunner, /ensureRustToolchain/);
   assert.match(runner, /repoRoot,/);
-  assert.match(runner, /SDKWORK_APP_ROOT = repoRoot/);
+  assert.match(runner, /SDKWORK_AGENTS_APP_ROOT = repoRoot/);
+  assert.match(runner, /SDKWORK_APP_ROOT = pcAppRoot/);
   assert.match(runner, /SDKWORK_IAM_APP_ROOT/);
   assert.doesNotMatch(runner, /createHmac|randomBytes|signDevelopmentAccessToken/);
+  assert.equal(rootPackage.scripts['_sdkwork:dev:standalone'], 'node scripts/agents-dev.mjs');
+  assert.deepEqual(
+    pcManifest.backend.accessTokenPermissionScope,
+    ['iam.users.read', 'iam.organizations.read', 'iam.roles.read', 'iam.permissions.read'],
+  );
+});
+
+test('standalone startup recovers the standard rustup toolchain when PATH omits Cargo', (context) => {
+  const rustHome = mkdtempSync(path.join(os.tmpdir(), 'sdkwork-agents-rust-toolchain-'));
+  context.after(() => rmSync(rustHome, { force: true, recursive: true }));
+  const cargoBin = path.join(rustHome, '.cargo', 'bin');
+  mkdirSync(cargoBin, { recursive: true });
+  writeFileSync(path.join(cargoBin, 'cargo.exe'), '', 'utf8');
+  writeFileSync(path.join(cargoBin, 'rustc.exe'), '', 'utf8');
+
+  let inspectedEnv;
+  const resolvedEnv = ensureRustToolchain({
+    env: {
+      Path: 'C:\\Windows\\System32',
+      USERPROFILE: rustHome,
+    },
+    platform: 'win32',
+    runProcess(command, args, options) {
+      assert.equal(command, 'cargo.exe');
+      assert.deepEqual(args, ['--version']);
+      inspectedEnv = options.env;
+      return { status: 0, stderr: '', stdout: 'cargo 1.90.0' };
+    },
+  });
+
+  assert.equal(resolvedEnv.Path.split(';')[0], cargoBin);
+  assert.equal(inspectedEnv.Path.split(';')[0], cargoBin);
 });
 
 test('standalone gateway provisions and mounts IAM before credential entry', () => {

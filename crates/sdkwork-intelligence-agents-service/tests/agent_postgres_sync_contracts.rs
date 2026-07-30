@@ -563,7 +563,7 @@ fn postgres_session_item_sql_supports_stable_bidirectional_pages() {
 }
 
 #[test]
-fn postgres_task_sql_is_tenant_scoped() {
+fn postgres_task_sql_is_tenant_and_organization_scoped() {
     tenant_scoped_select_sql(SQL_SELECT_AGENT_TASK, "ai_agent_task");
     tenant_scoped_list_sql(SQL_LIST_AGENT_TASKS, "ai_agent_task");
     tenant_scoped_update_sql(SQL_UPDATE_AGENT_TASK, "ai_agent_task");
@@ -572,8 +572,21 @@ fn postgres_task_sql_is_tenant_scoped() {
         "ai_agent_task insert SQL must include tenant_id"
     );
     assert!(
-        SQL_COUNT_AGENT_TASKS.contains("tenant_id = $1"),
-        "ai_agent_task count SQL must filter by tenant_id"
+        SQL_SELECT_AGENT_TASK.contains("tenant_id = $1 AND organization_id = $2 AND task_id = $3"),
+        "ai_agent_task select SQL must filter by tenant and organization"
+    );
+    assert!(
+        SQL_LIST_AGENT_TASKS.contains("tenant_id = $1 AND organization_id = $2"),
+        "ai_agent_task list SQL must filter by tenant and organization"
+    );
+    assert!(
+        SQL_COUNT_AGENT_TASKS.contains("tenant_id = $1 AND organization_id = $2"),
+        "ai_agent_task count SQL must filter by tenant and organization"
+    );
+    assert!(
+        SQL_UPDATE_AGENT_TASK
+            .contains("tenant_id = $11 AND organization_id = $12 AND task_id = $13"),
+        "ai_agent_task update SQL must filter by tenant and organization"
     );
     assert!(
         SQL_LIST_AGENT_TASKS.contains("LIMIT"),

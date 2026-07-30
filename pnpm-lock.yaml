@@ -12,6 +12,12 @@ catalogs:
     '@tailwindcss/vite':
       specifier: ^4.1.14
       version: 4.2.2
+    '@testing-library/jest-dom':
+      specifier: ^6.9.1
+      version: 6.9.1
+    '@testing-library/react':
+      specifier: ^16.3.2
+      version: 16.3.2
     '@tiptap/core':
       specifier: ^3.23.4
       version: 3.27.1
@@ -27,6 +33,9 @@ catalogs:
     '@tiptap/starter-kit':
       specifier: ^3.23.4
       version: 3.27.1
+    '@types/qrcode':
+      specifier: ^1.5.6
+      version: 1.5.6
     '@vitejs/plugin-react':
       specifier: ^6.0.1
       version: 6.0.1
@@ -39,12 +48,18 @@ catalogs:
     i18next:
       specifier: ^26.1.0
       version: 26.3.3
+    jsdom:
+      specifier: ^29.1.1
+      version: 29.1.1
     lucide-react:
       specifier: ^1.7.0
       version: 1.21.0
     motion:
       specifier: ^12.23.24
       version: 12.42.0
+    qrcode:
+      specifier: ^1.5.4
+      version: 1.5.4
     react:
       specifier: ^19.2.4
       version: 19.2.7
@@ -72,6 +87,12 @@ catalogs:
     vite:
       specifier: ^8.0.3
       version: 8.1.0
+    vite-plugin-dts:
+      specifier: ^4.5.4
+      version: 4.5.4
+    vitest:
+      specifier: ^4.1.8
+      version: 4.1.9
 
 overrides:
   '@types/react': 19.2.17
@@ -143,6 +164,12 @@ importers:
         specifier: ^17.0.7
         version: 17.0.8(i18next@26.3.3(typescript@6.0.3))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@6.0.3)
 
+  ../sdkwork-community/sdks/sdkwork-community-app-sdk/sdkwork-community-app-sdk-typescript:
+    dependencies:
+      '@sdkwork/sdk-common':
+        specifier: workspace:*
+        version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
+
   ../sdkwork-core/sdkwork-core-pc-react:
     dependencies:
       '@sdkwork/sdk-common':
@@ -195,6 +222,12 @@ importers:
       typescript:
         specifier: ^5.8.2
         version: 5.8.3
+
+  ../sdkwork-generations/sdks/sdkwork-generations-app-sdk/sdkwork-generations-app-sdk-typescript:
+    dependencies:
+      '@sdkwork/sdk-common':
+        specifier: workspace:*
+        version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
 
   ../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-application-bootstrap:
     dependencies:
@@ -359,9 +392,30 @@ importers:
       '@sdkwork/core-pc-react':
         specifier: workspace:*
         version: link:../../../../../sdkwork-core/sdkwork-core-pc-react
+      '@testing-library/jest-dom':
+        specifier: 'catalog:'
+        version: 6.9.1
+      '@testing-library/react':
+        specifier: 'catalog:'
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@types/qrcode':
+        specifier: 'catalog:'
+        version: 1.5.6
+      '@types/react':
+        specifier: 19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      jsdom:
+        specifier: 'catalog:'
+        version: 29.1.1
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.9(@types/node@25.9.4)(jsdom@29.1.1)(vite@8.1.5(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   ../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-auth-runtime-pc-react:
     dependencies:
@@ -380,10 +434,19 @@ importers:
       '@sdkwork/sdk-common':
         specifier: ^1.0.2
         version: 1.0.3
+      '@sdkwork/user-center-core-pc-react':
+        specifier: workspace:*
+        version: link:../sdkwork-user-center-core-pc-react
     devDependencies:
+      '@testing-library/jest-dom':
+        specifier: 'catalog:'
+        version: 6.9.1
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.9(@types/node@25.9.4)(jsdom@29.1.1)(vite@8.1.5(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   ../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-iam-react:
     dependencies:
@@ -396,6 +459,16 @@ importers:
       react-dom:
         specifier: '>=18.2.0 <20.0.0'
         version: 19.2.4(react@19.2.4)
+    devDependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+
+  ../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-user-center-core-pc-react:
+    dependencies:
+      '@sdkwork/utils':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-utils/packages/sdkwork-utils-typescript
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -549,8 +622,6 @@ importers:
         specifier: workspace:*
         version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
 
-  ../sdkwork-order/apps/sdkwork-order-common/packages/sdkwork-order-sdk-ports: {}
-
   ../sdkwork-order/apps/sdkwork-order-common/packages/sdkwork-order-service:
     dependencies:
       '@sdkwork/order-app-sdk':
@@ -559,9 +630,6 @@ importers:
       '@sdkwork/order-backend-sdk':
         specifier: workspace:*
         version: link:../../../../sdks/sdkwork-order-backend-sdk/sdkwork-order-backend-sdk-typescript
-      '@sdkwork/order-sdk-ports':
-        specifier: workspace:*
-        version: link:../sdkwork-order-sdk-ports
       '@sdkwork/sdk-common':
         specifier: workspace:*
         version: link:../../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
@@ -761,6 +829,10 @@ importers:
       '@sdkwork/sdk-common':
         specifier: workspace:*
         version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
 
   ../sdkwork-ui/sdkwork-ui-pc-react:
     dependencies:
@@ -1222,6 +1294,12 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.20.0
+      '@types/react':
+        specifier: 19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.17)
       '@types/react-syntax-highlighter':
         specifier: ^15.5.13
         version: 15.5.13
@@ -1282,6 +1360,9 @@ importers:
       '@sdkwork/agents-pc-commons':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-commons
+      '@sdkwork/agents-pc-core':
+        specifier: workspace:*
+        version: link:../sdkwork-agents-pc-core
       lucide-react:
         specifier: 'catalog:'
         version: 1.21.0(react@19.2.7)
@@ -1294,6 +1375,9 @@ importers:
       '@sdkwork/agents-pc-commons':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-commons
+      '@sdkwork/agents-pc-core':
+        specifier: workspace:*
+        version: link:../sdkwork-agents-pc-core
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
@@ -1387,9 +1471,15 @@ importers:
       '@sdkwork/agents-app-sdk':
         specifier: workspace:*
         version: link:../../../../sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript
+      '@sdkwork/community-app-sdk':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-community/sdks/sdkwork-community-app-sdk/sdkwork-community-app-sdk-typescript
       '@sdkwork/drive-app-sdk':
         specifier: workspace:*
         version: link:../../../../../sdkwork-drive/sdks/sdkwork-drive-app-sdk/sdkwork-drive-app-sdk-typescript
+      '@sdkwork/generations-app-sdk':
+        specifier: workspace:*
+        version: link:../../../../../sdkwork-generations/sdks/sdkwork-generations-app-sdk/sdkwork-generations-app-sdk-typescript
       '@sdkwork/iam-contracts':
         specifier: workspace:*
         version: link:../../../../../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-contracts
@@ -1420,6 +1510,9 @@ importers:
       '@sdkwork/agents-pc-commons':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-commons
+      '@sdkwork/agents-pc-core':
+        specifier: workspace:*
+        version: link:../sdkwork-agents-pc-core
       '@sdkwork/agents-pc-inspiration':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-inspiration
@@ -1443,6 +1536,9 @@ importers:
       '@sdkwork/agents-pc-commons':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-commons
+      '@sdkwork/agents-pc-core':
+        specifier: workspace:*
+        version: link:../sdkwork-agents-pc-core
       lucide-react:
         specifier: 'catalog:'
         version: 1.21.0(react@19.2.7)

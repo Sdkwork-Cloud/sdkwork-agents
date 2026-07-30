@@ -8,9 +8,7 @@ use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
 };
 use sdkwork_agent_provider_codex::{CodexConfigurationProvider, CodexSdkIntegration};
-use sdkwork_agent_provider_gemini_cli::{
-    GeminiCliConfigurationProvider, GeminiCliSdkIntegration,
-};
+use sdkwork_agent_provider_gemini_cli::{GeminiCliConfigurationProvider, GeminiCliSdkIntegration};
 use sdkwork_agent_provider_hermes::HermesSdkIntegration;
 use sdkwork_agent_provider_openclaw::OpenClawSdkIntegration;
 use sdkwork_agent_provider_opencode::{OpenCodeConfigurationProvider, OpenCodeSdkIntegration};
@@ -209,8 +207,7 @@ impl CodeEngineSlot {
                 capability_id: format!("agent.configure.execution.{}", self.engine_key()),
             }
         })?;
-        let request =
-            AgentExecutionSettingsRequest::new(agent_id).with_access_mode(access_mode_id);
+        let request = AgentExecutionSettingsRequest::new(agent_id).with_access_mode(access_mode_id);
         match self {
             Self::Codex(_) => {
                 CodexConfigurationProvider::new().resolve_execution_settings(&request)
@@ -312,7 +309,6 @@ impl CodeEngineSlot {
             Self::Hermes(integration) => &integration.model,
         }
     }
-
 }
 
 pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEngineBootstrapError> {

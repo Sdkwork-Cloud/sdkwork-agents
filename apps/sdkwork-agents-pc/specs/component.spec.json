@@ -69,7 +69,9 @@
     "runtimeEntrypoints": ["src/main.tsx", "package.json#scripts.dev"],
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
+      "@sdkwork/community-app-sdk",
       "@sdkwork/drive-app-sdk",
+      "@sdkwork/generations-app-sdk",
       "@sdkwork/iam-app-sdk",
       "@sdkwork/knowledgebase-app-sdk",
       "@sdkwork/memory-app-sdk",
@@ -81,7 +83,9 @@
     ],
     "sdkDependencies": [
       "sdkwork-agents-app-sdk",
+      "sdkwork-community-app-sdk",
       "sdkwork-drive-app-sdk",
+      "sdkwork-generations-app-sdk",
       "sdkwork-iam-app-sdk",
       "sdkwork-knowledgebase-app-sdk",
       "sdkwork-memory-app-sdk",
