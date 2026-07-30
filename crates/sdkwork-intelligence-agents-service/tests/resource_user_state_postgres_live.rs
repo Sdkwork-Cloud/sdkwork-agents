@@ -87,6 +87,7 @@ impl TurnExecutor for FailingTurnExecutor {
             output_tokens: 0,
             runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
             stream_deltas: Vec::new(),
+            stream_events: Vec::new(),
         }
     }
 }
@@ -112,6 +113,7 @@ impl TurnExecutor for BlockingTurnExecutor {
             output_tokens: 5,
             runtime_mode: "postgres-live-blocking",
             stream_deltas: Vec::new(),
+            stream_events: Vec::new(),
         }
     }
 }

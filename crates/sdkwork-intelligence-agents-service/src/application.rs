@@ -5380,6 +5380,7 @@ where
             assistant_output_item,
             user_item_drive_refs,
             stream_deltas: Vec::new(),
+            stream_events: Vec::new(),
         })
     }
 
@@ -5782,6 +5783,7 @@ where
             assistant_output_item,
             user_item_drive_refs,
             stream_deltas: completion.stream_deltas,
+            stream_events: completion.stream_events,
         })
     }
 

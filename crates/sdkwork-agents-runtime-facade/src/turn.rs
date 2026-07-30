@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use sdkwork_agent_kernel::{
-    AgentExecutionProviderOptionValue, KernelResult, ModelRequest, ModelResponse, ModelStreamChunk,
-    ModelStreamSink, ToolCall,
+    AgentExecutionProviderOptionValue, KernelEvent, KernelResult, ModelRequest, ModelResponse,
+    ModelStreamChunk, ModelStreamSink, ToolCall,
 };
 use sdkwork_agent_provider_spi::SdkRuntimeStreamCompletion;
 use sdkwork_utils_rust::string::is_blank;
@@ -81,6 +81,8 @@ pub struct CodeEngineTurnOutput {
     pub tool_calls: Vec<ToolCall>,
     /// Token/word deltas when streaming is available; empty when invoke-only.
     pub stream_deltas: Vec<String>,
+    /// Provider-neutral lifecycle and item events emitted during the turn.
+    pub stream_events: Vec<KernelEvent>,
     /// Verified terminal metadata for a streamed turn. `None` means the turn
     /// used invoke-only execution or the provider cannot prove completion.
     pub stream_completion: Option<CodeEngineTurnStreamCompletion>,
@@ -124,6 +126,7 @@ fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> Co
         provider_session_id: resolve_provider_session_id(&response, input),
         tool_calls: response.tool_calls,
         stream_deltas: Vec::new(),
+        stream_events: Vec::new(),
         stream_completion: None,
     }
 }
@@ -297,7 +300,8 @@ pub fn execute_code_engine_turn_with_stream_sink(
     let mut collector = ForwardingStreamCollector::new(sink);
     match slot.stream_model_into(model_request, &mut collector) {
         Ok(()) if !collector.is_empty() => {
-            return build_streamed_turn_output(input, collector.into_deltas(), None);
+            let (stream_deltas, stream_events) = collector.into_parts();
+            return build_streamed_turn_output(input, stream_deltas, stream_events, None);
         }
         Ok(()) => {
             return Err(RuntimeFacadeError::Kernel(
@@ -326,7 +330,13 @@ fn execute_first_turn_with_stream_completion(
         .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
     let completion = code_engine_stream_completion(runtime_completion)?;
 
-    build_streamed_turn_output(input, collector.into_deltas(), Some(completion))
+    let (stream_deltas, stream_events) = collector.into_parts();
+    build_streamed_turn_output(
+        input,
+        stream_deltas,
+        stream_events,
+        Some(completion),
+    )
 }
 
 fn code_engine_stream_completion(
@@ -351,6 +361,7 @@ fn code_engine_stream_completion(
 fn build_streamed_turn_output(
     input: &CodeEngineTurnInput,
     stream_deltas: Vec<String>,
+    stream_events: Vec<KernelEvent>,
     stream_completion: Option<CodeEngineTurnStreamCompletion>,
 ) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
     if stream_deltas.is_empty() {
@@ -382,6 +393,7 @@ fn build_streamed_turn_output(
         provider_session_id: Some(provider_session_id),
         tool_calls: Vec::new(),
         stream_deltas,
+        stream_events,
         stream_completion,
     })
 }
@@ -389,6 +401,7 @@ fn build_streamed_turn_output(
 struct ForwardingStreamCollector<'a> {
     inner: &'a mut dyn ModelStreamSink,
     deltas: Vec<String>,
+    events: Vec<KernelEvent>,
     bytes: usize,
 }
 
@@ -397,6 +410,7 @@ impl<'a> ForwardingStreamCollector<'a> {
         Self {
             inner,
             deltas: Vec::new(),
+            events: Vec::new(),
             bytes: 0,
         }
     }
@@ -405,8 +419,8 @@ impl<'a> ForwardingStreamCollector<'a> {
         self.deltas.is_empty()
     }
 
-    fn into_deltas(self) -> Vec<String> {
-        self.deltas
+    fn into_parts(self) -> (Vec<String>, Vec<KernelEvent>) {
+        (self.deltas, self.events)
     }
 }
 
@@ -433,6 +447,12 @@ impl ModelStreamSink for ForwardingStreamCollector<'_> {
 
         self.inner.push_chunk(chunk.clone())?;
         self.deltas.push(chunk.content);
+        Ok(())
+    }
+
+    fn push_event(&mut self, event: KernelEvent) -> KernelResult<()> {
+        self.inner.push_event(event.clone())?;
+        self.events.push(event);
         Ok(())
     }
 }
@@ -602,9 +622,10 @@ mod tests {
             .push_chunk(ModelStreamChunk::output("request-1", 1, " world"))
             .expect("second chunk");
 
-        let deltas = collector.into_deltas();
+        let (deltas, events) = collector.into_parts();
         assert_eq!(sink.contents, ["Hello", " world"]);
         assert_eq!(deltas, ["Hello", " world"]);
+        assert!(events.is_empty());
     }
 
     #[test]
@@ -619,9 +640,10 @@ mod tests {
             .push_chunk(ModelStreamChunk::output("request-1", 1, "content"))
             .expect("content chunk");
 
-        let deltas = collector.into_deltas();
+        let (deltas, events) = collector.into_parts();
         assert_eq!(sink.contents, ["content"]);
         assert_eq!(deltas, ["content"]);
+        assert!(events.is_empty());
     }
 
     #[test]
@@ -665,6 +687,7 @@ mod tests {
         let output = build_streamed_turn_output(
             &input,
             vec!["first ".to_string(), "second".to_string()],
+            Vec::new(),
             Some(completion.clone()),
         )
         .expect("streamed output");
@@ -672,6 +695,7 @@ mod tests {
         assert_eq!(output.assistant_content, "first second");
         assert_eq!(output.provider_session_id.as_deref(), Some("thread-1"));
         assert_eq!(output.stream_deltas, ["first ", "second"]);
+        assert!(output.stream_events.is_empty());
         assert_eq!(output.stream_completion, Some(completion));
     }
 

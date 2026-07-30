@@ -22,7 +22,7 @@ use crate::ports::{
     SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectDriveAccessMode, AgentProjectVisibility};
-use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
+use sdkwork_agent_kernel::{AgentManifest, KernelEvent, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
 
 // ---------------------------------------------------------------------------
@@ -761,6 +761,7 @@ pub struct TurnExecutionResult {
     pub assistant_output_item: AgentSessionItemRecord,
     pub user_item_drive_refs: Vec<AgentItemDriveRefRecord>,
     pub stream_deltas: Vec<String>,
+    pub stream_events: Vec<KernelEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

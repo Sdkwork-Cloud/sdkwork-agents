@@ -7,7 +7,9 @@
 
 use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
-use sdkwork_agent_kernel::{KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus};
+use sdkwork_agent_kernel::{
+    KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
+};
 use sdkwork_agents_runtime_facade::{
     bootstrap_code_engine, execute_code_engine_turn, execute_code_engine_turn_with_stream,
     CodeEngineTurnInput,
@@ -71,6 +73,7 @@ pub struct TurnExecutionOutput {
     pub output_tokens: u64,
     pub runtime_mode: &'static str,
     pub stream_deltas: Vec<String>,
+    pub stream_events: Vec<KernelEvent>,
 }
 
 /// Pluggable turn execution strategy (Open/Closed: swap at service bootstrap).
@@ -140,6 +143,7 @@ fn run_with_bounded_timeout(
                 output_tokens: 0,
                 runtime_mode: RUNTIME_MODE_CAPACITY_ERROR,
                 stream_deltas: Vec::new(),
+                stream_events: Vec::new(),
             };
         }
     };
@@ -275,6 +279,7 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
                     output_tokens: estimate_tokens(output.assistant_content.as_str()),
                     runtime_mode: RUNTIME_MODE_FACADE,
                     stream_deltas: output.stream_deltas,
+                    stream_events: output.stream_events,
                 }
             }
             Err(error) => inference_error(format!("code engine turn failed: {error}")),
@@ -324,6 +329,7 @@ fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
         output_tokens: 0,
         runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
         stream_deltas: Vec::new(),
+        stream_events: Vec::new(),
     }
 }
 
@@ -397,6 +403,7 @@ fn map_model_response(
         output_tokens,
         runtime_mode: "managed-agent-kernel-model-v1",
         stream_deltas: Vec::new(),
+        stream_events: Vec::new(),
     })
 }
 
@@ -475,6 +482,7 @@ pub fn execute_agent_turn(input: &TurnExecutionInput) -> TurnExecutionOutput {
         output_tokens,
         runtime_mode,
         stream_deltas: Vec::new(),
+        stream_events: Vec::new(),
     }
 }
 
