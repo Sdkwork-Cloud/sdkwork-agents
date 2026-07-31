@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.agents.task-scheduling",
+  "contractVersion": "1.0.0",
+  "status": "active",
+  "authority": "postgresql",
+  "aggregates": {
+    "task": "ai_agent_task",
+    "run": "ai_agent_task_run",
+    "attempt": "ai_agent_task_run_attempt",
+    "session": "ai_agent_session",
+    "turn": "ai_agent_turn"
+  },
+  "schedule": {
+    "kinds": ["one_time", "cron"],
+    "cronFields": 6,
+    "timezoneDatabase": "IANA",
+    "misfirePolicies": ["skip", "fire_once", "catch_up"],
+    "overlapPolicies": ["skip", "queue"],
+    "maxConcurrentRuns": { "minimum": 1, "maximum": 32 },
+    "maxCatchUpRuns": { "minimum": 1, "maximum": 100 },
+    "timeoutSeconds": { "minimum": 1, "maximum": 86400 }
+  },
+  "retry": {
+    "maxAttempts": { "minimum": 1, "maximum": 20 },
+    "backoff": "capped-exponential-with-deterministic-jitter",
+    "infrastructureRetryReusesRun": true,
+    "infrastructureRetryReusesTurn": true,
+    "businessRetryCreatesRun": true
+  },
+  "concurrency": {
+    "materialization": "for-update-skip-locked",
+    "claim": "for-update-skip-locked",
+    "leaseTokenPersistence": "sha256-hash-only",
+    "fencing": "monotonic-per-run",
+    "generationCheck": true
+  },
+  "idempotency": {
+    "scheduledOccurrenceUniqueBy": [
+      "tenantId",
+      "organizationId",
+      "taskId",
+      "scheduleGeneration",
+      "scheduledFor"
+    ],
+    "runOwnsTurnIdempotencyKey": true,
+    "ambiguousOutcomePolicy": "reconcile"
+  },
+  "state": {
+    "task": ["active", "paused", "completed", "cancelled"],
+    "run": ["pending", "claimed", "running", "succeeded", "failed", "cancelled", "reconciling", "dead_letter"],
+    "attempt": ["claimed", "running", "succeeded", "failed", "lease_expired", "cancelled"]
+  },
+  "boundaries": {
+    "sessionRequired": true,
+    "sessionStubAllowed": false,
+    "providerCallInsideTransactionAllowed": false,
+    "redisMayOwnCorrectness": false,
+    "brokerMayOwnCorrectness": false,
+    "externalExactlyOnceRequiresProviderIdempotency": true
+  },
+  "review": {
+    "requirement": "docs/product/requirements/REQ-2026-0731-agent-task-scheduling.md",
+    "decision": "docs/architecture/decisions/ADR-20260731-agent-task-scheduling.md",
+    "approval": "docs/engineering/reviews/REVIEW-20260731-agent-task-scheduling.md",
+    "status": "approved"
+  }
+}

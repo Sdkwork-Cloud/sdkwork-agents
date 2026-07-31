@@ -132,9 +132,15 @@ pub enum AgentAuditAction {
     InteractionExpired,
     InteractionCancelled,
     TaskCreated,
+    TaskUpdated,
+    TaskPaused,
+    TaskResumed,
     TaskCompleted,
     TaskFailed,
     TaskCancelled,
+    TaskRunCreated,
+    TaskRunCancelRequested,
+    TaskRunReconciled,
     WorkspaceCreated,
     WorkspaceUpdated,
     WorkspaceArchived,
@@ -189,9 +195,15 @@ impl AgentAuditAction {
             Self::InteractionExpired => "agent.business.interaction.expired",
             Self::InteractionCancelled => "agent.business.interaction.cancelled",
             Self::TaskCreated => "agent.business.task.created",
+            Self::TaskUpdated => "agent.business.task.updated",
+            Self::TaskPaused => "agent.business.task.paused",
+            Self::TaskResumed => "agent.business.task.resumed",
             Self::TaskCompleted => "agent.business.task.completed",
             Self::TaskFailed => "agent.business.task.failed",
             Self::TaskCancelled => "agent.business.task.cancelled",
+            Self::TaskRunCreated => "agent.business.task_run.created",
+            Self::TaskRunCancelRequested => "agent.business.task_run.cancel_requested",
+            Self::TaskRunReconciled => "agent.business.task_run.reconciled",
             Self::WorkspaceCreated => "agent.business.workspace.created",
             Self::WorkspaceUpdated => "agent.business.workspace.updated",
             Self::WorkspaceArchived => "agent.business.workspace.archived",
@@ -256,9 +268,15 @@ impl AgentAuditAction {
             Self::InteractionExpired => "interaction_expired",
             Self::InteractionCancelled => "interaction_cancelled",
             Self::TaskCreated => "task_created",
+            Self::TaskUpdated => "task_updated",
+            Self::TaskPaused => "task_paused",
+            Self::TaskResumed => "task_resumed",
             Self::TaskCompleted => "task_completed",
             Self::TaskFailed => "task_failed",
             Self::TaskCancelled => "task_cancelled",
+            Self::TaskRunCreated => "task_run_created",
+            Self::TaskRunCancelRequested => "task_run_cancel_requested",
+            Self::TaskRunReconciled => "task_run_reconciled",
             Self::WorkspaceCreated => "workspace_created",
             Self::WorkspaceUpdated => "workspace_updated",
             Self::WorkspaceArchived => "workspace_archived",
@@ -1912,150 +1930,7 @@ impl AgentInteractionRecord {
     }
 }
 
-// ============================================================================
-// Agent Task Management — kernel AgentTask scheduling contract
-// ============================================================================
-
-/// Lifecycle status of a scheduled agent task.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentTaskStatus {
-    Pending,
-    Running,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
-impl AgentTaskStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
-        }
-    }
-
-    pub fn from_code(value: &str) -> Option<Self> {
-        match value {
-            "pending" => Some(Self::Pending),
-            "running" => Some(Self::Running),
-            "completed" => Some(Self::Completed),
-            "failed" => Some(Self::Failed),
-            "cancelled" => Some(Self::Cancelled),
-            _ => None,
-        }
-    }
-
-    pub fn as_db_code(&self) -> i16 {
-        match self {
-            Self::Pending => 0,
-            Self::Running => 1,
-            Self::Completed => 2,
-            Self::Failed => 3,
-            Self::Cancelled => 4,
-        }
-    }
-
-    pub fn from_db_code(value: i16) -> Option<Self> {
-        match value {
-            0 => Some(Self::Pending),
-            1 => Some(Self::Running),
-            2 => Some(Self::Completed),
-            3 => Some(Self::Failed),
-            4 => Some(Self::Cancelled),
-            _ => None,
-        }
-    }
-
-    pub fn is_cancellable(&self) -> bool {
-        matches!(self, Self::Pending | Self::Running)
-    }
-}
-
-/// A scheduled task for an agent, projected from the kernel `AgentTask` SPI.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentTaskRecord {
-    pub id: u64,
-    pub task_id: String,
-    pub tenant_id: u64,
-    pub organization_id: u64,
-    pub agent_id: String,
-    pub owner_user_id: u64,
-    pub title: Option<String>,
-    pub prompt: String,
-    pub status: AgentTaskStatus,
-    pub external_ref: Option<String>,
-    pub metadata_json: String,
-    pub version: u64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
-    pub cancelled_at: Option<String>,
-}
-
-impl AgentTaskRecord {
-    pub fn mark_updated(&mut self, updated_at: impl Into<String>) {
-        self.updated_at = updated_at.into();
-        self.version = self.version.saturating_add(1);
-    }
-
-    pub fn cancel(&mut self, cancelled_at: impl Into<String>) {
-        let ts = cancelled_at.into();
-        self.status = AgentTaskStatus::Cancelled;
-        self.cancelled_at = Some(ts.clone());
-        self.updated_at = ts;
-        self.version = self.version.saturating_add(1);
-    }
-
-    pub fn mark_running(&mut self, started_at: impl Into<String>) {
-        let ts = started_at.into();
-        self.status = AgentTaskStatus::Running;
-        self.started_at = Some(ts.clone());
-        self.updated_at = ts;
-        self.version = self.version.saturating_add(1);
-    }
-
-    pub fn mark_completed(&mut self, completed_at: impl Into<String>, output: &str) {
-        let ts = completed_at.into();
-        self.status = AgentTaskStatus::Completed;
-        self.completed_at = Some(ts.clone());
-        self.updated_at = ts;
-        self.version = self.version.saturating_add(1);
-        if let Ok(mut metadata) = serde_json::from_str::<serde_json::Value>(&self.metadata_json) {
-            if let Some(obj) = metadata.as_object_mut() {
-                obj.insert(
-                    "output".to_string(),
-                    serde_json::Value::String(output.to_string()),
-                );
-                if let Ok(json) = serde_json::to_string(obj) {
-                    self.metadata_json = json;
-                }
-            }
-        }
-    }
-
-    pub fn mark_failed(&mut self, completed_at: impl Into<String>, error: &str) {
-        let ts = completed_at.into();
-        self.status = AgentTaskStatus::Failed;
-        self.completed_at = Some(ts.clone());
-        self.updated_at = ts;
-        self.version = self.version.saturating_add(1);
-        if let Ok(mut metadata) = serde_json::from_str::<serde_json::Value>(&self.metadata_json) {
-            if let Some(obj) = metadata.as_object_mut() {
-                obj.insert(
-                    "error".to_string(),
-                    serde_json::Value::String(error.to_string()),
-                );
-                if let Ok(json) = serde_json::to_string(obj) {
-                    self.metadata_json = json;
-                }
-            }
-        }
-    }
-}
+pub use crate::task_scheduling::{AgentTaskRecord, AgentTaskStatus};
 
 #[cfg(test)]
 mod tests {

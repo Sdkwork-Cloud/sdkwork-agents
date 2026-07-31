@@ -622,6 +622,60 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.create",
+    },
+    ApiOperation {
+        method: "PATCH",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.update",
+    },
+    ApiOperation {
+        method: "DELETE",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.delete",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/clear",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.clear",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/reorder",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.reorder",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/claim_next",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.claimNext",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/fail",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.fail",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/retry",
+        tag: "ai",
+        operation_id: "agents.turnInputQueueEntries.retry",
+    },
+    ApiOperation {
+        method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
         tag: "ai",
         operation_id: "agents.interactions.list",
@@ -1508,7 +1562,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 47);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 83);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 92);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 48);
 
         assert_eq!(

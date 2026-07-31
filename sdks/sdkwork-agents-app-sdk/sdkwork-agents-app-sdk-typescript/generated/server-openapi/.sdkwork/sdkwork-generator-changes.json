@@ -9,11 +9,29 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "88d941c0d47346ede5e0589818f487f7550251f70af89aac2e59659c6c379874",
+  "changeFingerprint": "8b9b62c3f90d1d797e488c7429895dded9bfa243be68c94209042d624cd0e3ea",
   "changes": {
-    "createdGeneratedFiles": [],
+    "createdGeneratedFiles": [
+      "src/types/agent-turn-input-queue-drive-ref.ts",
+      "src/types/agent-turn-input-queue-entry-list-response.ts",
+      "src/types/agent-turn-input-queue-entry-response.ts",
+      "src/types/agent-turn-input-queue-entry.ts",
+      "src/types/agent-turn-input-queue-reorder-entry.ts",
+      "src/types/agent-turn-input-queue-status.ts",
+      "src/types/claim-next-agent-turn-input-queue-entry-request.ts",
+      "src/types/claim-next-agent-turn-input-queue-entry-response.ts",
+      "src/types/claim-next-agent-turn-input-queue-entry-result.ts",
+      "src/types/clear-agent-turn-input-queue-entries-response.ts",
+      "src/types/create-agent-turn-input-queue-entry-request.ts",
+      "src/types/fail-agent-turn-input-queue-entry-request.ts",
+      "src/types/reorder-agent-turn-input-queue-entries-request.ts",
+      "src/types/reorder-agent-turn-input-queue-entries-response.ts",
+      "src/types/retry-agent-turn-input-queue-entry-request.ts",
+      "src/types/update-agent-turn-input-queue-entry-request.ts"
+    ],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts"
+      "src/api/ai.ts",
+      "src/types/index.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -105,6 +123,7 @@
       "src/types/agent-turn-mode.ts",
       "src/types/agent-turn-record.ts",
       "src/types/agent-turn-response.ts",
+      "src/types/agent-turn-runtime-event.ts",
       "src/types/agent-turn-status.ts",
       "src/types/agent-turn-stream-event.ts",
       "src/types/agent-visibility.ts",
@@ -144,7 +163,6 @@
       "src/types/ensure-default-agent-workspace-request.ts",
       "src/types/field-error.ts",
       "src/types/import-agent-project-request.ts",
-      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
       "src/types/mcp-server-marketplace-list-response.ts",
@@ -186,7 +204,8 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface"
+      "api-surface",
+      "models"
     ],
     "details": [
       {
@@ -194,21 +213,43 @@
         "paths": [
           "src/api/ai.ts"
         ]
+      },
+      {
+        "area": "models",
+        "paths": [
+          "src/types/agent-turn-input-queue-drive-ref.ts",
+          "src/types/agent-turn-input-queue-entry-list-response.ts",
+          "src/types/agent-turn-input-queue-entry-response.ts",
+          "src/types/agent-turn-input-queue-entry.ts",
+          "src/types/agent-turn-input-queue-reorder-entry.ts",
+          "src/types/agent-turn-input-queue-status.ts",
+          "src/types/claim-next-agent-turn-input-queue-entry-request.ts",
+          "src/types/claim-next-agent-turn-input-queue-entry-response.ts",
+          "src/types/claim-next-agent-turn-input-queue-entry-result.ts",
+          "src/types/clear-agent-turn-input-queue-entries-response.ts",
+          "src/types/create-agent-turn-input-queue-entry-request.ts",
+          "src/types/fail-agent-turn-input-queue-entry-request.ts",
+          "src/types/index.ts",
+          "src/types/reorder-agent-turn-input-queue-entries-request.ts",
+          "src/types/reorder-agent-turn-input-queue-entries-response.ts",
+          "src/types/retry-agent-turn-input-queue-entry-request.ts",
+          "src/types/update-agent-turn-input-queue-entry-request.ts"
+        ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface. Verification is required."
+    "summary": "Detected impact areas: api-surface, models. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -226,7 +267,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

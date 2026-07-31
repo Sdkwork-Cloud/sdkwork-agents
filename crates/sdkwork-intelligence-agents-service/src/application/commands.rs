@@ -22,6 +22,11 @@ use crate::ports::{
     SessionListQuery, SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery,
 };
 use crate::project::{AgentProjectDriveAccessMode, AgentProjectVisibility};
+use crate::task_scheduling::{
+    AgentTaskMisfirePolicy, AgentTaskOverlapPolicy, AgentTaskRunAttemptRecord, AgentTaskRunRecord,
+    AgentTaskRunStatus, AgentTaskScheduleKind,
+};
+use crate::{PaginatedResult, TaskRunAttemptListQuery, TaskRunListQuery};
 use sdkwork_agent_kernel::{AgentManifest, KernelEvent, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
 
@@ -600,9 +605,25 @@ pub struct CreateTaskCommand {
     pub organization_id: u64,
     pub agent_id: String,
     pub owner_user_id: u64,
+    pub session_id: String,
     pub task_id: String,
     pub title: Option<String>,
     pub prompt: String,
+    pub schedule_kind: AgentTaskScheduleKind,
+    pub cron_expression: Option<String>,
+    pub timezone: String,
+    pub scheduled_at: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub misfire_policy: AgentTaskMisfirePolicy,
+    pub overlap_policy: AgentTaskOverlapPolicy,
+    pub max_concurrent_runs: u16,
+    pub max_catch_up_runs: u16,
+    pub max_attempts: u16,
+    pub retry_initial_delay_seconds: u32,
+    pub retry_max_delay_seconds: u32,
+    pub timeout_seconds: u32,
+    pub priority: i16,
     pub external_ref: Option<String>,
     pub metadata_json: String,
     pub requested_by: PolicySubject,
@@ -624,11 +645,67 @@ pub struct CancelTaskCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplaceTaskCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub title: Option<String>,
+    pub prompt: String,
+    pub schedule_kind: AgentTaskScheduleKind,
+    pub cron_expression: Option<String>,
+    pub timezone: String,
+    pub scheduled_at: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub misfire_policy: AgentTaskMisfirePolicy,
+    pub overlap_policy: AgentTaskOverlapPolicy,
+    pub max_concurrent_runs: u16,
+    pub max_catch_up_runs: u16,
+    pub max_attempts: u16,
+    pub retry_initial_delay_seconds: u32,
+    pub retry_max_delay_seconds: u32,
+    pub timeout_seconds: u32,
+    pub priority: i16,
+    pub external_ref: Option<String>,
+    pub metadata_json: String,
+    pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PauseTaskCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumeTaskCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecuteTaskCommand {
     pub tenant_id: u64,
     pub organization_id: u64,
     pub path_agent_id: String,
     pub task_id: String,
+    pub idempotency_key: String,
     pub expected_version: Option<u64>,
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
@@ -652,6 +729,102 @@ pub struct ListTasksCommand {
     pub query: TaskListQuery,
     pub requested_by: PolicySubject,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTaskRunsCommand {
+    pub query: TaskRunListQuery,
+    pub path_agent_id: String,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetTaskRunCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub run_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryTaskRunCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub run_id: String,
+    pub idempotency_key: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelTaskRunCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub run_id: String,
+    pub expected_version: Option<u64>,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTaskRunAttemptsCommand {
+    pub query: TaskRunAttemptListQuery,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskRunReconciliationOutcome {
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl TaskRunReconciliationOutcome {
+    pub fn terminal_status(self) -> AgentTaskRunStatus {
+        match self {
+            Self::Succeeded => AgentTaskRunStatus::Succeeded,
+            Self::Failed => AgentTaskRunStatus::Failed,
+            Self::Cancelled => AgentTaskRunStatus::Cancelled,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconcileTaskRunCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub task_id: String,
+    pub run_id: String,
+    pub outcome: TaskRunReconciliationOutcome,
+    pub error_code: Option<String>,
+    pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskRunReconciliationResult {
+    pub examined: usize,
+    pub reconciled: Vec<AgentTaskRunRecord>,
+    pub pending: usize,
+    pub skipped_conflicts: usize,
+}
+
+pub type TaskRunPage = PaginatedResult<AgentTaskRunRecord>;
+pub type TaskRunAttemptPage = PaginatedResult<AgentTaskRunAttemptRecord>;
 
 // ---------------------------------------------------------------------------
 // Session item and turn commands
@@ -752,13 +925,14 @@ pub struct CreateTurnCommand {
     pub prefer_stream: bool,
 }
 
-/// Result of one completed turn (user input + assistant output + session).
+/// Result of one completed Turn with its complete authoritative item set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnExecutionResult {
     pub session: AgentSessionRecord,
     pub turn: AgentTurnRecord,
     pub user_input_item: AgentSessionItemRecord,
     pub assistant_output_item: AgentSessionItemRecord,
+    pub turn_items: Vec<AgentSessionItemRecord>,
     pub user_item_drive_refs: Vec<AgentItemDriveRefRecord>,
     pub stream_deltas: Vec<String>,
     pub stream_events: Vec<KernelEvent>,

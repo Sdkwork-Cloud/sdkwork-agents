@@ -61,6 +61,16 @@
       "purpose": "Canonical Project, Session, Turn, Session Item, Interaction and Checkpoint aggregate."
     },
     {
+      "file": "AGENTS_TASK_SCHEDULING_SPEC.md",
+      "path": "specs/AGENTS_TASK_SCHEDULING_SPEC.md",
+      "purpose": "Canonical Task, Run, Attempt, cron, lease, fencing, retry, and reconciliation contract."
+    },
+    {
+      "file": "agent-task-scheduling.contract.json",
+      "path": "specs/agent-task-scheduling.contract.json",
+      "purpose": "Machine-readable scheduling invariants and approved boundary."
+    },
+    {
       "file": "AGENTS_KERNEL_BOUNDARY_SPEC.md",
       "path": "specs/AGENTS_KERNEL_BOUNDARY_SPEC.md",
       "purpose": "Kernel vs agents vs product application responsibility boundary."
@@ -83,7 +93,7 @@
     {
       "file": "AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
       "path": "crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md",
-      "purpose": "Canonical 20-table Agents PostgreSQL contract."
+      "purpose": "Canonical 23-table Agents PostgreSQL contract."
     },
     {
       "file": "agents-birdcoder-alignment.spec.json",

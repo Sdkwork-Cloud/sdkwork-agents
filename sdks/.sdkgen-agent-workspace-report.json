@@ -4,7 +4,7 @@
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-07-30T11:38:47.388Z",
+  "startedAt": "2026-07-31T04:56:07.981Z",
   "families": [
     {
       "key": "app",
@@ -80,10 +80,10 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "88d941c0d47346ede5e0589818f487f7550251f70af89aac2e59659c6c379874",
+      "fingerprint": "8b9b62c3f90d1d797e488c7429895dded9bfa243be68c94209042d624cd0e3ea",
       "fingerprints": {
-        "typescript": "88d941c0d47346ede5e0589818f487f7550251f70af89aac2e59659c6c379874",
-        "flutter": "32621192e99450c2f3d88e3b1b3381bb5ff141817d63df776d85b4fcce2de713"
+        "typescript": "8b9b62c3f90d1d797e488c7429895dded9bfa243be68c94209042d624cd0e3ea",
+        "flutter": "c77862e3e533d0d70f6973ea3756ce7774a314188ac545ff79f8b14241d21623"
       },
       "hasChanges": false,
       "riskLevel": "medium",
@@ -95,7 +95,7 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi",
           "packageName": "@sdkwork/agents-app-sdk",
           "version": "0.1.0",
-          "fingerprint": "88d941c0d47346ede5e0589818f487f7550251f70af89aac2e59659c6c379874",
+          "fingerprint": "8b9b62c3f90d1d797e488c7429895dded9bfa243be68c94209042d624cd0e3ea",
           "hasChanges": false,
           "riskLevel": "medium",
           "generated": true
@@ -106,7 +106,7 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi",
           "packageName": "sdkwork_agents_app_sdk",
           "version": "0.1.0",
-          "fingerprint": "32621192e99450c2f3d88e3b1b3381bb5ff141817d63df776d85b4fcce2de713",
+          "fingerprint": "c77862e3e533d0d70f6973ea3756ce7774a314188ac545ff79f8b14241d21623",
           "hasChanges": false,
           "riskLevel": "medium",
           "generated": true
@@ -114,5 +114,5 @@
       ]
     }
   ],
-  "finishedAt": "2026-07-30T11:38:48.581Z"
+  "finishedAt": "2026-07-31T04:56:09.125Z"
 }

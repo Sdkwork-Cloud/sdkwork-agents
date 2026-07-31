@@ -9,12 +9,15 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-backend-sdk"
   },
-  "changeFingerprint": "253af27a1f1a948928298d6110638b8b0d4c830753b1b0cb58522ceaa7a5911d",
+  "changeFingerprint": "8400f7872976207ffbd37b4b9f6084a991be6367d1442c91b4549cb9332a988c",
   "changes": {
-    "createdGeneratedFiles": [],
+    "createdGeneratedFiles": [
+      "src/types/agent-turn-runtime-event.ts"
+    ],
     "updatedGeneratedFiles": [
       "src/api/ai.ts",
-      "src/http/client.ts"
+      "src/types/agent-turn-stream-event.ts",
+      "src/types/index.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -31,6 +34,7 @@
       "src/api/index.ts",
       "src/api/paths.ts",
       "src/auth/index.ts",
+      "src/http/client.ts",
       "src/http/index.ts",
       "src/index.ts",
       "src/sdk.ts",
@@ -89,7 +93,6 @@
       "src/types/agent-turn-record.ts",
       "src/types/agent-turn-response.ts",
       "src/types/agent-turn-status.ts",
-      "src/types/agent-turn-stream-event.ts",
       "src/types/agent-visibility.ts",
       "src/types/answer-agent-interaction-request.ts",
       "src/types/approve-agent-interaction-request.ts",
@@ -111,7 +114,6 @@
       "src/types/create-agent-task-request.ts",
       "src/types/create-agent-turn-request.ts",
       "src/types/field-error.ts",
-      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
       "src/types/page-info.ts",
@@ -139,36 +141,37 @@
     "schemaVersion": 1,
     "areas": [
       "api-surface",
-      "runtime"
+      "models"
     ],
     "details": [
       {
         "area": "api-surface",
         "paths": [
-          "src/api/ai.ts",
-          "src/http/client.ts"
+          "src/api/ai.ts"
         ]
       },
       {
-        "area": "runtime",
+        "area": "models",
         "paths": [
-          "src/http/client.ts"
+          "src/types/agent-turn-runtime-event.ts",
+          "src/types/agent-turn-stream-event.ts",
+          "src/types/index.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, runtime. Verification is required."
+    "summary": "Detected impact areas: api-surface, models. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, runtime. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -186,7 +189,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-backend-sdk\\sdkwork-agents-backend-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

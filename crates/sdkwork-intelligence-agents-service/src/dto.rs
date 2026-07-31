@@ -1,11 +1,14 @@
 use crate::application::{
     ActivateAgentProviderBindingCommand, AgentPreviewResponseCommand,
     AgentPromptOptimizationCommand, AgentProviderBindingCommand, AnswerInteractionCommand,
-    ApproveInteractionCommand, ArchiveSessionCommand, CancelTaskCommand, ChangeAgentStatusCommand,
-    CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand, CreateSessionCommand,
-    CreateSessionItemCommand, CreateTaskCommand, DeleteAgentCommand, ExecuteTaskCommand,
-    GetAgentCommand, ListAgentsCommand, ListInteractionsCommand, ListSessionItemsCommand,
-    ListSessionsCommand, ListTasksCommand, RestoreAgentCommand, UpdateAgentCommand,
+    ApproveInteractionCommand, ArchiveSessionCommand, CancelTaskCommand, CancelTaskRunCommand,
+    ChangeAgentStatusCommand, CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand,
+    CreateSessionCommand, CreateSessionItemCommand, CreateTaskCommand, DeleteAgentCommand,
+    ExecuteTaskCommand, GetAgentCommand, ListAgentsCommand, ListInteractionsCommand,
+    ListSessionItemsCommand, ListSessionsCommand, ListTaskRunAttemptsCommand, ListTaskRunsCommand,
+    ListTasksCommand, PauseTaskCommand, ReconcileTaskRunCommand, ReplaceTaskCommand,
+    RestoreAgentCommand, ResumeTaskCommand, RetryTaskRunCommand, TaskRunReconciliationOutcome,
+    UpdateAgentCommand,
 };
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotRecord, AgentImplementationKind,
@@ -22,6 +25,7 @@ use crate::ports::{
 use crate::session_activity::{
     SessionActivitySummaryRecord, SessionProviderActivityObservation, SessionProviderIdentity,
 };
+use crate::task_scheduler::{TaskRunAttemptListQuery, TaskRunListQuery};
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_organization_id, parse_owner_user_id,
     parse_tenant_id, validate_requested_at,
@@ -1388,8 +1392,33 @@ impl AgentItemFeedbackRecordDto {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateTaskRequestDto {
     pub task_id: Option<String>,
+    pub session_id: String,
     pub title: String,
     pub prompt: String,
+    pub schedule_kind: String,
+    pub cron_expression: Option<String>,
+    pub timezone: String,
+    pub scheduled_at: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    #[serde(default = "default_task_misfire_policy")]
+    pub misfire_policy: String,
+    #[serde(default = "default_task_overlap_policy")]
+    pub overlap_policy: String,
+    #[serde(default = "default_task_max_concurrent_runs")]
+    pub max_concurrent_runs: u16,
+    #[serde(default = "default_task_max_catch_up_runs")]
+    pub max_catch_up_runs: u16,
+    #[serde(default = "default_task_max_attempts")]
+    pub max_attempts: u16,
+    #[serde(default = "default_task_retry_initial_delay_seconds")]
+    pub retry_initial_delay_seconds: u32,
+    #[serde(default = "default_task_retry_max_delay_seconds")]
+    pub retry_max_delay_seconds: u32,
+    #[serde(default = "default_task_timeout_seconds")]
+    pub timeout_seconds: u32,
+    #[serde(default)]
+    pub priority: i16,
     pub external_ref: Option<String>,
     pub metadata_json: Option<String>,
     pub requested_at: String,
@@ -1405,20 +1434,156 @@ impl CreateTaskRequestDto {
         requested_by: PolicySubject,
     ) -> KernelResult<CreateTaskCommand> {
         validate_requested_at(&self.requested_at)?;
+        let schedule_kind = crate::AgentTaskScheduleKind::from_code(&self.schedule_kind)
+            .ok_or_else(|| KernelError::validation("invalid scheduleKind"))?;
+        let misfire_policy = crate::AgentTaskMisfirePolicy::from_code(&self.misfire_policy)
+            .ok_or_else(|| KernelError::validation("invalid misfirePolicy"))?;
+        let overlap_policy = crate::AgentTaskOverlapPolicy::from_code(&self.overlap_policy)
+            .ok_or_else(|| KernelError::validation("invalid overlapPolicy"))?;
         Ok(CreateTaskCommand {
             tenant_id,
             organization_id,
             agent_id,
             owner_user_id,
+            session_id: self.session_id,
             task_id: self.task_id.unwrap_or_default(),
             title: Some(self.title),
             prompt: self.prompt,
+            schedule_kind,
+            cron_expression: self.cron_expression,
+            timezone: self.timezone,
+            scheduled_at: self.scheduled_at,
+            starts_at: self.starts_at,
+            ends_at: self.ends_at,
+            misfire_policy,
+            overlap_policy,
+            max_concurrent_runs: self.max_concurrent_runs,
+            max_catch_up_runs: self.max_catch_up_runs,
+            max_attempts: self.max_attempts,
+            retry_initial_delay_seconds: self.retry_initial_delay_seconds,
+            retry_max_delay_seconds: self.retry_max_delay_seconds,
+            timeout_seconds: self.timeout_seconds,
+            priority: self.priority,
             external_ref: self.external_ref,
             metadata_json: self.metadata_json.unwrap_or_else(|| "{}".to_string()),
             requested_by,
             requested_at: self.requested_at,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceTaskRequestDto {
+    pub title: String,
+    pub prompt: String,
+    pub schedule_kind: String,
+    pub cron_expression: Option<String>,
+    pub timezone: String,
+    pub scheduled_at: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    #[serde(default = "default_task_misfire_policy")]
+    pub misfire_policy: String,
+    #[serde(default = "default_task_overlap_policy")]
+    pub overlap_policy: String,
+    #[serde(default = "default_task_max_concurrent_runs")]
+    pub max_concurrent_runs: u16,
+    #[serde(default = "default_task_max_catch_up_runs")]
+    pub max_catch_up_runs: u16,
+    #[serde(default = "default_task_max_attempts")]
+    pub max_attempts: u16,
+    #[serde(default = "default_task_retry_initial_delay_seconds")]
+    pub retry_initial_delay_seconds: u32,
+    #[serde(default = "default_task_retry_max_delay_seconds")]
+    pub retry_max_delay_seconds: u32,
+    #[serde(default = "default_task_timeout_seconds")]
+    pub timeout_seconds: u32,
+    #[serde(default)]
+    pub priority: i16,
+    pub external_ref: Option<String>,
+    pub metadata_json: Option<String>,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ReplaceTaskRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        owner_scope: Option<u64>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ReplaceTaskCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(ReplaceTaskCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            task_id,
+            title: Some(self.title),
+            prompt: self.prompt,
+            schedule_kind: crate::AgentTaskScheduleKind::from_code(&self.schedule_kind)
+                .ok_or_else(|| KernelError::validation("invalid scheduleKind"))?,
+            cron_expression: self.cron_expression,
+            timezone: self.timezone,
+            scheduled_at: self.scheduled_at,
+            starts_at: self.starts_at,
+            ends_at: self.ends_at,
+            misfire_policy: crate::AgentTaskMisfirePolicy::from_code(&self.misfire_policy)
+                .ok_or_else(|| KernelError::validation("invalid misfirePolicy"))?,
+            overlap_policy: crate::AgentTaskOverlapPolicy::from_code(&self.overlap_policy)
+                .ok_or_else(|| KernelError::validation("invalid overlapPolicy"))?,
+            max_concurrent_runs: self.max_concurrent_runs,
+            max_catch_up_runs: self.max_catch_up_runs,
+            max_attempts: self.max_attempts,
+            retry_initial_delay_seconds: self.retry_initial_delay_seconds,
+            retry_max_delay_seconds: self.retry_max_delay_seconds,
+            timeout_seconds: self.timeout_seconds,
+            priority: self.priority,
+            external_ref: self.external_ref,
+            metadata_json: self.metadata_json.unwrap_or_else(|| "{}".to_string()),
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+fn default_task_misfire_policy() -> String {
+    "fire_once".to_string()
+}
+
+fn default_task_overlap_policy() -> String {
+    "skip".to_string()
+}
+
+fn default_task_max_concurrent_runs() -> u16 {
+    1
+}
+
+fn default_task_max_catch_up_runs() -> u16 {
+    1
+}
+
+fn default_task_max_attempts() -> u16 {
+    3
+}
+
+fn default_task_retry_initial_delay_seconds() -> u32 {
+    5
+}
+
+fn default_task_retry_max_delay_seconds() -> u32 {
+    300
+}
+
+fn default_task_timeout_seconds() -> u32 {
+    900
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -1454,8 +1619,73 @@ impl CancelTaskRequestDto {
             requested_at: self.requested_at,
         })
     }
+}
 
-    pub fn into_execute_command(
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskStateChangeRequestDto {
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl TaskStateChangeRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_pause_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        owner_scope: Option<u64>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<PauseTaskCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(PauseTaskCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            task_id,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_resume_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        owner_scope: Option<u64>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ResumeTaskCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(ResumeTaskCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            task_id,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExecuteTaskRequestDto {
+    pub idempotency_key: String,
+    pub expected_version: Option<String>,
+    pub requested_at: String,
+}
+
+impl ExecuteTaskRequestDto {
+    pub fn into_command(
         self,
         tenant_id: u64,
         organization_id: u64,
@@ -1474,11 +1704,297 @@ impl CancelTaskRequestDto {
             organization_id,
             path_agent_id,
             task_id,
+            idempotency_key: self.idempotency_key,
             expected_version,
             owner_scope: None,
             requested_by,
             requested_at: self.requested_at,
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RetryTaskRunRequestDto {
+    pub idempotency_key: String,
+    pub requested_at: String,
+}
+
+impl RetryTaskRunRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        run_id: String,
+        owner_scope: Option<u64>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<RetryTaskRunCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(RetryTaskRunCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            task_id,
+            run_id,
+            idempotency_key: self.idempotency_key,
+            owner_scope,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CancelTaskRunRequestDto {
+    pub expected_version: Option<String>,
+    pub requested_at: String,
+}
+
+impl CancelTaskRunRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        run_id: String,
+        owner_scope: Option<u64>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<CancelTaskRunCommand> {
+        validate_requested_at(&self.requested_at)?;
+        Ok(CancelTaskRunCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            task_id,
+            run_id,
+            expected_version: self
+                .expected_version
+                .as_deref()
+                .map(parse_expected_version)
+                .transpose()?,
+            owner_scope,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReconcileTaskRunRequestDto {
+    pub outcome: String,
+    pub error_code: Option<String>,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ReconcileTaskRunRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        run_id: String,
+        owner_scope: Option<u64>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ReconcileTaskRunCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let outcome = match self.outcome.as_str() {
+            "succeeded" => TaskRunReconciliationOutcome::Succeeded,
+            "failed" => TaskRunReconciliationOutcome::Failed,
+            "cancelled" => TaskRunReconciliationOutcome::Cancelled,
+            _ => return Err(KernelError::validation("invalid reconciliation outcome")),
+        };
+        Ok(ReconcileTaskRunCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            task_id,
+            run_id,
+            outcome,
+            error_code: self.error_code,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskRunRecordDto {
+    pub run_id: String,
+    pub task_id: String,
+    pub session_id: String,
+    pub agent_id: String,
+    pub owner_user_id: String,
+    pub trigger_kind: String,
+    pub schedule_generation: String,
+    pub scheduled_for: String,
+    pub retry_of_run_id: Option<String>,
+    pub priority: i16,
+    pub status: String,
+    pub turn_id: Option<String>,
+    pub attempt_count: u16,
+    pub max_attempts: u16,
+    pub available_at: String,
+    pub fencing_token: String,
+    pub timeout_at: Option<String>,
+    pub failure_class: Option<String>,
+    pub error_code: Option<String>,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub claimed_at: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub cancelled_at: Option<String>,
+}
+
+impl AgentTaskRunRecordDto {
+    pub fn from_record(record: &crate::AgentTaskRunRecord) -> Self {
+        Self {
+            run_id: record.run_id.clone(),
+            task_id: record.task_id.clone(),
+            session_id: record.session_id.clone(),
+            agent_id: record.agent_id.clone(),
+            owner_user_id: record.owner_user_id.to_string(),
+            trigger_kind: record.trigger_kind.as_str().to_string(),
+            schedule_generation: record.schedule_generation.to_string(),
+            scheduled_for: record.scheduled_for.clone(),
+            retry_of_run_id: record.retry_of_run_id.clone(),
+            priority: record.priority,
+            status: record.status.as_str().to_string(),
+            turn_id: record.turn_id.clone(),
+            attempt_count: record.attempt_count,
+            max_attempts: record.max_attempts,
+            available_at: record.available_at.clone(),
+            fencing_token: record.fencing_token.to_string(),
+            timeout_at: record.timeout_at.clone(),
+            failure_class: record.failure_class.clone(),
+            error_code: record.error_code.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            claimed_at: record.claimed_at.clone(),
+            started_at: record.started_at.clone(),
+            finished_at: record.finished_at.clone(),
+            cancelled_at: record.cancelled_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTaskRunsRequestDto {
+    pub status: Option<String>,
+    pub trigger_kind: Option<String>,
+}
+
+impl ListTaskRunsRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        owner_scope: Option<u64>,
+        page_size: usize,
+        cursor: Option<crate::TaskRunCursor>,
+        requested_by: PolicySubject,
+    ) -> KernelResult<ListTaskRunsCommand> {
+        let mut query = TaskRunListQuery::for_task(tenant_id, organization_id, task_id)
+            .with_cursor_page(page_size, cursor);
+        if let Some(owner_user_id) = owner_scope {
+            query = query.for_owner(owner_user_id);
+        }
+        if let Some(status) = self.status {
+            query = query.with_status(
+                crate::AgentTaskRunStatus::from_code(&status)
+                    .ok_or_else(|| KernelError::validation("invalid task Run status"))?,
+            );
+        }
+        if let Some(trigger_kind) = self.trigger_kind {
+            query = query.with_trigger_kind(
+                crate::AgentTaskTriggerKind::from_code(&trigger_kind)
+                    .ok_or_else(|| KernelError::validation("invalid task Run triggerKind"))?,
+            );
+        }
+        Ok(ListTaskRunsCommand {
+            query,
+            path_agent_id,
+            requested_by,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTaskRunAttemptsRequestDto;
+
+impl ListTaskRunAttemptsRequestDto {
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_command(
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        task_id: String,
+        run_id: String,
+        owner_scope: Option<u64>,
+        page_size: usize,
+        cursor: Option<crate::TaskRunAttemptCursor>,
+        requested_by: PolicySubject,
+    ) -> ListTaskRunAttemptsCommand {
+        ListTaskRunAttemptsCommand {
+            query: TaskRunAttemptListQuery::for_run(tenant_id, organization_id, run_id)
+                .with_cursor_page(page_size, cursor),
+            path_agent_id,
+            task_id,
+            owner_scope,
+            requested_by,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskRunAttemptRecordDto {
+    pub attempt_id: String,
+    pub run_id: String,
+    pub attempt_no: u16,
+    pub status: String,
+    pub failure_class: Option<String>,
+    pub error_code: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub started_at: Option<String>,
+    pub heartbeat_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+impl AgentTaskRunAttemptRecordDto {
+    pub fn from_record(record: &crate::AgentTaskRunAttemptRecord) -> Self {
+        Self {
+            attempt_id: record.attempt_id.clone(),
+            run_id: record.run_id.clone(),
+            attempt_no: record.attempt_no,
+            status: record.status.as_str().to_string(),
+            failure_class: record.failure_class.clone(),
+            error_code: record.error_code.clone(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            started_at: record.started_at.clone(),
+            heartbeat_at: record.heartbeat_at.clone(),
+            finished_at: record.finished_at.clone(),
+        }
     }
 }
 
@@ -1517,16 +2033,34 @@ pub struct AgentTaskRecordDto {
     pub tenant_id: String,
     pub organization_id: String,
     pub owner_user_id: String,
+    pub session_id: String,
     pub title: Option<String>,
     pub prompt: String,
+    pub schedule_kind: String,
+    pub cron_expression: Option<String>,
+    pub timezone: String,
+    pub scheduled_at: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub next_fire_at: Option<String>,
+    pub misfire_policy: String,
+    pub overlap_policy: String,
+    pub max_concurrent_runs: u16,
+    pub max_catch_up_runs: u16,
+    pub max_attempts: u16,
+    pub retry_initial_delay_seconds: u32,
+    pub retry_max_delay_seconds: u32,
+    pub timeout_seconds: u32,
+    pub priority: i16,
     pub status: String,
+    pub generation: String,
     pub external_ref: Option<String>,
     pub metadata_json: String,
     pub version: String,
     pub created_at: String,
     pub updated_at: String,
-    pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    pub paused_at: Option<String>,
     pub cancelled_at: Option<String>,
 }
 
@@ -1538,16 +2072,34 @@ impl AgentTaskRecordDto {
             tenant_id: record.tenant_id.to_string(),
             organization_id: record.organization_id.to_string(),
             owner_user_id: record.owner_user_id.to_string(),
+            session_id: record.session_id.clone(),
             title: record.title.clone(),
             prompt: record.prompt.clone(),
+            schedule_kind: record.schedule_kind.as_str().to_string(),
+            cron_expression: record.cron_expression.clone(),
+            timezone: record.timezone.clone(),
+            scheduled_at: record.scheduled_at.clone(),
+            starts_at: record.starts_at.clone(),
+            ends_at: record.ends_at.clone(),
+            next_fire_at: record.next_fire_at.clone(),
+            misfire_policy: record.misfire_policy.as_str().to_string(),
+            overlap_policy: record.overlap_policy.as_str().to_string(),
+            max_concurrent_runs: record.max_concurrent_runs,
+            max_catch_up_runs: record.max_catch_up_runs,
+            max_attempts: record.max_attempts,
+            retry_initial_delay_seconds: record.retry_initial_delay_seconds,
+            retry_max_delay_seconds: record.retry_max_delay_seconds,
+            timeout_seconds: record.timeout_seconds,
+            priority: record.priority,
             status: record.status.as_str().to_string(),
+            generation: record.generation.to_string(),
             external_ref: record.external_ref.clone(),
             metadata_json: record.metadata_json.clone(),
             version: record.version.to_string(),
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
-            started_at: record.started_at.clone(),
             completed_at: record.completed_at.clone(),
+            paused_at: record.paused_at.clone(),
             cancelled_at: record.cancelled_at.clone(),
         }
     }
@@ -2288,13 +2840,20 @@ impl AgentTurnExecutionDto {
         Ok(Self {
             session: AgentSessionRecordDto::from_record(&result.session),
             turn: AgentTurnRecordDto::from_record(&result.turn),
-            items: vec![
-                AgentSessionItemRecordDto::from_record_with_drive_refs(
-                    &result.user_input_item,
-                    &result.user_item_drive_refs,
-                )?,
-                AgentSessionItemRecordDto::from_record(&result.assistant_output_item)?,
-            ],
+            items: result
+                .turn_items
+                .iter()
+                .map(|item| {
+                    if item.item_id == result.user_input_item.item_id {
+                        AgentSessionItemRecordDto::from_record_with_drive_refs(
+                            item,
+                            &result.user_item_drive_refs,
+                        )
+                    } else {
+                        AgentSessionItemRecordDto::from_record(item)
+                    }
+                })
+                .collect::<KernelResult<Vec<_>>>()?,
         })
     }
 }

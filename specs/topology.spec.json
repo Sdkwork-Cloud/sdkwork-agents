@@ -2,6 +2,7 @@
   "schemaVersion": 5,
   "kind": "sdkwork.app.topology",
   "appId": "sdkwork-agents",
+  "applicationCode": "agents",
   "archetype": "application-http-gateway",
   "profileRoot": "etc/topology",
   "profilePattern": "{deploymentProfile}.{environment}.env",
@@ -92,9 +93,6 @@
       "httpUrlEnv": "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL",
       "clientHttpEnv": "VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL"
     }
-  },
-  "database": {
-    "appPrefix": "SDKWORK_AGENTS"
   },
   "components": {
     "appApiRouter": {

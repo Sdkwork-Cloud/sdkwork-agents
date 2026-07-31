@@ -11,8 +11,8 @@ members = [
     "crates/sdkwork-agents-runtime-facade",
     "crates/sdkwork-agents-kernel-bridge",
     "crates/sdkwork-agents-database-host",
-    "crates/sdkwork-api-agents-assembly",
     "crates/sdkwork-api-agents-standalone-gateway",
+    "crates/sdkwork-intelligence-agents-worker",
     "crates/sdkwork-agents-integration-tests",
 ]
 
@@ -36,6 +36,9 @@ serde_json = "1"
 serde_yaml = "0.9"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "time"] }
 time = { version = "0.3", features = ["parsing"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+cron = "0.15"
 async-trait = "0.1"
 thiserror = "1"
 
@@ -83,4 +86,5 @@ sdkwork-agents-kernel-bridge = { path = "crates/sdkwork-agents-kernel-bridge" }
 sdkwork-agents-database-host = { path = "crates/sdkwork-agents-database-host" }
 sdkwork-api-agents-assembly = { path = "crates/sdkwork-api-agents-assembly" }
 sdkwork-api-agents-standalone-gateway = { path = "crates/sdkwork-api-agents-standalone-gateway" }
+sdkwork-intelligence-agents-worker = { path = "crates/sdkwork-intelligence-agents-worker" }
 sdkwork-agents-integration-tests = { path = "crates/sdkwork-agents-integration-tests" }

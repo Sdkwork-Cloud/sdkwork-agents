@@ -1,6 +1,6 @@
 # SDKWork Agents Database Specification
 
-- Version: `6.0.0`
+- Version: `7.0.0`
 - Status: active
 - Domain: `intelligence`
 - Capability: `agents`
@@ -33,7 +33,7 @@ and durable agent execution:
 AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
-The managed store uses PostgreSQL and owns exactly 20 tables. It has no read
+The managed store uses PostgreSQL and owns exactly 23 tables. It has no
 derived read tables, shadow tables, compatibility tables, dual-write path, or
 second session aggregate. A consumer may render an Agent Session as a dialog,
 but that presentation does not create another persistence vocabulary.
@@ -112,6 +112,7 @@ pair. The application service applies the same rule before persistence.
 | `ai_agent_session` | tenant entity | The sole durable agent execution session |
 | `ai_agent_session_runtime_binding` | tenant entity | Current/previous runtime selection and provider Session lineage |
 | `ai_agent_turn` | operational state | One idempotent execution command with retry, lease and fencing state |
+| `ai_agent_turn_input_queue_entry` | operational state | Durable owner-scoped FIFO input awaiting one Turn execution |
 | `ai_agent_session_item` | tenant entity | Ordered typed input, output, tool, artifact or status item |
 | `ai_agent_item_drive_ref` | relation entity | Typed relation from an item to Drive-owned resources |
 | `ai_agent_item_feedback` | user entity | Per-user positive/negative quality feedback for an item |
@@ -128,12 +129,21 @@ provider/runtime scope.
 
 | Table | Profile | Responsibility |
 | --- | --- | --- |
-| `ai_agent_task` | operational state | Product-managed scheduled agent task |
+| `ai_agent_task` | operational state | Session-bound one-time or cron schedule definition |
+| `ai_agent_task_run` | operational state | One logical occurrence with one idempotent Turn identity |
+| `ai_agent_task_run_attempt` | operational state | One leased, fenced infrastructure delivery attempt |
 | `ai_agent_outbox_event` | outbox event, L3 | Reliable aggregate event publication |
 
 Outbox rows are written in the same transaction as their aggregate mutation.
 Downstream search, notification and IM behavior consumes published events; the
 publisher never writes downstream tables.
+
+Task schedules, Runs and Attempts follow
+`specs/AGENTS_TASK_SCHEDULING_SPEC.md`. PostgreSQL atomically materializes each
+Task generation and scheduled instant once. A Run references the same tenant,
+organization, agent, owner and persisted Session as its Task. Worker claims use
+hashed lease tokens and monotonic fencing; infrastructure retries reuse the Run
+and Turn, while business retries create a linked Run.
 
 ## 5. Common Data Rules
 
@@ -268,6 +278,14 @@ Turn, interaction and outbox workers claim eligible rows with bounded leases,
 compare-and-set versions and monotonic fencing tokens. PostgreSQL workers use
 indexed eligibility predicates and `FOR UPDATE SKIP LOCKED` where appropriate.
 
+### 8.4 Materialize and execute scheduled tasks
+
+Due Task selection, occurrence insertion, schedule-cursor advancement and
+outbox creation are one short transaction. Run claim and Attempt insertion are
+a second short transaction. Provider execution occurs outside both. Run
+heartbeat and completion compare the lease hash, fencing token, generation and
+non-terminal state. Unknown provider outcomes enter reconciliation.
+
 ## 9. Query and Index Rules
 
 All list/search filtering, authorization scope, stable ordering and bounds are
@@ -284,6 +302,8 @@ memory is forbidden.
 | Interactions | `created_at DESC, id DESC` inside one session/status scope |
 | Checkpoints | `created_at DESC, id DESC` inside one session/status scope |
 | Tasks | `updated_at DESC, id DESC` inside agent/owner/status scope |
+| Task Runs | `scheduled_for DESC, id DESC` inside one Task/status scope |
+| Run Attempts | `attempt_no DESC, id DESC` inside one Run |
 | Feedback analytics | `created_at DESC, id DESC` inside rating scope |
 
 Repository list methods use bounded pagination and paired count queries when
@@ -310,11 +330,12 @@ partial indexes declared by the baseline.
 
 ## 11. Schema Lifecycle
 
-PostgreSQL `0001_agents_baseline.sql` is the greenfield `6.0.0` authority and
-contains the complete 20-table model. The application is pre-launch, so there
-is no supported historical installation and no active compatibility migration.
-The baseline is the complete initial state; the migration directory remains
-empty until the first released schema change.
+PostgreSQL `0001_agents_baseline.sql` is the greenfield `7.0.0` authority and
+contains the complete 23-table model. The application is pre-launch, so there
+is no supported historical Task schedule. Existing development databases with
+legacy deferred Task rows are rebuilt. The retained `6.1.0` Turn input queue
+migration is development traceability and is not replayed after the
+consolidated baseline.
 
 After the first production release, changes use ordered forward migrations and
 the expand/contract rules from `MIGRATION_SPEC.md`. Baseline rewrites then stop.

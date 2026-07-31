@@ -104,7 +104,7 @@ assert.doesNotMatch(
 );
 
 const openApiContracts = [
-  ['app', 'agents-app-api.openapi.yaml', 83],
+  ['app', 'agents-app-api.openapi.yaml', 92],
   ['backend', 'agents-backend-api.openapi.yaml', 48],
   ['open', 'agents-open-api.openapi.yaml', 47],
 ];
@@ -217,7 +217,7 @@ for (const [surface, basename, expectedOperationCount] of openApiContracts) {
   );
   assert.deepEqual(
     schemas.AgentTurnStreamEvent?.properties?.eventType?.enum,
-    ['delta', 'completion'],
+    ['event', 'delta', 'completion'],
     `${surface} turn stream event types drifted`,
   );
   assert.equal(

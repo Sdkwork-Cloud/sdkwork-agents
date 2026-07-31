@@ -1,9 +1,9 @@
 # SDKWork Agents Technical Architecture
 
-- Version: `5.1.0`
+- Version: `6.0.0`
 - Status: active
 - Owner: `agents-platform`
-- Updated: `2026-07-28`
+- Updated: `2026-07-31`
 - Specs: [ARCHITECTURE_DECISION_SPEC.md](../../../../sdkwork-specs/ARCHITECTURE_DECISION_SPEC.md), [DOCUMENTATION_SPEC.md](../../../../sdkwork-specs/DOCUMENTATION_SPEC.md)
 - API Reference: [TECH-api-reference.md](TECH-api-reference.md)
 
@@ -17,8 +17,8 @@ PC / H5 / Flutter / product integrations / sdkwork-im
        Open API | App API | Backend API route crates
                          |
           sdkwork-intelligence-agents-service
-             |                         |
-     PostgreSQL managed store   sdkwork-agents-kernel-bridge
+             |             |           |
+     PostgreSQL store   scheduler/worker   sdkwork-agents-kernel-bridge
                                        |
                             sdkwork-agents-runtime-facade
                                        |
@@ -40,6 +40,11 @@ AgentWorkspace
             |    `- AgentSessionItem
             |- AgentInteraction
             `- AgentSessionCheckpoint
+
+AgentTask
+  `- AgentTaskRun
+       |- AgentTaskRunAttempt
+       `- AgentTurn (in the referenced AgentSession)
 ```
 
 No other module owns a durable agent execution Session or transcript.
@@ -50,7 +55,8 @@ No other module owns a durable agent execution Session or transcript.
 | --- | --- | --- |
 | HTTP | Rust, Axum, `sdkwork-web-framework` | request context, routing, envelopes, problem details |
 | Application | Rust service/use-case layer | authorization, orchestration, transactions |
-| Persistence | PostgreSQL, `sdkwork-database` | 20-table managed module and lifecycle |
+| Persistence | PostgreSQL, `sdkwork-database` | 23-table managed module and lifecycle |
+| Scheduling | PostgreSQL materializer and horizontally scaled workers | cron/timezone, occurrences, leases, fencing, retries, reconciliation |
 | Runtime | `sdkwork-agents-runtime-facade` | product-safe kernel adapter |
 | Agent Provider mechanism | `sdkwork-kernel` | model/agent-engine SPI, plugins and transient events |
 | Sandbox execution mechanism | `sdkwork-sandbox` through Kernel | `SandboxSession`, `SandboxRuntimeBinding`, execution-environment Provider SPI |
@@ -113,7 +119,7 @@ stays under `generated/server-openapi` and is never hand-edited.
 
 | Surface | Authority | Prefix | Operations | Auth |
 | --- | --- | --- | ---: | --- |
-| App | `sdkwork-agents-app-api` | `/app/v3/api` | 83 | dual token |
+| App | `sdkwork-agents-app-api` | `/app/v3/api` | 92 | dual token |
 | Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 48 | dual token/operator |
 | Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 47 | API key |
 
@@ -141,7 +147,10 @@ the same contract before constructing the generated client.
 | Agent composition | `ai_agent`, `ai_agent_runtime_binding`, `ai_agent_composition_slot`, `ai_agent_audit_event` |
 | Workspace and Project | `ai_agent_workspace`, `ai_agent_project`, `ai_agent_project_composition_slot`, `ai_agent_project_member`, `ai_agent_share_link` |
 | Session execution | `ai_agent_session`, `ai_agent_session_runtime_binding`, `ai_agent_turn`, `ai_agent_session_item`, `ai_agent_item_drive_ref`, `ai_agent_item_feedback`, `ai_agent_interaction`, `ai_agent_session_checkpoint` |
-| Orchestration and delivery | `ai_agent_task`, `ai_agent_resource_user_state`, `ai_agent_outbox_event` |
+| Orchestration and delivery | `ai_agent_task`, `ai_agent_task_run`, `ai_agent_task_run_attempt`, `ai_agent_resource_user_state`, `ai_agent_outbox_event` |
+
+The Session execution group also contains
+`ai_agent_turn_input_queue_entry`, the durable owner-scoped FIFO input queue.
 
 All rows are tenant scoped. Session idempotency, Turn idempotency, ordered item
 sequence, current runtime binding, Interaction claim, checkpoint lifecycle and
@@ -172,6 +181,12 @@ the Documents module, not a copied document table, Drive alias or derived read t
 7. JSON returns typed resource data; SSE emits typed delta events followed by
    one terminal completion response.
 
+Task execution adds a preceding durable flow: a scheduler materializes one Run
+per Task generation and scheduled instant, a worker claims it with a hashed
+lease token and fencing token, and the Run reserves or reuses one Turn in the
+Task's persisted Session. Provider calls remain outside database transactions.
+Infrastructure retries reuse the Run and Turn; unknown outcomes reconcile.
+
 Timeout reconciliation reads persisted state using the fully scoped identity
 and never assumes failure from a network timeout.
 
@@ -201,9 +216,15 @@ Kernel/provider runtime state is not a replacement for the Agents PostgreSQL
 authority. Optional capability services may be mounted or remote without
 changing public resource semantics.
 
+Cloud deployments may deliver transactional outbox notifications through a
+Kafka-compatible bus. Standalone workers may poll PostgreSQL directly. Both
+retain PostgreSQL polling reconciliation; Redis and the broker are optional
+acceleration and never own schedule correctness.
+
 ## 9. Architecture Decision Index
 
 - [ADR-20260722-agent-session-domain-unification.md](../decisions/ADR-20260722-agent-session-domain-unification.md)
+- [ADR-20260731-agent-task-scheduling.md](../decisions/ADR-20260731-agent-task-scheduling.md)
 - [AGENTS_KERNEL_BOUNDARY_SPEC.md](../../../specs/AGENTS_KERNEL_BOUNDARY_SPEC.md)
 - [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](../../../specs/AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md)
 

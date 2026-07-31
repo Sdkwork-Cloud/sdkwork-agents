@@ -2,23 +2,22 @@
 
 Status: active pre-launch baseline
 
-Updated: 2026-07-29
+Updated: 2026-07-31
 
 ## Current Contract
 
-- Contract version: `6.0.2`
+- Contract version: `7.0.0`
 - Managed engine: PostgreSQL
 - Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 - Lifecycle strategy: `baseline-plus-migrations`
-- Active migrations: none (pre-launch baseline)
-- Active tables: 20
+- Development migrations: none
+- Active tables: 23
 
 The full current schema is installed from one baseline on an empty database.
 The application has not been released, so there is no supported historical
-installation to upgrade and no compatibility migration is retained. There is
-no dual-write path, derived read store, or legacy session table. Local
-development installations are rebuilt from the current baseline when the
-pre-launch contract changes.
+schema or Task schedule to upgrade. Development installations created before
+`7.0.0` are rebuilt from the consolidated baseline. There is no dual-write
+path, derived read store, legacy Session table, or compatibility migration.
 
 ## Operational Checks
 

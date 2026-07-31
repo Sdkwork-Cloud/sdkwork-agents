@@ -55,6 +55,9 @@ pub struct TurnExecutionInput {
     pub user_content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
+    /// Opaque provider continuation identity. This must never be synthesized
+    /// from the canonical SDKWork Session id.
+    pub provider_session_id: Option<String>,
     pub access_mode_id: Option<String>,
     /// Active provider binding id (used to resolve canonical code-engine keys).
     pub binding_id: Option<String>,
@@ -69,6 +72,7 @@ pub struct TurnExecutionOutput {
     pub content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
+    pub provider_session_id: Option<String>,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub runtime_mode: &'static str,
@@ -139,6 +143,7 @@ fn run_with_bounded_timeout(
                 content: "provider concurrency limit reached".to_string(),
                 model_id: input.model_id.clone(),
                 provider_id: input.provider_id.clone(),
+                provider_session_id: input.provider_session_id.clone(),
                 input_tokens: 0,
                 output_tokens: 0,
                 runtime_mode: RUNTIME_MODE_CAPACITY_ERROR,
@@ -253,7 +258,7 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
         let turn_input = CodeEngineTurnInput {
             engine_key: engine_key.to_string(),
             model_id: model_id.clone(),
-            provider_session_id: Some(input.session.session_id.clone()),
+            provider_session_id: input.provider_session_id.clone(),
             prompt,
             access_mode_id: input.access_mode_id.clone(),
             ..Default::default()
@@ -275,6 +280,7 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
                     content,
                     model_id: Some(model_id),
                     provider_id: input.provider_id.clone(),
+                    provider_session_id: output.provider_session_id,
                     input_tokens: estimate_tokens(input.user_content.as_str()),
                     output_tokens: estimate_tokens(output.assistant_content.as_str()),
                     runtime_mode: RUNTIME_MODE_FACADE,
@@ -325,6 +331,7 @@ fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
         content: message.into(),
         model_id: None,
         provider_id: None,
+        provider_session_id: None,
         input_tokens: 0,
         output_tokens: 0,
         runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
@@ -399,6 +406,7 @@ fn map_model_response(
         content,
         model_id,
         provider_id: Some(response.provider_id),
+        provider_session_id: input.provider_session_id.clone(),
         input_tokens,
         output_tokens,
         runtime_mode: "managed-agent-kernel-model-v1",
@@ -478,6 +486,7 @@ pub fn execute_agent_turn(input: &TurnExecutionInput) -> TurnExecutionOutput {
         content,
         model_id,
         provider_id,
+        provider_session_id: input.provider_session_id.clone(),
         input_tokens,
         output_tokens,
         runtime_mode,
@@ -544,6 +553,7 @@ mod tests {
             user_content: "Hello".to_string(),
             model_id: None,
             provider_id: None,
+            provider_session_id: None,
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: false,
@@ -564,6 +574,7 @@ mod tests {
             user_content: "Hello".to_string(),
             model_id: None,
             provider_id: Some("provider.model.rig".to_string()),
+            provider_session_id: None,
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: true,
@@ -610,6 +621,7 @@ mod tests {
             user_content: "Hello".to_string(),
             model_id: Some("model.fake".to_string()),
             provider_id: Some("provider.model.fake".to_string()),
+            provider_session_id: Some("provider-session.fake".to_string()),
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: true,
@@ -617,5 +629,9 @@ mod tests {
         assert_eq!(output.content, "kernel reply");
         assert_eq!(output.runtime_mode, "managed-agent-kernel-model-v1");
         assert_eq!(output.provider_id.as_deref(), Some("provider.model.fake"));
+        assert_eq!(
+            output.provider_session_id.as_deref(),
+            Some("provider-session.fake")
+        );
     }
 }

@@ -9,11 +9,13 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 | --- | --- |
 | [AGENTS_DOMAIN_SPEC.md](./AGENTS_DOMAIN_SPEC.md) | Canonical Agents bounded context and Project/Session/Turn/Item/Interaction vocabulary |
 | [AGENTS_SESSION_MODEL_SPEC.md](./AGENTS_SESSION_MODEL_SPEC.md) | Durable session aggregate, runtime binding, item, interaction, and checkpoint contract |
+| [AGENTS_TASK_SCHEDULING_SPEC.md](./AGENTS_TASK_SCHEDULING_SPEC.md) | Durable Task, Run, Attempt, cron, lease, fencing, retry, and reconciliation contract |
 | [AGENTS_KERNEL_BOUNDARY_SPEC.md](./AGENTS_KERNEL_BOUNDARY_SPEC.md) | Kernel vs agents vs product boundary (frozen) |
 | [AGENTS_PROVIDER_TAXONOMY_SPEC.md](./AGENTS_PROVIDER_TAXONOMY_SPEC.md) | Code / autonomous / framework agent taxonomy |
 | [AGENTS_KERNEL_SPI_GAP_ANALYSIS.md](./AGENTS_KERNEL_SPI_GAP_ANALYSIS.md) | Kernel capability closure and commercial readiness gates |
 | [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](./AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md) | Mandatory `sdkwork-im -> sdkwork-agents` dependency direction and database ownership boundary |
-| [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md) | Canonical 20-table Agents PostgreSQL contract |
+| [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md) | Canonical 23-table Agents PostgreSQL contract |
+| [agent-task-scheduling.contract.json](./agent-task-scheduling.contract.json) | Machine-readable Task scheduling invariants and review authority |
 | [agents-birdcoder-alignment.spec.json](./agents-birdcoder-alignment.spec.json) | Machine-readable cross-repo alignment tracker |
 | [agent-execution-placement-orchestration.contract.json](./agent-execution-placement-orchestration.contract.json) | Draft machine contract for explicit local/cloud intent, Agents orchestration, and Kernel-owned execution placement |
 | [docs/architecture/AGENTS_LAYERING.md](../docs/architecture/AGENTS_LAYERING.md) | Crate and SDK layering |

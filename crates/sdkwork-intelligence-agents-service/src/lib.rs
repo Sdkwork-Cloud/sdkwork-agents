@@ -1,4 +1,5 @@
 mod agent_turn;
+mod agent_turn_input_queue;
 mod api;
 mod application;
 mod code_engine_catalog;
@@ -17,16 +18,26 @@ mod postgres_sync_pool;
 mod project;
 #[cfg(feature = "http-axum")]
 mod provider_session_sync;
+mod provider_stream_items;
 #[cfg(feature = "http-axum")]
 pub mod response;
 mod runtime_facade_bridge;
 mod session_activity;
 mod session_item_cursor;
+mod task_execution_cursor;
+mod task_scheduler;
+mod task_scheduling;
 mod turn_runtime;
 mod validation;
 mod workspace;
 
 pub use agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
+pub use agent_turn_input_queue::{
+    AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, AgentTurnInputQueueStatus,
+    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueListQuery,
+    TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION,
+    MAX_TURN_INPUT_QUEUE_DRIVE_REFS, MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
+};
 pub use api::{
     ApiOperation, AGENT_APP_API_OPERATIONS, AGENT_APP_API_PREFIX, AGENT_BACKEND_API_OPERATIONS,
     AGENT_BACKEND_API_PREFIX, AGENT_OPEN_API_OPERATIONS, AGENT_OPEN_API_PREFIX,
@@ -37,35 +48,45 @@ pub use application::{
     AgentCompositionSlotListCommand, AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput,
     AgentPreviewResponseCommand, AgentPromptOptimizationCommand, AgentProviderBindingCommand,
     AgentSessionItemWithDriveRefs, AgentsService, AnswerInteractionCommand,
-    ApproveInteractionCommand, ArchiveSessionCommand, CancelTurnCommand, ChangeAgentStatusCommand,
-    ChangeSessionCheckpointStatusCommand, ChangeSessionRuntimeBindingStatusCommand,
-    ClaimInteractionCommand, CloseSessionCommand, CreateAgentCommand, CreateInteractionCommand,
-    CreateProjectCommand, CreateProjectCompositionSlotCommand, CreateSessionCheckpointCommand,
-    CreateSessionCommand, CreateSessionItemCommand, CreateSessionRuntimeBindingCommand,
-    CreateTurnCommand, CreateWorkspaceCommand, DeleteAgentCommand,
-    DeleteProjectCompositionSlotCommand, EnsureDefaultWorkspaceCommand, GetAgentCommand,
-    GetInteractionCommand, GetProjectCommand, GetProjectCompositionSlotCommand,
-    GetSessionCheckpointCommand, GetSessionCommand, GetSessionItemCommand,
-    GetSessionRuntimeBindingCommand, GetSessionUserStateCommand, GetTurnByIdempotencyCommand,
-    GetTurnCommand, GetWorkspaceCommand, ImportProjectCommand, InteractionClaimResult,
-    ItemFeedbackResult, ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand,
+    ApproveInteractionCommand, ArchiveSessionCommand, CancelTaskCommand, CancelTaskRunCommand,
+    CancelTurnCommand, ChangeAgentStatusCommand, ChangeSessionCheckpointStatusCommand,
+    ChangeSessionRuntimeBindingStatusCommand, ClaimInteractionCommand,
+    ClaimNextTurnInputQueueEntryCommand, ClaimNextTurnInputQueueEntryResult,
+    ClearTurnInputQueueEntriesCommand, CloseSessionCommand, CreateAgentCommand,
+    CreateInteractionCommand, CreateProjectCommand, CreateProjectCompositionSlotCommand,
+    CreateSessionCheckpointCommand, CreateSessionCommand, CreateSessionItemCommand,
+    CreateSessionRuntimeBindingCommand, CreateTaskCommand, CreateTurnCommand,
+    CreateTurnInputQueueEntryCommand, CreateWorkspaceCommand, DeleteAgentCommand,
+    DeleteProjectCompositionSlotCommand, EnsureDefaultWorkspaceCommand, ExecuteTaskCommand,
+    FailTurnInputQueueEntryCommand, GetAgentCommand, GetInteractionCommand, GetProjectCommand,
+    GetProjectCompositionSlotCommand, GetSessionCheckpointCommand, GetSessionCommand,
+    GetSessionItemCommand, GetSessionRuntimeBindingCommand, GetSessionUserStateCommand,
+    GetTaskCommand, GetTaskRunCommand, GetTurnByIdempotencyCommand, GetTurnCommand,
+    GetWorkspaceCommand, ImportProjectCommand, InteractionClaimResult, ItemFeedbackResult,
+    ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand,
     ListItemFeedbackCommand, ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand,
     ListProjectsCommand, ListSessionCheckpointsCommand, ListSessionItemsCommand,
     ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand, ListSessionsCommand,
-    ListTurnsCommand, ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
-    RestoreAgentCommand, SessionCheckpointResult, SessionRuntimeBindingResult,
-    SessionUserStateResult, TurnExecutionResult, TurnReconciliationResult, UpdateAgentCommand,
-    UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
-    UpdateSessionRuntimeBindingCommand, UpdateSessionUserStateCommand, UpdateWorkspaceCommand,
+    ListTaskRunAttemptsCommand, ListTaskRunsCommand, ListTasksCommand,
+    ListTurnInputQueueEntriesCommand, ListTurnsCommand, ListWorkspacesCommand, PauseTaskCommand,
+    ProjectMutationCommand, ProviderBindingListCommand, ReconcileTaskRunCommand,
+    RemoveTurnInputQueueEntryCommand, ReorderTurnInputQueueEntriesCommand, ReplaceTaskCommand,
+    RestoreAgentCommand, ResumeTaskCommand, RetryTaskRunCommand, RetryTurnInputQueueEntryCommand,
+    SessionCheckpointResult, SessionRuntimeBindingResult, SessionUserStateResult,
+    TaskRunAttemptPage, TaskRunPage, TaskRunReconciliationOutcome, TaskRunReconciliationResult,
+    TurnExecutionResult, TurnReconciliationResult, UpdateAgentCommand, UpdateItemFeedbackCommand,
+    UpdateProjectCommand, UpdateProjectCompositionSlotCommand, UpdateSessionRuntimeBindingCommand,
+    UpdateSessionUserStateCommand, UpdateTurnInputQueueEntryCommand, UpdateWorkspaceCommand,
     WorkspaceMutationCommand,
 };
 pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
 };
 pub use turn_runtime::{
-    complete_with_timeout, execute_agent_turn, is_inference_error, ContractTurnExecutor,
-    KernelModelTurnExecutor, RuntimeFacadeTurnExecutor, TurnExecutionInput, TurnExecutionOutput,
-    TurnExecutor, RUNTIME_MODE_FACADE, RUNTIME_MODE_INFERENCE_ERROR, TURN_EXECUTION_TIMEOUT,
+    complete_with_timeout, execute_agent_turn, is_capacity_error, is_inference_error,
+    ContractTurnExecutor, KernelModelTurnExecutor, RuntimeFacadeTurnExecutor, TurnExecutionInput,
+    TurnExecutionOutput, TurnExecutor, RUNTIME_MODE_CAPACITY_ERROR, RUNTIME_MODE_FACADE,
+    RUNTIME_MODE_INFERENCE_ERROR, TURN_EXECUTION_TIMEOUT,
 };
 
 pub use domain::{
@@ -92,10 +113,14 @@ pub use dto::{
     AgentResourceUserStateRecordDto, AgentResponseDto, AgentRuntimeExecutionRecordDto,
     AgentRuntimeExecutionResponseDto, AgentSessionItemListResponseDto, AgentSessionItemRecordDto,
     AgentSessionItemResponseDto, AgentSessionListResponseDto, AgentSessionRecordDto,
-    AgentSessionResponseDto, ArchiveSessionRequestDto, CloseSessionRequestDto,
-    CreateAgentRequestDto, CreateSessionItemRequestDto, CreateSessionRequestDto,
-    DeleteAgentRequestDto, GetAgentRequestDto, ListAgentsRequestDto, ListSessionItemsRequestDto,
-    ListSessionsRequestDto, RestoreAgentRequestDto, UpdateAgentRequestDto,
+    AgentSessionResponseDto, AgentTaskRecordDto, AgentTaskRunAttemptRecordDto,
+    AgentTaskRunRecordDto, ArchiveSessionRequestDto, CancelTaskRequestDto, CancelTaskRunRequestDto,
+    CloseSessionRequestDto, CreateAgentRequestDto, CreateSessionItemRequestDto,
+    CreateSessionRequestDto, CreateTaskRequestDto, DeleteAgentRequestDto, ExecuteTaskRequestDto,
+    GetAgentRequestDto, ListAgentsRequestDto, ListSessionItemsRequestDto, ListSessionsRequestDto,
+    ListTaskRunAttemptsRequestDto, ListTaskRunsRequestDto, ListTasksRequestDto,
+    ReconcileTaskRunRequestDto, ReplaceTaskRequestDto, RestoreAgentRequestDto,
+    RetryTaskRunRequestDto, TaskStateChangeRequestDto, UpdateAgentRequestDto,
     UpdateAgentStatusRequestDto,
 };
 #[cfg(feature = "http-axum")]
@@ -103,7 +128,7 @@ pub use http::testing;
 #[cfg(feature = "http-axum")]
 pub use http::{
     build_app_routes, build_backend_routes, build_combined_routes, build_open_routes,
-    serve_agents_metrics, AgentHttpState, AgentRequestContext,
+    serve_agents_metrics, AgentHttpState, AgentRequestContext, AgentTaskWorkerHandle,
 };
 pub use id::{AgentBusinessIdGenerator, AgentIdGenerator, AUDIT_SINK_NODE_ID};
 pub use infrastructure::{
@@ -170,5 +195,19 @@ pub use session_activity::{
     SessionActivitySummaryRecord, SessionPresentationPhase, SessionProviderActivityEvidenceKind,
     SessionProviderActivityFreshness, SessionProviderActivityInteractionHint,
     SessionProviderActivityObservation, SessionProviderActivityState, SessionProviderIdentity,
+};
+pub use task_execution_cursor::{TaskRunAttemptCursor, TaskRunCursor};
+pub use task_scheduler::{
+    AgentTaskScheduler, ClaimTaskRunsRequest, FailTaskRunRequest, MaterializeDueTasksRequest,
+    TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition, TaskRunLease,
+    TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult, TaskTurnExecutor,
+    DEFAULT_CLAIM_BATCH_SIZE, DEFAULT_MATERIALIZE_BATCH_SIZE, DEFAULT_RUN_LEASE_SECONDS,
+    DEFAULT_TENANT_CONCURRENT_RUNS, MAX_CLAIM_BATCH_SIZE, MAX_MATERIALIZE_BATCH_SIZE,
+    MAX_RUN_LEASE_SECONDS, MAX_TENANT_CONCURRENT_RUNS,
+};
+pub use task_scheduling::{
+    AgentTaskMisfirePolicy, AgentTaskOverlapPolicy, AgentTaskRecord, AgentTaskRunAttemptRecord,
+    AgentTaskRunAttemptStatus, AgentTaskRunRecord, AgentTaskRunStatus, AgentTaskScheduleKind,
+    AgentTaskStatus, AgentTaskTriggerKind, TaskSchedule,
 };
 pub use workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};

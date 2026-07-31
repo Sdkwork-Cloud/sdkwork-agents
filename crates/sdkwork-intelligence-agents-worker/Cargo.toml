@@ -1,0 +1,32 @@
+[package]
+name = "sdkwork-intelligence-agents-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Horizontally scalable SDKWork Agents task scheduler and execution worker"
+
+[lib]
+name = "sdkwork_intelligence_agents_worker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sdkwork-intelligence-agents-worker"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+chrono.workspace = true
+sdkwork-agent-kernel.workspace = true
+sdkwork-agents-kernel-bridge.workspace = true
+sdkwork-intelligence-agents-service.workspace = true
+sdkwork-utils-rust.workspace = true
+sdkwork-web-bootstrap.workspace = true
+sdkwork-web-core.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+http.workspace = true
+tower.workspace = true

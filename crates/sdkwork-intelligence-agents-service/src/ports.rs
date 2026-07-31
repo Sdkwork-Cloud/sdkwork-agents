@@ -1,10 +1,15 @@
 use crate::agent_turn::AgentTurnRecord;
+use crate::agent_turn_input_queue::{
+    AgentTurnInputQueueEntry, TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest,
+    TurnInputQueueListQuery, TurnInputQueueReorderEntry,
+};
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
-    AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionRecord,
-    AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentVisibility,
+    AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord,
+    AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord,
+    AgentVisibility,
 };
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::session_activity::{
@@ -14,6 +19,7 @@ use crate::session_item_cursor::{session_item_scope_fingerprint, SessionItemCurs
 use crate::validation::optional_non_blank;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
+use std::collections::HashSet;
 
 // ---------------------------------------------------------------------------
 // Pagination types for list operations
@@ -30,6 +36,134 @@ pub const DEFAULT_PAGE_SIZE: usize = 20;
 pub const TURN_CONTEXT_ITEM_LIMIT: usize = 50;
 /// Maximum user-input payload accepted on turn and task prompt surfaces.
 pub const MAX_TURN_INPUT_CONTENT_BYTES: usize = 256 * 1024;
+
+pub(crate) fn validate_completed_turn_items(
+    turn: &AgentTurnRecord,
+    expected_turn_version: u64,
+    completed_items: &[AgentSessionItemRecord],
+) -> KernelResult<()> {
+    if turn.status != crate::agent_turn::AgentTurnStatus::Completed
+        || turn.version != expected_turn_version.saturating_add(1)
+        || completed_items.is_empty()
+    {
+        return Err(KernelError::validation(
+            "completed Turn and item batch are inconsistent",
+        ));
+    }
+    let response_item = completed_items.last().expect("non-empty item batch");
+    if turn.response_item_id.as_deref() != Some(response_item.item_id.as_str())
+        || response_item.kind != AgentSessionItemKind::AssistantOutput
+        || response_item.status != AgentSessionItemStatus::Completed
+        || response_item.parent_item_id.as_deref() != Some(turn.request_item_id.as_str())
+    {
+        return Err(KernelError::validation(
+            "completed Turn response item is invalid",
+        ));
+    }
+
+    let item_ids = completed_items
+        .iter()
+        .map(|item| item.item_id.as_str())
+        .collect::<HashSet<_>>();
+    if item_ids.len() != completed_items.len() {
+        return Err(KernelError::conflict(
+            "completed Turn contains duplicate item identities",
+        ));
+    }
+    for (index, item) in completed_items.iter().enumerate() {
+        if item.sequence != 0
+            || item.tenant_id != turn.tenant_id
+            || item.organization_id != turn.organization_id
+            || item.session_id != turn.session_id
+            || item.turn_id.as_deref() != Some(turn.turn_id.as_str())
+            || item.created_by != turn.owner_user_id
+            || item.status == AgentSessionItemStatus::Pending
+            || item.completed_at.is_none()
+        {
+            return Err(KernelError::validation(
+                "completed Turn item scope or lifecycle is invalid",
+            ));
+        }
+        if index + 1 != completed_items.len()
+            && matches!(
+                item.kind,
+                AgentSessionItemKind::UserInput
+                    | AgentSessionItemKind::SystemInstruction
+                    | AgentSessionItemKind::AssistantOutput
+            )
+        {
+            return Err(KernelError::validation(
+                "completed Turn provider item kind is invalid",
+            ));
+        }
+        if item.parent_item_id.as_deref().is_none_or(|parent_item_id| {
+            parent_item_id == item.item_id
+                || (parent_item_id != turn.request_item_id && !item_ids.contains(parent_item_id))
+        }) {
+            return Err(KernelError::validation(
+                "completed Turn item parent identity is invalid",
+            ));
+        }
+        let content_required = matches!(
+            item.kind,
+            AgentSessionItemKind::AssistantOutput
+                | AgentSessionItemKind::Reasoning
+                | AgentSessionItemKind::StatusNotice
+                | AgentSessionItemKind::ErrorNotice
+        );
+        if content_required && item.content.as_deref().is_none_or(str::is_empty) {
+            return Err(KernelError::validation(
+                "completed Turn text item has no content",
+            ));
+        }
+        match item.kind {
+            AgentSessionItemKind::ToolCall
+                if item.tool_name.as_deref().is_none_or(str::is_empty)
+                    || item.tool_call_id.as_deref().is_none_or(str::is_empty)
+                    || item.tool_arguments_json.is_none()
+                    || item.tool_result_json.is_some()
+                    || item.content.is_some() =>
+            {
+                return Err(KernelError::validation(
+                    "completed Turn tool-call payload is invalid",
+                ));
+            }
+            AgentSessionItemKind::ToolResult
+                if item.tool_call_id.as_deref().is_none_or(str::is_empty)
+                    || item.tool_arguments_json.is_some()
+                    || item.tool_result_json.is_none()
+                    || item.content.is_some() =>
+            {
+                return Err(KernelError::validation(
+                    "completed Turn tool-result payload is invalid",
+                ));
+            }
+            AgentSessionItemKind::ToolCall | AgentSessionItemKind::ToolResult => {}
+            _ if item.tool_name.is_some()
+                || item.tool_call_id.is_some()
+                || item.tool_arguments_json.is_some()
+                || item.tool_result_json.is_some() =>
+            {
+                return Err(KernelError::validation(
+                    "completed Turn non-tool item contains tool payload",
+                ));
+            }
+            _ => {}
+        }
+        if item.status == AgentSessionItemStatus::Redacted {
+            if item.redacted_at.is_none() || item.redacted_by.is_none() {
+                return Err(KernelError::validation(
+                    "redacted completed Turn item requires redaction attribution",
+                ));
+            }
+        } else if item.redacted_at.is_some() || item.redacted_by.is_some() {
+            return Err(KernelError::validation(
+                "non-redacted completed Turn item contains redaction attribution",
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// Build offset-mode pagination metadata from a repository page and total count.
 pub fn offset_paginated_result<T>(
@@ -1382,6 +1516,16 @@ pub trait AgentRepository: Send + Sync {
 
     fn count_session_items(&self, query: &SessionItemListQuery) -> KernelResult<u64>;
 
+    /// Load the bounded, ordered item set owned by one durable Turn.
+    fn list_session_items_by_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        turn_id: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentSessionItemRecord>>;
+
     fn upsert_item_feedback(
         &self,
         record: AgentItemFeedbackRecord,
@@ -1421,6 +1565,95 @@ pub trait AgentRepository: Send + Sync {
     fn list_turns(&self, query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRecord>>;
 
     fn count_turns(&self, query: &TurnListQuery) -> KernelResult<u64>;
+
+    fn get_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+    ) -> KernelResult<Option<AgentTurnInputQueueEntry>>;
+
+    fn list_turn_input_queue_entries(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>>;
+
+    fn count_turn_input_queue_entries(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<u64>;
+
+    fn insert_turn_input_queue_entry(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+
+    fn update_turn_input_queue_entry(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+
+    fn remove_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+
+    fn clear_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64>;
+
+    fn purge_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64>;
+
+    fn reorder_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        entries: &[TurnInputQueueReorderEntry],
+        requested_at: &str,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>>;
+
+    fn claim_next_turn_input_queue_entry(
+        &self,
+        request: &TurnInputQueueClaimRequest,
+    ) -> KernelResult<TurnInputQueueClaimOutcome>;
+
+    fn fail_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+        expected_fencing_token: u64,
+        claim_token_hash: &str,
+        error_code: &str,
+        error_detail: Option<&str>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+
     fn list_reconcilable_turns(
         &self,
         stale_before: &str,
@@ -1442,16 +1675,16 @@ pub trait AgentRepository: Send + Sync {
         expected_version: u64,
     ) -> KernelResult<AgentTurnRecord>;
 
-    /// Atomically persist a turn response item, transition the turn to its
-    /// completed state, and update the corresponding session counters.
+    /// Atomically persist terminal provider items plus the final assistant
+    /// response, transition the Turn, and update Session counters.
     fn complete_turn(
         &self,
         turn: AgentTurnRecord,
         expected_turn_version: u64,
         expected_fencing_token: u64,
         expected_lease_token: Option<String>,
-        response_item: AgentSessionItemRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)>;
+        completed_items: Vec<AgentSessionItemRecord>,
+    ) -> KernelResult<(AgentSessionRecord, Vec<AgentSessionItemRecord>)>;
 
     fn list_item_drive_refs(
         &self,

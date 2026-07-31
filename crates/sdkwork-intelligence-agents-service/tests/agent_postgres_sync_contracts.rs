@@ -584,8 +584,9 @@ fn postgres_task_sql_is_tenant_and_organization_scoped() {
         "ai_agent_task count SQL must filter by tenant and organization"
     );
     assert!(
-        SQL_UPDATE_AGENT_TASK
-            .contains("tenant_id = $11 AND organization_id = $12 AND task_id = $13"),
+        SQL_UPDATE_AGENT_TASK.contains(
+            "tenant_id = $28 AND organization_id = $29 AND task_id = $30 AND version = $31"
+        ),
         "ai_agent_task update SQL must filter by tenant and organization"
     );
     assert!(

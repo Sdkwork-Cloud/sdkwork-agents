@@ -5,24 +5,32 @@ pub mod testing;
 pub use context::AgentRequestContext;
 use context::RequestScope;
 
+use crate::agent_turn_input_queue::{
+    AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, TurnInputQueueListQuery,
+    TurnInputQueueReorderEntry,
+};
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
     AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService, CancelTurnCommand,
-    CreateProjectCommand, CreateProjectCompositionSlotCommand, CreateSessionCommand,
-    CreateTurnCommand, CreateWorkspaceCommand, DeleteProjectCompositionSlotCommand,
-    DeleteSessionCommand, EnsureDefaultWorkspaceCommand, GetInteractionCommand, GetProjectCommand,
-    GetProjectCompositionSlotCommand, GetProjectSessionCommand, GetSessionCheckpointCommand,
-    GetSessionCommand, GetSessionItemCommand, GetSessionRuntimeBindingCommand,
-    GetSessionUserStateCommand, GetTaskCommand, GetTurnByIdempotencyCommand, GetTurnCommand,
+    ClaimNextTurnInputQueueEntryCommand, ClearTurnInputQueueEntriesCommand, CreateProjectCommand,
+    CreateProjectCompositionSlotCommand, CreateSessionCommand, CreateTurnCommand,
+    CreateTurnInputQueueEntryCommand, CreateWorkspaceCommand, DeleteProjectCompositionSlotCommand,
+    DeleteSessionCommand, EnsureDefaultWorkspaceCommand, FailTurnInputQueueEntryCommand,
+    GetInteractionCommand, GetProjectCommand, GetProjectCompositionSlotCommand,
+    GetProjectSessionCommand, GetSessionCheckpointCommand, GetSessionCommand,
+    GetSessionItemCommand, GetSessionRuntimeBindingCommand, GetSessionUserStateCommand,
+    GetTaskCommand, GetTaskRunCommand, GetTurnByIdempotencyCommand, GetTurnCommand,
     GetWorkspaceCommand, ImportProjectCommand, ListAgentAuditEventsCommand,
     ListItemFeedbackCommand, ListMcpMarketplaceCommand, ListProjectCompositionSlotsCommand,
     ListProjectsCommand, ListSessionActivitySummariesCommand, ListSessionCheckpointsCommand,
-    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand, ListTurnsCommand,
-    ListWorkspacesCommand, ProjectMutationCommand, ProviderBindingListCommand,
+    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
+    ListTurnInputQueueEntriesCommand, ListTurnsCommand, ListWorkspacesCommand,
+    ProjectMutationCommand, ProviderBindingListCommand, RemoveTurnInputQueueEntryCommand,
+    ReorderTurnInputQueueEntriesCommand, RetryTurnInputQueueEntryCommand,
     UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
-    UpdateSessionCommand, UpdateSessionUserStateCommand, UpdateWorkspaceCommand,
-    WorkspaceMutationCommand,
+    UpdateSessionCommand, UpdateSessionUserStateCommand, UpdateTurnInputQueueEntryCommand,
+    UpdateWorkspaceCommand, WorkspaceMutationCommand,
 };
 use crate::domain::{
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
@@ -38,16 +46,19 @@ use crate::dto::{
     AgentProviderBindingRequestDto, AgentRecordDto, AgentResourceUserStateRecordDto,
     AgentRuntimeExecutionRecordDto, AgentSessionCheckpointRecordDto, AgentSessionItemRecordDto,
     AgentSessionRecordDto, AgentSessionRuntimeBindingRecordDto, AgentTaskRecordDto,
-    AgentTurnExecutionDto, AgentTurnRecordDto, AnswerInteractionRequestDto,
-    ApproveInteractionRequestDto, ArchiveSessionRequestDto, CancelTaskRequestDto,
-    ChangeSessionCheckpointStatusRequestDto, ChangeSessionRuntimeBindingStatusRequestDto,
-    ClaimInteractionRequestDto, CloseSessionRequestDto, CreateAgentRequestDto,
-    CreateInteractionRequestDto, CreateSessionCheckpointRequestDto, CreateSessionRequestDto,
+    AgentTaskRunAttemptRecordDto, AgentTaskRunRecordDto, AgentTurnExecutionDto, AgentTurnRecordDto,
+    AnswerInteractionRequestDto, ApproveInteractionRequestDto, ArchiveSessionRequestDto,
+    CancelTaskRequestDto, CancelTaskRunRequestDto, ChangeSessionCheckpointStatusRequestDto,
+    ChangeSessionRuntimeBindingStatusRequestDto, ClaimInteractionRequestDto,
+    CloseSessionRequestDto, CreateAgentRequestDto, CreateInteractionRequestDto,
+    CreateSessionCheckpointRequestDto, CreateSessionRequestDto,
     CreateSessionRuntimeBindingRequestDto, CreateTaskRequestDto, DeleteAgentRequestDto,
-    GetAgentRequestDto, InteractionClaimResultDto, ListAgentsRequestDto,
+    ExecuteTaskRequestDto, GetAgentRequestDto, InteractionClaimResultDto, ListAgentsRequestDto,
     ListInteractionsRequestDto, ListSessionItemsRequestDto, ListSessionsRequestDto,
-    ListTasksRequestDto, RestoreAgentRequestDto, SessionActivitySummaryDto, UpdateAgentRequestDto,
-    UpdateAgentStatusRequestDto, UpdateSessionRuntimeBindingRequestDto,
+    ListTaskRunAttemptsRequestDto, ListTaskRunsRequestDto, ListTasksRequestDto,
+    ReconcileTaskRunRequestDto, ReplaceTaskRequestDto, RestoreAgentRequestDto,
+    RetryTaskRunRequestDto, SessionActivitySummaryDto, TaskStateChangeRequestDto,
+    UpdateAgentRequestDto, UpdateAgentStatusRequestDto, UpdateSessionRuntimeBindingRequestDto,
 };
 use crate::mcp_marketplace::McpServerMarketplaceRecord;
 use crate::ports::{
@@ -71,6 +82,11 @@ use crate::session_activity::{
     SessionProviderActivityObservation,
 };
 use crate::session_item_cursor::decode_session_item_cursor;
+use crate::task_execution_cursor::{decode_task_run_attempt_cursor, decode_task_run_cursor};
+use crate::task_scheduler::{
+    ClaimTaskRunsRequest, FailTaskRunRequest, MaterializeDueTasksRequest, TaskRunAttemptListQuery,
+    TaskRunClaim, TaskRunLease, TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult,
+};
 use crate::turn_runtime::{ContractTurnExecutor, TurnExecutor};
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
@@ -89,12 +105,13 @@ use axum::{Json, Router};
 use sdkwork_agent_kernel::ProviderManifest;
 use sdkwork_agent_kernel::{
     AgentManifest, KernelError, KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider,
-    PolicyRequest, ProviderHealth,
+    PolicyRequest, PolicySubject, ProviderHealth,
 };
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
@@ -145,14 +162,18 @@ const ALLOWED_AUDIT_ACTIONS: &[&str] = &[
     "interaction_cancelled",
 ];
 
-pub(crate) struct DynAgentRepository(Box<dyn AgentRepository + Send + Sync>);
+trait AgentHttpRepository: AgentRepository + TaskSchedulerRepository {}
+
+impl<T> AgentHttpRepository for T where T: AgentRepository + TaskSchedulerRepository {}
+
+pub(crate) struct DynAgentRepository(Box<dyn AgentHttpRepository + Send + Sync>);
 pub(crate) struct DynAgentAuditSink(Box<dyn AgentAuditSink + Send + Sync>);
 pub(crate) struct DynPolicyProvider(Box<dyn PolicyProvider + Send + Sync>);
 
 impl DynAgentRepository {
     fn new<R>(repository: R) -> Self
     where
-        R: AgentRepository + Send + Sync + 'static,
+        R: AgentRepository + TaskSchedulerRepository + Send + Sync + 'static,
     {
         Self(Box::new(repository))
     }
@@ -669,6 +690,18 @@ impl AgentRepository for DynAgentRepository {
         self.0.count_session_items(query)
     }
 
+    fn list_session_items_by_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        turn_id: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<crate::domain::AgentSessionItemRecord>> {
+        self.0
+            .list_session_items_by_turn(tenant_id, organization_id, session_id, turn_id, limit)
+    }
+
     fn upsert_item_feedback(
         &self,
         record: crate::domain::AgentItemFeedbackRecord,
@@ -739,6 +772,151 @@ impl AgentRepository for DynAgentRepository {
         self.0.count_turns(query)
     }
 
+    fn get_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+    ) -> KernelResult<Option<crate::agent_turn_input_queue::AgentTurnInputQueueEntry>> {
+        self.0.get_turn_input_queue_entry(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            queue_entry_id,
+        )
+    }
+
+    fn list_turn_input_queue_entries(
+        &self,
+        query: &crate::agent_turn_input_queue::TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<Vec<crate::agent_turn_input_queue::AgentTurnInputQueueEntry>> {
+        self.0.list_turn_input_queue_entries(query, owner_user_id)
+    }
+
+    fn count_turn_input_queue_entries(
+        &self,
+        query: &crate::agent_turn_input_queue::TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        self.0.count_turn_input_queue_entries(query, owner_user_id)
+    }
+
+    fn insert_turn_input_queue_entry(
+        &self,
+        entry: crate::agent_turn_input_queue::AgentTurnInputQueueEntry,
+    ) -> KernelResult<crate::agent_turn_input_queue::AgentTurnInputQueueEntry> {
+        self.0.insert_turn_input_queue_entry(entry)
+    }
+
+    fn update_turn_input_queue_entry(
+        &self,
+        entry: crate::agent_turn_input_queue::AgentTurnInputQueueEntry,
+        expected_version: u64,
+    ) -> KernelResult<crate::agent_turn_input_queue::AgentTurnInputQueueEntry> {
+        self.0
+            .update_turn_input_queue_entry(entry, expected_version)
+    }
+
+    fn remove_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+    ) -> KernelResult<crate::agent_turn_input_queue::AgentTurnInputQueueEntry> {
+        self.0.remove_turn_input_queue_entry(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            queue_entry_id,
+            expected_version,
+        )
+    }
+
+    fn clear_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        self.0
+            .clear_turn_input_queue_entries(tenant_id, organization_id, session_id, owner_user_id)
+    }
+
+    fn purge_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        self.0
+            .purge_turn_input_queue_entries(tenant_id, organization_id, session_id, owner_user_id)
+    }
+
+    fn reorder_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        entries: &[crate::agent_turn_input_queue::TurnInputQueueReorderEntry],
+        requested_at: &str,
+    ) -> KernelResult<Vec<crate::agent_turn_input_queue::AgentTurnInputQueueEntry>> {
+        self.0.reorder_turn_input_queue_entries(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            entries,
+            requested_at,
+        )
+    }
+
+    fn claim_next_turn_input_queue_entry(
+        &self,
+        request: &crate::agent_turn_input_queue::TurnInputQueueClaimRequest,
+    ) -> KernelResult<crate::agent_turn_input_queue::TurnInputQueueClaimOutcome> {
+        self.0.claim_next_turn_input_queue_entry(request)
+    }
+
+    fn fail_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+        expected_fencing_token: u64,
+        claim_token_hash: &str,
+        error_code: &str,
+        error_detail: Option<&str>,
+        requested_at: &str,
+    ) -> KernelResult<crate::agent_turn_input_queue::AgentTurnInputQueueEntry> {
+        self.0.fail_turn_input_queue_entry(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            queue_entry_id,
+            expected_version,
+            expected_fencing_token,
+            claim_token_hash,
+            error_code,
+            error_detail,
+            requested_at,
+        )
+    }
+
     fn list_reconcilable_turns(
         &self,
         stale_before: &str,
@@ -770,17 +948,17 @@ impl AgentRepository for DynAgentRepository {
         expected_turn_version: u64,
         expected_fencing_token: u64,
         expected_lease_token: Option<String>,
-        response_item: crate::domain::AgentSessionItemRecord,
+        completed_items: Vec<crate::domain::AgentSessionItemRecord>,
     ) -> KernelResult<(
         crate::domain::AgentSessionRecord,
-        crate::domain::AgentSessionItemRecord,
+        Vec<crate::domain::AgentSessionItemRecord>,
     )> {
         self.0.complete_turn(
             turn,
             expected_turn_version,
             expected_fencing_token,
             expected_lease_token,
-            response_item,
+            completed_items,
         )
     }
 
@@ -880,6 +1058,155 @@ impl AgentRepository for DynAgentRepository {
     }
 }
 
+impl TaskSchedulerRepository for DynAgentRepository {
+    fn transition_task(
+        &self,
+        task: crate::AgentTaskRecord,
+        cancellation_reason: &str,
+    ) -> KernelResult<TaskTransitionResult> {
+        self.0.transition_task(task, cancellation_reason)
+    }
+
+    fn create_manual_task_run(
+        &self,
+        task: &crate::AgentTaskRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0
+            .create_manual_task_run(task, idempotency_key, requested_at)
+    }
+
+    fn create_business_retry_task_run(
+        &self,
+        task: &crate::AgentTaskRecord,
+        retry_of: &crate::AgentTaskRunRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0
+            .create_business_retry_task_run(task, retry_of, idempotency_key, requested_at)
+    }
+
+    fn materialize_due_tasks(
+        &self,
+        request: &MaterializeDueTasksRequest,
+    ) -> KernelResult<Vec<crate::AgentTaskRunRecord>> {
+        self.0.materialize_due_tasks(request)
+    }
+
+    fn claim_task_runs(&self, request: &ClaimTaskRunsRequest) -> KernelResult<Vec<TaskRunClaim>> {
+        self.0.claim_task_runs(request)
+    }
+
+    fn mark_task_run_running(
+        &self,
+        lease: &TaskRunLease,
+        started_at: &str,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0.mark_task_run_running(lease, started_at)
+    }
+
+    fn heartbeat_task_run(
+        &self,
+        lease: &TaskRunLease,
+        heartbeat_at: &str,
+        lease_seconds: u32,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0
+            .heartbeat_task_run(lease, heartbeat_at, lease_seconds)
+    }
+
+    fn complete_task_run(
+        &self,
+        lease: &TaskRunLease,
+        turn_id: &str,
+        completed_at: &str,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0.complete_task_run(lease, turn_id, completed_at)
+    }
+
+    fn fail_task_run(
+        &self,
+        request: &FailTaskRunRequest,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0.fail_task_run(request)
+    }
+
+    fn recover_expired_task_run_leases(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        self.0.recover_expired_task_run_leases(now, limit)
+    }
+
+    fn request_task_run_cancellation(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: Option<u64>,
+        requested_at: &str,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0.request_task_run_cancellation(
+            tenant_id,
+            organization_id,
+            run_id,
+            expected_version,
+            requested_at,
+        )
+    }
+
+    fn reconcile_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: u64,
+        terminal_status: crate::AgentTaskRunStatus,
+        error_code: Option<&str>,
+        reconciled_at: &str,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.0.reconcile_task_run(
+            tenant_id,
+            organization_id,
+            run_id,
+            expected_version,
+            terminal_status,
+            error_code,
+            reconciled_at,
+        )
+    }
+
+    fn list_reconciling_task_runs(
+        &self,
+        updated_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<crate::AgentTaskRunRecord>> {
+        self.0.list_reconciling_task_runs(updated_before, limit)
+    }
+
+    fn list_task_runs(
+        &self,
+        query: &TaskRunListQuery,
+    ) -> KernelResult<Vec<crate::AgentTaskRunRecord>> {
+        self.0.list_task_runs(query)
+    }
+
+    fn list_task_run_attempts(
+        &self,
+        query: &TaskRunAttemptListQuery,
+    ) -> KernelResult<Vec<crate::AgentTaskRunAttemptRecord>> {
+        self.0.list_task_run_attempts(query)
+    }
+
+    fn get_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+    ) -> KernelResult<Option<crate::AgentTaskRunRecord>> {
+        self.0.get_task_run(tenant_id, organization_id, run_id)
+    }
+}
+
 impl AgentAuditSink for DynAgentAuditSink {
     fn record(&self, event: sdkwork_agent_kernel::KernelEvent) -> KernelResult<()> {
         self.0.record(event)
@@ -913,10 +1240,15 @@ pub struct AgentHttpState {
         Option<Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>>,
 }
 
+#[derive(Clone)]
+pub struct AgentTaskWorkerHandle {
+    service: Arc<HttpService>,
+}
+
 impl AgentHttpState {
     pub fn new<R, A, P>(repository: R, audit_sink: A, policy_provider: P) -> Self
     where
-        R: AgentRepository + Send + Sync + 'static,
+        R: AgentRepository + TaskSchedulerRepository + Send + Sync + 'static,
         A: AgentAuditSink + Send + Sync + 'static,
         P: PolicyProvider + Send + Sync + 'static,
     {
@@ -935,7 +1267,7 @@ impl AgentHttpState {
         turn_executor: Arc<dyn TurnExecutor>,
     ) -> Self
     where
-        R: AgentRepository + Send + Sync + 'static,
+        R: AgentRepository + TaskSchedulerRepository + Send + Sync + 'static,
         A: AgentAuditSink + Send + Sync + 'static,
         P: PolicyProvider + Send + Sync + 'static,
     {
@@ -961,6 +1293,12 @@ impl AgentHttpState {
 
     pub fn session_facade(&self) -> Arc<dyn sdkwork_agents_runtime_facade::AgentsSessionFacade> {
         Arc::new(HttpAgentsSessionFacade::new(self.service.clone()))
+    }
+
+    pub fn task_worker_handle(&self) -> AgentTaskWorkerHandle {
+        AgentTaskWorkerHandle {
+            service: self.service.clone(),
+        }
     }
 
     /// Verify the repository dependency used by the same HTTP service state.
@@ -1017,6 +1355,88 @@ impl AgentHttpState {
                 }
             }
         }))
+    }
+}
+
+impl AgentTaskWorkerHandle {
+    pub fn check_readiness(&self) -> KernelResult<()> {
+        self.service.check_readiness()
+    }
+
+    pub async fn materialize_due_tasks(
+        &self,
+        request: MaterializeDueTasksRequest,
+    ) -> KernelResult<Vec<crate::AgentTaskRunRecord>> {
+        self.run(move |service| service.materialize_scheduled_task_runs(&request))
+            .await
+    }
+
+    pub async fn claim_task_runs(
+        &self,
+        request: ClaimTaskRunsRequest,
+    ) -> KernelResult<Vec<TaskRunClaim>> {
+        self.run(move |service| service.claim_scheduled_task_runs(&request))
+            .await
+    }
+
+    pub async fn heartbeat_task_run(
+        &self,
+        lease: TaskRunLease,
+        heartbeat_at: String,
+        lease_seconds: u32,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.run(move |service| {
+            service.heartbeat_scheduled_task_run(&lease, &heartbeat_at, lease_seconds)
+        })
+        .await
+    }
+
+    pub async fn recover_expired_task_run_leases(
+        &self,
+        now: String,
+        limit: usize,
+    ) -> KernelResult<u64> {
+        self.run(move |service| service.recover_expired_scheduled_task_run_leases(&now, limit))
+            .await
+    }
+
+    pub async fn reconcile_task_runs(
+        &self,
+        updated_before: String,
+        occurred_at: String,
+        limit: usize,
+    ) -> KernelResult<crate::TaskRunReconciliationResult> {
+        self.run(move |service| {
+            service.reconcile_scheduled_task_runs(&updated_before, &occurred_at, limit)
+        })
+        .await
+    }
+
+    pub async fn execute_task_run_claim(
+        &self,
+        claim: TaskRunClaim,
+        requested_by: PolicySubject,
+        requested_at: String,
+    ) -> KernelResult<crate::AgentTaskRunRecord> {
+        self.run(move |service| {
+            service.execute_scheduled_task_run_claim(&claim, requested_by, requested_at)
+        })
+        .await
+    }
+
+    async fn run<T>(
+        &self,
+        action: impl FnOnce(&HttpService) -> KernelResult<T> + Send + 'static,
+    ) -> KernelResult<T>
+    where
+        T: Send + 'static,
+    {
+        let service = self.service.clone();
+        tokio::task::spawn_blocking(move || action(service.as_ref()))
+            .await
+            .map_err(|error| KernelError::Internal {
+                message: format!("task worker operation join failed: {error}"),
+            })?
     }
 }
 
@@ -1700,6 +2120,35 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             post(app_cancel_turn),
         )
         .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue",
+            get(app_list_turn_input_queue_entries).post(app_create_turn_input_queue_entry),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/clear",
+            post(app_clear_turn_input_queue_entries),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/reorder",
+            post(app_reorder_turn_input_queue_entries),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/claim_next",
+            post(app_claim_next_turn_input_queue_entry),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}",
+            axum::routing::patch(app_update_turn_input_queue_entry)
+                .delete(app_remove_turn_input_queue_entry),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/fail",
+            post(app_fail_turn_input_queue_entry),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/retry",
+            post(app_retry_turn_input_queue_entry),
+        )
+        .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions",
             get(app_list_interactions).post(app_create_interaction),
         )
@@ -1757,7 +2206,15 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}",
-            get(app_get_task),
+            get(app_get_task).put(replace_task),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause",
+            post(pause_task),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume",
+            post(resume_task),
         )
         .route(
             "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
@@ -1766,6 +2223,26 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
             post(app_execute_task),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs",
+            get(list_task_runs),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}",
+            get(get_task_run),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry",
+            post(retry_task_run),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel",
+            post(cancel_task_run),
+        )
+        .route(
+            "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts",
+            get(list_task_run_attempts),
         )
         .route(
             "/app/v3/api/ai/code_engines",
@@ -1909,7 +2386,15 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
         )
         .route(
             "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}",
-            get(backend_get_task),
+            get(backend_get_task).put(replace_task),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause",
+            post(pause_task),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume",
+            post(resume_task),
         )
         .route(
             "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
@@ -1918,6 +2403,26 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
         .route(
             "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
             post(backend_execute_task),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs",
+            get(list_task_runs),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}",
+            get(get_task_run),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry",
+            post(retry_task_run),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel",
+            post(cancel_task_run),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts",
+            get(list_task_run_attempts),
         )
         .layer(axum::middleware::from_fn(
             middleware::reject_client_scope_selectors,
@@ -2059,7 +2564,15 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
         )
         .route(
             "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}",
-            get(backend_get_task),
+            get(backend_get_task).put(replace_task),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause",
+            post(pause_task),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume",
+            post(resume_task),
         )
         .route(
             "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel",
@@ -2068,6 +2581,30 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
         .route(
             "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
             post(backend_execute_task),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs",
+            get(list_task_runs),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}",
+            get(get_task_run),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry",
+            post(retry_task_run),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel",
+            post(cancel_task_run),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts",
+            get(list_task_run_attempts),
+        )
+        .route(
+            "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/reconcile",
+            post(reconcile_task_run),
         )
         .layer(axum::middleware::from_fn(
             middleware::reject_client_scope_selectors,
@@ -2515,6 +3052,22 @@ pub(crate) struct AppListTasksQueryParams {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ListTaskRunsQueryParams {
+    status: Option<String>,
+    trigger_kind: Option<String>,
+    cursor: Option<String>,
+    page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListTaskRunAttemptsQueryParams {
+    cursor: Option<String>,
+    page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ListItemsQueryParams {
     pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
@@ -2840,6 +3393,199 @@ struct AppCreateTurnBody {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppCreateTurnInputQueueEntryBody {
+    queue_entry_id: Option<String>,
+    content: String,
+    #[serde(default)]
+    display_text: String,
+    content_type: Option<String>,
+    #[serde(default)]
+    attachment_names: Vec<String>,
+    #[serde(default)]
+    drive_refs: Vec<AgentItemDriveRefBody>,
+    turn_mode: String,
+    runtime_binding_id: Option<String>,
+    requested_model_id: Option<String>,
+    access_mode_id: Option<String>,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppUpdateTurnInputQueueEntryBody {
+    content: String,
+    #[serde(default)]
+    display_text: String,
+    content_type: Option<String>,
+    #[serde(default)]
+    attachment_names: Vec<String>,
+    #[serde(default)]
+    drive_refs: Vec<AgentItemDriveRefBody>,
+    turn_mode: String,
+    runtime_binding_id: Option<String>,
+    requested_model_id: Option<String>,
+    access_mode_id: Option<String>,
+    expected_version: String,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AppRemoveTurnInputQueueEntryQueryParams {
+    expected_version: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppReorderTurnInputQueueEntriesBody {
+    ordered_entries: Vec<AppTurnInputQueueReorderEntryBody>,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppTurnInputQueueReorderEntryBody {
+    queue_entry_id: String,
+    expected_version: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppClaimNextTurnInputQueueEntryBody {
+    claim_owner: String,
+    #[serde(default = "default_turn_input_queue_lease_seconds")]
+    lease_seconds: u32,
+    requested_at: String,
+}
+
+const fn default_turn_input_queue_lease_seconds() -> u32 {
+    120
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppFailTurnInputQueueEntryBody {
+    expected_version: String,
+    fencing_token: String,
+    claim_token: String,
+    error_code: String,
+    error_detail: Option<String>,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppRetryTurnInputQueueEntryBody {
+    expected_version: String,
+    requested_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentTurnInputQueueDriveRefResponse {
+    resource_role: String,
+    drive_space_id: String,
+    drive_node_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentTurnInputQueueEntryResponse {
+    queue_entry_id: String,
+    session_id: String,
+    agent_id: String,
+    content: String,
+    display_text: String,
+    content_type: String,
+    attachment_names: Vec<String>,
+    drive_refs: Vec<AgentTurnInputQueueDriveRefResponse>,
+    turn_mode: String,
+    runtime_binding_id: Option<String>,
+    requested_model_id: Option<String>,
+    access_mode_id: Option<String>,
+    idempotency_key: String,
+    payload_hash: String,
+    client_request_id: String,
+    position: String,
+    status: String,
+    claim_owner: Option<String>,
+    claim_expires_at: Option<String>,
+    fencing_token: String,
+    error_code: Option<String>,
+    error_detail: Option<String>,
+    version: String,
+    created_at: String,
+    updated_at: String,
+    claimed_at: Option<String>,
+    failed_at: Option<String>,
+}
+
+impl AgentTurnInputQueueEntryResponse {
+    fn from_record(record: &AgentTurnInputQueueEntry) -> Self {
+        Self {
+            queue_entry_id: record.queue_entry_id.clone(),
+            session_id: record.session_id.clone(),
+            agent_id: record.agent_id.clone(),
+            content: record.content.clone(),
+            display_text: record.display_text.clone(),
+            content_type: record.content_type.clone(),
+            attachment_names: record.attachment_names.clone(),
+            drive_refs: record
+                .drive_refs
+                .iter()
+                .map(|value| AgentTurnInputQueueDriveRefResponse {
+                    resource_role: value.resource_role.as_str().to_string(),
+                    drive_space_id: value.drive_space_id.clone(),
+                    drive_node_id: value.drive_node_id.clone(),
+                })
+                .collect(),
+            turn_mode: record.turn_mode.as_str().to_string(),
+            runtime_binding_id: record.runtime_binding_id.clone(),
+            requested_model_id: record.requested_model_id.clone(),
+            access_mode_id: record.access_mode_id.clone(),
+            idempotency_key: record.idempotency_key.clone(),
+            payload_hash: record.payload_hash.clone(),
+            client_request_id: record.client_request_id.clone(),
+            position: record.position.to_string(),
+            status: record.status.as_str().to_string(),
+            claim_owner: record.claim_owner.clone(),
+            claim_expires_at: record.claim_expires_at.clone(),
+            fencing_token: record.fencing_token.to_string(),
+            error_code: record.error_code.clone(),
+            error_detail: record.error_detail.clone(),
+            version: record.version.to_string(),
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            claimed_at: record.claimed_at.clone(),
+            failed_at: record.failed_at.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaimNextTurnInputQueueEntryResponse {
+    outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entry: Option<AgentTurnInputQueueEntryResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claim_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClearTurnInputQueueEntriesResponse {
+    cleared_count: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReorderTurnInputQueueEntriesResponse {
+    items: Vec<AgentTurnInputQueueEntryResponse>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateTurnBody {
     turn_id: Option<String>,
     content: String,
@@ -2873,6 +3619,20 @@ impl AgentItemDriveRefBody {
             _ => return Err(ApiProblem::validation("invalid driveRefs.resourceRole")),
         };
         Ok(AgentItemDriveRefInput {
+            resource_role,
+            drive_space_id: self.drive_space_id,
+            drive_node_id: self.drive_node_id,
+        })
+    }
+
+    fn into_queue_ref(self) -> Result<AgentTurnInputQueueDriveRef, ApiProblem> {
+        let resource_role = match self.resource_role.as_str() {
+            "attachment" => AgentItemResourceRole::Attachment,
+            "image" => AgentItemResourceRole::Image,
+            "audio" => AgentItemResourceRole::Audio,
+            _ => return Err(ApiProblem::validation("invalid driveRefs.resourceRole")),
+        };
+        Ok(AgentTurnInputQueueDriveRef {
             resource_role,
             drive_space_id: self.drive_space_id,
             drive_node_id: self.drive_node_id,
@@ -6196,15 +6956,15 @@ async fn app_execute_task(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
-    body: Result<Json<CancelTaskRequestDto>, JsonRejection>,
+    body: Result<Json<ExecuteTaskRequestDto>, JsonRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+    let result: ApiResult<ResourceData<AgentTaskRunRecordDto>> = async {
         let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_execute_command(
+            .into_command(
                 scope.tenant_id_u64()?,
                 parse_organization_id(&scope.organization_id)
                     .map_err(ApiProblem::from_kernel_error)?,
@@ -6214,9 +6974,327 @@ async fn app_execute_task(
             )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
-        let record = with_service(&state, move |service| service.execute_task(command)).await?;
+        let run = with_service(&state, move |service| service.execute_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRunRecordDto::from_record(&run),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn replace_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<ReplaceTaskRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = body
+            .into_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.owner_scope()?,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.replace_task(command)).await?;
         Ok(ResourceData {
             item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn pause_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<TaskStateChangeRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = body
+            .into_pause_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.owner_scope()?,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.pause_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn resume_task(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<TaskStateChangeRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = body
+            .into_resume_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                scope.owner_scope()?,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record = with_service(&state, move |service| service.resume_task(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn list_task_runs(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<ListTaskRunsQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentTaskRunRecordDto>> = async {
+        let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_task_run_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
+        let command = ListTaskRunsRequestDto {
+            status: query.status,
+            trigger_kind: query.trigger_kind,
+        }
+        .into_command(
+            scope.tenant_id_u64()?,
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?,
+            agent_id,
+            task_id,
+            scope.owner_scope()?,
+            page_size,
+            cursor,
+            scope.subject,
+        )
+        .map_err(ApiProblem::from_kernel_error)?;
+        let records = with_service(&state, move |service| service.list_task_runs(command)).await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentTaskRunRecordDto::from_record)
+                .collect(),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn get_task_run(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRunRecordDto>> = async {
+        let Path((agent_id, task_id, run_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = GetTaskRunCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            task_id,
+            run_id,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+        };
+        let run = with_service(&state, move |service| service.get_task_run(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRunRecordDto::from_record(&run),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn retry_task_run(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<RetryTaskRunRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRunRecordDto>> = async {
+        let Path((agent_id, task_id, run_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = body
+            .into_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                run_id,
+                scope.owner_scope()?,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let run = with_service(&state, move |service| service.retry_task_run(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRunRecordDto::from_record(&run),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn cancel_task_run(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<CancelTaskRunRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRunRecordDto>> = async {
+        let Path((agent_id, task_id, run_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = body
+            .into_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                run_id,
+                scope.owner_scope()?,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let run = with_service(&state, move |service| service.cancel_task_run(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRunRecordDto::from_record(&run),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn list_task_run_attempts(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    query: Result<Query<ListTaskRunAttemptsQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentTaskRunAttemptRecordDto>> = async {
+        let Path((agent_id, task_id, run_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_task_run_attempt_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
+        let command = ListTaskRunAttemptsRequestDto::into_command(
+            scope.tenant_id_u64()?,
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?,
+            agent_id,
+            task_id,
+            run_id,
+            scope.owner_scope()?,
+            page_size,
+            cursor,
+            scope.subject,
+        );
+        let records = with_service(&state, move |service| {
+            service.list_task_run_attempts(command)
+        })
+        .await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentTaskRunAttemptRecordDto::from_record)
+                .collect(),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn reconcile_task_run(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<ReconcileTaskRunRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTaskRunRecordDto>> = async {
+        let Path((agent_id, task_id, run_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = body
+            .into_command(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                agent_id,
+                task_id,
+                run_id,
+                scope.owner_scope()?,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let run = with_service(&state, move |service| service.reconcile_task_run(command)).await?;
+        Ok(ResourceData {
+            item: AgentTaskRunRecordDto::from_record(&run),
         })
     }
     .await;
@@ -6790,6 +7868,429 @@ async fn app_cancel_turn(
         let record = with_service(&state, move |service| service.cancel_turn(command)).await?;
         Ok(ResourceData {
             item: AgentTurnRecordDto::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_list_turn_input_queue_entries(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    query: Result<Query<AppListQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<AgentTurnInputQueueEntryResponse>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let command = ListTurnInputQueueEntriesCommand {
+            query: TurnInputQueueListQuery::for_session(
+                scope.tenant_id_u64()?,
+                parse_organization_id(&scope.organization_id)
+                    .map_err(ApiProblem::from_kernel_error)?,
+                session_id,
+            )
+            .with_pagination(
+                PaginationParams::default()
+                    .with_page_size(page_size)
+                    .with_page(page),
+            ),
+            path_agent_id: agent_id,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+        };
+        let records = with_service(&state, move |service| {
+            service.list_turn_input_queue_entries(command)
+        })
+        .await?;
+        Ok(PageData {
+            items: records
+                .items
+                .iter()
+                .map(AgentTurnInputQueueEntryResponse::from_record)
+                .collect(),
+            page_info: offset_page_info(
+                page,
+                page_size,
+                records.total_count.unwrap_or(0),
+                records.has_more,
+            ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_create_turn_input_queue_entry(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<AppCreateTurnInputQueueEntryBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTurnInputQueueEntryResponse>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let drive_refs = body
+            .drive_refs
+            .into_iter()
+            .map(AgentItemDriveRefBody::into_queue_ref)
+            .collect::<Result<Vec<_>, _>>()?;
+        let command = CreateTurnInputQueueEntryCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            queue_entry_id: body.queue_entry_id,
+            content: body.content,
+            display_text: body.display_text,
+            content_type: body
+                .content_type
+                .unwrap_or_else(|| "text/plain".to_string()),
+            attachment_names: body.attachment_names,
+            drive_refs,
+            turn_mode: crate::agent_turn::AgentTurnMode::from_code(&body.turn_mode)
+                .ok_or_else(|| ApiProblem::validation("invalid turnMode"))?,
+            runtime_binding_id: body.runtime_binding_id,
+            requested_model_id: body.requested_model_id,
+            access_mode_id: body.access_mode_id,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
+        };
+        let record = with_service(&state, move |service| {
+            service.create_turn_input_queue_entry(command)
+        })
+        .await?;
+        Ok(ResourceData {
+            item: AgentTurnInputQueueEntryResponse::from_record(&record),
+        })
+    }
+    .await;
+    finish_created_api_json(&web_ctx, result)
+}
+
+async fn app_update_turn_input_queue_entry(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<AppUpdateTurnInputQueueEntryBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTurnInputQueueEntryResponse>> = async {
+        let Path((agent_id, session_id, queue_entry_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let drive_refs = body
+            .drive_refs
+            .into_iter()
+            .map(AgentItemDriveRefBody::into_queue_ref)
+            .collect::<Result<Vec<_>, _>>()?;
+        let command = UpdateTurnInputQueueEntryCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            queue_entry_id,
+            content: body.content,
+            display_text: body.display_text,
+            content_type: body
+                .content_type
+                .unwrap_or_else(|| "text/plain".to_string()),
+            attachment_names: body.attachment_names,
+            drive_refs,
+            turn_mode: crate::agent_turn::AgentTurnMode::from_code(&body.turn_mode)
+                .ok_or_else(|| ApiProblem::validation("invalid turnMode"))?,
+            runtime_binding_id: body.runtime_binding_id,
+            requested_model_id: body.requested_model_id,
+            access_mode_id: body.access_mode_id,
+            expected_version: parse_expected_version(&body.expected_version)
+                .map_err(ApiProblem::from_kernel_error)?,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
+        };
+        let record = with_service(&state, move |service| {
+            service.update_turn_input_queue_entry(command)
+        })
+        .await?;
+        Ok(ResourceData {
+            item: AgentTurnInputQueueEntryResponse::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_remove_turn_input_queue_entry(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    query: Result<Query<AppRemoveTurnInputQueueEntryQueryParams>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<()> = async {
+        let Path((agent_id, session_id, queue_entry_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = RemoveTurnInputQueueEntryCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            queue_entry_id,
+            expected_version: parse_expected_version(&query.expected_version)
+                .map_err(ApiProblem::from_kernel_error)?,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+        };
+        with_service(&state, move |service| {
+            service.remove_turn_input_queue_entry(command)
+        })
+        .await?;
+        Ok(())
+    }
+    .await;
+    match result {
+        Ok(()) => {
+            no_content(&web_ctx).unwrap_or_else(|problem| problem.into_response_for(&web_ctx))
+        }
+        Err(problem) => problem.into_response_for(&web_ctx),
+    }
+}
+
+async fn app_clear_turn_input_queue_entries(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ClearTurnInputQueueEntriesResponse> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = ClearTurnInputQueueEntriesCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+        };
+        let cleared_count = with_service(&state, move |service| {
+            service.clear_turn_input_queue_entries(command)
+        })
+        .await?;
+        Ok(ClearTurnInputQueueEntriesResponse {
+            cleared_count: cleared_count.to_string(),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_reorder_turn_input_queue_entries(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<AppReorderTurnInputQueueEntriesBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ReorderTurnInputQueueEntriesResponse> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let entries = body
+            .ordered_entries
+            .into_iter()
+            .map(|entry| {
+                Ok(TurnInputQueueReorderEntry {
+                    queue_entry_id: entry.queue_entry_id,
+                    expected_version: parse_expected_version(&entry.expected_version)
+                        .map_err(ApiProblem::from_kernel_error)?,
+                })
+            })
+            .collect::<Result<Vec<_>, ApiProblem>>()?;
+        let command = ReorderTurnInputQueueEntriesCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            entries,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
+        };
+        let records = with_service(&state, move |service| {
+            service.reorder_turn_input_queue_entries(command)
+        })
+        .await?;
+        Ok(ReorderTurnInputQueueEntriesResponse {
+            items: records
+                .iter()
+                .map(AgentTurnInputQueueEntryResponse::from_record)
+                .collect(),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_claim_next_turn_input_queue_entry(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+    body: Result<Json<AppClaimNextTurnInputQueueEntryBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ClaimNextTurnInputQueueEntryResponse> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = ClaimNextTurnInputQueueEntryCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            claim_owner: body.claim_owner,
+            lease_seconds: body.lease_seconds,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
+        };
+        let outcome = with_service(&state, move |service| {
+            service.claim_next_turn_input_queue_entry(command)
+        })
+        .await?;
+        Ok(match outcome {
+            crate::application::ClaimNextTurnInputQueueEntryResult::Claimed {
+                entry,
+                claim_token,
+            } => ClaimNextTurnInputQueueEntryResponse {
+                outcome: "claimed".to_string(),
+                entry: Some(AgentTurnInputQueueEntryResponse::from_record(&entry)),
+                claim_token: Some(claim_token),
+            },
+            crate::application::ClaimNextTurnInputQueueEntryResult::Busy(entry) => {
+                ClaimNextTurnInputQueueEntryResponse {
+                    outcome: "busy".to_string(),
+                    entry: Some(AgentTurnInputQueueEntryResponse::from_record(&entry)),
+                    claim_token: None,
+                }
+            }
+            crate::application::ClaimNextTurnInputQueueEntryResult::Blocked(entry) => {
+                ClaimNextTurnInputQueueEntryResponse {
+                    outcome: "blocked".to_string(),
+                    entry: Some(AgentTurnInputQueueEntryResponse::from_record(&entry)),
+                    claim_token: None,
+                }
+            }
+            crate::application::ClaimNextTurnInputQueueEntryResult::ActiveTurn => {
+                ClaimNextTurnInputQueueEntryResponse {
+                    outcome: "active_turn".to_string(),
+                    entry: None,
+                    claim_token: None,
+                }
+            }
+            crate::application::ClaimNextTurnInputQueueEntryResult::Empty => {
+                ClaimNextTurnInputQueueEntryResponse {
+                    outcome: "empty".to_string(),
+                    entry: None,
+                    claim_token: None,
+                }
+            }
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_fail_turn_input_queue_entry(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<AppFailTurnInputQueueEntryBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTurnInputQueueEntryResponse>> = async {
+        let Path((agent_id, session_id, queue_entry_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = FailTurnInputQueueEntryCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            queue_entry_id,
+            expected_version: parse_expected_version(&body.expected_version)
+                .map_err(ApiProblem::from_kernel_error)?,
+            fencing_token: body
+                .fencing_token
+                .parse::<u64>()
+                .map_err(|_| ApiProblem::validation("fencingToken must be int64 string"))?,
+            claim_token: body.claim_token,
+            error_code: body.error_code,
+            error_detail: body.error_detail,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
+        };
+        let record = with_service(&state, move |service| {
+            service.fail_turn_input_queue_entry(command)
+        })
+        .await?;
+        Ok(ResourceData {
+            item: AgentTurnInputQueueEntryResponse::from_record(&record),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_retry_turn_input_queue_entry(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<AppRetryTurnInputQueueEntryBody>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentTurnInputQueueEntryResponse>> = async {
+        let Path((agent_id, session_id, queue_entry_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let command = RetryTurnInputQueueEntryCommand {
+            tenant_id: scope.tenant_id_u64()?,
+            organization_id: parse_organization_id(&scope.organization_id)
+                .map_err(ApiProblem::from_kernel_error)?,
+            path_agent_id: agent_id,
+            session_id,
+            queue_entry_id,
+            expected_version: parse_expected_version(&body.expected_version)
+                .map_err(ApiProblem::from_kernel_error)?,
+            owner_scope: scope.owner_scope()?,
+            requested_by: scope.subject,
+            requested_at: body.requested_at,
+        };
+        let record = with_service(&state, move |service| {
+            service.retry_turn_input_queue_entry(command)
+        })
+        .await?;
+        Ok(ResourceData {
+            item: AgentTurnInputQueueEntryResponse::from_record(&record),
         })
     }
     .await;
@@ -8298,15 +9799,15 @@ async fn backend_execute_task(
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
     Extension(context): Extension<AgentRequestContext>,
-    body: Result<Json<CancelTaskRequestDto>, JsonRejection>,
+    body: Result<Json<ExecuteTaskRequestDto>, JsonRejection>,
 ) -> Response {
-    let result: ApiResult<ResourceData<AgentTaskRecordDto>> = async {
+    let result: ApiResult<ResourceData<AgentTaskRunRecordDto>> = async {
         let Path((agent_id, task_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
         let mut command = body
-            .into_execute_command(
+            .into_command(
                 scope.tenant_id_u64()?,
                 parse_organization_id(&scope.organization_id)
                     .map_err(ApiProblem::from_kernel_error)?,
@@ -8316,9 +9817,9 @@ async fn backend_execute_task(
             )
             .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
-        let record = with_service(&state, move |service| service.execute_task(command)).await?;
+        let run = with_service(&state, move |service| service.execute_task(command)).await?;
         Ok(ResourceData {
-            item: AgentTaskRecordDto::from_record(&record),
+            item: AgentTaskRunRecordDto::from_record(&run),
         })
     }
     .await;
@@ -9289,15 +10790,22 @@ fn append_rich_turn_events(
     result: &crate::application::TurnExecutionResult,
 ) -> Result<(), ApiProblem> {
     let mut delta_index = 0usize;
+    let mut agent_message_text_by_item = HashMap::new();
     for (event_index, event) in result.stream_events.iter().enumerate() {
-        if kernel_event_is_agent_message_update(event) {
-            if let Some(delta) = result.stream_deltas.get(delta_index) {
+        let payload = agent_turn_runtime_event_json(event_index, event, result)?;
+        append_sse_json_event(body, "event", &payload, "turn runtime event")?;
+        if let Some(expected_delta) =
+            kernel_event_agent_message_delta(event, &mut agent_message_text_by_item)
+        {
+            if let Some(delta) = result
+                .stream_deltas
+                .get(delta_index)
+                .filter(|delta| delta.as_str() == expected_delta)
+            {
                 append_turn_delta_event(body, delta_index, delta)?;
                 delta_index += 1;
             }
         }
-        let payload = agent_turn_runtime_event_json(event_index, event, result)?;
-        append_sse_json_event(body, "event", &payload, "turn runtime event")?;
     }
     for (index, delta) in result.stream_deltas.iter().enumerate().skip(delta_index) {
         append_turn_delta_event(body, index, delta)?;
@@ -9336,21 +10844,33 @@ fn append_sse_json_event(
     Ok(())
 }
 
-fn kernel_event_is_agent_message_update(event: &sdkwork_agent_kernel::KernelEvent) -> bool {
-    if !event.event_type.starts_with("agent.message.") {
-        return false;
+fn kernel_event_agent_message_delta(
+    event: &sdkwork_agent_kernel::KernelEvent,
+    text_by_item: &mut HashMap<String, String>,
+) -> Option<String> {
+    if !matches!(
+        event.event_type.as_str(),
+        "agent.message.started" | "agent.message.updated" | "agent.message.completed"
+    ) {
+        return None;
     }
-    serde_json::from_str::<Value>(&event.payload)
-        .ok()
-        .and_then(|payload| {
-            payload
-                .get("item")?
-                .get("type")?
-                .as_str()
-                .map(str::to_string)
-        })
-        .as_deref()
-        == Some("agent_message")
+    let payload = serde_json::from_str::<Value>(&event.payload).ok()?;
+    let item = payload.get("item")?;
+    if item.get("type")?.as_str()? != "agent_message" {
+        return None;
+    }
+    let item_id = item.get("id")?.as_str()?.to_string();
+    let current = item.get("text")?.as_str()?.to_string();
+    let previous = text_by_item
+        .insert(item_id, current.clone())
+        .unwrap_or_default();
+    if event.event_type == "agent.message.started"
+        || !current.starts_with(&previous)
+        || current.len() == previous.len()
+    {
+        return None;
+    }
+    Some(current[previous.len()..].to_string())
 }
 
 fn agent_turn_runtime_event_json(

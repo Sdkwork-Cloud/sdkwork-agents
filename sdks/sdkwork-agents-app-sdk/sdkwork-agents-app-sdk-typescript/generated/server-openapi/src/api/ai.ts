@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, PageInfo, ProjectSessionSynchronizationResult, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentWorkspaceRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
 
 
 export interface AiAgentsMcpServersListParams {
@@ -272,6 +272,76 @@ export class AiAgentsInteractionsApi {
   }
 }
 
+export interface AiAgentsTurnInputQueueEntriesListParams {
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AiAgentsTurnInputQueueEntriesDeleteParams {
+  expectedVersion: Int64String;
+}
+
+export class AiAgentsTurnInputQueueEntriesApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List durable queued Turn inputs for one Session */
+  async list(agentId: string, sessionId: string, params?: AiAgentsTurnInputQueueEntriesListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentTurnInputQueueEntry[]; }> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentTurnInputQueueEntry[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Persist one user input in the Session Turn queue */
+  async create(agentId: string | number, sessionId: string | number, body: CreateAgentTurnInputQueueEntryRequest, requestOptions?: ApiRequestOptions): Promise<AgentTurnInputQueueEntry> {
+    return this.client.request<AgentTurnInputQueueEntry>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Remove all non-executing inputs from the Session Turn queue */
+  async clear(agentId: string, sessionId: string, requestOptions?: ApiRequestOptions): Promise<{ clearedCount: Int64String; }> {
+    return this.client.request<{ clearedCount: Int64String; }>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/clear`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, sdkworkUnwrapKind: 'data' });
+  }
+
+/** Atomically reorder all non-executing inputs in the Session Turn queue */
+  async reorder(agentId: string, sessionId: string, body: ReorderAgentTurnInputQueueEntriesRequest, requestOptions?: ApiRequestOptions): Promise<{ items: AgentTurnInputQueueEntry[]; }> {
+    return this.client.request<{ items: AgentTurnInputQueueEntry[]; }>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/reorder`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'data' });
+  }
+
+/** Reconcile and lease the FIFO head when the Session has no active Turn */
+  async claimNext(agentId: string, sessionId: string, body: ClaimNextAgentTurnInputQueueEntryRequest, requestOptions?: ApiRequestOptions): Promise<ClaimNextAgentTurnInputQueueEntryResult> {
+    return this.client.request<ClaimNextAgentTurnInputQueueEntryResult>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/claim_next`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'data' });
+  }
+
+/** Update one non-executing queued Turn input */
+  async update(agentId: string, sessionId: string, queueEntryId: string, body: UpdateAgentTurnInputQueueEntryRequest, requestOptions?: ApiRequestOptions): Promise<AgentTurnInputQueueEntry> {
+    return this.client.request<AgentTurnInputQueueEntry>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/${serializePathParameter(queueEntryId, { name: 'queueEntryId', style: 'simple', explode: false })}`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'PATCH' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Delete one non-executing queued Turn input */
+  async delete(agentId: string, sessionId: string, queueEntryId: string, params: AiAgentsTurnInputQueueEntriesDeleteParams, requestOptions?: ApiRequestOptions): Promise<void> {
+    const query = buildQueryString([
+      { name: 'expected_version', value: params.expectedVersion, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<void>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/${serializePathParameter(queueEntryId, { name: 'queueEntryId', style: 'simple', explode: false })}`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'DELETE' as any });
+  }
+
+/** Mark one claimed queue entry failed and pause automatic execution */
+  async fail(agentId: string, sessionId: string, queueEntryId: string, body: FailAgentTurnInputQueueEntryRequest, requestOptions?: ApiRequestOptions): Promise<AgentTurnInputQueueEntry> {
+    return this.client.request<AgentTurnInputQueueEntry>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/${serializePathParameter(queueEntryId, { name: 'queueEntryId', style: 'simple', explode: false })}/fail`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Reset one failed queued Turn input for an explicit retry */
+  async retry(agentId: string, sessionId: string, queueEntryId: string, body: RetryAgentTurnInputQueueEntryRequest, requestOptions?: ApiRequestOptions): Promise<AgentTurnInputQueueEntry> {
+    return this.client.request<AgentTurnInputQueueEntry>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turn_input_queue/${serializePathParameter(queueEntryId, { name: 'queueEntryId', style: 'simple', explode: false })}/retry`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+}
+
 export interface AiAgentsTurnsListParams {
   page?: number;
   pageSize?: number;
@@ -279,6 +349,7 @@ export interface AiAgentsTurnsListParams {
 
 export interface AiAgentsTurnsStreamParams {
   stream?: boolean;
+  eventProtocol?: 'kernel-v1';
 }
 
 export class AiAgentsTurnsApi {
@@ -302,6 +373,7 @@ export class AiAgentsTurnsApi {
   async stream(agentId: string, sessionId: string, body: CreateAgentTurnRequest, params?: AiAgentsTurnsStreamParams, requestOptions?: ApiRequestOptions): Promise<AsyncIterable<AgentTurnStreamEvent>> {
     const query = buildQueryString([
       { name: 'stream', value: params?.stream, style: 'form', explode: true, allowReserved: false },
+      { name: 'event_protocol', value: params?.eventProtocol, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.streamJson<AgentTurnStreamEvent>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turns`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json' });
   }
@@ -865,6 +937,7 @@ export class AiAgentsApi {
   public readonly itemFeedback: AiAgentsItemFeedbackApi;
   public readonly sessionItems: AiAgentsSessionItemsApi;
   public readonly turns: AiAgentsTurnsApi;
+  public readonly turnInputQueueEntries: AiAgentsTurnInputQueueEntriesApi;
   public readonly interactions: AiAgentsInteractionsApi;
   public readonly checkpoints: AiAgentsCheckpointsApi;
   public readonly sessionRuntimeBindings: AiAgentsSessionRuntimeBindingsApi;
@@ -889,6 +962,7 @@ export class AiAgentsApi {
     this.itemFeedback = new AiAgentsItemFeedbackApi(client);
     this.sessionItems = new AiAgentsSessionItemsApi(client);
     this.turns = new AiAgentsTurnsApi(client);
+    this.turnInputQueueEntries = new AiAgentsTurnInputQueueEntriesApi(client);
     this.interactions = new AiAgentsInteractionsApi(client);
     this.checkpoints = new AiAgentsCheckpointsApi(client);
     this.sessionRuntimeBindings = new AiAgentsSessionRuntimeBindingsApi(client);

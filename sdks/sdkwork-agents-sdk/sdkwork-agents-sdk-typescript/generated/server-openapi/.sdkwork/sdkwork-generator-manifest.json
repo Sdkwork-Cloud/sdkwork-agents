@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "74e8180bb713d86fff48ab9fecdf067af48f50baad4fe057f6418dc1e62436bd"
+      "sha256": "966e40c9b854783dd7789f8d660a95f5c5955209cee4be5c6dc99ca5b5bc2bd6"
     },
     {
       "path": "src/api/base.ts",
@@ -303,12 +303,16 @@
       "sha256": "b3bf6f905bfd4d942a1ed4d248a1f14f0e7a276e9c2e5f3bb0b10b3ca97be7f1"
     },
     {
+      "path": "src/types/agent-turn-runtime-event.ts",
+      "sha256": "37c2a6a39b8f5a97361723fe900c396f8051bdcb2f6de956d3d46212b851c319"
+    },
+    {
       "path": "src/types/agent-turn-status.ts",
       "sha256": "31ab99e951f387d1f57fcba952fd8d98a5cc381937a5da12d62fa1c879dcddd3"
     },
     {
       "path": "src/types/agent-turn-stream-event.ts",
-      "sha256": "d05caae78eab2d0bc1da564506aac492fb2ab03b1db72e5dc4d17f0b28a435a9"
+      "sha256": "d9fdd982b6afa31ab7d455363944e15e07b7ad443f29d09c84dc2e40b67ddae7"
     },
     {
       "path": "src/types/agent-visibility.ts",
@@ -396,7 +400,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "11b60ecb30bc0ed5b013ba89fd56a65cf63d489488a99054da4e8df58ce701e9"
+      "sha256": "666d51a437b511d6a6a8a3b2a1f7de0ccbd6849e11c0dd77d518dbbf14f5d18d"
     },
     {
       "path": "src/types/int64-string.ts",

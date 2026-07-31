@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-intelligence-agents-worker",
+    "displayName": "SDKWork Agents Task Worker",
+    "version": "0.1.0",
+    "type": "rust-crate",
+    "root": "crates/sdkwork-intelligence-agents-worker",
+    "domain": "intelligence",
+    "declaredDomain": null,
+    "capability": "agents-task-scheduling",
+    "status": "active",
+    "surfaceNotRequiredReason": "This internal worker exposes only framework-owned health and metrics endpoints.",
+    "languages": ["rust"],
+    "generated": false,
+    "private": true,
+    "manifests": ["Cargo.toml"]
+  },
+  "canonicalSpecs": [
+    {
+      "file": "RUST_CODE_SPEC.md",
+      "path": "../../../sdkwork-specs/RUST_CODE_SPEC.md",
+      "purpose": "Rust crate and runtime implementation rules."
+    },
+    {
+      "file": "HEALTH_CHECK_SPEC.md",
+      "path": "../../../sdkwork-specs/HEALTH_CHECK_SPEC.md",
+      "purpose": "Worker liveness, readiness, and metrics surface."
+    },
+    {
+      "file": "OBSERVABILITY_SPEC.md",
+      "path": "../../../sdkwork-specs/OBSERVABILITY_SPEC.md",
+      "purpose": "Bounded metrics and structured log rules."
+    },
+    {
+      "file": "DEPLOYMENT_SPEC.md",
+      "path": "../../../sdkwork-specs/DEPLOYMENT_SPEC.md",
+      "purpose": "Standalone and cloud runtime parity."
+    },
+    {
+      "file": "TEST_SPEC.md",
+      "path": "../../../sdkwork-specs/TEST_SPEC.md",
+      "purpose": "Worker contract and runtime verification."
+    }
+  ],
+  "contracts": {
+    "publicExports": [
+      "sdkwork_intelligence_agents_worker::SchedulerWorkerConfig",
+      "sdkwork_intelligence_agents_worker::run_scheduler_worker",
+      "sdkwork_intelligence_agents_worker::build_operations_router"
+    ],
+    "providedPorts": [
+      {
+        "name": "taskWorkerOperationsHttp",
+        "export": "sdkwork_intelligence_agents_worker::build_operations_router"
+      }
+    ],
+    "requiredPorts": [
+      {
+        "name": "taskSchedulerService",
+        "export": "sdkwork_intelligence_agents_service::AgentTaskWorkerHandle"
+      }
+    ],
+    "runtimeEntrypoints": ["sdkwork-intelligence-agents-worker"],
+    "sdkDependencies": [],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": [],
+    "sdkClients": [],
+    "events": [],
+    "configKeys": [
+      "SDKWORK_AGENTS_TASK_WORKER_ID",
+      "SDKWORK_AGENTS_TASK_WORKER_BIND",
+      "SDKWORK_AGENTS_TASK_MATERIALIZE_INTERVAL_MILLIS",
+      "SDKWORK_AGENTS_TASK_CLAIM_INTERVAL_MILLIS",
+      "SDKWORK_AGENTS_TASK_RECOVERY_INTERVAL_SECONDS",
+      "SDKWORK_AGENTS_TASK_RECONCILIATION_INTERVAL_SECONDS",
+      "SDKWORK_AGENTS_TASK_RECONCILIATION_MIN_AGE_SECONDS",
+      "SDKWORK_AGENTS_TASK_RECONCILIATION_BATCH_SIZE",
+      "SDKWORK_AGENTS_TASK_HEARTBEAT_INTERVAL_SECONDS",
+      "SDKWORK_AGENTS_TASK_LEASE_SECONDS",
+      "SDKWORK_AGENTS_TASK_MAX_CONCURRENCY",
+      "SDKWORK_AGENTS_TASK_TENANT_MAX_CONCURRENCY",
+      "SDKWORK_AGENTS_TASK_DRAIN_TIMEOUT_SECONDS"
+    ],
+    "routeManifest": null
+  },
+  "integration": {
+    "authority": "PostgreSQL remains the sole scheduling correctness authority through AgentTaskWorkerHandle.",
+    "dependencyPolicy": "The worker orchestrates the service worker handle and does not access repository SQL or provider implementations directly.",
+    "sdkPolicy": "No public API SDK is consumed by this in-process service worker.",
+    "languagePolicy": "Rust implementation follows the root workspace and canonical Rust standards."
+  },
+  "verification": {
+    "commands": [
+      "cargo test -p sdkwork-intelligence-agents-worker",
+      "cargo check -p sdkwork-intelligence-agents-worker"
+    ]
+  },
+  "metadata": {
+    "managedBy": "manual",
+    "standardVersion": "2026-06-01"
+  }
+}

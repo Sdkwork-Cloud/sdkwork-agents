@@ -31,7 +31,7 @@ pnpm check:docs
 
 Pass criteria:
 
-- operation counts are App 83, Backend 48 and Open 47;
+- operation counts are App 92, Backend 48 and Open 47;
 - no client-writable tenant, organization or user selector exists;
 - all list operations use store-level pagination;
 - offset and cursor list declarations match their `PageInfo` mode;

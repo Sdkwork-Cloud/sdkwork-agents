@@ -59,7 +59,7 @@ The current authored API inventories are:
 | Surface | Prefix | Operations | SDK |
 | --- | --- | ---: | --- |
 | Open API | `/agent/v3/api` | 47 | `@sdkwork/agents-sdk` |
-| App API | `/app/v3/api` | 83 | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 92 | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 48 | `@sdkwork/agents-backend-sdk` |
 
 Counts are derived from the three authored OpenAPI documents. The Open API uses

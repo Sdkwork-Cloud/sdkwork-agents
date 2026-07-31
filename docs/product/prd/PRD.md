@@ -71,7 +71,7 @@ Non-goals:
 | Session items | Ordered input/output/tool/artifact facts | `AgentSessionItem` |
 | Human interaction | Claim and resolve approval or user question | `AgentInteraction` |
 | Runtime continuity | `AgentSessionRuntimeBinding` and checkpoints; active `SandboxRuntimeBindingId` is retained only as opaque `runtimeLocationId` | `AgentSession` aggregate |
-| Tasks | Scheduled or deferred agent commands | `AgentTask` |
+| Task scheduling | One-time or cron definitions, logical Runs, delivery Attempts, and Run history | `AgentTask`, `AgentTaskRun`, `AgentTaskRunAttempt` |
 | User state | Pin, hide and resource-specific preferences | Agents user-state table |
 | Operations | Audit, outbox, metrics, health and reconciliation | Agents service |
 
@@ -142,12 +142,13 @@ claim that the current runtime implements placement.
 | FR-10 | Files use Drive references | No raw bytes, credentials or signed URLs in Agents rows |
 | FR-11 | Documents use canonical composition references | Only `document/documents` is accepted; content remains in `sdkwork-documents` |
 | FR-12 | Hybrid execution intent is durable and server-placed | Reviewed Session target/Task inheritance, split placement/provider bindings, one Kernel port, and real cancel/restore evidence |
+| FR-13 | Task scheduling is durable and horizontally scalable | Session-bound Task/Run/Attempt, cron/timezone, atomic occurrence materialization, lease fencing, retries and reconciliation |
 
 ## 7. API And SDK Product Surface
 
 | Surface | Prefix | Operations | Credential mode | SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 83 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 92 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 48 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
 | Open API | `/agent/v3/api` | 47 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
@@ -156,7 +157,7 @@ The complete generated inventory is
 
 ## 8. Data Ownership
 
-Agents owns 20 PostgreSQL tables under prefix `ai_`. The canonical design is
+Agents owns 23 PostgreSQL tables under prefix `ai_`. The canonical design is
 [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../../../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md).
 
 All cross-domain links are identifiers validated through public contracts.
@@ -211,8 +212,10 @@ recovery, migration, and rollback evidence.
 
 - [REQ-2026-0722-agent-session-execution.md](../requirements/REQ-2026-0722-agent-session-execution.md)
 - [REQ-2026-0730-hybrid-agent-execution-orchestration.md](../requirements/REQ-2026-0730-hybrid-agent-execution-orchestration.md)
+- [REQ-2026-0731-agent-task-scheduling.md](../requirements/REQ-2026-0731-agent-task-scheduling.md)
 - [ADR-20260722-agent-session-domain-unification.md](../../architecture/decisions/ADR-20260722-agent-session-domain-unification.md)
 - [ADR-20260730-hybrid-execution-placement-orchestration.md](../../architecture/decisions/ADR-20260730-hybrid-execution-placement-orchestration.md)
+- [ADR-20260731-agent-task-scheduling.md](../../architecture/decisions/ADR-20260731-agent-task-scheduling.md)
 - [AGENTS_SESSION_MODEL_SPEC.md](../../../specs/AGENTS_SESSION_MODEL_SPEC.md)
 - [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](../../../specs/AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md)
 - [SDKWork Sandbox PRD](../../../../sdkwork-sandbox/docs/product/prd/PRD.md)

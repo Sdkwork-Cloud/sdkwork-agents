@@ -1,4 +1,10 @@
 use crate::agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
+use crate::agent_turn_input_queue::{
+    AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, AgentTurnInputQueueStatus,
+    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueListQuery,
+    TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION,
+    MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
+};
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentCompositionTargetModule, AgentImplementationKind, AgentImplementationType,
@@ -11,12 +17,13 @@ use crate::domain::{
     AgentSessionStatus, AgentSessionTitleSource, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
 };
 use crate::ports::{
-    AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
-    ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionActivitySummaryListQuery, SessionCheckpointListQuery,
-    SessionItemListQuery, SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery,
-    TaskListQuery, TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
+    validate_completed_turn_items, AgentAuditSink, AgentListQuery, AgentRepository,
+    AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery, ItemFeedbackListQuery,
+    McpMarketplaceListQuery, ProjectCompositionSlotListQuery, ProjectListQuery,
+    ProviderBindingListQuery, ResourceUserStateListQuery, SessionActivitySummaryListQuery,
+    SessionCheckpointListQuery, SessionItemListQuery, SessionItemListSort, SessionListQuery,
+    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery, TurnRequestWriteOutcome,
+    WorkspaceListQuery,
 };
 #[cfg(feature = "postgres-sync")]
 use crate::postgres_sync_pool::{BlockingPostgresPool, PgRow};
@@ -28,6 +35,15 @@ use crate::session_activity::{
     encode_session_activity_cursor, SessionActivityCursor, SessionActivitySource,
     SessionActivitySummaryParts, SessionActivitySummaryRecord,
 };
+use crate::task_scheduler::{
+    plan_task_materialization, task_run_payload_hash, ClaimTaskRunsRequest, FailTaskRunRequest,
+    MaterializeDueTasksRequest, TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition,
+    TaskRunLease, TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult,
+};
+use crate::task_scheduling::{
+    AgentTaskOverlapPolicy, AgentTaskRunAttemptRecord, AgentTaskRunAttemptStatus,
+    AgentTaskRunRecord, AgentTaskRunStatus, AgentTaskTriggerKind,
+};
 use crate::validation::{validate_capabilities, validate_standard_id};
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 #[cfg(feature = "postgres-sync")]
@@ -37,10 +53,12 @@ use sdkwork_agent_kernel::{
     KernelEventSource, KernelResult,
 };
 use sdkwork_code_kernel::CodeTaskIntent;
-use sdkwork_utils_rust::{is_blank, sha256_hash, trim};
+use sdkwork_utils_rust::{format_datetime, is_blank, parse_datetime, sha256_hash, trim};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "postgres-sync")]
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
+#[cfg(feature = "postgres-sync")]
+use std::collections::HashMap;
 #[cfg(feature = "postgres-sync")]
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -136,8 +154,9 @@ pub use sql::{
     SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_RESOURCE_USER_STATES,
     SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
     SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TASKS, SQL_COUNT_AGENT_TURNS,
-    SQL_COUNT_AGENT_WORKSPACES, SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS,
-    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_COUNT_AGENT_WORKSPACES, SQL_COUNT_TURN_INPUT_QUEUE_ENTRIES,
+    SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_INSERT_AGENT_INTERACTION,
+    SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
     SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
     SQL_INSERT_AGENT_SESSION_CHECKPOINT, SQL_INSERT_AGENT_SESSION_ITEM,
     SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
@@ -146,11 +165,12 @@ pub use sql::{
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
     SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS,
     SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
-    SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC, SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC,
-    SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
-    SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS, SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS,
-    SQL_LIST_AGENT_WORKSPACES, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
-    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME,
+    SQL_LIST_AGENT_SESSION_ITEMS_BY_TURN, SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC,
+    SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC, SQL_LIST_AGENT_SESSION_ITEMS_DESC,
+    SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS,
+    SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS, SQL_LIST_AGENT_WORKSPACES,
+    SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID, SQL_LIST_RECONCILABLE_AGENT_TURNS,
+    SQL_LIST_TURN_INPUT_QUEUE_ENTRIES, SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME,
     SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING, SQL_RECORD_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
     SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE, SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME,
@@ -160,11 +180,11 @@ pub use sql::{
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
     SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
     SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
-    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
+    SQL_SELECT_TURN_INPUT_QUEUE_ENTRY, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
     SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
-    SQL_UPDATE_AGENT_WORKSPACE, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
+    SQL_UPDATE_AGENT_WORKSPACE, SQL_UPDATE_TURN_INPUT_QUEUE_ENTRY, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
     SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
 
@@ -1601,16 +1621,34 @@ pub struct AgentTaskRow {
     pub agent_id: String,
     pub task_id: String,
     pub owner_user_id: u64,
+    pub session_id: String,
     pub title: Option<String>,
     pub prompt: String,
+    pub schedule_kind: i16,
+    pub cron_expression: Option<String>,
+    pub timezone: String,
+    pub scheduled_at: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub next_fire_at: Option<String>,
+    pub misfire_policy: i16,
+    pub overlap_policy: i16,
+    pub max_concurrent_runs: u16,
+    pub max_catch_up_runs: u16,
+    pub max_attempts: u16,
+    pub retry_initial_delay_seconds: u32,
+    pub retry_max_delay_seconds: u32,
+    pub timeout_seconds: u32,
+    pub priority: i16,
     pub status: i16,
+    pub generation: u64,
     pub external_ref: Option<String>,
     pub metadata_json: String,
     pub version: u64,
     pub created_at: String,
     pub updated_at: String,
-    pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    pub paused_at: Option<String>,
     pub cancelled_at: Option<String>,
 }
 
@@ -1624,16 +1662,34 @@ impl AgentTaskRow {
             agent_id: record.agent_id.clone(),
             task_id: record.task_id.clone(),
             owner_user_id: record.owner_user_id,
+            session_id: record.session_id.clone(),
             title: record.title.clone(),
             prompt: record.prompt.clone(),
+            schedule_kind: record.schedule_kind.as_db_code(),
+            cron_expression: record.cron_expression.clone(),
+            timezone: record.timezone.clone(),
+            scheduled_at: record.scheduled_at.clone(),
+            starts_at: record.starts_at.clone(),
+            ends_at: record.ends_at.clone(),
+            next_fire_at: record.next_fire_at.clone(),
+            misfire_policy: record.misfire_policy.as_db_code(),
+            overlap_policy: record.overlap_policy.as_db_code(),
+            max_concurrent_runs: record.max_concurrent_runs,
+            max_catch_up_runs: record.max_catch_up_runs,
+            max_attempts: record.max_attempts,
+            retry_initial_delay_seconds: record.retry_initial_delay_seconds,
+            retry_max_delay_seconds: record.retry_max_delay_seconds,
+            timeout_seconds: record.timeout_seconds,
+            priority: record.priority,
             status: record.status.as_db_code(),
+            generation: record.generation,
             external_ref: record.external_ref.clone(),
             metadata_json: record.metadata_json.clone(),
             version: record.version,
             created_at: record.created_at.clone(),
             updated_at: record.updated_at.clone(),
-            started_at: record.started_at.clone(),
             completed_at: record.completed_at.clone(),
+            paused_at: record.paused_at.clone(),
             cancelled_at: record.cancelled_at.clone(),
         })
     }
@@ -1642,6 +1698,12 @@ impl AgentTaskRow {
         let status = AgentTaskStatus::from_db_code(self.status).ok_or_else(|| {
             KernelError::validation(format!("invalid task status db code: {}", self.status))
         })?;
+        let schedule_kind = crate::AgentTaskScheduleKind::from_db_code(self.schedule_kind)
+            .ok_or_else(|| KernelError::validation("invalid task schedule kind db code"))?;
+        let misfire_policy = crate::AgentTaskMisfirePolicy::from_db_code(self.misfire_policy)
+            .ok_or_else(|| KernelError::validation("invalid task misfire policy db code"))?;
+        let overlap_policy = crate::AgentTaskOverlapPolicy::from_db_code(self.overlap_policy)
+            .ok_or_else(|| KernelError::validation("invalid task overlap policy db code"))?;
         Ok(AgentTaskRecord {
             id: self.id,
             task_id: self.task_id,
@@ -1649,16 +1711,34 @@ impl AgentTaskRow {
             organization_id: self.organization_id,
             agent_id: self.agent_id,
             owner_user_id: self.owner_user_id,
+            session_id: self.session_id,
             title: self.title,
             prompt: self.prompt,
+            schedule_kind,
+            cron_expression: self.cron_expression,
+            timezone: self.timezone,
+            scheduled_at: self.scheduled_at,
+            starts_at: self.starts_at,
+            ends_at: self.ends_at,
+            next_fire_at: self.next_fire_at,
+            misfire_policy,
+            overlap_policy,
+            max_concurrent_runs: self.max_concurrent_runs,
+            max_catch_up_runs: self.max_catch_up_runs,
+            max_attempts: self.max_attempts,
+            retry_initial_delay_seconds: self.retry_initial_delay_seconds,
+            retry_max_delay_seconds: self.retry_max_delay_seconds,
+            timeout_seconds: self.timeout_seconds,
+            priority: self.priority,
             status,
+            generation: self.generation,
             external_ref: self.external_ref,
             metadata_json: self.metadata_json,
             version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            started_at: self.started_at,
             completed_at: self.completed_at,
+            paused_at: self.paused_at,
             cancelled_at: self.cancelled_at,
         })
     }
@@ -1696,6 +1776,20 @@ fn build_session_checkpoint_uuid(
 
 fn build_session_item_uuid(tenant_id: u64, session_id: &str, item_id: &str) -> String {
     build_storage_uuid("session-item", tenant_id, &[session_id, item_id])
+}
+
+fn build_turn_input_queue_entry_uuid(
+    tenant_id: u64,
+    organization_id: u64,
+    session_id: &str,
+    queue_entry_id: &str,
+) -> String {
+    let organization_id = organization_id.to_string();
+    build_storage_uuid(
+        "turn-input-queue",
+        tenant_id,
+        &[&organization_id, session_id, queue_entry_id],
+    )
 }
 
 fn build_interaction_uuid(tenant_id: u64, session_id: &str, interaction_id: &str) -> String {
@@ -2190,6 +2284,18 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         query: &SessionItemListQuery,
     ) -> KernelResult<Vec<AgentSessionItemRow>>;
     fn count_session_item_rows(&self, query: &SessionItemListQuery) -> KernelResult<u64>;
+    fn list_session_item_rows_by_turn(
+        &self,
+        _tenant_id: u64,
+        _organization_id: u64,
+        _session_id: &str,
+        _turn_id: &str,
+        _limit: usize,
+    ) -> KernelResult<Vec<AgentSessionItemRow>> {
+        Err(KernelError::Internal {
+            message: "list_session_item_rows_by_turn requires an adapter override".to_string(),
+        })
+    }
     fn upsert_item_feedback_row(
         &self,
         row: AgentItemFeedbackRow,
@@ -2236,6 +2342,77 @@ pub trait AgentRepositoryAdapter: Send + Sync {
             message: "count_turn_rows requires an adapter override".to_string(),
         })
     }
+    fn get_turn_input_queue_entry_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+    ) -> KernelResult<Option<AgentTurnInputQueueEntry>>;
+    fn list_turn_input_queue_entry_records(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>>;
+    fn count_turn_input_queue_entry_records(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<u64>;
+    fn insert_turn_input_queue_entry_record(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+    fn update_turn_input_queue_entry_record(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+    fn remove_turn_input_queue_entry_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
+    fn clear_turn_input_queue_entry_records(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        include_executing: bool,
+    ) -> KernelResult<u64>;
+    fn reorder_turn_input_queue_entry_records(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        entries: &[TurnInputQueueReorderEntry],
+        requested_at: &str,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>>;
+    fn claim_next_turn_input_queue_entry_record(
+        &self,
+        request: &TurnInputQueueClaimRequest,
+    ) -> KernelResult<TurnInputQueueClaimOutcome>;
+    fn fail_turn_input_queue_entry_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+        expected_fencing_token: u64,
+        claim_token_hash: &str,
+        error_code: &str,
+        error_detail: Option<&str>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTurnInputQueueEntry>;
     fn list_reconcilable_turn_rows(
         &self,
         _stale_before: &str,
@@ -2271,8 +2448,8 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         _expected_turn_version: u64,
         _expected_fencing_token: u64,
         _expected_lease_token: Option<String>,
-        _response_item: AgentSessionItemRow,
-    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)> {
+        _completed_items: Vec<AgentSessionItemRow>,
+    ) -> KernelResult<(AgentSessionRow, Vec<AgentSessionItemRow>)> {
         Err(KernelError::Internal {
             message: "complete_turn_rows requires a transactional adapter override".to_string(),
         })
@@ -3006,6 +3183,21 @@ where
         self.adapter.count_session_item_rows(query)
     }
 
+    fn list_session_items_by_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        turn_id: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentSessionItemRecord>> {
+        self.adapter
+            .list_session_item_rows_by_turn(tenant_id, organization_id, session_id, turn_id, limit)?
+            .into_iter()
+            .map(AgentSessionItemRow::into_record)
+            .collect()
+    }
+
     fn upsert_item_feedback(
         &self,
         record: AgentItemFeedbackRecord,
@@ -3093,6 +3285,164 @@ where
         self.adapter.count_turn_rows(query)
     }
 
+    fn get_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+    ) -> KernelResult<Option<AgentTurnInputQueueEntry>> {
+        self.adapter.get_turn_input_queue_entry_record(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            queue_entry_id,
+        )
+    }
+
+    fn list_turn_input_queue_entries(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>> {
+        self.adapter
+            .list_turn_input_queue_entry_records(query, owner_user_id)
+    }
+
+    fn count_turn_input_queue_entries(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        self.adapter
+            .count_turn_input_queue_entry_records(query, owner_user_id)
+    }
+
+    fn insert_turn_input_queue_entry(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        self.adapter.insert_turn_input_queue_entry_record(entry)
+    }
+
+    fn update_turn_input_queue_entry(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        self.adapter
+            .update_turn_input_queue_entry_record(entry, expected_version)
+    }
+
+    fn remove_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        self.adapter.remove_turn_input_queue_entry_record(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            queue_entry_id,
+            expected_version,
+        )
+    }
+
+    fn clear_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        self.adapter.clear_turn_input_queue_entry_records(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            false,
+        )
+    }
+
+    fn purge_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        self.adapter.clear_turn_input_queue_entry_records(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            true,
+        )
+    }
+
+    fn reorder_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        entries: &[TurnInputQueueReorderEntry],
+        requested_at: &str,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>> {
+        self.adapter.reorder_turn_input_queue_entry_records(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            entries,
+            requested_at,
+        )
+    }
+
+    fn claim_next_turn_input_queue_entry(
+        &self,
+        request: &TurnInputQueueClaimRequest,
+    ) -> KernelResult<TurnInputQueueClaimOutcome> {
+        self.adapter
+            .claim_next_turn_input_queue_entry_record(request)
+    }
+
+    fn fail_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+        expected_fencing_token: u64,
+        claim_token_hash: &str,
+        error_code: &str,
+        error_detail: Option<&str>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        self.adapter.fail_turn_input_queue_entry_record(
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+            queue_entry_id,
+            expected_version,
+            expected_fencing_token,
+            claim_token_hash,
+            error_code,
+            error_detail,
+            requested_at,
+        )
+    }
+
     fn list_reconcilable_turns(
         &self,
         stale_before: &str,
@@ -3150,18 +3500,28 @@ where
         expected_turn_version: u64,
         expected_fencing_token: u64,
         expected_lease_token: Option<String>,
-        response_item: AgentSessionItemRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
+        completed_items: Vec<AgentSessionItemRecord>,
+    ) -> KernelResult<(AgentSessionRecord, Vec<AgentSessionItemRecord>)> {
+        validate_completed_turn_items(&turn, expected_turn_version, &completed_items)?;
         let turn_row = AgentTurnRow::from_record(&turn);
-        let response_item_row = AgentSessionItemRow::from_record(&response_item)?;
-        let (session_row, response_item_row) = self.adapter.complete_turn_rows(
+        let completed_item_rows = completed_items
+            .iter()
+            .map(AgentSessionItemRow::from_record)
+            .collect::<KernelResult<Vec<_>>>()?;
+        let (session_row, completed_item_rows) = self.adapter.complete_turn_rows(
             turn_row,
             expected_turn_version,
             expected_fencing_token,
             expected_lease_token,
-            response_item_row,
+            completed_item_rows,
         )?;
-        Ok((session_row.into_record()?, response_item_row.into_record()?))
+        Ok((
+            session_row.into_record()?,
+            completed_item_rows
+                .into_iter()
+                .map(AgentSessionItemRow::into_record)
+                .collect::<KernelResult<Vec<_>>>()?,
+        ))
     }
 
     fn list_item_drive_refs(
@@ -3271,6 +3631,154 @@ where
     }
 }
 
+impl<A> TaskSchedulerRepository for SqlAgentRepository<A>
+where
+    A: AgentRepositoryAdapter + TaskSchedulerRepository,
+{
+    fn transition_task(
+        &self,
+        task: AgentTaskRecord,
+        cancellation_reason: &str,
+    ) -> KernelResult<TaskTransitionResult> {
+        self.adapter.transition_task(task, cancellation_reason)
+    }
+
+    fn create_manual_task_run(
+        &self,
+        task: &AgentTaskRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter
+            .create_manual_task_run(task, idempotency_key, requested_at)
+    }
+
+    fn create_business_retry_task_run(
+        &self,
+        task: &AgentTaskRecord,
+        retry_of: &AgentTaskRunRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter
+            .create_business_retry_task_run(task, retry_of, idempotency_key, requested_at)
+    }
+
+    fn materialize_due_tasks(
+        &self,
+        request: &MaterializeDueTasksRequest,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        self.adapter.materialize_due_tasks(request)
+    }
+
+    fn claim_task_runs(&self, request: &ClaimTaskRunsRequest) -> KernelResult<Vec<TaskRunClaim>> {
+        self.adapter.claim_task_runs(request)
+    }
+
+    fn mark_task_run_running(
+        &self,
+        lease: &TaskRunLease,
+        started_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter.mark_task_run_running(lease, started_at)
+    }
+
+    fn heartbeat_task_run(
+        &self,
+        lease: &TaskRunLease,
+        heartbeat_at: &str,
+        lease_seconds: u32,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter
+            .heartbeat_task_run(lease, heartbeat_at, lease_seconds)
+    }
+
+    fn complete_task_run(
+        &self,
+        lease: &TaskRunLease,
+        turn_id: &str,
+        completed_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter.complete_task_run(lease, turn_id, completed_at)
+    }
+
+    fn fail_task_run(&self, request: &FailTaskRunRequest) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter.fail_task_run(request)
+    }
+
+    fn recover_expired_task_run_leases(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        self.adapter.recover_expired_task_run_leases(now, limit)
+    }
+
+    fn request_task_run_cancellation(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: Option<u64>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter.request_task_run_cancellation(
+            tenant_id,
+            organization_id,
+            run_id,
+            expected_version,
+            requested_at,
+        )
+    }
+
+    fn reconcile_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: u64,
+        terminal_status: AgentTaskRunStatus,
+        error_code: Option<&str>,
+        reconciled_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        self.adapter.reconcile_task_run(
+            tenant_id,
+            organization_id,
+            run_id,
+            expected_version,
+            terminal_status,
+            error_code,
+            reconciled_at,
+        )
+    }
+
+    fn list_reconciling_task_runs(
+        &self,
+        updated_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        self.adapter
+            .list_reconciling_task_runs(updated_before, limit)
+    }
+
+    fn list_task_runs(&self, query: &TaskRunListQuery) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        self.adapter.list_task_runs(query)
+    }
+
+    fn list_task_run_attempts(
+        &self,
+        query: &TaskRunAttemptListQuery,
+    ) -> KernelResult<Vec<AgentTaskRunAttemptRecord>> {
+        self.adapter.list_task_run_attempts(query)
+    }
+
+    fn get_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+    ) -> KernelResult<Option<AgentTaskRunRecord>> {
+        self.adapter
+            .get_task_run(tenant_id, organization_id, run_id)
+    }
+}
+
 pub trait AgentAuditAdapter: Send + Sync {
     fn next_id(&self) -> KernelResult<u64>;
     fn insert_audit_row(&self, row: AgentAuditEventRow) -> KernelResult<()>;
@@ -3281,6 +3789,242 @@ pub trait AgentAuditAdapter: Send + Sync {
 
 #[cfg(feature = "postgres-sync")]
 pub const AGENTS_DATABASE_SERVICE: &str = "AGENTS";
+
+#[cfg(feature = "postgres-sync")]
+const SQL_SELECT_TASK_RUN_BY_ID: &str = r#"
+SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
+       r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
+       r.scheduled_for::text AS scheduled_for, r.retry_of_run_id, r.priority,
+       r.status, r.idempotency_key, r.payload_hash, r.turn_id, r.attempt_count,
+       r.max_attempts, r.available_at::text AS available_at, r.lease_owner,
+       r.lease_token_hash, r.lease_expires_at::text AS lease_expires_at,
+       r.fencing_token, r.timeout_at::text AS timeout_at, r.failure_class,
+       r.error_code, r.error_detail, r.version, r.created_at::text AS created_at,
+       r.updated_at::text AS updated_at, r.claimed_at::text AS claimed_at,
+       r.started_at::text AS started_at, r.finished_at::text AS finished_at,
+       r.cancelled_at::text AS cancelled_at
+FROM ai_agent_task_run r
+WHERE r.tenant_id = $1 AND r.organization_id = $2 AND r.run_id = $3
+LIMIT 1
+"#;
+
+#[cfg(feature = "postgres-sync")]
+const SQL_SELECT_TASK_RUN_BY_IDEMPOTENCY: &str = r#"
+SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
+       r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
+       r.scheduled_for::text AS scheduled_for, r.retry_of_run_id, r.priority,
+       r.status, r.idempotency_key, r.payload_hash, r.turn_id, r.attempt_count,
+       r.max_attempts, r.available_at::text AS available_at, r.lease_owner,
+       r.lease_token_hash, r.lease_expires_at::text AS lease_expires_at,
+       r.fencing_token, r.timeout_at::text AS timeout_at, r.failure_class,
+       r.error_code, r.error_detail, r.version, r.created_at::text AS created_at,
+       r.updated_at::text AS updated_at, r.claimed_at::text AS claimed_at,
+       r.started_at::text AS started_at, r.finished_at::text AS finished_at,
+       r.cancelled_at::text AS cancelled_at
+FROM ai_agent_task_run r
+WHERE r.tenant_id = $1 AND r.organization_id = $2
+  AND r.owner_user_id = $3 AND r.idempotency_key = $4
+LIMIT 1
+FOR UPDATE
+"#;
+
+#[cfg(feature = "postgres-sync")]
+const SQL_LIST_TASK_RUNS_CURSOR: &str = r#"
+SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
+       r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
+       r.scheduled_for::text AS scheduled_for, r.retry_of_run_id, r.priority,
+       r.status, r.idempotency_key, r.payload_hash, r.turn_id, r.attempt_count,
+       r.max_attempts, r.available_at::text AS available_at, r.lease_owner,
+       r.lease_token_hash, r.lease_expires_at::text AS lease_expires_at,
+       r.fencing_token, r.timeout_at::text AS timeout_at, r.failure_class,
+       r.error_code, r.error_detail, r.version, r.created_at::text AS created_at,
+       r.updated_at::text AS updated_at, r.claimed_at::text AS claimed_at,
+       r.started_at::text AS started_at, r.finished_at::text AS finished_at,
+       r.cancelled_at::text AS cancelled_at
+FROM ai_agent_task_run r
+WHERE r.tenant_id = $1 AND r.organization_id = $2 AND r.task_id = $3
+  AND ($4::bigint IS NULL OR r.owner_user_id = $4)
+  AND ($5::smallint IS NULL OR r.status = $5)
+  AND ($6::smallint IS NULL OR r.trigger_kind = $6)
+  AND ($7::bigint IS NULL OR r.id < $7)
+ORDER BY r.id DESC
+LIMIT $8
+"#;
+
+#[cfg(feature = "postgres-sync")]
+const SQL_LIST_RECONCILING_TASK_RUNS: &str = r#"
+SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
+       r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
+       r.scheduled_for::text AS scheduled_for, r.retry_of_run_id, r.priority,
+       r.status, r.idempotency_key, r.payload_hash, r.turn_id, r.attempt_count,
+       r.max_attempts, r.available_at::text AS available_at, r.lease_owner,
+       r.lease_token_hash, r.lease_expires_at::text AS lease_expires_at,
+       r.fencing_token, r.timeout_at::text AS timeout_at, r.failure_class,
+       r.error_code, r.error_detail, r.version, r.created_at::text AS created_at,
+       r.updated_at::text AS updated_at, r.claimed_at::text AS claimed_at,
+       r.started_at::text AS started_at, r.finished_at::text AS finished_at,
+       r.cancelled_at::text AS cancelled_at
+FROM ai_agent_task_run r
+WHERE r.status = 6 AND r.updated_at <= $1::timestamptz
+ORDER BY r.updated_at, r.id
+LIMIT $2
+"#;
+
+#[cfg(feature = "postgres-sync")]
+const SQL_LIST_TASK_RUN_ATTEMPTS_CURSOR: &str = r#"
+SELECT a.id, a.tenant_id, a.organization_id, a.attempt_id, a.run_id,
+       a.attempt_no, a.worker_id, a.status, a.lease_token_hash,
+       a.fencing_token, a.failure_class, a.error_code, a.error_detail,
+       a.created_at::text AS created_at, a.updated_at::text AS updated_at,
+       a.started_at::text AS started_at, a.heartbeat_at::text AS heartbeat_at,
+       a.finished_at::text AS finished_at
+FROM ai_agent_task_run_attempt a
+WHERE a.tenant_id = $1 AND a.organization_id = $2 AND a.run_id = $3
+  AND ($4::smallint IS NULL OR (a.attempt_no, a.id) < ($4::smallint, $5::bigint))
+ORDER BY a.attempt_no DESC, a.id DESC
+LIMIT $6
+"#;
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_task_run(row: PgRow) -> KernelResult<AgentTaskRunRecord> {
+    let trigger_kind =
+        AgentTaskTriggerKind::from_db_code(row.try_get("trigger_kind").map_err(map_sqlx_error)?)
+            .ok_or_else(|| KernelError::validation("invalid task Run trigger db code"))?;
+    let status = AgentTaskRunStatus::from_db_code(row.try_get("status").map_err(map_sqlx_error)?)
+        .ok_or_else(|| KernelError::validation("invalid task Run status db code"))?;
+    Ok(AgentTaskRunRecord {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        run_id: row.try_get("run_id").map_err(map_sqlx_error)?,
+        task_id: row.try_get("task_id").map_err(map_sqlx_error)?,
+        session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        owner_user_id: int64_to_u64(
+            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
+            "owner_user_id",
+        )?,
+        trigger_kind,
+        schedule_generation: int64_to_u64(
+            row.try_get("schedule_generation").map_err(map_sqlx_error)?,
+            "schedule_generation",
+        )?,
+        scheduled_for: row.try_get("scheduled_for").map_err(map_sqlx_error)?,
+        retry_of_run_id: row.try_get("retry_of_run_id").map_err(map_sqlx_error)?,
+        priority: row.try_get("priority").map_err(map_sqlx_error)?,
+        status,
+        idempotency_key: row.try_get("idempotency_key").map_err(map_sqlx_error)?,
+        payload_hash: row.try_get("payload_hash").map_err(map_sqlx_error)?,
+        turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
+        attempt_count: i16_to_u16(
+            row.try_get("attempt_count").map_err(map_sqlx_error)?,
+            "attempt_count",
+        )?,
+        max_attempts: i16_to_u16(
+            row.try_get("max_attempts").map_err(map_sqlx_error)?,
+            "max_attempts",
+        )?,
+        available_at: row.try_get("available_at").map_err(map_sqlx_error)?,
+        lease_owner: row.try_get("lease_owner").map_err(map_sqlx_error)?,
+        lease_token_hash: row.try_get("lease_token_hash").map_err(map_sqlx_error)?,
+        lease_expires_at: row.try_get("lease_expires_at").map_err(map_sqlx_error)?,
+        fencing_token: int64_to_u64(
+            row.try_get("fencing_token").map_err(map_sqlx_error)?,
+            "fencing_token",
+        )?,
+        timeout_at: row.try_get("timeout_at").map_err(map_sqlx_error)?,
+        failure_class: row.try_get("failure_class").map_err(map_sqlx_error)?,
+        error_code: row.try_get("error_code").map_err(map_sqlx_error)?,
+        error_detail: row.try_get("error_detail").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        claimed_at: row.try_get("claimed_at").map_err(map_sqlx_error)?,
+        started_at: row.try_get("started_at").map_err(map_sqlx_error)?,
+        finished_at: row.try_get("finished_at").map_err(map_sqlx_error)?,
+        cancelled_at: row.try_get("cancelled_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_task_run_attempt(row: PgRow) -> KernelResult<AgentTaskRunAttemptRecord> {
+    let status =
+        AgentTaskRunAttemptStatus::from_db_code(row.try_get("status").map_err(map_sqlx_error)?)
+            .ok_or_else(|| KernelError::validation("invalid task Run Attempt status db code"))?;
+    Ok(AgentTaskRunAttemptRecord {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        attempt_id: row.try_get("attempt_id").map_err(map_sqlx_error)?,
+        run_id: row.try_get("run_id").map_err(map_sqlx_error)?,
+        attempt_no: i16_to_u16(
+            row.try_get("attempt_no").map_err(map_sqlx_error)?,
+            "attempt_no",
+        )?,
+        worker_id: row.try_get("worker_id").map_err(map_sqlx_error)?,
+        status,
+        lease_token_hash: row.try_get("lease_token_hash").map_err(map_sqlx_error)?,
+        fencing_token: int64_to_u64(
+            row.try_get("fencing_token").map_err(map_sqlx_error)?,
+            "fencing_token",
+        )?,
+        failure_class: row.try_get("failure_class").map_err(map_sqlx_error)?,
+        error_code: row.try_get("error_code").map_err(map_sqlx_error)?,
+        error_detail: row.try_get("error_detail").map_err(map_sqlx_error)?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        started_at: row.try_get("started_at").map_err(map_sqlx_error)?,
+        heartbeat_at: row.try_get("heartbeat_at").map_err(map_sqlx_error)?,
+        finished_at: row.try_get("finished_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn task_tenant_capacity_lock_key(tenant_id: i64) -> KernelResult<i64> {
+    let digest = sha256_hash(format!("sdkwork-agents:task-tenant-capacity:{tenant_id}").as_bytes());
+    let unsigned = u64::from_str_radix(&digest[..16], 16).map_err(|_| KernelError::Internal {
+        message: "failed to derive task tenant capacity lock key".to_string(),
+    })?;
+    Ok(i64::from_be_bytes(unsigned.to_be_bytes()))
+}
+
+#[cfg(feature = "postgres-sync")]
+fn validate_task_run_lease_record(
+    run: &AgentTaskRunRecord,
+    lease: &TaskRunLease,
+    at: &str,
+) -> KernelResult<()> {
+    let at = parse_datetime(at, None)
+        .ok_or_else(|| KernelError::validation("lease operation timestamp is invalid"))?;
+    let token_hash = sha256_hash(lease.lease_token.as_bytes());
+    if run.tenant_id != lease.tenant_id
+        || run.organization_id != lease.organization_id
+        || run.run_id != lease.run_id
+        || run.lease_owner.as_deref() != Some(lease.worker_id.as_str())
+        || run.lease_token_hash.as_deref() != Some(token_hash.as_str())
+        || run.fencing_token != lease.fencing_token
+        || run
+            .lease_expires_at
+            .as_deref()
+            .and_then(|value| parse_datetime(value, None))
+            .is_none_or(|expires_at| expires_at < at)
+    {
+        return Err(KernelError::conflict("task Run lease lost"));
+    }
+    Ok(())
+}
 
 #[cfg(feature = "postgres-sync")]
 pub struct SyncPostgresAdapter {
@@ -3348,6 +4092,64 @@ fn transaction_error(error: KernelError) -> sqlx::Error {
         _ => "sdkwork-domain-internal:",
     };
     sqlx::Error::Protocol(format!("{prefix}{}", error.message()))
+}
+
+#[cfg(feature = "postgres-sync")]
+#[allow(clippy::too_many_arguments)]
+async fn insert_agent_outbox_event(
+    adapter: &SyncPostgresAdapter,
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: u64,
+    organization_id: u64,
+    aggregate_type: &str,
+    aggregate_id: &str,
+    aggregate_version: u64,
+    event_type: &str,
+    payload: &serde_json::Value,
+    dedupe_key: &str,
+    occurred_at: &str,
+) -> Result<(), sqlx::Error> {
+    let event_id_value = AgentRepositoryAdapter::next_id(adapter).map_err(transaction_error)?;
+    let event_id = format!("event.{event_id_value}");
+    let payload_json = serde_json::to_string(payload).map_err(|_| {
+        transaction_error(KernelError::Internal {
+            message: "failed to serialize Agents outbox payload".to_string(),
+        })
+    })?;
+    sqlx::query(
+        r#"
+INSERT INTO ai_agent_outbox_event (
+    id, uuid, tenant_id, organization_id, event_id, aggregate_type,
+    aggregate_id, aggregate_version, event_type, payload_json, headers_json,
+    dedupe_key, status, attempt_count, max_attempts, available_at,
+    fencing_token, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+    '{"specversion":"1.0","source":"sdkwork-intelligence-agents-service","schemaVersion":"1.0.0"}'::jsonb,
+    $11,
+    0, 0, 10, $12::timestamptz, 0, $12::timestamptz, $12::timestamptz
+)
+        "#,
+    )
+    .bind(u64_to_i64(event_id_value, "outbox.id").map_err(transaction_error)?)
+    .bind(build_storage_uuid(
+        "outbox",
+        tenant_id,
+        &[&organization_id.to_string(), &event_id],
+    ))
+    .bind(u64_to_i64(tenant_id, "tenant_id").map_err(transaction_error)?)
+    .bind(u64_to_i64(organization_id, "organization_id").map_err(transaction_error)?)
+    .bind(event_id)
+    .bind(aggregate_type)
+    .bind(aggregate_id)
+    .bind(u64_to_i64(aggregate_version, "aggregate_version").map_err(transaction_error)?)
+    .bind(event_type)
+    .bind(payload_json)
+    .bind(dedupe_key)
+    .bind(occurred_at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 #[cfg(feature = "postgres-sync")]
@@ -6151,6 +6953,39 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn list_session_item_rows_by_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        turn_id: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentSessionItemRow>> {
+        if limit == 0 {
+            return Err(KernelError::validation(
+                "turn session-item limit must be greater than zero",
+            ));
+        }
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| KernelError::validation("turn session-item limit overflow"))?;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_SESSION_ITEMS_BY_TURN,
+                tenant_id,
+                organization_id,
+                session_id,
+                turn_id,
+                limit
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_session_item_row)
+            .collect()
+        })
+    }
+
     fn count_session_item_rows(&self, query: &SessionItemListQuery) -> KernelResult<u64> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
@@ -6405,6 +7240,717 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         })
     }
 
+    fn get_turn_input_queue_entry_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+    ) -> KernelResult<Option<AgentTurnInputQueueEntry>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_TURN_INPUT_QUEUE_ENTRY,
+                tenant_id,
+                organization_id,
+                session_id,
+                owner_user_id,
+                queue_entry_id
+            )?
+            .map(pg_row_to_turn_input_queue_entry)
+            .transpose()
+        })
+    }
+
+    fn list_turn_input_queue_entry_records(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        let page_size = i64::try_from(query.pagination.page_size)
+            .map_err(|_| KernelError::validation("page_size overflow"))?;
+        let offset = i64::try_from(query.pagination.offset)
+            .map_err(|_| KernelError::validation("pagination offset overflow"))?;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_TURN_INPUT_QUEUE_ENTRIES,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                owner_user_id,
+                page_size,
+                offset
+            )?
+            .into_iter()
+            .map(pg_row_to_turn_input_queue_entry)
+            .collect()
+        })
+    }
+
+    fn count_turn_input_queue_entry_records(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            let row = pg_query_optional!(
+                pool,
+                SQL_COUNT_TURN_INPUT_QUEUE_ENTRIES,
+                tenant_id,
+                organization_id,
+                query.session_id,
+                owner_user_id
+            )?;
+            let total = row
+                .map(|row| row.try_get::<i64, _>("total_count").map_err(map_sqlx_error))
+                .transpose()?
+                .unwrap_or(0);
+            int64_to_u64(total, "total_count")
+        })
+    }
+
+    fn insert_turn_input_queue_entry_record(
+        &self,
+        mut entry: AgentTurnInputQueueEntry,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let id = u64_to_i64(entry.id, "queue_entry.id")?;
+        let tenant_id = u64_to_i64(entry.tenant_id, "queue_entry.tenant_id")?;
+        let organization_id = u64_to_i64(entry.organization_id, "queue_entry.organization_id")?;
+        let owner_user_id = u64_to_i64(entry.owner_user_id, "queue_entry.owner_user_id")?;
+        let attachment_names_json =
+            string_list_to_json(&entry.attachment_names, "queue attachment_names")?;
+        let drive_refs_json = turn_input_queue_drive_refs_to_json(&entry.drive_refs)?;
+        let uuid = build_turn_input_queue_entry_uuid(
+            entry.tenant_id,
+            entry.organization_id,
+            &entry.session_id,
+            &entry.queue_entry_id,
+        );
+        let pool = self.pool.pool().clone();
+        let session_id = entry.session_id.clone();
+        let queue_entry_id = entry.queue_entry_id.clone();
+        let payload_hash = entry.payload_hash.clone();
+        let result = self.pool.run_kernel(async move {
+            let mut tx = pool.begin().await?;
+            let session = sqlx::query(
+                "SELECT owner_user_id FROM ai_agent_session WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND deleted_at IS NULL FOR UPDATE",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if session.is_none() {
+                return Err(transaction_error(KernelError::validation("session not found")));
+            }
+            if let Some(existing) = sqlx::query(SQL_SELECT_TURN_INPUT_QUEUE_ENTRY)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&session_id)
+                .bind(owner_user_id)
+                .bind(&queue_entry_id)
+                .fetch_optional(&mut *tx)
+                .await?
+            {
+                let existing_payload_hash: String = existing.try_get("payload_hash")?;
+                if existing_payload_hash != payload_hash {
+                    return Err(transaction_error(KernelError::conflict(
+                        "queued Turn input idempotency conflict",
+                    )));
+                }
+                tx.commit().await?;
+                return pg_row_to_turn_input_queue_entry(existing).map_err(transaction_error);
+            }
+            let aggregate = sqlx::query(
+                "SELECT COUNT(*)::bigint AS entry_count, COALESCE(SUM(octet_length(content) + octet_length(display_text) + octet_length(attachment_names_json::text)), 0)::bigint AS content_bytes, COALESCE(MAX(position), 0)::bigint AS maximum_position FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            let entry_count: i64 = aggregate.try_get("entry_count")?;
+            let content_bytes: i64 = aggregate.try_get("content_bytes")?;
+            let maximum_position: i64 = aggregate.try_get("maximum_position")?;
+            let entry_bytes = i64::try_from(
+                entry
+                    .content
+                    .len()
+                    .saturating_add(entry.display_text.len())
+                    .saturating_add(attachment_names_json.len()),
+            )
+            .map_err(|_| transaction_error(KernelError::validation("queue content overflow")))?;
+            if entry_count >= MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION as i64 {
+                return Err(transaction_error(KernelError::conflict(
+                    "queued Turn input limit reached",
+                )));
+            }
+            if content_bytes.saturating_add(entry_bytes)
+                > MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION as i64
+            {
+                return Err(transaction_error(KernelError::conflict(
+                    "queued Turn input content budget reached",
+                )));
+            }
+            let position = maximum_position.checked_add(1024).ok_or_else(|| {
+                transaction_error(KernelError::conflict("queued Turn input position overflow"))
+            })?;
+            sqlx::query(
+                "INSERT INTO ai_agent_turn_input_queue_entry (id, uuid, tenant_id, organization_id, queue_entry_id, session_id, agent_id, owner_user_id, content, display_text, content_type, attachment_names_json, drive_refs_json, turn_mode, runtime_binding_id, requested_model_id, access_mode_id, idempotency_key, payload_hash, client_request_id, position, status, claim_owner, claim_token_hash, claim_expires_at, fencing_token, error_code, error_detail, version, created_at, updated_at, claimed_at, failed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULL, NULL, NULL, $23, NULL, NULL, $24, $25::timestamptz, $26::timestamptz, NULL, NULL)",
+            )
+            .bind(id)
+            .bind(uuid)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&queue_entry_id)
+            .bind(&session_id)
+            .bind(&entry.agent_id)
+            .bind(owner_user_id)
+            .bind(&entry.content)
+            .bind(&entry.display_text)
+            .bind(&entry.content_type)
+            .bind(&attachment_names_json)
+            .bind(&drive_refs_json)
+            .bind(entry.turn_mode.as_db_code())
+            .bind(&entry.runtime_binding_id)
+            .bind(&entry.requested_model_id)
+            .bind(&entry.access_mode_id)
+            .bind(&entry.idempotency_key)
+            .bind(&entry.payload_hash)
+            .bind(&entry.client_request_id)
+            .bind(position)
+            .bind(entry.status.as_db_code())
+            .bind(u64_to_i64(entry.fencing_token, "queue fencing_token").map_err(transaction_error)?)
+            .bind(u64_to_i64(entry.version, "queue version").map_err(transaction_error)?)
+            .bind(&entry.created_at)
+            .bind(&entry.updated_at)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            entry.position = int64_to_u64(position, "queue position").map_err(transaction_error)?;
+            Ok(entry)
+        })?;
+        Ok(result)
+    }
+
+    fn update_turn_input_queue_entry_record(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let attachment_names_json =
+            string_list_to_json(&entry.attachment_names, "queue attachment_names")?;
+        let drive_refs_json = turn_input_queue_drive_refs_to_json(&entry.drive_refs)?;
+        let version = u64_to_i64(entry.version, "queue version")?;
+        let tenant_id = u64_to_i64(entry.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(entry.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(entry.owner_user_id, "owner_user_id")?;
+        let expected_version = u64_to_i64(expected_version, "expected_version")?;
+        let entry_bytes = i64::try_from(
+            entry
+                .content
+                .len()
+                .saturating_add(entry.display_text.len())
+                .saturating_add(
+                    entry
+                        .attachment_names
+                        .iter()
+                        .map(String::len)
+                        .sum::<usize>(),
+                ),
+        )
+        .map_err(|_| KernelError::validation("queue content overflow"))?;
+        let pool = self.pool.pool().clone();
+        let result = self.pool.run_kernel(async move {
+            let mut tx = pool.begin().await?;
+            let session = sqlx::query(
+                "SELECT owner_user_id FROM ai_agent_session WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND deleted_at IS NULL FOR UPDATE",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&entry.session_id)
+            .bind(owner_user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if session.is_none() {
+                return Err(transaction_error(KernelError::validation("session not found")));
+            }
+            let content_bytes: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(octet_length(content) + octet_length(display_text) + (SELECT COALESCE(SUM(octet_length(value)), 0) FROM jsonb_array_elements_text(attachment_names_json) AS attachment_name(value))), 0)::bigint FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND queue_entry_id <> $5",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&entry.session_id)
+            .bind(owner_user_id)
+            .bind(&entry.queue_entry_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if content_bytes.saturating_add(entry_bytes)
+                > MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION as i64
+            {
+                return Err(transaction_error(KernelError::conflict(
+                    "queued Turn input content budget reached",
+                )));
+            }
+            let affected = sqlx::query(SQL_UPDATE_TURN_INPUT_QUEUE_ENTRY)
+                .bind(&entry.content)
+                .bind(&entry.display_text)
+                .bind(&entry.content_type)
+                .bind(&attachment_names_json)
+                .bind(&drive_refs_json)
+                .bind(entry.turn_mode.as_db_code())
+                .bind(&entry.runtime_binding_id)
+                .bind(&entry.requested_model_id)
+                .bind(&entry.access_mode_id)
+                .bind(&entry.idempotency_key)
+                .bind(&entry.payload_hash)
+                .bind(&entry.client_request_id)
+                .bind(entry.status.as_db_code())
+                .bind(&entry.error_code)
+                .bind(&entry.error_detail)
+                .bind(version)
+                .bind(&entry.updated_at)
+                .bind(&entry.failed_at)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&entry.session_id)
+                .bind(owner_user_id)
+                .bind(&entry.queue_entry_id)
+                .bind(expected_version)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+            if affected != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "queued Turn input update conflict",
+                )));
+            }
+            tx.commit().await?;
+            Ok(entry)
+        })?;
+        Ok(result)
+    }
+
+    fn remove_turn_input_queue_entry_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let entry = self
+            .get_turn_input_queue_entry_record(
+                tenant_id,
+                organization_id,
+                session_id,
+                owner_user_id,
+                queue_entry_id,
+            )?
+            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        let expected_version = u64_to_i64(expected_version, "expected_version")?;
+        self.with_pool(|pool| {
+            let affected = pg_execute!(
+                pool,
+                "DELETE FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND queue_entry_id = $5 AND version = $6 AND status <> 1",
+                tenant_id,
+                organization_id,
+                session_id,
+                owner_user_id,
+                queue_entry_id,
+                expected_version
+            )?;
+            if affected != 1 {
+                return Err(KernelError::conflict("queued Turn input removal conflict"));
+            }
+            Ok(entry)
+        })
+    }
+
+    fn clear_turn_input_queue_entry_records(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        include_executing: bool,
+    ) -> KernelResult<u64> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                "DELETE FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND ($5::bool OR status <> 1)",
+                tenant_id,
+                organization_id,
+                session_id,
+                owner_user_id,
+                include_executing
+            )
+        })
+    }
+
+    fn reorder_turn_input_queue_entry_records(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        entries: &[TurnInputQueueReorderEntry],
+        requested_at: &str,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>> {
+        let tenant_id_i64 = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id_i64 = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id_i64 = u64_to_i64(owner_user_id, "owner_user_id")?;
+        let entries = entries.to_vec();
+        let session_id_owned = session_id.to_string();
+        let requested_at_owned = requested_at.to_string();
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async move {
+            let mut tx = pool.begin().await?;
+            let session = sqlx::query(
+                "SELECT owner_user_id FROM ai_agent_session WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND deleted_at IS NULL FOR UPDATE",
+            )
+            .bind(tenant_id_i64)
+            .bind(organization_id_i64)
+            .bind(&session_id_owned)
+            .bind(owner_user_id_i64)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if session.is_none() {
+                return Err(transaction_error(KernelError::validation("session not found")));
+            }
+            let rows = sqlx::query(
+                "SELECT queue_entry_id, version FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND status <> 1 ORDER BY position ASC, id ASC FOR UPDATE",
+            )
+            .bind(tenant_id_i64)
+            .bind(organization_id_i64)
+            .bind(&session_id_owned)
+            .bind(owner_user_id_i64)
+            .fetch_all(&mut *tx)
+            .await?;
+            let executing_position: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(position), 0)::bigint FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND status = 1",
+            )
+            .bind(tenant_id_i64)
+            .bind(organization_id_i64)
+            .bind(&session_id_owned)
+            .bind(owner_user_id_i64)
+            .fetch_one(&mut *tx)
+            .await?;
+            if rows.len() != entries.len() {
+                return Err(transaction_error(KernelError::conflict(
+                    "queued Turn input reorder set changed",
+                )));
+            }
+            let current = rows
+                .iter()
+                .map(|row| {
+                    Ok((
+                        row.try_get::<String, _>("queue_entry_id")?,
+                        row.try_get::<i64, _>("version")?,
+                    ))
+                })
+                .collect::<Result<HashMap<_, _>, sqlx::Error>>()?;
+            for (index, requested) in entries.iter().enumerate() {
+                let expected_version = u64_to_i64(
+                    requested.expected_version,
+                    "queue expected_version",
+                )
+                .map_err(transaction_error)?;
+                if current.get(&requested.queue_entry_id) != Some(&expected_version) {
+                    return Err(transaction_error(KernelError::conflict(
+                        "queued Turn input version mismatch",
+                    )));
+                }
+                let position = i64::try_from(index + 1)
+                    .ok()
+                    .and_then(|value| value.checked_mul(1024))
+                    .and_then(|value| value.checked_add(executing_position))
+                    .ok_or_else(|| {
+                        transaction_error(KernelError::conflict(
+                            "queued Turn input position overflow",
+                        ))
+                    })?;
+                let affected = sqlx::query(
+                    "UPDATE ai_agent_turn_input_queue_entry SET position = $1, version = version + 1, updated_at = $2::timestamptz WHERE tenant_id = $3 AND organization_id = $4 AND session_id = $5 AND owner_user_id = $6 AND queue_entry_id = $7 AND version = $8 AND status <> 1",
+                )
+                .bind(position)
+                .bind(&requested_at_owned)
+                .bind(tenant_id_i64)
+                .bind(organization_id_i64)
+                .bind(&session_id_owned)
+                .bind(owner_user_id_i64)
+                .bind(&requested.queue_entry_id)
+                .bind(expected_version)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+                if affected != 1 {
+                    return Err(transaction_error(KernelError::conflict(
+                        "queued Turn input reorder conflict",
+                    )));
+                }
+            }
+            let rows = sqlx::query(SQL_LIST_TURN_INPUT_QUEUE_ENTRIES)
+                .bind(tenant_id_i64)
+                .bind(organization_id_i64)
+                .bind(&session_id_owned)
+                .bind(owner_user_id_i64)
+                .bind(MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION as i64)
+                .bind(0_i64)
+                .fetch_all(&mut *tx)
+                .await?;
+            let reordered = rows
+                .into_iter()
+                .map(|row| pg_row_to_turn_input_queue_entry(row).map_err(transaction_error))
+                .collect::<Result<Vec<_>, _>>()?;
+            tx.commit().await?;
+            Ok(reordered)
+        })
+    }
+
+    fn claim_next_turn_input_queue_entry_record(
+        &self,
+        request: &TurnInputQueueClaimRequest,
+    ) -> KernelResult<TurnInputQueueClaimOutcome> {
+        let tenant_id = u64_to_i64(request.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(request.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(request.owner_user_id, "owner_user_id")?;
+        let session_id = request.session_id.clone();
+        let claim_owner = request.claim_owner.clone();
+        let claim_token_hash = request.claim_token_hash.clone();
+        let claim_expires_at = request.claim_expires_at.clone();
+        let requested_at = request.requested_at.clone();
+        let pool = self.pool.pool().clone();
+        let (outcome_code, queue_entry_id) = self.pool.run_kernel(async move {
+            let mut tx = pool.begin().await?;
+            let session = sqlx::query(
+                "SELECT owner_user_id FROM ai_agent_session WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND deleted_at IS NULL FOR UPDATE",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if session.is_none() {
+                return Err(transaction_error(KernelError::validation("session not found")));
+            }
+            let executing = sqlx::query(
+                "SELECT queue_entry_id, idempotency_key, claim_expires_at FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND status = 1 ORDER BY position ASC, id ASC LIMIT 1 FOR UPDATE",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if let Some(executing) = executing {
+                let entry_id: String = executing.try_get("queue_entry_id")?;
+                let idempotency_key: String = executing.try_get("idempotency_key")?;
+                let turn = sqlx::query(
+                    "SELECT status, error_code, error_detail FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND idempotency_key = $5 LIMIT 1",
+                )
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&session_id)
+                .bind(owner_user_id)
+                .bind(&idempotency_key)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if let Some(turn) = turn {
+                    match turn.try_get::<i16, _>("status")? {
+                        2 => {
+                            sqlx::query("DELETE FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND queue_entry_id = $5 AND status = 1")
+                                .bind(tenant_id).bind(organization_id).bind(&session_id).bind(owner_user_id).bind(&entry_id)
+                                .execute(&mut *tx).await?;
+                        }
+                        3 | 4 => {
+                            let error_code: Option<String> = turn.try_get("error_code")?;
+                            let error_detail: Option<String> = turn.try_get("error_detail")?;
+                            sqlx::query("UPDATE ai_agent_turn_input_queue_entry SET status = 2, claim_owner = NULL, claim_token_hash = NULL, claim_expires_at = NULL, error_code = COALESCE($1, 'turn_terminal_failure'), error_detail = $2, failed_at = $3::timestamptz, updated_at = $3::timestamptz, version = version + 1 WHERE tenant_id = $4 AND organization_id = $5 AND session_id = $6 AND owner_user_id = $7 AND queue_entry_id = $8 AND status = 1")
+                                .bind(error_code).bind(error_detail).bind(&requested_at).bind(tenant_id).bind(organization_id).bind(&session_id).bind(owner_user_id).bind(&entry_id)
+                                .execute(&mut *tx).await?;
+                            tx.commit().await?;
+                            return Ok((4_i16, Some(entry_id)));
+                        }
+                        0 | 1 => {
+                            tx.commit().await?;
+                            return Ok((3_i16, Some(entry_id)));
+                        }
+                        _ => return Err(transaction_error(KernelError::validation("invalid Turn status"))),
+                    }
+                } else {
+                    let claim_expires_at = executing
+                        .try_get::<Option<String>, _>("claim_expires_at")?
+                        .ok_or_else(|| {
+                            transaction_error(KernelError::conflict(
+                                "executing queued Turn input has no claim expiry",
+                            ))
+                        })?;
+                    let lease_is_active: bool = sqlx::query_scalar(
+                        "SELECT $1::timestamptz > $2::timestamptz",
+                    )
+                    .bind(claim_expires_at)
+                    .bind(&requested_at)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    if lease_is_active {
+                        tx.commit().await?;
+                        return Ok((3_i16, Some(entry_id)));
+                    }
+                    sqlx::query("UPDATE ai_agent_turn_input_queue_entry SET status = 0, claim_owner = NULL, claim_token_hash = NULL, claim_expires_at = NULL, updated_at = $1::timestamptz, version = version + 1 WHERE tenant_id = $2 AND organization_id = $3 AND session_id = $4 AND owner_user_id = $5 AND queue_entry_id = $6 AND status = 1")
+                        .bind(&requested_at).bind(tenant_id).bind(organization_id).bind(&session_id).bind(owner_user_id).bind(&entry_id)
+                        .execute(&mut *tx).await?;
+                }
+            }
+            let active_turn_exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND status IN (0, 1))",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if active_turn_exists {
+                tx.commit().await?;
+                return Ok((1_i16, None));
+            }
+            let head = sqlx::query(
+                "SELECT queue_entry_id, status FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 ORDER BY position ASC, id ASC LIMIT 1 FOR UPDATE",
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let Some(head) = head else {
+                tx.commit().await?;
+                return Ok((0_i16, None));
+            };
+            let entry_id: String = head.try_get("queue_entry_id")?;
+            if head.try_get::<i16, _>("status")? == 2 {
+                tx.commit().await?;
+                return Ok((4_i16, Some(entry_id)));
+            }
+            let affected = sqlx::query(
+                "UPDATE ai_agent_turn_input_queue_entry SET status = 1, claim_owner = $1, claim_token_hash = $2, claim_expires_at = $3::timestamptz, claimed_at = $4::timestamptz, updated_at = $4::timestamptz, fencing_token = fencing_token + 1, version = version + 1 WHERE tenant_id = $5 AND organization_id = $6 AND session_id = $7 AND owner_user_id = $8 AND queue_entry_id = $9 AND status = 0",
+            )
+            .bind(&claim_owner)
+            .bind(&claim_token_hash)
+            .bind(&claim_expires_at)
+            .bind(&requested_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&session_id)
+            .bind(owner_user_id)
+            .bind(&entry_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if affected != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "queued Turn input claim conflict",
+                )));
+            }
+            tx.commit().await?;
+            Ok((2_i16, Some(entry_id)))
+        })?;
+        let entry = queue_entry_id
+            .as_deref()
+            .map(|entry_id| {
+                self.get_turn_input_queue_entry_record(
+                    request.tenant_id,
+                    request.organization_id,
+                    &request.session_id,
+                    request.owner_user_id,
+                    entry_id,
+                )?
+                .ok_or_else(|| KernelError::conflict("queued Turn input claim changed"))
+            })
+            .transpose()?;
+        match (outcome_code, entry) {
+            (0, None) => Ok(TurnInputQueueClaimOutcome::Empty),
+            (1, None) => Ok(TurnInputQueueClaimOutcome::ActiveTurn),
+            (2, Some(entry)) => Ok(TurnInputQueueClaimOutcome::Claimed(entry)),
+            (3, Some(entry)) => Ok(TurnInputQueueClaimOutcome::Busy(entry)),
+            (4, Some(entry)) => Ok(TurnInputQueueClaimOutcome::Blocked(entry)),
+            _ => Err(KernelError::Internal {
+                message: "invalid queued Turn input claim outcome".to_string(),
+            }),
+        }
+    }
+
+    fn fail_turn_input_queue_entry_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+        expected_fencing_token: u64,
+        claim_token_hash: &str,
+        error_code: &str,
+        error_detail: Option<&str>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let tenant_id_i64 = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id_i64 = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id_i64 = u64_to_i64(owner_user_id, "owner_user_id")?;
+        let expected_version_i64 = u64_to_i64(expected_version, "expected_version")?;
+        let fencing_token_i64 = u64_to_i64(expected_fencing_token, "fencing_token")?;
+        self.with_pool(|pool| {
+            let affected = pg_execute!(
+                pool,
+                "UPDATE ai_agent_turn_input_queue_entry SET status = 2, claim_owner = NULL, claim_token_hash = NULL, claim_expires_at = NULL, error_code = $1, error_detail = $2, failed_at = $3::timestamptz, updated_at = $3::timestamptz, version = version + 1 WHERE tenant_id = $4 AND organization_id = $5 AND session_id = $6 AND owner_user_id = $7 AND queue_entry_id = $8 AND status = 1 AND version = $9 AND fencing_token = $10 AND claim_token_hash = $11",
+                error_code,
+                error_detail,
+                requested_at,
+                tenant_id_i64,
+                organization_id_i64,
+                session_id,
+                owner_user_id_i64,
+                queue_entry_id,
+                expected_version_i64,
+                fencing_token_i64,
+                claim_token_hash
+            )?;
+            if affected != 1 {
+                return Err(KernelError::conflict("queued Turn input claim mismatch"));
+            }
+            self.get_turn_input_queue_entry_record(
+                tenant_id,
+                organization_id,
+                session_id,
+                owner_user_id,
+                queue_entry_id,
+            )?
+            .ok_or_else(|| KernelError::conflict("queued Turn input failure update changed"))
+        })
+    }
+
     fn list_reconcilable_turn_rows(
         &self,
         stale_before: &str,
@@ -6566,42 +8112,27 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         expected_turn_version: u64,
         expected_fencing_token: u64,
         expected_lease_token: Option<String>,
-        response_item: AgentSessionItemRow,
-    ) -> KernelResult<(AgentSessionRow, AgentSessionItemRow)> {
-        if turn.status != AgentTurnStatus::Completed.as_db_code()
-            || turn.version != expected_turn_version.saturating_add(1)
-            || turn.response_item_id.as_deref() != Some(response_item.item_id.as_str())
-            || turn.tenant_id != response_item.tenant_id
-            || turn.organization_id != response_item.organization_id
-            || turn.session_id != response_item.session_id
-            || response_item.turn_id.as_deref() != Some(turn.turn_id.as_str())
-            || response_item.parent_item_id.as_deref() != Some(turn.request_item_id.as_str())
-            || response_item.kind != AgentSessionItemKind::AssistantOutput.as_db_code()
-            || response_item.status != AgentSessionItemStatus::Completed.as_db_code()
-        {
-            return Err(KernelError::validation(
-                "completed turn and response item scope mismatch",
-            ));
-        }
+        completed_items: Vec<AgentSessionItemRow>,
+    ) -> KernelResult<(AgentSessionRow, Vec<AgentSessionItemRow>)> {
+        let turn_record = turn.clone().into_record()?;
+        let completed_item_records = completed_items
+            .iter()
+            .cloned()
+            .map(AgentSessionItemRow::into_record)
+            .collect::<KernelResult<Vec<_>>>()?;
+        validate_completed_turn_items(
+            &turn_record,
+            expected_turn_version,
+            &completed_item_records,
+        )?;
 
         self.with_pool(|pool| {
             let pg_pool = pool.pool().clone();
             pool.run_kernel(async move {
                 retry_postgres_transaction(|| async {
                     let turn = turn.clone();
-                    let mut response_item = response_item.clone();
+                    let mut completed_items = completed_items.clone();
                     let mut tx = pg_pool.begin().await?;
-
-                    let session =
-                        record_session_item_in_transaction(&mut tx, &response_item, false).await?;
-                    if session.agent_id != turn.agent_id
-                        || session.owner_user_id != turn.owner_user_id
-                    {
-                        return Err(transaction_error(KernelError::validation(
-                            "completed turn does not belong to the session agent and owner",
-                        )));
-                    }
-                    response_item.sequence = session.last_item_sequence;
                     complete_turn_in_transaction(
                         &mut tx,
                         &turn,
@@ -6610,9 +8141,28 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         &expected_lease_token,
                     )
                     .await?;
-                    insert_session_item_in_transaction(&mut tx, &response_item).await?;
+                    let mut updated_session = None;
+                    for item in &mut completed_items {
+                        let session =
+                            record_session_item_in_transaction(&mut tx, item, false).await?;
+                        if session.agent_id != turn.agent_id
+                            || session.owner_user_id != turn.owner_user_id
+                        {
+                            return Err(transaction_error(KernelError::validation(
+                                "completed Turn does not belong to the Session agent and owner",
+                            )));
+                        }
+                        item.sequence = session.last_item_sequence;
+                        insert_session_item_in_transaction(&mut tx, item).await?;
+                        updated_session = Some(session);
+                    }
+                    let session = updated_session.ok_or_else(|| {
+                        transaction_error(KernelError::validation(
+                            "completed Turn item batch must not be empty",
+                        ))
+                    })?;
                     tx.commit().await?;
-                    Ok((session, response_item))
+                    Ok((session, completed_items))
                 })
                 .await
             })
@@ -6860,6 +8410,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
         let owner_user_id = u64_to_i64(row.owner_user_id, "owner_user_id")?;
+        let generation = u64_to_i64(row.generation, "generation")?;
         let version = u64_to_i64(row.version, "version")?;
 
         self.with_pool(|pool| {
@@ -6873,16 +8424,34 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.agent_id,
                 row.task_id,
                 owner_user_id,
+                row.session_id,
                 row.title,
                 row.prompt,
+                row.schedule_kind,
+                row.cron_expression,
+                row.timezone,
+                row.scheduled_at,
+                row.starts_at,
+                row.ends_at,
+                row.next_fire_at,
+                row.misfire_policy,
+                row.overlap_policy,
+                row.max_concurrent_runs as i16,
+                row.max_catch_up_runs as i16,
+                row.max_attempts as i16,
+                row.retry_initial_delay_seconds as i32,
+                row.retry_max_delay_seconds as i32,
+                row.timeout_seconds as i32,
+                row.priority,
                 row.status,
+                generation,
                 row.external_ref,
                 row.metadata_json,
                 version,
                 row.created_at,
                 row.updated_at,
-                row.started_at,
                 row.completed_at,
+                row.paused_at,
                 row.cancelled_at
             )?;
             Ok(())
@@ -6895,6 +8464,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
         let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let generation = u64_to_i64(row.generation, "generation")?;
 
         self.with_pool(|pool| {
             let updated_rows = pg_execute!(
@@ -6902,13 +8472,30 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 SQL_UPDATE_AGENT_TASK,
                 row.title,
                 row.prompt,
+                row.schedule_kind,
+                row.cron_expression,
+                row.timezone,
+                row.scheduled_at,
+                row.starts_at,
+                row.ends_at,
+                row.next_fire_at,
+                row.misfire_policy,
+                row.overlap_policy,
+                row.max_concurrent_runs as i16,
+                row.max_catch_up_runs as i16,
+                row.max_attempts as i16,
+                row.retry_initial_delay_seconds as i32,
+                row.retry_max_delay_seconds as i32,
+                row.timeout_seconds as i32,
+                row.priority,
                 row.status,
+                generation,
                 row.external_ref,
                 row.metadata_json,
                 version,
                 row.updated_at,
-                row.started_at,
                 row.completed_at,
+                row.paused_at,
                 row.cancelled_at,
                 tenant_id,
                 organization_id,
@@ -7013,6 +8600,1919 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 .transpose()?
                 .unwrap_or(0);
             int64_to_u64(total, "total_count")
+        })
+    }
+}
+
+#[cfg(feature = "postgres-sync")]
+fn create_postgres_business_retry_task_run(
+    adapter: &SyncPostgresAdapter,
+    task: &AgentTaskRecord,
+    retry_of: &AgentTaskRunRecord,
+    idempotency_key: &str,
+    requested_at: &str,
+) -> KernelResult<AgentTaskRunRecord> {
+    if is_blank(Some(idempotency_key)) || idempotency_key.len() > 256 {
+        return Err(KernelError::validation("idempotencyKey is invalid"));
+    }
+    parse_datetime(requested_at, None)
+        .ok_or_else(|| KernelError::validation("requestedAt is invalid"))?;
+    if retry_of.tenant_id != task.tenant_id
+        || retry_of.organization_id != task.organization_id
+        || retry_of.task_id != task.task_id
+    {
+        return Err(KernelError::validation("retry source Run scope is invalid"));
+    }
+    let tenant_id = u64_to_i64(task.tenant_id, "tenant_id")?;
+    let organization_id = u64_to_i64(task.organization_id, "organization_id")?;
+    let owner_user_id = u64_to_i64(task.owner_user_id, "owner_user_id")?;
+    let task_generation = u64_to_i64(task.generation, "generation")?;
+    let pool = adapter.pool.pool().clone();
+    adapter.pool.run_kernel(async {
+        let mut tx = pool.begin().await?;
+        let source = sqlx::query(
+            r#"
+SELECT status
+FROM ai_agent_task_run
+WHERE tenant_id = $1 AND organization_id = $2 AND run_id = $3 AND task_id = $4
+FOR UPDATE
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&retry_of.run_id)
+        .bind(&task.task_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| transaction_error(KernelError::validation("task Run not found")))?;
+        let source_status: i16 = source.try_get("status")?;
+        if !matches!(source_status, 4 | 5 | 7) {
+            return Err(transaction_error(KernelError::validation(
+                "task Run is not in a retryable terminal state",
+            )));
+        }
+        let current = sqlx::query(
+            r#"
+SELECT generation, status
+FROM ai_agent_task
+WHERE tenant_id = $1 AND organization_id = $2 AND task_id = $3
+FOR SHARE
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&task.task_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| transaction_error(KernelError::validation("task not found")))?;
+        if current.try_get::<i64, _>("generation")? != task_generation
+            || current.try_get::<i16, _>("status")? == AgentTaskStatus::Cancelled.as_db_code()
+        {
+            return Err(transaction_error(KernelError::conflict(
+                "task changed before business retry creation",
+            )));
+        }
+        if let Some(row) = sqlx::query(SQL_SELECT_TASK_RUN_BY_IDEMPOTENCY)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(owner_user_id)
+            .bind(idempotency_key)
+            .fetch_optional(&mut *tx)
+            .await?
+        {
+            let existing = pg_row_to_task_run(row).map_err(transaction_error)?;
+            if existing.trigger_kind == AgentTaskTriggerKind::BusinessRetry
+                && existing.retry_of_run_id.as_deref() == Some(retry_of.run_id.as_str())
+                && existing.schedule_generation == task.generation
+            {
+                tx.commit().await?;
+                return Ok(existing);
+            }
+            return Err(transaction_error(KernelError::conflict(
+                "idempotency key payload mismatch",
+            )));
+        }
+        let id = AgentRepositoryAdapter::next_id(adapter).map_err(transaction_error)?;
+        let run_id = format!("run.{id}");
+        let turn_id = format!(
+            "turn.{}",
+            AgentRepositoryAdapter::next_id(adapter).map_err(transaction_error)?
+        );
+        let run = AgentTaskRunRecord {
+            id,
+            run_id: run_id.clone(),
+            tenant_id: task.tenant_id,
+            organization_id: task.organization_id,
+            task_id: task.task_id.clone(),
+            session_id: task.session_id.clone(),
+            agent_id: task.agent_id.clone(),
+            owner_user_id: task.owner_user_id,
+            trigger_kind: AgentTaskTriggerKind::BusinessRetry,
+            schedule_generation: task.generation,
+            scheduled_for: requested_at.to_string(),
+            retry_of_run_id: Some(retry_of.run_id.clone()),
+            priority: task.priority,
+            status: AgentTaskRunStatus::Pending,
+            idempotency_key: idempotency_key.to_string(),
+            payload_hash: task_run_payload_hash(
+                &task.task_id,
+                &task.session_id,
+                task.generation,
+                idempotency_key,
+                &task.prompt,
+            )
+            .map_err(transaction_error)?,
+            turn_id: Some(turn_id),
+            attempt_count: 0,
+            max_attempts: task.max_attempts,
+            available_at: requested_at.to_string(),
+            lease_owner: None,
+            lease_token_hash: None,
+            lease_expires_at: None,
+            fencing_token: 0,
+            timeout_at: None,
+            failure_class: None,
+            error_code: None,
+            error_detail: None,
+            version: 0,
+            created_at: requested_at.to_string(),
+            updated_at: requested_at.to_string(),
+            claimed_at: None,
+            started_at: None,
+            finished_at: None,
+            cancelled_at: None,
+        };
+        sqlx::query(
+            r#"
+INSERT INTO ai_agent_task_run (
+    id, uuid, tenant_id, organization_id, run_id, task_id, session_id, agent_id,
+    owner_user_id, trigger_kind, schedule_generation, scheduled_for,
+    retry_of_run_id, priority, status, idempotency_key, payload_hash, turn_id,
+    attempt_count, max_attempts, available_at, fencing_token, version,
+    created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, 2, $10,
+    $11::timestamptz, $12, $13, 0, $14, $15, $16, 0, $17,
+    $18::timestamptz, 0, 0, $19::timestamptz, $20::timestamptz
+)
+            "#,
+        )
+        .bind(u64_to_i64(run.id, "run.id").map_err(transaction_error)?)
+        .bind(build_storage_uuid(
+            "task-run",
+            task.tenant_id,
+            &[&task.organization_id.to_string(), &run.run_id],
+        ))
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&run.run_id)
+        .bind(&run.task_id)
+        .bind(&run.session_id)
+        .bind(&run.agent_id)
+        .bind(owner_user_id)
+        .bind(task_generation)
+        .bind(requested_at)
+        .bind(&run.retry_of_run_id)
+        .bind(run.priority)
+        .bind(idempotency_key)
+        .bind(&run.payload_hash)
+        .bind(&run.turn_id)
+        .bind(
+            i16::try_from(run.max_attempts)
+                .map_err(|_| transaction_error(KernelError::validation("max_attempts overflow")))?,
+        )
+        .bind(requested_at)
+        .bind(requested_at)
+        .bind(requested_at)
+        .execute(&mut *tx)
+        .await?;
+        insert_agent_outbox_event(
+            adapter,
+            &mut tx,
+            run.tenant_id,
+            run.organization_id,
+            "agent_task_run",
+            &run.run_id,
+            run.version,
+            "agent.task.run.business_retry_created",
+            &serde_json::json!({
+                "taskId": run.task_id,
+                "runId": run.run_id,
+                "retryOfRunId": run.retry_of_run_id,
+                "status": run.status.as_str(),
+                "triggerKind": run.trigger_kind.as_str()
+            }),
+            &format!("agent-task-run-business-retry-created:{}", run.run_id),
+            requested_at,
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(run)
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+impl TaskSchedulerRepository for SyncPostgresAdapter {
+    fn transition_task(
+        &self,
+        task: AgentTaskRecord,
+        cancellation_reason: &str,
+    ) -> KernelResult<TaskTransitionResult> {
+        if cancellation_reason.trim().is_empty() || cancellation_reason.len() > 128 {
+            return Err(KernelError::validation(
+                "task transition cancellation reason is invalid",
+            ));
+        }
+        let row = AgentTaskRow::from_record(&task)?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let generation = u64_to_i64(row.generation, "generation")?;
+        let version = u64_to_i64(row.version, "version")?;
+        let previous_version =
+            u64_to_i64(expected_previous_version(row.version)?, "previous_version")?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async move {
+            let mut tx = pool.begin().await?;
+            let updated = sqlx::query(SQL_UPDATE_AGENT_TASK)
+                .bind(&row.title)
+                .bind(&row.prompt)
+                .bind(row.schedule_kind)
+                .bind(&row.cron_expression)
+                .bind(&row.timezone)
+                .bind(&row.scheduled_at)
+                .bind(&row.starts_at)
+                .bind(&row.ends_at)
+                .bind(&row.next_fire_at)
+                .bind(row.misfire_policy)
+                .bind(row.overlap_policy)
+                .bind(row.max_concurrent_runs as i16)
+                .bind(row.max_catch_up_runs as i16)
+                .bind(row.max_attempts as i16)
+                .bind(row.retry_initial_delay_seconds as i32)
+                .bind(row.retry_max_delay_seconds as i32)
+                .bind(row.timeout_seconds as i32)
+                .bind(row.priority)
+                .bind(row.status)
+                .bind(generation)
+                .bind(&row.external_ref)
+                .bind(&row.metadata_json)
+                .bind(version)
+                .bind(&row.updated_at)
+                .bind(&row.completed_at)
+                .bind(&row.paused_at)
+                .bind(&row.cancelled_at)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&row.task_id)
+                .bind(previous_version)
+                .execute(&mut *tx)
+                .await?;
+            if updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task version mismatch",
+                )));
+            }
+            let cancelled = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET status = 5, failure_class = 'task_generation_changed', error_code = $1,
+    lease_owner = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
+    finished_at = $2::timestamptz, cancelled_at = $2::timestamptz,
+    updated_at = $2::timestamptz, version = version + 1
+WHERE tenant_id = $3 AND organization_id = $4 AND task_id = $5
+  AND status = 0 AND schedule_generation < $6
+                "#,
+            )
+            .bind(cancellation_reason)
+            .bind(&row.updated_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&row.task_id)
+            .bind(generation)
+            .execute(&mut *tx)
+            .await?;
+            let cancelled_pending_run_count = cancelled.rows_affected();
+            insert_agent_outbox_event(
+                self,
+                &mut tx,
+                task.tenant_id,
+                task.organization_id,
+                "agent_task",
+                &task.task_id,
+                task.version,
+                "agent.task.transitioned",
+                &serde_json::json!({
+                    "taskId": task.task_id,
+                    "status": task.status.as_str(),
+                    "generation": task.generation.to_string(),
+                    "version": task.version.to_string(),
+                    "transitionReason": cancellation_reason,
+                    "cancelledPendingRunCount": cancelled_pending_run_count.to_string()
+                }),
+                &format!("agent-task-transition:{}:{}", task.task_id, task.version),
+                &task.updated_at,
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(TaskTransitionResult {
+                task,
+                cancelled_pending_run_count,
+            })
+        })
+    }
+
+    fn create_business_retry_task_run(
+        &self,
+        task: &AgentTaskRecord,
+        retry_of: &AgentTaskRunRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        create_postgres_business_retry_task_run(self, task, retry_of, idempotency_key, requested_at)
+    }
+
+    fn create_manual_task_run(
+        &self,
+        task: &AgentTaskRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        if is_blank(Some(idempotency_key)) || idempotency_key.len() > 256 {
+            return Err(KernelError::validation("idempotencyKey is invalid"));
+        }
+        parse_datetime(requested_at, None)
+            .ok_or_else(|| KernelError::validation("requestedAt is invalid"))?;
+        let tenant_id = u64_to_i64(task.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(task.organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(task.owner_user_id, "owner_user_id")?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let existing = sqlx::query(
+                r#"
+SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
+       r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
+       r.scheduled_for::text AS scheduled_for, r.retry_of_run_id, r.priority,
+       r.status, r.idempotency_key, r.payload_hash, r.turn_id, r.attempt_count,
+       r.max_attempts, r.available_at::text AS available_at, r.lease_owner,
+       r.lease_token_hash, r.lease_expires_at::text AS lease_expires_at,
+       r.fencing_token, r.timeout_at::text AS timeout_at, r.failure_class,
+       r.error_code, r.error_detail, r.version, r.created_at::text AS created_at,
+       r.updated_at::text AS updated_at, r.claimed_at::text AS claimed_at,
+       r.started_at::text AS started_at, r.finished_at::text AS finished_at,
+       r.cancelled_at::text AS cancelled_at
+FROM ai_agent_task_run r
+WHERE r.tenant_id = $1 AND r.organization_id = $2
+  AND r.owner_user_id = $3 AND r.idempotency_key = $4
+LIMIT 1
+FOR UPDATE
+                "#,
+            )
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(owner_user_id)
+            .bind(idempotency_key)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if let Some(row) = existing {
+                let existing = pg_row_to_task_run(row).map_err(transaction_error)?;
+                if existing.task_id == task.task_id
+                    && existing.schedule_generation == task.generation
+                {
+                    tx.commit().await?;
+                    return Ok(existing);
+                }
+                return Err(transaction_error(KernelError::conflict(
+                    "idempotency key payload mismatch",
+                )));
+            }
+            let id = AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
+            let run_id = format!("run.{id}");
+            let turn_id = format!(
+                "turn.{}",
+                AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?
+            );
+            let run = AgentTaskRunRecord {
+                id,
+                run_id: run_id.clone(),
+                tenant_id: task.tenant_id,
+                organization_id: task.organization_id,
+                task_id: task.task_id.clone(),
+                session_id: task.session_id.clone(),
+                agent_id: task.agent_id.clone(),
+                owner_user_id: task.owner_user_id,
+                trigger_kind: AgentTaskTriggerKind::Manual,
+                schedule_generation: task.generation,
+                scheduled_for: requested_at.to_string(),
+                retry_of_run_id: None,
+                priority: task.priority,
+                status: AgentTaskRunStatus::Pending,
+                idempotency_key: idempotency_key.to_string(),
+                payload_hash: task_run_payload_hash(
+                    &task.task_id,
+                    &task.session_id,
+                    task.generation,
+                    idempotency_key,
+                    &task.prompt,
+                )
+                .map_err(transaction_error)?,
+                turn_id: Some(turn_id),
+                attempt_count: 0,
+                max_attempts: task.max_attempts,
+                available_at: requested_at.to_string(),
+                lease_owner: None,
+                lease_token_hash: None,
+                lease_expires_at: None,
+                fencing_token: 0,
+                timeout_at: None,
+                failure_class: None,
+                error_code: None,
+                error_detail: None,
+                version: 0,
+                created_at: requested_at.to_string(),
+                updated_at: requested_at.to_string(),
+                claimed_at: None,
+                started_at: None,
+                finished_at: None,
+                cancelled_at: None,
+            };
+            sqlx::query(
+                r#"
+INSERT INTO ai_agent_task_run (
+    id, uuid, tenant_id, organization_id, run_id, task_id, session_id, agent_id,
+    owner_user_id, trigger_kind, schedule_generation, scheduled_for, priority,
+    status, idempotency_key, payload_hash, turn_id, attempt_count, max_attempts,
+    available_at, fencing_token, version, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10,
+    $11::timestamptz, $12, 0, $13, $14, $15, 0, $16,
+    $17::timestamptz, 0, 0, $18::timestamptz, $19::timestamptz
+)
+                "#,
+            )
+            .bind(u64_to_i64(run.id, "run.id").map_err(transaction_error)?)
+            .bind(build_storage_uuid(
+                "task-run",
+                task.tenant_id,
+                &[&task.organization_id.to_string(), &run.run_id],
+            ))
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&run.run_id)
+            .bind(&run.task_id)
+            .bind(&run.session_id)
+            .bind(&run.agent_id)
+            .bind(owner_user_id)
+            .bind(u64_to_i64(task.generation, "generation").map_err(transaction_error)?)
+            .bind(requested_at)
+            .bind(run.priority)
+            .bind(idempotency_key)
+            .bind(&run.payload_hash)
+            .bind(&run.turn_id)
+            .bind(
+                i16::try_from(run.max_attempts).map_err(|_| {
+                    transaction_error(KernelError::validation("max_attempts overflow"))
+                })?,
+            )
+            .bind(requested_at)
+            .bind(requested_at)
+            .bind(requested_at)
+            .execute(&mut *tx)
+            .await?;
+            insert_agent_outbox_event(
+                self,
+                &mut tx,
+                run.tenant_id,
+                run.organization_id,
+                "agent_task_run",
+                &run.run_id,
+                run.version,
+                "agent.task.run.created",
+                &serde_json::json!({
+                    "taskId": run.task_id,
+                    "runId": run.run_id,
+                    "status": run.status.as_str(),
+                    "triggerKind": run.trigger_kind.as_str()
+                }),
+                &format!("agent-task-run-created:{}", run.run_id),
+                requested_at,
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn materialize_due_tasks(
+        &self,
+        request: &MaterializeDueTasksRequest,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        parse_datetime(&request.now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let limit = i64::try_from(request.limit)
+            .map_err(|_| KernelError::validation("materialize limit overflow"))?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let rows = sqlx::query(
+                r#"
+SELECT id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id,
+       session_id, title, prompt, schedule_kind, cron_expression, timezone,
+       scheduled_at::text AS scheduled_at, starts_at::text AS starts_at,
+       ends_at::text AS ends_at, next_fire_at::text AS next_fire_at,
+       misfire_policy, overlap_policy, max_concurrent_runs, max_catch_up_runs,
+       max_attempts, retry_initial_delay_seconds, retry_max_delay_seconds,
+       timeout_seconds, priority, status, generation, external_ref,
+       metadata_json::text AS metadata_json, version,
+       created_at::text AS created_at, updated_at::text AS updated_at,
+       completed_at::text AS completed_at, paused_at::text AS paused_at,
+       cancelled_at::text AS cancelled_at
+FROM ai_agent_task
+WHERE status = 0 AND next_fire_at <= $1::timestamptz
+ORDER BY next_fire_at, priority DESC, id
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+                "#,
+            )
+            .bind(&request.now)
+            .bind(limit)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            let mut materialized = Vec::new();
+            for row in rows {
+                let task = pg_row_to_agent_task_row(row)
+                    .map_err(transaction_error)?
+                    .into_record()
+                    .map_err(transaction_error)?;
+                let active_count: i64 = sqlx::query_scalar(
+                    r#"
+SELECT COUNT(*)::bigint
+FROM ai_agent_task_run
+WHERE tenant_id = $1 AND organization_id = $2 AND task_id = $3
+  AND status IN (1, 2, 6)
+                    "#,
+                )
+                .bind(u64_to_i64(task.tenant_id, "tenant_id").map_err(transaction_error)?)
+                .bind(
+                    u64_to_i64(task.organization_id, "organization_id")
+                        .map_err(transaction_error)?,
+                )
+                .bind(&task.task_id)
+                .fetch_one(&mut *tx)
+                .await?;
+                let overlap_blocked = task.overlap_policy == AgentTaskOverlapPolicy::Skip
+                    && active_count >= i64::from(task.max_concurrent_runs);
+                let remaining = request.limit.saturating_sub(materialized.len()).max(1);
+                let plan = plan_task_materialization(
+                    &task,
+                    &request.now,
+                    usize::from(task.max_catch_up_runs).min(remaining),
+                    overlap_blocked,
+                )
+                .map_err(transaction_error)?;
+
+                for scheduled_for in plan.occurrences {
+                    if materialized.len() >= request.limit {
+                        break;
+                    }
+                    let id = AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
+                    let run_id = format!("run.{id}");
+                    let turn_id = format!(
+                        "turn.{}",
+                        AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?
+                    );
+                    let run = AgentTaskRunRecord {
+                        id,
+                        run_id: run_id.clone(),
+                        tenant_id: task.tenant_id,
+                        organization_id: task.organization_id,
+                        task_id: task.task_id.clone(),
+                        session_id: task.session_id.clone(),
+                        agent_id: task.agent_id.clone(),
+                        owner_user_id: task.owner_user_id,
+                        trigger_kind: AgentTaskTriggerKind::Scheduled,
+                        schedule_generation: task.generation,
+                        scheduled_for: scheduled_for.clone(),
+                        retry_of_run_id: None,
+                        priority: task.priority,
+                        status: AgentTaskRunStatus::Pending,
+                        idempotency_key: format!("agent-task-run:{run_id}"),
+                        payload_hash: task_run_payload_hash(
+                            &task.task_id,
+                            &task.session_id,
+                            task.generation,
+                            &scheduled_for,
+                            &task.prompt,
+                        )
+                        .map_err(transaction_error)?,
+                        turn_id: Some(turn_id),
+                        attempt_count: 0,
+                        max_attempts: task.max_attempts,
+                        available_at: request.now.clone(),
+                        lease_owner: None,
+                        lease_token_hash: None,
+                        lease_expires_at: None,
+                        fencing_token: 0,
+                        timeout_at: None,
+                        failure_class: None,
+                        error_code: None,
+                        error_detail: None,
+                        version: 0,
+                        created_at: request.now.clone(),
+                        updated_at: request.now.clone(),
+                        claimed_at: None,
+                        started_at: None,
+                        finished_at: None,
+                        cancelled_at: None,
+                    };
+                    let inserted = sqlx::query(
+                        r#"
+INSERT INTO ai_agent_task_run (
+    id, uuid, tenant_id, organization_id, run_id, task_id, session_id, agent_id,
+    owner_user_id, trigger_kind, schedule_generation, scheduled_for,
+    retry_of_run_id, priority, status, idempotency_key, payload_hash, turn_id,
+    attempt_count, max_attempts, available_at, fencing_token, version,
+    created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::timestamptz,
+    $13, $14, $15, $16, $17, $18, $19, $20, $21::timestamptz, $22, $23,
+    $24::timestamptz, $25::timestamptz
+)
+ON CONFLICT (tenant_id, organization_id, task_id, schedule_generation, scheduled_for)
+    WHERE trigger_kind = 0
+DO NOTHING
+                        "#,
+                    )
+                    .bind(u64_to_i64(run.id, "run.id").map_err(transaction_error)?)
+                    .bind(build_storage_uuid(
+                        "task-run",
+                        run.tenant_id,
+                        &[&run.organization_id.to_string(), &run.run_id],
+                    ))
+                    .bind(u64_to_i64(run.tenant_id, "tenant_id").map_err(transaction_error)?)
+                    .bind(
+                        u64_to_i64(run.organization_id, "organization_id")
+                            .map_err(transaction_error)?,
+                    )
+                    .bind(&run.run_id)
+                    .bind(&run.task_id)
+                    .bind(&run.session_id)
+                    .bind(&run.agent_id)
+                    .bind(
+                        u64_to_i64(run.owner_user_id, "owner_user_id")
+                            .map_err(transaction_error)?,
+                    )
+                    .bind(run.trigger_kind.as_db_code())
+                    .bind(
+                        u64_to_i64(run.schedule_generation, "schedule_generation")
+                            .map_err(transaction_error)?,
+                    )
+                    .bind(&run.scheduled_for)
+                    .bind(&run.retry_of_run_id)
+                    .bind(run.priority)
+                    .bind(run.status.as_db_code())
+                    .bind(&run.idempotency_key)
+                    .bind(&run.payload_hash)
+                    .bind(&run.turn_id)
+                    .bind(i16::try_from(run.attempt_count).map_err(|_| {
+                        transaction_error(KernelError::validation("attempt_count overflow"))
+                    })?)
+                    .bind(i16::try_from(run.max_attempts).map_err(|_| {
+                        transaction_error(KernelError::validation("max_attempts overflow"))
+                    })?)
+                    .bind(&run.available_at)
+                    .bind(
+                        u64_to_i64(run.fencing_token, "fencing_token")
+                            .map_err(transaction_error)?,
+                    )
+                    .bind(u64_to_i64(run.version, "version").map_err(transaction_error)?)
+                    .bind(&run.created_at)
+                    .bind(&run.updated_at)
+                    .execute(&mut *tx)
+                    .await?;
+                    if inserted.rows_affected() == 0 {
+                        continue;
+                    }
+
+                    insert_agent_outbox_event(
+                        self,
+                        &mut tx,
+                        run.tenant_id,
+                        run.organization_id,
+                        "agent_task_run",
+                        &run.run_id,
+                        run.version,
+                        "agent.task.run.materialized",
+                        &serde_json::json!({
+                            "taskId": run.task_id,
+                            "runId": run.run_id,
+                            "status": run.status.as_str(),
+                            "scheduledFor": run.scheduled_for,
+                            "triggerKind": run.trigger_kind.as_str()
+                        }),
+                        &format!("agent-task-run-materialized:{}", run.run_id),
+                        &request.now,
+                    )
+                    .await?;
+                    materialized.push(run);
+                }
+
+                sqlx::query(
+                    r#"
+UPDATE ai_agent_task
+SET status = $1, next_fire_at = $2::timestamptz,
+    completed_at = $3::timestamptz, updated_at = $4::timestamptz,
+    version = version + 1
+WHERE tenant_id = $5 AND organization_id = $6 AND task_id = $7
+  AND generation = $8 AND status = 0
+                    "#,
+                )
+                .bind(plan.status.as_db_code())
+                .bind(plan.next_fire_at)
+                .bind(plan.completed_at)
+                .bind(&request.now)
+                .bind(u64_to_i64(task.tenant_id, "tenant_id").map_err(transaction_error)?)
+                .bind(
+                    u64_to_i64(task.organization_id, "organization_id")
+                        .map_err(transaction_error)?,
+                )
+                .bind(&task.task_id)
+                .bind(u64_to_i64(task.generation, "generation").map_err(transaction_error)?)
+                .execute(&mut *tx)
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(materialized)
+        })
+    }
+
+    fn claim_task_runs(&self, request: &ClaimTaskRunsRequest) -> KernelResult<Vec<TaskRunClaim>> {
+        if is_blank(Some(&request.worker_id)) || request.worker_id.len() > 128 {
+            return Err(KernelError::validation("workerId is invalid"));
+        }
+        let now = parse_datetime(&request.now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let lease_expires_at = format_datetime(
+            now + chrono::Duration::seconds(i64::from(request.lease_seconds)),
+            None,
+        );
+        let limit = i64::try_from(request.limit)
+            .map_err(|_| KernelError::validation("claim limit overflow"))?;
+        let tenant_limit = i64::try_from(request.max_concurrent_runs_per_tenant)
+            .map_err(|_| KernelError::validation("tenant concurrency limit overflow"))?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let rows = sqlx::query(
+                r#"
+WITH ranked AS MATERIALIZED (
+    SELECT r.id, r.priority, r.available_at, r.scheduled_for,
+           ROW_NUMBER() OVER (
+               PARTITION BY r.tenant_id, r.organization_id, r.task_id
+               ORDER BY r.priority DESC, r.available_at, r.scheduled_for, r.id
+           ) AS task_rank,
+           ROW_NUMBER() OVER (
+               PARTITION BY r.tenant_id
+               ORDER BY r.priority DESC, r.available_at, r.scheduled_for, r.id
+           ) AS tenant_rank,
+           GREATEST(
+               t.max_concurrent_runs - (
+                   SELECT COUNT(*)::integer
+                   FROM ai_agent_task_run active
+                   WHERE active.tenant_id = r.tenant_id
+                     AND active.organization_id = r.organization_id
+                     AND active.task_id = r.task_id
+                     AND active.status IN (1, 2)
+               ),
+               0
+           ) AS available_slots,
+           GREATEST(
+               $3::bigint - (
+                   SELECT COUNT(*)::bigint
+                   FROM ai_agent_task_run tenant_active
+                   WHERE tenant_active.tenant_id = r.tenant_id
+                     AND tenant_active.status IN (1, 2)
+               ),
+               0
+           ) AS tenant_available_slots
+    FROM ai_agent_task_run r
+    JOIN ai_agent_task t
+      ON t.tenant_id = r.tenant_id
+     AND t.organization_id = r.organization_id
+     AND t.task_id = r.task_id
+    WHERE r.status = 0 AND r.available_at <= $1::timestamptz
+      AND r.schedule_generation = t.generation
+), eligible AS (
+    SELECT id
+    FROM ranked
+    WHERE task_rank <= available_slots
+      AND tenant_rank <= tenant_available_slots
+    ORDER BY priority DESC, available_at, scheduled_for, id
+    LIMIT $2
+)
+SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
+       r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
+       r.scheduled_for::text AS scheduled_for, r.retry_of_run_id, r.priority,
+       r.status, r.idempotency_key, r.payload_hash, r.turn_id, r.attempt_count,
+       r.max_attempts, r.available_at::text AS available_at, r.lease_owner,
+       r.lease_token_hash, r.lease_expires_at::text AS lease_expires_at,
+       r.fencing_token, r.timeout_at::text AS timeout_at, r.failure_class,
+       r.error_code, r.error_detail, r.version, r.created_at::text AS created_at,
+       r.updated_at::text AS updated_at, r.claimed_at::text AS claimed_at,
+       r.started_at::text AS started_at, r.finished_at::text AS finished_at,
+       r.cancelled_at::text AS cancelled_at
+FROM ai_agent_task_run r
+JOIN eligible e ON e.id = r.id
+ORDER BY r.priority DESC, r.available_at, r.scheduled_for, r.id
+FOR UPDATE OF r SKIP LOCKED
+                "#,
+            )
+            .bind(&request.now)
+            .bind(limit)
+            .bind(tenant_limit)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            // Serialize each tenant's capacity decision, then lock all participating
+            // Task rows in deterministic order. This prevents concurrent claim
+            // transactions from consuming the same tenant or Task capacity slot.
+            let mut tenant_ids = rows
+                .iter()
+                .map(|row| row.try_get::<i64, _>("tenant_id"))
+                .collect::<Result<Vec<_>, _>>()?;
+            tenant_ids.sort_unstable();
+            tenant_ids.dedup();
+            for tenant_id in &tenant_ids {
+                let lock_key =
+                    task_tenant_capacity_lock_key(*tenant_id).map_err(transaction_error)?;
+                sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                    .bind(lock_key)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            let mut task_keys = rows
+                .iter()
+                .map(|row| {
+                    Ok::<_, sqlx::Error>((
+                        row.try_get::<i64, _>("tenant_id")?,
+                        row.try_get::<i64, _>("organization_id")?,
+                        row.try_get::<String, _>("task_id")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            task_keys.sort();
+            task_keys.dedup();
+            let mut task_capacity = HashMap::<(i64, i64, String), (i64, i16, i32, i64)>::new();
+            for task_key in task_keys {
+                let task_row = sqlx::query(
+                    r#"
+SELECT generation, max_concurrent_runs, timeout_seconds
+FROM ai_agent_task
+WHERE tenant_id = $1 AND organization_id = $2 AND task_id = $3
+FOR UPDATE
+                    "#,
+                )
+                .bind(task_key.0)
+                .bind(task_key.1)
+                .bind(&task_key.2)
+                .fetch_one(&mut *tx)
+                .await?;
+                let active_count: i64 = sqlx::query_scalar(
+                    r#"
+SELECT COUNT(*)::bigint
+FROM ai_agent_task_run
+WHERE tenant_id = $1 AND organization_id = $2 AND task_id = $3
+  AND status IN (1, 2)
+                    "#,
+                )
+                .bind(task_key.0)
+                .bind(task_key.1)
+                .bind(&task_key.2)
+                .fetch_one(&mut *tx)
+                .await?;
+                task_capacity.insert(
+                    task_key,
+                    (
+                        task_row.try_get::<i64, _>("generation")?,
+                        task_row.try_get::<i16, _>("max_concurrent_runs")?,
+                        task_row.try_get::<i32, _>("timeout_seconds")?,
+                        active_count,
+                    ),
+                );
+            }
+            let mut tenant_active_counts = HashMap::<i64, i64>::new();
+            for tenant_id in tenant_ids {
+                let active_count: i64 = sqlx::query_scalar(
+                    r#"
+SELECT COUNT(*)::bigint
+FROM ai_agent_task_run
+WHERE tenant_id = $1 AND status IN (1, 2)
+                    "#,
+                )
+                .bind(tenant_id)
+                .fetch_one(&mut *tx)
+                .await?;
+                tenant_active_counts.insert(tenant_id, active_count);
+            }
+            let mut claimed_per_task = HashMap::<(i64, i64, String), i64>::new();
+            let mut claimed_per_tenant = HashMap::<i64, i64>::new();
+            let mut claims = Vec::new();
+            for row in rows {
+                let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+                let task_key = (
+                    u64_to_i64(run.tenant_id, "tenant_id").map_err(transaction_error)?,
+                    u64_to_i64(run.organization_id, "organization_id")
+                        .map_err(transaction_error)?,
+                    run.task_id.clone(),
+                );
+                let tenant_key = task_key.0;
+                let Some((generation, max_concurrent, timeout_seconds, active_count)) =
+                    task_capacity.get(&task_key).copied()
+                else {
+                    continue;
+                };
+                if run.schedule_generation
+                    != u64::try_from(generation).map_err(|_| {
+                        transaction_error(KernelError::validation("generation is invalid"))
+                    })?
+                {
+                    continue;
+                }
+                let local_tenant_claimed =
+                    claimed_per_tenant.get(&task_key.0).copied().unwrap_or(0);
+                if tenant_active_counts.get(&task_key.0).copied().unwrap_or(0)
+                    + local_tenant_claimed
+                    >= tenant_limit
+                {
+                    continue;
+                }
+                let local_claimed = claimed_per_task.get(&task_key).copied().unwrap_or(0);
+                if active_count + local_claimed >= i64::from(max_concurrent) {
+                    continue;
+                }
+                let raw_token = sdkwork_utils_rust::random_string(48);
+                let token_hash = sha256_hash(raw_token.as_bytes());
+                let fencing_token = run.fencing_token.saturating_add(1);
+                let attempt_no = run.attempt_count.saturating_add(1);
+                let timeout_at = format_datetime(
+                    now + chrono::Duration::seconds(i64::from(timeout_seconds)),
+                    None,
+                );
+                let updated = sqlx::query(
+                    r#"
+UPDATE ai_agent_task_run
+SET status = 1, attempt_count = $1, lease_owner = $2,
+    lease_token_hash = $3, lease_expires_at = $4::timestamptz,
+    fencing_token = $5, timeout_at = $6::timestamptz,
+    claimed_at = $7::timestamptz, updated_at = $7::timestamptz,
+    failure_class = NULL, error_code = NULL, error_detail = NULL,
+    version = version + 1
+WHERE tenant_id = $8 AND organization_id = $9 AND run_id = $10 AND status = 0
+                    "#,
+                )
+                .bind(i16::try_from(attempt_no).map_err(|_| {
+                    transaction_error(KernelError::validation("attempt number overflow"))
+                })?)
+                .bind(&request.worker_id)
+                .bind(&token_hash)
+                .bind(&lease_expires_at)
+                .bind(u64_to_i64(fencing_token, "fencing_token").map_err(transaction_error)?)
+                .bind(&timeout_at)
+                .bind(&request.now)
+                .bind(task_key.0)
+                .bind(task_key.1)
+                .bind(&run.run_id)
+                .execute(&mut *tx)
+                .await?;
+                if updated.rows_affected() == 0 {
+                    continue;
+                }
+                let attempt_id_value =
+                    AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
+                let attempt_id = format!("attempt.{attempt_id_value}");
+                sqlx::query(
+                    r#"
+INSERT INTO ai_agent_task_run_attempt (
+    id, uuid, tenant_id, organization_id, attempt_id, run_id, attempt_no,
+    worker_id, status, lease_token_hash, fencing_token, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10,
+    $11::timestamptz, $12::timestamptz
+)
+                    "#,
+                )
+                .bind(u64_to_i64(attempt_id_value, "attempt.id").map_err(transaction_error)?)
+                .bind(build_storage_uuid(
+                    "task-run-attempt",
+                    run.tenant_id,
+                    &[&run.organization_id.to_string(), &attempt_id],
+                ))
+                .bind(task_key.0)
+                .bind(task_key.1)
+                .bind(&attempt_id)
+                .bind(&run.run_id)
+                .bind(i16::try_from(attempt_no).map_err(|_| {
+                    transaction_error(KernelError::validation("attempt number overflow"))
+                })?)
+                .bind(&request.worker_id)
+                .bind(&token_hash)
+                .bind(u64_to_i64(fencing_token, "fencing_token").map_err(transaction_error)?)
+                .bind(&request.now)
+                .bind(&request.now)
+                .execute(&mut *tx)
+                .await?;
+                let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                    .bind(task_key.0)
+                    .bind(task_key.1)
+                    .bind(&run.run_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                let claimed_run = pg_row_to_task_run(row).map_err(transaction_error)?;
+                let attempt = AgentTaskRunAttemptRecord {
+                    id: attempt_id_value,
+                    attempt_id: attempt_id.clone(),
+                    tenant_id: run.tenant_id,
+                    organization_id: run.organization_id,
+                    run_id: run.run_id.clone(),
+                    attempt_no,
+                    worker_id: request.worker_id.clone(),
+                    status: AgentTaskRunAttemptStatus::Claimed,
+                    lease_token_hash: token_hash,
+                    fencing_token,
+                    failure_class: None,
+                    error_code: None,
+                    error_detail: None,
+                    created_at: request.now.clone(),
+                    updated_at: request.now.clone(),
+                    started_at: None,
+                    heartbeat_at: None,
+                    finished_at: None,
+                };
+                claims.push(TaskRunClaim {
+                    run: claimed_run,
+                    attempt,
+                    lease: TaskRunLease {
+                        tenant_id: run.tenant_id,
+                        organization_id: run.organization_id,
+                        run_id: run.run_id,
+                        attempt_id,
+                        worker_id: request.worker_id.clone(),
+                        lease_token: raw_token,
+                        fencing_token,
+                    },
+                });
+                *claimed_per_task.entry(task_key).or_insert(0) += 1;
+                *claimed_per_tenant.entry(tenant_key).or_insert(0) += 1;
+            }
+            tx.commit().await?;
+            Ok(claims)
+        })
+    }
+
+    fn mark_task_run_running(
+        &self,
+        lease: &TaskRunLease,
+        started_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(started_at, None)
+            .ok_or_else(|| KernelError::validation("startedAt is invalid"))?;
+        let tenant_id = u64_to_i64(lease.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(lease.organization_id, "organization_id")?;
+        let fencing_token = u64_to_i64(lease.fencing_token, "fencing_token")?;
+        let token_hash = sha256_hash(lease.lease_token.as_bytes());
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET status = 2, started_at = COALESCE(started_at, $1::timestamptz),
+    updated_at = $1::timestamptz, version = version + 1
+WHERE tenant_id = $2 AND organization_id = $3 AND run_id = $4
+  AND status = 1 AND lease_owner = $5 AND lease_token_hash = $6
+  AND fencing_token = $7 AND lease_expires_at >= $1::timestamptz
+                "#,
+            )
+            .bind(started_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&lease.run_id)
+            .bind(&lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run lease lost",
+                )));
+            }
+            let attempt_updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run_attempt
+SET status = 1, started_at = COALESCE(started_at, $1::timestamptz),
+    heartbeat_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE tenant_id = $2 AND organization_id = $3 AND attempt_id = $4
+  AND run_id = $5 AND worker_id = $6 AND status = 0
+  AND lease_token_hash = $7 AND fencing_token = $8
+                "#,
+            )
+            .bind(started_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&lease.attempt_id)
+            .bind(&lease.run_id)
+            .bind(&lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if attempt_updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run Attempt lease lost",
+                )));
+            }
+            let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&lease.run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn heartbeat_task_run(
+        &self,
+        lease: &TaskRunLease,
+        heartbeat_at: &str,
+        lease_seconds: u32,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        let heartbeat = parse_datetime(heartbeat_at, None)
+            .ok_or_else(|| KernelError::validation("heartbeatAt is invalid"))?;
+        let lease_expires_at = format_datetime(
+            heartbeat + chrono::Duration::seconds(i64::from(lease_seconds.clamp(1, 300))),
+            None,
+        );
+        let tenant_id = u64_to_i64(lease.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(lease.organization_id, "organization_id")?;
+        let fencing_token = u64_to_i64(lease.fencing_token, "fencing_token")?;
+        let token_hash = sha256_hash(lease.lease_token.as_bytes());
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET lease_expires_at = $1::timestamptz, updated_at = $2::timestamptz,
+    version = version + 1
+WHERE tenant_id = $3 AND organization_id = $4 AND run_id = $5
+  AND status IN (1, 2) AND lease_owner = $6 AND lease_token_hash = $7
+  AND fencing_token = $8 AND lease_expires_at >= $2::timestamptz
+                "#,
+            )
+            .bind(&lease_expires_at)
+            .bind(heartbeat_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&lease.run_id)
+            .bind(&lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run lease lost",
+                )));
+            }
+            let attempt_updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run_attempt
+SET heartbeat_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE tenant_id = $2 AND organization_id = $3 AND attempt_id = $4
+  AND run_id = $5 AND worker_id = $6 AND status IN (0, 1)
+  AND lease_token_hash = $7 AND fencing_token = $8
+                "#,
+            )
+            .bind(heartbeat_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&lease.attempt_id)
+            .bind(&lease.run_id)
+            .bind(&lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if attempt_updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run Attempt lease lost",
+                )));
+            }
+            let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&lease.run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn complete_task_run(
+        &self,
+        lease: &TaskRunLease,
+        turn_id: &str,
+        completed_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(completed_at, None)
+            .ok_or_else(|| KernelError::validation("completedAt is invalid"))?;
+        let tenant_id = u64_to_i64(lease.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(lease.organization_id, "organization_id")?;
+        let fencing_token = u64_to_i64(lease.fencing_token, "fencing_token")?;
+        let token_hash = sha256_hash(lease.lease_token.as_bytes());
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET status = 3, lease_owner = NULL, lease_token_hash = NULL,
+    lease_expires_at = NULL, finished_at = $1::timestamptz,
+    updated_at = $1::timestamptz, version = version + 1
+WHERE tenant_id = $2 AND organization_id = $3 AND run_id = $4
+  AND status IN (1, 2) AND turn_id = $5 AND lease_owner = $6
+  AND lease_token_hash = $7 AND fencing_token = $8
+  AND lease_expires_at >= $1::timestamptz
+  AND schedule_generation = (
+      SELECT generation FROM ai_agent_task
+      WHERE tenant_id = $2 AND organization_id = $3
+        AND task_id = ai_agent_task_run.task_id
+  )
+                "#,
+            )
+            .bind(completed_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&lease.run_id)
+            .bind(turn_id)
+            .bind(&lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run lease lost",
+                )));
+            }
+            let attempt_updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run_attempt
+SET status = 2, finished_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE tenant_id = $2 AND organization_id = $3 AND attempt_id = $4
+  AND run_id = $5 AND worker_id = $6 AND status IN (0, 1)
+  AND lease_token_hash = $7 AND fencing_token = $8
+                "#,
+            )
+            .bind(completed_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&lease.attempt_id)
+            .bind(&lease.run_id)
+            .bind(&lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if attempt_updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run Attempt lease lost",
+                )));
+            }
+            let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&lease.run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn fail_task_run(&self, request: &FailTaskRunRequest) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(&request.failed_at, None)
+            .ok_or_else(|| KernelError::validation("failedAt is invalid"))?;
+        if request.error_code.len() > 128 || request.failure_class.len() > 64 {
+            return Err(KernelError::validation("task Run failure code is too long"));
+        }
+        let tenant_id = u64_to_i64(request.lease.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(request.lease.organization_id, "organization_id")?;
+        let fencing_token = u64_to_i64(request.lease.fencing_token, "fencing_token")?;
+        let token_hash = sha256_hash(request.lease.lease_token.as_bytes());
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let locking_sql = format!("{} FOR UPDATE", SQL_SELECT_TASK_RUN_BY_ID.trim());
+            let row = sqlx::query(&locking_sql)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&request.lease.run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            validate_task_run_lease_record(&run, &request.lease, &request.failed_at)
+                .map_err(transaction_error)?;
+            if !matches!(
+                run.status,
+                AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+            ) {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run is not fail-able",
+                )));
+            }
+            let retry_allowed = request.disposition == TaskRunFailureDisposition::Retry
+                && run.attempt_count < run.max_attempts;
+            let next_status = if retry_allowed {
+                AgentTaskRunStatus::Pending
+            } else {
+                match request.disposition {
+                    TaskRunFailureDisposition::Reconcile => AgentTaskRunStatus::Reconciling,
+                    TaskRunFailureDisposition::Retry => AgentTaskRunStatus::DeadLetter,
+                    TaskRunFailureDisposition::Terminal => AgentTaskRunStatus::Failed,
+                }
+            };
+            let retry_at = if retry_allowed {
+                request.retry_at.as_deref().ok_or_else(|| {
+                    transaction_error(KernelError::validation("retryAt is required"))
+                })?
+            } else {
+                run.available_at.as_str()
+            };
+            let finished_at = matches!(
+                next_status,
+                AgentTaskRunStatus::Failed | AgentTaskRunStatus::DeadLetter
+            )
+            .then_some(request.failed_at.as_str());
+            sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET status = $1, available_at = $2::timestamptz,
+    lease_owner = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
+    failure_class = $3, error_code = $4, error_detail = NULL,
+    finished_at = $5::timestamptz, updated_at = $6::timestamptz,
+    version = version + 1
+WHERE tenant_id = $7 AND organization_id = $8 AND run_id = $9
+  AND status IN (1, 2) AND lease_owner = $10 AND lease_token_hash = $11
+  AND fencing_token = $12
+                "#,
+            )
+            .bind(next_status.as_db_code())
+            .bind(retry_at)
+            .bind(&request.failure_class)
+            .bind(&request.error_code)
+            .bind(finished_at)
+            .bind(&request.failed_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&request.lease.run_id)
+            .bind(&request.lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            let attempt_updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run_attempt
+SET status = 3, failure_class = $1, error_code = $2, error_detail = NULL,
+    finished_at = $3::timestamptz, updated_at = $3::timestamptz
+WHERE tenant_id = $4 AND organization_id = $5 AND attempt_id = $6
+  AND run_id = $7 AND worker_id = $8 AND status IN (0, 1)
+  AND lease_token_hash = $9 AND fencing_token = $10
+                "#,
+            )
+            .bind(&request.failure_class)
+            .bind(&request.error_code)
+            .bind(&request.failed_at)
+            .bind(tenant_id)
+            .bind(organization_id)
+            .bind(&request.lease.attempt_id)
+            .bind(&request.lease.run_id)
+            .bind(&request.lease.worker_id)
+            .bind(&token_hash)
+            .bind(fencing_token)
+            .execute(&mut *tx)
+            .await?;
+            if attempt_updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run Attempt lease lost",
+                )));
+            }
+            let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&request.lease.run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            if run.status == AgentTaskRunStatus::DeadLetter {
+                insert_agent_outbox_event(
+                    self,
+                    &mut tx,
+                    run.tenant_id,
+                    run.organization_id,
+                    "agent_task_run",
+                    &run.run_id,
+                    run.version,
+                    "agent.task.run.dead_lettered",
+                    &serde_json::json!({
+                        "taskId": run.task_id,
+                        "runId": run.run_id,
+                        "status": run.status.as_str(),
+                        "triggerKind": run.trigger_kind.as_str(),
+                        "failureClass": run.failure_class,
+                        "errorCode": run.error_code,
+                        "attemptCount": run.attempt_count
+                    }),
+                    &format!(
+                        "agent-task-run-dead-lettered:{}:{}",
+                        run.run_id, run.version
+                    ),
+                    &request.failed_at,
+                )
+                .await?;
+            }
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn recover_expired_task_run_leases(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        parse_datetime(now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let limit = i64::try_from(limit.clamp(1, 1_000))
+            .map_err(|_| KernelError::validation("recovery limit overflow"))?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let rows = sqlx::query(
+                r#"
+SELECT tenant_id, organization_id, run_id, attempt_count, max_attempts
+FROM ai_agent_task_run
+WHERE status IN (1, 2) AND lease_expires_at < $1::timestamptz
+ORDER BY lease_expires_at, id
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+                "#,
+            )
+            .bind(now)
+            .bind(limit)
+            .fetch_all(&mut *tx)
+            .await?;
+            for row in &rows {
+                let tenant_id: i64 = row.try_get("tenant_id")?;
+                let organization_id: i64 = row.try_get("organization_id")?;
+                let run_id: String = row.try_get("run_id")?;
+                let attempt_count: i16 = row.try_get("attempt_count")?;
+                let max_attempts: i16 = row.try_get("max_attempts")?;
+                sqlx::query(
+                    r#"
+UPDATE ai_agent_task_run_attempt
+SET status = 4, failure_class = 'lease_lost',
+    error_code = 'task_run_lease_expired', finished_at = $1::timestamptz,
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2 AND organization_id = $3 AND run_id = $4
+  AND attempt_no = $5 AND status IN (0, 1)
+                    "#,
+                )
+                .bind(now)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&run_id)
+                .bind(attempt_count)
+                .execute(&mut *tx)
+                .await?;
+                let exhausted = attempt_count >= max_attempts;
+                let updated = sqlx::query(
+                    r#"
+UPDATE ai_agent_task_run
+SET status = $1, available_at = $2::timestamptz,
+    lease_owner = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
+    failure_class = 'lease_lost', error_code = 'task_run_lease_expired',
+    error_detail = NULL, finished_at = $3::timestamptz,
+    updated_at = $2::timestamptz, version = version + 1
+WHERE tenant_id = $4 AND organization_id = $5 AND run_id = $6
+  AND status IN (1, 2)
+RETURNING version
+                    "#,
+                )
+                .bind(if exhausted {
+                    AgentTaskRunStatus::DeadLetter.as_db_code()
+                } else {
+                    AgentTaskRunStatus::Pending.as_db_code()
+                })
+                .bind(now)
+                .bind(exhausted.then_some(now))
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+                if exhausted {
+                    let version =
+                        int64_to_u64(updated.try_get::<i64, _>("version")?, "task_run.version")
+                            .map_err(transaction_error)?;
+                    let tenant_id_value =
+                        int64_to_u64(tenant_id, "tenant_id").map_err(transaction_error)?;
+                    let organization_id_value = int64_to_u64(organization_id, "organization_id")
+                        .map_err(transaction_error)?;
+                    insert_agent_outbox_event(
+                        self,
+                        &mut tx,
+                        tenant_id_value,
+                        organization_id_value,
+                        "agent_task_run",
+                        &run_id,
+                        version,
+                        "agent.task.run.dead_lettered",
+                        &serde_json::json!({
+                            "runId": run_id,
+                            "status": AgentTaskRunStatus::DeadLetter.as_str(),
+                            "failureClass": "lease_lost",
+                            "errorCode": "task_run_lease_expired",
+                            "attemptCount": attempt_count
+                        }),
+                        &format!("agent-task-run-dead-lettered:{run_id}:{version}"),
+                        now,
+                    )
+                    .await?;
+                }
+            }
+            let recovered = u64::try_from(rows.len()).map_err(|_| {
+                transaction_error(KernelError::conflict("recovered task Run count overflow"))
+            })?;
+            tx.commit().await?;
+            Ok(recovered)
+        })
+    }
+
+    fn request_task_run_cancellation(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: Option<u64>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(requested_at, None)
+            .ok_or_else(|| KernelError::validation("requestedAt is invalid"))?;
+        let tenant_id_db = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id_db = u64_to_i64(organization_id, "organization_id")?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let locking_sql = format!("{} FOR UPDATE", SQL_SELECT_TASK_RUN_BY_ID.trim());
+            let row = sqlx::query(&locking_sql)
+                .bind(tenant_id_db)
+                .bind(organization_id_db)
+                .bind(run_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or_else(|| transaction_error(KernelError::validation("task Run not found")))?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            if expected_version.is_some_and(|version| version != run.version) {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run version mismatch",
+                )));
+            }
+            if matches!(
+                run.status,
+                AgentTaskRunStatus::Cancelled | AgentTaskRunStatus::Reconciling
+            ) {
+                tx.commit().await?;
+                return Ok(run);
+            }
+            let (status, failure_class, error_code, finished_at, cancelled_at) = match run.status {
+                AgentTaskRunStatus::Pending => (
+                    AgentTaskRunStatus::Cancelled,
+                    "cancelled",
+                    "task_run_cancelled_before_claim",
+                    Some(requested_at),
+                    Some(requested_at),
+                ),
+                AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running => {
+                    sqlx::query(
+                        r#"
+UPDATE ai_agent_task_run_attempt
+SET status = 3, failure_class = 'outcome_unknown',
+    error_code = 'task_run_cancellation_requested', error_detail = NULL,
+    finished_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE tenant_id = $2 AND organization_id = $3 AND run_id = $4
+  AND attempt_no = $5 AND status IN (0, 1)
+                        "#,
+                    )
+                    .bind(requested_at)
+                    .bind(tenant_id_db)
+                    .bind(organization_id_db)
+                    .bind(run_id)
+                    .bind(i16::try_from(run.attempt_count).map_err(|_| {
+                        transaction_error(KernelError::validation("attempt_count overflow"))
+                    })?)
+                    .execute(&mut *tx)
+                    .await?;
+                    (
+                        AgentTaskRunStatus::Reconciling,
+                        "outcome_unknown",
+                        "task_run_cancellation_requested",
+                        None,
+                        None,
+                    )
+                }
+                AgentTaskRunStatus::Succeeded
+                | AgentTaskRunStatus::Failed
+                | AgentTaskRunStatus::DeadLetter => {
+                    return Err(transaction_error(KernelError::validation(
+                        "task Run cannot be cancelled",
+                    )));
+                }
+                AgentTaskRunStatus::Cancelled | AgentTaskRunStatus::Reconciling => unreachable!(),
+            };
+            let updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET status = $1, failure_class = $2, error_code = $3, error_detail = NULL,
+    lease_owner = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
+    finished_at = $4::timestamptz, cancelled_at = $5::timestamptz,
+    updated_at = $6::timestamptz, version = version + 1
+WHERE tenant_id = $7 AND organization_id = $8 AND run_id = $9 AND version = $10
+                "#,
+            )
+            .bind(status.as_db_code())
+            .bind(failure_class)
+            .bind(error_code)
+            .bind(finished_at)
+            .bind(cancelled_at)
+            .bind(requested_at)
+            .bind(tenant_id_db)
+            .bind(organization_id_db)
+            .bind(run_id)
+            .bind(u64_to_i64(run.version, "version").map_err(transaction_error)?)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run version mismatch",
+                )));
+            }
+            let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                .bind(tenant_id_db)
+                .bind(organization_id_db)
+                .bind(run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            insert_agent_outbox_event(
+                self,
+                &mut tx,
+                run.tenant_id,
+                run.organization_id,
+                "agent_task_run",
+                &run.run_id,
+                run.version,
+                "agent.task.run.cancellation_requested",
+                &serde_json::json!({
+                    "taskId": run.task_id,
+                    "runId": run.run_id,
+                    "status": run.status.as_str(),
+                    "triggerKind": run.trigger_kind.as_str(),
+                    "failureClass": run.failure_class,
+                    "errorCode": run.error_code
+                }),
+                &format!(
+                    "agent-task-run-cancellation-requested:{}:{}",
+                    run.run_id, run.version
+                ),
+                requested_at,
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn reconcile_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: u64,
+        terminal_status: AgentTaskRunStatus,
+        error_code: Option<&str>,
+        reconciled_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(reconciled_at, None)
+            .ok_or_else(|| KernelError::validation("reconciledAt is invalid"))?;
+        if !matches!(
+            terminal_status,
+            AgentTaskRunStatus::Succeeded
+                | AgentTaskRunStatus::Failed
+                | AgentTaskRunStatus::Cancelled
+        ) {
+            return Err(KernelError::validation(
+                "task Run reconciliation status is invalid",
+            ));
+        }
+        if error_code.is_some_and(|value| value.len() > 128) {
+            return Err(KernelError::validation("errorCode is too long"));
+        }
+        let tenant_id_db = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id_db = u64_to_i64(organization_id, "organization_id")?;
+        let version_db = u64_to_i64(expected_version, "expected_version")?;
+        let failure_class = match terminal_status {
+            AgentTaskRunStatus::Succeeded => None,
+            AgentTaskRunStatus::Failed => Some("reconciled_failure"),
+            AgentTaskRunStatus::Cancelled => Some("cancelled"),
+            _ => unreachable!(),
+        };
+        let default_cancel_code =
+            (terminal_status == AgentTaskRunStatus::Cancelled).then_some("task_run_cancelled");
+        let error_code = error_code.or(default_cancel_code);
+        let cancelled_at =
+            (terminal_status == AgentTaskRunStatus::Cancelled).then_some(reconciled_at);
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let updated = sqlx::query(
+                r#"
+UPDATE ai_agent_task_run
+SET status = $1, failure_class = $2, error_code = $3, error_detail = NULL,
+    lease_owner = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
+    finished_at = $4::timestamptz, cancelled_at = $5::timestamptz,
+    updated_at = $4::timestamptz, version = version + 1
+WHERE tenant_id = $6 AND organization_id = $7 AND run_id = $8
+  AND status = 6 AND version = $9
+                "#,
+            )
+            .bind(terminal_status.as_db_code())
+            .bind(failure_class)
+            .bind(error_code)
+            .bind(reconciled_at)
+            .bind(cancelled_at)
+            .bind(tenant_id_db)
+            .bind(organization_id_db)
+            .bind(run_id)
+            .bind(version_db)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(transaction_error(KernelError::conflict(
+                    "task Run reconciliation version mismatch",
+                )));
+            }
+            let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                .bind(tenant_id_db)
+                .bind(organization_id_db)
+                .bind(run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let run = pg_row_to_task_run(row).map_err(transaction_error)?;
+            insert_agent_outbox_event(
+                self,
+                &mut tx,
+                run.tenant_id,
+                run.organization_id,
+                "agent_task_run",
+                &run.run_id,
+                run.version,
+                "agent.task.run.reconciled",
+                &serde_json::json!({
+                    "taskId": run.task_id,
+                    "runId": run.run_id,
+                    "status": run.status.as_str(),
+                    "triggerKind": run.trigger_kind.as_str(),
+                    "failureClass": run.failure_class,
+                    "errorCode": run.error_code
+                }),
+                &format!("agent-task-run-reconciled:{}:{}", run.run_id, run.version),
+                reconciled_at,
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(run)
+        })
+    }
+
+    fn list_reconciling_task_runs(
+        &self,
+        updated_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        parse_datetime(updated_before, None)
+            .ok_or_else(|| KernelError::validation("updatedBefore is invalid"))?;
+        let limit = i64::try_from(limit.clamp(1, 1_000))
+            .map_err(|_| KernelError::validation("reconciliation limit overflow"))?;
+        self.with_pool(|pool| {
+            let rows = pool.run_kernel(async {
+                sqlx::query(SQL_LIST_RECONCILING_TASK_RUNS)
+                    .bind(updated_before)
+                    .bind(limit)
+                    .fetch_all(pool.pool())
+                    .await
+            })?;
+            rows.into_iter().map(pg_row_to_task_run).collect()
+        })
+    }
+
+    fn list_task_runs(&self, query: &TaskRunListQuery) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let owner_user_id = query
+            .owner_user_id
+            .map(|value| u64_to_i64(value, "owner_user_id"))
+            .transpose()?;
+        let status = query.status.map(AgentTaskRunStatus::as_db_code);
+        let trigger_kind = query.trigger_kind.map(AgentTaskTriggerKind::as_db_code);
+        let cursor_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.run_internal_id, "cursor.run_internal_id"))
+            .transpose()?;
+        let limit = i64::try_from(query.store_limit())
+            .map_err(|_| KernelError::validation("page size overflow"))?;
+        self.with_pool(|pool| {
+            let rows = pool.run_kernel(async {
+                sqlx::query(SQL_LIST_TASK_RUNS_CURSOR)
+                    .bind(tenant_id)
+                    .bind(organization_id)
+                    .bind(&query.task_id)
+                    .bind(owner_user_id)
+                    .bind(status)
+                    .bind(trigger_kind)
+                    .bind(cursor_id)
+                    .bind(limit)
+                    .fetch_all(pool.pool())
+                    .await
+            })?;
+            rows.into_iter().map(pg_row_to_task_run).collect()
+        })
+    }
+
+    fn list_task_run_attempts(
+        &self,
+        query: &TaskRunAttemptListQuery,
+    ) -> KernelResult<Vec<AgentTaskRunAttemptRecord>> {
+        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
+        let cursor_attempt_no = query.cursor.as_ref().map(|cursor| cursor.attempt_no as i16);
+        let cursor_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.attempt_internal_id, "cursor.attempt_internal_id"))
+            .transpose()?;
+        let limit = i64::try_from(query.store_limit())
+            .map_err(|_| KernelError::validation("page size overflow"))?;
+        self.with_pool(|pool| {
+            let rows = pool.run_kernel(async {
+                sqlx::query(SQL_LIST_TASK_RUN_ATTEMPTS_CURSOR)
+                    .bind(tenant_id)
+                    .bind(organization_id)
+                    .bind(&query.run_id)
+                    .bind(cursor_attempt_no)
+                    .bind(cursor_id)
+                    .bind(limit)
+                    .fetch_all(pool.pool())
+                    .await
+            })?;
+            rows.into_iter().map(pg_row_to_task_run_attempt).collect()
+        })
+    }
+
+    fn get_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+    ) -> KernelResult<Option<AgentTaskRunRecord>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            let row = pool.run_kernel(async {
+                sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
+                    .bind(tenant_id)
+                    .bind(organization_id)
+                    .bind(run_id)
+                    .fetch_optional(pool.pool())
+                    .await
+            })?;
+            row.map(pg_row_to_task_run).transpose()
         })
     }
 }
@@ -7537,6 +11037,18 @@ fn int64_to_u64(value: i64, field: &str) -> KernelResult<u64> {
     u64::try_from(value).map_err(|_| {
         KernelError::validation(format!("{field} must be a positive postgres int64 value"))
     })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn i16_to_u16(value: i16, field: &str) -> KernelResult<u16> {
+    u16::try_from(value)
+        .map_err(|_| KernelError::validation(format!("{field} must be non-negative")))
+}
+
+#[cfg(feature = "postgres-sync")]
+fn i32_to_u32(value: i32, field: &str) -> KernelResult<u32> {
+    u32::try_from(value)
+        .map_err(|_| KernelError::validation(format!("{field} must be non-negative")))
 }
 
 #[cfg(feature = "postgres-sync")]
@@ -8184,6 +11696,114 @@ fn pg_row_to_agent_turn_row(row: PgRow) -> KernelResult<AgentTurnRow> {
 }
 
 #[cfg(feature = "postgres-sync")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnInputQueueDriveRefSnapshot {
+    resource_role: String,
+    drive_space_id: String,
+    drive_node_id: String,
+}
+
+#[cfg(feature = "postgres-sync")]
+fn turn_input_queue_drive_refs_to_json(
+    values: &[AgentTurnInputQueueDriveRef],
+) -> KernelResult<String> {
+    serde_json::to_string(
+        &values
+            .iter()
+            .map(|value| TurnInputQueueDriveRefSnapshot {
+                resource_role: value.resource_role.as_str().to_string(),
+                drive_space_id: value.drive_space_id.clone(),
+                drive_node_id: value.drive_node_id.clone(),
+            })
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|error| KernelError::validation(format!("invalid queue driveRefs json: {error}")))
+}
+
+#[cfg(feature = "postgres-sync")]
+fn turn_input_queue_drive_refs_from_json(
+    input: &str,
+) -> KernelResult<Vec<AgentTurnInputQueueDriveRef>> {
+    serde_json::from_str::<Vec<TurnInputQueueDriveRefSnapshot>>(input)
+        .map_err(|error| KernelError::validation(format!("invalid queue driveRefs json: {error}")))?
+        .into_iter()
+        .map(|value| {
+            let resource_role = match value.resource_role.as_str() {
+                "attachment" => AgentItemResourceRole::Attachment,
+                "image" => AgentItemResourceRole::Image,
+                "audio" => AgentItemResourceRole::Audio,
+                _ => return Err(KernelError::validation("invalid queue Drive resource role")),
+            };
+            Ok(AgentTurnInputQueueDriveRef {
+                resource_role,
+                drive_space_id: value.drive_space_id,
+                drive_node_id: value.drive_node_id,
+            })
+        })
+        .collect()
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_turn_input_queue_entry(row: PgRow) -> KernelResult<AgentTurnInputQueueEntry> {
+    let attachment_names_json: String = row
+        .try_get("attachment_names_json")
+        .map_err(map_sqlx_error)?;
+    let drive_refs_json: String = row.try_get("drive_refs_json").map_err(map_sqlx_error)?;
+    let turn_mode = AgentTurnMode::from_db_code(row.try_get("turn_mode").map_err(map_sqlx_error)?)
+        .ok_or_else(|| KernelError::validation("invalid queued Turn mode"))?;
+    let status =
+        AgentTurnInputQueueStatus::from_db_code(row.try_get("status").map_err(map_sqlx_error)?)
+            .ok_or_else(|| KernelError::validation("invalid queued Turn status"))?;
+    Ok(AgentTurnInputQueueEntry {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        queue_entry_id: row.try_get("queue_entry_id").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
+        agent_id: row.try_get("agent_id").map_err(map_sqlx_error)?,
+        owner_user_id: int64_to_u64(
+            row.try_get("owner_user_id").map_err(map_sqlx_error)?,
+            "owner_user_id",
+        )?,
+        content: row.try_get("content").map_err(map_sqlx_error)?,
+        display_text: row.try_get("display_text").map_err(map_sqlx_error)?,
+        content_type: row.try_get("content_type").map_err(map_sqlx_error)?,
+        attachment_names: string_list_from_json(&attachment_names_json, "queue attachment_names")?,
+        drive_refs: turn_input_queue_drive_refs_from_json(&drive_refs_json)?,
+        turn_mode,
+        runtime_binding_id: row.try_get("runtime_binding_id").map_err(map_sqlx_error)?,
+        requested_model_id: row.try_get("requested_model_id").map_err(map_sqlx_error)?,
+        access_mode_id: row.try_get("access_mode_id").map_err(map_sqlx_error)?,
+        idempotency_key: row.try_get("idempotency_key").map_err(map_sqlx_error)?,
+        payload_hash: row.try_get("payload_hash").map_err(map_sqlx_error)?,
+        client_request_id: row.try_get("client_request_id").map_err(map_sqlx_error)?,
+        position: int64_to_u64(row.try_get("position").map_err(map_sqlx_error)?, "position")?,
+        status,
+        claim_owner: row.try_get("claim_owner").map_err(map_sqlx_error)?,
+        claim_token_hash: row.try_get("claim_token_hash").map_err(map_sqlx_error)?,
+        claim_expires_at: row.try_get("claim_expires_at").map_err(map_sqlx_error)?,
+        fencing_token: int64_to_u64(
+            row.try_get("fencing_token").map_err(map_sqlx_error)?,
+            "fencing_token",
+        )?,
+        error_code: row.try_get("error_code").map_err(map_sqlx_error)?,
+        error_detail: row.try_get("error_detail").map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        claimed_at: row.try_get("claimed_at").map_err(map_sqlx_error)?,
+        failed_at: row.try_get("failed_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
 fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionRow> {
     Ok(AgentInteractionRow {
         id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
@@ -8242,16 +11862,57 @@ fn pg_row_to_agent_task_row(row: PgRow) -> KernelResult<AgentTaskRow> {
             row.try_get("owner_user_id").map_err(map_sqlx_error)?,
             "owner_user_id",
         )?,
+        session_id: row.try_get("session_id").map_err(map_sqlx_error)?,
         title: row.try_get("title").map_err(map_sqlx_error)?,
         prompt: row.try_get("prompt").map_err(map_sqlx_error)?,
+        schedule_kind: row.try_get("schedule_kind").map_err(map_sqlx_error)?,
+        cron_expression: row.try_get("cron_expression").map_err(map_sqlx_error)?,
+        timezone: row.try_get("timezone").map_err(map_sqlx_error)?,
+        scheduled_at: row.try_get("scheduled_at").map_err(map_sqlx_error)?,
+        starts_at: row.try_get("starts_at").map_err(map_sqlx_error)?,
+        ends_at: row.try_get("ends_at").map_err(map_sqlx_error)?,
+        next_fire_at: row.try_get("next_fire_at").map_err(map_sqlx_error)?,
+        misfire_policy: row.try_get("misfire_policy").map_err(map_sqlx_error)?,
+        overlap_policy: row.try_get("overlap_policy").map_err(map_sqlx_error)?,
+        max_concurrent_runs: i16_to_u16(
+            row.try_get("max_concurrent_runs").map_err(map_sqlx_error)?,
+            "max_concurrent_runs",
+        )?,
+        max_catch_up_runs: i16_to_u16(
+            row.try_get("max_catch_up_runs").map_err(map_sqlx_error)?,
+            "max_catch_up_runs",
+        )?,
+        max_attempts: i16_to_u16(
+            row.try_get("max_attempts").map_err(map_sqlx_error)?,
+            "max_attempts",
+        )?,
+        retry_initial_delay_seconds: i32_to_u32(
+            row.try_get("retry_initial_delay_seconds")
+                .map_err(map_sqlx_error)?,
+            "retry_initial_delay_seconds",
+        )?,
+        retry_max_delay_seconds: i32_to_u32(
+            row.try_get("retry_max_delay_seconds")
+                .map_err(map_sqlx_error)?,
+            "retry_max_delay_seconds",
+        )?,
+        timeout_seconds: i32_to_u32(
+            row.try_get("timeout_seconds").map_err(map_sqlx_error)?,
+            "timeout_seconds",
+        )?,
+        priority: row.try_get("priority").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
+        generation: int64_to_u64(
+            row.try_get("generation").map_err(map_sqlx_error)?,
+            "generation",
+        )?,
         external_ref: row.try_get("external_ref").map_err(map_sqlx_error)?,
         metadata_json: row.try_get("metadata_json").map_err(map_sqlx_error)?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        started_at: row.try_get("started_at").map_err(map_sqlx_error)?,
         completed_at: row.try_get("completed_at").map_err(map_sqlx_error)?,
+        paused_at: row.try_get("paused_at").map_err(map_sqlx_error)?,
         cancelled_at: row.try_get("cancelled_at").map_err(map_sqlx_error)?,
     })
 }

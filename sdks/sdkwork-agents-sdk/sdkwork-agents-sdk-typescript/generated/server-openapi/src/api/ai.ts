@@ -231,6 +231,7 @@ export interface AiAgentsTurnsListParams {
 
 export interface AiAgentsTurnsStreamParams {
   stream?: boolean;
+  eventProtocol?: 'kernel-v1';
 }
 
 export class AiAgentsTurnsApi {
@@ -254,6 +255,7 @@ export class AiAgentsTurnsApi {
   async stream(agentId: string, sessionId: string, body: CreateAgentTurnRequest, params?: AiAgentsTurnsStreamParams, requestOptions?: ApiRequestOptions): Promise<AsyncIterable<AgentTurnStreamEvent>> {
     const query = buildQueryString([
       { name: 'stream', value: params?.stream, style: 'form', explode: true, allowReserved: false },
+      { name: 'event_protocol', value: params?.eventProtocol, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.streamJson<AgentTurnStreamEvent>(appendQueryString(customApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turns`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json' });
   }

@@ -2,7 +2,7 @@
 
 Owner: `agents-platform`
 
-Canonical contract: `database/contract/schema.yaml` (`6.0.2`)
+Canonical contract: `database/contract/schema.yaml` (`7.0.0`)
 
 Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
 
@@ -13,23 +13,27 @@ execution:
 
 ```text
 AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
+                                      ^
+AgentTask -> AgentTaskRun -> AgentTaskRunAttempt
 ```
 
 The Session aggregate also owns one current runtime binding, resumable
-checkpoint references, typed Drive relations, retry/lease/fencing state, audit
-facts, and reliable outbox events. IM conversations, IM delivery state,
+checkpoint references, typed Drive relations, durable Turn input queues,
+Task/Run/Attempt scheduling state, retry/lease/fencing state, audit facts, and
+reliable outbox events. IM conversations, IM delivery state,
 runtime-location details, provider catalogs, capability content, and Drive bytes
 remain owned by their respective modules.
 
 ## Engine And Lifecycle
 
-PostgreSQL is the only managed-store engine. The `6.0.2` greenfield baseline
-contains the complete Workspace-scoped Project model and canonical provider
-Session lineage names. It is the only database state supported before the first
-release. `baseline-plus-migrations` remains the lifecycle strategy so ordered
-forward migrations can be added after the schema is released. The migration
-directory remains empty while the application is pre-launch; local development
-installations are rebuilt from the current baseline.
+PostgreSQL is the only managed-store engine. The `7.0.0` greenfield baseline
+contains the complete 23-table Session execution and Task scheduling model. It
+is the only database state supported before the first release.
+`baseline-plus-migrations` remains the lifecycle strategy. The existing
+`6.1.0` development migration documents the Turn input queue increment; it is
+not a substitute for the `7.0.0` baseline. Pre-release development databases
+created from an older baseline are rebuilt rather than reinterpreting legacy
+Task rows that lack Session and schedule semantics.
 
 Lifecycle `init` atomically materializes the consolidated baseline only when the
 completion anchor is absent. Automatic pending-migration execution defaults to
@@ -67,3 +71,4 @@ Related authorities:
 - `../sdkwork-specs/MIGRATION_SPEC.md`
 - `specs/AGENTS_DOMAIN_SPEC.md`
 - `specs/AGENTS_SESSION_MODEL_SPEC.md`
+- `specs/AGENTS_TASK_SCHEDULING_SPEC.md`

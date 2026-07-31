@@ -33,6 +33,9 @@ tokio = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
 sdkwork-web-core = { workspace = true, optional = true }
 time.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+cron.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true

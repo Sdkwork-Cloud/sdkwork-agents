@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 mod commands;
+mod turn_input_queue;
 pub use commands::*;
+pub use turn_input_queue::*;
 
 use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::domain::{
@@ -13,11 +15,11 @@ use crate::domain::{
     AgentItemResourceRole, AgentProviderBindingRecord, AgentResourceType,
     AgentResourceUserStateRecord, AgentRuntimeExecutionOperation, AgentRuntimeExecutionRecord,
     AgentRuntimeExecutionStatus, AgentSessionCheckpointRecord, AgentSessionCheckpointStatus,
-    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus,
-    AgentSessionKind, AgentSessionRecord, AgentSessionRuntimeBindingRecord,
-    AgentSessionRuntimeBindingStatus, AgentSessionStatus, AgentSessionTitleSource, AgentTaskRecord,
-    AgentTaskStatus, AgentVisibility, MarketplaceAuditPayload, ProviderBindingAuditPayload,
-    RuntimeExecutionAuditPayload, SessionAuditPayload, SessionItemAuditPayload, TaskAuditPayload,
+    AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord,
+    AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentSessionStatus,
+    AgentSessionTitleSource, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
+    MarketplaceAuditPayload, ProviderBindingAuditPayload, RuntimeExecutionAuditPayload,
+    SessionAuditPayload, SessionItemAuditPayload, TaskAuditPayload,
     DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
@@ -30,15 +32,24 @@ use crate::project::{
     project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode,
     AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
 };
+use crate::provider_stream_items::{project_terminal_provider_turn_items, MAX_PROVIDER_TURN_FACTS};
 use crate::runtime_facade_bridge::{
     engine_key_for_binding_id, execute_preview_response, execute_prompt_optimization,
     RUNTIME_MODE_CONTRACT_FALLBACK,
 };
 use crate::session_activity::SessionActivitySummaryRecord;
 use crate::session_item_cursor::{encode_session_item_cursor, SessionItemCursor};
+use crate::task_execution_cursor::{
+    encode_task_run_attempt_cursor, encode_task_run_cursor, TaskRunAttemptCursor, TaskRunCursor,
+};
+use crate::task_scheduler::{
+    execute_task_run_claim, ClaimTaskRunsRequest, MaterializeDueTasksRequest, TaskRunClaim,
+    TaskRunLease, TaskSchedulerRepository,
+};
+use crate::task_scheduling::{AgentTaskRunRecord, AgentTaskRunStatus};
 use crate::turn_runtime::{
-    complete_with_timeout, is_capacity_error, is_inference_error, ContractTurnExecutor,
-    TurnExecutionInput, TurnExecutor, TURN_EXECUTION_TIMEOUT,
+    complete_with_timeout, is_inference_error, ContractTurnExecutor, TurnExecutionInput,
+    TurnExecutor, TURN_EXECUTION_TIMEOUT,
 };
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
@@ -62,8 +73,83 @@ const MAX_METADATA_JSON_BYTES: usize = 64 * 1024;
 const MAX_TOOL_ARGUMENTS_JSON_BYTES: usize = 256 * 1024;
 const MAX_TOOL_RESULT_JSON_BYTES: usize = 1024 * 1024;
 
-fn task_execution_session_id(task: &AgentTaskRecord) -> String {
-    format!("task.session.{}", task.id)
+#[derive(Debug, Clone, Copy)]
+struct TaskExecutionPolicyInput {
+    max_concurrent_runs: u16,
+    max_catch_up_runs: u16,
+    max_attempts: u16,
+    retry_initial_delay_seconds: u32,
+    retry_max_delay_seconds: u32,
+    timeout_seconds: u32,
+    priority: i16,
+}
+
+impl From<&CreateTaskCommand> for TaskExecutionPolicyInput {
+    fn from(command: &CreateTaskCommand) -> Self {
+        Self {
+            max_concurrent_runs: command.max_concurrent_runs,
+            max_catch_up_runs: command.max_catch_up_runs,
+            max_attempts: command.max_attempts,
+            retry_initial_delay_seconds: command.retry_initial_delay_seconds,
+            retry_max_delay_seconds: command.retry_max_delay_seconds,
+            timeout_seconds: command.timeout_seconds,
+            priority: command.priority,
+        }
+    }
+}
+
+impl From<&ReplaceTaskCommand> for TaskExecutionPolicyInput {
+    fn from(command: &ReplaceTaskCommand) -> Self {
+        Self {
+            max_concurrent_runs: command.max_concurrent_runs,
+            max_catch_up_runs: command.max_catch_up_runs,
+            max_attempts: command.max_attempts,
+            retry_initial_delay_seconds: command.retry_initial_delay_seconds,
+            retry_max_delay_seconds: command.retry_max_delay_seconds,
+            timeout_seconds: command.timeout_seconds,
+            priority: command.priority,
+        }
+    }
+}
+
+fn validate_task_execution_policy(input: TaskExecutionPolicyInput) -> KernelResult<()> {
+    if !(1..=crate::task_scheduling::MAX_TASK_CONCURRENT_RUNS).contains(&input.max_concurrent_runs)
+    {
+        return Err(KernelError::validation(
+            "maxConcurrentRuns must be between 1 and 32",
+        ));
+    }
+    if !(1..=crate::task_scheduling::MAX_TASK_CATCH_UP_RUNS).contains(&input.max_catch_up_runs) {
+        return Err(KernelError::validation(
+            "maxCatchUpRuns must be between 1 and 100",
+        ));
+    }
+    if !(1..=crate::task_scheduling::MAX_TASK_RUN_ATTEMPTS).contains(&input.max_attempts) {
+        return Err(KernelError::validation(
+            "maxAttempts must be between 1 and 20",
+        ));
+    }
+    if !(crate::task_scheduling::MIN_TASK_TIMEOUT_SECONDS
+        ..=crate::task_scheduling::MAX_TASK_TIMEOUT_SECONDS)
+        .contains(&input.timeout_seconds)
+    {
+        return Err(KernelError::validation(
+            "timeoutSeconds must be between 1 and 86400",
+        ));
+    }
+    if input.retry_initial_delay_seconds == 0
+        || input.retry_initial_delay_seconds > 86_400
+        || input.retry_max_delay_seconds < input.retry_initial_delay_seconds
+        || input.retry_max_delay_seconds > 604_800
+    {
+        return Err(KernelError::validation("invalid retry delay range"));
+    }
+    if !(-100..=100).contains(&input.priority) {
+        return Err(KernelError::validation(
+            "priority must be between -100 and 100",
+        ));
+    }
+    Ok(())
 }
 
 fn code_engine_runtime_manifest(engine_key: &str, agent_id: &str) -> AgentManifest {
@@ -389,6 +475,75 @@ where
             if task.owner_user_id != required_owner {
                 return Err(KernelError::validation("task not found"));
             }
+        }
+        Ok(())
+    }
+
+    fn load_task_for_command_scope(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: &str,
+        task_id: &str,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<AgentTaskRecord> {
+        validate_standard_id(task_id, "taskId", Some("task."))?;
+        validate_agent_id(path_agent_id)?;
+        let task = self
+            .repository
+            .get_task(tenant_id, organization_id, task_id)?
+            .ok_or_else(|| KernelError::validation("task not found"))?;
+        Self::ensure_task_owner_scope(&task, owner_scope)?;
+        Self::ensure_nested_agent_id(&task.agent_id, path_agent_id, "task")?;
+        Ok(task)
+    }
+
+    fn ensure_task_run_scope(
+        run: &AgentTaskRunRecord,
+        task_id: &str,
+        owner_scope: Option<u64>,
+    ) -> KernelResult<()> {
+        if run.task_id != task_id
+            || owner_scope.is_some_and(|owner_user_id| run.owner_user_id != owner_user_id)
+        {
+            return Err(KernelError::validation("task Run not found"));
+        }
+        Ok(())
+    }
+
+    fn ensure_reconciliation_matches_turn(
+        &self,
+        run: &AgentTaskRunRecord,
+        outcome: TaskRunReconciliationOutcome,
+    ) -> KernelResult<()> {
+        if run.status != AgentTaskRunStatus::Reconciling {
+            return Err(KernelError::validation("task Run is not reconciling"));
+        }
+        let turn_id = run
+            .turn_id
+            .as_deref()
+            .ok_or_else(|| KernelError::conflict("task Run has no Turn identity"))?;
+        let turn = self
+            .repository
+            .get_turn(run.tenant_id, run.organization_id, turn_id)?
+            .ok_or_else(|| KernelError::conflict("task Run Turn not found"))?;
+        let matches = matches!(
+            (outcome, turn.status),
+            (
+                TaskRunReconciliationOutcome::Succeeded,
+                AgentTurnStatus::Completed
+            ) | (
+                TaskRunReconciliationOutcome::Failed,
+                AgentTurnStatus::Failed
+            ) | (
+                TaskRunReconciliationOutcome::Cancelled,
+                AgentTurnStatus::Cancelled
+            )
+        );
+        if !matches {
+            return Err(KernelError::conflict(
+                "requested reconciliation outcome does not match the canonical Turn",
+            ));
         }
         Ok(())
     }
@@ -2987,6 +3142,12 @@ where
         }
         record.soft_delete(command.requested_at.clone());
         self.repository.update_session(record.clone())?;
+        self.repository.purge_turn_input_queue_entries(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            record.owner_user_id,
+        )?;
         self.emit_session_audit_event(
             AgentAuditAction::SessionDeleted,
             &record,
@@ -3592,6 +3753,22 @@ where
             return Err(KernelError::validation("agent not found"));
         }
 
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        let session = self
+            .repository
+            .get_session(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+            )?
+            .ok_or_else(|| KernelError::validation("session not found"))?;
+        if session.agent_id != command.agent_id
+            || session.owner_user_id != command.owner_user_id
+            || !session.status.is_active()
+        {
+            return Err(KernelError::validation("session not found"));
+        }
+
         if self
             .repository
             .get_task(command.tenant_id, command.organization_id, task_id.as_str())?
@@ -3610,6 +3787,19 @@ where
 
         let metadata_json = default_json_object_if_blank(command.metadata_json.as_str());
 
+        let schedule = crate::task_scheduling::TaskSchedule {
+            kind: command.schedule_kind,
+            cron_expression: command.cron_expression.clone(),
+            timezone: command.timezone.clone(),
+            scheduled_at: command.scheduled_at.clone(),
+            starts_at: command.starts_at.clone(),
+            ends_at: command.ends_at.clone(),
+        };
+        let next_fire_at = schedule
+            .next_after(command.requested_at.as_str())?
+            .ok_or_else(|| KernelError::validation("schedule has no future occurrence"))?;
+        validate_task_execution_policy(TaskExecutionPolicyInput::from(&command))?;
+
         let record = AgentTaskRecord {
             id: self.repository.next_id()?,
             task_id,
@@ -3617,16 +3807,34 @@ where
             organization_id: command.organization_id,
             agent_id: command.agent_id,
             owner_user_id: command.owner_user_id,
+            session_id: command.session_id,
             title: command.title,
             prompt: command.prompt,
-            status: AgentTaskStatus::Pending,
+            schedule_kind: command.schedule_kind,
+            cron_expression: command.cron_expression,
+            timezone: command.timezone,
+            scheduled_at: command.scheduled_at,
+            starts_at: command.starts_at,
+            ends_at: command.ends_at,
+            next_fire_at: Some(next_fire_at),
+            misfire_policy: command.misfire_policy,
+            overlap_policy: command.overlap_policy,
+            max_concurrent_runs: command.max_concurrent_runs,
+            max_catch_up_runs: command.max_catch_up_runs,
+            max_attempts: command.max_attempts,
+            retry_initial_delay_seconds: command.retry_initial_delay_seconds,
+            retry_max_delay_seconds: command.retry_max_delay_seconds,
+            timeout_seconds: command.timeout_seconds,
+            priority: command.priority,
+            status: AgentTaskStatus::Active,
+            generation: 1,
             external_ref: command.external_ref,
             metadata_json,
             version: 0,
             created_at: command.requested_at.clone(),
             updated_at: command.requested_at.clone(),
-            started_at: None,
             completed_at: None,
+            paused_at: None,
             cancelled_at: None,
         };
 
@@ -3638,166 +3846,13 @@ where
             command.requested_at.clone(),
         )?;
 
-        let record = self.dispatch_task_execution(
-            record,
-            command.requested_by,
-            command.requested_at,
-            false,
-        )?;
         Ok(record)
     }
 
-    /// HTTP and worker callers defer LLM execution unless `metadataJson.autoExecute` is
-    /// `true`. Legacy `deferExecution: true` also defers; `deferExecution: false` opts
-    /// into inline execution for backward compatibility.
-    fn should_auto_execute_task(metadata_json: &str) -> bool {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(metadata_json) else {
-            return false;
-        };
-        if value
-            .get("deferExecution")
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-        {
-            return false;
-        }
-        if value
-            .get("autoExecute")
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-        {
-            return true;
-        }
-        value
-            .get("deferExecution")
-            .and_then(serde_json::Value::as_bool)
-            == Some(false)
-    }
-
-    fn dispatch_task_execution(
-        &self,
-        mut record: AgentTaskRecord,
-        requested_by: PolicySubject,
-        requested_at: String,
-        force: bool,
-    ) -> KernelResult<AgentTaskRecord> {
-        if record.status != AgentTaskStatus::Pending {
-            return Ok(record);
-        }
-        if !force && !Self::should_auto_execute_task(record.metadata_json.as_str()) {
-            return Ok(record);
-        }
-
-        let agent = self
-            .repository
-            .get(record.tenant_id, record.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
-
-        record.mark_running(requested_at.clone());
-        self.repository.update_task(record.clone())?;
-
-        let active_binding = self
-            .repository
-            .get_active_provider_binding(record.tenant_id, record.agent_id.as_str())?;
-
-        let provider_has_model_chat = active_binding
-            .as_ref()
-            .map(|binding| binding.capabilities.iter().any(|cap| cap == "model.chat"))
-            .unwrap_or(false);
-
-        let session_stub = AgentSessionRecord {
-            id: record.id,
-            session_id: task_execution_session_id(&record),
-            tenant_id: record.tenant_id,
-            organization_id: record.organization_id,
-            agent_id: record.agent_id.clone(),
-            owner_user_id: record.owner_user_id,
-            project_id: None,
-            session_kind: AgentSessionKind::Automation,
-            entry_surface: AgentSessionEntrySurface::Automation,
-            source_module: Some("sdkwork-agents".to_string()),
-            source_context_kind: Some("agent_task".to_string()),
-            source_context_id: Some(record.task_id.clone()),
-            parent_session_id: None,
-            forked_from_turn_id: None,
-            title: record.title.clone(),
-            title_source: AgentSessionTitleSource::System,
-            status: AgentSessionStatus::Active,
-            item_count: 0,
-            last_item_sequence: 0,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            idempotency_key: None,
-            payload_hash: None,
-            created_by: record.owner_user_id,
-            updated_by: record.owner_user_id,
-            version: 0,
-            created_at: requested_at.clone(),
-            updated_at: requested_at.clone(),
-            last_item_at: None,
-            closed_at: None,
-            archived_at: None,
-            archived_by: None,
-            deleted_at: None,
-            deleted_by: None,
-            retention_until: None,
-        };
-
-        let prompt = record.prompt.clone();
-        let completion = complete_with_timeout(
-            Arc::clone(&self.turn_executor),
-            &TurnExecutionInput {
-                agent_display_name: agent.display_name.clone(),
-                welcome_message: None,
-                session: session_stub,
-                history: Vec::new(),
-                user_content: prompt,
-                model_id: None,
-                provider_id: active_binding
-                    .as_ref()
-                    .map(|binding| binding.provider_id.clone()),
-                binding_id: active_binding
-                    .as_ref()
-                    .map(|binding| binding.binding_id.clone()),
-                access_mode_id: None,
-                provider_has_model_chat,
-            },
-            false,
-            TURN_EXECUTION_TIMEOUT,
-        );
-
-        if is_capacity_error(completion.runtime_mode) {
-            return Err(KernelError::resource_exhausted(completion.content));
-        }
-        if is_capacity_error(completion.runtime_mode) {
-            record.mark_failed(requested_at.clone(), completion.content.as_str());
-            self.repository.update_task(record.clone())?;
-            return Err(KernelError::resource_exhausted(completion.content));
-        }
-        if is_inference_error(completion.runtime_mode) {
-            record.mark_failed(requested_at.clone(), completion.content.as_str());
-            self.repository.update_task(record.clone())?;
-            self.emit_task_audit_event(
-                AgentAuditAction::TaskFailed,
-                &record,
-                requested_by,
-                requested_at,
-            )?;
-            return Ok(record);
-        }
-
-        record.mark_completed(requested_at.clone(), completion.content.as_str());
-        self.repository.update_task(record.clone())?;
-        self.emit_task_audit_event(
-            AgentAuditAction::TaskCompleted,
-            &record,
-            requested_by,
-            requested_at,
-        )?;
-        Ok(record)
-    }
-
-    pub fn cancel_task(&self, command: CancelTaskCommand) -> KernelResult<AgentTaskRecord> {
+    pub fn cancel_task(&self, command: CancelTaskCommand) -> KernelResult<AgentTaskRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
         self.authorize(
             "agent.business.task.cancel",
             command.requested_by.clone(),
@@ -3826,7 +3881,8 @@ where
         ensure_expected_version(record.version, command.expected_version, "task")?;
 
         record.cancel(command.requested_at.clone());
-        self.repository.update_task(record.clone())?;
+        let transition = self.repository.transition_task(record, "task_cancelled")?;
+        let record = transition.task;
         self.emit_task_audit_event(
             AgentAuditAction::TaskCancelled,
             &record,
@@ -3836,8 +3892,187 @@ where
         Ok(record)
     }
 
-    /// Run LLM execution for a deferred (`pending`) task created without `autoExecute`.
-    pub fn execute_task(&self, command: ExecuteTaskCommand) -> KernelResult<AgentTaskRecord> {
+    pub fn replace_task(&self, command: ReplaceTaskCommand) -> KernelResult<AgentTaskRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task.replace",
+            command.requested_by.clone(),
+            format!("agent.business.task.{}", command.task_id),
+            "task.replace",
+        )?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_agent_id(command.path_agent_id.as_str())?;
+        parse_rfc3339_datetime(&command.requested_at, "requestedAt")?;
+        require_non_blank(&command.prompt, "prompt")?;
+        reject_secret_material(&command.prompt, "prompt")?;
+        if command.prompt.len() > MAX_TURN_INPUT_CONTENT_BYTES {
+            return Err(KernelError::validation(format!(
+                "prompt exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
+            )));
+        }
+        validate_task_execution_policy(TaskExecutionPolicyInput::from(&command))?;
+        if !is_trimmed_blank(&command.metadata_json) {
+            validate_bounded_json_payload(
+                &command.metadata_json,
+                "metadataJson",
+                MAX_METADATA_JSON_BYTES,
+            )?;
+        }
+        let schedule = crate::task_scheduling::TaskSchedule {
+            kind: command.schedule_kind,
+            cron_expression: command.cron_expression.clone(),
+            timezone: command.timezone.clone(),
+            scheduled_at: command.scheduled_at.clone(),
+            starts_at: command.starts_at.clone(),
+            ends_at: command.ends_at.clone(),
+        };
+        let next_fire_at = schedule
+            .next_after(&command.requested_at)?
+            .ok_or_else(|| KernelError::validation("schedule has no future occurrence"))?;
+
+        let mut record = self
+            .repository
+            .get_task(command.tenant_id, command.organization_id, &command.task_id)?
+            .ok_or_else(|| KernelError::validation("task not found"))?;
+        Self::ensure_task_owner_scope(&record, command.owner_scope)?;
+        Self::ensure_nested_agent_id(&record.agent_id, &command.path_agent_id, "task")?;
+        if !matches!(
+            record.status,
+            AgentTaskStatus::Active | AgentTaskStatus::Paused
+        ) {
+            return Err(KernelError::validation("task cannot be replaced"));
+        }
+        ensure_expected_version(record.version, Some(command.expected_version), "task")?;
+
+        record.title = command.title;
+        record.prompt = command.prompt;
+        record.schedule_kind = command.schedule_kind;
+        record.cron_expression = command.cron_expression;
+        record.timezone = command.timezone;
+        record.scheduled_at = command.scheduled_at;
+        record.starts_at = command.starts_at;
+        record.ends_at = command.ends_at;
+        record.next_fire_at = Some(next_fire_at);
+        record.misfire_policy = command.misfire_policy;
+        record.overlap_policy = command.overlap_policy;
+        record.max_concurrent_runs = command.max_concurrent_runs;
+        record.max_catch_up_runs = command.max_catch_up_runs;
+        record.max_attempts = command.max_attempts;
+        record.retry_initial_delay_seconds = command.retry_initial_delay_seconds;
+        record.retry_max_delay_seconds = command.retry_max_delay_seconds;
+        record.timeout_seconds = command.timeout_seconds;
+        record.priority = command.priority;
+        record.external_ref = command.external_ref;
+        record.metadata_json = default_json_object_if_blank(&command.metadata_json);
+        record.completed_at = None;
+        record.cancelled_at = None;
+        record.generation = record
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| KernelError::conflict("task generation overflow"))?;
+        record.mark_updated(command.requested_at.clone());
+
+        let transition = self
+            .repository
+            .transition_task(record, "task_definition_replaced")?;
+        self.emit_task_audit_event(
+            AgentAuditAction::TaskUpdated,
+            &transition.task,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(transition.task)
+    }
+
+    pub fn pause_task(&self, command: PauseTaskCommand) -> KernelResult<AgentTaskRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task.pause",
+            command.requested_by.clone(),
+            format!("agent.business.task.{}", command.task_id),
+            "task.pause",
+        )?;
+        let mut record = self.load_task_for_command_scope(
+            command.tenant_id,
+            command.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        if record.status != AgentTaskStatus::Active {
+            return Err(KernelError::validation("task is not active"));
+        }
+        ensure_expected_version(record.version, Some(command.expected_version), "task")?;
+        record.status = AgentTaskStatus::Paused;
+        record.paused_at = Some(command.requested_at.clone());
+        record.generation = record
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| KernelError::conflict("task generation overflow"))?;
+        record.mark_updated(command.requested_at.clone());
+        let transition = self.repository.transition_task(record, "task_paused")?;
+        self.emit_task_audit_event(
+            AgentAuditAction::TaskPaused,
+            &transition.task,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(transition.task)
+    }
+
+    pub fn resume_task(&self, command: ResumeTaskCommand) -> KernelResult<AgentTaskRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task.resume",
+            command.requested_by.clone(),
+            format!("agent.business.task.{}", command.task_id),
+            "task.resume",
+        )?;
+        let mut record = self.load_task_for_command_scope(
+            command.tenant_id,
+            command.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        if record.status != AgentTaskStatus::Paused {
+            return Err(KernelError::validation("task is not paused"));
+        }
+        ensure_expected_version(record.version, Some(command.expected_version), "task")?;
+        if record.next_fire_at.is_none() {
+            record.next_fire_at = record.schedule().next_after(&command.requested_at)?;
+        }
+        if record.next_fire_at.is_none() {
+            return Err(KernelError::validation("schedule has no future occurrence"));
+        }
+        record.status = AgentTaskStatus::Active;
+        record.paused_at = None;
+        record.generation = record
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| KernelError::conflict("task generation overflow"))?;
+        record.mark_updated(command.requested_at.clone());
+        let transition = self.repository.transition_task(record, "task_resumed")?;
+        self.emit_task_audit_event(
+            AgentAuditAction::TaskResumed,
+            &transition.task,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(transition.task)
+    }
+
+    /// Create an idempotent manual Run for an active Task.
+    pub fn execute_task(&self, command: ExecuteTaskCommand) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
         self.authorize(
             "agent.business.task.execute",
             command.requested_by.clone(),
@@ -3859,15 +4094,157 @@ where
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "task")?;
 
-        if record.status != AgentTaskStatus::Pending {
+        if record.status != AgentTaskStatus::Active {
             return Err(KernelError::validation(
-                "task is not pending, cannot execute",
+                "task is not active, cannot execute",
             ));
         }
 
         ensure_expected_version(record.version, command.expected_version, "task")?;
 
-        self.dispatch_task_execution(record, command.requested_by, command.requested_at, true)
+        self.repository.create_manual_task_run(
+            &record,
+            command.idempotency_key.trim(),
+            &command.requested_at,
+        )
+    }
+
+    pub fn materialize_scheduled_task_runs(
+        &self,
+        request: &MaterializeDueTasksRequest,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.repository.materialize_due_tasks(request)
+    }
+
+    pub fn claim_scheduled_task_runs(
+        &self,
+        request: &ClaimTaskRunsRequest,
+    ) -> KernelResult<Vec<TaskRunClaim>>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.repository.claim_task_runs(request)
+    }
+
+    pub fn heartbeat_scheduled_task_run(
+        &self,
+        lease: &TaskRunLease,
+        heartbeat_at: &str,
+        lease_seconds: u32,
+    ) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.repository
+            .heartbeat_task_run(lease, heartbeat_at, lease_seconds)
+    }
+
+    pub fn recover_expired_scheduled_task_run_leases(
+        &self,
+        now: &str,
+        limit: usize,
+    ) -> KernelResult<u64>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.repository.recover_expired_task_run_leases(now, limit)
+    }
+
+    pub fn reconcile_scheduled_task_runs(
+        &self,
+        updated_before: &str,
+        occurred_at: &str,
+        limit: usize,
+    ) -> KernelResult<TaskRunReconciliationResult>
+    where
+        R: TaskSchedulerRepository,
+    {
+        parse_rfc3339_datetime(updated_before, "updatedBefore")?;
+        parse_rfc3339_datetime(occurred_at, "occurredAt")?;
+        let runs = self
+            .repository
+            .list_reconciling_task_runs(updated_before, limit.clamp(1, 1_000))?;
+        let examined = runs.len();
+        let mut reconciled = Vec::new();
+        let mut pending = 0usize;
+        let mut skipped_conflicts = 0usize;
+        for run in runs {
+            let Some(turn_id) = run.turn_id.as_deref() else {
+                pending = pending.saturating_add(1);
+                continue;
+            };
+            let Some(turn) =
+                self.repository
+                    .get_turn(run.tenant_id, run.organization_id, turn_id)?
+            else {
+                pending = pending.saturating_add(1);
+                continue;
+            };
+            let terminal_status = match turn.status {
+                AgentTurnStatus::Completed => AgentTaskRunStatus::Succeeded,
+                AgentTurnStatus::Failed => AgentTaskRunStatus::Failed,
+                AgentTurnStatus::Cancelled => AgentTaskRunStatus::Cancelled,
+                AgentTurnStatus::Requested | AgentTurnStatus::Running => {
+                    pending = pending.saturating_add(1);
+                    continue;
+                }
+            };
+            match self.repository.reconcile_task_run(
+                run.tenant_id,
+                run.organization_id,
+                &run.run_id,
+                run.version,
+                terminal_status,
+                turn.error_code.as_deref(),
+                occurred_at,
+            ) {
+                Ok(record) => {
+                    self.emit_task_run_audit_event(
+                        AgentAuditAction::TaskRunReconciled,
+                        &record,
+                        PolicySubject::new(
+                            "system.agents.task-run-reconciliation",
+                            record.tenant_id.to_string(),
+                        ),
+                        occurred_at.to_string(),
+                    )?;
+                    reconciled.push(record);
+                }
+                Err(error) if error.kind() == KernelErrorKind::Conflict => {
+                    skipped_conflicts = skipped_conflicts.saturating_add(1);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(TaskRunReconciliationResult {
+            examined,
+            reconciled,
+            pending,
+            skipped_conflicts,
+        })
+    }
+
+    pub fn execute_scheduled_task_run_claim(
+        &self,
+        claim: &TaskRunClaim,
+        requested_by: PolicySubject,
+        requested_at: String,
+    ) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+        P: Send + Sync,
+    {
+        execute_task_run_claim(
+            &self.repository,
+            &self.repository,
+            self,
+            claim,
+            requested_by,
+            requested_at,
+        )
     }
 
     pub fn get_task(&self, command: GetTaskCommand) -> KernelResult<AgentTaskRecord> {
@@ -3913,6 +4290,272 @@ where
             &command.query.pagination,
             total_count,
         ))
+    }
+
+    pub fn list_task_runs(&self, command: ListTaskRunsCommand) -> KernelResult<TaskRunPage>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task_run.list",
+            command.requested_by,
+            format!("agent.business.task.{}", command.query.task_id),
+            "task_run.list",
+        )?;
+        self.load_task_for_command_scope(
+            command.query.tenant_id,
+            command.query.organization_id,
+            &command.path_agent_id,
+            &command.query.task_id,
+            command.query.owner_user_id,
+        )?;
+        let scope_fingerprint = command.query.scope_fingerprint();
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested task Run scope",
+            ));
+        }
+        let page_size = command.query.page_size;
+        let mut items = self.repository.list_task_runs(&command.query)?;
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|run| {
+                    encode_task_run_cursor(&TaskRunCursor {
+                        run_internal_id: run.id,
+                        scope_fingerprint,
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
+    }
+
+    pub fn get_task_run(&self, command: GetTaskRunCommand) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task_run.retrieve",
+            command.requested_by,
+            format!("agent.business.task_run.{}", command.run_id),
+            "task_run.retrieve",
+        )?;
+        self.load_task_for_command_scope(
+            command.tenant_id,
+            command.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        let run = self
+            .repository
+            .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
+        Ok(run)
+    }
+
+    pub fn retry_task_run(&self, command: RetryTaskRunCommand) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task_run.retry",
+            command.requested_by.clone(),
+            format!("agent.business.task_run.{}", command.run_id),
+            "task_run.retry",
+        )?;
+        let task = self.load_task_for_command_scope(
+            command.tenant_id,
+            command.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        if task.status == AgentTaskStatus::Cancelled {
+            return Err(KernelError::validation("cancelled task cannot be retried"));
+        }
+        let source = self
+            .repository
+            .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        Self::ensure_task_run_scope(&source, &command.task_id, command.owner_scope)?;
+        if !matches!(
+            source.status,
+            AgentTaskRunStatus::Failed
+                | AgentTaskRunStatus::Cancelled
+                | AgentTaskRunStatus::DeadLetter
+        ) {
+            return Err(KernelError::validation(
+                "task Run is not in a retryable terminal state",
+            ));
+        }
+        let run = self.repository.create_business_retry_task_run(
+            &task,
+            &source,
+            command.idempotency_key.trim(),
+            &command.requested_at,
+        )?;
+        self.emit_task_run_audit_event(
+            AgentAuditAction::TaskRunCreated,
+            &run,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(run)
+    }
+
+    pub fn cancel_task_run(&self, command: CancelTaskRunCommand) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task_run.cancel",
+            command.requested_by.clone(),
+            format!("agent.business.task_run.{}", command.run_id),
+            "task_run.cancel",
+        )?;
+        self.load_task_for_command_scope(
+            command.tenant_id,
+            command.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        let current = self
+            .repository
+            .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        Self::ensure_task_run_scope(&current, &command.task_id, command.owner_scope)?;
+        let run = self.repository.request_task_run_cancellation(
+            command.tenant_id,
+            command.organization_id,
+            &command.run_id,
+            command.expected_version,
+            &command.requested_at,
+        )?;
+        self.emit_task_run_audit_event(
+            AgentAuditAction::TaskRunCancelRequested,
+            &run,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(run)
+    }
+
+    pub fn list_task_run_attempts(
+        &self,
+        command: ListTaskRunAttemptsCommand,
+    ) -> KernelResult<TaskRunAttemptPage>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task_run_attempt.list",
+            command.requested_by,
+            format!("agent.business.task_run.{}", command.query.run_id),
+            "task_run_attempt.list",
+        )?;
+        self.load_task_for_command_scope(
+            command.query.tenant_id,
+            command.query.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        let run = self
+            .repository
+            .get_task_run(
+                command.query.tenant_id,
+                command.query.organization_id,
+                &command.query.run_id,
+            )?
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
+        let scope_fingerprint = command.query.scope_fingerprint();
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested task Run Attempt scope",
+            ));
+        }
+        let page_size = command.query.page_size;
+        let mut items = self.repository.list_task_run_attempts(&command.query)?;
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|attempt| {
+                    encode_task_run_attempt_cursor(&TaskRunAttemptCursor {
+                        attempt_no: attempt.attempt_no,
+                        attempt_internal_id: attempt.id,
+                        scope_fingerprint,
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
+    }
+
+    pub fn reconcile_task_run(
+        &self,
+        command: ReconcileTaskRunCommand,
+    ) -> KernelResult<AgentTaskRunRecord>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.authorize(
+            "agent.business.task_run.reconcile",
+            command.requested_by.clone(),
+            format!("agent.business.task_run.{}", command.run_id),
+            "task_run.reconcile",
+        )?;
+        self.load_task_for_command_scope(
+            command.tenant_id,
+            command.organization_id,
+            &command.path_agent_id,
+            &command.task_id,
+            command.owner_scope,
+        )?;
+        let run = self
+            .repository
+            .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
+        self.ensure_reconciliation_matches_turn(&run, command.outcome)?;
+        let reconciled = self.repository.reconcile_task_run(
+            command.tenant_id,
+            command.organization_id,
+            &command.run_id,
+            command.expected_version,
+            command.outcome.terminal_status(),
+            command.error_code.as_deref(),
+            &command.requested_at,
+        )?;
+        self.emit_task_run_audit_event(
+            AgentAuditAction::TaskRunReconciled,
+            &reconciled,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(reconciled)
     }
 
     // -----------------------------------------------------------------------
@@ -5373,15 +6016,79 @@ where
             session.organization_id,
             &user_input_item.item_id,
         )?;
+        let turn_items = self.repository.list_session_items_by_turn(
+            command.tenant_id,
+            session.organization_id,
+            &command.session_id,
+            &existing_turn.turn_id,
+            MAX_PROVIDER_TURN_FACTS + 3,
+        )?;
+        if turn_items.len() > MAX_PROVIDER_TURN_FACTS + 2
+            || turn_items
+                .first()
+                .is_none_or(|item| item.item_id != existing_turn.request_item_id)
+            || turn_items
+                .last()
+                .is_none_or(|item| item.item_id != response_item_id)
+        {
+            return Err(KernelError::Internal {
+                message: "completed Turn has an inconsistent authoritative item set".to_string(),
+            });
+        }
         Ok(TurnExecutionResult {
             session,
             turn: existing_turn,
             user_input_item,
             assistant_output_item,
+            turn_items,
             user_item_drive_refs,
             stream_deltas: Vec::new(),
             stream_events: Vec::new(),
         })
+    }
+
+    fn persist_turn_provider_session_identity(
+        &self,
+        runtime_binding: &AgentSessionRuntimeBindingRecord,
+        provider_session_id: Option<&str>,
+        requested_by: PolicySubject,
+        requested_at: &str,
+    ) -> KernelResult<AgentSessionRuntimeBindingRecord> {
+        let Some(provider_session_id) = normalize_optional_bounded(
+            provider_session_id.map(str::to_string),
+            "providerSessionId",
+            256,
+        )?
+        else {
+            return Ok(runtime_binding.clone());
+        };
+
+        if let Some(existing_provider_session_id) = runtime_binding.provider_session_id.as_deref() {
+            if existing_provider_session_id == provider_session_id {
+                return Ok(runtime_binding.clone());
+            }
+            return Err(KernelError::conflict(
+                "providerSessionId changed for the active Session runtime binding",
+            ));
+        }
+
+        let mut updated = runtime_binding.clone();
+        updated.provider_session_id = Some(provider_session_id);
+        updated.mark_updated(requested_at.to_string());
+        self.repository
+            .update_session_runtime_binding(updated.clone())?;
+        self.emit_session_resource_audit_event(
+            AgentAuditAction::SessionRuntimeBindingUpdated,
+            "runtime_binding",
+            &updated.runtime_binding_id,
+            &updated.session_id,
+            updated.tenant_id,
+            updated.organization_id,
+            updated.version,
+            requested_by,
+            requested_at.to_string(),
+        )?;
+        Ok(updated)
     }
 
     /// Execute one turn and atomically persist its input, output and session counters.
@@ -5675,6 +6382,7 @@ where
                 user_content: user_content.clone(),
                 model_id: Some(session_runtime_binding.model_id.clone()),
                 provider_id: Some(session_runtime_binding.provider_id.clone()),
+                provider_session_id: session_runtime_binding.provider_session_id.clone(),
                 binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
                 access_mode_id: command.access_mode_id.clone(),
                 provider_has_model_chat,
@@ -5700,6 +6408,69 @@ where
                 completion.content,
             ));
         }
+
+        let session_runtime_binding = self.persist_turn_provider_session_identity(
+            &session_runtime_binding,
+            completion.provider_session_id.as_deref(),
+            command.requested_by.clone(),
+            &command.requested_at,
+        )?;
+
+        let provider_item_facts = project_terminal_provider_turn_items(
+            &completion.stream_events,
+            &command.session_id,
+            &turn_id,
+        )?;
+        let completion_model_id = completion
+            .model_id
+            .clone()
+            .unwrap_or_else(|| session_runtime_binding.model_id.clone());
+        let mut completed_items = provider_item_facts
+            .into_iter()
+            .map(|fact| {
+                let created_at = fact
+                    .created_at
+                    .unwrap_or_else(|| command.requested_at.clone());
+                parse_rfc3339_datetime(&created_at, "providerItem.createdAt")?;
+                let completed_at = fact
+                    .completed_at
+                    .unwrap_or_else(|| command.requested_at.clone());
+                parse_rfc3339_datetime(&completed_at, "providerItem.completedAt")?;
+                let redacted = fact.status == AgentSessionItemStatus::Redacted;
+                Ok(AgentSessionItemRecord {
+                    id: self.repository.next_id()?,
+                    item_id: fact.item_id,
+                    tenant_id: command.tenant_id,
+                    organization_id: session.organization_id,
+                    session_id: command.session_id.clone(),
+                    kind: fact.kind,
+                    content: fact.content,
+                    content_type: fact.content_type,
+                    status: fact.status,
+                    sequence: 0,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    model_id: Some(completion_model_id.clone()),
+                    provider_id: Some(fact.provider_id),
+                    tool_name: fact.tool_name,
+                    tool_call_id: fact.tool_call_id,
+                    tool_arguments_json: fact.tool_arguments_json,
+                    tool_result_json: fact.tool_result_json,
+                    parent_item_id: fact
+                        .parent_item_id
+                        .or_else(|| Some(user_input_item.item_id.clone())),
+                    turn_id: Some(turn_id.clone()),
+                    created_by: session.owner_user_id,
+                    version: 0,
+                    created_at,
+                    updated_at: completed_at.clone(),
+                    completed_at: Some(completed_at.clone()),
+                    redacted_at: redacted.then_some(completed_at),
+                    redacted_by: redacted.then_some(session.owner_user_id),
+                    retention_until: None,
+                })
+            })
+            .collect::<KernelResult<Vec<_>>>()?;
 
         let assistant_output_item_id = format!("item.{}", self.repository.next_id()?);
         let assistant_output_item = AgentSessionItemRecord {
@@ -5742,6 +6513,7 @@ where
             redacted_by: None,
             retention_until: None,
         };
+        completed_items.push(assistant_output_item.clone());
 
         turn.response_item_id = Some(assistant_output_item.item_id.clone());
         turn.model_id = assistant_output_item.model_id.clone();
@@ -5754,13 +6526,20 @@ where
         turn.mark_completed(command.requested_at.clone());
         let completed_turn = turn.clone();
 
-        let (session, assistant_output_item) = self.repository.complete_turn(
+        let (session, completed_items) = self.repository.complete_turn(
             turn,
             expected_turn_version,
             expected_fencing_token,
             expected_lease_token,
-            assistant_output_item,
+            completed_items,
         )?;
+        let assistant_output_item = completed_items
+            .last()
+            .filter(|item| item.item_id == assistant_output_item.item_id)
+            .cloned()
+            .ok_or_else(|| KernelError::Internal {
+                message: "completed Turn did not return its final assistant item".to_string(),
+            })?;
 
         self.emit_turn_audit_event(
             AgentAuditAction::TurnCompleted,
@@ -5769,18 +6548,25 @@ where
             command.requested_at.clone(),
         )?;
 
-        self.emit_session_item_audit_event(
-            AgentAuditAction::SessionItemCreated,
-            &assistant_output_item,
-            command.requested_by,
-            command.requested_at,
-        )?;
+        for item in &completed_items {
+            self.emit_session_item_audit_event(
+                AgentAuditAction::SessionItemCreated,
+                item,
+                command.requested_by.clone(),
+                command.requested_at.clone(),
+            )?;
+        }
+
+        let mut turn_items = Vec::with_capacity(completed_items.len() + 1);
+        turn_items.push(user_input_item.clone());
+        turn_items.extend(completed_items);
 
         Ok(TurnExecutionResult {
             session,
             turn: completed_turn,
             user_input_item,
             assistant_output_item,
+            turn_items,
             user_item_drive_refs,
             stream_deltas: completion.stream_deltas,
             stream_events: completion.stream_events,
@@ -6297,6 +7083,59 @@ where
         .occurred_at(occurred_at)
         .with_payload_schema("sdkwork.agent.business.task.v1");
 
+        self.record_audit_event(event)
+    }
+
+    fn emit_task_run_audit_event(
+        &self,
+        action: AgentAuditAction,
+        record: &AgentTaskRunRecord,
+        subject: PolicySubject,
+        occurred_at: String,
+    ) -> KernelResult<()> {
+        let payload_json = serde_json::json!({
+            "schemaVersion": "v1",
+            "runId": record.run_id,
+            "taskId": record.task_id,
+            "sessionId": record.session_id,
+            "agentId": record.agent_id,
+            "triggerKind": record.trigger_kind.as_str(),
+            "status": record.status.as_str(),
+            "attemptCount": record.attempt_count,
+            "failureClass": record.failure_class,
+            "errorCode": record.error_code,
+            "version": record.version.to_string(),
+        })
+        .to_string();
+        let event = KernelEvent::new(
+            format!(
+                "agent_task_run_{}_{}_{}",
+                record.run_id,
+                action.action_code(),
+                record.version
+            ),
+            action.event_type(),
+            KernelEventSeverity::Info,
+            payload_json,
+        )
+        .from_source(KernelEventSource::Runtime)
+        .with_redaction(KernelEventRedaction::TenantSensitive)
+        .with_context("schema_version", "v1")
+        .with_context("audit_action", action.action_code())
+        .with_context("aggregate_type", "task_run")
+        .with_context("aggregate_id", record.run_id.as_str())
+        .with_context("task_id", record.task_id.as_str())
+        .with_context("session_id", record.session_id.as_str())
+        .with_context("agent_id", record.agent_id.as_str())
+        .with_context("subject_id", subject.subject_id.as_str())
+        .with_context("subject_tenant_id", subject.tenant_id.as_str())
+        .with_context("tenant_id", record.tenant_id.to_string().as_str())
+        .with_context(
+            "organization_id",
+            record.organization_id.to_string().as_str(),
+        )
+        .occurred_at(occurred_at)
+        .with_payload_schema("sdkwork.agent.business.task-run.audit.v1");
         self.record_audit_event(event)
     }
 
@@ -7204,7 +8043,7 @@ mod task_tests {
         CancelTaskCommand, CreateAgentCommand, CreateTaskCommand, ExecuteTaskCommand,
         GetTaskCommand, ListTasksCommand,
     };
-    use crate::domain::AgentBusinessStatus;
+    use crate::domain::{AgentBusinessStatus, AgentSessionEntrySurface, AgentSessionKind};
     use crate::infrastructure::{
         IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
     };
@@ -7267,6 +8106,76 @@ mod task_tests {
             implementation_provider_id: None,
             implementation_kind: None,
             implementation_type: None,
+            requested_by: sample_subject(),
+            requested_at: requested_at.to_string(),
+        }
+    }
+
+    type TaskTestService =
+        AgentsService<InMemoryAgentRepository, InMemoryAgentAuditSink, IamGatedPolicyProvider>;
+
+    fn create_task_cmd(
+        service: &TaskTestService,
+        tenant_id: u64,
+        organization_id: u64,
+        agent_id: &str,
+        owner_user_id: u64,
+        prompt: &str,
+        requested_at: &str,
+    ) -> CreateTaskCommand {
+        let digest = sha256_hash(
+            format!("{tenant_id}:{organization_id}:{agent_id}:{owner_user_id}:{requested_at}")
+                .as_bytes(),
+        );
+        let session_id = format!("session.task.{}", &digest[..20]);
+        service
+            .create_session(CreateSessionCommand {
+                tenant_id,
+                organization_id,
+                agent_id: agent_id.to_string(),
+                owner_user_id,
+                project_id: None,
+                session_id: session_id.clone(),
+                session_kind: AgentSessionKind::Automation,
+                entry_surface: AgentSessionEntrySurface::Automation,
+                source_module: Some("sdkwork-agents".to_string()),
+                source_context_kind: Some("agent_task".to_string()),
+                source_context_id: Some(format!("task-test.{}", &digest[..20])),
+                parent_session_id: None,
+                forked_from_turn_id: None,
+                title: None,
+                idempotency_key: None,
+                payload_hash: None,
+                requested_by: sample_subject(),
+                requested_at: requested_at.to_string(),
+            })
+            .expect("create task Session");
+        CreateTaskCommand {
+            tenant_id,
+            organization_id,
+            agent_id: agent_id.to_string(),
+            owner_user_id,
+            session_id,
+            task_id: String::new(),
+            title: None,
+            prompt: prompt.to_string(),
+            schedule_kind: crate::AgentTaskScheduleKind::OneTime,
+            cron_expression: None,
+            timezone: "UTC".to_string(),
+            scheduled_at: Some("2027-06-01T00:00:00Z".to_string()),
+            starts_at: None,
+            ends_at: None,
+            misfire_policy: crate::AgentTaskMisfirePolicy::FireOnce,
+            overlap_policy: crate::AgentTaskOverlapPolicy::Skip,
+            max_concurrent_runs: 1,
+            max_catch_up_runs: 1,
+            max_attempts: 3,
+            retry_initial_delay_seconds: 5,
+            retry_max_delay_seconds: 300,
+            timeout_seconds: 900,
+            priority: 0,
+            external_ref: None,
+            metadata_json: "{}".to_string(),
             requested_by: sample_subject(),
             requested_at: requested_at.to_string(),
         }
@@ -7349,25 +8258,22 @@ mod task_tests {
             })
             .expect("activate agent");
 
-        let task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 0,
-                agent_id: created.agent_id.clone(),
-                owner_user_id: 100,
-                task_id: String::new(),
-                title: Some("Nightly sync".to_string()),
-                prompt: "Run nightly data sync".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"autoExecute":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T05:01:00Z".to_string(),
-            })
-            .expect("create task");
+        let mut command = create_task_cmd(
+            &service,
+            100_001,
+            0,
+            &created.agent_id,
+            100,
+            "Run nightly data sync",
+            "2026-06-01T05:01:00Z",
+        );
+        command.title = Some("Nightly sync".to_string());
+        command.metadata_json = r#"{"autoExecute":true}"#.to_string();
+        let task = service.create_task(command).expect("create task");
 
         assert!(task.task_id.starts_with("task."));
-        assert_eq!(task.status, AgentTaskStatus::Completed);
-        assert!(task.completed_at.is_some());
+        assert_eq!(task.status, AgentTaskStatus::Active);
+        assert!(task.completed_at.is_none());
 
         let listed = service
             .list_tasks(ListTasksCommand {
@@ -7399,19 +8305,15 @@ mod task_tests {
             .expect("create agent");
 
         let task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 0,
-                agent_id: created.agent_id,
-                owner_user_id: 100,
-                task_id: String::new(),
-                title: None,
-                prompt: "Do work".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"deferExecution":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T05:01:00Z".to_string(),
-            })
+            .create_task(create_task_cmd(
+                &service,
+                100_001,
+                0,
+                &created.agent_id,
+                100,
+                "Do work",
+                "2026-06-01T05:01:00Z",
+            ))
             .expect("create task");
 
         let cancelled = service
@@ -7444,7 +8346,7 @@ mod task_tests {
     }
 
     #[test]
-    fn execute_task_completes_deferred_pending_task() {
+    fn execute_task_creates_idempotent_pending_run() {
         let repository = InMemoryAgentRepository::new();
         let audit_sink = InMemoryAgentAuditSink::default();
         let policy_provider = test_policy_provider();
@@ -7463,21 +8365,17 @@ mod task_tests {
             .expect("create agent");
 
         let task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 0,
-                agent_id: created.agent_id.clone(),
-                owner_user_id: 100,
-                task_id: String::new(),
-                title: None,
-                prompt: "Run deferred work".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"deferExecution":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T05:01:00Z".to_string(),
-            })
+            .create_task(create_task_cmd(
+                &service,
+                100_001,
+                0,
+                &created.agent_id,
+                100,
+                "Run deferred work",
+                "2026-06-01T05:01:00Z",
+            ))
             .expect("create task");
-        assert_eq!(task.status, AgentTaskStatus::Pending);
+        assert_eq!(task.status, AgentTaskStatus::Active);
 
         let executed = service
             .execute_task(ExecuteTaskCommand {
@@ -7485,13 +8383,31 @@ mod task_tests {
                 organization_id: 0,
                 path_agent_id: created.agent_id.clone(),
                 task_id: task.task_id.clone(),
+                idempotency_key: "task-run.execute-test".to_string(),
                 expected_version: Some(task.version),
                 owner_scope: None,
                 requested_by: sample_subject(),
                 requested_at: "2026-06-01T05:02:00Z".to_string(),
             })
             .expect("execute task");
-        assert_eq!(executed.status, AgentTaskStatus::Completed);
+        assert_eq!(executed.status, crate::AgentTaskRunStatus::Pending);
+        assert_eq!(executed.task_id, task.task_id);
+        assert_eq!(executed.session_id, task.session_id);
+
+        let duplicate = service
+            .execute_task(ExecuteTaskCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: created.agent_id,
+                task_id: task.task_id,
+                idempotency_key: "task-run.execute-test".to_string(),
+                expected_version: Some(task.version),
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-06-01T05:02:01Z".to_string(),
+            })
+            .expect("repeat idempotent execute task");
+        assert_eq!(duplicate.run_id, executed.run_id);
     }
 
     #[test]
@@ -7515,19 +8431,15 @@ mod task_tests {
 
         let path_agent_id = created.agent_id.clone();
         let task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 0,
-                agent_id: path_agent_id.clone(),
-                owner_user_id: 100,
-                task_id: String::new(),
-                title: None,
-                prompt: "Private task".to_string(),
-                external_ref: None,
-                metadata_json: "{}".to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T05:01:00Z".to_string(),
-            })
+            .create_task(create_task_cmd(
+                &service,
+                100_001,
+                0,
+                &path_agent_id,
+                100,
+                "Private task",
+                "2026-06-01T05:01:00Z",
+            ))
             .expect("create task");
 
         let error = service
@@ -7573,58 +8485,53 @@ mod task_tests {
             ))
             .expect("create organization two agent");
 
+        let mut cross_organization_command = create_task_cmd(
+            &service,
+            100_001,
+            20,
+            &organization_two_agent.agent_id,
+            200,
+            "Must not be created",
+            "2026-06-01T06:01:00Z",
+        );
+        cross_organization_command.agent_id = organization_one_agent.agent_id.clone();
+        cross_organization_command.task_id = "task.cross-organization".to_string();
         let cross_organization_create = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 20,
-                agent_id: organization_one_agent.agent_id.clone(),
-                owner_user_id: 200,
-                task_id: "task.cross-organization".to_string(),
-                title: None,
-                prompt: "Must not be created".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"deferExecution":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T06:01:00Z".to_string(),
-            })
+            .create_task(cross_organization_command)
             .expect_err("an agent from another organization must not be accepted");
         assert!(cross_organization_create
             .to_string()
             .contains("agent not found"));
 
+        let mut organization_one_command = create_task_cmd(
+            &service,
+            100_001,
+            10,
+            &organization_one_agent.agent_id,
+            100,
+            "Organization one work",
+            "2026-06-01T06:02:00Z",
+        );
+        organization_one_command.task_id = "task.shared-id".to_string();
         let organization_one_task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 10,
-                agent_id: organization_one_agent.agent_id.clone(),
-                owner_user_id: 100,
-                task_id: "task.shared-id".to_string(),
-                title: None,
-                prompt: "Organization one work".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"deferExecution":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T06:02:00Z".to_string(),
-            })
+            .create_task(organization_one_command)
             .expect("create organization one task");
+        let mut organization_two_command = create_task_cmd(
+            &service,
+            100_001,
+            20,
+            &organization_two_agent.agent_id,
+            200,
+            "Organization two work",
+            "2026-06-01T06:02:01Z",
+        );
+        organization_two_command.task_id = "task.shared-id".to_string();
         let organization_two_task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 20,
-                agent_id: organization_two_agent.agent_id.clone(),
-                owner_user_id: 200,
-                task_id: "task.shared-id".to_string(),
-                title: None,
-                prompt: "Organization two work".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"deferExecution":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T06:02:01Z".to_string(),
-            })
+            .create_task(organization_two_command)
             .expect("the same task id is valid in another organization");
         assert_ne!(
-            task_execution_session_id(&organization_one_task),
-            task_execution_session_id(&organization_two_task)
+            organization_one_task.session_id,
+            organization_two_task.session_id
         );
 
         let organization_one_tasks = service
@@ -7667,20 +8574,18 @@ mod task_tests {
             .expect("read organization two task");
         assert_eq!(organization_two_read.prompt, "Organization two work");
 
+        let mut organization_one_only_command = create_task_cmd(
+            &service,
+            100_001,
+            10,
+            &organization_one_agent.agent_id,
+            100,
+            "Organization one private work",
+            "2026-06-01T06:03:00Z",
+        );
+        organization_one_only_command.task_id = "task.organization-one-only".to_string();
         let organization_one_only_task = service
-            .create_task(CreateTaskCommand {
-                tenant_id: 100_001,
-                organization_id: 10,
-                agent_id: organization_one_agent.agent_id.clone(),
-                owner_user_id: 100,
-                task_id: "task.organization-one-only".to_string(),
-                title: None,
-                prompt: "Organization one private work".to_string(),
-                external_ref: None,
-                metadata_json: r#"{"deferExecution":true}"#.to_string(),
-                requested_by: sample_subject(),
-                requested_at: "2026-06-01T06:03:00Z".to_string(),
-            })
+            .create_task(organization_one_only_command)
             .expect("create organization one private task");
 
         let foreign_read = service
@@ -7715,6 +8620,7 @@ mod task_tests {
                 organization_id: 20,
                 path_agent_id: organization_one_agent.agent_id.clone(),
                 task_id: organization_one_only_task.task_id.clone(),
+                idempotency_key: "task-run.foreign-org".to_string(),
                 expected_version: Some(organization_one_only_task.version),
                 owner_scope: None,
                 requested_by: sample_subject(),
@@ -7733,7 +8639,7 @@ mod task_tests {
                 requested_by: sample_subject(),
             })
             .expect("the owning organization still sees its task");
-        assert_eq!(unchanged.status, AgentTaskStatus::Pending);
+        assert_eq!(unchanged.status, AgentTaskStatus::Active);
         assert_eq!(unchanged.version, organization_one_only_task.version);
     }
 }

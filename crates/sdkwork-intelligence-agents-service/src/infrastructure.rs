@@ -1,4 +1,9 @@
 use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
+use crate::agent_turn_input_queue::{
+    AgentTurnInputQueueEntry, AgentTurnInputQueueStatus, TurnInputQueueClaimOutcome,
+    TurnInputQueueClaimRequest, TurnInputQueueListQuery, TurnInputQueueReorderEntry,
+    MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION, MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
+};
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentInteractionKind, AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
@@ -10,12 +15,13 @@ use crate::domain::{
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 use crate::in_memory_pagination::{count_iterator, paginate_items, paginate_iterator};
 use crate::ports::{
-    AgentAuditSink, AgentListQuery, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
-    InteractionListQuery, ItemFeedbackListQuery, McpMarketplaceListQuery,
-    ProjectCompositionSlotListQuery, ProjectListQuery, ProviderBindingListQuery,
-    ResourceUserStateListQuery, SessionActivitySummaryListQuery, SessionCheckpointListQuery,
-    SessionItemListQuery, SessionItemListSort, SessionListQuery, SessionRuntimeBindingListQuery,
-    TaskListQuery, TurnListQuery, TurnRequestWriteOutcome, WorkspaceListQuery,
+    validate_completed_turn_items, AgentAuditSink, AgentListQuery, AgentRepository,
+    AuditEventListQuery, CompositionSlotListQuery, InteractionListQuery, ItemFeedbackListQuery,
+    McpMarketplaceListQuery, ProjectCompositionSlotListQuery, ProjectListQuery,
+    ProviderBindingListQuery, ResourceUserStateListQuery, SessionActivitySummaryListQuery,
+    SessionCheckpointListQuery, SessionItemListQuery, SessionItemListSort, SessionListQuery,
+    SessionRuntimeBindingListQuery, TaskListQuery, TurnListQuery, TurnRequestWriteOutcome,
+    WorkspaceListQuery,
 };
 use crate::project::{
     project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus,
@@ -24,16 +30,39 @@ use crate::session_activity::{
     encode_session_activity_cursor, SessionActivityCursor, SessionActivitySource,
     SessionActivitySummaryParts, SessionActivitySummaryRecord,
 };
+use crate::task_scheduler::{
+    plan_task_materialization, task_run_payload_hash, ClaimTaskRunsRequest, FailTaskRunRequest,
+    MaterializeDueTasksRequest, TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition,
+    TaskRunLease, TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult,
+};
+use crate::task_scheduling::{
+    AgentTaskRunAttemptRecord, AgentTaskRunAttemptStatus, AgentTaskRunRecord, AgentTaskRunStatus,
+    AgentTaskStatus, AgentTaskTriggerKind,
+};
 use crate::validation::parse_rfc3339_datetime;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
     ProviderHealth, ProviderManifest,
 };
-use sdkwork_utils_rust::{is_blank, trim};
+use sdkwork_utils_rust::{format_datetime, is_blank, parse_datetime, sha256_hash, trim};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{LazyLock, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+fn turn_input_queue_payload_bytes(entry: &AgentTurnInputQueueEntry) -> usize {
+    entry
+        .content
+        .len()
+        .saturating_add(entry.display_text.len())
+        .saturating_add(
+            entry
+                .attachment_names
+                .iter()
+                .map(String::len)
+                .sum::<usize>(),
+        )
+}
 
 // ---------------------------------------------------------------------------
 // Production environment safety checks
@@ -349,11 +378,14 @@ type SessionItemIndexKey = (u64, u64, String, u64, u64);
 type TurnPrimaryKey = (u64, u64, String);
 type TurnIdempotencyKey = (u64, u64, u64, String);
 type TurnIndexKey = (u64, u64, String, Reverse<String>, Reverse<u64>);
+type TurnInputQueuePrimaryKey = (u64, u64, String, String);
 type InteractionPrimaryKey = (u64, u64, String, String);
 type InteractionIndexKey = (u64, u64, String, Reverse<String>, String);
 type PendingInteractionIndexKey = (u64, u64, String, i16, Reverse<String>, String);
 type TaskPrimaryKey = (u64, u64, String);
 type TaskIndexKey = (u64, u64, Reverse<String>, String);
+type TaskRunPrimaryKey = (u64, u64, String);
+type TaskRunAttemptPrimaryKey = (u64, u64, String);
 
 trait RecoveringRwLock<T> {
     fn recovering_read(&self) -> RwLockReadGuard<'_, T>;
@@ -438,11 +470,14 @@ pub struct InMemoryAgentRepository {
     turns: RwLock<HashMap<TurnPrimaryKey, AgentTurnRecord>>,
     turn_idempotency: RwLock<HashMap<TurnIdempotencyKey, TurnPrimaryKey>>,
     turn_index: RwLock<BTreeMap<TurnIndexKey, TurnPrimaryKey>>,
+    turn_input_queue: Mutex<HashMap<TurnInputQueuePrimaryKey, AgentTurnInputQueueEntry>>,
     interactions: RwLock<HashMap<InteractionPrimaryKey, AgentInteractionRecord>>,
     interaction_index: RwLock<BTreeMap<InteractionIndexKey, InteractionPrimaryKey>>,
     pending_interaction_index: RwLock<BTreeMap<PendingInteractionIndexKey, InteractionPrimaryKey>>,
     tasks: RwLock<HashMap<TaskPrimaryKey, AgentTaskRecord>>,
     task_index: RwLock<BTreeMap<TaskIndexKey, TaskPrimaryKey>>,
+    task_runs: RwLock<HashMap<TaskRunPrimaryKey, AgentTaskRunRecord>>,
+    task_run_attempts: RwLock<HashMap<TaskRunAttemptPrimaryKey, AgentTaskRunAttemptRecord>>,
 }
 
 impl InMemoryAgentRepository {
@@ -486,11 +521,14 @@ impl InMemoryAgentRepository {
             turns: RwLock::new(HashMap::new()),
             turn_idempotency: RwLock::new(HashMap::new()),
             turn_index: RwLock::new(BTreeMap::new()),
+            turn_input_queue: Mutex::new(HashMap::new()),
             interactions: RwLock::new(HashMap::new()),
             interaction_index: RwLock::new(BTreeMap::new()),
             pending_interaction_index: RwLock::new(BTreeMap::new()),
             tasks: RwLock::new(HashMap::new()),
             task_index: RwLock::new(BTreeMap::new()),
+            task_runs: RwLock::new(HashMap::new()),
+            task_run_attempts: RwLock::new(HashMap::new()),
         }
     }
 
@@ -2657,6 +2695,38 @@ impl AgentRepository for InMemoryAgentRepository {
         ))
     }
 
+    fn list_session_items_by_turn(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        turn_id: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentSessionItemRecord>> {
+        if limit == 0 {
+            return Err(KernelError::validation(
+                "turn session-item limit must be greater than zero",
+            ));
+        }
+        let items = self.items.recovering_read();
+        let index = self.session_item_index.recovering_read();
+        let scope_start = (tenant_id, organization_id, session_id.to_string(), 0, 0);
+        let scope_end = (
+            tenant_id,
+            organization_id,
+            session_id.to_string(),
+            u64::MAX,
+            u64::MAX,
+        );
+        Ok(index
+            .range(scope_start..=scope_end)
+            .filter_map(|(_, primary_key)| items.get(primary_key))
+            .filter(|record| record.turn_id.as_deref() == Some(turn_id))
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
     fn upsert_item_feedback(
         &self,
         record: AgentItemFeedbackRecord,
@@ -2832,6 +2902,484 @@ impl AgentRepository for InMemoryAgentRepository {
         ))
     }
 
+    fn get_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+    ) -> KernelResult<Option<AgentTurnInputQueueEntry>> {
+        Ok(self
+            .turn_input_queue
+            .recovering_lock()
+            .get(&(
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                queue_entry_id.to_string(),
+            ))
+            .filter(|entry| entry.owner_user_id == owner_user_id)
+            .cloned())
+    }
+
+    fn list_turn_input_queue_entries(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>> {
+        let mut entries = self
+            .turn_input_queue
+            .recovering_lock()
+            .values()
+            .filter(|entry| {
+                entry.tenant_id == query.tenant_id
+                    && entry.organization_id == query.organization_id
+                    && entry.session_id == query.session_id
+                    && entry.owner_user_id == owner_user_id
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| {
+            left.position
+                .cmp(&right.position)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(paginate_iterator(entries.into_iter(), &query.pagination))
+    }
+
+    fn count_turn_input_queue_entries(
+        &self,
+        query: &TurnInputQueueListQuery,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        Ok(self
+            .turn_input_queue
+            .recovering_lock()
+            .values()
+            .filter(|entry| {
+                entry.tenant_id == query.tenant_id
+                    && entry.organization_id == query.organization_id
+                    && entry.session_id == query.session_id
+                    && entry.owner_user_id == owner_user_id
+            })
+            .count() as u64)
+    }
+
+    fn insert_turn_input_queue_entry(
+        &self,
+        mut entry: AgentTurnInputQueueEntry,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let key = (
+            entry.tenant_id,
+            entry.organization_id,
+            entry.session_id.clone(),
+            entry.queue_entry_id.clone(),
+        );
+        let mut queue = self.turn_input_queue.recovering_lock();
+        if let Some(existing) = queue.get(&key) {
+            return if existing.payload_hash == entry.payload_hash
+                && existing.owner_user_id == entry.owner_user_id
+            {
+                Ok(existing.clone())
+            } else {
+                Err(KernelError::conflict(
+                    "queued Turn input idempotency conflict",
+                ))
+            };
+        }
+        let scoped = queue.values().filter(|candidate| {
+            candidate.tenant_id == entry.tenant_id
+                && candidate.organization_id == entry.organization_id
+                && candidate.session_id == entry.session_id
+                && candidate.owner_user_id == entry.owner_user_id
+        });
+        let (count, content_bytes, maximum_position) = scoped.fold(
+            (0usize, 0usize, 0u64),
+            |(count, content_bytes, position), candidate| {
+                (
+                    count.saturating_add(1),
+                    content_bytes.saturating_add(turn_input_queue_payload_bytes(candidate)),
+                    position.max(candidate.position),
+                )
+            },
+        );
+        if count >= MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION {
+            return Err(KernelError::conflict("queued Turn input limit reached"));
+        }
+        let entry_bytes = turn_input_queue_payload_bytes(&entry);
+        if content_bytes.saturating_add(entry_bytes)
+            > MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION
+        {
+            return Err(KernelError::conflict(
+                "queued Turn input content budget reached",
+            ));
+        }
+        entry.position = maximum_position
+            .checked_add(1024)
+            .ok_or_else(|| KernelError::conflict("queued Turn input position overflow"))?;
+        queue.insert(key, entry.clone());
+        Ok(entry)
+    }
+
+    fn update_turn_input_queue_entry(
+        &self,
+        entry: AgentTurnInputQueueEntry,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let key = (
+            entry.tenant_id,
+            entry.organization_id,
+            entry.session_id.clone(),
+            entry.queue_entry_id.clone(),
+        );
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let existing = queue
+            .get(&key)
+            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+        if existing.owner_user_id != entry.owner_user_id
+            || existing.version != expected_version
+            || entry.version != expected_version.saturating_add(1)
+            || existing.status == AgentTurnInputQueueStatus::Executing
+        {
+            return Err(KernelError::conflict("queued Turn input update conflict"));
+        }
+        let content_bytes = queue
+            .values()
+            .filter(|candidate| {
+                candidate.tenant_id == entry.tenant_id
+                    && candidate.organization_id == entry.organization_id
+                    && candidate.session_id == entry.session_id
+                    && candidate.owner_user_id == entry.owner_user_id
+                    && candidate.queue_entry_id != entry.queue_entry_id
+            })
+            .fold(0usize, |total, candidate| {
+                total.saturating_add(turn_input_queue_payload_bytes(candidate))
+            });
+        if content_bytes.saturating_add(turn_input_queue_payload_bytes(&entry))
+            > MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION
+        {
+            return Err(KernelError::conflict(
+                "queued Turn input content budget reached",
+            ));
+        }
+        queue.insert(key, entry.clone());
+        Ok(entry)
+    }
+
+    fn remove_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let key = (
+            tenant_id,
+            organization_id,
+            session_id.to_string(),
+            queue_entry_id.to_string(),
+        );
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let entry = queue
+            .get(&key)
+            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+        if entry.owner_user_id != owner_user_id
+            || entry.version != expected_version
+            || entry.status == AgentTurnInputQueueStatus::Executing
+        {
+            return Err(KernelError::conflict("queued Turn input removal conflict"));
+        }
+        queue
+            .remove(&key)
+            .ok_or_else(|| KernelError::conflict("queued Turn input removal conflict"))
+    }
+
+    fn clear_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let before = queue.len();
+        queue.retain(|_, entry| {
+            entry.tenant_id != tenant_id
+                || entry.organization_id != organization_id
+                || entry.session_id != session_id
+                || entry.owner_user_id != owner_user_id
+                || entry.status == AgentTurnInputQueueStatus::Executing
+        });
+        Ok(u64::try_from(before.saturating_sub(queue.len())).unwrap_or(u64::MAX))
+    }
+
+    fn purge_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<u64> {
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let before = queue.len();
+        queue.retain(|_, entry| {
+            entry.tenant_id != tenant_id
+                || entry.organization_id != organization_id
+                || entry.session_id != session_id
+                || entry.owner_user_id != owner_user_id
+        });
+        Ok(u64::try_from(before.saturating_sub(queue.len())).unwrap_or(u64::MAX))
+    }
+
+    fn reorder_turn_input_queue_entries(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        entries: &[TurnInputQueueReorderEntry],
+        requested_at: &str,
+    ) -> KernelResult<Vec<AgentTurnInputQueueEntry>> {
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let mutable_ids = queue
+            .values()
+            .filter(|entry| {
+                entry.tenant_id == tenant_id
+                    && entry.organization_id == organization_id
+                    && entry.session_id == session_id
+                    && entry.owner_user_id == owner_user_id
+                    && entry.status != AgentTurnInputQueueStatus::Executing
+            })
+            .map(|entry| entry.queue_entry_id.clone())
+            .collect::<HashSet<_>>();
+        let requested_ids = entries
+            .iter()
+            .map(|entry| entry.queue_entry_id.clone())
+            .collect::<HashSet<_>>();
+        if mutable_ids != requested_ids {
+            return Err(KernelError::conflict(
+                "queued Turn input reorder set changed",
+            ));
+        }
+        for entry in entries {
+            let key = (
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                entry.queue_entry_id.clone(),
+            );
+            let current = queue
+                .get(&key)
+                .ok_or_else(|| KernelError::conflict("queued Turn input reorder set changed"))?;
+            if current.version != entry.expected_version {
+                return Err(KernelError::conflict("queued Turn input version mismatch"));
+            }
+        }
+        let executing_position = queue
+            .values()
+            .filter(|entry| {
+                entry.tenant_id == tenant_id
+                    && entry.organization_id == organization_id
+                    && entry.session_id == session_id
+                    && entry.owner_user_id == owner_user_id
+                    && entry.status == AgentTurnInputQueueStatus::Executing
+            })
+            .map(|entry| entry.position)
+            .max()
+            .unwrap_or(0);
+        let mut reordered = Vec::with_capacity(entries.len());
+        for (index, requested) in entries.iter().enumerate() {
+            let key = (
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+                requested.queue_entry_id.clone(),
+            );
+            let current = queue
+                .get_mut(&key)
+                .ok_or_else(|| KernelError::conflict("queued Turn input reorder set changed"))?;
+            current.position = u64::try_from(index)
+                .ok()
+                .and_then(|value| value.checked_add(1))
+                .and_then(|value| value.checked_mul(1024))
+                .and_then(|value| value.checked_add(executing_position))
+                .ok_or_else(|| KernelError::conflict("queued Turn input position overflow"))?;
+            current.version = current.version.saturating_add(1);
+            current.updated_at = requested_at.to_string();
+            reordered.push(current.clone());
+        }
+        Ok(reordered)
+    }
+
+    fn claim_next_turn_input_queue_entry(
+        &self,
+        request: &TurnInputQueueClaimRequest,
+    ) -> KernelResult<TurnInputQueueClaimOutcome> {
+        let requested_at = parse_rfc3339_datetime(&request.requested_at, "requestedAt")?;
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let turns = self.turns.recovering_read();
+        let mut scoped_keys = queue
+            .iter()
+            .filter(|(_, entry)| {
+                entry.tenant_id == request.tenant_id
+                    && entry.organization_id == request.organization_id
+                    && entry.session_id == request.session_id
+                    && entry.owner_user_id == request.owner_user_id
+            })
+            .map(|(key, entry)| (key.clone(), entry.position, entry.id))
+            .collect::<Vec<_>>();
+        scoped_keys.sort_by_key(|(_, position, id)| (*position, *id));
+
+        if let Some(executing_key) = scoped_keys
+            .iter()
+            .find(|(key, _, _)| {
+                queue
+                    .get(key)
+                    .is_some_and(|entry| entry.status == AgentTurnInputQueueStatus::Executing)
+            })
+            .map(|(key, _, _)| key.clone())
+        {
+            let executing = queue
+                .get(&executing_key)
+                .cloned()
+                .ok_or_else(|| KernelError::conflict("queued Turn input claim changed"))?;
+            let matching_turn = turns.values().find(|turn| {
+                turn.tenant_id == request.tenant_id
+                    && turn.organization_id == request.organization_id
+                    && turn.session_id == request.session_id
+                    && turn.owner_user_id == request.owner_user_id
+                    && turn.idempotency_key == executing.idempotency_key
+            });
+            match matching_turn.map(|turn| turn.status) {
+                Some(AgentTurnStatus::Completed) => {
+                    queue.remove(&executing_key);
+                    scoped_keys.retain(|(key, _, _)| key != &executing_key);
+                }
+                Some(AgentTurnStatus::Failed | AgentTurnStatus::Cancelled) => {
+                    let entry = queue
+                        .get_mut(&executing_key)
+                        .ok_or_else(|| KernelError::conflict("queued Turn input claim changed"))?;
+                    entry.status = AgentTurnInputQueueStatus::Failed;
+                    entry.claim_owner = None;
+                    entry.claim_token_hash = None;
+                    entry.claim_expires_at = None;
+                    entry.error_code = Some("turn_terminal_failure".to_string());
+                    entry.error_detail = None;
+                    entry.failed_at = Some(request.requested_at.clone());
+                    entry.updated_at = request.requested_at.clone();
+                    entry.version = entry.version.saturating_add(1);
+                    return Ok(TurnInputQueueClaimOutcome::Blocked(entry.clone()));
+                }
+                Some(AgentTurnStatus::Requested | AgentTurnStatus::Running) => {
+                    return Ok(TurnInputQueueClaimOutcome::Busy(executing));
+                }
+                None => {
+                    let expired = executing
+                        .claim_expires_at
+                        .as_deref()
+                        .and_then(|value| parse_rfc3339_datetime(value, "claimExpiresAt").ok())
+                        .is_none_or(|expires_at| expires_at <= requested_at);
+                    if !expired {
+                        return Ok(TurnInputQueueClaimOutcome::Busy(executing));
+                    }
+                    let entry = queue
+                        .get_mut(&executing_key)
+                        .ok_or_else(|| KernelError::conflict("queued Turn input claim changed"))?;
+                    entry.status = AgentTurnInputQueueStatus::Queued;
+                    entry.claim_owner = None;
+                    entry.claim_token_hash = None;
+                    entry.claim_expires_at = None;
+                    entry.updated_at = request.requested_at.clone();
+                    entry.version = entry.version.saturating_add(1);
+                }
+            }
+        }
+
+        if turns.values().any(|turn| {
+            turn.tenant_id == request.tenant_id
+                && turn.organization_id == request.organization_id
+                && turn.session_id == request.session_id
+                && turn.owner_user_id == request.owner_user_id
+                && matches!(
+                    turn.status,
+                    AgentTurnStatus::Requested | AgentTurnStatus::Running
+                )
+        }) {
+            return Ok(TurnInputQueueClaimOutcome::ActiveTurn);
+        }
+
+        let head_key = scoped_keys
+            .iter()
+            .filter_map(|(key, _, _)| queue.get(key).map(|entry| (key, entry)))
+            .min_by_key(|(_, entry)| (entry.position, entry.id))
+            .map(|(key, _)| key.clone());
+        let Some(head_key) = head_key else {
+            return Ok(TurnInputQueueClaimOutcome::Empty);
+        };
+        let head = queue
+            .get_mut(&head_key)
+            .ok_or_else(|| KernelError::conflict("queued Turn input claim changed"))?;
+        if head.status == AgentTurnInputQueueStatus::Failed {
+            return Ok(TurnInputQueueClaimOutcome::Blocked(head.clone()));
+        }
+        head.status = AgentTurnInputQueueStatus::Executing;
+        head.claim_owner = Some(request.claim_owner.clone());
+        head.claim_token_hash = Some(request.claim_token_hash.clone());
+        head.claim_expires_at = Some(request.claim_expires_at.clone());
+        head.claimed_at = Some(request.requested_at.clone());
+        head.updated_at = request.requested_at.clone();
+        head.fencing_token = head.fencing_token.saturating_add(1);
+        head.version = head.version.saturating_add(1);
+        Ok(TurnInputQueueClaimOutcome::Claimed(head.clone()))
+    }
+
+    fn fail_turn_input_queue_entry(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+        queue_entry_id: &str,
+        expected_version: u64,
+        expected_fencing_token: u64,
+        claim_token_hash: &str,
+        error_code: &str,
+        error_detail: Option<&str>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTurnInputQueueEntry> {
+        let key = (
+            tenant_id,
+            organization_id,
+            session_id.to_string(),
+            queue_entry_id.to_string(),
+        );
+        let mut queue = self.turn_input_queue.recovering_lock();
+        let entry = queue
+            .get_mut(&key)
+            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+        if entry.owner_user_id != owner_user_id
+            || entry.status != AgentTurnInputQueueStatus::Executing
+            || entry.version != expected_version
+            || entry.fencing_token != expected_fencing_token
+            || entry.claim_token_hash.as_deref() != Some(claim_token_hash)
+        {
+            return Err(KernelError::conflict("queued Turn input claim mismatch"));
+        }
+        entry.status = AgentTurnInputQueueStatus::Failed;
+        entry.claim_owner = None;
+        entry.claim_token_hash = None;
+        entry.claim_expires_at = None;
+        entry.error_code = Some(error_code.to_string());
+        entry.error_detail = error_detail.map(str::to_string);
+        entry.failed_at = Some(requested_at.to_string());
+        entry.updated_at = requested_at.to_string();
+        entry.version = entry.version.saturating_add(1);
+        Ok(entry.clone())
+    }
+
     fn list_reconcilable_turns(
         &self,
         stale_before: &str,
@@ -2947,6 +3495,19 @@ impl AgentRepository for InMemoryAgentRepository {
                     })?;
             return Ok(TurnRequestWriteOutcome::Existing(Box::new(existing)));
         }
+        if turns.values().any(|existing| {
+            existing.tenant_id == turn.tenant_id
+                && existing.organization_id == turn.organization_id
+                && existing.session_id == turn.session_id
+                && matches!(
+                    existing.status,
+                    AgentTurnStatus::Requested | AgentTurnStatus::Running
+                )
+        }) {
+            return Err(KernelError::conflict(
+                "another Turn is already active for this session",
+            ));
+        }
         let existing_session = sessions
             .get(&session_primary_key)
             .cloned()
@@ -3059,21 +3620,9 @@ impl AgentRepository for InMemoryAgentRepository {
         expected_turn_version: u64,
         expected_fencing_token: u64,
         expected_lease_token: Option<String>,
-        mut response_item: AgentSessionItemRecord,
-    ) -> KernelResult<(AgentSessionRecord, AgentSessionItemRecord)> {
-        if turn.status != AgentTurnStatus::Completed
-            || turn.version != expected_turn_version.saturating_add(1)
-            || turn.response_item_id.as_deref() != Some(response_item.item_id.as_str())
-            || turn.tenant_id != response_item.tenant_id
-            || turn.organization_id != response_item.organization_id
-            || turn.session_id != response_item.session_id
-            || response_item.turn_id.as_deref() != Some(turn.turn_id.as_str())
-            || response_item.parent_item_id.as_deref() != Some(turn.request_item_id.as_str())
-        {
-            return Err(KernelError::validation(
-                "completed turn and response item scope mismatch",
-            ));
-        }
+        mut completed_items: Vec<AgentSessionItemRecord>,
+    ) -> KernelResult<(AgentSessionRecord, Vec<AgentSessionItemRecord>)> {
+        validate_completed_turn_items(&turn, expected_turn_version, &completed_items)?;
         let turn_primary_key = (turn.tenant_id, turn.organization_id, turn.turn_id.clone());
         let session_primary_key = (
             turn.tenant_id,
@@ -3109,27 +3658,48 @@ impl AgentRepository for InMemoryAgentRepository {
         if existing_session.deleted_at.is_some() {
             return Err(KernelError::validation("session not found"));
         }
-        let response_primary_key = session_item_primary_key(&response_item);
-        if items.contains_key(&response_primary_key) {
-            return Err(KernelError::conflict("response item already exists"));
-        }
-        response_item.sequence = existing_session.last_item_sequence.saturating_add(1);
-        let response_index_key = session_item_index_key(&response_item);
-        if session_item_index.contains_key(&response_index_key) {
-            return Err(KernelError::conflict("session item sequence conflict"));
-        }
         let mut updated_session = existing_session.clone();
-        updated_session.updated_by = response_item.created_by;
-        updated_session.record_item(
-            response_item.input_tokens,
-            response_item.output_tokens,
-            response_item.updated_at.clone(),
-        );
+        let mut pending_items = Vec::with_capacity(completed_items.len());
+        let mut pending_primary_keys = HashSet::with_capacity(completed_items.len());
+        let mut pending_index_keys = HashSet::with_capacity(completed_items.len());
+        for (index, item) in completed_items.iter_mut().enumerate() {
+            let sequence_offset = u64::try_from(index)
+                .map_err(|_| KernelError::conflict("session item sequence overflow"))?
+                .checked_add(1)
+                .ok_or_else(|| KernelError::conflict("session item sequence overflow"))?;
+            item.sequence = existing_session
+                .last_item_sequence
+                .checked_add(sequence_offset)
+                .ok_or_else(|| KernelError::conflict("session item sequence overflow"))?;
+            let primary_key = session_item_primary_key(item);
+            if items.contains_key(&primary_key) || !pending_primary_keys.insert(primary_key.clone())
+            {
+                return Err(KernelError::conflict("completed turn item already exists"));
+            }
+            let index_key = session_item_index_key(item);
+            if session_item_index.contains_key(&index_key)
+                || !pending_index_keys.insert(index_key.clone())
+            {
+                return Err(KernelError::conflict("session item sequence conflict"));
+            }
+            updated_session.updated_by = item.created_by;
+            updated_session.record_item(
+                item.input_tokens,
+                item.output_tokens,
+                item.updated_at.clone(),
+            );
+            pending_items.push((primary_key, index_key));
+        }
 
         let previous_session_index_key = session_index_key(&existing_session);
         let next_session_index_key = session_index_key(&updated_session);
-        items.insert(response_primary_key.clone(), response_item.clone());
-        session_item_index.insert(response_index_key, response_primary_key);
+        for ((primary_key, index_key), item) in pending_items
+            .into_iter()
+            .zip(completed_items.iter().cloned())
+        {
+            items.insert(primary_key.clone(), item);
+            session_item_index.insert(index_key, primary_key);
+        }
         sessions.insert(session_primary_key.clone(), updated_session.clone());
         session_index.remove(&previous_session_index_key);
         session_index.insert(next_session_index_key, session_primary_key);
@@ -3137,7 +3707,7 @@ impl AgentRepository for InMemoryAgentRepository {
         turns.insert(turn_primary_key, turn);
         self.advance_session_activity(&updated_session, &activity_at, SessionActivitySource::Turn);
 
-        Ok((updated_session, response_item))
+        Ok((updated_session, completed_items))
     }
 
     fn list_item_drive_refs(
@@ -3418,6 +3988,970 @@ impl AgentRepository for InMemoryAgentRepository {
                 .filter(|record| task_matches_list_query(record, query)),
         ))
     }
+}
+
+impl TaskSchedulerRepository for InMemoryAgentRepository {
+    fn transition_task(
+        &self,
+        task: AgentTaskRecord,
+        cancellation_reason: &str,
+    ) -> KernelResult<TaskTransitionResult> {
+        if cancellation_reason.trim().is_empty() || cancellation_reason.len() > 128 {
+            return Err(KernelError::validation(
+                "task transition cancellation reason is invalid",
+            ));
+        }
+        let key = (task.tenant_id, task.organization_id, task.task_id.clone());
+        let mut tasks = self.tasks.recovering_write();
+        let existing = tasks
+            .get(&key)
+            .ok_or_else(|| KernelError::validation("task not found"))?;
+        if task.version != existing.version.saturating_add(1)
+            || task.generation != existing.generation.saturating_add(1)
+        {
+            return Err(KernelError::conflict("task version or generation mismatch"));
+        }
+        let previous_index_key = task_index_key(existing);
+        let mut runs = self.task_runs.recovering_write();
+        let mut cancelled_pending_run_count = 0u64;
+        for run in runs.values_mut().filter(|run| {
+            run.tenant_id == task.tenant_id
+                && run.organization_id == task.organization_id
+                && run.task_id == task.task_id
+                && run.status == AgentTaskRunStatus::Pending
+                && run.schedule_generation < task.generation
+        }) {
+            run.status = AgentTaskRunStatus::Cancelled;
+            run.failure_class = Some("task_generation_changed".to_string());
+            run.error_code = Some(cancellation_reason.to_string());
+            run.finished_at = Some(task.updated_at.clone());
+            run.cancelled_at = Some(task.updated_at.clone());
+            run.updated_at = task.updated_at.clone();
+            run.version = run.version.saturating_add(1);
+            cancelled_pending_run_count = cancelled_pending_run_count.saturating_add(1);
+        }
+        tasks.insert(key.clone(), task.clone());
+        let mut index = self.task_index.recovering_write();
+        index.remove(&previous_index_key);
+        index.insert(task_index_key(&task), key);
+        Ok(TaskTransitionResult {
+            task,
+            cancelled_pending_run_count,
+        })
+    }
+
+    fn create_manual_task_run(
+        &self,
+        task: &AgentTaskRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        if is_blank(Some(idempotency_key)) || idempotency_key.len() > 256 {
+            return Err(KernelError::validation("idempotencyKey is invalid"));
+        }
+        parse_datetime(requested_at, None)
+            .ok_or_else(|| KernelError::validation("requestedAt is invalid"))?;
+        let mut runs = self.task_runs.recovering_write();
+        if let Some(existing) = runs.values().find(|run| {
+            run.tenant_id == task.tenant_id
+                && run.organization_id == task.organization_id
+                && run.owner_user_id == task.owner_user_id
+                && run.idempotency_key == idempotency_key
+        }) {
+            if existing.task_id == task.task_id && existing.schedule_generation == task.generation {
+                return Ok(existing.clone());
+            }
+            return Err(KernelError::conflict("idempotency key payload mismatch"));
+        }
+        let id = self.id_generator.next_id()?;
+        let run_id = format!("run.{id}");
+        let run = AgentTaskRunRecord {
+            id,
+            run_id: run_id.clone(),
+            tenant_id: task.tenant_id,
+            organization_id: task.organization_id,
+            task_id: task.task_id.clone(),
+            session_id: task.session_id.clone(),
+            agent_id: task.agent_id.clone(),
+            owner_user_id: task.owner_user_id,
+            trigger_kind: AgentTaskTriggerKind::Manual,
+            schedule_generation: task.generation,
+            scheduled_for: requested_at.to_string(),
+            retry_of_run_id: None,
+            priority: task.priority,
+            status: AgentTaskRunStatus::Pending,
+            idempotency_key: idempotency_key.to_string(),
+            payload_hash: task_run_payload_hash(
+                &task.task_id,
+                &task.session_id,
+                task.generation,
+                idempotency_key,
+                &task.prompt,
+            )?,
+            turn_id: Some(format!("turn.{}", self.id_generator.next_id()?)),
+            attempt_count: 0,
+            max_attempts: task.max_attempts,
+            available_at: requested_at.to_string(),
+            lease_owner: None,
+            lease_token_hash: None,
+            lease_expires_at: None,
+            fencing_token: 0,
+            timeout_at: None,
+            failure_class: None,
+            error_code: None,
+            error_detail: None,
+            version: 0,
+            created_at: requested_at.to_string(),
+            updated_at: requested_at.to_string(),
+            claimed_at: None,
+            started_at: None,
+            finished_at: None,
+            cancelled_at: None,
+        };
+        runs.insert(
+            (run.tenant_id, run.organization_id, run.run_id.clone()),
+            run.clone(),
+        );
+        Ok(run)
+    }
+
+    fn create_business_retry_task_run(
+        &self,
+        task: &AgentTaskRecord,
+        retry_of: &AgentTaskRunRecord,
+        idempotency_key: &str,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        if is_blank(Some(idempotency_key)) || idempotency_key.len() > 256 {
+            return Err(KernelError::validation("idempotencyKey is invalid"));
+        }
+        parse_datetime(requested_at, None)
+            .ok_or_else(|| KernelError::validation("requestedAt is invalid"))?;
+        if retry_of.tenant_id != task.tenant_id
+            || retry_of.organization_id != task.organization_id
+            || retry_of.task_id != task.task_id
+        {
+            return Err(KernelError::validation("retry source Run scope is invalid"));
+        }
+        let mut runs = self.task_runs.recovering_write();
+        if let Some(existing) = runs.values().find(|run| {
+            run.tenant_id == task.tenant_id
+                && run.organization_id == task.organization_id
+                && run.owner_user_id == task.owner_user_id
+                && run.idempotency_key == idempotency_key
+        }) {
+            if existing.trigger_kind == AgentTaskTriggerKind::BusinessRetry
+                && existing.retry_of_run_id.as_deref() == Some(retry_of.run_id.as_str())
+                && existing.schedule_generation == task.generation
+            {
+                return Ok(existing.clone());
+            }
+            return Err(KernelError::conflict("idempotency key payload mismatch"));
+        }
+        let id = self.id_generator.next_id()?;
+        let run_id = format!("run.{id}");
+        let run = AgentTaskRunRecord {
+            id,
+            run_id: run_id.clone(),
+            tenant_id: task.tenant_id,
+            organization_id: task.organization_id,
+            task_id: task.task_id.clone(),
+            session_id: task.session_id.clone(),
+            agent_id: task.agent_id.clone(),
+            owner_user_id: task.owner_user_id,
+            trigger_kind: AgentTaskTriggerKind::BusinessRetry,
+            schedule_generation: task.generation,
+            scheduled_for: requested_at.to_string(),
+            retry_of_run_id: Some(retry_of.run_id.clone()),
+            priority: task.priority,
+            status: AgentTaskRunStatus::Pending,
+            idempotency_key: idempotency_key.to_string(),
+            payload_hash: task_run_payload_hash(
+                &task.task_id,
+                &task.session_id,
+                task.generation,
+                idempotency_key,
+                &task.prompt,
+            )?,
+            turn_id: Some(format!("turn.{}", self.id_generator.next_id()?)),
+            attempt_count: 0,
+            max_attempts: task.max_attempts,
+            available_at: requested_at.to_string(),
+            lease_owner: None,
+            lease_token_hash: None,
+            lease_expires_at: None,
+            fencing_token: 0,
+            timeout_at: None,
+            failure_class: None,
+            error_code: None,
+            error_detail: None,
+            version: 0,
+            created_at: requested_at.to_string(),
+            updated_at: requested_at.to_string(),
+            claimed_at: None,
+            started_at: None,
+            finished_at: None,
+            cancelled_at: None,
+        };
+        runs.insert(
+            (run.tenant_id, run.organization_id, run.run_id.clone()),
+            run.clone(),
+        );
+        Ok(run)
+    }
+
+    fn materialize_due_tasks(
+        &self,
+        request: &MaterializeDueTasksRequest,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        let now = parse_datetime(&request.now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let mut tasks = self.tasks.recovering_write();
+        let mut task_index = self.task_index.recovering_write();
+        let mut runs = self.task_runs.recovering_write();
+        let mut due_keys = tasks
+            .iter()
+            .filter(|(_, task)| {
+                task.status == AgentTaskStatus::Active
+                    && task
+                        .next_fire_at
+                        .as_deref()
+                        .and_then(|value| parse_datetime(value, None))
+                        .is_some_and(|value| value <= now)
+            })
+            .map(|(key, task)| {
+                (
+                    task.next_fire_at.clone().unwrap_or_default(),
+                    Reverse(task.priority),
+                    task.id,
+                    key.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        due_keys.sort();
+        due_keys.truncate(request.limit);
+
+        let mut materialized = Vec::new();
+        for (_, _, _, key) in due_keys {
+            let task = tasks
+                .get_mut(&key)
+                .ok_or_else(|| KernelError::validation("task not found"))?;
+            let previous_index_key = task_index_key(task);
+            let active_count = runs
+                .values()
+                .filter(|run| {
+                    run.tenant_id == task.tenant_id
+                        && run.organization_id == task.organization_id
+                        && run.task_id == task.task_id
+                        && matches!(
+                            run.status,
+                            AgentTaskRunStatus::Claimed
+                                | AgentTaskRunStatus::Running
+                                | AgentTaskRunStatus::Reconciling
+                        )
+                })
+                .count();
+            let overlap_blocked = task.overlap_policy
+                == crate::task_scheduling::AgentTaskOverlapPolicy::Skip
+                && active_count >= usize::from(task.max_concurrent_runs);
+            let remaining = request.limit.saturating_sub(materialized.len()).max(1);
+            let plan = plan_task_materialization(
+                task,
+                &request.now,
+                usize::from(task.max_catch_up_runs).min(remaining),
+                overlap_blocked,
+            )?;
+
+            for scheduled_for in plan.occurrences {
+                if materialized.len() >= request.limit {
+                    break;
+                }
+                let duplicate = runs.values().any(|run| {
+                    run.tenant_id == task.tenant_id
+                        && run.organization_id == task.organization_id
+                        && run.task_id == task.task_id
+                        && run.schedule_generation == task.generation
+                        && run.scheduled_for == scheduled_for
+                        && run.trigger_kind == AgentTaskTriggerKind::Scheduled
+                });
+                if duplicate {
+                    continue;
+                }
+                let id = self.id_generator.next_id()?;
+                let run_id = format!("run.{id}");
+                let turn_id = format!("turn.{}", self.id_generator.next_id()?);
+                let run = AgentTaskRunRecord {
+                    id,
+                    run_id: run_id.clone(),
+                    tenant_id: task.tenant_id,
+                    organization_id: task.organization_id,
+                    task_id: task.task_id.clone(),
+                    session_id: task.session_id.clone(),
+                    agent_id: task.agent_id.clone(),
+                    owner_user_id: task.owner_user_id,
+                    trigger_kind: AgentTaskTriggerKind::Scheduled,
+                    schedule_generation: task.generation,
+                    scheduled_for: scheduled_for.clone(),
+                    retry_of_run_id: None,
+                    priority: task.priority,
+                    status: AgentTaskRunStatus::Pending,
+                    idempotency_key: format!("agent-task-run:{run_id}"),
+                    payload_hash: task_run_payload_hash(
+                        &task.task_id,
+                        &task.session_id,
+                        task.generation,
+                        &scheduled_for,
+                        &task.prompt,
+                    )?,
+                    turn_id: Some(turn_id),
+                    attempt_count: 0,
+                    max_attempts: task.max_attempts,
+                    available_at: request.now.clone(),
+                    lease_owner: None,
+                    lease_token_hash: None,
+                    lease_expires_at: None,
+                    fencing_token: 0,
+                    timeout_at: None,
+                    failure_class: None,
+                    error_code: None,
+                    error_detail: None,
+                    version: 0,
+                    created_at: request.now.clone(),
+                    updated_at: request.now.clone(),
+                    claimed_at: None,
+                    started_at: None,
+                    finished_at: None,
+                    cancelled_at: None,
+                };
+                runs.insert(
+                    (run.tenant_id, run.organization_id, run.run_id.clone()),
+                    run.clone(),
+                );
+                materialized.push(run);
+            }
+
+            task.next_fire_at = plan.next_fire_at;
+            task.status = plan.status;
+            task.completed_at = plan.completed_at;
+            task.updated_at = request.now.clone();
+            task.version = task.version.saturating_add(1);
+            task_index.remove(&previous_index_key);
+            task_index.insert(task_index_key(task), key);
+        }
+        Ok(materialized)
+    }
+
+    fn claim_task_runs(&self, request: &ClaimTaskRunsRequest) -> KernelResult<Vec<TaskRunClaim>> {
+        if is_blank(Some(&request.worker_id)) || request.worker_id.len() > 128 {
+            return Err(KernelError::validation("workerId is invalid"));
+        }
+        let now = parse_datetime(&request.now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let lease_expires_at = format_datetime(
+            now + chrono::Duration::seconds(i64::from(request.lease_seconds)),
+            None,
+        );
+        let tasks = self.tasks.recovering_read();
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let mut tenant_active_counts = HashMap::<u64, usize>::new();
+        for run in runs.values().filter(|run| {
+            matches!(
+                run.status,
+                AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+            )
+        }) {
+            *tenant_active_counts.entry(run.tenant_id).or_insert(0) += 1;
+        }
+        let mut candidates = runs
+            .iter()
+            .filter(|(_, run)| {
+                run.status == AgentTaskRunStatus::Pending
+                    && parse_datetime(&run.available_at, None).is_some_and(|value| value <= now)
+            })
+            .map(|(key, run)| {
+                (
+                    Reverse(run.priority),
+                    run.available_at.clone(),
+                    run.scheduled_for.clone(),
+                    run.id,
+                    key.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        candidates.sort();
+
+        let mut claims = Vec::new();
+        for (_, _, _, _, key) in candidates {
+            if claims.len() >= request.limit {
+                break;
+            }
+            let run_snapshot = runs
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            let Some(task) = tasks.get(&(
+                run_snapshot.tenant_id,
+                run_snapshot.organization_id,
+                run_snapshot.task_id.clone(),
+            )) else {
+                continue;
+            };
+            if task.generation != run_snapshot.schedule_generation {
+                if let Some(run) = runs.get_mut(&key) {
+                    run.status = AgentTaskRunStatus::DeadLetter;
+                    run.failure_class = Some("fencing_conflict".to_string());
+                    run.error_code = Some("stale_task_generation".to_string());
+                    run.finished_at = Some(request.now.clone());
+                    run.updated_at = request.now.clone();
+                    run.version = run.version.saturating_add(1);
+                }
+                continue;
+            }
+            if tenant_active_counts
+                .get(&run_snapshot.tenant_id)
+                .copied()
+                .unwrap_or(0)
+                >= request.max_concurrent_runs_per_tenant
+            {
+                continue;
+            }
+            let active_count = runs
+                .values()
+                .filter(|run| {
+                    run.tenant_id == run_snapshot.tenant_id
+                        && run.organization_id == run_snapshot.organization_id
+                        && run.task_id == run_snapshot.task_id
+                        && matches!(
+                            run.status,
+                            AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+                        )
+                })
+                .count();
+            if active_count >= usize::from(task.max_concurrent_runs) {
+                continue;
+            }
+
+            let raw_token = sdkwork_utils_rust::random_string(48);
+            let token_hash = sha256_hash(raw_token.as_bytes());
+            let attempt_id_value = self.id_generator.next_id()?;
+            let attempt_id = format!("attempt.{attempt_id_value}");
+            let run = runs
+                .get_mut(&key)
+                .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            run.status = AgentTaskRunStatus::Claimed;
+            run.attempt_count = run.attempt_count.saturating_add(1);
+            run.lease_owner = Some(request.worker_id.clone());
+            run.lease_token_hash = Some(token_hash.clone());
+            run.lease_expires_at = Some(lease_expires_at.clone());
+            run.fencing_token = run.fencing_token.saturating_add(1);
+            run.claimed_at = Some(request.now.clone());
+            run.updated_at = request.now.clone();
+            run.version = run.version.saturating_add(1);
+            run.timeout_at = Some(format_datetime(
+                now + chrono::Duration::seconds(i64::from(task.timeout_seconds)),
+                None,
+            ));
+            let attempt = AgentTaskRunAttemptRecord {
+                id: attempt_id_value,
+                attempt_id: attempt_id.clone(),
+                tenant_id: run.tenant_id,
+                organization_id: run.organization_id,
+                run_id: run.run_id.clone(),
+                attempt_no: run.attempt_count,
+                worker_id: request.worker_id.clone(),
+                status: AgentTaskRunAttemptStatus::Claimed,
+                lease_token_hash: token_hash,
+                fencing_token: run.fencing_token,
+                failure_class: None,
+                error_code: None,
+                error_detail: None,
+                created_at: request.now.clone(),
+                updated_at: request.now.clone(),
+                started_at: None,
+                heartbeat_at: None,
+                finished_at: None,
+            };
+            attempts.insert(
+                (
+                    attempt.tenant_id,
+                    attempt.organization_id,
+                    attempt.attempt_id.clone(),
+                ),
+                attempt.clone(),
+            );
+            claims.push(TaskRunClaim {
+                run: run.clone(),
+                attempt,
+                lease: TaskRunLease {
+                    tenant_id: run.tenant_id,
+                    organization_id: run.organization_id,
+                    run_id: run.run_id.clone(),
+                    attempt_id,
+                    worker_id: request.worker_id.clone(),
+                    lease_token: raw_token,
+                    fencing_token: run.fencing_token,
+                },
+            });
+            *tenant_active_counts.entry(run.tenant_id).or_insert(0) += 1;
+        }
+        Ok(claims)
+    }
+
+    fn mark_task_run_running(
+        &self,
+        lease: &TaskRunLease,
+        started_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let run = checked_in_memory_run_lease(&mut runs, lease, started_at)?;
+        if run.status != AgentTaskRunStatus::Claimed {
+            return Err(KernelError::conflict("task Run is not claimed"));
+        }
+        run.status = AgentTaskRunStatus::Running;
+        run.started_at = Some(started_at.to_string());
+        run.updated_at = started_at.to_string();
+        run.version = run.version.saturating_add(1);
+        let attempt = attempts
+            .get_mut(&(
+                lease.tenant_id,
+                lease.organization_id,
+                lease.attempt_id.clone(),
+            ))
+            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+        attempt.status = AgentTaskRunAttemptStatus::Running;
+        attempt.started_at = Some(started_at.to_string());
+        attempt.heartbeat_at = Some(started_at.to_string());
+        attempt.updated_at = started_at.to_string();
+        Ok(run.clone())
+    }
+
+    fn heartbeat_task_run(
+        &self,
+        lease: &TaskRunLease,
+        heartbeat_at: &str,
+        lease_seconds: u32,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        let heartbeat = parse_datetime(heartbeat_at, None)
+            .ok_or_else(|| KernelError::validation("heartbeatAt is invalid"))?;
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let run = checked_in_memory_run_lease(&mut runs, lease, heartbeat_at)?;
+        if !matches!(
+            run.status,
+            AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+        ) {
+            return Err(KernelError::conflict("task Run lease is not active"));
+        }
+        run.lease_expires_at = Some(format_datetime(
+            heartbeat + chrono::Duration::seconds(i64::from(lease_seconds)),
+            None,
+        ));
+        run.updated_at = heartbeat_at.to_string();
+        run.version = run.version.saturating_add(1);
+        let attempt = attempts
+            .get_mut(&(
+                lease.tenant_id,
+                lease.organization_id,
+                lease.attempt_id.clone(),
+            ))
+            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+        attempt.heartbeat_at = Some(heartbeat_at.to_string());
+        attempt.updated_at = heartbeat_at.to_string();
+        Ok(run.clone())
+    }
+
+    fn complete_task_run(
+        &self,
+        lease: &TaskRunLease,
+        turn_id: &str,
+        completed_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        let tasks = self.tasks.recovering_read();
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let run = checked_in_memory_run_lease(&mut runs, lease, completed_at)?;
+        if !matches!(
+            run.status,
+            AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+        ) {
+            return Err(KernelError::conflict("task Run is not completable"));
+        }
+        if run.turn_id.as_deref() != Some(turn_id) {
+            return Err(KernelError::conflict("task Run Turn identity mismatch"));
+        }
+        let current_generation = tasks
+            .get(&(run.tenant_id, run.organization_id, run.task_id.clone()))
+            .map(|task| task.generation)
+            .ok_or_else(|| KernelError::conflict("task Run Task not found"))?;
+        if current_generation != run.schedule_generation {
+            return Err(KernelError::conflict("stale task Run generation"));
+        }
+        run.status = AgentTaskRunStatus::Succeeded;
+        run.lease_owner = None;
+        run.lease_token_hash = None;
+        run.lease_expires_at = None;
+        run.finished_at = Some(completed_at.to_string());
+        run.updated_at = completed_at.to_string();
+        run.version = run.version.saturating_add(1);
+        let attempt = attempts
+            .get_mut(&(
+                lease.tenant_id,
+                lease.organization_id,
+                lease.attempt_id.clone(),
+            ))
+            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+        attempt.status = AgentTaskRunAttemptStatus::Succeeded;
+        attempt.finished_at = Some(completed_at.to_string());
+        attempt.updated_at = completed_at.to_string();
+        Ok(run.clone())
+    }
+
+    fn fail_task_run(&self, request: &FailTaskRunRequest) -> KernelResult<AgentTaskRunRecord> {
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let run = checked_in_memory_run_lease(&mut runs, &request.lease, &request.failed_at)?;
+        let retry_allowed = request.disposition == TaskRunFailureDisposition::Retry
+            && run.attempt_count < run.max_attempts;
+        run.status = if retry_allowed {
+            AgentTaskRunStatus::Pending
+        } else {
+            match request.disposition {
+                TaskRunFailureDisposition::Reconcile => AgentTaskRunStatus::Reconciling,
+                TaskRunFailureDisposition::Retry => AgentTaskRunStatus::DeadLetter,
+                TaskRunFailureDisposition::Terminal => AgentTaskRunStatus::Failed,
+            }
+        };
+        run.available_at = if retry_allowed {
+            request
+                .retry_at
+                .clone()
+                .ok_or_else(|| KernelError::validation("retryAt is required"))?
+        } else {
+            run.available_at.clone()
+        };
+        run.lease_owner = None;
+        run.lease_token_hash = None;
+        run.lease_expires_at = None;
+        run.failure_class = Some(request.failure_class.clone());
+        run.error_code = Some(request.error_code.clone());
+        run.error_detail = None;
+        run.finished_at = matches!(
+            run.status,
+            AgentTaskRunStatus::Failed | AgentTaskRunStatus::DeadLetter
+        )
+        .then(|| request.failed_at.clone());
+        run.updated_at = request.failed_at.clone();
+        run.version = run.version.saturating_add(1);
+        let attempt = attempts
+            .get_mut(&(
+                request.lease.tenant_id,
+                request.lease.organization_id,
+                request.lease.attempt_id.clone(),
+            ))
+            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+        attempt.status = AgentTaskRunAttemptStatus::Failed;
+        attempt.failure_class = Some(request.failure_class.clone());
+        attempt.error_code = Some(request.error_code.clone());
+        attempt.error_detail = None;
+        attempt.finished_at = Some(request.failed_at.clone());
+        attempt.updated_at = request.failed_at.clone();
+        Ok(run.clone())
+    }
+
+    fn recover_expired_task_run_leases(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        let now_at = parse_datetime(now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let mut keys = runs
+            .iter()
+            .filter(|(_, run)| {
+                matches!(
+                    run.status,
+                    AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+                ) && run
+                    .lease_expires_at
+                    .as_deref()
+                    .and_then(|value| parse_datetime(value, None))
+                    .is_some_and(|value| value < now_at)
+            })
+            .map(|(key, run)| (run.lease_expires_at.clone(), run.id, key.clone()))
+            .collect::<Vec<_>>();
+        keys.sort();
+        keys.truncate(limit.clamp(1, 1_000));
+        for (_, _, key) in &keys {
+            let run = runs
+                .get_mut(key)
+                .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            if let Some(attempt) = attempts.values_mut().find(|attempt| {
+                attempt.tenant_id == run.tenant_id
+                    && attempt.organization_id == run.organization_id
+                    && attempt.run_id == run.run_id
+                    && attempt.attempt_no == run.attempt_count
+            }) {
+                attempt.status = AgentTaskRunAttemptStatus::LeaseExpired;
+                attempt.failure_class = Some("lease_lost".to_string());
+                attempt.error_code = Some("task_run_lease_expired".to_string());
+                attempt.finished_at = Some(now.to_string());
+                attempt.updated_at = now.to_string();
+            }
+            let exhausted = run.attempt_count >= run.max_attempts;
+            run.status = if exhausted {
+                AgentTaskRunStatus::DeadLetter
+            } else {
+                AgentTaskRunStatus::Pending
+            };
+            run.available_at = now.to_string();
+            run.lease_owner = None;
+            run.lease_token_hash = None;
+            run.lease_expires_at = None;
+            run.failure_class = Some("lease_lost".to_string());
+            run.error_code = Some("task_run_lease_expired".to_string());
+            run.finished_at = exhausted.then(|| now.to_string());
+            run.updated_at = now.to_string();
+            run.version = run.version.saturating_add(1);
+        }
+        u64::try_from(keys.len())
+            .map_err(|_| KernelError::conflict("recovered task Run count overflow"))
+    }
+
+    fn request_task_run_cancellation(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: Option<u64>,
+        requested_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(requested_at, None)
+            .ok_or_else(|| KernelError::validation("requestedAt is invalid"))?;
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let run = runs
+            .get_mut(&(tenant_id, organization_id, run_id.to_string()))
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        if expected_version.is_some_and(|version| version != run.version) {
+            return Err(KernelError::conflict("task Run version mismatch"));
+        }
+        match run.status {
+            AgentTaskRunStatus::Cancelled | AgentTaskRunStatus::Reconciling => {
+                return Ok(run.clone());
+            }
+            AgentTaskRunStatus::Pending => {
+                run.status = AgentTaskRunStatus::Cancelled;
+                run.failure_class = Some("cancelled".to_string());
+                run.error_code = Some("task_run_cancelled_before_claim".to_string());
+                run.finished_at = Some(requested_at.to_string());
+                run.cancelled_at = Some(requested_at.to_string());
+            }
+            AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running => {
+                if let Some(attempt) = attempts.values_mut().find(|attempt| {
+                    attempt.tenant_id == run.tenant_id
+                        && attempt.organization_id == run.organization_id
+                        && attempt.run_id == run.run_id
+                        && attempt.attempt_no == run.attempt_count
+                        && matches!(
+                            attempt.status,
+                            AgentTaskRunAttemptStatus::Claimed | AgentTaskRunAttemptStatus::Running
+                        )
+                }) {
+                    attempt.status = AgentTaskRunAttemptStatus::Failed;
+                    attempt.failure_class = Some("outcome_unknown".to_string());
+                    attempt.error_code = Some("task_run_cancellation_requested".to_string());
+                    attempt.finished_at = Some(requested_at.to_string());
+                    attempt.updated_at = requested_at.to_string();
+                }
+                run.status = AgentTaskRunStatus::Reconciling;
+                run.failure_class = Some("outcome_unknown".to_string());
+                run.error_code = Some("task_run_cancellation_requested".to_string());
+                run.lease_owner = None;
+                run.lease_token_hash = None;
+                run.lease_expires_at = None;
+            }
+            AgentTaskRunStatus::Succeeded
+            | AgentTaskRunStatus::Failed
+            | AgentTaskRunStatus::DeadLetter => {
+                return Err(KernelError::validation("task Run cannot be cancelled"));
+            }
+        }
+        run.updated_at = requested_at.to_string();
+        run.version = run.version.saturating_add(1);
+        Ok(run.clone())
+    }
+
+    fn reconcile_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+        expected_version: u64,
+        terminal_status: AgentTaskRunStatus,
+        error_code: Option<&str>,
+        reconciled_at: &str,
+    ) -> KernelResult<AgentTaskRunRecord> {
+        parse_datetime(reconciled_at, None)
+            .ok_or_else(|| KernelError::validation("reconciledAt is invalid"))?;
+        if !matches!(
+            terminal_status,
+            AgentTaskRunStatus::Succeeded
+                | AgentTaskRunStatus::Failed
+                | AgentTaskRunStatus::Cancelled
+        ) {
+            return Err(KernelError::validation(
+                "task Run reconciliation status is invalid",
+            ));
+        }
+        let mut runs = self.task_runs.recovering_write();
+        let run = runs
+            .get_mut(&(tenant_id, organization_id, run_id.to_string()))
+            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        if run.status != AgentTaskRunStatus::Reconciling || run.version != expected_version {
+            return Err(KernelError::conflict(
+                "task Run reconciliation version mismatch",
+            ));
+        }
+        run.status = terminal_status;
+        run.failure_class = match terminal_status {
+            AgentTaskRunStatus::Succeeded => None,
+            AgentTaskRunStatus::Cancelled => Some("cancelled".to_string()),
+            AgentTaskRunStatus::Failed => Some("reconciled_failure".to_string()),
+            _ => unreachable!(),
+        };
+        run.error_code = error_code.map(str::to_string).or_else(|| {
+            (terminal_status == AgentTaskRunStatus::Cancelled)
+                .then(|| "task_run_cancelled".to_string())
+        });
+        run.finished_at = Some(reconciled_at.to_string());
+        run.cancelled_at =
+            (terminal_status == AgentTaskRunStatus::Cancelled).then(|| reconciled_at.to_string());
+        run.updated_at = reconciled_at.to_string();
+        run.version = run.version.saturating_add(1);
+        Ok(run.clone())
+    }
+
+    fn list_reconciling_task_runs(
+        &self,
+        updated_before: &str,
+        limit: usize,
+    ) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        let cutoff = parse_datetime(updated_before, None)
+            .ok_or_else(|| KernelError::validation("updatedBefore is invalid"))?;
+        let mut runs = self
+            .task_runs
+            .recovering_read()
+            .values()
+            .filter(|run| {
+                run.status == AgentTaskRunStatus::Reconciling
+                    && parse_datetime(&run.updated_at, None).is_some_and(|value| value <= cutoff)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        runs.sort_by(|left, right| {
+            left.updated_at
+                .cmp(&right.updated_at)
+                .then(left.id.cmp(&right.id))
+        });
+        runs.truncate(limit.clamp(1, 1_000));
+        Ok(runs)
+    }
+
+    fn list_task_runs(&self, query: &TaskRunListQuery) -> KernelResult<Vec<AgentTaskRunRecord>> {
+        let mut runs = self
+            .task_runs
+            .recovering_read()
+            .values()
+            .filter(|run| {
+                run.tenant_id == query.tenant_id
+                    && run.organization_id == query.organization_id
+                    && run.task_id == query.task_id
+                    && query
+                        .owner_user_id
+                        .is_none_or(|owner_user_id| run.owner_user_id == owner_user_id)
+                    && query.status.is_none_or(|status| run.status == status)
+                    && query
+                        .trigger_kind
+                        .is_none_or(|trigger_kind| run.trigger_kind == trigger_kind)
+                    && query
+                        .cursor
+                        .as_ref()
+                        .is_none_or(|cursor| run.id < cursor.run_internal_id)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        runs.sort_by(|left, right| right.id.cmp(&left.id));
+        runs.truncate(query.store_limit());
+        Ok(runs)
+    }
+
+    fn list_task_run_attempts(
+        &self,
+        query: &TaskRunAttemptListQuery,
+    ) -> KernelResult<Vec<AgentTaskRunAttemptRecord>> {
+        let mut attempts = self
+            .task_run_attempts
+            .recovering_read()
+            .values()
+            .filter(|attempt| {
+                attempt.tenant_id == query.tenant_id
+                    && attempt.organization_id == query.organization_id
+                    && attempt.run_id == query.run_id
+                    && query.cursor.as_ref().is_none_or(|cursor| {
+                        attempt.attempt_no < cursor.attempt_no
+                            || (attempt.attempt_no == cursor.attempt_no
+                                && attempt.id < cursor.attempt_internal_id)
+                    })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        attempts.sort_by(|left, right| {
+            right
+                .attempt_no
+                .cmp(&left.attempt_no)
+                .then(right.id.cmp(&left.id))
+        });
+        attempts.truncate(query.store_limit());
+        Ok(attempts)
+    }
+
+    fn get_task_run(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        run_id: &str,
+    ) -> KernelResult<Option<AgentTaskRunRecord>> {
+        Ok(self
+            .task_runs
+            .recovering_read()
+            .get(&(tenant_id, organization_id, run_id.to_string()))
+            .cloned())
+    }
+}
+
+fn checked_in_memory_run_lease<'a>(
+    runs: &'a mut HashMap<TaskRunPrimaryKey, AgentTaskRunRecord>,
+    lease: &TaskRunLease,
+    at: &str,
+) -> KernelResult<&'a mut AgentTaskRunRecord> {
+    let at = parse_datetime(at, None)
+        .ok_or_else(|| KernelError::validation("lease operation timestamp is invalid"))?;
+    let run = runs
+        .get_mut(&(lease.tenant_id, lease.organization_id, lease.run_id.clone()))
+        .ok_or_else(|| KernelError::validation("task Run not found"))?;
+    if run.lease_owner.as_deref() != Some(lease.worker_id.as_str())
+        || run.lease_token_hash.as_deref()
+            != Some(sha256_hash(lease.lease_token.as_bytes()).as_str())
+        || run.fencing_token != lease.fencing_token
+        || run
+            .lease_expires_at
+            .as_deref()
+            .and_then(|value| parse_datetime(value, None))
+            .is_none_or(|expires_at| expires_at < at)
+    {
+        return Err(KernelError::conflict("task Run lease lost"));
+    }
+    Ok(run)
 }
 
 // ---------------------------------------------------------------------------

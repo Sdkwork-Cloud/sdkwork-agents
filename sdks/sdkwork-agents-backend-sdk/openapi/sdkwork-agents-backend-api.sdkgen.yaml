@@ -931,6 +931,7 @@ paths:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
       - $ref: '#/components/parameters/StreamQuery'
+      - $ref: '#/components/parameters/EventProtocolQuery'
       requestBody:
         required: true
         content:
@@ -2166,6 +2167,16 @@ components:
       schema:
         type: boolean
         default: false
+    EventProtocolQuery:
+      name: event_protocol
+      in: query
+      required: false
+      description: Selects provider-neutral runtime events for an SSE response. `kernel-v1`
+        requires `stream=true`; omit this parameter to preserve the legacy delta/completion
+        stream.
+      schema:
+        type: string
+        enum: [kernel-v1]
     SearchQ:
       name: q
       in: query
@@ -3989,7 +4000,7 @@ components:
         content:
           type: string
           minLength: 1
-          maxLength: 1048576
+          maxLength: 262144
         contentType:
           type: string
           minLength: 1
@@ -4063,6 +4074,72 @@ components:
                       type: array
                       items:
                         $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentTurnRuntimeEvent:
+      type: object
+      additionalProperties: false
+      description: Provider-neutral kernel runtime event emitted during one agent turn.
+      required: [eventId, type, version, sequence, occurredAt, source, severity, sessionId,
+        turnId, providerSessionId, taskId, runId, itemId, traceContext, correlationId,
+        causationId, redactionClassification, payloadSchema, payload, replay]
+      properties:
+        eventId:
+          type: string
+        type:
+          type: string
+        version:
+          type: string
+        sequence:
+          type: integer
+          format: int32
+          minimum: 0
+        occurredAt:
+          type: [string, 'null']
+          format: date-time
+        source:
+          type: string
+          enum: [runtime, manifest, provider, model, tool, context, memory, policy,
+            host, protocol_adapter, kernel_ui, code_kernel, telemetry, unknown]
+        severity:
+          type: string
+          enum: [debug, info, warn, error]
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        providerSessionId:
+          type: [string, 'null']
+        taskId:
+          type: [string, 'null']
+        runId:
+          type: [string, 'null']
+        itemId:
+          type: [string, 'null']
+        traceContext:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [traceId, spanId, parentSpanId]
+          properties:
+            traceId:
+              type: string
+            spanId:
+              type: string
+            parentSpanId:
+              type: [string, 'null']
+        correlationId:
+          type: [string, 'null']
+        causationId:
+          type: [string, 'null']
+        redactionClassification:
+          type: string
+          enum: [public, internal, tenant_sensitive, personal_data, secret, regulated,
+            unknown]
+        payloadSchema:
+          type: [string, 'null']
+        payload:
+          type: object
+          additionalProperties: true
+        replay:
+          type: boolean
     AgentTurnStreamEvent:
       type: object
       additionalProperties: false
@@ -4071,7 +4148,9 @@ components:
       properties:
         eventType:
           type: string
-          enum: [delta, completion]
+          enum: [event, delta, completion]
+        event:
+          $ref: '#/components/schemas/AgentTurnRuntimeEvent'
         index:
           type: integer
           format: int32

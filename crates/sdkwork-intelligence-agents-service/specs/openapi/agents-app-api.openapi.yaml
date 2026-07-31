@@ -1834,6 +1834,7 @@ paths:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
       - $ref: '#/components/parameters/StreamQuery'
+      - $ref: '#/components/parameters/EventProtocolQuery'
       requestBody:
         required: true
         content:
@@ -1909,6 +1910,260 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentTurnResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue:
+    get:
+      tags: [ai]
+      summary: List durable queued Turn inputs for one Session
+      operationId: agents.turnInputQueueEntries.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated durable queued Turn inputs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTurnInputQueueEntryListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [ai]
+      summary: Persist one user input in the Session Turn queue
+      operationId: agents.turnInputQueueEntries.create
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentTurnInputQueueEntryRequest'
+      responses:
+        '201':
+          description: Persisted queued Turn input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/clear:
+    post:
+      tags: [ai]
+      summary: Remove all non-executing inputs from the Session Turn queue
+      operationId: agents.turnInputQueueEntries.clear
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Queue clear result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearAgentTurnInputQueueEntriesResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/reorder:
+    post:
+      tags: [ai]
+      summary: Atomically reorder all non-executing inputs in the Session Turn queue
+      operationId: agents.turnInputQueueEntries.reorder
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderAgentTurnInputQueueEntriesRequest'
+      responses:
+        '200':
+          description: Reordered queue entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderAgentTurnInputQueueEntriesResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/claim_next:
+    post:
+      tags: [ai]
+      summary: Reconcile and lease the FIFO head when the Session has no active Turn
+      operationId: agents.turnInputQueueEntries.claimNext
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimNextAgentTurnInputQueueEntryRequest'
+      responses:
+        '200':
+          description: Queue claim or reconciliation outcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimNextAgentTurnInputQueueEntryResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}:
+    patch:
+      tags: [ai]
+      summary: Update one non-executing queued Turn input
+      operationId: agents.turnInputQueueEntries.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/QueueEntryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentTurnInputQueueEntryRequest'
+      responses:
+        '200':
+          description: Updated queued Turn input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      tags: [ai]
+      summary: Delete one non-executing queued Turn input
+      operationId: agents.turnInputQueueEntries.delete
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/QueueEntryIdPath'
+      - name: expected_version
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/Int64String'
+      responses:
+        '204':
+          description: Queued Turn input deleted
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/fail:
+    post:
+      tags: [ai]
+      summary: Mark one claimed queue entry failed and pause automatic execution
+      operationId: agents.turnInputQueueEntries.fail
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/QueueEntryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailAgentTurnInputQueueEntryRequest'
+      responses:
+        '200':
+          description: Failed queued Turn input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/retry:
+    post:
+      tags: [ai]
+      summary: Reset one failed queued Turn input for an explicit retry
+      operationId: agents.turnInputQueueEntries.retry
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.turnInputQueueEntries
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/QueueEntryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryAgentTurnInputQueueEntryRequest'
+      responses:
+        '200':
+          description: Queued Turn input reset for retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions:
@@ -2859,6 +3114,16 @@ components:
       schema:
         type: boolean
         default: false
+    EventProtocolQuery:
+      name: event_protocol
+      in: query
+      required: false
+      description: Selects provider-neutral runtime events for an SSE response. `kernel-v1`
+        requires `stream=true`; omit this parameter to preserve the legacy delta/completion
+        stream.
+      schema:
+        type: string
+        enum: [kernel-v1]
     SearchQ:
       name: q
       in: query
@@ -2935,6 +3200,15 @@ components:
         minLength: 1
         maxLength: 128
         pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+    QueueEntryIdPath:
+      name: queueEntryId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^queue-entry\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
     InteractionIdPath:
       name: interactionId
       in: path
@@ -5639,6 +5913,394 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentTurnInputQueueDriveRef:
+      type: object
+      additionalProperties: false
+      required: [resourceRole, driveSpaceId, driveNodeId]
+      properties:
+        resourceRole:
+          type: string
+          enum: [attachment, image, audio]
+        driveSpaceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        driveNodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AgentTurnInputQueueStatus:
+      type: string
+      enum: [queued, executing, failed]
+    AgentTurnInputQueueEntry:
+      type: object
+      additionalProperties: false
+      required:
+      - queueEntryId
+      - sessionId
+      - agentId
+      - content
+      - displayText
+      - contentType
+      - attachmentNames
+      - driveRefs
+      - turnMode
+      - idempotencyKey
+      - payloadHash
+      - clientRequestId
+      - position
+      - status
+      - fencingToken
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        queueEntryId:
+          type: string
+          pattern: '^queue-entry\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        agentId:
+          type: string
+          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 262144
+        displayText:
+          type: string
+          maxLength: 262144
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 128
+        attachmentNames:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        driveRefs:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
+        turnMode:
+          $ref: '#/components/schemas/AgentTurnMode'
+        runtimeBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        requestedModelId:
+          type: [string, 'null']
+          maxLength: 128
+        accessModeId:
+          type: [string, 'null']
+          maxLength: 64
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        payloadHash:
+          type: string
+          minLength: 1
+          maxLength: 128
+        clientRequestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        position:
+          $ref: '#/components/schemas/Int64String'
+        status:
+          $ref: '#/components/schemas/AgentTurnInputQueueStatus'
+        claimOwner:
+          type: [string, 'null']
+          maxLength: 128
+        claimExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        errorCode:
+          type: [string, 'null']
+          maxLength: 128
+        errorDetail:
+          type: [string, 'null']
+          maxLength: 1024
+          description: Sanitized error detail without credentials or provider secrets.
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        claimedAt:
+          type: [string, 'null']
+          format: date-time
+        failedAt:
+          type: [string, 'null']
+          format: date-time
+    CreateAgentTurnInputQueueEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [content, turnMode, requestedAt]
+      properties:
+        queueEntryId:
+          type: string
+          pattern: '^queue-entry\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        content:
+          type: string
+          minLength: 1
+          maxLength: 262144
+        displayText:
+          type: string
+          maxLength: 262144
+          default: ''
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 128
+          default: text/plain
+        attachmentNames:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          default: []
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        driveRefs:
+          type: array
+          maxItems: 64
+          default: []
+          items:
+            $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
+        turnMode:
+          $ref: '#/components/schemas/AgentTurnMode'
+        runtimeBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        requestedModelId:
+          type: [string, 'null']
+          maxLength: 128
+        accessModeId:
+          type: [string, 'null']
+          maxLength: 64
+        requestedAt:
+          type: string
+          format: date-time
+    UpdateAgentTurnInputQueueEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [content, turnMode, expectedVersion, requestedAt]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 262144
+        displayText:
+          type: string
+          maxLength: 262144
+          default: ''
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 128
+          default: text/plain
+        attachmentNames:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          default: []
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        driveRefs:
+          type: array
+          maxItems: 64
+          default: []
+          items:
+            $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
+        turnMode:
+          $ref: '#/components/schemas/AgentTurnMode'
+        runtimeBindingId:
+          type: [string, 'null']
+          maxLength: 128
+        requestedModelId:
+          type: [string, 'null']
+          maxLength: 128
+        accessModeId:
+          type: [string, 'null']
+          maxLength: 64
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentTurnInputQueueReorderEntry:
+      type: object
+      additionalProperties: false
+      required: [queueEntryId, expectedVersion]
+      properties:
+        queueEntryId:
+          type: string
+          pattern: '^queue-entry\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+    ReorderAgentTurnInputQueueEntriesRequest:
+      type: object
+      additionalProperties: false
+      required: [orderedEntries, requestedAt]
+      properties:
+        orderedEntries:
+          type: array
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/AgentTurnInputQueueReorderEntry'
+        requestedAt:
+          type: string
+          format: date-time
+    ClaimNextAgentTurnInputQueueEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [claimOwner, requestedAt]
+      properties:
+        claimOwner:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[a-z][a-z0-9_-]*$'
+        leaseSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          default: 120
+        requestedAt:
+          type: string
+          format: date-time
+    FailAgentTurnInputQueueEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, fencingToken, claimToken, errorCode, requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        claimToken:
+          type: string
+          minLength: 32
+          maxLength: 256
+          writeOnly: true
+        errorCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+        errorDetail:
+          type: [string, 'null']
+          maxLength: 1024
+        requestedAt:
+          type: string
+          format: date-time
+    RetryAgentTurnInputQueueEntryRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentTurnInputQueueEntryResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentTurnInputQueueEntry'
+    AgentTurnInputQueueEntryListResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentTurnInputQueueEntry'
+    ReorderAgentTurnInputQueueEntriesResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            type: object
+            additionalProperties: false
+            required: [items]
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentTurnInputQueueEntry'
+    ClaimNextAgentTurnInputQueueEntryResult:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [claimed, busy, blocked, active_turn, empty]
+        entry:
+          oneOf:
+          - $ref: '#/components/schemas/AgentTurnInputQueueEntry'
+          - type: 'null'
+        claimToken:
+          type: [string, 'null']
+          minLength: 32
+          maxLength: 256
+          readOnly: true
+    ClaimNextAgentTurnInputQueueEntryResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            $ref: '#/components/schemas/ClaimNextAgentTurnInputQueueEntryResult'
+    ClearAgentTurnInputQueueEntriesResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            type: object
+            additionalProperties: false
+            required: [clearedCount]
+            properties:
+              clearedCount:
+                $ref: '#/components/schemas/Int64String'
     AgentTurnMode:
       type: string
       enum: [interactive, background, automation, resume, retry]
@@ -5832,7 +6494,7 @@ components:
         content:
           type: string
           minLength: 1
-          maxLength: 1048576
+          maxLength: 262144
         contentType:
           type: string
           minLength: 1
@@ -5911,6 +6573,72 @@ components:
                       type: array
                       items:
                         $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentTurnRuntimeEvent:
+      type: object
+      additionalProperties: false
+      description: Provider-neutral kernel runtime event emitted during one agent turn.
+      required: [eventId, type, version, sequence, occurredAt, source, severity, sessionId,
+        turnId, providerSessionId, taskId, runId, itemId, traceContext, correlationId,
+        causationId, redactionClassification, payloadSchema, payload, replay]
+      properties:
+        eventId:
+          type: string
+        type:
+          type: string
+        version:
+          type: string
+        sequence:
+          type: integer
+          format: int32
+          minimum: 0
+        occurredAt:
+          type: [string, 'null']
+          format: date-time
+        source:
+          type: string
+          enum: [runtime, manifest, provider, model, tool, context, memory, policy,
+            host, protocol_adapter, kernel_ui, code_kernel, telemetry, unknown]
+        severity:
+          type: string
+          enum: [debug, info, warn, error]
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        providerSessionId:
+          type: [string, 'null']
+        taskId:
+          type: [string, 'null']
+        runId:
+          type: [string, 'null']
+        itemId:
+          type: [string, 'null']
+        traceContext:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [traceId, spanId, parentSpanId]
+          properties:
+            traceId:
+              type: string
+            spanId:
+              type: string
+            parentSpanId:
+              type: [string, 'null']
+        correlationId:
+          type: [string, 'null']
+        causationId:
+          type: [string, 'null']
+        redactionClassification:
+          type: string
+          enum: [public, internal, tenant_sensitive, personal_data, secret, regulated,
+            unknown]
+        payloadSchema:
+          type: [string, 'null']
+        payload:
+          type: object
+          additionalProperties: true
+        replay:
+          type: boolean
     AgentTurnStreamEvent:
       type: object
       additionalProperties: false
@@ -5919,7 +6647,9 @@ components:
       properties:
         eventType:
           type: string
-          enum: [delta, completion]
+          enum: [event, delta, completion]
+        event:
+          $ref: '#/components/schemas/AgentTurnRuntimeEvent'
         index:
           type: integer
           format: int32

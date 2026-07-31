@@ -10,6 +10,7 @@ canon:
   kernelSpiGapAnalysis: specs/AGENTS_KERNEL_SPI_GAP_ANALYSIS.md
   birdcoderAlignment: specs/agents-birdcoder-alignment.spec.json
   agentSessionDomain: specs/AGENTS_SESSION_MODEL_SPEC.md
+  agentTaskScheduling: specs/AGENTS_TASK_SCHEDULING_SPEC.md
   preLaunchVerification: docs/runbooks/pre-launch-verification.md
   monitoring: docs/runbooks/monitoring.md
   smokeTest: docs/runbooks/smoke-test.md
@@ -51,6 +52,18 @@ entries:
   - id: agent-session-domain-decision
     title: Agent session domain unification decision
     path: docs/architecture/decisions/ADR-20260722-agent-session-domain-unification.md
+    domain: architecture
+  - id: agent-task-scheduling-requirement
+    title: Durable agent task scheduling requirement
+    path: docs/product/requirements/REQ-2026-0731-agent-task-scheduling.md
+    domain: product
+  - id: agent-task-scheduling-decision
+    title: PostgreSQL-authoritative task scheduling decision
+    path: docs/architecture/decisions/ADR-20260731-agent-task-scheduling.md
+    domain: architecture
+  - id: agent-task-scheduling-spec
+    title: Agent task scheduling contract
+    path: specs/AGENTS_TASK_SCHEDULING_SPEC.md
     domain: architecture
   - id: provider-taxonomy-spec
     title: Agent provider taxonomy

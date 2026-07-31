@@ -566,9 +566,10 @@ class AiApi {
   }
 
   /// Create one idempotent agent turn
-  Stream<AgentTurnStreamEvent> agentsTurnsStream(String agentId, String sessionId, CreateAgentTurnRequest body, [bool? stream]) {
+  Stream<AgentTurnStreamEvent> agentsTurnsStream(String agentId, String sessionId, CreateAgentTurnRequest body, [bool? stream, String? eventProtocol]) {
     final query = buildQueryString([
-      QueryParameterSpec('stream', stream, 'form', true, false, null)
+      QueryParameterSpec('stream', stream, 'form', true, false, null),
+      QueryParameterSpec('event_protocol', eventProtocol, 'form', true, false, null)
     ]);
     final payload = body.toJson();
     return _client.streamJson(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turns'), query), body: payload, contentType: 'application/json')
@@ -591,6 +592,96 @@ class AiApi {
     return (() {
       final map = sdkworkResponseAsMap(response);
       return map == null ? null : AgentTurnResponse.fromJson(map);
+    })();
+  }
+
+  /// List durable queued Turn inputs for one Session
+  Future<AgentTurnInputQueueEntryListResponse?> agentsTurnInputQueueEntriesList(String agentId, String sessionId, [int? page, int? pageSize]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTurnInputQueueEntryListResponse.fromJson(map);
+    })();
+  }
+
+  /// Persist one user input in the Session Turn queue
+  Future<AgentTurnInputQueueEntryResponse?> agentsTurnInputQueueEntriesCreate(String agentId, String sessionId, CreateAgentTurnInputQueueEntryRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTurnInputQueueEntryResponse.fromJson(map);
+    })();
+  }
+
+  /// Remove all non-executing inputs from the Session Turn queue
+  Future<ClearAgentTurnInputQueueEntriesResponse?> agentsTurnInputQueueEntriesClear(String agentId, String sessionId) async {
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/clear'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ClearAgentTurnInputQueueEntriesResponse.fromJson(map);
+    })();
+  }
+
+  /// Atomically reorder all non-executing inputs in the Session Turn queue
+  Future<ReorderAgentTurnInputQueueEntriesResponse?> agentsTurnInputQueueEntriesReorder(String agentId, String sessionId, ReorderAgentTurnInputQueueEntriesRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/reorder'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ReorderAgentTurnInputQueueEntriesResponse.fromJson(map);
+    })();
+  }
+
+  /// Reconcile and lease the FIFO head when the Session has no active Turn
+  Future<ClaimNextAgentTurnInputQueueEntryResponse?> agentsTurnInputQueueEntriesClaimNext(String agentId, String sessionId, ClaimNextAgentTurnInputQueueEntryRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/claim_next'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ClaimNextAgentTurnInputQueueEntryResponse.fromJson(map);
+    })();
+  }
+
+  /// Update one non-executing queued Turn input
+  Future<AgentTurnInputQueueEntryResponse?> agentsTurnInputQueueEntriesUpdate(String agentId, String sessionId, String queueEntryId, UpdateAgentTurnInputQueueEntryRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.patch(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/${serializePathParameter(queueEntryId, const PathParameterSpec('queueEntryId', 'simple', false))}'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTurnInputQueueEntryResponse.fromJson(map);
+    })();
+  }
+
+  /// Delete one non-executing queued Turn input
+  Future<void> agentsTurnInputQueueEntriesDelete(String agentId, String sessionId, String queueEntryId, String expectedVersion) async {
+    final query = buildQueryString([
+      QueryParameterSpec('expected_version', expectedVersion, 'form', true, false, null)
+    ]);
+    await _client.delete(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/${serializePathParameter(queueEntryId, const PathParameterSpec('queueEntryId', 'simple', false))}'), query));
+  }
+
+  /// Mark one claimed queue entry failed and pause automatic execution
+  Future<AgentTurnInputQueueEntryResponse?> agentsTurnInputQueueEntriesFail(String agentId, String sessionId, String queueEntryId, FailAgentTurnInputQueueEntryRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/${serializePathParameter(queueEntryId, const PathParameterSpec('queueEntryId', 'simple', false))}/fail'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTurnInputQueueEntryResponse.fromJson(map);
+    })();
+  }
+
+  /// Reset one failed queued Turn input for an explicit retry
+  Future<AgentTurnInputQueueEntryResponse?> agentsTurnInputQueueEntriesRetry(String agentId, String sessionId, String queueEntryId, RetryAgentTurnInputQueueEntryRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turn_input_queue/${serializePathParameter(queueEntryId, const PathParameterSpec('queueEntryId', 'simple', false))}/retry'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTurnInputQueueEntryResponse.fromJson(map);
     })();
   }
 

@@ -6211,6 +6211,982 @@ class AgentSessionItemListResponse {
   }
 }
 
+class AgentTurnInputQueueDriveRef {
+  final String resourceRole;
+  final String driveSpaceId;
+  final String driveNodeId;
+
+  AgentTurnInputQueueDriveRef({
+    required this.resourceRole,
+    required this.driveSpaceId,
+    required this.driveNodeId
+  });
+
+  factory AgentTurnInputQueueDriveRef.fromJson(Map<String, dynamic> json) {
+    return AgentTurnInputQueueDriveRef(
+      resourceRole: (() {
+        final value = json['resourceRole']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueDriveRef.resourceRole is required');
+        }
+        return value;
+      })(),
+      driveSpaceId: (() {
+        final value = json['driveSpaceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueDriveRef.driveSpaceId is required');
+        }
+        return value;
+      })(),
+      driveNodeId: (() {
+        final value = json['driveNodeId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueDriveRef.driveNodeId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'resourceRole': resourceRole,
+      'driveSpaceId': driveSpaceId,
+      'driveNodeId': driveNodeId,
+    };
+  }
+}
+
+class AgentTurnInputQueueEntry {
+  final String queueEntryId;
+  final String sessionId;
+  final String agentId;
+  final String content;
+  final String displayText;
+  final String contentType;
+  final List<String> attachmentNames;
+  final List<AgentTurnInputQueueDriveRef> driveRefs;
+  final String turnMode;
+  final String? runtimeBindingId;
+  final String? requestedModelId;
+  final String? accessModeId;
+  final String idempotencyKey;
+  final String payloadHash;
+  final String clientRequestId;
+  final String position;
+  final String status;
+  final String? claimOwner;
+  final String? claimExpiresAt;
+  final String fencingToken;
+  final String? errorCode;
+  final String? errorDetail;
+  final String version;
+  final String createdAt;
+  final String updatedAt;
+  final String? claimedAt;
+  final String? failedAt;
+
+  AgentTurnInputQueueEntry({
+    required this.queueEntryId,
+    required this.sessionId,
+    required this.agentId,
+    required this.content,
+    required this.displayText,
+    required this.contentType,
+    required this.attachmentNames,
+    required this.driveRefs,
+    required this.turnMode,
+    this.runtimeBindingId,
+    this.requestedModelId,
+    this.accessModeId,
+    required this.idempotencyKey,
+    required this.payloadHash,
+    required this.clientRequestId,
+    required this.position,
+    required this.status,
+    this.claimOwner,
+    this.claimExpiresAt,
+    required this.fencingToken,
+    this.errorCode,
+    this.errorDetail,
+    required this.version,
+    required this.createdAt,
+    required this.updatedAt,
+    this.claimedAt,
+    this.failedAt
+  });
+
+  factory AgentTurnInputQueueEntry.fromJson(Map<String, dynamic> json) {
+    return AgentTurnInputQueueEntry(
+      queueEntryId: (() {
+        final value = json['queueEntryId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.queueEntryId is required');
+        }
+        return value;
+      })(),
+      sessionId: (() {
+        final value = json['sessionId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.sessionId is required');
+        }
+        return value;
+      })(),
+      agentId: (() {
+        final value = json['agentId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.agentId is required');
+        }
+        return value;
+      })(),
+      content: (() {
+        final value = json['content']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.content is required');
+        }
+        return value;
+      })(),
+      displayText: (() {
+        final value = json['displayText']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.displayText is required');
+        }
+        return value;
+      })(),
+      contentType: (() {
+        final value = json['contentType']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.contentType is required');
+        }
+        return value;
+      })(),
+      attachmentNames: (() {
+        final list = _sdkworkAsList(json['attachmentNames']);
+        if (list == null) {
+          throw FormatException('AgentTurnInputQueueEntry.attachmentNames is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      driveRefs: (() {
+        final list = _sdkworkAsList(json['driveRefs']);
+        if (list == null) {
+          throw FormatException('AgentTurnInputQueueEntry.driveRefs is required');
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentTurnInputQueueDriveRef.fromJson(map);
+      })())
+            .whereType<AgentTurnInputQueueDriveRef>()
+            .toList();
+      })(),
+      turnMode: (() {
+        final value = json['turnMode']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.turnMode is required');
+        }
+        return value;
+      })(),
+      runtimeBindingId: json['runtimeBindingId']?.toString(),
+      requestedModelId: json['requestedModelId']?.toString(),
+      accessModeId: json['accessModeId']?.toString(),
+      idempotencyKey: (() {
+        final value = json['idempotencyKey']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.idempotencyKey is required');
+        }
+        return value;
+      })(),
+      payloadHash: (() {
+        final value = json['payloadHash']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.payloadHash is required');
+        }
+        return value;
+      })(),
+      clientRequestId: (() {
+        final value = json['clientRequestId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.clientRequestId is required');
+        }
+        return value;
+      })(),
+      position: (() {
+        final value = json['position']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.position is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.status is required');
+        }
+        return value;
+      })(),
+      claimOwner: json['claimOwner']?.toString(),
+      claimExpiresAt: json['claimExpiresAt']?.toString(),
+      fencingToken: (() {
+        final value = json['fencingToken']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.fencingToken is required');
+        }
+        return value;
+      })(),
+      errorCode: json['errorCode']?.toString(),
+      errorDetail: json['errorDetail']?.toString(),
+      version: (() {
+        final value = json['version']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.version is required');
+        }
+        return value;
+      })(),
+      createdAt: (() {
+        final value = json['createdAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.createdAt is required');
+        }
+        return value;
+      })(),
+      updatedAt: (() {
+        final value = json['updatedAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntry.updatedAt is required');
+        }
+        return value;
+      })(),
+      claimedAt: json['claimedAt']?.toString(),
+      failedAt: json['failedAt']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'queueEntryId': queueEntryId,
+      'sessionId': sessionId,
+      'agentId': agentId,
+      'content': content,
+      'displayText': displayText,
+      'contentType': contentType,
+      'attachmentNames': attachmentNames.map((item) => item).toList(),
+      'driveRefs': driveRefs.map((item) => item.toJson()).toList(),
+      'turnMode': turnMode,
+      'runtimeBindingId': runtimeBindingId,
+      'requestedModelId': requestedModelId,
+      'accessModeId': accessModeId,
+      'idempotencyKey': idempotencyKey,
+      'payloadHash': payloadHash,
+      'clientRequestId': clientRequestId,
+      'position': position,
+      'status': status,
+      'claimOwner': claimOwner,
+      'claimExpiresAt': claimExpiresAt,
+      'fencingToken': fencingToken,
+      'errorCode': errorCode,
+      'errorDetail': errorDetail,
+      'version': version,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'claimedAt': claimedAt,
+      'failedAt': failedAt,
+    };
+  }
+}
+
+class CreateAgentTurnInputQueueEntryRequest {
+  final String? queueEntryId;
+  final String content;
+  final String? displayText;
+  final String? contentType;
+  final List<String>? attachmentNames;
+  final List<AgentTurnInputQueueDriveRef>? driveRefs;
+  final String turnMode;
+  final String? runtimeBindingId;
+  final String? requestedModelId;
+  final String? accessModeId;
+  final String requestedAt;
+
+  CreateAgentTurnInputQueueEntryRequest({
+    this.queueEntryId,
+    required this.content,
+    this.displayText,
+    this.contentType,
+    this.attachmentNames,
+    this.driveRefs,
+    required this.turnMode,
+    this.runtimeBindingId,
+    this.requestedModelId,
+    this.accessModeId,
+    required this.requestedAt
+  });
+
+  factory CreateAgentTurnInputQueueEntryRequest.fromJson(Map<String, dynamic> json) {
+    return CreateAgentTurnInputQueueEntryRequest(
+      queueEntryId: json['queueEntryId']?.toString(),
+      content: (() {
+        final value = json['content']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentTurnInputQueueEntryRequest.content is required');
+        }
+        return value;
+      })(),
+      displayText: json['displayText']?.toString(),
+      contentType: json['contentType']?.toString(),
+      attachmentNames: (() {
+        final list = _sdkworkAsList(json['attachmentNames']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      driveRefs: (() {
+        final list = _sdkworkAsList(json['driveRefs']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentTurnInputQueueDriveRef.fromJson(map);
+      })())
+            .whereType<AgentTurnInputQueueDriveRef>()
+            .toList();
+      })(),
+      turnMode: (() {
+        final value = json['turnMode']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentTurnInputQueueEntryRequest.turnMode is required');
+        }
+        return value;
+      })(),
+      runtimeBindingId: json['runtimeBindingId']?.toString(),
+      requestedModelId: json['requestedModelId']?.toString(),
+      accessModeId: json['accessModeId']?.toString(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentTurnInputQueueEntryRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'queueEntryId': queueEntryId,
+      'content': content,
+      'displayText': displayText,
+      'contentType': contentType,
+      'attachmentNames': attachmentNames?.map((item) => item).toList(),
+      'driveRefs': driveRefs?.map((item) => item.toJson()).toList(),
+      'turnMode': turnMode,
+      'runtimeBindingId': runtimeBindingId,
+      'requestedModelId': requestedModelId,
+      'accessModeId': accessModeId,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class UpdateAgentTurnInputQueueEntryRequest {
+  final String content;
+  final String? displayText;
+  final String? contentType;
+  final List<String>? attachmentNames;
+  final List<AgentTurnInputQueueDriveRef>? driveRefs;
+  final String turnMode;
+  final String? runtimeBindingId;
+  final String? requestedModelId;
+  final String? accessModeId;
+  final String expectedVersion;
+  final String requestedAt;
+
+  UpdateAgentTurnInputQueueEntryRequest({
+    required this.content,
+    this.displayText,
+    this.contentType,
+    this.attachmentNames,
+    this.driveRefs,
+    required this.turnMode,
+    this.runtimeBindingId,
+    this.requestedModelId,
+    this.accessModeId,
+    required this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory UpdateAgentTurnInputQueueEntryRequest.fromJson(Map<String, dynamic> json) {
+    return UpdateAgentTurnInputQueueEntryRequest(
+      content: (() {
+        final value = json['content']?.toString();
+        if (value == null) {
+          throw FormatException('UpdateAgentTurnInputQueueEntryRequest.content is required');
+        }
+        return value;
+      })(),
+      displayText: json['displayText']?.toString(),
+      contentType: json['contentType']?.toString(),
+      attachmentNames: (() {
+        final list = _sdkworkAsList(json['attachmentNames']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      driveRefs: (() {
+        final list = _sdkworkAsList(json['driveRefs']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentTurnInputQueueDriveRef.fromJson(map);
+      })())
+            .whereType<AgentTurnInputQueueDriveRef>()
+            .toList();
+      })(),
+      turnMode: (() {
+        final value = json['turnMode']?.toString();
+        if (value == null) {
+          throw FormatException('UpdateAgentTurnInputQueueEntryRequest.turnMode is required');
+        }
+        return value;
+      })(),
+      runtimeBindingId: json['runtimeBindingId']?.toString(),
+      requestedModelId: json['requestedModelId']?.toString(),
+      accessModeId: json['accessModeId']?.toString(),
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('UpdateAgentTurnInputQueueEntryRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('UpdateAgentTurnInputQueueEntryRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'content': content,
+      'displayText': displayText,
+      'contentType': contentType,
+      'attachmentNames': attachmentNames?.map((item) => item).toList(),
+      'driveRefs': driveRefs?.map((item) => item.toJson()).toList(),
+      'turnMode': turnMode,
+      'runtimeBindingId': runtimeBindingId,
+      'requestedModelId': requestedModelId,
+      'accessModeId': accessModeId,
+      'expectedVersion': expectedVersion,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class AgentTurnInputQueueReorderEntry {
+  final String queueEntryId;
+  final String expectedVersion;
+
+  AgentTurnInputQueueReorderEntry({
+    required this.queueEntryId,
+    required this.expectedVersion
+  });
+
+  factory AgentTurnInputQueueReorderEntry.fromJson(Map<String, dynamic> json) {
+    return AgentTurnInputQueueReorderEntry(
+      queueEntryId: (() {
+        final value = json['queueEntryId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueReorderEntry.queueEntryId is required');
+        }
+        return value;
+      })(),
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueReorderEntry.expectedVersion is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'queueEntryId': queueEntryId,
+      'expectedVersion': expectedVersion,
+    };
+  }
+}
+
+class ReorderAgentTurnInputQueueEntriesRequest {
+  final List<AgentTurnInputQueueReorderEntry> orderedEntries;
+  final String requestedAt;
+
+  ReorderAgentTurnInputQueueEntriesRequest({
+    required this.orderedEntries,
+    required this.requestedAt
+  });
+
+  factory ReorderAgentTurnInputQueueEntriesRequest.fromJson(Map<String, dynamic> json) {
+    return ReorderAgentTurnInputQueueEntriesRequest(
+      orderedEntries: (() {
+        final list = _sdkworkAsList(json['orderedEntries']);
+        if (list == null) {
+          throw FormatException('ReorderAgentTurnInputQueueEntriesRequest.orderedEntries is required');
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentTurnInputQueueReorderEntry.fromJson(map);
+      })())
+            .whereType<AgentTurnInputQueueReorderEntry>()
+            .toList();
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('ReorderAgentTurnInputQueueEntriesRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'orderedEntries': orderedEntries.map((item) => item.toJson()).toList(),
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class ClaimNextAgentTurnInputQueueEntryRequest {
+  final String claimOwner;
+  final int? leaseSeconds;
+  final String requestedAt;
+
+  ClaimNextAgentTurnInputQueueEntryRequest({
+    required this.claimOwner,
+    this.leaseSeconds,
+    required this.requestedAt
+  });
+
+  factory ClaimNextAgentTurnInputQueueEntryRequest.fromJson(Map<String, dynamic> json) {
+    return ClaimNextAgentTurnInputQueueEntryRequest(
+      claimOwner: (() {
+        final value = json['claimOwner']?.toString();
+        if (value == null) {
+          throw FormatException('ClaimNextAgentTurnInputQueueEntryRequest.claimOwner is required');
+        }
+        return value;
+      })(),
+      leaseSeconds: json['leaseSeconds'] is int ? json['leaseSeconds'] : null,
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('ClaimNextAgentTurnInputQueueEntryRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'claimOwner': claimOwner,
+      'leaseSeconds': leaseSeconds,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class FailAgentTurnInputQueueEntryRequest {
+  final String expectedVersion;
+  final String fencingToken;
+  final String claimToken;
+  final String errorCode;
+  final String? errorDetail;
+  final String requestedAt;
+
+  FailAgentTurnInputQueueEntryRequest({
+    required this.expectedVersion,
+    required this.fencingToken,
+    required this.claimToken,
+    required this.errorCode,
+    this.errorDetail,
+    required this.requestedAt
+  });
+
+  factory FailAgentTurnInputQueueEntryRequest.fromJson(Map<String, dynamic> json) {
+    return FailAgentTurnInputQueueEntryRequest(
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('FailAgentTurnInputQueueEntryRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      fencingToken: (() {
+        final value = json['fencingToken']?.toString();
+        if (value == null) {
+          throw FormatException('FailAgentTurnInputQueueEntryRequest.fencingToken is required');
+        }
+        return value;
+      })(),
+      claimToken: (() {
+        final value = json['claimToken']?.toString();
+        if (value == null) {
+          throw FormatException('FailAgentTurnInputQueueEntryRequest.claimToken is required');
+        }
+        return value;
+      })(),
+      errorCode: (() {
+        final value = json['errorCode']?.toString();
+        if (value == null) {
+          throw FormatException('FailAgentTurnInputQueueEntryRequest.errorCode is required');
+        }
+        return value;
+      })(),
+      errorDetail: json['errorDetail']?.toString(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('FailAgentTurnInputQueueEntryRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'expectedVersion': expectedVersion,
+      'fencingToken': fencingToken,
+      'claimToken': claimToken,
+      'errorCode': errorCode,
+      'errorDetail': errorDetail,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class RetryAgentTurnInputQueueEntryRequest {
+  final String expectedVersion;
+  final String requestedAt;
+
+  RetryAgentTurnInputQueueEntryRequest({
+    required this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory RetryAgentTurnInputQueueEntryRequest.fromJson(Map<String, dynamic> json) {
+    return RetryAgentTurnInputQueueEntryRequest(
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('RetryAgentTurnInputQueueEntryRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('RetryAgentTurnInputQueueEntryRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'expectedVersion': expectedVersion,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class AgentTurnInputQueueEntryResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentTurnInputQueueEntryResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentTurnInputQueueEntryResponse.fromJson(Map<String, dynamic> json) {
+    return AgentTurnInputQueueEntryResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentTurnInputQueueEntryResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentTurnInputQueueEntryResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntryResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class AgentTurnInputQueueEntryListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentTurnInputQueueEntryListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentTurnInputQueueEntryListResponse.fromJson(Map<String, dynamic> json) {
+    return AgentTurnInputQueueEntryListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentTurnInputQueueEntryListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentTurnInputQueueEntryListResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnInputQueueEntryListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ReorderAgentTurnInputQueueEntriesResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ReorderAgentTurnInputQueueEntriesResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ReorderAgentTurnInputQueueEntriesResponse.fromJson(Map<String, dynamic> json) {
+    return ReorderAgentTurnInputQueueEntriesResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ReorderAgentTurnInputQueueEntriesResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('ReorderAgentTurnInputQueueEntriesResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ReorderAgentTurnInputQueueEntriesResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ClaimNextAgentTurnInputQueueEntryResult {
+  final String outcome;
+  final AgentTurnInputQueueEntry? entry;
+  final String? claimToken;
+
+  ClaimNextAgentTurnInputQueueEntryResult({
+    required this.outcome,
+    this.entry,
+    this.claimToken
+  });
+
+  factory ClaimNextAgentTurnInputQueueEntryResult.fromJson(Map<String, dynamic> json) {
+    return ClaimNextAgentTurnInputQueueEntryResult(
+      outcome: (() {
+        final value = json['outcome']?.toString();
+        if (value == null) {
+          throw FormatException('ClaimNextAgentTurnInputQueueEntryResult.outcome is required');
+        }
+        return value;
+      })(),
+      entry: (() {
+        final map = _sdkworkAsMap(json['entry']);
+        return map == null ? null : AgentTurnInputQueueEntry.fromJson(map);
+      })(),
+      claimToken: json['claimToken']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'outcome': outcome,
+      'entry': entry?.toJson(),
+      'claimToken': claimToken,
+    };
+  }
+}
+
+class ClaimNextAgentTurnInputQueueEntryResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ClaimNextAgentTurnInputQueueEntryResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ClaimNextAgentTurnInputQueueEntryResponse.fromJson(Map<String, dynamic> json) {
+    return ClaimNextAgentTurnInputQueueEntryResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ClaimNextAgentTurnInputQueueEntryResponse.code is required');
+        }
+        return value;
+      })(),
+      data: json['data'],
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ClaimNextAgentTurnInputQueueEntryResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ClearAgentTurnInputQueueEntriesResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ClearAgentTurnInputQueueEntriesResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ClearAgentTurnInputQueueEntriesResponse.fromJson(Map<String, dynamic> json) {
+    return ClearAgentTurnInputQueueEntriesResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ClearAgentTurnInputQueueEntriesResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('ClearAgentTurnInputQueueEntriesResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ClearAgentTurnInputQueueEntriesResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
 class AgentTurnRecord {
   final String turnId;
   final String tenantId;
@@ -6754,14 +7730,313 @@ class AgentTurnExecutionResponse {
   }
 }
 
+class AgentTurnRuntimeEvent {
+  final String eventId;
+  final String type;
+  final String version;
+  final int sequence;
+  final String? occurredAt;
+  final String source;
+  final String severity;
+  final String sessionId;
+  final String turnId;
+  final String? providerSessionId;
+  final String? taskId;
+  final String? runId;
+  final String? itemId;
+  final Map<String, dynamic>? traceContext;
+  final String? correlationId;
+  final String? causationId;
+  final String redactionClassification;
+  final String? payloadSchema;
+  final Map<String, dynamic> payload;
+  final bool replay;
+
+  AgentTurnRuntimeEvent({
+    required this.eventId,
+    required this.type,
+    required this.version,
+    required this.sequence,
+    required this.occurredAt,
+    required this.source,
+    required this.severity,
+    required this.sessionId,
+    required this.turnId,
+    required this.providerSessionId,
+    required this.taskId,
+    required this.runId,
+    required this.itemId,
+    required this.traceContext,
+    required this.correlationId,
+    required this.causationId,
+    required this.redactionClassification,
+    required this.payloadSchema,
+    required this.payload,
+    required this.replay
+  });
+
+  factory AgentTurnRuntimeEvent.fromJson(Map<String, dynamic> json) {
+    return AgentTurnRuntimeEvent(
+      eventId: (() {
+        final value = json['eventId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.eventId is required');
+        }
+        return value;
+      })(),
+      type: (() {
+        final value = json['type']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.type is required');
+        }
+        return value;
+      })(),
+      version: (() {
+        final value = json['version']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.version is required');
+        }
+        return value;
+      })(),
+      sequence: (() {
+        final value = json['sequence'];
+        if (value is! int) {
+          throw FormatException('AgentTurnRuntimeEvent.sequence is required');
+        }
+        return value;
+      })(),
+      occurredAt: (() {
+        if (!json.containsKey('occurredAt')) {
+          throw FormatException('AgentTurnRuntimeEvent.occurredAt is required');
+        }
+        final _sdkworkRequiredValue = json['occurredAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.occurredAt is required');
+        }
+        return value;
+      })();
+      })(),
+      source: (() {
+        final value = json['source']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.source is required');
+        }
+        return value;
+      })(),
+      severity: (() {
+        final value = json['severity']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.severity is required');
+        }
+        return value;
+      })(),
+      sessionId: (() {
+        final value = json['sessionId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.sessionId is required');
+        }
+        return value;
+      })(),
+      turnId: (() {
+        final value = json['turnId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.turnId is required');
+        }
+        return value;
+      })(),
+      providerSessionId: (() {
+        if (!json.containsKey('providerSessionId')) {
+          throw FormatException('AgentTurnRuntimeEvent.providerSessionId is required');
+        }
+        final _sdkworkRequiredValue = json['providerSessionId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.providerSessionId is required');
+        }
+        return value;
+      })();
+      })(),
+      taskId: (() {
+        if (!json.containsKey('taskId')) {
+          throw FormatException('AgentTurnRuntimeEvent.taskId is required');
+        }
+        final _sdkworkRequiredValue = json['taskId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.taskId is required');
+        }
+        return value;
+      })();
+      })(),
+      runId: (() {
+        if (!json.containsKey('runId')) {
+          throw FormatException('AgentTurnRuntimeEvent.runId is required');
+        }
+        final _sdkworkRequiredValue = json['runId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.runId is required');
+        }
+        return value;
+      })();
+      })(),
+      itemId: (() {
+        if (!json.containsKey('itemId')) {
+          throw FormatException('AgentTurnRuntimeEvent.itemId is required');
+        }
+        final _sdkworkRequiredValue = json['itemId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.itemId is required');
+        }
+        return value;
+      })();
+      })(),
+      traceContext: (() {
+        if (!json.containsKey('traceContext')) {
+          throw FormatException('AgentTurnRuntimeEvent.traceContext is required');
+        }
+        final _sdkworkRequiredValue = json['traceContext'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final map = _sdkworkAsMap(_sdkworkRequiredValue);
+        if (map == null) {
+          throw FormatException('AgentTurnRuntimeEvent.traceContext is required');
+        }
+        return map;
+      })();
+      })(),
+      correlationId: (() {
+        if (!json.containsKey('correlationId')) {
+          throw FormatException('AgentTurnRuntimeEvent.correlationId is required');
+        }
+        final _sdkworkRequiredValue = json['correlationId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.correlationId is required');
+        }
+        return value;
+      })();
+      })(),
+      causationId: (() {
+        if (!json.containsKey('causationId')) {
+          throw FormatException('AgentTurnRuntimeEvent.causationId is required');
+        }
+        final _sdkworkRequiredValue = json['causationId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.causationId is required');
+        }
+        return value;
+      })();
+      })(),
+      redactionClassification: (() {
+        final value = json['redactionClassification']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.redactionClassification is required');
+        }
+        return value;
+      })(),
+      payloadSchema: (() {
+        if (!json.containsKey('payloadSchema')) {
+          throw FormatException('AgentTurnRuntimeEvent.payloadSchema is required');
+        }
+        final _sdkworkRequiredValue = json['payloadSchema'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTurnRuntimeEvent.payloadSchema is required');
+        }
+        return value;
+      })();
+      })(),
+      payload: (() {
+        final map = _sdkworkAsMap(json['payload']);
+        if (map == null) {
+          throw FormatException('AgentTurnRuntimeEvent.payload is required');
+        }
+        return map;
+      })(),
+      replay: (() {
+        final value = json['replay'];
+        if (value is! bool) {
+          throw FormatException('AgentTurnRuntimeEvent.replay is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'eventId': eventId,
+      'type': type,
+      'version': version,
+      'sequence': sequence,
+      'occurredAt': occurredAt,
+      'source': source,
+      'severity': severity,
+      'sessionId': sessionId,
+      'turnId': turnId,
+      'providerSessionId': providerSessionId,
+      'taskId': taskId,
+      'runId': runId,
+      'itemId': itemId,
+      'traceContext': traceContext,
+      'correlationId': correlationId,
+      'causationId': causationId,
+      'redactionClassification': redactionClassification,
+      'payloadSchema': payloadSchema,
+      'payload': payload,
+      'replay': replay,
+    };
+  }
+}
+
 class AgentTurnStreamEvent {
   final String eventType;
+  final AgentTurnRuntimeEvent? event;
   final int? index;
   final String? delta;
   final AgentTurnExecutionResponse? response;
 
   AgentTurnStreamEvent({
     required this.eventType,
+    this.event,
     this.index,
     this.delta,
     this.response
@@ -6776,6 +8051,10 @@ class AgentTurnStreamEvent {
         }
         return value;
       })(),
+      event: (() {
+        final map = _sdkworkAsMap(json['event']);
+        return map == null ? null : AgentTurnRuntimeEvent.fromJson(map);
+      })(),
       index: json['index'] is int ? json['index'] : null,
       delta: json['delta']?.toString(),
       response: (() {
@@ -6788,6 +8067,7 @@ class AgentTurnStreamEvent {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'eventType': eventType,
+      'event': event?.toJson(),
       'index': index,
       'delta': delta,
       'response': response?.toJson(),

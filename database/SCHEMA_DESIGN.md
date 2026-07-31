@@ -2,13 +2,13 @@
 
 Status: active
 
-Contract: `6.0.2`
+Contract: `7.0.0`
 
 Managed engine: PostgreSQL
 
 ## Ownership
 
-All 20 tables are authored and written by `sdkwork-intelligence-agents-service`.
+All 23 tables are authored and written by `sdkwork-intelligence-agents-service`.
 There are no imported tables, derived read stores, shadow copies, compatibility tables,
 or cross-module foreign keys. External capabilities are represented only by
 stable reference columns.
@@ -26,12 +26,15 @@ stable reference columns.
 | `ai_agent_session` | Single durable execution session authority |
 | `ai_agent_session_runtime_binding` | Session runtime selection and provider Session lineage |
 | `ai_agent_turn` | Idempotent turn, retry, lease, fencing, usage, and terminal state |
+| `ai_agent_turn_input_queue_entry` | Durable owner-scoped FIFO input awaiting Turn execution |
 | `ai_agent_session_item` | Ordered typed transcript or execution item |
 | `ai_agent_item_drive_ref` | Typed relation to Drive-owned resources |
 | `ai_agent_item_feedback` | Per-user assistant-output quality feedback |
 | `ai_agent_interaction` | Approval or user-question pause point with claim fencing |
 | `ai_agent_session_checkpoint` | Provider or Drive-backed resumable checkpoint reference |
-| `ai_agent_task` | Product-managed scheduled task |
+| `ai_agent_task` | Session-bound one-time or cron schedule definition |
+| `ai_agent_task_run` | One logical scheduled, manual, or business-retry occurrence |
+| `ai_agent_task_run_attempt` | One leased and fenced infrastructure delivery attempt |
 | `ai_agent_resource_user_state` | Per-user session/project view preferences |
 | `ai_agent_project_member` | Project collaboration ACL |
 | `ai_agent_share_link` | Hashed, revocable, expiring grant |
@@ -65,6 +68,12 @@ organization scope. Application-allocated `BIGINT` primary keys are used.
 Mutating aggregates use optimistic versions. Turn workers, interaction
 claimers, and outbox publishers use bounded attempts, leases, opaque lease
 tokens, expirations, and monotonic fencing tokens.
+
+Task materializers and Run workers use bounded `FOR UPDATE SKIP LOCKED` scans.
+The unique Task generation and scheduled instant prevents duplicate logical
+occurrences. Raw Run lease tokens are returned once and only their SHA-256
+hashes are persisted. A Run references one canonical Session and one
+idempotent Turn; delivery retries never synthesize a Session or a second Turn.
 
 PostgreSQL list paths use tenant-leading indexes with stable `id` tie-breakers.
 Retention scans use partial indexes. There are no IM delivery/read columns in

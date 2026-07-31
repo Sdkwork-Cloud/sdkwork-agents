@@ -9,15 +9,156 @@ use axum::body::{to_bytes, Body};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{Request, StatusCode};
 use axum::Extension;
+use sdkwork_agent_kernel::{
+    KernelEvent, KernelEventRedaction, KernelEventSeverity, KernelEventSource,
+};
 use sdkwork_intelligence_agents_service::{
     build_combined_routes, testing::test_web_context, AgentHttpState, AgentRepository,
     AgentRequestContext, AgentSessionEntrySurface, AgentSessionKind, AgentSessionRecord,
     AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentSessionStatus,
     AgentSessionTitleSource, DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink,
-    InMemoryAgentRepository,
+    InMemoryAgentRepository, TurnExecutionInput, TurnExecutionOutput, TurnExecutor,
 };
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tower::ServiceExt;
+
+#[derive(Debug, Clone, Copy)]
+struct RichTurnExecutor;
+
+impl TurnExecutor for RichTurnExecutor {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+        if !input.history.is_empty() {
+            assert_eq!(
+                input.provider_session_id.as_deref(),
+                Some("provider-session.rich"),
+                "follow-up Turn must resume with the provider identity persisted from the first Turn",
+            );
+        }
+        let message_item = |text: &str| {
+            json!({
+                "id": "provider-item.message.rich",
+                "type": "agent_message",
+                "text": text,
+            })
+        };
+        TurnExecutionOutput {
+            content: "Hello world".to_string(),
+            model_id: input.model_id.clone(),
+            provider_id: input.provider_id.clone(),
+            provider_session_id: Some("provider-session.rich".to_string()),
+            input_tokens: 2,
+            output_tokens: 3,
+            runtime_mode: "http-contract-rich-stream",
+            stream_deltas: vec!["Hello ".to_string(), "world".to_string()],
+            stream_events: vec![
+                rich_runtime_event(
+                    0,
+                    "agent.session.started",
+                    "thread.started",
+                    None,
+                    KernelEventSource::Provider,
+                    KernelEventRedaction::TenantSensitive,
+                ),
+                rich_runtime_event(
+                    1,
+                    "agent.turn.started",
+                    "turn.started",
+                    None,
+                    KernelEventSource::Provider,
+                    KernelEventRedaction::TenantSensitive,
+                ),
+                rich_runtime_event(
+                    2,
+                    "agent.tool.completed",
+                    "item.completed",
+                    Some(json!({
+                        "id": "provider-item.tool.rich",
+                        "type": "command_execution",
+                        "command": "redacted-test-command",
+                    })),
+                    KernelEventSource::Tool,
+                    KernelEventRedaction::Secret,
+                ),
+                rich_runtime_event(
+                    3,
+                    "agent.message.started",
+                    "item.started",
+                    Some(message_item("")),
+                    KernelEventSource::Model,
+                    KernelEventRedaction::TenantSensitive,
+                ),
+                rich_runtime_event(
+                    4,
+                    "agent.message.updated",
+                    "item.updated",
+                    Some(message_item("Hello ")),
+                    KernelEventSource::Model,
+                    KernelEventRedaction::TenantSensitive,
+                ),
+                rich_runtime_event(
+                    5,
+                    "agent.message.completed",
+                    "item.completed",
+                    Some(message_item("Hello world")),
+                    KernelEventSource::Model,
+                    KernelEventRedaction::TenantSensitive,
+                ),
+                rich_runtime_event(
+                    6,
+                    "agent.turn.completed",
+                    "turn.completed",
+                    None,
+                    KernelEventSource::Provider,
+                    KernelEventRedaction::TenantSensitive,
+                ),
+            ],
+        }
+    }
+}
+
+fn rich_runtime_event(
+    sequence: usize,
+    event_type: &str,
+    provider_event_type: &str,
+    item: Option<Value>,
+    source: KernelEventSource,
+    redaction: KernelEventRedaction,
+) -> KernelEvent {
+    let item_id = item
+        .as_ref()
+        .and_then(|item| item.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let payload = json!({
+        "schemaVersion": 1,
+        "providerId": "codex",
+        "providerEventType": provider_event_type,
+        "sequence": sequence,
+        "threadId": "provider-session.rich",
+        "item": item,
+        "usage": null,
+        "error": null,
+    });
+    let mut event = KernelEvent::new(
+        format!("event.rich.{sequence}"),
+        event_type,
+        KernelEventSeverity::Info,
+        payload.to_string(),
+    )
+    .occurred_at(format!("2026-07-30T00:00:{sequence:02}Z"))
+    .from_source(source)
+    .for_session("provider-session.rich")
+    .for_run("provider-run.rich")
+    .with_correlation("provider-run.rich")
+    .with_redaction(redaction)
+    .with_payload_schema("sdkwork.agent.provider_stream_event.v1");
+    event.event_version = "1.0.0".to_string();
+    if let Some(item_id) = item_id {
+        event = event.for_step(item_id);
+    }
+    event
+}
 
 fn test_agent_context() -> AgentRequestContext {
     AgentRequestContext::new("100001", "100")
@@ -139,6 +280,21 @@ async fn post_json(
         String::from_utf8_lossy(&body_bytes)
     );
     serde_json::from_slice(&body_bytes).expect("response body should be valid json")
+}
+
+fn parse_sse_json_events(body: &str) -> Vec<(String, Value)> {
+    body.split("\n\n")
+        .filter_map(|block| {
+            let event_name = block
+                .lines()
+                .find_map(|line| line.strip_prefix("event: "))?;
+            let data = block.lines().find_map(|line| line.strip_prefix("data: "))?;
+            Some((
+                event_name.to_string(),
+                serde_json::from_str(data).expect("SSE data must be JSON"),
+            ))
+        })
+        .collect()
 }
 
 async fn get_json_response(app: &axum::Router, uri: &str) -> (StatusCode, Value) {
@@ -321,6 +477,27 @@ async fn request_without_body(
         body_bytes.is_empty(),
         "{uri}: a no-content response must not include a response body"
     );
+}
+
+async fn request_status(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> StatusCode {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if body.is_some() {
+        builder = builder.header(CONTENT_TYPE, "application/json");
+    }
+    app.clone()
+        .oneshot(
+            builder
+                .body(body.map_or_else(Body::empty, |value| Body::from(value.to_string())))
+                .expect("request should be built"),
+        )
+        .await
+        .expect("request should complete")
+        .status()
 }
 
 fn response_constraints(response: &Value) -> Vec<String> {
@@ -4752,10 +4929,11 @@ async fn missing_provider_session_items_returns_uncacheable_problem_details() {
 
 #[tokio::test]
 async fn app_turn_stream_should_return_typed_delta_and_completion_events() {
-    let state = AgentHttpState::new(
+    let state = AgentHttpState::with_turn_executor(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
         test_policy_provider(),
+        Arc::new(RichTurnExecutor),
     );
     let app = build_test_app(state);
     let agent_id = "agent.turn.stream.http";
@@ -4789,6 +4967,7 @@ async fn app_turn_stream_should_return_typed_delta_and_completion_events() {
         .body(Body::from(payload.to_string()))
         .expect("stream turn request should be built");
     let response = app
+        .clone()
         .oneshot(request)
         .await
         .expect("stream turn request should complete");
@@ -4804,24 +4983,198 @@ async fn app_turn_stream_should_return_typed_delta_and_completion_events() {
         .await
         .expect("stream turn body should be readable");
     let body = String::from_utf8(body.to_vec()).expect("stream turn body should be UTF-8");
-    let events = body
-        .lines()
-        .filter_map(|line| line.strip_prefix("data: "))
-        .map(|data| serde_json::from_str::<Value>(data).expect("SSE data must be JSON"))
-        .collect::<Vec<_>>();
-    assert!(!events.is_empty());
-    for (index, event) in events.iter().take(events.len() - 1).enumerate() {
+    let events = parse_sse_json_events(&body);
+    assert_eq!(
+        events
+            .iter()
+            .map(|(event_name, _)| event_name.as_str())
+            .collect::<Vec<_>>(),
+        ["delta", "delta", "completion"]
+    );
+    for (index, (_, event)) in events.iter().take(events.len() - 1).enumerate() {
         assert_eq!(event["eventType"], "delta");
         assert_eq!(event["index"], index);
         assert!(event["delta"].is_string());
     }
-    let completion = events.last().expect("completion event should exist");
+    let (_, completion) = events.last().expect("completion event should exist");
     assert_eq!(completion["eventType"], "completion");
     assert_eq!(completion["response"]["code"], 0);
     assert_eq!(
         completion["response"]["data"]["item"]["turn"]["sessionId"],
         session_id
     );
+
+    let runtime_binding = get_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/runtime_bindings/{runtime_binding_id}"
+        ),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        runtime_binding["data"]["item"]["providerSessionId"],
+        "provider-session.rich"
+    );
+    assert_ne!(
+        runtime_binding["data"]["item"]["providerSessionId"], session_id,
+        "canonical Session id must not be reused as providerSessionId",
+    );
+
+    let follow_up = post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns"),
+        json!({
+            "content": "Continue the same provider session",
+            "turnMode": "interactive",
+            "runtimeBindingId": runtime_binding_id,
+            "idempotencyKey": "turn-stream-http-2",
+            "payloadHash": "sha256:turn-stream-http-2",
+            "requestedAt": "2026-06-28T12:00:02Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(follow_up["data"]["item"]["turn"]["sessionId"], session_id);
+}
+
+#[tokio::test]
+async fn app_turn_kernel_v1_stream_should_preserve_runtime_event_and_delta_order() {
+    let state = AgentHttpState::with_turn_executor(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+        Arc::new(RichTurnExecutor),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.turn.rich.stream.http";
+    create_agent(&app, agent_id, "Rich Stream Turn HTTP Agent").await;
+
+    let session_id = "session.turn.rich.stream.http";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "HTTP rich stream turn test",
+        "2026-06-28T12:00:00Z",
+    )
+    .await;
+    let runtime_binding_id =
+        create_turn_runtime(&app, agent_id, session_id, "turn-rich-stream-http").await;
+    let payload = json!({
+        "content": "Hello over rich SSE",
+        "turnMode": "interactive",
+        "runtimeBindingId": runtime_binding_id,
+        "idempotencyKey": "turn-rich-stream-http-1",
+        "payloadHash": "sha256:turn-rich-stream-http-1",
+        "requestedAt": "2026-06-28T12:00:01Z"
+    });
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns?stream=true&event_protocol=kernel-v1"
+        ))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("rich stream turn request should be built");
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("rich stream turn request should complete");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("rich stream turn body should be readable");
+    let body = String::from_utf8(body.to_vec()).expect("rich stream turn body should be UTF-8");
+    let events = parse_sse_json_events(&body);
+    assert_eq!(
+        events
+            .iter()
+            .map(|(event_name, _)| event_name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "event",
+            "event",
+            "event",
+            "event",
+            "event",
+            "delta",
+            "event",
+            "delta",
+            "event",
+            "completion",
+        ]
+    );
+    assert_eq!(events[0].1["event"]["type"], "agent.session.started");
+    assert_eq!(events[0].1["event"]["sequence"], 0);
+    assert_eq!(events[0].1["event"]["sessionId"], session_id);
+    assert_eq!(
+        events[0].1["event"]["providerSessionId"],
+        "provider-session.rich"
+    );
+    assert_eq!(events[2].1["event"]["payload"], json!({ "redacted": true }));
+    assert_eq!(events[4].1["event"]["type"], "agent.message.updated");
+    assert_eq!(events[5].1["eventType"], "delta");
+    assert_eq!(events[5].1["delta"], "Hello ");
+    assert_eq!(events[6].1["event"]["type"], "agent.message.completed");
+    assert_eq!(events[7].1["delta"], "world");
+    assert_eq!(events[9].1["eventType"], "completion");
+}
+
+#[tokio::test]
+async fn app_turn_event_protocol_should_require_supported_streaming_protocol() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state);
+    let payload = json!({
+        "content": "Validate event protocol",
+        "turnMode": "interactive",
+        "idempotencyKey": "turn-event-protocol-validation",
+        "payloadHash": "sha256:turn-event-protocol-validation",
+        "requestedAt": "2026-06-28T12:00:01Z"
+    });
+    let cases = [
+        (
+            "/app/v3/api/ai/agents/agent.validation/sessions/session.validation/turns?stream=true&event_protocol=kernel-v2",
+            "event_protocol must be kernel-v1",
+        ),
+        (
+            "/app/v3/api/ai/agents/agent.validation/sessions/session.validation/turns?stream=false&event_protocol=kernel-v1",
+            "event_protocol requires stream=true",
+        ),
+    ];
+
+    for (uri, expected_detail) in cases {
+        let request = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(payload.to_string()))
+            .expect("event protocol validation request should be built");
+        let response = app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("event protocol validation request should complete");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/problem+json")
+        );
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("event protocol validation body should be readable");
+        let problem: Value = serde_json::from_slice(&body)
+            .expect("event protocol validation body should be valid JSON");
+        assert_eq!(problem["code"], 40001);
+        assert_eq!(problem["detail"], expected_detail);
+    }
 }
 
 #[tokio::test]
@@ -5302,4 +5655,280 @@ async fn app_provider_session_without_live_evidence_is_unknown_not_ready() {
     assert_eq!(item["presentationPhase"], "unknown");
     assert_eq!(item["providerActivity"]["freshness"], "unsupported");
     assert!(item["providerActivity"]["freshUntil"].is_null());
+}
+
+#[tokio::test]
+async fn durable_turn_input_queue_serializes_claims_and_reconciles_terminal_turns() {
+    let state = AgentHttpState::new(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+    );
+    let app = build_test_app(state.clone());
+    let other_owner_app = build_test_app_with_context(
+        state,
+        AgentRequestContext::new("100001", "101")
+            .with_organization_id("0")
+            .with_subject_id("101")
+            .with_roles(["ai.agents.manage"]),
+    );
+    let agent_id = "agent.turn-input-queue.http";
+    let session_id = "session.turn-input-queue.http";
+    create_agent(&app, agent_id, "Turn input queue HTTP Agent").await;
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "Durable queue",
+        "2026-07-31T00:00:00Z",
+    )
+    .await;
+    let runtime_binding_id =
+        create_turn_runtime(&app, agent_id, session_id, "turn-input-queue-http").await;
+    let queue_uri =
+        format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turn_input_queue");
+
+    let create_entry = |queue_entry_id: &str, content: &str| {
+        json!({
+            "queueEntryId": queue_entry_id,
+            "content": content,
+            "displayText": content,
+            "contentType": "text/plain",
+            "attachmentNames": [],
+            "driveRefs": [],
+            "turnMode": "interactive",
+            "runtimeBindingId": runtime_binding_id,
+            "requestedModelId": "model.turn.turn-input-queue-http",
+            "requestedAt": "2026-07-31T00:00:01Z"
+        })
+    };
+    let first = post_json(
+        &app,
+        &queue_uri,
+        create_entry("queue-entry.http.first", "first queued input"),
+        StatusCode::CREATED,
+    )
+    .await;
+    let second = post_json(
+        &app,
+        &queue_uri,
+        create_entry("queue-entry.http.second", "second queued input"),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(first["data"]["item"]["status"], "queued");
+    assert_eq!(second["data"]["item"]["status"], "queued");
+
+    let listed = get_json(
+        &app,
+        &format!("{queue_uri}?page=1&page_size=32"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["data"]["items"].as_array().map(Vec::len), Some(2));
+    get_json(
+        &other_owner_app,
+        &format!("{queue_uri}?page=1&page_size=32"),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+
+    let claim_uri = format!("{queue_uri}/claim_next");
+    let claim_body = |owner: &str, lease_seconds: u64| {
+        json!({
+            "claimOwner": owner,
+            "leaseSeconds": lease_seconds,
+            "requestedAt": "2026-07-31T00:00:02Z"
+        })
+    };
+    let (claim_a, claim_b) = tokio::join!(
+        post_json(
+            &app,
+            &claim_uri,
+            claim_body("birdcoder-window-a", 30),
+            StatusCode::OK,
+        ),
+        post_json(
+            &app,
+            &claim_uri,
+            claim_body("birdcoder-window-b", 30),
+            StatusCode::OK,
+        ),
+    );
+    let outcomes = [
+        claim_a["data"]["outcome"].as_str().unwrap_or_default(),
+        claim_b["data"]["outcome"].as_str().unwrap_or_default(),
+    ];
+    assert!(outcomes.contains(&"claimed"));
+    assert!(outcomes.contains(&"busy"));
+    let claimed = if claim_a["data"]["outcome"] == "claimed" {
+        &claim_a["data"]
+    } else {
+        &claim_b["data"]
+    };
+    let claimed_entry = &claimed["entry"];
+    let claimed_version = claimed_entry["version"].as_str().unwrap_or_default();
+    assert_eq!(claimed_entry["queueEntryId"], "queue-entry.http.first");
+
+    let executing_update_status = request_status(
+        &app,
+        "PATCH",
+        &format!("{queue_uri}/queue-entry.http.first"),
+        Some(json!({
+            "content": "edited while executing",
+            "displayText": "edited while executing",
+            "contentType": "text/plain",
+            "attachmentNames": [],
+            "driveRefs": [],
+            "turnMode": "interactive",
+            "runtimeBindingId": runtime_binding_id,
+            "requestedModelId": "model.turn.turn-input-queue-http",
+            "expectedVersion": claimed_version,
+            "requestedAt": "2026-07-31T00:00:03Z"
+        })),
+    )
+    .await;
+    assert_eq!(executing_update_status, StatusCode::CONFLICT);
+    let executing_delete_status = request_status(
+        &app,
+        "DELETE",
+        &format!("{queue_uri}/queue-entry.http.first?expected_version={claimed_version}"),
+        None,
+    )
+    .await;
+    assert_eq!(executing_delete_status, StatusCode::CONFLICT);
+
+    post_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns"),
+        json!({
+            "clientRequestId": claimed_entry["clientRequestId"],
+            "content": claimed_entry["content"],
+            "contentType": claimed_entry["contentType"],
+            "driveRefs": claimed_entry["driveRefs"],
+            "turnMode": claimed_entry["turnMode"],
+            "runtimeBindingId": claimed_entry["runtimeBindingId"],
+            "requestedModelId": claimed_entry["requestedModelId"],
+            "accessModeId": claimed_entry["accessModeId"],
+            "idempotencyKey": claimed_entry["idempotencyKey"],
+            "payloadHash": claimed_entry["payloadHash"],
+            "requestedAt": "2026-07-31T00:00:04Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+
+    let second_claim = post_json(
+        &app,
+        &claim_uri,
+        claim_body("birdcoder-window-a", 30),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(second_claim["data"]["outcome"], "claimed");
+    assert_eq!(
+        second_claim["data"]["entry"]["queueEntryId"],
+        "queue-entry.http.second"
+    );
+    let second_claim_data = &second_claim["data"];
+    let failed = post_json(
+        &app,
+        &format!("{queue_uri}/queue-entry.http.second/fail"),
+        json!({
+            "expectedVersion": second_claim_data["entry"]["version"],
+            "fencingToken": second_claim_data["entry"]["fencingToken"],
+            "claimToken": second_claim_data["claimToken"],
+            "errorCode": "turn_dispatch_rejected",
+            "errorDetail": "Turn delivery was rejected before authoritative acceptance.",
+            "requestedAt": "2026-07-31T00:00:05Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(failed["data"]["item"]["status"], "failed");
+    let blocked = post_json(
+        &app,
+        &claim_uri,
+        claim_body("birdcoder-window-a", 30),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(blocked["data"]["outcome"], "blocked");
+
+    let retried = post_json(
+        &app,
+        &format!("{queue_uri}/queue-entry.http.second/retry"),
+        json!({
+            "expectedVersion": failed["data"]["item"]["version"],
+            "requestedAt": "2026-07-31T00:00:06Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(retried["data"]["item"]["status"], "queued");
+    let short_claim = post_json(
+        &app,
+        &claim_uri,
+        claim_body("birdcoder-window-a", 1),
+        StatusCode::OK,
+    )
+    .await;
+    let first_fencing_token = short_claim["data"]["entry"]["fencingToken"]
+        .as_str()
+        .and_then(|value| value.parse::<u64>().ok())
+        .expect("first fencing token");
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    let reclaimed = post_json(
+        &app,
+        &claim_uri,
+        claim_body("birdcoder-window-b", 30),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(reclaimed["data"]["outcome"], "claimed");
+    assert!(reclaimed["data"]["entry"]["fencingToken"]
+        .as_str()
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|value| value > first_fencing_token));
+
+    post_json(
+        &app,
+        &queue_uri,
+        create_entry("queue-entry.http.third", "third queued input"),
+        StatusCode::CREATED,
+    )
+    .await;
+    let cleared = post_json(
+        &app,
+        &format!("{queue_uri}/clear"),
+        json!({}),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(cleared["data"]["clearedCount"], "1");
+    let after_clear = get_json(
+        &app,
+        &format!("{queue_uri}?page=1&page_size=32"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        after_clear["data"]["items"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(after_clear["data"]["items"][0]["status"], "executing");
+
+    request_without_body(
+        &app,
+        "DELETE",
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}"),
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    get_json(
+        &app,
+        &format!("{queue_uri}?page=1&page_size=32"),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
 }

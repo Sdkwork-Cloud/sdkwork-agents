@@ -2,7 +2,7 @@ schema_version: 1
 kind: sdkwork.database.schema
 database_role: authoritative-server
 module_id: agents
-contract_version: 6.0.2
+contract_version: 7.0.0
 owner_team: agents-platform
 compliance_level: L2
 engines:
@@ -85,6 +85,11 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: Idempotent turn execution, retry, lease, fencing, usage, and terminal state.
+  - name: ai_agent_turn_input_queue_entry
+    profile: operational_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: Durable owner-scoped FIFO input awaiting exactly-once Turn execution with lease and fencing controls.
   - name: ai_agent_session_item
     profile: tenant_entity
     lifecycle_status: active
@@ -114,7 +119,17 @@ tables:
     profile: operational_state
     lifecycle_status: active
     owner: agents-platform
-    description: Product-managed scheduled agent task.
+    description: Versioned one-time or cron schedule bound to a persisted Agent Session.
+  - name: ai_agent_task_run
+    profile: operational_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: One logical scheduled, manual, or business-retry occurrence with Turn identity, lease, and fencing state.
+  - name: ai_agent_task_run_attempt
+    profile: operational_state
+    lifecycle_status: active
+    owner: agents-platform
+    description: One infrastructure delivery attempt with worker, lease hash, fencing, and bounded diagnostics.
   - name: ai_agent_resource_user_state
     profile: user_entity
     lifecycle_status: active
