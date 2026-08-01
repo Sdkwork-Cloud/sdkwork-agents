@@ -40,16 +40,18 @@ use crate::runtime_facade_bridge::{
 use crate::session_activity::SessionActivitySummaryRecord;
 use crate::session_item_cursor::{encode_session_item_cursor, SessionItemCursor};
 use crate::task_execution_cursor::{
-    encode_task_run_attempt_cursor, encode_task_run_cursor, TaskRunAttemptCursor, TaskRunCursor,
+    encode_task_cursor, encode_task_run_attempt_cursor, encode_task_run_cursor, TaskCursor,
+    TaskRunAttemptCursor, TaskRunCursor,
 };
 use crate::task_scheduler::{
-    execute_task_run_claim, ClaimTaskRunsRequest, MaterializeDueTasksRequest, TaskRunClaim,
-    TaskRunLease, TaskSchedulerRepository,
+    execute_task_run_claim, ClaimTaskRunsRequest, MaterializeDueTasksRequest,
+    ReconcileTaskRunRequest, TaskRunClaim, TaskRunLease, TaskSchedulerRepository,
 };
 use crate::task_scheduling::{AgentTaskRunRecord, AgentTaskRunStatus};
 use crate::turn_runtime::{
-    complete_with_timeout, is_inference_error, ContractTurnExecutor, TurnExecutionInput,
-    TurnExecutor, TURN_EXECUTION_TIMEOUT,
+    complete_with_timeout, complete_with_timeout_and_sink, is_inference_error,
+    ContractTurnExecutor, TurnExecutionInput, TurnExecutionStreamSink, TurnExecutor,
+    TURN_EXECUTION_TIMEOUT,
 };
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
@@ -72,6 +74,10 @@ const MAX_JSON_PAYLOAD_BYTES: usize = 1024 * 1024;
 const MAX_METADATA_JSON_BYTES: usize = 64 * 1024;
 const MAX_TOOL_ARGUMENTS_JSON_BYTES: usize = 256 * 1024;
 const MAX_TOOL_RESULT_JSON_BYTES: usize = 1024 * 1024;
+const MAX_TASK_TITLE_BYTES: usize = 512;
+const MAX_TASK_CRON_EXPRESSION_BYTES: usize = 256;
+const MAX_TASK_TIMEZONE_BYTES: usize = 128;
+const MAX_TASK_EXTERNAL_REF_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy)]
 struct TaskExecutionPolicyInput {
@@ -150,6 +156,27 @@ fn validate_task_execution_policy(input: TaskExecutionPolicyInput) -> KernelResu
         ));
     }
     Ok(())
+}
+
+fn validate_task_definition_fields(
+    title: &Option<String>,
+    cron_expression: &Option<String>,
+    timezone: &str,
+    external_ref: &Option<String>,
+) -> KernelResult<()> {
+    validate_optional_bounded(title, "title", MAX_TASK_TITLE_BYTES)?;
+    validate_optional_bounded(
+        cron_expression,
+        "cronExpression",
+        MAX_TASK_CRON_EXPRESSION_BYTES,
+    )?;
+    require_non_blank(timezone, "timezone")?;
+    if timezone.len() > MAX_TASK_TIMEZONE_BYTES {
+        return Err(KernelError::validation(format!(
+            "timezone exceeds {MAX_TASK_TIMEZONE_BYTES} bytes"
+        )));
+    }
+    validate_optional_bounded(external_ref, "externalRef", MAX_TASK_EXTERNAL_REF_BYTES)
 }
 
 fn code_engine_runtime_manifest(engine_key: &str, agent_id: &str) -> AgentManifest {
@@ -3744,6 +3771,12 @@ where
                 "prompt exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
+        validate_task_definition_fields(
+            &command.title,
+            &command.cron_expression,
+            &command.timezone,
+            &command.external_ref,
+        )?;
 
         let agent = self
             .repository
@@ -3912,6 +3945,12 @@ where
                 "prompt exceeds maximum size of {MAX_TURN_INPUT_CONTENT_BYTES} bytes"
             )));
         }
+        validate_task_definition_fields(
+            &command.title,
+            &command.cron_expression,
+            &command.timezone,
+            &command.external_ref,
+        )?;
         validate_task_execution_policy(TaskExecutionPolicyInput::from(&command))?;
         if !is_trimmed_blank(&command.metadata_json) {
             validate_bounded_json_payload(
@@ -4153,6 +4192,17 @@ where
         self.repository.recover_expired_task_run_leases(now, limit)
     }
 
+    pub fn scheduled_task_metrics_snapshot(
+        &self,
+        now: &str,
+    ) -> KernelResult<crate::TaskSchedulerMetricsSnapshot>
+    where
+        R: TaskSchedulerRepository,
+    {
+        parse_rfc3339_datetime(now, "now")?;
+        self.repository.scheduler_metrics_snapshot(now)
+    }
+
     pub fn reconcile_scheduled_task_runs(
         &self,
         updated_before: &str,
@@ -4192,15 +4242,17 @@ where
                     continue;
                 }
             };
-            match self.repository.reconcile_task_run(
-                run.tenant_id,
-                run.organization_id,
-                &run.run_id,
-                run.version,
-                terminal_status,
-                turn.error_code.as_deref(),
-                occurred_at,
-            ) {
+            match self
+                .repository
+                .reconcile_task_run(&ReconcileTaskRunRequest {
+                    tenant_id: run.tenant_id,
+                    organization_id: run.organization_id,
+                    run_id: run.run_id.clone(),
+                    expected_version: run.version,
+                    terminal_status,
+                    error_code: turn.error_code.clone(),
+                    reconciled_at: occurred_at.to_string(),
+                }) {
                 Ok(record) => {
                     self.emit_task_run_audit_event(
                         AgentAuditAction::TaskRunReconciled,
@@ -4283,13 +4335,36 @@ where
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "task.list",
         )?;
-        let total_count = self.repository.count_tasks(&command.query)?;
-        let items = self.repository.list_tasks(&command.query)?;
-        Ok(offset_paginated_result(
-            items,
-            &command.query.pagination,
-            total_count,
-        ))
+        let scope_fingerprint = command.query.scope_fingerprint();
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested Task scope",
+            ));
+        }
+        let page_size = command.query.page_size;
+        let mut items = self.repository.list_tasks(&command.query)?;
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|task| {
+                    encode_task_cursor(&TaskCursor {
+                        updated_at: task.updated_at.clone(),
+                        task_internal_id: task.id,
+                        scope_fingerprint,
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
     }
 
     pub fn list_task_runs(&self, command: ListTaskRunsCommand) -> KernelResult<TaskRunPage>
@@ -4540,15 +4615,17 @@ where
             .ok_or_else(|| KernelError::validation("task Run not found"))?;
         Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
         self.ensure_reconciliation_matches_turn(&run, command.outcome)?;
-        let reconciled = self.repository.reconcile_task_run(
-            command.tenant_id,
-            command.organization_id,
-            &command.run_id,
-            command.expected_version,
-            command.outcome.terminal_status(),
-            command.error_code.as_deref(),
-            &command.requested_at,
-        )?;
+        let reconciled = self
+            .repository
+            .reconcile_task_run(&ReconcileTaskRunRequest {
+                tenant_id: command.tenant_id,
+                organization_id: command.organization_id,
+                run_id: command.run_id,
+                expected_version: command.expected_version,
+                terminal_status: command.outcome.terminal_status(),
+                error_code: command.error_code,
+                reconciled_at: command.requested_at.clone(),
+            })?;
         self.emit_task_run_audit_event(
             AgentAuditAction::TaskRunReconciled,
             &reconciled,
@@ -6093,6 +6170,23 @@ where
 
     /// Execute one turn and atomically persist its input, output and session counters.
     pub fn execute_turn(&self, command: CreateTurnCommand) -> KernelResult<TurnExecutionResult> {
+        self.execute_turn_internal(command, None)
+    }
+
+    /// Execute one durable Turn while forwarding provider-neutral live output.
+    pub fn execute_turn_with_stream_sink(
+        &self,
+        command: CreateTurnCommand,
+        stream_sink: Arc<dyn TurnExecutionStreamSink>,
+    ) -> KernelResult<TurnExecutionResult> {
+        self.execute_turn_internal(command, Some(stream_sink))
+    }
+
+    fn execute_turn_internal(
+        &self,
+        command: CreateTurnCommand,
+        stream_sink: Option<Arc<dyn TurnExecutionStreamSink>>,
+    ) -> KernelResult<TurnExecutionResult> {
         validate_agent_id(command.agent_id.as_str())?;
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
         self.authorize(
@@ -6372,24 +6466,36 @@ where
             .iter()
             .any(|capability| capability == "model.chat");
 
-        let completion = complete_with_timeout(
-            Arc::clone(&self.turn_executor),
-            &TurnExecutionInput {
-                agent_display_name: agent.display_name.clone(),
-                welcome_message,
-                session: session.clone(),
-                history,
-                user_content: user_content.clone(),
-                model_id: Some(session_runtime_binding.model_id.clone()),
-                provider_id: Some(session_runtime_binding.provider_id.clone()),
-                provider_session_id: session_runtime_binding.provider_session_id.clone(),
-                binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
-                access_mode_id: command.access_mode_id.clone(),
-                provider_has_model_chat,
-            },
-            command.prefer_stream,
-            TURN_EXECUTION_TIMEOUT,
-        );
+        let execution_input = TurnExecutionInput {
+            turn_id: turn_id.clone(),
+            agent_display_name: agent.display_name.clone(),
+            welcome_message,
+            session: session.clone(),
+            history,
+            user_content: user_content.clone(),
+            model_id: Some(session_runtime_binding.model_id.clone()),
+            provider_id: Some(session_runtime_binding.provider_id.clone()),
+            provider_session_id: session_runtime_binding.provider_session_id.clone(),
+            binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
+            access_mode_id: command.access_mode_id.clone(),
+            provider_has_model_chat,
+        };
+        let completion = if let Some(stream_sink) = stream_sink.as_ref() {
+            stream_sink.begin_turn(&session.session_id, &turn_id);
+            complete_with_timeout_and_sink(
+                Arc::clone(&self.turn_executor),
+                &execution_input,
+                Arc::clone(stream_sink),
+                TURN_EXECUTION_TIMEOUT,
+            )
+        } else {
+            complete_with_timeout(
+                Arc::clone(&self.turn_executor),
+                &execution_input,
+                command.prefer_stream,
+                TURN_EXECUTION_TIMEOUT,
+            )
+        };
         if is_inference_error(completion.runtime_mode) {
             turn.mark_failed(
                 "turn_inference_failed",
@@ -8286,6 +8392,137 @@ mod task_tests {
     }
 
     #[test]
+    fn task_list_cursor_is_continuous_and_scope_bound() {
+        let service = AgentsService::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let agent = service
+            .create_agent(create_agent_cmd(
+                "agent.tasks.cursor",
+                100_001,
+                0,
+                100,
+                "tasks-cursor",
+                "Tasks Cursor",
+                "2026-06-01T05:00:00Z",
+            ))
+            .expect("create agent");
+
+        for index in 1..=3 {
+            let requested_at = format!("2026-06-01T05:0{index}:00Z");
+            let mut command = create_task_cmd(
+                &service,
+                100_001,
+                0,
+                &agent.agent_id,
+                100,
+                format!("Cursor task {index}").as_str(),
+                &requested_at,
+            );
+            command.task_id = format!("task.cursor-{index}");
+            service.create_task(command).expect("create cursor task");
+        }
+
+        let first_page = service
+            .list_tasks(ListTasksCommand {
+                query: TaskListQuery::for_organization(100_001, 0).with_cursor_page(2, None),
+                requested_by: sample_subject(),
+            })
+            .expect("list first cursor page");
+        assert_eq!(
+            first_page
+                .items
+                .iter()
+                .map(|task| task.task_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["task.cursor-3", "task.cursor-2"]
+        );
+        assert!(first_page.has_more);
+        assert_eq!(first_page.total_count, None);
+        let cursor = crate::task_execution_cursor::decode_task_cursor(
+            first_page
+                .next_page_token
+                .as_deref()
+                .expect("first page cursor"),
+        )
+        .expect("decode task cursor");
+
+        let second_page = service
+            .list_tasks(ListTasksCommand {
+                query: TaskListQuery::for_organization(100_001, 0)
+                    .with_cursor_page(2, Some(cursor.clone())),
+                requested_by: sample_subject(),
+            })
+            .expect("list second cursor page");
+        assert_eq!(second_page.items.len(), 1);
+        assert_eq!(second_page.items[0].task_id, "task.cursor-1");
+        assert!(!second_page.has_more);
+        assert!(second_page.next_page_token.is_none());
+        assert_eq!(second_page.total_count, None);
+
+        let scope_error = service
+            .list_tasks(ListTasksCommand {
+                query: TaskListQuery::for_organization(100_001, 0)
+                    .for_owner(100)
+                    .with_cursor_page(2, Some(cursor)),
+                requested_by: sample_subject(),
+            })
+            .expect_err("cursor must not cross Task query scopes");
+        assert!(scope_error
+            .to_string()
+            .contains("cursor does not match the requested Task scope"));
+    }
+
+    #[test]
+    fn task_definition_field_limits_are_enforced() {
+        assert!(validate_task_definition_fields(
+            &Some("t".repeat(MAX_TASK_TITLE_BYTES)),
+            &Some("0 0 9 * * *".to_string()),
+            "UTC",
+            &Some("e".repeat(MAX_TASK_EXTERNAL_REF_BYTES)),
+        )
+        .is_ok());
+
+        for (title, cron_expression, timezone, external_ref, expected_message) in [
+            (
+                Some("t".repeat(MAX_TASK_TITLE_BYTES + 1)),
+                None,
+                "UTC".to_string(),
+                None,
+                "title exceeds 512 bytes",
+            ),
+            (
+                None,
+                Some("c".repeat(MAX_TASK_CRON_EXPRESSION_BYTES + 1)),
+                "UTC".to_string(),
+                None,
+                "cronExpression exceeds 256 bytes",
+            ),
+            (
+                None,
+                None,
+                "z".repeat(MAX_TASK_TIMEZONE_BYTES + 1),
+                None,
+                "timezone exceeds 128 bytes",
+            ),
+            (
+                None,
+                None,
+                "UTC".to_string(),
+                Some("e".repeat(MAX_TASK_EXTERNAL_REF_BYTES + 1)),
+                "externalRef exceeds 256 bytes",
+            ),
+        ] {
+            let error =
+                validate_task_definition_fields(&title, &cron_expression, &timezone, &external_ref)
+                    .expect_err("oversized Task field must be rejected");
+            assert!(error.to_string().contains(expected_message));
+        }
+    }
+
+    #[test]
     fn cancel_task_rejects_terminal_status() {
         let repository = InMemoryAgentRepository::new();
         let audit_sink = InMemoryAgentAuditSink::default();
@@ -8371,7 +8608,7 @@ mod task_tests {
                 0,
                 &created.agent_id,
                 100,
-                "Run deferred work",
+                "Run scheduled work",
                 "2026-06-01T05:01:00Z",
             ))
             .expect("create task");
@@ -8540,7 +8777,9 @@ mod task_tests {
                 requested_by: sample_subject(),
             })
             .expect("list organization one tasks");
-        assert_eq!(organization_one_tasks.total_count, Some(1));
+        assert_eq!(organization_one_tasks.total_count, None);
+        assert!(!organization_one_tasks.has_more);
+        assert!(organization_one_tasks.next_page_token.is_none());
         assert_eq!(organization_one_tasks.items[0].organization_id, 10);
         let organization_two_tasks = service
             .list_tasks(ListTasksCommand {
@@ -8548,7 +8787,9 @@ mod task_tests {
                 requested_by: sample_subject(),
             })
             .expect("list organization two tasks");
-        assert_eq!(organization_two_tasks.total_count, Some(1));
+        assert_eq!(organization_two_tasks.total_count, None);
+        assert!(!organization_two_tasks.has_more);
+        assert!(organization_two_tasks.next_page_token.is_none());
         assert_eq!(organization_two_tasks.items[0].organization_id, 20);
 
         let organization_one_read = service

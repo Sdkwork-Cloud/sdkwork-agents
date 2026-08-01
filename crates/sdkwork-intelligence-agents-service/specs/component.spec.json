@@ -133,6 +133,7 @@
       "sdkwork_intelligence_agents_service::infrastructure::*",
       "sdkwork_intelligence_agents_service::persistence::*",
       "sdkwork_intelligence_agents_service::{AgentHttpState,build_open_router,build_app_router,build_backend_router,build_combined_router} [feature=http-axum]",
+      "sdkwork_intelligence_agents_service::AgentHttpState",
       "sdkwork_intelligence_agents_service::AgentTaskWorkerHandle",
       "sdkwork_intelligence_agents_service::AgentRepository::check_readiness",
       "sdkwork_intelligence_agents_service::AgentHttpState::check_readiness"

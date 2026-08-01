@@ -125,6 +125,21 @@ pub struct TurnInputQueueClaimRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnInputQueueFailureRequest {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub session_id: String,
+    pub owner_user_id: u64,
+    pub queue_entry_id: String,
+    pub expected_version: u64,
+    pub expected_fencing_token: u64,
+    pub claim_token_hash: String,
+    pub error_code: String,
+    pub error_detail: Option<String>,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnInputQueueClaimOutcome {
     Claimed(AgentTurnInputQueueEntry),
     Busy(AgentTurnInputQueueEntry),

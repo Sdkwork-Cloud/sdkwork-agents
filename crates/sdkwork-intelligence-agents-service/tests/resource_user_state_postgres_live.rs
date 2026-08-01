@@ -1,30 +1,36 @@
 #![cfg(feature = "postgres-sync")]
 
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::sync::{Arc, Barrier, Condvar, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sdkwork_agent_kernel::{AgentManifest, KernelErrorKind, PolicySubject};
-use sdkwork_database_config::workspace_database::workspace_postgres_test_database_url;
+use sdkwork_database_config::workspace_database::{
+    build_postgres_database_url, workspace_postgres_test_database_url,
+};
 use sdkwork_intelligence_agents_service::{
     AgentBusinessIdGenerator, AgentCompositionSlotKind, AgentCompositionTargetModule,
-    AgentImplementationKind, AgentItemDriveRefInput, AgentItemFeedbackRating,
+    AgentIdGenerator, AgentImplementationKind, AgentItemDriveRefInput, AgentItemFeedbackRating,
     AgentItemResourceRole, AgentProjectDriveAccessMode, AgentProjectVisibility,
     AgentProviderBindingCommand, AgentRepository, AgentSessionEntrySurface, AgentSessionItemKind,
-    AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind, AgentTurnMode,
-    AgentTurnRecord, AgentTurnStatus, AgentVisibility, AgentsService, CancelTurnCommand,
-    CreateAgentCommand, CreateProjectCommand, CreateProjectCompositionSlotCommand,
-    CreateSessionCommand, CreateSessionItemCommand, CreateSessionRuntimeBindingCommand,
-    CreateTurnCommand, DeleteProjectCompositionSlotCommand, GetAgentCommand,
-    IamGatedPolicyProvider, InMemoryAgentAuditSink, ItemFeedbackListQuery, ListItemFeedbackCommand,
+    AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind, AgentTaskMisfirePolicy,
+    AgentTaskOverlapPolicy, AgentTaskRecord, AgentTaskRunAttemptStatus, AgentTaskScheduleKind,
+    AgentTaskStatus, AgentTurnMode, AgentTurnRecord, AgentTurnStatus, AgentVisibility,
+    AgentsService, CancelTurnCommand, ClaimTaskRunsRequest, CreateAgentCommand,
+    CreateProjectCommand, CreateProjectCompositionSlotCommand, CreateSessionCommand,
+    CreateSessionItemCommand, CreateSessionRuntimeBindingCommand, CreateTurnCommand,
+    DeleteProjectCompositionSlotCommand, GetAgentCommand, IamGatedPolicyProvider,
+    InMemoryAgentAuditSink, ItemFeedbackListQuery, ListItemFeedbackCommand,
     ListProjectCompositionSlotsCommand, ListProjectsCommand, ListSessionItemsCommand,
-    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
+    ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand, MaterializeDueTasksRequest,
     ProjectCompositionSlotListQuery, ProjectListQuery, ResourceUserStateListQuery,
     SessionItemListQuery, SessionRuntimeBindingListQuery, SqlAgentAuditSink, SqlAgentRepository,
-    SyncPostgresAdapter, TurnExecutionInput, TurnExecutionOutput, TurnExecutor, TurnListQuery,
-    UpdateItemFeedbackCommand, UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
-    AUDIT_SINK_NODE_ID, RUNTIME_MODE_INFERENCE_ERROR,
+    SyncPostgresAdapter, TaskRunAttemptListQuery, TaskSchedulerRepository, TurnExecutionInput,
+    TurnExecutionOutput, TurnExecutor, TurnListQuery, UpdateItemFeedbackCommand,
+    UpdateProjectCompositionSlotCommand, UpdateSessionUserStateCommand,
+    RUNTIME_MODE_INFERENCE_ERROR,
 };
 
 struct FailingTurnExecutor;
@@ -72,7 +78,6 @@ impl BlockingTurnExecutor {
 }
 
 const DATABASE_URL_ENV: &str = "SDKWORK_DATABASE_URL";
-const DATABASE_ADMIN_URL_ENV: &str = "SDKWORK_DATABASE_ADMIN_URL";
 const DATABASE_SCHEMA_ENV: &str = "SDKWORK_DATABASE_SCHEMA";
 const DATABASE_SCHEMA_FALLBACK_PUBLIC_ENV: &str = "SDKWORK_DATABASE_SCHEMA_FALLBACK_PUBLIC";
 const DATABASE_AUTO_MIGRATE_ENV: &str = "SDKWORK_DATABASE_AUTO_MIGRATE";
@@ -170,14 +175,29 @@ fn database_environment_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+fn test_id_generator() -> AgentBusinessIdGenerator {
+    static GENERATOR: OnceLock<AgentBusinessIdGenerator> = OnceLock::new();
+    GENERATOR
+        .get_or_init(|| {
+            AgentBusinessIdGenerator::with_node_id(911)
+                .expect("postgres live test Snowflake generator should initialize")
+        })
+        .clone()
+}
+
+fn connect_test_adapter(
+    connection_uri: &str,
+) -> sdkwork_agent_kernel::KernelResult<SyncPostgresAdapter> {
+    SyncPostgresAdapter::connect_with_id_generator(connection_uri, test_id_generator())
+}
+
 fn create_isolated_database(
     base_url: &str,
     suffix: u128,
 ) -> (IsolatedPostgresDatabase, String, SyncPostgresAdapter) {
-    let admin_url = std::env::var(DATABASE_ADMIN_URL_ENV)
-        .expect("SDKWORK_DATABASE_ADMIN_URL must be set for ephemeral test provisioning");
-    let admin = SyncPostgresAdapter::connect(&admin_url)
-        .expect("workspace postgres admin adapter should connect");
+    let admin_url = workspace_admin_database_url();
+    let admin =
+        connect_test_adapter(&admin_url).expect("workspace postgres admin adapter should connect");
     let database = format!("sdkwork_ai_test_{suffix}");
     let create_database = format!("CREATE DATABASE {database} OWNER sdkwork_ai_test");
     admin
@@ -188,8 +208,8 @@ fn create_isolated_database(
     let isolated_url = workspace_postgres_test_database_url(base_url, &database)
         .expect("workspace test database URL should normalize");
     let schema = database.clone();
-    let schema_owner = SyncPostgresAdapter::connect(&isolated_url)
-        .expect("workspace test database owner should connect");
+    let schema_owner =
+        connect_test_adapter(&isolated_url).expect("workspace test database owner should connect");
     let create_schema = format!("CREATE SCHEMA {schema} AUTHORIZATION sdkwork_ai_test");
     schema_owner
         .pool()
@@ -209,10 +229,27 @@ fn create_isolated_database(
         schema,
         _environment: environment,
     };
-    let isolated = SyncPostgresAdapter::connect(&isolated_url)
+    let isolated = connect_test_adapter(&isolated_url)
         .expect("workspace test postgres adapter should connect");
 
     (isolated_database, isolated_url, isolated)
+}
+
+fn workspace_admin_database_url() -> String {
+    let required = |key: &str| {
+        std::env::var(key)
+            .unwrap_or_else(|_| panic!("{key} must be set for ephemeral test provisioning"))
+    };
+    build_postgres_database_url(
+        &required("SDKWORK_DATABASE_ADMIN_HOST"),
+        std::env::var("SDKWORK_DATABASE_ADMIN_PORT").ok().as_deref(),
+        &required("SDKWORK_DATABASE_ADMIN_DATABASE"),
+        &required("SDKWORK_DATABASE_ADMIN_USERNAME"),
+        &required("SDKWORK_DATABASE_ADMIN_PASSWORD"),
+        std::env::var("SDKWORK_DATABASE_ADMIN_SSL_MODE")
+            .ok()
+            .as_deref(),
+    )
 }
 
 fn bootstrap_isolated_database(base_url: &str, suffix: u128) -> (IsolatedPostgresDatabase, String) {
@@ -226,8 +263,8 @@ fn bootstrap_isolated_database(base_url: &str, suffix: u128) -> (IsolatedPostgre
         .expect("agents database lifecycle should bootstrap the isolated schema");
     assert_eq!(
         authoritative_agent_table_count(&isolated, &isolated_database.schema),
-        20,
-        "greenfield init must materialize exactly 20 authoritative Agents baseline tables without enabling auto-migrate",
+        23,
+        "greenfield init must materialize exactly 23 authoritative Agents baseline tables without enabling auto-migrate",
     );
 
     (isolated_database, isolated_url)
@@ -317,8 +354,7 @@ fn create_live_turn_service(
 ) -> (Arc<LiveAgentsService>, String, String, String) {
     let service = AgentsService::new(
         SqlAgentRepository::new(
-            SyncPostgresAdapter::connect(database_url)
-                .expect("live turn service adapter should connect"),
+            connect_test_adapter(database_url).expect("live turn service adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
         IamGatedPolicyProvider::new("policy.agents.turn-concurrency.postgres-live"),
@@ -474,7 +510,7 @@ fn read_session_aggregate(
     Vec<AgentTurnRecord>,
 ) {
     let repository = SqlAgentRepository::new(
-        SyncPostgresAdapter::connect(database_url)
+        connect_test_adapter(database_url)
             .expect("live aggregate inspection adapter should connect"),
     );
     let session = repository
@@ -498,8 +534,440 @@ fn read_session_aggregate(
     (session, items, turns)
 }
 
+fn live_scheduler_task(
+    suffix: u128,
+    label: &str,
+    agent_id: &str,
+    session_id: &str,
+    max_concurrent_runs: u16,
+) -> sdkwork_agent_kernel::KernelResult<AgentTaskRecord> {
+    Ok(AgentTaskRecord {
+        id: test_id_generator().next_id()?,
+        task_id: format!("task.scheduler.{label}.{suffix}"),
+        tenant_id: 700_001,
+        organization_id: 0,
+        agent_id: agent_id.to_string(),
+        owner_user_id: 700,
+        session_id: session_id.to_string(),
+        title: Some(format!("PostgreSQL scheduler {label}")),
+        prompt: "execute the PostgreSQL scheduler contract".to_string(),
+        schedule_kind: AgentTaskScheduleKind::Cron,
+        cron_expression: Some("0 * * * * *".to_string()),
+        timezone: "UTC".to_string(),
+        scheduled_at: None,
+        starts_at: None,
+        ends_at: None,
+        next_fire_at: Some("2026-08-01T00:00:00.000Z".to_string()),
+        misfire_policy: AgentTaskMisfirePolicy::FireOnce,
+        overlap_policy: AgentTaskOverlapPolicy::Queue,
+        max_concurrent_runs,
+        max_catch_up_runs: 1,
+        max_attempts: 3,
+        retry_initial_delay_seconds: 5,
+        retry_max_delay_seconds: 60,
+        timeout_seconds: 300,
+        priority: 0,
+        status: AgentTaskStatus::Active,
+        generation: 1,
+        external_ref: None,
+        metadata_json: "{}".to_string(),
+        version: 0,
+        created_at: "2026-07-31T00:00:00.000Z".to_string(),
+        updated_at: "2026-07-31T00:00:00.000Z".to_string(),
+        completed_at: None,
+        paused_at: None,
+        cancelled_at: None,
+    })
+}
+
+fn create_live_scheduler_context(
+    database_url: &str,
+    suffix: u128,
+) -> (String, String, SqlAgentRepository<SyncPostgresAdapter>) {
+    let (service, agent_id, provider_binding_id, provider_id) =
+        create_live_turn_service(database_url, suffix, None);
+    let (session_id, _, _) = create_live_turn_session(
+        service.as_ref(),
+        &agent_id,
+        &provider_binding_id,
+        &provider_id,
+        suffix,
+        "scheduler",
+    );
+    let repository = SqlAgentRepository::new(
+        connect_test_adapter(database_url).expect("scheduler repository should connect"),
+    );
+    (agent_id, session_id, repository)
+}
+
+fn scalar_count(database_url: &str, sql: &str, task_id: &str) -> i64 {
+    let adapter =
+        connect_test_adapter(database_url).expect("scheduler count adapter should connect");
+    adapter
+        .pool()
+        .run(
+            sqlx::query_scalar::<_, i64>(sql)
+                .bind(task_id)
+                .fetch_one(adapter.pool().pool()),
+        )
+        .expect("scheduler count should be queryable")
+}
+
 #[test]
-#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
+fn postgres_concurrent_materialization_creates_one_run_and_one_outbox_fact() {
+    let _environment_lock = database_environment_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after the Unix epoch")
+        .as_nanos();
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
+    let (agent_id, session_id, repository) = create_live_scheduler_context(&database_url, suffix);
+    let task = live_scheduler_task(suffix, "materialize", &agent_id, &session_id, 1)
+        .expect("scheduler Task should build");
+    repository
+        .insert_task(task.clone())
+        .expect("scheduler Task should persist");
+
+    const WORKER_COUNT: usize = 8;
+    let start = Arc::new(Barrier::new(WORKER_COUNT + 1));
+    let workers = (0..WORKER_COUNT)
+        .map(|_| {
+            let start = Arc::clone(&start);
+            let database_url = database_url.clone();
+            thread::spawn(move || {
+                let repository = SqlAgentRepository::new(
+                    connect_test_adapter(&database_url)
+                        .expect("materializer connection should initialize"),
+                );
+                start.wait();
+                repository.materialize_due_tasks(&MaterializeDueTasksRequest::bounded(
+                    "2026-08-01T00:00:00.000Z",
+                    10,
+                ))
+            })
+        })
+        .collect::<Vec<_>>();
+    start.wait();
+    let materialized = workers
+        .into_iter()
+        .flat_map(|worker| {
+            worker
+                .join()
+                .expect("materializer thread should not panic")
+                .expect("materialization should succeed")
+        })
+        .collect::<Vec<_>>();
+    let run_ids = materialized
+        .iter()
+        .map(|run| run.run_id.as_str())
+        .collect::<HashSet<_>>();
+    assert_eq!(materialized.len(), 1);
+    assert_eq!(run_ids.len(), 1);
+    assert_eq!(
+        scalar_count(
+            &database_url,
+            "SELECT COUNT(*)::bigint FROM ai_agent_task_run WHERE task_id = $1",
+            &task.task_id,
+        ),
+        1
+    );
+    assert_eq!(
+        scalar_count(
+            &database_url,
+            "SELECT COUNT(*)::bigint FROM ai_agent_outbox_event WHERE event_type = 'agent.task.run.materialized' AND payload_json->>'taskId' = $1",
+            &task.task_id,
+        ),
+        1
+    );
+}
+
+#[test]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
+fn postgres_concurrent_claims_are_unique_and_capacity_bounded() {
+    let _environment_lock = database_environment_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after the Unix epoch")
+        .as_nanos();
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
+    let (agent_id, session_id, repository) = create_live_scheduler_context(&database_url, suffix);
+    let task_a = live_scheduler_task(suffix, "claim-a", &agent_id, &session_id, 2)
+        .expect("first scheduler Task should build");
+    let task_b = live_scheduler_task(suffix, "claim-b", &agent_id, &session_id, 2)
+        .expect("second scheduler Task should build");
+    for task in [&task_a, &task_b] {
+        repository
+            .insert_task(task.clone())
+            .expect("scheduler Task should persist");
+        for index in 0..4 {
+            repository
+                .create_manual_task_run(
+                    task,
+                    &format!("manual:{}:{index}", task.task_id),
+                    "2026-08-01T00:00:00.000Z",
+                )
+                .expect("manual scheduler Run should persist");
+        }
+    }
+
+    const WORKER_COUNT: usize = 8;
+    let start = Arc::new(Barrier::new(WORKER_COUNT + 1));
+    let workers = (0..WORKER_COUNT)
+        .map(|index| {
+            let start = Arc::clone(&start);
+            let database_url = database_url.clone();
+            thread::spawn(move || {
+                let repository = SqlAgentRepository::new(
+                    connect_test_adapter(&database_url)
+                        .expect("claim worker connection should initialize"),
+                );
+                start.wait();
+                repository.claim_task_runs(&ClaimTaskRunsRequest::bounded_with_tenant_limit(
+                    format!("worker.claim.{index}"),
+                    "2026-08-01T00:00:01.000Z",
+                    60,
+                    2,
+                    3,
+                ))
+            })
+        })
+        .collect::<Vec<_>>();
+    start.wait();
+    let claims = workers
+        .into_iter()
+        .flat_map(|worker| {
+            worker
+                .join()
+                .expect("claim worker thread should not panic")
+                .expect("claim should succeed")
+        })
+        .collect::<Vec<_>>();
+    let unique_runs = claims
+        .iter()
+        .map(|claim| claim.run.run_id.as_str())
+        .collect::<HashSet<_>>();
+    let unique_attempts = claims
+        .iter()
+        .map(|claim| claim.attempt.attempt_id.as_str())
+        .collect::<HashSet<_>>();
+    assert_eq!(claims.len(), 3);
+    assert_eq!(unique_runs.len(), claims.len());
+    assert_eq!(unique_attempts.len(), claims.len());
+    for task in [&task_a, &task_b] {
+        assert!(
+            claims
+                .iter()
+                .filter(|claim| claim.run.task_id == task.task_id)
+                .count()
+                <= 2
+        );
+        assert!(
+            scalar_count(
+                &database_url,
+                "SELECT COUNT(*)::bigint FROM ai_agent_task_run WHERE task_id = $1 AND status IN (1, 2)",
+                &task.task_id,
+            ) <= 2
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
+fn postgres_expired_lease_recovery_fences_the_previous_worker() {
+    let _environment_lock = database_environment_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after the Unix epoch")
+        .as_nanos();
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
+    let (agent_id, session_id, repository) = create_live_scheduler_context(&database_url, suffix);
+    let task = live_scheduler_task(suffix, "lease", &agent_id, &session_id, 1)
+        .expect("scheduler Task should build");
+    repository
+        .insert_task(task.clone())
+        .expect("scheduler Task should persist");
+    let original = repository
+        .create_manual_task_run(
+            &task,
+            &format!("manual.lease.{suffix}"),
+            "2026-08-01T00:00:00.000Z",
+        )
+        .expect("manual scheduler Run should persist");
+    let first = repository
+        .claim_task_runs(&ClaimTaskRunsRequest::bounded(
+            "worker.lease.first",
+            "2026-08-01T00:00:01.000Z",
+            10,
+            1,
+        ))
+        .expect("first claim should succeed")
+        .pop()
+        .expect("first claim should exist");
+    repository
+        .mark_task_run_running(&first.lease, "2026-08-01T00:00:02.000Z")
+        .expect("first claim should enter running");
+
+    assert_eq!(
+        repository
+            .recover_expired_task_run_leases("2026-08-01T00:00:12.000Z", 10)
+            .expect("expired lease recovery should succeed"),
+        1
+    );
+    let stale_heartbeat =
+        repository.heartbeat_task_run(&first.lease, "2026-08-01T00:00:13.000Z", 10);
+    assert!(stale_heartbeat.is_err());
+
+    let second = repository
+        .claim_task_runs(&ClaimTaskRunsRequest::bounded(
+            "worker.lease.second",
+            "2026-08-01T00:00:13.000Z",
+            10,
+            1,
+        ))
+        .expect("second claim should succeed")
+        .pop()
+        .expect("second claim should exist");
+    assert_eq!(second.run.run_id, original.run_id);
+    assert_eq!(second.run.turn_id, original.turn_id);
+    assert_eq!(second.run.attempt_count, 2);
+    assert!(second.lease.fencing_token > first.lease.fencing_token);
+
+    let attempts = repository
+        .list_task_run_attempts(&TaskRunAttemptListQuery::for_run(
+            700_001,
+            0,
+            &original.run_id,
+        ))
+        .expect("Run attempts should be queryable");
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0].status, AgentTaskRunAttemptStatus::Claimed);
+    assert_eq!(attempts[1].status, AgentTaskRunAttemptStatus::LeaseExpired);
+    assert!(attempts[0].fencing_token > attempts[1].fencing_token);
+}
+
+#[test]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
+fn postgres_materialization_and_outbox_are_one_atomic_transaction() {
+    let _environment_lock = database_environment_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let base_database_url =
+        std::env::var(DATABASE_URL_ENV).expect("SDKWORK_DATABASE_URL must be set");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after the Unix epoch")
+        .as_nanos();
+    let (_isolated_database, database_url) =
+        bootstrap_isolated_database(&base_database_url, suffix);
+    let (agent_id, session_id, repository) = create_live_scheduler_context(&database_url, suffix);
+    let task = live_scheduler_task(suffix, "atomic", &agent_id, &session_id, 1)
+        .expect("scheduler Task should build");
+    repository
+        .insert_task(task.clone())
+        .expect("scheduler Task should persist");
+    let adapter = connect_test_adapter(&database_url).expect("trigger adapter should connect");
+    adapter
+        .pool()
+        .run(
+            sqlx::query(
+                r#"
+CREATE FUNCTION reject_task_run_materialized_outbox() RETURNS trigger
+LANGUAGE plpgsql AS $function$
+BEGIN
+    IF NEW.event_type = 'agent.task.run.materialized' THEN
+        RAISE EXCEPTION 'injected outbox failure';
+    END IF;
+    RETURN NEW;
+END;
+$function$
+                "#,
+            )
+            .execute(adapter.pool().pool()),
+        )
+        .expect("outbox failure function should install");
+    adapter
+        .pool()
+        .run(
+            sqlx::query(
+                "CREATE TRIGGER reject_task_run_materialized_outbox \
+                 BEFORE INSERT ON ai_agent_outbox_event \
+                 FOR EACH ROW EXECUTE FUNCTION reject_task_run_materialized_outbox()",
+            )
+            .execute(adapter.pool().pool()),
+        )
+        .expect("outbox failure trigger should install");
+
+    let failed = repository.materialize_due_tasks(&MaterializeDueTasksRequest::bounded(
+        "2026-08-01T00:00:00.000Z",
+        10,
+    ));
+    assert!(failed.is_err());
+    assert_eq!(
+        scalar_count(
+            &database_url,
+            "SELECT COUNT(*)::bigint FROM ai_agent_task_run WHERE task_id = $1",
+            &task.task_id,
+        ),
+        0
+    );
+    let unchanged = repository
+        .get_task(700_001, 0, &task.task_id)
+        .expect("Task should be queryable")
+        .expect("Task should exist");
+    assert_eq!(unchanged.version, 0);
+    assert_eq!(unchanged.next_fire_at, task.next_fire_at);
+
+    adapter
+        .pool()
+        .run(
+            sqlx::query(
+                "DROP TRIGGER reject_task_run_materialized_outbox ON ai_agent_outbox_event",
+            )
+            .execute(adapter.pool().pool()),
+        )
+        .expect("outbox failure trigger should be removed");
+    adapter
+        .pool()
+        .run(
+            sqlx::query("DROP FUNCTION reject_task_run_materialized_outbox()")
+                .execute(adapter.pool().pool()),
+        )
+        .expect("outbox failure function should be removed");
+    let materialized = repository
+        .materialize_due_tasks(&MaterializeDueTasksRequest::bounded(
+            "2026-08-01T00:00:00.000Z",
+            10,
+        ))
+        .expect("materialization should succeed after removing trigger");
+    assert_eq!(materialized.len(), 1);
+    assert_eq!(
+        scalar_count(
+            &database_url,
+            "SELECT COUNT(*)::bigint FROM ai_agent_outbox_event WHERE event_type = 'agent.task.run.materialized' AND payload_json->>'taskId' = $1",
+            &task.task_id,
+        ),
+        1
+    );
+}
+
+#[test]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
 fn postgres_partial_schema_fails_closed_without_auto_migrate_authorization() {
     let _environment_lock = database_environment_lock()
         .lock()
@@ -541,7 +1009,7 @@ fn postgres_partial_schema_fails_closed_without_auto_migrate_authorization() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
 fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     let _environment_lock = database_environment_lock()
         .lock()
@@ -555,7 +1023,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     let (_isolated_database, database_url) =
         bootstrap_isolated_database(&base_database_url, suffix);
     let repository = SqlAgentRepository::new(
-        SyncPostgresAdapter::connect(&database_url).expect("postgres adapter should connect"),
+        connect_test_adapter(&database_url).expect("postgres adapter should connect"),
     );
     let service = AgentsService::new(
         repository,
@@ -1000,7 +1468,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     let failed_idempotency_key = format!("live-turn-failed-{suffix}");
     let failure_service = AgentsService::new(
         SqlAgentRepository::new(
-            SyncPostgresAdapter::connect(&database_url).expect("failure adapter should connect"),
+            connect_test_adapter(&database_url).expect("failure adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
         IamGatedPolicyProvider::new("policy.agents.turn-failure.postgres-live"),
@@ -1029,7 +1497,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
     });
     assert!(failed_result.is_err());
     let lifecycle_repository = SqlAgentRepository::new(
-        SyncPostgresAdapter::connect(&database_url).expect("lifecycle adapter should connect"),
+        connect_test_adapter(&database_url).expect("lifecycle adapter should connect"),
     );
     let failed_turn = lifecycle_repository
         .get_turn_by_idempotency(700_001, 0, 700, &failed_idempotency_key)
@@ -1101,8 +1569,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         .unwrap();
     let cancellation_service = AgentsService::new(
         SqlAgentRepository::new(
-            SyncPostgresAdapter::connect(&database_url)
-                .expect("cancellation adapter should connect"),
+            connect_test_adapter(&database_url).expect("cancellation adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
         IamGatedPolicyProvider::new("policy.agents.turn-cancel.postgres-live"),
@@ -1178,8 +1645,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         .unwrap();
     let reconciliation_service = AgentsService::new(
         SqlAgentRepository::new(
-            SyncPostgresAdapter::connect(&database_url)
-                .expect("reconciliation adapter should connect"),
+            connect_test_adapter(&database_url).expect("reconciliation adapter should connect"),
         ),
         InMemoryAgentAuditSink::default(),
         IamGatedPolicyProvider::new("policy.agents.turn-reconcile.postgres-live"),
@@ -1210,7 +1676,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
 fn postgres_project_create_persists_sql_audit_events() {
     let _environment_lock = database_environment_lock()
         .lock()
@@ -1224,12 +1690,8 @@ fn postgres_project_create_persists_sql_audit_events() {
     let (_isolated_database, database_url) =
         bootstrap_isolated_database(&base_database_url, suffix);
     let repository_adapter =
-        SyncPostgresAdapter::connect(&database_url).expect("postgres adapter should connect");
-    let audit_adapter = SyncPostgresAdapter::with_pool_and_id_generator(
-        repository_adapter.pool().clone(),
-        AgentBusinessIdGenerator::with_node_id(AUDIT_SINK_NODE_ID)
-            .expect("audit sink id generator should initialize"),
-    );
+        connect_test_adapter(&database_url).expect("postgres adapter should connect");
+    let audit_adapter = repository_adapter.clone();
     let service = AgentsService::new(
         SqlAgentRepository::new(repository_adapter),
         SqlAgentAuditSink::new_global(audit_adapter),
@@ -1258,7 +1720,7 @@ fn postgres_project_create_persists_sql_audit_events() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
 fn postgres_turn_idempotency_and_session_sequences_are_concurrency_safe() {
     let _environment_lock = database_environment_lock()
         .lock()
@@ -1482,7 +1944,7 @@ fn postgres_turn_idempotency_and_session_sequences_are_concurrency_safe() {
 }
 
 #[test]
-#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_URL for ephemeral test provisioning"]
+#[ignore = "requires SDKWORK_DATABASE_URL and SDKWORK_DATABASE_ADMIN_* for ephemeral test provisioning"]
 fn postgres_cancel_wins_completion_race_without_partial_response_state() {
     let _environment_lock = database_environment_lock()
         .lock()

@@ -34,9 +34,10 @@ mod workspace;
 pub use agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 pub use agent_turn_input_queue::{
     AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, AgentTurnInputQueueStatus,
-    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueListQuery,
-    TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION,
-    MAX_TURN_INPUT_QUEUE_DRIVE_REFS, MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
+    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueFailureRequest,
+    TurnInputQueueListQuery, TurnInputQueueReorderEntry,
+    MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION, MAX_TURN_INPUT_QUEUE_DRIVE_REFS,
+    MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
 };
 pub use api::{
     ApiOperation, AGENT_APP_API_OPERATIONS, AGENT_APP_API_PREFIX, AGENT_BACKEND_API_OPERATIONS,
@@ -83,10 +84,11 @@ pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
 };
 pub use turn_runtime::{
-    complete_with_timeout, execute_agent_turn, is_capacity_error, is_inference_error,
-    ContractTurnExecutor, KernelModelTurnExecutor, RuntimeFacadeTurnExecutor, TurnExecutionInput,
-    TurnExecutionOutput, TurnExecutor, RUNTIME_MODE_CAPACITY_ERROR, RUNTIME_MODE_FACADE,
-    RUNTIME_MODE_INFERENCE_ERROR, TURN_EXECUTION_TIMEOUT,
+    complete_with_timeout, complete_with_timeout_and_sink, execute_agent_turn, is_capacity_error,
+    is_inference_error, ContractTurnExecutor, KernelModelTurnExecutor, RuntimeFacadeTurnExecutor,
+    TurnExecutionInput, TurnExecutionOutput, TurnExecutionStreamSink, TurnExecutor,
+    RUNTIME_MODE_CAPACITY_ERROR, RUNTIME_MODE_FACADE, RUNTIME_MODE_INFERENCE_ERROR,
+    TURN_EXECUTION_TIMEOUT,
 };
 
 pub use domain::{
@@ -130,7 +132,7 @@ pub use http::{
     build_app_routes, build_backend_routes, build_combined_routes, build_open_routes,
     serve_agents_metrics, AgentHttpState, AgentRequestContext, AgentTaskWorkerHandle,
 };
-pub use id::{AgentBusinessIdGenerator, AgentIdGenerator, AUDIT_SINK_NODE_ID};
+pub use id::{AgentBusinessIdGenerator, AgentIdGenerator};
 pub use infrastructure::{
     is_production_environment, validate_production_security_config, AgentMetricsRegistry,
     AgentServiceMetrics, AllowAllPolicyProvider, DenyAllPolicyProvider, IamGatedPolicyProvider,
@@ -155,8 +157,8 @@ pub use persistence::{
     SQL_COMPLETE_AGENT_TURN_STATE, SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_ITEM_FEEDBACK,
     SQL_COUNT_AGENT_PROJECTS, SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS,
     SQL_COUNT_AGENT_RESOURCE_USER_STATES, SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_ITEMS,
-    SQL_COUNT_AGENT_TASKS, SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF,
-    SQL_INSERT_AGENT_PROJECT, SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
     SQL_INSERT_AGENT_SESSION_ITEM, SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK,
     SQL_INSERT_AGENT_TURN, SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
     SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
@@ -170,11 +172,12 @@ pub use persistence::{
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
     SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
-    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
+    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT,
+    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_ITEM, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
     SQL_UPDATE_AGENT_WORKSPACE, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
-    SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
+    SQL_UPSERT_AGENT_RESOURCE_USER_STATE, TASK_SCHEDULER_METRICS_COUNT_CAP,
 };
 pub use ports::WorkspaceListQuery;
 pub use ports::{
@@ -196,14 +199,15 @@ pub use session_activity::{
     SessionProviderActivityFreshness, SessionProviderActivityInteractionHint,
     SessionProviderActivityObservation, SessionProviderActivityState, SessionProviderIdentity,
 };
-pub use task_execution_cursor::{TaskRunAttemptCursor, TaskRunCursor};
+pub use task_execution_cursor::{TaskCursor, TaskRunAttemptCursor, TaskRunCursor};
 pub use task_scheduler::{
     AgentTaskScheduler, ClaimTaskRunsRequest, FailTaskRunRequest, MaterializeDueTasksRequest,
-    TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition, TaskRunLease,
-    TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult, TaskTurnExecutor,
-    DEFAULT_CLAIM_BATCH_SIZE, DEFAULT_MATERIALIZE_BATCH_SIZE, DEFAULT_RUN_LEASE_SECONDS,
-    DEFAULT_TENANT_CONCURRENT_RUNS, MAX_CLAIM_BATCH_SIZE, MAX_MATERIALIZE_BATCH_SIZE,
-    MAX_RUN_LEASE_SECONDS, MAX_TENANT_CONCURRENT_RUNS,
+    ReconcileTaskRunRequest, TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition,
+    TaskRunLease, TaskRunListQuery, TaskSchedulerMetricsSnapshot, TaskSchedulerRepository,
+    TaskTransitionResult, TaskTurnExecutor, DEFAULT_CLAIM_BATCH_SIZE,
+    DEFAULT_MATERIALIZE_BATCH_SIZE, DEFAULT_RUN_LEASE_SECONDS, DEFAULT_TENANT_CONCURRENT_RUNS,
+    MAX_CLAIM_BATCH_SIZE, MAX_MATERIALIZE_BATCH_SIZE, MAX_RUN_LEASE_SECONDS,
+    MAX_TENANT_CONCURRENT_RUNS,
 };
 pub use task_scheduling::{
     AgentTaskMisfirePolicy, AgentTaskOverlapPolicy, AgentTaskRecord, AgentTaskRunAttemptRecord,

@@ -218,6 +218,12 @@ function buildGeneratorArgs(family, target, input, output) {
     ...(target.npmPackageName
       ? ['--npm-package-name', target.npmPackageName]
       : []),
+    ...(target.language === 'typescript'
+      ? [
+          '--common-package',
+          `${SDKWORK_SDKGEN_STANDARD.typescriptCommonPackage.name}@${SDKWORK_SDKGEN_STANDARD.typescriptCommonPackage.version}`,
+        ]
+      : []),
     '--sdk-root',
     path.join(root, 'sdks', family.familyDir),
     '--sdk-name',

@@ -51,8 +51,11 @@ void main() {
     final Future<AgentSessionItemListResponse?> Function(
       String,
       String, [
+      String?,
       int?,
-      int?,
+      String?,
+      String?,
+      String?,
     ])
     listItems = client.ai.agentsSessionItemsList;
 

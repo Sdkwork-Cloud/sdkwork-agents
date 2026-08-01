@@ -3547,32 +3547,74 @@ class UpdateAgentItemFeedbackRequest {
 class AgentTaskRecord {
   final String taskId;
   final String agentId;
-  final String title;
+  final String tenantId;
+  final String organizationId;
+  final String ownerUserId;
+  final String sessionId;
+  final String? title;
   final String prompt;
+  final String scheduleKind;
+  final String? cronExpression;
+  final String timezone;
+  final String? scheduledAt;
+  final String? startsAt;
+  final String? endsAt;
+  final String? nextFireAt;
+  final String misfirePolicy;
+  final String overlapPolicy;
+  final int maxConcurrentRuns;
+  final int maxCatchUpRuns;
+  final int maxAttempts;
+  final int retryInitialDelaySeconds;
+  final int retryMaxDelaySeconds;
+  final int timeoutSeconds;
+  final int priority;
   final String status;
+  final String generation;
   final String? externalRef;
-  final String? metadataJson;
+  final String metadataJson;
   final String version;
   final String createdAt;
   final String updatedAt;
-  final String? startedAt;
   final String? completedAt;
+  final String? pausedAt;
   final String? cancelledAt;
 
   AgentTaskRecord({
     required this.taskId,
     required this.agentId,
+    required this.tenantId,
+    required this.organizationId,
+    required this.ownerUserId,
+    required this.sessionId,
     required this.title,
     required this.prompt,
+    required this.scheduleKind,
+    required this.cronExpression,
+    required this.timezone,
+    required this.scheduledAt,
+    required this.startsAt,
+    required this.endsAt,
+    required this.nextFireAt,
+    required this.misfirePolicy,
+    required this.overlapPolicy,
+    required this.maxConcurrentRuns,
+    required this.maxCatchUpRuns,
+    required this.maxAttempts,
+    required this.retryInitialDelaySeconds,
+    required this.retryMaxDelaySeconds,
+    required this.timeoutSeconds,
+    required this.priority,
     required this.status,
-    this.externalRef,
-    this.metadataJson,
+    required this.generation,
+    required this.externalRef,
+    required this.metadataJson,
     required this.version,
     required this.createdAt,
     required this.updatedAt,
-    this.startedAt,
-    this.completedAt,
-    this.cancelledAt
+    required this.completedAt,
+    required this.pausedAt,
+    required this.cancelledAt
   });
 
   factory AgentTaskRecord.fromJson(Map<String, dynamic> json) {
@@ -3591,17 +3633,211 @@ class AgentTaskRecord {
         }
         return value;
       })(),
+      tenantId: (() {
+        final value = json['tenantId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.tenantId is required');
+        }
+        return value;
+      })(),
+      organizationId: (() {
+        final value = json['organizationId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.organizationId is required');
+        }
+        return value;
+      })(),
+      ownerUserId: (() {
+        final value = json['ownerUserId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.ownerUserId is required');
+        }
+        return value;
+      })(),
+      sessionId: (() {
+        final value = json['sessionId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.sessionId is required');
+        }
+        return value;
+      })(),
       title: (() {
-        final value = json['title']?.toString();
+        if (!json.containsKey('title')) {
+          throw FormatException('AgentTaskRecord.title is required');
+        }
+        final _sdkworkRequiredValue = json['title'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
         if (value == null) {
           throw FormatException('AgentTaskRecord.title is required');
         }
         return value;
+      })();
       })(),
       prompt: (() {
         final value = json['prompt']?.toString();
         if (value == null) {
           throw FormatException('AgentTaskRecord.prompt is required');
+        }
+        return value;
+      })(),
+      scheduleKind: (() {
+        final value = json['scheduleKind']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.scheduleKind is required');
+        }
+        return value;
+      })(),
+      cronExpression: (() {
+        if (!json.containsKey('cronExpression')) {
+          throw FormatException('AgentTaskRecord.cronExpression is required');
+        }
+        final _sdkworkRequiredValue = json['cronExpression'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.cronExpression is required');
+        }
+        return value;
+      })();
+      })(),
+      timezone: (() {
+        final value = json['timezone']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.timezone is required');
+        }
+        return value;
+      })(),
+      scheduledAt: (() {
+        if (!json.containsKey('scheduledAt')) {
+          throw FormatException('AgentTaskRecord.scheduledAt is required');
+        }
+        final _sdkworkRequiredValue = json['scheduledAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.scheduledAt is required');
+        }
+        return value;
+      })();
+      })(),
+      startsAt: (() {
+        if (!json.containsKey('startsAt')) {
+          throw FormatException('AgentTaskRecord.startsAt is required');
+        }
+        final _sdkworkRequiredValue = json['startsAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.startsAt is required');
+        }
+        return value;
+      })();
+      })(),
+      endsAt: (() {
+        if (!json.containsKey('endsAt')) {
+          throw FormatException('AgentTaskRecord.endsAt is required');
+        }
+        final _sdkworkRequiredValue = json['endsAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.endsAt is required');
+        }
+        return value;
+      })();
+      })(),
+      nextFireAt: (() {
+        if (!json.containsKey('nextFireAt')) {
+          throw FormatException('AgentTaskRecord.nextFireAt is required');
+        }
+        final _sdkworkRequiredValue = json['nextFireAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.nextFireAt is required');
+        }
+        return value;
+      })();
+      })(),
+      misfirePolicy: (() {
+        final value = json['misfirePolicy']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.misfirePolicy is required');
+        }
+        return value;
+      })(),
+      overlapPolicy: (() {
+        final value = json['overlapPolicy']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.overlapPolicy is required');
+        }
+        return value;
+      })(),
+      maxConcurrentRuns: (() {
+        final value = json['maxConcurrentRuns'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.maxConcurrentRuns is required');
+        }
+        return value;
+      })(),
+      maxCatchUpRuns: (() {
+        final value = json['maxCatchUpRuns'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.maxCatchUpRuns is required');
+        }
+        return value;
+      })(),
+      maxAttempts: (() {
+        final value = json['maxAttempts'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.maxAttempts is required');
+        }
+        return value;
+      })(),
+      retryInitialDelaySeconds: (() {
+        final value = json['retryInitialDelaySeconds'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.retryInitialDelaySeconds is required');
+        }
+        return value;
+      })(),
+      retryMaxDelaySeconds: (() {
+        final value = json['retryMaxDelaySeconds'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.retryMaxDelaySeconds is required');
+        }
+        return value;
+      })(),
+      timeoutSeconds: (() {
+        final value = json['timeoutSeconds'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.timeoutSeconds is required');
+        }
+        return value;
+      })(),
+      priority: (() {
+        final value = json['priority'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRecord.priority is required');
         }
         return value;
       })(),
@@ -3612,8 +3848,36 @@ class AgentTaskRecord {
         }
         return value;
       })(),
-      externalRef: json['externalRef']?.toString(),
-      metadataJson: json['metadataJson']?.toString(),
+      generation: (() {
+        final value = json['generation']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.generation is required');
+        }
+        return value;
+      })(),
+      externalRef: (() {
+        if (!json.containsKey('externalRef')) {
+          throw FormatException('AgentTaskRecord.externalRef is required');
+        }
+        final _sdkworkRequiredValue = json['externalRef'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.externalRef is required');
+        }
+        return value;
+      })();
+      })(),
+      metadataJson: (() {
+        final value = json['metadataJson']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.metadataJson is required');
+        }
+        return value;
+      })(),
       version: (() {
         final value = json['version']?.toString();
         if (value == null) {
@@ -3635,9 +3899,54 @@ class AgentTaskRecord {
         }
         return value;
       })(),
-      startedAt: json['startedAt']?.toString(),
-      completedAt: json['completedAt']?.toString(),
-      cancelledAt: json['cancelledAt']?.toString()
+      completedAt: (() {
+        if (!json.containsKey('completedAt')) {
+          throw FormatException('AgentTaskRecord.completedAt is required');
+        }
+        final _sdkworkRequiredValue = json['completedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.completedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      pausedAt: (() {
+        if (!json.containsKey('pausedAt')) {
+          throw FormatException('AgentTaskRecord.pausedAt is required');
+        }
+        final _sdkworkRequiredValue = json['pausedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.pausedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      cancelledAt: (() {
+        if (!json.containsKey('cancelledAt')) {
+          throw FormatException('AgentTaskRecord.cancelledAt is required');
+        }
+        final _sdkworkRequiredValue = json['cancelledAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRecord.cancelledAt is required');
+        }
+        return value;
+      })();
+      })()
     );
   }
 
@@ -3645,16 +3954,37 @@ class AgentTaskRecord {
     return <String, dynamic>{
       'taskId': taskId,
       'agentId': agentId,
+      'tenantId': tenantId,
+      'organizationId': organizationId,
+      'ownerUserId': ownerUserId,
+      'sessionId': sessionId,
       'title': title,
       'prompt': prompt,
+      'scheduleKind': scheduleKind,
+      'cronExpression': cronExpression,
+      'timezone': timezone,
+      'scheduledAt': scheduledAt,
+      'startsAt': startsAt,
+      'endsAt': endsAt,
+      'nextFireAt': nextFireAt,
+      'misfirePolicy': misfirePolicy,
+      'overlapPolicy': overlapPolicy,
+      'maxConcurrentRuns': maxConcurrentRuns,
+      'maxCatchUpRuns': maxCatchUpRuns,
+      'maxAttempts': maxAttempts,
+      'retryInitialDelaySeconds': retryInitialDelaySeconds,
+      'retryMaxDelaySeconds': retryMaxDelaySeconds,
+      'timeoutSeconds': timeoutSeconds,
+      'priority': priority,
       'status': status,
+      'generation': generation,
       'externalRef': externalRef,
       'metadataJson': metadataJson,
       'version': version,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
-      'startedAt': startedAt,
       'completedAt': completedAt,
+      'pausedAt': pausedAt,
       'cancelledAt': cancelledAt,
     };
   }
@@ -3753,15 +4083,49 @@ class AgentTaskListResponse {
 }
 
 class CreateAgentTaskRequest {
+  final String? taskId;
+  final String sessionId;
   final String title;
   final String prompt;
+  final String scheduleKind;
+  final String? cronExpression;
+  final String timezone;
+  final String? scheduledAt;
+  final String? startsAt;
+  final String? endsAt;
+  final String? misfirePolicy;
+  final String? overlapPolicy;
+  final int? maxConcurrentRuns;
+  final int? maxCatchUpRuns;
+  final int? maxAttempts;
+  final int? retryInitialDelaySeconds;
+  final int? retryMaxDelaySeconds;
+  final int? timeoutSeconds;
+  final int? priority;
   final String? externalRef;
   final String? metadataJson;
   final String requestedAt;
 
   CreateAgentTaskRequest({
+    this.taskId,
+    required this.sessionId,
     required this.title,
     required this.prompt,
+    required this.scheduleKind,
+    this.cronExpression,
+    required this.timezone,
+    this.scheduledAt,
+    this.startsAt,
+    this.endsAt,
+    this.misfirePolicy,
+    this.overlapPolicy,
+    this.maxConcurrentRuns,
+    this.maxCatchUpRuns,
+    this.maxAttempts,
+    this.retryInitialDelaySeconds,
+    this.retryMaxDelaySeconds,
+    this.timeoutSeconds,
+    this.priority,
     this.externalRef,
     this.metadataJson,
     required this.requestedAt
@@ -3769,6 +4133,14 @@ class CreateAgentTaskRequest {
 
   factory CreateAgentTaskRequest.fromJson(Map<String, dynamic> json) {
     return CreateAgentTaskRequest(
+      taskId: json['taskId']?.toString(),
+      sessionId: (() {
+        final value = json['sessionId']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentTaskRequest.sessionId is required');
+        }
+        return value;
+      })(),
       title: (() {
         final value = json['title']?.toString();
         if (value == null) {
@@ -3783,6 +4155,33 @@ class CreateAgentTaskRequest {
         }
         return value;
       })(),
+      scheduleKind: (() {
+        final value = json['scheduleKind']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentTaskRequest.scheduleKind is required');
+        }
+        return value;
+      })(),
+      cronExpression: json['cronExpression']?.toString(),
+      timezone: (() {
+        final value = json['timezone']?.toString();
+        if (value == null) {
+          throw FormatException('CreateAgentTaskRequest.timezone is required');
+        }
+        return value;
+      })(),
+      scheduledAt: json['scheduledAt']?.toString(),
+      startsAt: json['startsAt']?.toString(),
+      endsAt: json['endsAt']?.toString(),
+      misfirePolicy: json['misfirePolicy']?.toString(),
+      overlapPolicy: json['overlapPolicy']?.toString(),
+      maxConcurrentRuns: json['maxConcurrentRuns'] is int ? json['maxConcurrentRuns'] : null,
+      maxCatchUpRuns: json['maxCatchUpRuns'] is int ? json['maxCatchUpRuns'] : null,
+      maxAttempts: json['maxAttempts'] is int ? json['maxAttempts'] : null,
+      retryInitialDelaySeconds: json['retryInitialDelaySeconds'] is int ? json['retryInitialDelaySeconds'] : null,
+      retryMaxDelaySeconds: json['retryMaxDelaySeconds'] is int ? json['retryMaxDelaySeconds'] : null,
+      timeoutSeconds: json['timeoutSeconds'] is int ? json['timeoutSeconds'] : null,
+      priority: json['priority'] is int ? json['priority'] : null,
       externalRef: json['externalRef']?.toString(),
       metadataJson: json['metadataJson']?.toString(),
       requestedAt: (() {
@@ -3797,10 +4196,199 @@ class CreateAgentTaskRequest {
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
+      'taskId': taskId,
+      'sessionId': sessionId,
       'title': title,
       'prompt': prompt,
+      'scheduleKind': scheduleKind,
+      'cronExpression': cronExpression,
+      'timezone': timezone,
+      'scheduledAt': scheduledAt,
+      'startsAt': startsAt,
+      'endsAt': endsAt,
+      'misfirePolicy': misfirePolicy,
+      'overlapPolicy': overlapPolicy,
+      'maxConcurrentRuns': maxConcurrentRuns,
+      'maxCatchUpRuns': maxCatchUpRuns,
+      'maxAttempts': maxAttempts,
+      'retryInitialDelaySeconds': retryInitialDelaySeconds,
+      'retryMaxDelaySeconds': retryMaxDelaySeconds,
+      'timeoutSeconds': timeoutSeconds,
+      'priority': priority,
       'externalRef': externalRef,
       'metadataJson': metadataJson,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class ReplaceAgentTaskRequest {
+  final String title;
+  final String prompt;
+  final String scheduleKind;
+  final String? cronExpression;
+  final String timezone;
+  final String? scheduledAt;
+  final String? startsAt;
+  final String? endsAt;
+  final String? misfirePolicy;
+  final String? overlapPolicy;
+  final int? maxConcurrentRuns;
+  final int? maxCatchUpRuns;
+  final int? maxAttempts;
+  final int? retryInitialDelaySeconds;
+  final int? retryMaxDelaySeconds;
+  final int? timeoutSeconds;
+  final int? priority;
+  final String? externalRef;
+  final String? metadataJson;
+  final String expectedVersion;
+  final String requestedAt;
+
+  ReplaceAgentTaskRequest({
+    required this.title,
+    required this.prompt,
+    required this.scheduleKind,
+    this.cronExpression,
+    required this.timezone,
+    this.scheduledAt,
+    this.startsAt,
+    this.endsAt,
+    this.misfirePolicy,
+    this.overlapPolicy,
+    this.maxConcurrentRuns,
+    this.maxCatchUpRuns,
+    this.maxAttempts,
+    this.retryInitialDelaySeconds,
+    this.retryMaxDelaySeconds,
+    this.timeoutSeconds,
+    this.priority,
+    this.externalRef,
+    this.metadataJson,
+    required this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory ReplaceAgentTaskRequest.fromJson(Map<String, dynamic> json) {
+    return ReplaceAgentTaskRequest(
+      title: (() {
+        final value = json['title']?.toString();
+        if (value == null) {
+          throw FormatException('ReplaceAgentTaskRequest.title is required');
+        }
+        return value;
+      })(),
+      prompt: (() {
+        final value = json['prompt']?.toString();
+        if (value == null) {
+          throw FormatException('ReplaceAgentTaskRequest.prompt is required');
+        }
+        return value;
+      })(),
+      scheduleKind: (() {
+        final value = json['scheduleKind']?.toString();
+        if (value == null) {
+          throw FormatException('ReplaceAgentTaskRequest.scheduleKind is required');
+        }
+        return value;
+      })(),
+      cronExpression: json['cronExpression']?.toString(),
+      timezone: (() {
+        final value = json['timezone']?.toString();
+        if (value == null) {
+          throw FormatException('ReplaceAgentTaskRequest.timezone is required');
+        }
+        return value;
+      })(),
+      scheduledAt: json['scheduledAt']?.toString(),
+      startsAt: json['startsAt']?.toString(),
+      endsAt: json['endsAt']?.toString(),
+      misfirePolicy: json['misfirePolicy']?.toString(),
+      overlapPolicy: json['overlapPolicy']?.toString(),
+      maxConcurrentRuns: json['maxConcurrentRuns'] is int ? json['maxConcurrentRuns'] : null,
+      maxCatchUpRuns: json['maxCatchUpRuns'] is int ? json['maxCatchUpRuns'] : null,
+      maxAttempts: json['maxAttempts'] is int ? json['maxAttempts'] : null,
+      retryInitialDelaySeconds: json['retryInitialDelaySeconds'] is int ? json['retryInitialDelaySeconds'] : null,
+      retryMaxDelaySeconds: json['retryMaxDelaySeconds'] is int ? json['retryMaxDelaySeconds'] : null,
+      timeoutSeconds: json['timeoutSeconds'] is int ? json['timeoutSeconds'] : null,
+      priority: json['priority'] is int ? json['priority'] : null,
+      externalRef: json['externalRef']?.toString(),
+      metadataJson: json['metadataJson']?.toString(),
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('ReplaceAgentTaskRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('ReplaceAgentTaskRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'title': title,
+      'prompt': prompt,
+      'scheduleKind': scheduleKind,
+      'cronExpression': cronExpression,
+      'timezone': timezone,
+      'scheduledAt': scheduledAt,
+      'startsAt': startsAt,
+      'endsAt': endsAt,
+      'misfirePolicy': misfirePolicy,
+      'overlapPolicy': overlapPolicy,
+      'maxConcurrentRuns': maxConcurrentRuns,
+      'maxCatchUpRuns': maxCatchUpRuns,
+      'maxAttempts': maxAttempts,
+      'retryInitialDelaySeconds': retryInitialDelaySeconds,
+      'retryMaxDelaySeconds': retryMaxDelaySeconds,
+      'timeoutSeconds': timeoutSeconds,
+      'priority': priority,
+      'externalRef': externalRef,
+      'metadataJson': metadataJson,
+      'expectedVersion': expectedVersion,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class AgentTaskStateChangeRequest {
+  final String expectedVersion;
+  final String requestedAt;
+
+  AgentTaskStateChangeRequest({
+    required this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory AgentTaskStateChangeRequest.fromJson(Map<String, dynamic> json) {
+    return AgentTaskStateChangeRequest(
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskStateChangeRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskStateChangeRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'expectedVersion': expectedVersion,
       'requestedAt': requestedAt,
     };
   }
@@ -5741,6 +6329,768 @@ class CreateAgentSessionRequest {
       'idempotencyKey': idempotencyKey,
       'payloadHash': payloadHash,
       'requestedAt': requestedAt,
+    };
+  }
+}
+
+class ExecuteAgentTaskRequest {
+  final String idempotencyKey;
+  final String? expectedVersion;
+  final String requestedAt;
+
+  ExecuteAgentTaskRequest({
+    required this.idempotencyKey,
+    this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory ExecuteAgentTaskRequest.fromJson(Map<String, dynamic> json) {
+    return ExecuteAgentTaskRequest(
+      idempotencyKey: (() {
+        final value = json['idempotencyKey']?.toString();
+        if (value == null) {
+          throw FormatException('ExecuteAgentTaskRequest.idempotencyKey is required');
+        }
+        return value;
+      })(),
+      expectedVersion: json['expectedVersion']?.toString(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('ExecuteAgentTaskRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'idempotencyKey': idempotencyKey,
+      'expectedVersion': expectedVersion,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class RetryAgentTaskRunRequest {
+  final String idempotencyKey;
+  final String requestedAt;
+
+  RetryAgentTaskRunRequest({
+    required this.idempotencyKey,
+    required this.requestedAt
+  });
+
+  factory RetryAgentTaskRunRequest.fromJson(Map<String, dynamic> json) {
+    return RetryAgentTaskRunRequest(
+      idempotencyKey: (() {
+        final value = json['idempotencyKey']?.toString();
+        if (value == null) {
+          throw FormatException('RetryAgentTaskRunRequest.idempotencyKey is required');
+        }
+        return value;
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('RetryAgentTaskRunRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'idempotencyKey': idempotencyKey,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class CancelAgentTaskRunRequest {
+  final String? expectedVersion;
+  final String requestedAt;
+
+  CancelAgentTaskRunRequest({
+    this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory CancelAgentTaskRunRequest.fromJson(Map<String, dynamic> json) {
+    return CancelAgentTaskRunRequest(
+      expectedVersion: json['expectedVersion']?.toString(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('CancelAgentTaskRunRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'expectedVersion': expectedVersion,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class AgentTaskRunRecord {
+  final String runId;
+  final String taskId;
+  final String sessionId;
+  final String agentId;
+  final String ownerUserId;
+  final String triggerKind;
+  final String scheduleGeneration;
+  final String scheduledFor;
+  final String? retryOfRunId;
+  final int priority;
+  final String status;
+  final String? turnId;
+  final int attemptCount;
+  final int maxAttempts;
+  final String availableAt;
+  final String? timeoutAt;
+  final String? failureClass;
+  final String? errorCode;
+  final String version;
+  final String createdAt;
+  final String updatedAt;
+  final String? claimedAt;
+  final String? startedAt;
+  final String? finishedAt;
+  final String? cancelledAt;
+
+  AgentTaskRunRecord({
+    required this.runId,
+    required this.taskId,
+    required this.sessionId,
+    required this.agentId,
+    required this.ownerUserId,
+    required this.triggerKind,
+    required this.scheduleGeneration,
+    required this.scheduledFor,
+    required this.retryOfRunId,
+    required this.priority,
+    required this.status,
+    required this.turnId,
+    required this.attemptCount,
+    required this.maxAttempts,
+    required this.availableAt,
+    required this.timeoutAt,
+    required this.failureClass,
+    required this.errorCode,
+    required this.version,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.claimedAt,
+    required this.startedAt,
+    required this.finishedAt,
+    required this.cancelledAt
+  });
+
+  factory AgentTaskRunRecord.fromJson(Map<String, dynamic> json) {
+    return AgentTaskRunRecord(
+      runId: (() {
+        final value = json['runId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.runId is required');
+        }
+        return value;
+      })(),
+      taskId: (() {
+        final value = json['taskId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.taskId is required');
+        }
+        return value;
+      })(),
+      sessionId: (() {
+        final value = json['sessionId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.sessionId is required');
+        }
+        return value;
+      })(),
+      agentId: (() {
+        final value = json['agentId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.agentId is required');
+        }
+        return value;
+      })(),
+      ownerUserId: (() {
+        final value = json['ownerUserId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.ownerUserId is required');
+        }
+        return value;
+      })(),
+      triggerKind: (() {
+        final value = json['triggerKind']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.triggerKind is required');
+        }
+        return value;
+      })(),
+      scheduleGeneration: (() {
+        final value = json['scheduleGeneration']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.scheduleGeneration is required');
+        }
+        return value;
+      })(),
+      scheduledFor: (() {
+        final value = json['scheduledFor']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.scheduledFor is required');
+        }
+        return value;
+      })(),
+      retryOfRunId: (() {
+        if (!json.containsKey('retryOfRunId')) {
+          throw FormatException('AgentTaskRunRecord.retryOfRunId is required');
+        }
+        final _sdkworkRequiredValue = json['retryOfRunId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.retryOfRunId is required');
+        }
+        return value;
+      })();
+      })(),
+      priority: (() {
+        final value = json['priority'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunRecord.priority is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.status is required');
+        }
+        return value;
+      })(),
+      turnId: (() {
+        if (!json.containsKey('turnId')) {
+          throw FormatException('AgentTaskRunRecord.turnId is required');
+        }
+        final _sdkworkRequiredValue = json['turnId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.turnId is required');
+        }
+        return value;
+      })();
+      })(),
+      attemptCount: (() {
+        final value = json['attemptCount'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunRecord.attemptCount is required');
+        }
+        return value;
+      })(),
+      maxAttempts: (() {
+        final value = json['maxAttempts'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunRecord.maxAttempts is required');
+        }
+        return value;
+      })(),
+      availableAt: (() {
+        final value = json['availableAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.availableAt is required');
+        }
+        return value;
+      })(),
+      timeoutAt: (() {
+        if (!json.containsKey('timeoutAt')) {
+          throw FormatException('AgentTaskRunRecord.timeoutAt is required');
+        }
+        final _sdkworkRequiredValue = json['timeoutAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.timeoutAt is required');
+        }
+        return value;
+      })();
+      })(),
+      failureClass: (() {
+        if (!json.containsKey('failureClass')) {
+          throw FormatException('AgentTaskRunRecord.failureClass is required');
+        }
+        final _sdkworkRequiredValue = json['failureClass'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.failureClass is required');
+        }
+        return value;
+      })();
+      })(),
+      errorCode: (() {
+        if (!json.containsKey('errorCode')) {
+          throw FormatException('AgentTaskRunRecord.errorCode is required');
+        }
+        final _sdkworkRequiredValue = json['errorCode'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.errorCode is required');
+        }
+        return value;
+      })();
+      })(),
+      version: (() {
+        final value = json['version']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.version is required');
+        }
+        return value;
+      })(),
+      createdAt: (() {
+        final value = json['createdAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.createdAt is required');
+        }
+        return value;
+      })(),
+      updatedAt: (() {
+        final value = json['updatedAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.updatedAt is required');
+        }
+        return value;
+      })(),
+      claimedAt: (() {
+        if (!json.containsKey('claimedAt')) {
+          throw FormatException('AgentTaskRunRecord.claimedAt is required');
+        }
+        final _sdkworkRequiredValue = json['claimedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.claimedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      startedAt: (() {
+        if (!json.containsKey('startedAt')) {
+          throw FormatException('AgentTaskRunRecord.startedAt is required');
+        }
+        final _sdkworkRequiredValue = json['startedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.startedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      finishedAt: (() {
+        if (!json.containsKey('finishedAt')) {
+          throw FormatException('AgentTaskRunRecord.finishedAt is required');
+        }
+        final _sdkworkRequiredValue = json['finishedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.finishedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      cancelledAt: (() {
+        if (!json.containsKey('cancelledAt')) {
+          throw FormatException('AgentTaskRunRecord.cancelledAt is required');
+        }
+        final _sdkworkRequiredValue = json['cancelledAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunRecord.cancelledAt is required');
+        }
+        return value;
+      })();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'runId': runId,
+      'taskId': taskId,
+      'sessionId': sessionId,
+      'agentId': agentId,
+      'ownerUserId': ownerUserId,
+      'triggerKind': triggerKind,
+      'scheduleGeneration': scheduleGeneration,
+      'scheduledFor': scheduledFor,
+      'retryOfRunId': retryOfRunId,
+      'priority': priority,
+      'status': status,
+      'turnId': turnId,
+      'attemptCount': attemptCount,
+      'maxAttempts': maxAttempts,
+      'availableAt': availableAt,
+      'timeoutAt': timeoutAt,
+      'failureClass': failureClass,
+      'errorCode': errorCode,
+      'version': version,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'claimedAt': claimedAt,
+      'startedAt': startedAt,
+      'finishedAt': finishedAt,
+      'cancelledAt': cancelledAt,
+    };
+  }
+}
+
+class AgentTaskRunAttemptRecord {
+  final String attemptId;
+  final String runId;
+  final int attemptNo;
+  final String status;
+  final String? failureClass;
+  final String? errorCode;
+  final String createdAt;
+  final String updatedAt;
+  final String? startedAt;
+  final String? heartbeatAt;
+  final String? finishedAt;
+
+  AgentTaskRunAttemptRecord({
+    required this.attemptId,
+    required this.runId,
+    required this.attemptNo,
+    required this.status,
+    required this.failureClass,
+    required this.errorCode,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.startedAt,
+    required this.heartbeatAt,
+    required this.finishedAt
+  });
+
+  factory AgentTaskRunAttemptRecord.fromJson(Map<String, dynamic> json) {
+    return AgentTaskRunAttemptRecord(
+      attemptId: (() {
+        final value = json['attemptId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.attemptId is required');
+        }
+        return value;
+      })(),
+      runId: (() {
+        final value = json['runId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.runId is required');
+        }
+        return value;
+      })(),
+      attemptNo: (() {
+        final value = json['attemptNo'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunAttemptRecord.attemptNo is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.status is required');
+        }
+        return value;
+      })(),
+      failureClass: (() {
+        if (!json.containsKey('failureClass')) {
+          throw FormatException('AgentTaskRunAttemptRecord.failureClass is required');
+        }
+        final _sdkworkRequiredValue = json['failureClass'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.failureClass is required');
+        }
+        return value;
+      })();
+      })(),
+      errorCode: (() {
+        if (!json.containsKey('errorCode')) {
+          throw FormatException('AgentTaskRunAttemptRecord.errorCode is required');
+        }
+        final _sdkworkRequiredValue = json['errorCode'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.errorCode is required');
+        }
+        return value;
+      })();
+      })(),
+      createdAt: (() {
+        final value = json['createdAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.createdAt is required');
+        }
+        return value;
+      })(),
+      updatedAt: (() {
+        final value = json['updatedAt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.updatedAt is required');
+        }
+        return value;
+      })(),
+      startedAt: (() {
+        if (!json.containsKey('startedAt')) {
+          throw FormatException('AgentTaskRunAttemptRecord.startedAt is required');
+        }
+        final _sdkworkRequiredValue = json['startedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.startedAt is required');
+        }
+        return value;
+      })();
+      })(),
+      heartbeatAt: (() {
+        if (!json.containsKey('heartbeatAt')) {
+          throw FormatException('AgentTaskRunAttemptRecord.heartbeatAt is required');
+        }
+        final _sdkworkRequiredValue = json['heartbeatAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.heartbeatAt is required');
+        }
+        return value;
+      })();
+      })(),
+      finishedAt: (() {
+        if (!json.containsKey('finishedAt')) {
+          throw FormatException('AgentTaskRunAttemptRecord.finishedAt is required');
+        }
+        final _sdkworkRequiredValue = json['finishedAt'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptRecord.finishedAt is required');
+        }
+        return value;
+      })();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'attemptId': attemptId,
+      'runId': runId,
+      'attemptNo': attemptNo,
+      'status': status,
+      'failureClass': failureClass,
+      'errorCode': errorCode,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'startedAt': startedAt,
+      'heartbeatAt': heartbeatAt,
+      'finishedAt': finishedAt,
+    };
+  }
+}
+
+class AgentTaskRunResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentTaskRunResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentTaskRunResponse.fromJson(Map<String, dynamic> json) {
+    return AgentTaskRunResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentTaskRunResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class AgentTaskRunListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentTaskRunListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentTaskRunListResponse.fromJson(Map<String, dynamic> json) {
+    return AgentTaskRunListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentTaskRunListResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class AgentTaskRunAttemptListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentTaskRunAttemptListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentTaskRunAttemptListResponse.fromJson(Map<String, dynamic> json) {
+    return AgentTaskRunAttemptListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentTaskRunAttemptListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentTaskRunAttemptListResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentTaskRunAttemptListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
     };
   }
 }

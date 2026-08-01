@@ -38,6 +38,7 @@ pnpm verify
 | `sdkwork-agents-contract` | Runtime env helpers (`SDKWORK_AGENTS_*`, dev auth gating) |
 | `sdkwork-agents-kernel-bridge` | Composes kernel operational router + agents HTTP router |
 | `sdkwork-agents-database-host` | Canonical `ai_*` database lifecycle |
+| `sdkwork-intelligence-agents-worker` | Independently scalable Task materialization, claim, execution, lease recovery and reconciliation worker |
 | `sdkwork-api-agents-assembly` | Gateway router assembly |
 | `sdkwork-api-agents-standalone-gateway` | Runnable binary (`sdkwork-api-agents-standalone-gateway`) |
 | `sdkwork-agents-integration-tests` | API bootstrap, gateway, and database smoke tests |
@@ -62,6 +63,10 @@ database and schema identity.
 - Local env template: [`.env.example`](.env.example)
 
 Pre-flight: `pnpm verify` and `pnpm topology:validate`. See [docs/runbooks/pre-launch-verification.md](docs/runbooks/pre-launch-verification.md).
+
+Production runs the gateway and `sdkwork-intelligence-agents-worker` as
+separate processes from the same image. PostgreSQL is the sole Task scheduling
+authority; scale and observe the two Deployments independently.
 
 ## Platform Integration
 

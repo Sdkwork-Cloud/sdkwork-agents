@@ -16,12 +16,13 @@ not replace this runtime evidence.
 
 | Step | Action | Pass criterion |
 | ---: | --- | --- |
-| 1 | `GET /healthz` | HTTP 200 with liveness status `ok` |
-| 2 | `GET /livez` | HTTP 200 with the same liveness status as `/healthz` |
-| 3 | `GET /readyz` | HTTP 200 with readiness status `ready` after required dependencies pass |
-| 4 | `GET /metrics` | HTTP 200 with framework Prometheus exposition |
-| 5 | `GET /metrics/agents` | HTTP 200 with `sdkwork_agents_` domain metrics |
-| 6 | Inspect startup logs | PostgreSQL connected; no development auth bypass or secret output |
+| 1 | Gateway `GET /healthz` and `GET /livez` | HTTP 200 with liveness status `ok` |
+| 2 | Gateway `GET /readyz` | HTTP 200 after database/schema and required dependencies pass |
+| 3 | Gateway `GET /metrics` and `GET /metrics/agents` | framework and Agents domain Prometheus exposition are present |
+| 4 | Worker `GET /healthz` and `GET /livez` on the private operations service | HTTP 200 while the process is alive |
+| 5 | Worker `GET /readyz` | HTTP 200 only while scheduling work is accepted and database readiness passes |
+| 6 | Worker `GET /metrics` | scheduler counters, durations and bounded backlog gauges are present |
+| 7 | Inspect startup logs | PostgreSQL and Snowflake node lease acquired; no auth bypass, raw lease token or secret output |
 
 Gateway-only helper:
 
@@ -58,15 +59,45 @@ pnpm smoke:live
 | Caller-supplied scope selector | rejected |
 | Cross-tenant resource id | not disclosed and denied |
 
-## 5. Recovery
+## 5. Scheduled Task Execution
+
+1. Create a persisted Session, then create a Session-bound one-time Task a few
+   minutes ahead with an IANA timezone. Create a six-field cron Task with the
+   same Session and an explicit DST/misfire/overlap policy.
+2. Observe `nextFireAt`, then wait for the Worker materialization cycle. List
+   Task Runs and verify exactly one Run for the generation and scheduled instant.
+3. List the Run Attempts and verify claim metadata, monotonically increasing
+   fencing token, bounded lease timestamps and terminal result. Confirm the
+   canonical Turn belongs to the Task Session.
+4. Execute the Task manually twice with the same idempotency key and payload.
+   Both responses must identify one logical Run and Turn. Reusing the key with
+   a different payload must return a conflict.
+5. Verify infrastructure retry reuses the Run and Turn and appends an Attempt.
+   Verify a governed business retry creates a linked Run and Turn.
+6. Confirm metrics advance for materialization, claim, execution and Run
+   latency without tenant, user, Task, Run, worker, token or error-text labels.
+
+## 6. Recovery And Fencing
 
 1. Submit a Turn and interrupt the client after request dispatch.
 2. Reconcile by Session and idempotency key.
 3. Confirm a completed Turn is returned without another provider invocation.
 4. Restart the service and retrieve the same Session, Turn and Items.
-5. Confirm outbox and audit processing resumes without duplicate business facts.
+5. Start a controlled Task Run, terminate or scale down its Worker after claim,
+   wait for lease expiry, then restore/scale the Worker. Confirm recovery creates
+   a new Attempt with a greater fencing token and does not duplicate the Run,
+   Turn or scheduled occurrence.
+6. Run the ignored live PostgreSQL contract
+   `postgres_expired_lease_recovery_fences_the_previous_worker` in the isolated
+   `sdkwork_ai_test_*` environment. Confirm the old heartbeat/completion is
+   rejected and no raw lease token appears in logs, metrics, audit or API data.
+7. For an intentionally unknown provider outcome, verify the Run enters
+   `reconciling` and only the canonical Turn/provider result can terminalize it.
+8. Confirm lifecycle mutations create audit and outbox facts atomically without
+   duplicate business facts. Do not claim external outbox delivery: that remains
+   gated until the approved platform publisher SPI is available and integrated.
 
-## 6. Failure Triage
+## 7. Failure Triage
 
 | Symptom | Check |
 | --- | --- |
@@ -77,6 +108,9 @@ pnpm smoke:live
 | 50001 on Project Session synchronization | Preserve `traceId`; verify the Project runtime binding resolves to the intended host, the provider collector is registered and healthy, and the server-derived working directory is valid and accessible. Do not request or log a client device path. Confirm read-only Project/Session refresh still succeeds before retrying explicit import. |
 | Missing SSE completion | gateway buffering, timeout, runtime error and HTTP contract |
 | Item order or continuation mismatch | Session sequence constraint, requested sort, opaque cursor binding, and repository keyset query order |
+| Due Task not materialized | Worker readiness, due/lag gauges, timezone/DST policy, generation and database locks |
+| Run remains eligible | claim latency/errors, Worker capacity, tenant concurrency and lease recovery |
+| Stale completion accepted | stop rollout; preserve Attempt/fencing evidence and run the live PostgreSQL stale-fence contract |
 
 See [monitoring.md](./monitoring.md) and
 [incident-rollback.md](./incident-rollback.md).

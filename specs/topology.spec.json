@@ -45,6 +45,8 @@
     "profileId": "SDKWORK_AGENTS_PROFILE_ID",
     "clientDeploymentProfile": "VITE_SDKWORK_AGENTS_DEPLOYMENT_PROFILE",
     "standaloneGatewayBind": "SDKWORK_AGENTS_APPLICATION_PUBLIC_INGRESS_BIND",
+    "taskWorkerBind": "SDKWORK_AGENTS_TASK_WORKER_BIND",
+    "taskWorkerHttpUrl": "SDKWORK_AGENTS_TASK_WORKER_HTTP_URL",
     "clientApiGatewayBaseUrl": "VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL",
     "apiGatewayBaseUrl": "SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL"
   },
@@ -85,6 +87,14 @@
       "httpUrlEnv": "SDKWORK_AGENTS_APPLICATION_APP_HTTP_URL",
       "clientHttpEnv": "VITE_SDKWORK_AGENTS_APPLICATION_APP_HTTP_URL"
     },
+    "application.task-worker-operations": {
+      "connectivityPlane": "application",
+      "protocols": [
+        "http"
+      ],
+      "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND",
+      "httpUrlEnv": "SDKWORK_AGENTS_TASK_WORKER_HTTP_URL"
+    },
     "platform.api-gateway": {
       "connectivityPlane": "platform",
       "protocols": [
@@ -106,6 +116,10 @@
     "openApiRouter": {
       "crate": "sdkwork-api-agents-standalone-gateway",
       "binary": "sdkwork-api-agents-standalone-gateway"
+    },
+    "taskWorker": {
+      "crate": "sdkwork-intelligence-agents-worker",
+      "binary": "sdkwork-intelligence-agents-worker"
     }
   },
   "orchestration": {
@@ -120,6 +134,14 @@
             "role": "api-standalone-gateway"
           },
           {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
+          },
+          {
             "id": "pc-renderer",
             "package": "@sdkwork/agents-pc",
             "script": "vite",
@@ -128,7 +150,8 @@
           }
         ],
         "healthSurfaces": [
-          "application.public-ingress"
+          "application.public-ingress",
+          "application.task-worker-operations"
         ]
       },
       "standalone.test": {
@@ -139,10 +162,19 @@
             "binary": "sdkwork-api-agents-standalone-gateway",
             "required": true,
             "role": "api-standalone-gateway"
+          },
+          {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           }
         ],
         "healthSurfaces": [
-          "application.public-ingress"
+          "application.public-ingress",
+          "application.task-worker-operations"
         ]
       },
       "standalone.staging": {
@@ -153,10 +185,19 @@
             "binary": "sdkwork-api-agents-standalone-gateway",
             "required": true,
             "role": "api-standalone-gateway"
+          },
+          {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           }
         ],
         "healthSurfaces": [
-          "application.public-ingress"
+          "application.public-ingress",
+          "application.task-worker-operations"
         ]
       },
       "standalone.production": {
@@ -167,10 +208,19 @@
             "binary": "sdkwork-api-agents-standalone-gateway",
             "required": true,
             "role": "api-standalone-gateway"
+          },
+          {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           }
         ],
         "healthSurfaces": [
-          "application.public-ingress"
+          "application.public-ingress",
+          "application.task-worker-operations"
         ]
       },
       "cloud.development": {
@@ -188,10 +238,19 @@
             "binary": "sdkwork-api-agents-standalone-gateway",
             "required": true,
             "role": "api-standalone-gateway"
+          },
+          {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           }
         ],
         "healthSurfaces": [
           "application.public-ingress",
+          "application.task-worker-operations",
           "platform.api-gateway"
         ]
       },
@@ -203,10 +262,19 @@
             "binary": "sdkwork-api-agents-standalone-gateway",
             "required": true,
             "role": "api-standalone-gateway"
+          },
+          {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           }
         ],
         "healthSurfaces": [
           "application.public-ingress",
+          "application.task-worker-operations",
           "platform.api-gateway"
         ]
       },
@@ -218,10 +286,19 @@
             "binary": "sdkwork-api-agents-standalone-gateway",
             "required": true,
             "role": "api-standalone-gateway"
+          },
+          {
+            "id": "application.task-worker",
+            "crate": "sdkwork-intelligence-agents-worker",
+            "binary": "sdkwork-intelligence-agents-worker",
+            "required": true,
+            "role": "worker",
+            "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           }
         ],
         "healthSurfaces": [
           "application.public-ingress",
+          "application.task-worker-operations",
           "platform.api-gateway"
         ]
       }

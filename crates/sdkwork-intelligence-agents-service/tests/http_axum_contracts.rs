@@ -17,10 +17,14 @@ use sdkwork_intelligence_agents_service::{
     AgentRequestContext, AgentSessionEntrySurface, AgentSessionKind, AgentSessionRecord,
     AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus, AgentSessionStatus,
     AgentSessionTitleSource, DenyAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink,
-    InMemoryAgentRepository, TurnExecutionInput, TurnExecutionOutput, TurnExecutor,
+    InMemoryAgentRepository, TurnExecutionInput, TurnExecutionOutput, TurnExecutionStreamSink,
+    TurnExecutor, RUNTIME_MODE_INFERENCE_ERROR,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
+use tokio_stream::StreamExt;
 use tower::ServiceExt;
 
 #[derive(Debug, Clone, Copy)]
@@ -113,6 +117,87 @@ impl TurnExecutor for RichTurnExecutor {
                     KernelEventRedaction::TenantSensitive,
                 ),
             ],
+        }
+    }
+}
+
+struct GatedStreamingTurnExecutor {
+    release: Arc<(Mutex<bool>, Condvar)>,
+    completed: Arc<AtomicBool>,
+}
+
+impl GatedStreamingTurnExecutor {
+    fn new() -> Self {
+        Self {
+            release: Arc::new((Mutex::new(false), Condvar::new())),
+            completed: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn release(&self) {
+        let (released, condition) = self.release.as_ref();
+        *released.lock().expect("release gate lock") = true;
+        condition.notify_all();
+    }
+
+    fn output(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+        TurnExecutionOutput {
+            content: "first second".to_string(),
+            model_id: input.model_id.clone(),
+            provider_id: input.provider_id.clone(),
+            provider_session_id: Some("provider-session.gated".to_string()),
+            input_tokens: 1,
+            output_tokens: 2,
+            runtime_mode: "http-contract-gated-stream",
+            stream_deltas: vec!["first ".to_string(), "second".to_string()],
+            stream_events: Vec::new(),
+        }
+    }
+}
+
+impl TurnExecutor for GatedStreamingTurnExecutor {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+        self.output(input)
+    }
+
+    fn complete_with_stream_sink(
+        &self,
+        input: &TurnExecutionInput,
+        sink: Arc<dyn TurnExecutionStreamSink>,
+    ) -> TurnExecutionOutput {
+        sink.push_delta("first ");
+        let (released, condition) = self.release.as_ref();
+        let guard = released.lock().expect("release gate lock");
+        let (guard, timeout) = condition
+            .wait_timeout_while(guard, Duration::from_secs(5), |released| !*released)
+            .expect("wait for release gate");
+        assert!(
+            !timeout.timed_out(),
+            "test did not release provider completion"
+        );
+        assert!(*guard, "provider completion gate must be released");
+        drop(guard);
+        sink.push_delta("second");
+        self.completed.store(true, Ordering::Release);
+        self.output(input)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FailingTurnExecutor;
+
+impl TurnExecutor for FailingTurnExecutor {
+    fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+        TurnExecutionOutput {
+            content: "provider unavailable before first stream frame".to_string(),
+            model_id: input.model_id.clone(),
+            provider_id: input.provider_id.clone(),
+            provider_session_id: input.provider_session_id.clone(),
+            input_tokens: 0,
+            output_tokens: 0,
+            runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
+            stream_deltas: Vec::new(),
+            stream_events: Vec::new(),
         }
     }
 }
@@ -1805,11 +1890,24 @@ async fn agent_tasks_should_work_over_http() {
     let app = build_test_app(state);
     let agent_id = "agent.tasks.http";
     create_agent(&app, agent_id, "Task HTTP Agent").await;
+    let session_id = "session.tasks.http";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "Task schedule session",
+        "2026-06-17T00:00:00Z",
+    )
+    .await;
 
     let create_body = json!({
+        "sessionId": session_id,
         "title": "Nightly sync",
         "prompt": "Summarize tenant activity",
-        "metadataJson": "{\"deferExecution\":true}",
+        "scheduleKind": "one_time",
+        "timezone": "UTC",
+        "scheduledAt": "2026-06-18T00:00:00Z",
+        "metadataJson": "{}",
         "requestedAt": "2026-06-17T00:00:00Z"
     });
     let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
@@ -1819,7 +1917,7 @@ async fn agent_tasks_should_work_over_http() {
         .as_str()
         .expect("task id")
         .to_string();
-    assert_eq!(create_response["data"]["item"]["status"], json!("pending"));
+    assert_eq!(create_response["data"]["item"]["status"], json!("active"));
 
     let list_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
     let list_response = get_json(&app, list_uri.as_str(), StatusCode::OK).await;
@@ -1845,7 +1943,7 @@ async fn agent_tasks_should_work_over_http() {
 }
 
 #[tokio::test]
-async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
+async fn agent_tasks_execute_should_create_manual_run_over_http() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
@@ -1854,11 +1952,24 @@ async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
     let app = build_test_app(state);
     let agent_id = "agent.tasks.execute.http";
     create_agent(&app, agent_id, "Task Execute HTTP Agent").await;
+    let session_id = "session.tasks.execute.http";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "Manual Task Run session",
+        "2026-06-17T00:00:00Z",
+    )
+    .await;
 
     let create_body = json!({
-        "title": "Deferred job",
+        "sessionId": session_id,
+        "title": "Scheduled summary",
         "prompt": "Summarize tenant activity",
-        "metadataJson": "{\"deferExecution\":true}",
+        "scheduleKind": "one_time",
+        "timezone": "UTC",
+        "scheduledAt": "2026-06-18T00:00:00Z",
+        "metadataJson": "{}",
         "requestedAt": "2026-06-17T00:00:00Z"
     });
     let create_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks");
@@ -1868,22 +1979,22 @@ async fn agent_tasks_execute_should_complete_deferred_task_over_http() {
         .as_str()
         .expect("task id")
         .to_string();
-    assert_eq!(create_response["data"]["item"]["status"], json!("pending"));
+    assert_eq!(create_response["data"]["item"]["status"], json!("active"));
 
     let get_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}");
     let get_response = get_json(&app, get_uri.as_str(), StatusCode::OK).await;
 
     let execute_body = json!({
+        "idempotencyKey": "manual-task-run-http-1",
         "expectedVersion": get_response["data"]["item"]["version"],
         "requestedAt": "2026-06-17T00:01:00Z"
     });
     let execute_uri = format!("/app/v3/api/ai/agents/{agent_id}/tasks/{task_id}/execute");
     let execute_response =
         post_json(&app, execute_uri.as_str(), execute_body, StatusCode::OK).await;
-    assert_eq!(
-        execute_response["data"]["item"]["status"],
-        json!("completed")
-    );
+    assert_eq!(execute_response["data"]["item"]["status"], json!("pending"));
+    assert_eq!(execute_response["data"]["item"]["triggerKind"], "manual");
+    assert_eq!(execute_response["data"]["item"]["sessionId"], session_id);
 }
 
 #[tokio::test]
@@ -4925,6 +5036,170 @@ async fn missing_provider_session_items_returns_uncacheable_problem_details() {
     assert!(problem["detail"]
         .as_str()
         .is_some_and(|detail| detail.contains("session not found")));
+}
+
+#[tokio::test]
+async fn app_turn_stream_should_deliver_first_delta_before_provider_completion() {
+    let executor = Arc::new(GatedStreamingTurnExecutor::new());
+    let turn_executor: Arc<dyn TurnExecutor> = executor.clone();
+    let state = AgentHttpState::with_turn_executor(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+        turn_executor,
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.turn.live-stream.http";
+    create_agent(&app, agent_id, "Live Stream Turn HTTP Agent").await;
+
+    let session_id = "session.turn.live-stream.http";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "HTTP live stream turn test",
+        "2026-06-28T12:00:00Z",
+    )
+    .await;
+    let runtime_binding_id =
+        create_turn_runtime(&app, agent_id, session_id, "turn-live-stream").await;
+    let turn_id = "turn.live-stream.http";
+    let payload = json!({
+        "turnId": turn_id,
+        "content": "Stream before completion",
+        "turnMode": "interactive",
+        "runtimeBindingId": runtime_binding_id,
+        "idempotencyKey": "turn-live-stream-http-1",
+        "payloadHash": "sha256:turn-live-stream-http-1",
+        "requestedAt": "2026-06-28T12:00:01Z"
+    });
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns?stream=true"
+        ))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("stream turn request should be built");
+    let response = tokio::time::timeout(Duration::from_secs(1), app.clone().oneshot(request))
+        .await
+        .expect("HTTP response headers must arrive before provider completion")
+        .expect("stream turn request should return a response");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut body_stream = response.into_body().into_data_stream();
+    let first_chunk = tokio::time::timeout(Duration::from_secs(1), body_stream.next())
+        .await
+        .expect("first SSE delta must arrive before provider completion")
+        .expect("stream must contain its first delta")
+        .expect("first SSE delta must be readable");
+    let mut body = String::from_utf8(first_chunk.to_vec()).expect("SSE chunk must be UTF-8");
+    let first_events = parse_sse_json_events(&body);
+    assert_eq!(first_events.len(), 1);
+    assert_eq!(first_events[0].0, "delta");
+    assert_eq!(first_events[0].1["delta"], "first ");
+    assert!(!executor.completed.load(Ordering::Acquire));
+
+    let running = get_json(
+        &app,
+        &format!("/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns/{turn_id}"),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(running["data"]["item"]["status"], "running");
+
+    executor.release();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while let Some(chunk) = body_stream.next().await {
+            let chunk = chunk.expect("remaining SSE chunk must be readable");
+            body.push_str(&String::from_utf8(chunk.to_vec()).expect("SSE chunk must be UTF-8"));
+        }
+    })
+    .await
+    .expect("stream must finish after provider completion is released");
+    assert!(executor.completed.load(Ordering::Acquire));
+
+    let events = parse_sse_json_events(&body);
+    assert_eq!(
+        events
+            .iter()
+            .map(|(event_name, _)| event_name.as_str())
+            .collect::<Vec<_>>(),
+        ["delta", "delta", "completion"]
+    );
+    let (_, completion) = events.last().expect("completion event should exist");
+    assert_eq!(completion["eventType"], "completion");
+    assert_eq!(
+        completion["response"]["data"]["item"]["turn"]["status"],
+        "completed"
+    );
+}
+
+#[tokio::test]
+async fn app_turn_stream_should_return_problem_detail_when_execution_fails_before_first_frame() {
+    let state = AgentHttpState::with_turn_executor(
+        InMemoryAgentRepository::new(),
+        InMemoryAgentAuditSink::default(),
+        test_policy_provider(),
+        Arc::new(FailingTurnExecutor),
+    );
+    let app = build_test_app(state);
+    let agent_id = "agent.turn.failed-stream.http";
+    create_agent(&app, agent_id, "Failed Stream Turn HTTP Agent").await;
+
+    let session_id = "session.turn.failed-stream.http";
+    create_app_session(
+        &app,
+        agent_id,
+        session_id,
+        "HTTP failed stream turn test",
+        "2026-06-28T12:00:00Z",
+    )
+    .await;
+    let runtime_binding_id =
+        create_turn_runtime(&app, agent_id, session_id, "turn-failed-stream").await;
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/turns?stream=true"
+        ))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "content": "Fail before streaming",
+                "turnMode": "interactive",
+                "runtimeBindingId": runtime_binding_id,
+                "idempotencyKey": "turn-failed-stream-http-1",
+                "payloadHash": "sha256:turn-failed-stream-http-1",
+                "requestedAt": "2026-06-28T12:00:01Z"
+            })
+            .to_string(),
+        ))
+        .expect("failed stream turn request should be built");
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("failed stream turn request should return a response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/problem+json")
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("problem response body should be readable");
+    let problem: Value =
+        serde_json::from_slice(&body).expect("problem response should be valid JSON");
+    let detail = problem["detail"]
+        .as_str()
+        .expect("problem detail should be a string");
+    assert!(
+        detail.contains("temporarily unavailable"),
+        "unexpected problem: {problem}"
+    );
 }
 
 #[tokio::test]

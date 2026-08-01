@@ -317,11 +317,15 @@ for (const targetTable of [
   'ai_agent_session',
   'ai_agent_session_runtime_binding',
   'ai_agent_turn',
+  'ai_agent_turn_input_queue_entry',
   'ai_agent_session_item',
   'ai_agent_item_drive_ref',
   'ai_agent_item_feedback',
   'ai_agent_interaction',
   'ai_agent_session_checkpoint',
+  'ai_agent_task',
+  'ai_agent_task_run',
+  'ai_agent_task_run_attempt',
   'ai_agent_resource_user_state',
   'ai_agent_project_member',
   'ai_agent_share_link',
@@ -333,10 +337,10 @@ for (const targetTable of [
   );
 }
 assert(
-  agentsTableRegistry.contractVersion === '6.0.2'
-    && agentTableNames.length === 20
-    && agentsDatabaseSpec.includes('owns exactly 20 tables'),
-  'Agents database contract 6.0 must declare the active 20-table inventory',
+  agentsTableRegistry.contractVersion === '7.0.0'
+    && agentTableNames.length === 23
+    && agentsDatabaseSpec.includes('owns exactly 23 tables'),
+  'Agents database contract 7.0 must declare the active 23-table inventory',
 );
 for (const retiredTable of [
   'ai_agent_chat_turn',
@@ -350,7 +354,8 @@ for (const retiredTable of [
 }
 assert(
   agentsDatabaseSpec.includes('There are no cross-module foreign keys')
-    && agentsDatabaseSpec.includes('Downstream search, notification and IM behavior consumes published events'),
+    && agentsDatabaseSpec.includes('does not expose a generic publisher SPI')
+    && agentsDatabaseSpec.includes('must not add a local Kafka'),
   'Agents must keep downstream indexing, generation and communication capabilities independent',
 );
 

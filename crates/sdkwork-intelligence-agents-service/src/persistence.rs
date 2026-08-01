@@ -1,9 +1,9 @@
 use crate::agent_turn::{AgentTurnMode, AgentTurnRecord, AgentTurnStatus};
 use crate::agent_turn_input_queue::{
     AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, AgentTurnInputQueueStatus,
-    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueListQuery,
-    TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION,
-    MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
+    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueFailureRequest,
+    TurnInputQueueListQuery, TurnInputQueueReorderEntry,
+    MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION, MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
 };
 use crate::domain::{
     AgentBusinessRecord, AgentBusinessStatus, AgentCompositionSlotKind, AgentCompositionSlotRecord,
@@ -37,8 +37,9 @@ use crate::session_activity::{
 };
 use crate::task_scheduler::{
     plan_task_materialization, task_run_payload_hash, ClaimTaskRunsRequest, FailTaskRunRequest,
-    MaterializeDueTasksRequest, TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition,
-    TaskRunLease, TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult,
+    MaterializeDueTasksRequest, ReconcileTaskRunRequest, TaskRunAttemptListQuery, TaskRunClaim,
+    TaskRunFailureDisposition, TaskRunLease, TaskRunListQuery, TaskSchedulerMetricsSnapshot,
+    TaskSchedulerRepository, TaskTransitionResult,
 };
 use crate::task_scheduling::{
     AgentTaskOverlapPolicy, AgentTaskRunAttemptRecord, AgentTaskRunAttemptStatus,
@@ -134,6 +135,8 @@ where
 
 #[cfg(feature = "postgres-sync")]
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
+#[cfg(feature = "postgres-sync")]
+use sdkwork_database_id::{NodeAllocatorConfig, NodeLease, SnowflakeNodeAllocator};
 mod sql;
 
 pub use sql::{
@@ -153,10 +156,9 @@ pub use sql::{
     SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_PROJECTS,
     SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_RESOURCE_USER_STATES,
     SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
-    SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TASKS, SQL_COUNT_AGENT_TURNS,
-    SQL_COUNT_AGENT_WORKSPACES, SQL_COUNT_TURN_INPUT_QUEUE_ENTRIES,
-    SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_INSERT_AGENT_INTERACTION,
-    SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
+    SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TURNS, SQL_COUNT_AGENT_WORKSPACES,
+    SQL_COUNT_TURN_INPUT_QUEUE_ENTRIES, SQL_DEACTIVATE_CURRENT_AGENT_SESSION_RUNTIME_BINDINGS,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
     SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
     SQL_INSERT_AGENT_SESSION_CHECKPOINT, SQL_INSERT_AGENT_SESSION_ITEM,
     SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
@@ -2401,17 +2403,7 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     ) -> KernelResult<TurnInputQueueClaimOutcome>;
     fn fail_turn_input_queue_entry_record(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-        owner_user_id: u64,
-        queue_entry_id: &str,
-        expected_version: u64,
-        expected_fencing_token: u64,
-        claim_token_hash: &str,
-        error_code: &str,
-        error_detail: Option<&str>,
-        requested_at: &str,
+        request: &TurnInputQueueFailureRequest,
     ) -> KernelResult<AgentTurnInputQueueEntry>;
     fn list_reconcilable_turn_rows(
         &self,
@@ -2503,7 +2495,6 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         task_id: &str,
     ) -> KernelResult<Option<AgentTaskRow>>;
     fn list_task_rows(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRow>>;
-    fn count_task_rows(&self, query: &TaskListQuery) -> KernelResult<u64>;
 }
 
 pub struct SqlAgentRepository<A>
@@ -3416,31 +3407,9 @@ where
 
     fn fail_turn_input_queue_entry(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-        owner_user_id: u64,
-        queue_entry_id: &str,
-        expected_version: u64,
-        expected_fencing_token: u64,
-        claim_token_hash: &str,
-        error_code: &str,
-        error_detail: Option<&str>,
-        requested_at: &str,
+        request: &TurnInputQueueFailureRequest,
     ) -> KernelResult<AgentTurnInputQueueEntry> {
-        self.adapter.fail_turn_input_queue_entry_record(
-            tenant_id,
-            organization_id,
-            session_id,
-            owner_user_id,
-            queue_entry_id,
-            expected_version,
-            expected_fencing_token,
-            claim_token_hash,
-            error_code,
-            error_detail,
-            requested_at,
-        )
+        self.adapter.fail_turn_input_queue_entry_record(request)
     }
 
     fn list_reconcilable_turns(
@@ -3625,10 +3594,6 @@ where
             .map(AgentTaskRow::into_record)
             .collect()
     }
-
-    fn count_tasks(&self, query: &TaskListQuery) -> KernelResult<u64> {
-        self.adapter.count_task_rows(query)
-    }
 }
 
 impl<A> TaskSchedulerRepository for SqlAgentRepository<A>
@@ -3710,6 +3675,10 @@ where
         self.adapter.recover_expired_task_run_leases(now, limit)
     }
 
+    fn scheduler_metrics_snapshot(&self, now: &str) -> KernelResult<TaskSchedulerMetricsSnapshot> {
+        self.adapter.scheduler_metrics_snapshot(now)
+    }
+
     fn request_task_run_cancellation(
         &self,
         tenant_id: u64,
@@ -3729,23 +3698,9 @@ where
 
     fn reconcile_task_run(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        run_id: &str,
-        expected_version: u64,
-        terminal_status: AgentTaskRunStatus,
-        error_code: Option<&str>,
-        reconciled_at: &str,
+        request: &ReconcileTaskRunRequest,
     ) -> KernelResult<AgentTaskRunRecord> {
-        self.adapter.reconcile_task_run(
-            tenant_id,
-            organization_id,
-            run_id,
-            expected_version,
-            terminal_status,
-            error_code,
-            reconciled_at,
-        )
+        self.adapter.reconcile_task_run(request)
     }
 
     fn list_reconciling_task_runs(
@@ -3789,6 +3744,53 @@ pub trait AgentAuditAdapter: Send + Sync {
 
 #[cfg(feature = "postgres-sync")]
 pub const AGENTS_DATABASE_SERVICE: &str = "AGENTS";
+
+#[cfg(feature = "postgres-sync")]
+pub const TASK_SCHEDULER_METRICS_COUNT_CAP: i64 = 100_000;
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT: &str = r#"
+SELECT
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task
+         WHERE status = 0 AND next_fire_at <= $1::timestamptz
+         LIMIT $2
+    ) bounded_due_tasks) AS due_tasks,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(next_fire_at))))::bigint,
+        0
+    ) FROM ai_agent_task
+      WHERE status = 0 AND next_fire_at <= $1::timestamptz), 0) AS materialization_lag_seconds,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task_run
+         WHERE status = 0 AND available_at <= $1::timestamptz
+         LIMIT $2
+    ) bounded_eligible_runs) AS eligible_runs,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(available_at))))::bigint,
+        0
+    ) FROM ai_agent_task_run
+      WHERE status = 0 AND available_at <= $1::timestamptz), 0) AS eligible_run_oldest_age_seconds,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task_run
+         WHERE status IN (1, 2) AND lease_expires_at >= $1::timestamptz
+         LIMIT $2
+    ) bounded_active_leases) AS active_leases,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task_run WHERE status = 6 LIMIT $2
+    ) bounded_reconciling_runs) AS reconciling_runs,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(updated_at))))::bigint,
+        0
+    ) FROM ai_agent_task_run WHERE status = 6), 0) AS reconciliation_oldest_age_seconds,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_outbox_event WHERE status IN (0, 1, 3) LIMIT $2
+    ) bounded_pending_outbox_events) AS pending_outbox_events,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(created_at))))::bigint,
+        0
+    ) FROM ai_agent_outbox_event WHERE status IN (0, 1, 3)), 0) AS outbox_oldest_age_seconds
+"#;
 
 #[cfg(feature = "postgres-sync")]
 const SQL_SELECT_TASK_RUN_BY_ID: &str = r#"
@@ -4027,26 +4029,24 @@ fn validate_task_run_lease_record(
 }
 
 #[cfg(feature = "postgres-sync")]
+#[derive(Clone)]
 pub struct SyncPostgresAdapter {
     pool: BlockingPostgresPool,
     id_generator: AgentBusinessIdGenerator,
+    node_lease: Option<NodeLease>,
 }
 
 #[cfg(feature = "postgres-sync")]
 impl SyncPostgresAdapter {
     pub fn connect(connection_uri: &str) -> KernelResult<Self> {
-        Ok(Self {
-            pool: BlockingPostgresPool::connect(connection_uri)?,
-            id_generator: AgentBusinessIdGenerator::new_default()?,
-        })
+        Self::from_pool(BlockingPostgresPool::connect(connection_uri)?)
     }
 
     /// Connects through the canonical `sdkwork-database-config` service profile.
     pub fn connect_from_sdkwork_env(service_name: &str) -> KernelResult<Self> {
-        Ok(Self {
-            pool: BlockingPostgresPool::connect_from_sdkwork_env(service_name)?,
-            id_generator: AgentBusinessIdGenerator::new_default()?,
-        })
+        Self::from_pool(BlockingPostgresPool::connect_from_sdkwork_env(
+            service_name,
+        )?)
     }
 
     /// Connects to the canonical Agents PostgreSQL database.
@@ -4055,23 +4055,58 @@ impl SyncPostgresAdapter {
     }
 
     pub fn from_pool(pool: BlockingPostgresPool) -> KernelResult<Self> {
+        let config = NodeAllocatorConfig::from_service_name("sdkwork-agents");
+        let database_pool = pool.database_pool().clone();
+        let (snowflake, node_lease) = pool
+            .block_on(SnowflakeNodeAllocator::allocate_process_generator(
+                &database_pool,
+                &config,
+            ))
+            .map_err(|error| {
+                tracing::error!(
+                    target: "sdkwork.agents.snowflake",
+                    error_kind = ?error,
+                    "failed to allocate the process Snowflake node lease"
+                );
+                KernelError::ProviderUnavailable {
+                    provider_id: "snowflake_node_allocator".to_string(),
+                }
+            })?;
         Ok(Self {
             pool,
-            id_generator: AgentBusinessIdGenerator::new_default()?,
+            id_generator: AgentBusinessIdGenerator::with_snowflake(snowflake),
+            node_lease: Some(node_lease),
         })
+    }
+
+    /// Connect with an explicitly managed generator.
+    ///
+    /// Production composition must use [`Self::connect`] or
+    /// [`Self::connect_from_sdkwork_env`]. This constructor exists for
+    /// isolated database tests that cannot share the process-wide production
+    /// node-registry authority.
+    pub fn connect_with_id_generator(
+        connection_uri: &str,
+        id_generator: AgentBusinessIdGenerator,
+    ) -> KernelResult<Self> {
+        Ok(Self::with_pool_and_id_generator(
+            BlockingPostgresPool::connect(connection_uri)?,
+            id_generator,
+        ))
     }
 
     pub fn with_pool_and_id_generator(
         pool: BlockingPostgresPool,
         id_generator: AgentBusinessIdGenerator,
     ) -> Self {
-        Self { pool, id_generator }
+        Self {
+            pool,
+            id_generator,
+            node_lease: None,
+        }
     }
 
-    /// Borrow the underlying postgres pool. Allows callers (e.g. the
-    /// production bootstrap) to share a single physical pool across the
-    /// repository adapter and a separate audit-sink adapter that uses a
-    /// dedicated snowflake node id.
+    /// Borrow the underlying PostgreSQL pool for lifecycle orchestration.
     pub fn pool(&self) -> &BlockingPostgresPool {
         &self.pool
     }
@@ -4457,6 +4492,15 @@ async fn insert_drive_ref_in_transaction(
 #[cfg(feature = "postgres-sync")]
 impl AgentRepositoryAdapter for SyncPostgresAdapter {
     fn check_readiness(&self) -> KernelResult<()> {
+        if self
+            .node_lease
+            .as_ref()
+            .is_some_and(|node_lease| !node_lease.is_healthy())
+        {
+            return Err(KernelError::ProviderUnavailable {
+                provider_id: "snowflake_node_lease".to_string(),
+            });
+        }
         let pool = self.pool.pool().clone();
         self.pool
             .run_kernel(async move { sqlx::query("SELECT 1").execute(&pool).await.map(|_| ()) })
@@ -7904,48 +7948,38 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
 
     fn fail_turn_input_queue_entry_record(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-        owner_user_id: u64,
-        queue_entry_id: &str,
-        expected_version: u64,
-        expected_fencing_token: u64,
-        claim_token_hash: &str,
-        error_code: &str,
-        error_detail: Option<&str>,
-        requested_at: &str,
+        request: &TurnInputQueueFailureRequest,
     ) -> KernelResult<AgentTurnInputQueueEntry> {
-        let tenant_id_i64 = u64_to_i64(tenant_id, "tenant_id")?;
-        let organization_id_i64 = u64_to_i64(organization_id, "organization_id")?;
-        let owner_user_id_i64 = u64_to_i64(owner_user_id, "owner_user_id")?;
-        let expected_version_i64 = u64_to_i64(expected_version, "expected_version")?;
-        let fencing_token_i64 = u64_to_i64(expected_fencing_token, "fencing_token")?;
+        let tenant_id_i64 = u64_to_i64(request.tenant_id, "tenant_id")?;
+        let organization_id_i64 = u64_to_i64(request.organization_id, "organization_id")?;
+        let owner_user_id_i64 = u64_to_i64(request.owner_user_id, "owner_user_id")?;
+        let expected_version_i64 = u64_to_i64(request.expected_version, "expected_version")?;
+        let fencing_token_i64 = u64_to_i64(request.expected_fencing_token, "fencing_token")?;
         self.with_pool(|pool| {
             let affected = pg_execute!(
                 pool,
                 "UPDATE ai_agent_turn_input_queue_entry SET status = 2, claim_owner = NULL, claim_token_hash = NULL, claim_expires_at = NULL, error_code = $1, error_detail = $2, failed_at = $3::timestamptz, updated_at = $3::timestamptz, version = version + 1 WHERE tenant_id = $4 AND organization_id = $5 AND session_id = $6 AND owner_user_id = $7 AND queue_entry_id = $8 AND status = 1 AND version = $9 AND fencing_token = $10 AND claim_token_hash = $11",
-                error_code,
-                error_detail,
-                requested_at,
+                &request.error_code,
+                request.error_detail.as_deref(),
+                &request.requested_at,
                 tenant_id_i64,
                 organization_id_i64,
-                session_id,
+                &request.session_id,
                 owner_user_id_i64,
-                queue_entry_id,
+                &request.queue_entry_id,
                 expected_version_i64,
                 fencing_token_i64,
-                claim_token_hash
+                &request.claim_token_hash
             )?;
             if affected != 1 {
                 return Err(KernelError::conflict("queued Turn input claim mismatch"));
             }
             self.get_turn_input_queue_entry_record(
-                tenant_id,
-                organization_id,
-                session_id,
-                owner_user_id,
-                queue_entry_id,
+                request.tenant_id,
+                request.organization_id,
+                &request.session_id,
+                request.owner_user_id,
+                &request.queue_entry_id,
             )?
             .ok_or_else(|| KernelError::conflict("queued Turn input failure update changed"))
         })
@@ -8551,8 +8585,17 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentTaskStatus::from_code)
             .map(|s| s.as_db_code());
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let cursor_updated_at = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.updated_at.as_str());
+        let cursor_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.task_internal_id, "cursor.task_internal_id"))
+            .transpose()?;
+        let limit = i64::try_from(query.store_limit())
+            .map_err(|_| KernelError::validation("page size overflow"))?;
 
         self.with_pool(|pool| {
             let rows = pg_query!(
@@ -8563,43 +8606,11 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 agent_id,
                 owner_user_id,
                 status_code,
-                page_size,
-                offset
+                cursor_updated_at,
+                cursor_id,
+                limit
             )?;
             rows.into_iter().map(pg_row_to_agent_task_row).collect()
-        })
-    }
-
-    fn count_task_rows(&self, query: &TaskListQuery) -> KernelResult<u64> {
-        let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let organization_id = u64_to_i64(query.organization_id, "organization_id")?;
-        let agent_id: Option<&str> = query.agent_id.as_deref();
-        let owner_user_id: Option<i64> = query.owner_user_id.map(|v| v as i64);
-        let status_code: Option<i16> = query
-            .status
-            .as_deref()
-            .and_then(AgentTaskStatus::from_code)
-            .map(|s| s.as_db_code());
-
-        self.with_pool(|pool| {
-            let row = pg_query_optional!(
-                pool,
-                SQL_COUNT_AGENT_TASKS,
-                tenant_id,
-                organization_id,
-                agent_id,
-                owner_user_id,
-                status_code
-            )?;
-            let total: i64 = row
-                .map(|value| {
-                    value
-                        .try_get::<i64, _>("total_count")
-                        .map_err(map_sqlx_error)
-                })
-                .transpose()?
-                .unwrap_or(0);
-            int64_to_u64(total, "total_count")
         })
     }
 }
@@ -10164,6 +10175,32 @@ RETURNING version
         })
     }
 
+    fn scheduler_metrics_snapshot(&self, now: &str) -> KernelResult<TaskSchedulerMetricsSnapshot> {
+        parse_datetime(now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let row = sqlx::query(SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT)
+                .bind(now)
+                .bind(TASK_SCHEDULER_METRICS_COUNT_CAP)
+                .fetch_one(&pool)
+                .await?;
+            let count = |column| -> Result<u64, sqlx::Error> {
+                int64_to_u64(row.try_get::<i64, _>(column)?, column).map_err(transaction_error)
+            };
+            Ok(TaskSchedulerMetricsSnapshot {
+                due_tasks: count("due_tasks")?,
+                materialization_lag_seconds: count("materialization_lag_seconds")?,
+                eligible_runs: count("eligible_runs")?,
+                eligible_run_oldest_age_seconds: count("eligible_run_oldest_age_seconds")?,
+                active_leases: count("active_leases")?,
+                reconciling_runs: count("reconciling_runs")?,
+                reconciliation_oldest_age_seconds: count("reconciliation_oldest_age_seconds")?,
+                pending_outbox_events: count("pending_outbox_events")?,
+                outbox_oldest_age_seconds: count("outbox_oldest_age_seconds")?,
+            })
+        })
+    }
     fn request_task_run_cancellation(
         &self,
         tenant_id: u64,
@@ -10310,18 +10347,12 @@ WHERE tenant_id = $7 AND organization_id = $8 AND run_id = $9 AND version = $10
 
     fn reconcile_task_run(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        run_id: &str,
-        expected_version: u64,
-        terminal_status: AgentTaskRunStatus,
-        error_code: Option<&str>,
-        reconciled_at: &str,
+        request: &ReconcileTaskRunRequest,
     ) -> KernelResult<AgentTaskRunRecord> {
-        parse_datetime(reconciled_at, None)
+        parse_datetime(&request.reconciled_at, None)
             .ok_or_else(|| KernelError::validation("reconciledAt is invalid"))?;
         if !matches!(
-            terminal_status,
+            request.terminal_status,
             AgentTaskRunStatus::Succeeded
                 | AgentTaskRunStatus::Failed
                 | AgentTaskRunStatus::Cancelled
@@ -10330,23 +10361,27 @@ WHERE tenant_id = $7 AND organization_id = $8 AND run_id = $9 AND version = $10
                 "task Run reconciliation status is invalid",
             ));
         }
-        if error_code.is_some_and(|value| value.len() > 128) {
+        if request
+            .error_code
+            .as_deref()
+            .is_some_and(|value| value.len() > 128)
+        {
             return Err(KernelError::validation("errorCode is too long"));
         }
-        let tenant_id_db = u64_to_i64(tenant_id, "tenant_id")?;
-        let organization_id_db = u64_to_i64(organization_id, "organization_id")?;
-        let version_db = u64_to_i64(expected_version, "expected_version")?;
-        let failure_class = match terminal_status {
+        let tenant_id_db = u64_to_i64(request.tenant_id, "tenant_id")?;
+        let organization_id_db = u64_to_i64(request.organization_id, "organization_id")?;
+        let version_db = u64_to_i64(request.expected_version, "expected_version")?;
+        let failure_class = match request.terminal_status {
             AgentTaskRunStatus::Succeeded => None,
             AgentTaskRunStatus::Failed => Some("reconciled_failure"),
             AgentTaskRunStatus::Cancelled => Some("cancelled"),
             _ => unreachable!(),
         };
-        let default_cancel_code =
-            (terminal_status == AgentTaskRunStatus::Cancelled).then_some("task_run_cancelled");
-        let error_code = error_code.or(default_cancel_code);
-        let cancelled_at =
-            (terminal_status == AgentTaskRunStatus::Cancelled).then_some(reconciled_at);
+        let default_cancel_code = (request.terminal_status == AgentTaskRunStatus::Cancelled)
+            .then_some("task_run_cancelled");
+        let error_code = request.error_code.as_deref().or(default_cancel_code);
+        let cancelled_at = (request.terminal_status == AgentTaskRunStatus::Cancelled)
+            .then_some(request.reconciled_at.as_str());
         let pool = self.pool.pool().clone();
         self.pool.run_kernel(async {
             let mut tx = pool.begin().await?;
@@ -10361,14 +10396,14 @@ WHERE tenant_id = $6 AND organization_id = $7 AND run_id = $8
   AND status = 6 AND version = $9
                 "#,
             )
-            .bind(terminal_status.as_db_code())
+            .bind(request.terminal_status.as_db_code())
             .bind(failure_class)
             .bind(error_code)
-            .bind(reconciled_at)
+            .bind(&request.reconciled_at)
             .bind(cancelled_at)
             .bind(tenant_id_db)
             .bind(organization_id_db)
-            .bind(run_id)
+            .bind(&request.run_id)
             .bind(version_db)
             .execute(&mut *tx)
             .await?;
@@ -10380,7 +10415,7 @@ WHERE tenant_id = $6 AND organization_id = $7 AND run_id = $8
             let row = sqlx::query(SQL_SELECT_TASK_RUN_BY_ID)
                 .bind(tenant_id_db)
                 .bind(organization_id_db)
-                .bind(run_id)
+                .bind(&request.run_id)
                 .fetch_one(&mut *tx)
                 .await?;
             let run = pg_row_to_task_run(row).map_err(transaction_error)?;
@@ -10402,7 +10437,7 @@ WHERE tenant_id = $6 AND organization_id = $7 AND run_id = $8
                     "errorCode": run.error_code
                 }),
                 &format!("agent-task-run-reconciled:{}:{}", run.run_id, run.version),
-                reconciled_at,
+                &request.reconciled_at,
             )
             .await?;
             tx.commit().await?;

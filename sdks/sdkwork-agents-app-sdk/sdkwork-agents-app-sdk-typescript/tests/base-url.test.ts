@@ -199,11 +199,9 @@ test('Agents App SDK exposes server-side Session Item filters and descending pag
         data: {
           items: [],
           pageInfo: {
-            mode: 'offset',
-            page: 1,
+            mode: 'cursor',
             pageSize: 20,
-            totalItems: '0',
-            totalPages: 0,
+            nextCursor: null,
             hasMore: false,
           },
         },
@@ -215,19 +213,18 @@ test('Agents App SDK exposes server-side Session Item filters and descending pag
   try {
     const client = createAuthenticatedClient(APP_API_BASE_URL);
     const page = await client.ai.agents.sessionItems.list('agent-1', 'session-1', {
-      page: 1,
       pageSize: 20,
       kind: 'assistant_output',
       status: 'completed',
       sort: '-sequence',
     });
-    assert.equal(page.pageInfo.mode, 'offset');
+    assert.equal(page.pageInfo.mode, 'cursor');
   } finally {
     globalThis.fetch = originalFetch;
   }
 
   assert.deepEqual(requestedUrls, [
-    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/items?page=1&page_size=20&kind=assistant_output&status=completed&sort=-sequence',
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/items?page_size=20&kind=assistant_output&status=completed&sort=-sequence',
   ]);
 });
 
@@ -278,4 +275,96 @@ test('Agents App SDK exposes distinct agent, project, and workspace session list
     'http://127.0.0.1:8095/app/v3/api/ai/projects/project-1/sessions?page=2&page_size=50&status=idle&include_archived=true',
     'http://127.0.0.1:8095/app/v3/api/ai/workspaces/workspace-1/sessions?page=2&page_size=50&status=idle&include_archived=true',
   ]);
+});
+
+test('Agents App SDK delivers named SSE delta frames before completion', async () => {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  const requestedBodies: string[] = [];
+  let releaseCompletion = () => {};
+  const completionGate = new Promise<void>((resolve) => {
+    releaseCompletion = resolve;
+  });
+
+  globalThis.fetch = async (_input, init) => {
+    requestedBodies.push(String(init?.body ?? ''));
+    let frame = 0;
+    return new Response(
+      new ReadableStream({
+        async pull(controller) {
+          if (frame === 0) {
+            frame += 1;
+            controller.enqueue(encoder.encode([
+              'event: delta',
+              'data: {"eventType":"delta","index":0,"delta":"hello"}',
+              '',
+              '',
+            ].join('\r\n')));
+            return;
+          }
+          if (frame === 1) {
+            frame += 1;
+            await completionGate;
+            controller.enqueue(encoder.encode([
+              'event: completion',
+              'data: {"eventType":"completion","response":{"code":0}}',
+              '',
+              '',
+            ].join('\r\n')));
+            controller.close();
+          }
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream; charset=utf-8' }, status: 200 },
+    );
+  };
+
+  const body = {
+    content: 'hello',
+    idempotencyKey: 'turn-stream-contract',
+    payloadHash: 'sha256:turn-stream-contract',
+    requestedAt: '2026-08-01T00:00:00.000Z',
+    turnMode: 'interactive' as const,
+  };
+
+  try {
+    const client = createAuthenticatedClient(APP_API_BASE_URL);
+    const events = await client.ai.agents.turns.stream(
+      'agent.code-engine.codex',
+      'session.stream-contract',
+      body,
+      { eventProtocol: 'kernel-v1', stream: true },
+    );
+    const iterator = events[Symbol.asyncIterator]();
+
+    const first = await iterator.next();
+    assert.deepEqual(first.value, {
+      eventType: 'delta',
+      index: 0,
+      delta: 'hello',
+    });
+
+    let completionDelivered = false;
+    const completion = iterator.next().then((result) => {
+      completionDelivered = true;
+      return result;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      completionDelivered,
+      false,
+      'the first delta must be observable while the completion frame is still gated',
+    );
+
+    releaseCompletion();
+    assert.deepEqual((await completion).value, {
+      eventType: 'completion',
+      response: { code: 0 },
+    });
+  } finally {
+    releaseCompletion();
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(JSON.parse(requestedBodies[0] ?? ''), body);
 });

@@ -1,8 +1,9 @@
 use crate::agent_turn::{AgentTurnRecord, AgentTurnStatus};
 use crate::agent_turn_input_queue::{
     AgentTurnInputQueueEntry, AgentTurnInputQueueStatus, TurnInputQueueClaimOutcome,
-    TurnInputQueueClaimRequest, TurnInputQueueListQuery, TurnInputQueueReorderEntry,
-    MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION, MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
+    TurnInputQueueClaimRequest, TurnInputQueueFailureRequest, TurnInputQueueListQuery,
+    TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_CONTENT_BYTES_PER_SESSION,
+    MAX_TURN_INPUT_QUEUE_ENTRIES_PER_SESSION,
 };
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
@@ -32,8 +33,9 @@ use crate::session_activity::{
 };
 use crate::task_scheduler::{
     plan_task_materialization, task_run_payload_hash, ClaimTaskRunsRequest, FailTaskRunRequest,
-    MaterializeDueTasksRequest, TaskRunAttemptListQuery, TaskRunClaim, TaskRunFailureDisposition,
-    TaskRunLease, TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult,
+    MaterializeDueTasksRequest, ReconcileTaskRunRequest, TaskRunAttemptListQuery, TaskRunClaim,
+    TaskRunFailureDisposition, TaskRunLease, TaskRunListQuery, TaskSchedulerRepository,
+    TaskTransitionResult,
 };
 use crate::task_scheduling::{
     AgentTaskRunAttemptRecord, AgentTaskRunAttemptStatus, AgentTaskRunRecord, AgentTaskRunStatus,
@@ -383,7 +385,7 @@ type InteractionPrimaryKey = (u64, u64, String, String);
 type InteractionIndexKey = (u64, u64, String, Reverse<String>, String);
 type PendingInteractionIndexKey = (u64, u64, String, i16, Reverse<String>, String);
 type TaskPrimaryKey = (u64, u64, String);
-type TaskIndexKey = (u64, u64, Reverse<String>, String);
+type TaskIndexKey = (u64, u64, Reverse<String>, Reverse<u64>);
 type TaskRunPrimaryKey = (u64, u64, String);
 type TaskRunAttemptPrimaryKey = (u64, u64, String);
 
@@ -948,7 +950,7 @@ fn task_index_key(record: &AgentTaskRecord) -> TaskIndexKey {
         record.tenant_id,
         record.organization_id,
         Reverse(record.updated_at.clone()),
-        record.task_id.clone(),
+        Reverse(record.id),
     )
 }
 
@@ -3338,33 +3340,23 @@ impl AgentRepository for InMemoryAgentRepository {
 
     fn fail_turn_input_queue_entry(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-        owner_user_id: u64,
-        queue_entry_id: &str,
-        expected_version: u64,
-        expected_fencing_token: u64,
-        claim_token_hash: &str,
-        error_code: &str,
-        error_detail: Option<&str>,
-        requested_at: &str,
+        request: &TurnInputQueueFailureRequest,
     ) -> KernelResult<AgentTurnInputQueueEntry> {
         let key = (
-            tenant_id,
-            organization_id,
-            session_id.to_string(),
-            queue_entry_id.to_string(),
+            request.tenant_id,
+            request.organization_id,
+            request.session_id.clone(),
+            request.queue_entry_id.clone(),
         );
         let mut queue = self.turn_input_queue.recovering_lock();
         let entry = queue
             .get_mut(&key)
             .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
-        if entry.owner_user_id != owner_user_id
+        if entry.owner_user_id != request.owner_user_id
             || entry.status != AgentTurnInputQueueStatus::Executing
-            || entry.version != expected_version
-            || entry.fencing_token != expected_fencing_token
-            || entry.claim_token_hash.as_deref() != Some(claim_token_hash)
+            || entry.version != request.expected_version
+            || entry.fencing_token != request.expected_fencing_token
+            || entry.claim_token_hash.as_deref() != Some(request.claim_token_hash.as_str())
         {
             return Err(KernelError::conflict("queued Turn input claim mismatch"));
         }
@@ -3372,10 +3364,10 @@ impl AgentRepository for InMemoryAgentRepository {
         entry.claim_owner = None;
         entry.claim_token_hash = None;
         entry.claim_expires_at = None;
-        entry.error_code = Some(error_code.to_string());
-        entry.error_detail = error_detail.map(str::to_string);
-        entry.failed_at = Some(requested_at.to_string());
-        entry.updated_at = requested_at.to_string();
+        entry.error_code = Some(request.error_code.clone());
+        entry.error_detail = request.error_detail.clone();
+        entry.failed_at = Some(request.requested_at.clone());
+        entry.updated_at = request.requested_at.clone();
         entry.version = entry.version.saturating_add(1);
         Ok(entry.clone())
     }
@@ -3971,22 +3963,16 @@ impl AgentRepository for InMemoryAgentRepository {
             })
             .filter_map(|(_, primary_key)| tasks.get(primary_key))
             .filter(|record| task_matches_list_query(record, query))
-            .cloned();
-        Ok(paginate_iterator(iter, &query.pagination))
-    }
-
-    fn count_tasks(&self, query: &TaskListQuery) -> KernelResult<u64> {
-        let tasks = self.tasks.recovering_read();
-        let index = self.task_index.recovering_read();
-        Ok(count_iterator(
-            index
-                .iter()
-                .filter(|((tenant_id, organization_id, _, _), _)| {
-                    *tenant_id == query.tenant_id && *organization_id == query.organization_id
+            .filter(|record| {
+                query.cursor.as_ref().is_none_or(|cursor| {
+                    record.updated_at < cursor.updated_at
+                        || (record.updated_at == cursor.updated_at
+                            && record.id < cursor.task_internal_id)
                 })
-                .filter_map(|(_, primary_key)| tasks.get(primary_key))
-                .filter(|record| task_matches_list_query(record, query)),
-        ))
+            })
+            .take(query.store_limit())
+            .cloned();
+        Ok(iter.collect())
     }
 }
 
@@ -4783,18 +4769,12 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
 
     fn reconcile_task_run(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        run_id: &str,
-        expected_version: u64,
-        terminal_status: AgentTaskRunStatus,
-        error_code: Option<&str>,
-        reconciled_at: &str,
+        request: &ReconcileTaskRunRequest,
     ) -> KernelResult<AgentTaskRunRecord> {
-        parse_datetime(reconciled_at, None)
+        parse_datetime(&request.reconciled_at, None)
             .ok_or_else(|| KernelError::validation("reconciledAt is invalid"))?;
         if !matches!(
-            terminal_status,
+            request.terminal_status,
             AgentTaskRunStatus::Succeeded
                 | AgentTaskRunStatus::Failed
                 | AgentTaskRunStatus::Cancelled
@@ -4805,28 +4785,33 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
         }
         let mut runs = self.task_runs.recovering_write();
         let run = runs
-            .get_mut(&(tenant_id, organization_id, run_id.to_string()))
+            .get_mut(&(
+                request.tenant_id,
+                request.organization_id,
+                request.run_id.clone(),
+            ))
             .ok_or_else(|| KernelError::validation("task Run not found"))?;
-        if run.status != AgentTaskRunStatus::Reconciling || run.version != expected_version {
+        if run.status != AgentTaskRunStatus::Reconciling || run.version != request.expected_version
+        {
             return Err(KernelError::conflict(
                 "task Run reconciliation version mismatch",
             ));
         }
-        run.status = terminal_status;
-        run.failure_class = match terminal_status {
+        run.status = request.terminal_status;
+        run.failure_class = match request.terminal_status {
             AgentTaskRunStatus::Succeeded => None,
             AgentTaskRunStatus::Cancelled => Some("cancelled".to_string()),
             AgentTaskRunStatus::Failed => Some("reconciled_failure".to_string()),
             _ => unreachable!(),
         };
-        run.error_code = error_code.map(str::to_string).or_else(|| {
-            (terminal_status == AgentTaskRunStatus::Cancelled)
+        run.error_code = request.error_code.clone().or_else(|| {
+            (request.terminal_status == AgentTaskRunStatus::Cancelled)
                 .then(|| "task_run_cancelled".to_string())
         });
-        run.finished_at = Some(reconciled_at.to_string());
-        run.cancelled_at =
-            (terminal_status == AgentTaskRunStatus::Cancelled).then(|| reconciled_at.to_string());
-        run.updated_at = reconciled_at.to_string();
+        run.finished_at = Some(request.reconciled_at.clone());
+        run.cancelled_at = (request.terminal_status == AgentTaskRunStatus::Cancelled)
+            .then(|| request.reconciled_at.clone());
+        run.updated_at = request.reconciled_at.clone();
         run.version = run.version.saturating_add(1);
         Ok(run.clone())
     }

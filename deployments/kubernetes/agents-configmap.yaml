@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdkwork-agents-config
+  labels:
+    app.kubernetes.io/name: sdkwork-agents
+data:
+  SDKWORK_AGENTS_PROFILE_ID: cloud.production

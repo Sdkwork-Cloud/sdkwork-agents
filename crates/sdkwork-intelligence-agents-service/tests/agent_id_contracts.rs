@@ -23,6 +23,25 @@ fn agent_business_id_generator_uses_signed_safe_snowflake_ids() {
 }
 
 #[test]
+fn cloned_business_id_generators_share_one_sequence() {
+    let repository = AgentBusinessIdGenerator::with_node_id(42)
+        .expect("valid snowflake node id should initialize");
+    let audit = repository.clone();
+
+    let repository_id = repository
+        .next_id()
+        .expect("repository snowflake id should generate");
+    let audit_id = audit.next_id().expect("audit snowflake id should generate");
+
+    assert_ne!(repository_id, audit_id);
+    assert!(repository_id < audit_id);
+    assert_eq!(
+        AgentBusinessIdGenerator::decode_node_id(repository_id),
+        AgentBusinessIdGenerator::decode_node_id(audit_id)
+    );
+}
+
+#[test]
 fn postgres_runtime_insert_sql_binds_ids_explicitly_for_all_business_tables() {
     for (name, sql) in [
         ("ai_agent", SQL_INSERT_AGENT),

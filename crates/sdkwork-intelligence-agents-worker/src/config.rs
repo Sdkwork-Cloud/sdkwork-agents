@@ -13,6 +13,8 @@ pub const ENV_TASK_WORKER_BIND: &str = "SDKWORK_AGENTS_TASK_WORKER_BIND";
 const ENV_MATERIALIZE_INTERVAL_MILLIS: &str = "SDKWORK_AGENTS_TASK_MATERIALIZE_INTERVAL_MILLIS";
 const ENV_CLAIM_INTERVAL_MILLIS: &str = "SDKWORK_AGENTS_TASK_CLAIM_INTERVAL_MILLIS";
 const ENV_RECOVERY_INTERVAL_SECONDS: &str = "SDKWORK_AGENTS_TASK_RECOVERY_INTERVAL_SECONDS";
+const ENV_METRICS_SNAPSHOT_INTERVAL_SECONDS: &str =
+    "SDKWORK_AGENTS_TASK_METRICS_SNAPSHOT_INTERVAL_SECONDS";
 const ENV_RECONCILIATION_INTERVAL_SECONDS: &str =
     "SDKWORK_AGENTS_TASK_RECONCILIATION_INTERVAL_SECONDS";
 const ENV_RECONCILIATION_MIN_AGE_SECONDS: &str =
@@ -34,6 +36,7 @@ pub struct SchedulerWorkerConfig {
     pub materialize_interval: Duration,
     pub claim_interval: Duration,
     pub recovery_interval: Duration,
+    pub metrics_snapshot_interval: Duration,
     pub reconciliation_interval: Duration,
     pub reconciliation_min_age: Duration,
     pub heartbeat_interval: Duration,
@@ -99,6 +102,12 @@ impl SchedulerWorkerConfig {
                 ENV_RECOVERY_INTERVAL_SECONDS,
                 15_u64,
                 1,
+                3_600,
+            )?),
+            metrics_snapshot_interval: Duration::from_secs(env_number(
+                ENV_METRICS_SNAPSHOT_INTERVAL_SECONDS,
+                60_u64,
+                10,
                 3_600,
             )?),
             reconciliation_interval: Duration::from_secs(env_number(

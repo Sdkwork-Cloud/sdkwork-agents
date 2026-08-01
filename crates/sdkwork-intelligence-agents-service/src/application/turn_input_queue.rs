@@ -5,8 +5,8 @@ use super::{
 use crate::agent_turn::AgentTurnMode;
 use crate::agent_turn_input_queue::{
     AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, AgentTurnInputQueueStatus,
-    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueListQuery,
-    TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_DRIVE_REFS,
+    TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest, TurnInputQueueFailureRequest,
+    TurnInputQueueListQuery, TurnInputQueueReorderEntry, MAX_TURN_INPUT_QUEUE_DRIVE_REFS,
 };
 use crate::ports::{
     offset_paginated_result, AgentAuditSink, AgentRepository, PaginatedResult,
@@ -690,19 +690,20 @@ where
             &command.path_agent_id,
             command.owner_scope,
         )?;
-        self.repository.fail_turn_input_queue_entry(
-            command.tenant_id,
-            command.organization_id,
-            &command.session_id,
-            session.owner_user_id,
-            &command.queue_entry_id,
-            command.expected_version,
-            command.fencing_token,
-            &sha256_hash(command.claim_token.as_bytes()),
-            &command.error_code,
-            command.error_detail.as_deref(),
-            &command.requested_at,
-        )
+        self.repository
+            .fail_turn_input_queue_entry(&TurnInputQueueFailureRequest {
+                tenant_id: command.tenant_id,
+                organization_id: command.organization_id,
+                session_id: command.session_id,
+                owner_user_id: session.owner_user_id,
+                queue_entry_id: command.queue_entry_id,
+                expected_version: command.expected_version,
+                expected_fencing_token: command.fencing_token,
+                claim_token_hash: sha256_hash(command.claim_token.as_bytes()),
+                error_code: command.error_code,
+                error_detail: command.error_detail,
+                requested_at: command.requested_at,
+            })
     }
 
     pub fn retry_turn_input_queue_entry(

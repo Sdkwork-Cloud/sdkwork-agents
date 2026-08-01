@@ -148,9 +148,9 @@ claim that the current runtime implements placement.
 
 | Surface | Prefix | Operations | Credential mode | SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 92 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
-| Backend API | `/backend/v3/api` | 48 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
-| Open API | `/agent/v3/api` | 47 | `X-API-Key` | `@sdkwork/agents-sdk` |
+| App API | `/app/v3/api` | 100 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| Backend API | `/backend/v3/api` | 57 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
+| Open API | `/agent/v3/api` | 55 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
 The complete generated inventory is
 [TECH-api-specification.md](../../architecture/tech/TECH-api-specification.md).
@@ -175,8 +175,9 @@ not alternate Agents aggregates or foreign-key targets.
   idempotency conflict detection, optimistic concurrency and fencing.
 - Performance: store-level pagination, bounded page size, indexed tenant scope,
   connection pooling and no in-process full-list slicing.
-- Reliability: outbox publication, retry-safe commands, timeout reconciliation,
-  checkpoints, health and metrics.
+- Reliability: transactional outbox facts, retry-safe commands, timeout
+  reconciliation, checkpoints, health and metrics. External event publication
+  requires the approved platform relay and separate delivery evidence.
 - Extensibility: provider manifests and composition slots extend the product
   without changing the Session aggregate.
 - Maintainability: generated SDKs, machine-readable component specs and

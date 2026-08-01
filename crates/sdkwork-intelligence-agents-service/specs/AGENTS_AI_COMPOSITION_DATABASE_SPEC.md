@@ -132,11 +132,13 @@ provider/runtime scope.
 | `ai_agent_task` | operational state | Session-bound one-time or cron schedule definition |
 | `ai_agent_task_run` | operational state | One logical occurrence with one idempotent Turn identity |
 | `ai_agent_task_run_attempt` | operational state | One leased, fenced infrastructure delivery attempt |
-| `ai_agent_outbox_event` | outbox event, L3 | Reliable aggregate event publication |
+| `ai_agent_outbox_event` | outbox event, L3 | Transactional aggregate facts awaiting an approved external relay |
 
 Outbox rows are written in the same transaction as their aggregate mutation.
-Downstream search, notification and IM behavior consumes published events; the
-publisher never writes downstream tables.
+The current platform does not expose a generic publisher SPI, so external
+delivery and every event-dependent release remain gated. A future relay must
+use the approved platform publisher SPI; this module must not add a local Kafka
+producer, raw HTTP dispatcher, or direct writer into downstream tables.
 
 Task schedules, Runs and Attempts follow
 `specs/AGENTS_TASK_SCHEDULING_SPEC.md`. PostgreSQL atomically materializes each
@@ -274,9 +276,11 @@ and dual writes to consumer stores are forbidden.
 
 ### 8.3 Claim workers
 
-Turn, interaction and outbox workers claim eligible rows with bounded leases,
+Turn and interaction workers claim eligible rows with bounded leases,
 compare-and-set versions and monotonic fencing tokens. PostgreSQL workers use
 indexed eligibility predicates and `FOR UPDATE SKIP LOCKED` where appropriate.
+The outbox table and indexes are relay-ready, but no outbox claim or publisher
+worker is active until the platform provides the approved publisher SPI.
 
 ### 8.4 Materialize and execute scheduled tasks
 
@@ -324,18 +328,17 @@ partial indexes declared by the baseline.
   URLs, raw prompts containing secrets and full tool results are excluded from
   audit/outbox/logging.
 - Retention workers use `retention_until` indexes and preserve legal/audit
-  requirements. Redaction and deletion publish explicit lifecycle events.
+  requirements. Redaction and deletion write explicit lifecycle outbox facts.
 - Every read and mutation rechecks tenant, organization, owner/member and
   aggregate lineage; a public identifier alone is never authorization.
 
 ## 11. Schema Lifecycle
 
 PostgreSQL `0001_agents_baseline.sql` is the greenfield `7.0.0` authority and
-contains the complete 23-table model. The application is pre-launch, so there
-is no supported historical Task schedule. Existing development databases with
-legacy deferred Task rows are rebuilt. The retained `6.1.0` Turn input queue
-migration is development traceability and is not replayed after the
-consolidated baseline.
+contains the complete 23-table model. The application is pre-launch, so every
+development, test, staging and release-candidate database must be created from
+that baseline. Importing or reinterpreting databases created from an earlier
+application contract is unsupported.
 
 After the first production release, changes use ordered forward migrations and
 the expand/contract rules from `MIGRATION_SPEC.md`. Baseline rewrites then stop.
@@ -351,7 +354,12 @@ cargo test -p sdkwork-intelligence-agents-service
 pnpm test:database:postgres-live
 ```
 
-The live PostgreSQL test requires `SDKWORK_DATABASE_TEST_POSTGRES_URL` and creates
-an isolated schema. The contract is complete only when table inventory, DDL,
-repository behavior, API resources and generated SDK vocabulary all agree on
-Project, Session, Turn, Session Item and Interaction.
+The live PostgreSQL suite requires `SDKWORK_DATABASE_URL` plus
+`SDKWORK_DATABASE_ADMIN_HOST`, `SDKWORK_DATABASE_ADMIN_DATABASE`,
+`SDKWORK_DATABASE_ADMIN_USERNAME` and `SDKWORK_DATABASE_ADMIN_PASSWORD`.
+`SDKWORK_DATABASE_ADMIN_PORT` and `SDKWORK_DATABASE_ADMIN_SSL_MODE` are optional.
+The suite provisions and removes an isolated `sdkwork_ai_test_*` database and
+schema. Its evidence includes concurrent Task occurrence materialization, Run
+claiming, Attempt creation, lease recovery and stale-fence rejection. The
+contract is complete only when table inventory, DDL, repository behavior, API
+resources and generated SDK vocabulary agree on the full 23-table model.

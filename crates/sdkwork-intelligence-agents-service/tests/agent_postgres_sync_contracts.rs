@@ -2,12 +2,12 @@
 
 use sdkwork_intelligence_agents_service::{
     SQL_COMPLETE_AGENT_TURN_STATE, SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_SESSIONS,
-    SQL_COUNT_AGENT_SESSION_ITEMS, SQL_COUNT_AGENT_TASKS, SQL_INSERT_AGENT,
-    SQL_INSERT_AGENT_COMPOSITION_SLOT, SQL_INSERT_AGENT_INTERACTION,
-    SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION, SQL_INSERT_AGENT_SESSION_ITEM,
-    SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
-    SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT, SQL_LIST_AGENT_COMPOSITION_SLOTS,
-    SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS,
+    SQL_COUNT_AGENT_SESSION_ITEMS, SQL_INSERT_AGENT, SQL_INSERT_AGENT_COMPOSITION_SLOT,
+    SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_PROVIDER_BINDING, SQL_INSERT_AGENT_SESSION,
+    SQL_INSERT_AGENT_SESSION_ITEM, SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK,
+    SQL_INSERT_AGENT_TURN, SQL_INSERT_AUDIT_EVENT, SQL_LIST_AGENT,
+    SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_INTERACTIONS,
+    SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS,
     SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS, SQL_LIST_AGENT_SESSION_ITEMS,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
@@ -15,9 +15,10 @@ use sdkwork_intelligence_agents_service::{
     SQL_SELECT_AGENT_COMPOSITION_SLOT, SQL_SELECT_AGENT_INTERACTION,
     SQL_SELECT_AGENT_PROVIDER_BINDING, SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK,
-    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_UPDATE_AGENT, SQL_UPDATE_AGENT_COMPOSITION_SLOT,
-    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT_SESSION,
-    SQL_UPDATE_AGENT_SESSION_ITEM, SQL_UPDATE_AGENT_TASK,
+    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT,
+    SQL_UPDATE_AGENT, SQL_UPDATE_AGENT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_INTERACTION,
+    SQL_UPDATE_AGENT_PROVIDER_BINDING, SQL_UPDATE_AGENT_SESSION, SQL_UPDATE_AGENT_SESSION_ITEM,
+    SQL_UPDATE_AGENT_TASK, TASK_SCHEDULER_METRICS_COUNT_CAP,
 };
 
 #[test]
@@ -580,17 +581,47 @@ fn postgres_task_sql_is_tenant_and_organization_scoped() {
         "ai_agent_task list SQL must filter by tenant and organization"
     );
     assert!(
-        SQL_COUNT_AGENT_TASKS.contains("tenant_id = $1 AND organization_id = $2"),
-        "ai_agent_task count SQL must filter by tenant and organization"
-    );
-    assert!(
         SQL_UPDATE_AGENT_TASK.contains(
             "tenant_id = $28 AND organization_id = $29 AND task_id = $30 AND version = $31"
         ),
         "ai_agent_task update SQL must filter by tenant and organization"
     );
     assert!(
-        SQL_LIST_AGENT_TASKS.contains("LIMIT"),
-        "ai_agent_task list SQL must paginate with LIMIT"
+        SQL_LIST_AGENT_TASKS.contains("(updated_at, id) < ($6::timestamptz, $7::bigint)")
+            && SQL_LIST_AGENT_TASKS.contains("ORDER BY updated_at DESC, id DESC LIMIT $8")
+            && !SQL_LIST_AGENT_TASKS.contains("OFFSET"),
+        "ai_agent_task list SQL must use store-level updated_at/id keyset pagination"
     );
+}
+
+#[test]
+fn task_scheduler_metrics_query_is_bounded_indexable_and_sanitized() {
+    let sql = SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT;
+    assert_eq!(TASK_SCHEDULER_METRICS_COUNT_CAP, 100_000);
+    assert!(sql.contains("next_fire_at <= $1::timestamptz"));
+    assert!(sql.contains("available_at <= $1::timestamptz"));
+    assert!(sql.contains("status IN (1, 2) AND lease_expires_at >= $1::timestamptz"));
+    assert!(sql.contains("WHERE status = 6"));
+    assert!(sql.contains("WHERE status IN (0, 1, 3)"));
+    assert_eq!(sql.matches("LIMIT $2").count(), 5);
+    for required_projection in [
+        "materialization_lag_seconds",
+        "eligible_run_oldest_age_seconds",
+        "reconciliation_oldest_age_seconds",
+        "outbox_oldest_age_seconds",
+    ] {
+        assert!(sql.contains(required_projection));
+    }
+    for forbidden_dimension in [
+        "tenant_id",
+        "organization_id",
+        "owner_user_id",
+        "task_id",
+        "run_id",
+        "worker_id",
+        "lease_token",
+        "error_detail",
+    ] {
+        assert!(!sql.contains(forbidden_dimension));
+    }
 }

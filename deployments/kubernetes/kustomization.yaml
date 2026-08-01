@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - agents-configmap.yaml
+  - standalone-gateway-deployment.yaml
+  - standalone-gateway-service.yaml
+  - standalone-gateway-pdb.yaml
+  - standalone-gateway-hpa.yaml
+  - task-worker-deployment.yaml
+  - task-worker-service.yaml
+  - task-worker-pdb.yaml
+  - task-worker-hpa.yaml

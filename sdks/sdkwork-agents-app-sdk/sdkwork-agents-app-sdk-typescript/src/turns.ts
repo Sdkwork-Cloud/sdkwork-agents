@@ -25,11 +25,10 @@ export async function completeAgentTurn(
   const path = appApiPath(
     `/ai/agents/${pathSegment(agentId, 'agentId')}/sessions/${pathSegment(sessionId, 'sessionId')}/turns`,
   );
-  return client.http.post<CompleteAgentTurnResult>(
-    path,
+  return client.http.request<CompleteAgentTurnResult>(`${path}?stream=false`, {
+    method: 'POST',
     body,
-    { stream: false },
-    undefined,
-    'application/json',
-  );
+    contentType: 'application/json',
+    sdkworkUnwrapKind: 'item',
+  });
 }

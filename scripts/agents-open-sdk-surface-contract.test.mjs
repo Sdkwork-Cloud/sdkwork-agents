@@ -49,10 +49,10 @@ const serviceHttp = fs.readFileSync(
   'utf8',
 );
 
-assert.equal(countAgentOpenApiOperations(openOpenApi), 47);
+assert.equal(countAgentOpenApiOperations(openOpenApi), 55);
 assert.equal(openSdkGeneratorManifest.sdk?.sdkType, 'custom');
 assert.equal(openSdkGeneratorManifest.sdk?.name, 'sdkwork-agents-sdk');
-assert.equal((openSdkAi.match(/async \w+\(/g) ?? []).length, 47);
+assert.equal((openSdkAi.match(/async \w+\(/g) ?? []).length, 55);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/agents\/\{agentId\}\/restore:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/code_engines:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/mcp_servers:/);
@@ -104,9 +104,9 @@ assert.doesNotMatch(
 );
 
 const openApiContracts = [
-  ['app', 'agents-app-api.openapi.yaml', 92],
-  ['backend', 'agents-backend-api.openapi.yaml', 48],
-  ['open', 'agents-open-api.openapi.yaml', 47],
+  ['app', 'agents-app-api.openapi.yaml', 100],
+  ['backend', 'agents-backend-api.openapi.yaml', 57],
+  ['open', 'agents-open-api.openapi.yaml', 55],
 ];
 const forbiddenScopeFields = new Set(['tenantId', 'organizationId', 'ownerUserId']);
 const forbiddenScopeParameters = new Set([

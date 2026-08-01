@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use sdkwork_agent_kernel::{KernelResult, PolicySubject};
+use sdkwork_agent_kernel::{KernelErrorKind, KernelResult, PolicySubject};
 use sdkwork_intelligence_agents_service::{
     AgentTaskRunRecord, AgentTaskWorkerHandle, ClaimTaskRunsRequest, MaterializeDueTasksRequest,
-    TaskRunClaim, TaskRunLease, TaskRunReconciliationResult,
+    TaskRunClaim, TaskRunLease, TaskRunReconciliationResult, TaskSchedulerMetricsSnapshot,
 };
 use sdkwork_utils_rust::{format_datetime, now};
 use tokio::sync::watch;
@@ -34,6 +34,13 @@ pub trait TaskWorkerClient: Clone + Send + Sync + 'static {
 
     async fn recover_expired_task_run_leases(&self, now: String, limit: usize)
         -> KernelResult<u64>;
+
+    async fn scheduler_metrics_snapshot(
+        &self,
+        _now: String,
+    ) -> KernelResult<TaskSchedulerMetricsSnapshot> {
+        Ok(TaskSchedulerMetricsSnapshot::default())
+    }
 
     async fn reconcile_task_runs(
         &self,
@@ -83,6 +90,13 @@ impl TaskWorkerClient for AgentTaskWorkerHandle {
         AgentTaskWorkerHandle::recover_expired_task_run_leases(self, now, limit).await
     }
 
+    async fn scheduler_metrics_snapshot(
+        &self,
+        now: String,
+    ) -> KernelResult<TaskSchedulerMetricsSnapshot> {
+        AgentTaskWorkerHandle::scheduler_metrics_snapshot(self, now).await
+    }
+
     async fn reconcile_task_runs(
         &self,
         updated_before: String,
@@ -114,10 +128,12 @@ pub async fn run_scheduler_worker<C>(
     let mut materialize = tokio::time::interval(config.materialize_interval);
     let mut claim = tokio::time::interval(config.claim_interval);
     let mut recover = tokio::time::interval(config.recovery_interval);
+    let mut metrics_snapshot = tokio::time::interval(config.metrics_snapshot_interval);
     let mut reconcile = tokio::time::interval(config.reconciliation_interval);
     materialize.set_missed_tick_behavior(MissedTickBehavior::Skip);
     claim.set_missed_tick_behavior(MissedTickBehavior::Skip);
     recover.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    metrics_snapshot.set_missed_tick_behavior(MissedTickBehavior::Skip);
     reconcile.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut executions = JoinSet::new();
     let mut reconciliations = JoinSet::new();
@@ -148,8 +164,9 @@ pub async fn run_scheduler_worker<C>(
                     current_time(),
                     config.materialize_batch_size,
                 );
+                let started_at = Instant::now();
                 match client.materialize_due_tasks(request).await {
-                    Ok(runs) => metrics.add_materialized(runs.len()),
+                    Ok(runs) => metrics.record_materialization(runs.len(), started_at.elapsed()),
                     Err(error) => {
                         metrics.record_operation_error();
                         tracing::error!(error = %error, "task occurrence materialization failed");
@@ -165,6 +182,15 @@ pub async fn run_scheduler_worker<C>(
                     Err(error) => {
                         metrics.record_operation_error();
                         tracing::error!(error = %error, "expired task run lease recovery failed");
+                    }
+                }
+            }
+            _ = metrics_snapshot.tick() => {
+                match client.scheduler_metrics_snapshot(current_time()).await {
+                    Ok(snapshot) => metrics.record_snapshot(snapshot),
+                    Err(error) => {
+                        metrics.record_operation_error();
+                        tracing::error!(error = %error, "task scheduler metrics snapshot failed");
                     }
                 }
             }
@@ -200,9 +226,10 @@ pub async fn run_scheduler_worker<C>(
                     capacity.min(config.claim_batch_size),
                     config.tenant_max_concurrency,
                 );
+                let started_at = Instant::now();
                 match client.claim_task_runs(request).await {
                     Ok(claims) => {
-                        metrics.add_claimed(claims.len());
+                        metrics.record_claim(claims.len(), started_at.elapsed());
                         for claim in claims.into_iter().take(capacity) {
                             metrics.execution_started();
                             executions.spawn(execute_with_heartbeats(
@@ -278,6 +305,7 @@ async fn execute_with_heartbeats<C>(
     )
     .with_role("ai.agents.use");
     let execution = client.execute_task_run_claim(claim, subject, current_time());
+    let started_at = Instant::now();
     tokio::pin!(execution);
     let mut heartbeat =
         tokio::time::interval_at(Instant::now() + heartbeat_interval, heartbeat_interval);
@@ -292,10 +320,11 @@ async fn execute_with_heartbeats<C>(
                     .heartbeat_task_run(lease.clone(), current_time(), lease_seconds)
                     .await
                 {
-                    Ok(_) => metrics.record_heartbeat(true),
+                    Ok(_) => metrics.record_heartbeat(true, false),
                     Err(error) => {
                         lease_lost = true;
-                        metrics.record_heartbeat(false);
+                        let fencing_rejected = error.kind() == KernelErrorKind::Conflict;
+                        metrics.record_heartbeat(false, fencing_rejected);
                         tracing::error!(
                             error = %error,
                             "task run lease heartbeat failed; stale completion will be fenced"
@@ -305,7 +334,7 @@ async fn execute_with_heartbeats<C>(
             }
         }
     };
-    metrics.execution_finished(&result);
+    metrics.execution_finished(&result, started_at.elapsed());
     if let Err(error) = result {
         tracing::error!(error = %error, "task run execution failed");
     }

@@ -21,6 +21,7 @@ stable reference columns.
 | `ai_agent_runtime_binding` | Agent-level provider configuration |
 | `ai_agent_composition_slot` | Agent references to sibling-owned capabilities |
 | `ai_agent_audit_event` | Immutable sanitized aggregate audit facts |
+| `ai_agent_workspace` | Owner-scoped project container with one active default |
 | `ai_agent_project` | Reusable orchestration project and access policy |
 | `ai_agent_project_composition_slot` | Project references to sibling-owned capabilities |
 | `ai_agent_session` | Single durable execution session authority |
@@ -38,7 +39,7 @@ stable reference columns.
 | `ai_agent_resource_user_state` | Per-user session/project view preferences |
 | `ai_agent_project_member` | Project collaboration ACL |
 | `ai_agent_share_link` | Hashed, revocable, expiring grant |
-| `ai_agent_outbox_event` | Reliable aggregate event publication |
+| `ai_agent_outbox_event` | Transactional aggregate event facts awaiting an approved relay |
 
 ## Composition References
 
@@ -65,15 +66,23 @@ provider state documents.
 
 Every session-aggregate unique key and foreign key includes tenant and
 organization scope. Application-allocated `BIGINT` primary keys are used.
-Mutating aggregates use optimistic versions. Turn workers, interaction
-claimers, and outbox publishers use bounded attempts, leases, opaque lease
-tokens, expirations, and monotonic fencing tokens.
+Mutating aggregates use optimistic versions. Turn workers and interaction
+claimers use bounded attempts, leases, opaque lease tokens, expirations, and
+monotonic fencing tokens. The outbox schema is relay-ready, but external
+publication is not claimed until the platform publisher SPI is integrated and
+verified.
 
 Task materializers and Run workers use bounded `FOR UPDATE SKIP LOCKED` scans.
 The unique Task generation and scheduled instant prevents duplicate logical
 occurrences. Raw Run lease tokens are returned once and only their SHA-256
 hashes are persisted. A Run references one canonical Session and one
 idempotent Turn; delivery retries never synthesize a Session or a second Turn.
+
+Production PostgreSQL adapters allocate one process-level Snowflake node lease
+through `sdkwork-database`; repository and audit writers share the same
+generator sequence. Kubernetes supplies Pod UID as `SDKWORK_NODE_INSTANCE_ID`,
+and readiness fails when the lease becomes unhealthy. Fixed production node IDs
+are forbidden.
 
 PostgreSQL list paths use tenant-leading indexes with stable `id` tie-breakers.
 Retention scans use partial indexes. There are no IM delivery/read columns in

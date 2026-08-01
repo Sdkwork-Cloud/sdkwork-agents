@@ -1,6 +1,9 @@
 # Operator Guide
 
-Deployment and runtime validation for SDKWork Agents.
+Deployment and runtime validation for SDKWork Agents. The public gateway and
+Task Worker are separate processes built from the same release source. They
+scale, probe, expose metrics, drain and roll back independently; PostgreSQL is
+the sole scheduling correctness authority shared by both.
 
 ## Pre-flight
 
@@ -13,6 +16,11 @@ pnpm db:validate
 ```
 
 These gates cover API and SDK standards, operation semantics, route collision checks, pagination, SDK import boundaries, composition boundaries, deploy manifest (`deployments/deploy.yaml`), topology spec, and database framework alignment.
+
+The gateway serves application APIs. The Worker materializes due Tasks, claims
+Runs, executes fenced Attempts, recovers expired leases and reconciles unknown
+outcomes. Do not run scheduler loops inside gateway replicas or use Redis/Kafka
+as the scheduling authority.
 
 **Staging/production cutover:** [runbooks/pre-launch-verification.md](../../runbooks/pre-launch-verification.md)
 
@@ -30,6 +38,14 @@ Authoritative manifest: [deployments/deploy.yaml](../../../deployments/deploy.ya
 
 Topology and env keys: [specs/topology.spec.json](../../../specs/topology.spec.json), `etc/topology/*.env`.
 
+In Kubernetes, deploy `sdkwork-api-agents-standalone-gateway` and
+`sdkwork-intelligence-agents-worker` separately. Both use Pod UID as
+`SDKWORK_NODE_INSTANCE_ID` for the PostgreSQL-backed Snowflake node lease.
+The Worker's `SDKWORK_AGENTS_TASK_WORKER_ID` is a distinct scheduling identity.
+Treat either node-lease acquisition failure as a readiness failure. Use each
+process's own `/healthz`, `/readyz` and `/metrics`, respect the Worker drain
+timeout, and rely on lease expiry plus fencing during restart or rollback.
+
 ## Database
 
 ```powershell
@@ -37,6 +53,11 @@ pnpm db:status
 pnpm db:migrate
 pnpm db:drift:check
 ```
+
+Production migrations run as a release phase before gateway or Worker rollout.
+Never edit Task Run leases or fencing tokens manually. Pause an affected Task
+through its governed API for scoped containment; scale the Worker only for
+scheduler-wide containment.
 
 ## Packaging (CI)
 

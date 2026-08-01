@@ -42,6 +42,11 @@ const PROVIDER_SESSION_DIAGNOSTIC_KEYS: [&str; 6] = [
 pub struct CodeEngineTurnInput {
     pub engine_key: String,
     pub model_id: String,
+    /// Canonical SDKWork Session identity used by kernel-owned lifecycle state.
+    pub session_id: Option<String>,
+    /// Canonical SDKWork Turn identity used for provider event correlation.
+    pub turn_id: Option<String>,
+    /// Opaque continuation identity established by the selected provider.
     pub provider_session_id: Option<String>,
     pub prompt: String,
     pub working_directory: Option<PathBuf>,
@@ -150,8 +155,14 @@ fn build_model_request(
     if !is_blank(Some(input.model_id.as_str())) {
         model_request.model_id = Some(input.model_id.clone());
     }
+    if let Some(session_id) = input.session_id.as_ref() {
+        model_request.session_id = Some(session_id.clone());
+    }
+    if let Some(turn_id) = input.turn_id.as_ref() {
+        model_request.step_id = Some(turn_id.clone());
+    }
     if let Some(provider_session_id) = input.provider_session_id.as_ref() {
-        model_request.session_id = Some(provider_session_id.clone());
+        model_request.provider_session_id = Some(provider_session_id.clone());
     }
     if let Some(timeout_ms) = input.timeout_ms {
         model_request.timeout_ms = Some(timeout_ms);
@@ -821,14 +832,16 @@ mod tests {
     }
 
     #[test]
-    fn build_model_request_preserves_execution_context_and_budget() {
+    fn build_model_request_preserves_session_identities_execution_context_and_budget() {
         let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
         let request = build_model_request(
             &slot,
             &CodeEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-5-codex".to_string(),
-                provider_session_id: Some("session-existing".to_string()),
+                session_id: Some("session-canonical".to_string()),
+                turn_id: Some("turn-canonical".to_string()),
+                provider_session_id: Some("provider-session-existing".to_string()),
                 prompt: "implement the change".to_string(),
                 working_directory: Some(PathBuf::from("C:/workspace/project")),
                 timeout_ms: Some(90_000),
@@ -848,7 +861,12 @@ mod tests {
         .expect("model request");
 
         assert_eq!(request.model_id.as_deref(), Some("gpt-5-codex"));
-        assert_eq!(request.session_id.as_deref(), Some("session-existing"));
+        assert_eq!(request.session_id.as_deref(), Some("session-canonical"));
+        assert_eq!(request.step_id.as_deref(), Some("turn-canonical"));
+        assert_eq!(
+            request.provider_session_id.as_deref(),
+            Some("provider-session-existing")
+        );
         assert_eq!(request.timeout_ms, Some(90_000));
         assert_eq!(
             request.metadata_value(WORKING_DIRECTORY_METADATA_KEY),
@@ -884,6 +902,42 @@ mod tests {
         assert_eq!(
             request.metadata_value(MAX_TOKENS_METADATA_KEY),
             Some("4096")
+        );
+    }
+
+    #[test]
+    fn build_model_request_never_substitutes_session_identities() {
+        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let canonical_only = build_model_request(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                session_id: Some("session-canonical".to_string()),
+                prompt: "canonical only".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("canonical-only model request");
+        assert_eq!(
+            canonical_only.session_id.as_deref(),
+            Some("session-canonical")
+        );
+        assert_eq!(canonical_only.provider_session_id, None);
+
+        let provider_only = build_model_request(
+            &slot,
+            &CodeEngineTurnInput {
+                engine_key: "codex".to_string(),
+                provider_session_id: Some("provider-session".to_string()),
+                prompt: "provider only".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("provider-only model request");
+        assert_eq!(provider_only.session_id, None);
+        assert_eq!(
+            provider_only.provider_session_id.as_deref(),
+            Some("provider-session")
         );
     }
 

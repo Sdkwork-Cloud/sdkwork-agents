@@ -20,7 +20,10 @@ AgentTask -> AgentTaskRun -> AgentTaskRunAttempt
 The Session aggregate also owns one current runtime binding, resumable
 checkpoint references, typed Drive relations, durable Turn input queues,
 Task/Run/Attempt scheduling state, retry/lease/fencing state, audit facts, and
-reliable outbox events. IM conversations, IM delivery state,
+transactional outbox facts. External outbox delivery remains a release gate
+until the platform provides an approved generic publisher SPI; this module does
+not implement a local Kafka producer, raw HTTP relay, or downstream table
+writer. IM conversations, IM delivery state,
 runtime-location details, provider catalogs, capability content, and Drive bytes
 remain owned by their respective modules.
 
@@ -60,9 +63,20 @@ pnpm db:drift:check
 pnpm test:database:postgres-live
 ```
 
-The live PostgreSQL test requires `SDKWORK_DATABASE_TEST_POSTGRES_URL` with
-permission to create and drop an isolated test schema. Credentials belong in
-operator or CI secret storage and must not be committed.
+The live PostgreSQL suite requires `SDKWORK_DATABASE_URL` and these
+administrative provisioning values:
+
+- `SDKWORK_DATABASE_ADMIN_HOST`
+- `SDKWORK_DATABASE_ADMIN_DATABASE`
+- `SDKWORK_DATABASE_ADMIN_USERNAME`
+- `SDKWORK_DATABASE_ADMIN_PASSWORD`
+
+`SDKWORK_DATABASE_ADMIN_PORT` and `SDKWORK_DATABASE_ADMIN_SSL_MODE` are
+optional. The suite creates and removes an isolated `sdkwork_ai_test_*`
+database and schema, and verifies Task occurrence materialization, concurrent
+Run claiming, Attempt creation, expired-lease recovery, and stale-fence
+rejection. Credentials belong in operator or CI secret storage and must not be
+committed.
 
 Related authorities:
 

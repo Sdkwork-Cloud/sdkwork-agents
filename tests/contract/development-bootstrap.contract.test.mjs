@@ -47,6 +47,9 @@ test('root dev runner registers the application root and supplies private bootst
   assert.match(runner, /ensurePostgresDevDatabaseReady/);
   assert.match(runner, /ensureRustToolchain/);
   assert.match(runner, /waitForGateway\(timeoutMs = 300_000\)/);
+  assert.match(runner, /waitForTaskWorker\(timeoutMs = 300_000\)/);
+  assert.match(runner, /application\.task-worker/);
+  assert.match(runner, /cargo', \['run', '-p', taskWorkerProcess\.crate\]/);
   assert.doesNotMatch(runner, /applicationIngressProcess\.crate, '--quiet'/);
   assert.match(databaseRunner, /ensureRustToolchain/);
   assert.match(runner, /repoRoot,/);

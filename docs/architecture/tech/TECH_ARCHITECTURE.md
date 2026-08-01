@@ -119,9 +119,9 @@ stays under `generated/server-openapi` and is never hand-edited.
 
 | Surface | Authority | Prefix | Operations | Auth |
 | --- | --- | --- | ---: | --- |
-| App | `sdkwork-agents-app-api` | `/app/v3/api` | 92 | dual token |
-| Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 48 | dual token/operator |
-| Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 47 | API key |
+| App | `sdkwork-agents-app-api` | `/app/v3/api` | 100 | dual token |
+| Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 57 | dual token/operator |
+| Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 55 | API key |
 
 Every operation carries `WebRequestContext`, surface metadata, permission,
 tenant scope and audit metadata. Full inventory:
@@ -216,10 +216,12 @@ Kernel/provider runtime state is not a replacement for the Agents PostgreSQL
 authority. Optional capability services may be mounted or remote without
 changing public resource semantics.
 
-Cloud deployments may deliver transactional outbox notifications through a
-Kafka-compatible bus. Standalone workers may poll PostgreSQL directly. Both
-retain PostgreSQL polling reconciliation; Redis and the broker are optional
-acceleration and never own schedule correctness.
+Standalone and cloud Task workers currently poll PostgreSQL directly. Outbox
+facts are committed with aggregate changes, while external delivery remains
+disabled until a platform-owned publisher SPI supplies reviewed idempotency,
+retry, and observability behavior. Agents does not implement a local Kafka or
+raw HTTP publisher. Future broker or Redis acceleration never owns schedule
+correctness.
 
 ## 9. Architecture Decision Index
 

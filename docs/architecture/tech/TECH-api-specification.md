@@ -4,7 +4,7 @@
 
 - Version: `6.0.0`
 - Status: active
-- Total operations: 187
+- Total operations: 212
 - Domain model: `AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction`
 
 ## 1. Authorities
@@ -14,9 +14,9 @@ deterministic inventory and must be regenerated after an authority change.
 
 | Surface | Prefix | Operations | Authentication | Consumer SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 92 | `Authorization` and `Access-Token` through the global app session | `@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk` |
-| Backend API | `/backend/v3/api` | 48 | `Authorization` and `Access-Token` for operator context | `@sdkwork/agents-backend-sdk` |
-| Open API | `/agent/v3/api` | 47 | `X-API-Key` | `@sdkwork/agents-sdk` |
+| App API | `/app/v3/api` | 100 | `Authorization` and `Access-Token` through the global app session | `@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk` |
+| Backend API | `/backend/v3/api` | 57 | `Authorization` and `Access-Token` for operator context | `@sdkwork/agents-backend-sdk` |
+| Open API | `/agent/v3/api` | 55 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
 ## 2. Common Contract
 
@@ -134,15 +134,23 @@ Authority: [agents-app-api.openapi.yaml](../../../crates/sdkwork-intelligence-ag
 | 81 | GET | `/app/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
 | 82 | POST | `/app/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
 | 83 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
-| 84 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
-| 85 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Execute one deferred scheduled task |
-| 86 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
-| 87 | POST | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
-| 88 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
-| 89 | PATCH | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
-| 90 | DELETE | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
-| 91 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog |
-| 92 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
+| 84 | PUT | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
+| 85 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
+| 86 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
+| 87 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
+| 88 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
+| 89 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
+| 90 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
+| 91 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
+| 92 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
+| 93 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
+| 94 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
+| 95 | POST | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
+| 96 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
+| 97 | PATCH | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
+| 98 | DELETE | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 99 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog |
+| 100 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
 
 ### 4.2 Backend API
 
@@ -190,14 +198,23 @@ Authority: [agents-backend-api.openapi.yaml](../../../crates/sdkwork-intelligenc
 | 38 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
 | 39 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
 | 40 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
-| 41 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
-| 42 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Execute one deferred scheduled task |
-| 43 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive` | `agents.sessions.archive` | Archive one agent session |
-| 44 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
-| 45 | POST | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
-| 46 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
-| 47 | PATCH | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
-| 48 | DELETE | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 41 | PUT | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
+| 42 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
+| 43 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
+| 44 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
+| 45 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
+| 46 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
+| 47 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
+| 48 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
+| 49 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
+| 50 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
+| 51 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/reconcile` | `agents.taskRuns.reconcile` | Reconcile an indeterminate task Run to a verified terminal outcome |
+| 52 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive` | `agents.sessions.archive` | Archive one agent session |
+| 53 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
+| 54 | POST | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
+| 55 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
+| 56 | PATCH | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
+| 57 | DELETE | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
 
 ### 4.3 Open API
 
@@ -245,13 +262,21 @@ Authority: [agents-open-api.openapi.yaml](../../../crates/sdkwork-intelligence-a
 | 38 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
 | 39 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
 | 40 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
-| 41 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
-| 42 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Execute one deferred scheduled task |
-| 43 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
-| 44 | POST | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
-| 45 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
-| 46 | PATCH | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
-| 47 | DELETE | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 41 | PUT | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
+| 42 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
+| 43 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
+| 44 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
+| 45 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
+| 46 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
+| 47 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
+| 48 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
+| 49 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
+| 50 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
+| 51 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
+| 52 | POST | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
+| 53 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
+| 54 | PATCH | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
+| 55 | DELETE | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
 
 ## 5. Verification
 

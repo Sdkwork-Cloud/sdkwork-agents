@@ -30,6 +30,18 @@
       "tokenSecret": "SDKWORK_RELEASE_TOKEN"
     },
     {
+      "id": "sdkwork-iam",
+      "repository": "Sdkwork-Cloud/sdkwork-iam",
+      "refInput": "SDKWORK_IAM_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-id",
+      "repository": "Sdkwork-Cloud/sdkwork-id",
+      "refInput": "SDKWORK_ID_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
       "id": "sdkwork-database",
       "repository": "Sdkwork-Cloud/sdkwork-database",
       "refInput": "SDKWORK_DATABASE_REF",
@@ -39,6 +51,18 @@
       "id": "sdkwork-utils",
       "repository": "Sdkwork-Cloud/sdkwork-utils",
       "refInput": "SDKWORK_UTILS_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-prompts",
+      "repository": "Sdkwork-Cloud/sdkwork-prompts",
+      "refInput": "SDKWORK_PROMPTS_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-sandbox",
+      "repository": "Sdkwork-Cloud/sdkwork-sandbox",
+      "refInput": "SDKWORK_SANDBOX_REF",
       "tokenSecret": "SDKWORK_RELEASE_TOKEN"
     },
     {
@@ -94,9 +118,9 @@
     ],
     "package": [
       {
-        "name": "Package Agents server artifact",
+        "name": "Build Agents gateway and task worker artifacts",
         "shell": "pwsh",
-        "run": "cargo build --release -p sdkwork-api-agents-standalone-gateway"
+        "run": "cargo build --locked --release -p sdkwork-api-agents-standalone-gateway -p sdkwork-intelligence-agents-worker"
       }
     ],
     "sign": [

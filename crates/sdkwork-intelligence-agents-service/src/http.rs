@@ -6,8 +6,8 @@ pub use context::AgentRequestContext;
 use context::RequestScope;
 
 use crate::agent_turn_input_queue::{
-    AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, TurnInputQueueListQuery,
-    TurnInputQueueReorderEntry,
+    AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, TurnInputQueueFailureRequest,
+    TurnInputQueueListQuery, TurnInputQueueReorderEntry,
 };
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
@@ -82,18 +82,21 @@ use crate::session_activity::{
     SessionProviderActivityObservation,
 };
 use crate::session_item_cursor::decode_session_item_cursor;
-use crate::task_execution_cursor::{decode_task_run_attempt_cursor, decode_task_run_cursor};
-use crate::task_scheduler::{
-    ClaimTaskRunsRequest, FailTaskRunRequest, MaterializeDueTasksRequest, TaskRunAttemptListQuery,
-    TaskRunClaim, TaskRunLease, TaskRunListQuery, TaskSchedulerRepository, TaskTransitionResult,
+use crate::task_execution_cursor::{
+    decode_task_cursor, decode_task_run_attempt_cursor, decode_task_run_cursor,
 };
-use crate::turn_runtime::{ContractTurnExecutor, TurnExecutor};
+use crate::task_scheduler::{
+    ClaimTaskRunsRequest, FailTaskRunRequest, MaterializeDueTasksRequest, ReconcileTaskRunRequest,
+    TaskRunAttemptListQuery, TaskRunClaim, TaskRunLease, TaskRunListQuery, TaskSchedulerRepository,
+    TaskTransitionResult,
+};
+use crate::turn_runtime::{ContractTurnExecutor, TurnExecutionStreamSink, TurnExecutor};
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
     parse_organization_id, parse_tenant_id, validate_requested_at, validate_standard_id,
 };
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::header::{HeaderName, CONTENT_TYPE};
@@ -112,12 +115,16 @@ use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, OnceLock};
 use time::OffsetDateTime;
-use tokio::sync::Semaphore;
+use tokio::sync::{mpsc, Semaphore};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::StreamExt;
 
 const MAX_PAGE_SIZE: usize = 200;
 const DEFAULT_SERVICE_WORKER_LIMIT: usize = 128;
+const TURN_STREAM_CHANNEL_CAPACITY: usize = 128;
 pub const ENV_TURN_RECONCILIATION_INTERVAL_SECONDS: &str =
     "SDKWORK_AGENTS_TURN_RECONCILIATION_INTERVAL_SECONDS";
 pub const ENV_TURN_STALE_AFTER_SECONDS: &str = "SDKWORK_AGENTS_TURN_STALE_AFTER_SECONDS";
@@ -890,31 +897,9 @@ impl AgentRepository for DynAgentRepository {
 
     fn fail_turn_input_queue_entry(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-        owner_user_id: u64,
-        queue_entry_id: &str,
-        expected_version: u64,
-        expected_fencing_token: u64,
-        claim_token_hash: &str,
-        error_code: &str,
-        error_detail: Option<&str>,
-        requested_at: &str,
+        request: &TurnInputQueueFailureRequest,
     ) -> KernelResult<crate::agent_turn_input_queue::AgentTurnInputQueueEntry> {
-        self.0.fail_turn_input_queue_entry(
-            tenant_id,
-            organization_id,
-            session_id,
-            owner_user_id,
-            queue_entry_id,
-            expected_version,
-            expected_fencing_token,
-            claim_token_hash,
-            error_code,
-            error_detail,
-            requested_at,
-        )
+        self.0.fail_turn_input_queue_entry(request)
     }
 
     fn list_reconcilable_turns(
@@ -1004,10 +989,6 @@ impl AgentRepository for DynAgentRepository {
         query: &crate::ports::TaskListQuery,
     ) -> KernelResult<Vec<crate::domain::AgentTaskRecord>> {
         self.0.list_tasks(query)
-    }
-
-    fn count_tasks(&self, query: &crate::ports::TaskListQuery) -> KernelResult<u64> {
-        self.0.count_tasks(query)
     }
 
     fn insert_interaction(
@@ -1156,23 +1137,9 @@ impl TaskSchedulerRepository for DynAgentRepository {
 
     fn reconcile_task_run(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        run_id: &str,
-        expected_version: u64,
-        terminal_status: crate::AgentTaskRunStatus,
-        error_code: Option<&str>,
-        reconciled_at: &str,
+        request: &ReconcileTaskRunRequest,
     ) -> KernelResult<crate::AgentTaskRunRecord> {
-        self.0.reconcile_task_run(
-            tenant_id,
-            organization_id,
-            run_id,
-            expected_version,
-            terminal_status,
-            error_code,
-            reconciled_at,
-        )
+        self.0.reconcile_task_run(request)
     }
 
     fn list_reconciling_task_runs(
@@ -1397,6 +1364,14 @@ impl AgentTaskWorkerHandle {
         limit: usize,
     ) -> KernelResult<u64> {
         self.run(move |service| service.recover_expired_scheduled_task_run_leases(&now, limit))
+            .await
+    }
+
+    pub async fn scheduler_metrics_snapshot(
+        &self,
+        now: String,
+    ) -> KernelResult<crate::TaskSchedulerMetricsSnapshot> {
+        self.run(move |service| service.scheduled_task_metrics_snapshot(&now))
             .await
     }
 
@@ -3038,7 +3013,7 @@ struct AppListItemFeedbackQueryParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ListTasksQueryParams {
     pub(crate) status: Option<String>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -3046,7 +3021,7 @@ pub(crate) struct ListTasksQueryParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct AppListTasksQueryParams {
     pub(crate) status: Option<String>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -6822,7 +6797,13 @@ async fn app_list_tasks(
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_task_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListTasksRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -6831,11 +6812,10 @@ async fn app_list_tasks(
         }
         .into_command(scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
-        command.query = command.query.for_agent(agent_id).with_pagination(
-            PaginationParams::default()
-                .with_page_size(page_size)
-                .with_page(page),
-        );
+        command.query = command
+            .query
+            .for_agent(agent_id)
+            .with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| service.list_tasks(command)).await?;
         Ok(PageData {
             items: records
@@ -6843,10 +6823,9 @@ async fn app_list_tasks(
                 .iter()
                 .map(AgentTaskRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -7758,14 +7737,14 @@ async fn app_create_turn(
             requested_at: body.requested_at,
             prefer_stream: stream_requested,
         };
-        let turn_result =
-            with_service(&state, move |service| service.execute_turn(command)).await?;
-        turn_execution_http_response(
+        execute_turn_http_response(
+            &state,
             &web_ctx,
-            &turn_result,
+            command,
             stream_requested,
             rich_events_requested,
         )
+        .await
     }
     .await;
     crate::response::finish_api_response(&web_ctx, result)
@@ -9256,14 +9235,14 @@ async fn backend_create_turn(
             requested_at: body.requested_at,
             prefer_stream: stream_requested,
         };
-        let turn_result =
-            with_service(&state, move |service| service.execute_turn(command)).await?;
-        turn_execution_http_response(
+        execute_turn_http_response(
+            &state,
             &web_ctx,
-            &turn_result,
+            command,
             stream_requested,
             rich_events_requested,
         )
+        .await
     }
     .await;
     crate::response::finish_api_response(&web_ctx, result)
@@ -9666,7 +9645,13 @@ async fn backend_list_tasks(
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_task_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListTasksRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -9675,11 +9660,10 @@ async fn backend_list_tasks(
         }
         .into_command(scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
-        command.query = command.query.for_agent(agent_id).with_pagination(
-            PaginationParams::default()
-                .with_page_size(page_size)
-                .with_page(page),
-        );
+        command.query = command
+            .query
+            .for_agent(agent_id)
+            .with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| service.list_tasks(command)).await?;
         Ok(PageData {
             items: records
@@ -9687,10 +9671,9 @@ async fn backend_list_tasks(
                 .iter()
                 .map(AgentTaskRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -10705,6 +10688,227 @@ fn normalized_cursor_page_size(page_size: Option<usize>) -> Result<usize, ApiPro
     Ok(page_size)
 }
 
+async fn execute_turn_http_response(
+    state: &AgentHttpState,
+    ctx: &sdkwork_web_core::WebRequestContext,
+    command: CreateTurnCommand,
+    stream_requested: bool,
+    rich_events_requested: bool,
+) -> Result<Response, ApiProblem> {
+    if !stream_requested {
+        let result = with_service(state, move |service| service.execute_turn(command)).await?;
+        return turn_execution_http_response(ctx, &result, false, rich_events_requested);
+    }
+
+    streaming_turn_execution_http_response(state, ctx, command, rich_events_requested).await
+}
+
+#[derive(Debug)]
+enum TurnHttpStreamSignal {
+    Chunk(String),
+    Failed(ApiProblem),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TurnHttpStreamIdentity {
+    session_id: String,
+    turn_id: String,
+}
+
+struct HttpTurnExecutionStreamSink {
+    sender: mpsc::Sender<TurnHttpStreamSignal>,
+    rich_events_requested: bool,
+    identity: OnceLock<TurnHttpStreamIdentity>,
+    delta_index: AtomicUsize,
+    event_sequence: AtomicUsize,
+    closed: AtomicBool,
+}
+
+impl HttpTurnExecutionStreamSink {
+    fn new(sender: mpsc::Sender<TurnHttpStreamSignal>, rich_events_requested: bool) -> Self {
+        Self {
+            sender,
+            rich_events_requested,
+            identity: OnceLock::new(),
+            delta_index: AtomicUsize::new(0),
+            event_sequence: AtomicUsize::new(0),
+            closed: AtomicBool::new(false),
+        }
+    }
+
+    fn send_chunk(&self, chunk: Result<String, ApiProblem>) {
+        match chunk {
+            Ok(chunk) => {
+                if self.closed.load(Ordering::Acquire) {
+                    return;
+                }
+                if self
+                    .sender
+                    .blocking_send(TurnHttpStreamSignal::Chunk(chunk))
+                    .is_err()
+                {
+                    self.closed.store(true, Ordering::Release);
+                }
+            }
+            Err(problem) => self.fail(problem),
+        }
+    }
+
+    fn fail(&self, problem: ApiProblem) {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let _ = self
+            .sender
+            .blocking_send(TurnHttpStreamSignal::Failed(problem));
+    }
+}
+
+impl TurnExecutionStreamSink for HttpTurnExecutionStreamSink {
+    fn begin_turn(&self, session_id: &str, turn_id: &str) {
+        let identity = TurnHttpStreamIdentity {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+        };
+        if self
+            .identity
+            .set(TurnHttpStreamIdentity {
+                session_id: identity.session_id.clone(),
+                turn_id: identity.turn_id.clone(),
+            })
+            .is_err()
+            && self.identity.get() != Some(&identity)
+        {
+            self.fail(ApiProblem::internal(
+                "Turn stream identity changed during execution",
+            ));
+        }
+    }
+
+    fn push_delta(&self, delta: &str) {
+        let index = self.delta_index.fetch_add(1, Ordering::AcqRel);
+        let mut chunk = String::new();
+        let encoded = append_turn_delta_event(&mut chunk, index, delta).map(|_| chunk);
+        self.send_chunk(encoded);
+    }
+
+    fn push_event(&self, event: &sdkwork_agent_kernel::KernelEvent) {
+        if !self.rich_events_requested || self.closed.load(Ordering::Acquire) {
+            return;
+        }
+        let Some(identity) = self.identity.get() else {
+            self.fail(ApiProblem::internal(
+                "Turn stream event arrived before execution identity was established",
+            ));
+            return;
+        };
+        let sequence = self.event_sequence.fetch_add(1, Ordering::AcqRel);
+        let encoded =
+            agent_turn_runtime_event_json(sequence, event, &identity.session_id, &identity.turn_id)
+                .and_then(|payload| {
+                    let mut chunk = String::new();
+                    append_sse_json_event(&mut chunk, "event", &payload, "turn runtime event")?;
+                    Ok(chunk)
+                });
+        self.send_chunk(encoded);
+    }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
+}
+
+async fn streaming_turn_execution_http_response(
+    state: &AgentHttpState,
+    ctx: &sdkwork_web_core::WebRequestContext,
+    command: CreateTurnCommand,
+    rich_events_requested: bool,
+) -> Result<Response, ApiProblem> {
+    let permit = SERVICE_WORKER_LIMIT
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            crate::infrastructure::AgentMetricsRegistry::global().record_service_worker_rejection();
+            ApiProblem::too_many_requests("agents service concurrency limit reached", Some(1))
+        })?;
+    let service = Arc::clone(&state.service);
+    let trace_id = ctx.resolved_trace_id();
+    let (sender, mut receiver) = mpsc::channel(TURN_STREAM_CHANNEL_CAPACITY);
+    let transport_sink = Arc::new(HttpTurnExecutionStreamSink::new(
+        sender.clone(),
+        rich_events_requested,
+    ));
+    let execution_sink: Arc<dyn TurnExecutionStreamSink> = transport_sink.clone();
+    let terminal_sender = sender.clone();
+    let completion_trace_id = trace_id.clone();
+    let execution = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let result = service.execute_turn_with_stream_sink(command, execution_sink);
+        transport_sink.close();
+        let signal = match result {
+            Ok(result) => turn_completion_sse_chunk(&completion_trace_id, &result)
+                .map(TurnHttpStreamSignal::Chunk)
+                .unwrap_or_else(TurnHttpStreamSignal::Failed),
+            Err(error) => TurnHttpStreamSignal::Failed(ApiProblem::from_kernel_error(error)),
+        };
+        let _ = terminal_sender.blocking_send(signal);
+    });
+    tokio::spawn(async move {
+        if let Err(error) = execution.await {
+            let _ = sender
+                .send(TurnHttpStreamSignal::Failed(ApiProblem::internal(format!(
+                    "agents service worker failed: {error}"
+                ))))
+                .await;
+        }
+    });
+
+    let first = receiver.recv().await.ok_or_else(|| {
+        ApiProblem::internal("Turn stream closed before the first event or error")
+    })?;
+    let first = match first {
+        TurnHttpStreamSignal::Failed(problem) => return Err(problem),
+        chunk @ TurnHttpStreamSignal::Chunk(_) => chunk,
+    };
+
+    let body_stream = tokio_stream::iter([first])
+        .chain(ReceiverStream::new(receiver))
+        .map(|signal| match signal {
+            TurnHttpStreamSignal::Chunk(chunk) => Ok::<Bytes, std::io::Error>(Bytes::from(chunk)),
+            TurnHttpStreamSignal::Failed(problem) => Err(std::io::Error::other(problem.message)),
+        });
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "text/event-stream")
+        .body(Body::from_stream(body_stream))
+        .map_err(|error| ApiProblem::internal(format!("failed to build SSE response: {error}")))?;
+    if let Ok(value) = HeaderValue::from_str(&trace_id) {
+        response
+            .headers_mut()
+            .insert(HeaderName::from_static("x-sdkwork-trace-id"), value);
+    }
+    Ok(response)
+}
+
+fn turn_completion_sse_chunk(
+    trace_id: &str,
+    result: &crate::application::TurnExecutionResult,
+) -> Result<String, ApiProblem> {
+    let execution =
+        AgentTurnExecutionDto::from_result(result).map_err(ApiProblem::from_kernel_error)?;
+    let envelope = sdkwork_utils_rust::SdkWorkApiResponse::success(
+        ResourceData { item: execution },
+        trace_id.to_string(),
+    );
+    let payload = json!({
+        "eventType": "completion",
+        "response": envelope,
+    });
+    let mut chunk = String::new();
+    append_sse_json_event(&mut chunk, "completion", &payload, "turn completion")?;
+    Ok(chunk)
+}
+
 /// Build the durable turn execution response.
 /// Non-streaming returns `200 OK` with the SDKWork response envelope.
 /// Streaming returns ordered delta events followed by a completion envelope.
@@ -10719,17 +10923,6 @@ fn turn_execution_http_response(
     let trace_id = ctx.resolved_trace_id();
 
     if stream_requested {
-        let envelope = sdkwork_utils_rust::SdkWorkApiResponse::success(
-            ResourceData { item: execution },
-            trace_id.clone(),
-        );
-        let completion_payload = serde_json::to_string(&json!({
-            "eventType": "completion",
-            "response": envelope,
-        }))
-        .map_err(|error| {
-            ApiProblem::internal(format!("failed to encode turn completion: {error}"))
-        })?;
         let mut body = String::new();
         if rich_events_requested {
             append_rich_turn_events(&mut body, result)?;
@@ -10738,10 +10931,7 @@ fn turn_execution_http_response(
                 append_turn_delta_event(&mut body, index, delta)?;
             }
         }
-        body.push_str("event: completion\n");
-        body.push_str("data: ");
-        body.push_str(&completion_payload);
-        body.push_str("\n\n");
+        body.push_str(&turn_completion_sse_chunk(&trace_id, result)?);
         let mut response = Response::builder()
             .status(StatusCode::OK)
             .header(CONTENT_TYPE, "text/event-stream")
@@ -10792,7 +10982,12 @@ fn append_rich_turn_events(
     let mut delta_index = 0usize;
     let mut agent_message_text_by_item = HashMap::new();
     for (event_index, event) in result.stream_events.iter().enumerate() {
-        let payload = agent_turn_runtime_event_json(event_index, event, result)?;
+        let payload = agent_turn_runtime_event_json(
+            event_index,
+            event,
+            &result.session.session_id,
+            &result.turn.turn_id,
+        )?;
         append_sse_json_event(body, "event", &payload, "turn runtime event")?;
         if let Some(expected_delta) =
             kernel_event_agent_message_delta(event, &mut agent_message_text_by_item)
@@ -10876,7 +11071,8 @@ fn kernel_event_agent_message_delta(
 fn agent_turn_runtime_event_json(
     sequence: usize,
     event: &sdkwork_agent_kernel::KernelEvent,
-    result: &crate::application::TurnExecutionResult,
+    session_id: &str,
+    turn_id: &str,
 ) -> Result<Value, ApiProblem> {
     let payload = match event.redaction_classification {
         sdkwork_agent_kernel::KernelEventRedaction::Secret
@@ -10904,8 +11100,8 @@ fn agent_turn_runtime_event_json(
             "occurredAt": event.occurred_at,
             "source": kernel_event_source(event.source),
             "severity": kernel_event_severity(event.severity),
-            "sessionId": result.session.session_id,
-            "turnId": result.turn.turn_id,
+            "sessionId": session_id,
+            "turnId": turn_id,
             "providerSessionId": event.session_id,
             "taskId": event.task_id,
             "runId": event.run_id,

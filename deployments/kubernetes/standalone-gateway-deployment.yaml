@@ -7,6 +7,12 @@ metadata:
     app.kubernetes.io/component: standalone-gateway
 spec:
   replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: sdkwork-agents
@@ -16,8 +22,20 @@ spec:
       labels:
         app.kubernetes.io/name: sdkwork-agents
         app.kubernetes.io/component: standalone-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8095"
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
@@ -35,7 +53,7 @@ spec:
               app.kubernetes.io/component: standalone-gateway
       containers:
         - name: standalone-gateway
-          image: sdkwork-agents:latest
+          image: registry.sdkwork.com/apps/sdkwork-agents:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -45,18 +63,32 @@ spec:
                 name: sdkwork-agents-config
             - secretRef:
                 name: sdkwork-agents-secrets
+          env:
+            - name: SDKWORK_NODE_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 1
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
-            initialDelaySeconds: 5
+            failureThreshold: 3
             periodSeconds: 10
+            timeoutSeconds: 2
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 10
+            failureThreshold: 3
             periodSeconds: 20
+            timeoutSeconds: 2
           resources:
             requests:
               cpu: 250m
@@ -64,3 +96,16 @@ spec:
             limits:
               cpu: "2"
               memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: temporary-files
+              mountPath: /tmp
+      volumes:
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 256Mi

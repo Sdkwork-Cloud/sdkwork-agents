@@ -1289,6 +1289,10 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_task_agent_status
     ON ai_agent_task (
         tenant_id, organization_id, agent_id, status, updated_at DESC, id DESC
     );
+CREATE INDEX IF NOT EXISTS idx_ai_agent_task_agent_owner_list
+    ON ai_agent_task (
+        tenant_id, organization_id, agent_id, owner_user_id, updated_at DESC, id DESC
+    ) INCLUDE (status);
 CREATE INDEX IF NOT EXISTS idx_ai_agent_task_owner_status
     ON ai_agent_task (
         tenant_id, organization_id, owner_user_id, status, updated_at DESC, id DESC

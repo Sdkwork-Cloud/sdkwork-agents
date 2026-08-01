@@ -264,6 +264,54 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.tasks.execute",
     },
     ApiOperation {
+        method: "PUT",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+        tag: "ai",
+        operation_id: "agents.tasks.update",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause",
+        tag: "ai",
+        operation_id: "agents.tasks.pause",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume",
+        tag: "ai",
+        operation_id: "agents.tasks.resume",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs",
+        tag: "ai",
+        operation_id: "agents.taskRuns.list",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}",
+        tag: "ai",
+        operation_id: "agents.taskRuns.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry",
+        tag: "ai",
+        operation_id: "agents.taskRuns.retry",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel",
+        tag: "ai",
+        operation_id: "agents.taskRuns.cancel",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts",
+        tag: "ai",
+        operation_id: "agents.taskRunAttempts.list",
+    },
+    ApiOperation {
         method: "GET",
         path: "/agent/v3/api/ai/agents/{agentId}/composition_slots",
         tag: "ai",
@@ -807,6 +855,54 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.tasks.execute",
     },
     ApiOperation {
+        method: "PUT",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+        tag: "ai",
+        operation_id: "agents.tasks.update",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause",
+        tag: "ai",
+        operation_id: "agents.tasks.pause",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume",
+        tag: "ai",
+        operation_id: "agents.tasks.resume",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs",
+        tag: "ai",
+        operation_id: "agents.taskRuns.list",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}",
+        tag: "ai",
+        operation_id: "agents.taskRuns.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry",
+        tag: "ai",
+        operation_id: "agents.taskRuns.retry",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel",
+        tag: "ai",
+        operation_id: "agents.taskRuns.cancel",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts",
+        tag: "ai",
+        operation_id: "agents.taskRunAttempts.list",
+    },
+    ApiOperation {
         method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/composition_slots",
         tag: "ai",
@@ -1102,6 +1198,60 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute",
         tag: "ai",
         operation_id: "agents.tasks.execute",
+    },
+    ApiOperation {
+        method: "PUT",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}",
+        tag: "ai",
+        operation_id: "agents.tasks.update",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause",
+        tag: "ai",
+        operation_id: "agents.tasks.pause",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume",
+        tag: "ai",
+        operation_id: "agents.tasks.resume",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs",
+        tag: "ai",
+        operation_id: "agents.taskRuns.list",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}",
+        tag: "ai",
+        operation_id: "agents.taskRuns.retrieve",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry",
+        tag: "ai",
+        operation_id: "agents.taskRuns.retry",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel",
+        tag: "ai",
+        operation_id: "agents.taskRuns.cancel",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts",
+        tag: "ai",
+        operation_id: "agents.taskRunAttempts.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/reconcile",
+        tag: "ai",
+        operation_id: "agents.taskRuns.reconcile",
     },
     ApiOperation {
         method: "POST",
@@ -1561,9 +1711,9 @@ mod tests {
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
-        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 47);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 92);
-        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 48);
+        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 55);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 100);
+        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 57);
 
         assert_eq!(
             AGENT_OPEN_API_OPERATIONS.len(),

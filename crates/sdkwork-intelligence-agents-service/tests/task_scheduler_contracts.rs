@@ -4,9 +4,9 @@ use sdkwork_intelligence_agents_service::{
     AgentTaskRunAttemptStatus, AgentTaskRunStatus, AgentTaskScheduleKind, AgentTaskStatus,
     AgentTaskTriggerKind, AgentsService, ClaimTaskRunsRequest, FailTaskRunRequest,
     IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository, ListTaskRunsCommand,
-    MaterializeDueTasksRequest, PauseTaskCommand, ResumeTaskCommand, TaskRunAttemptCursor,
-    TaskRunAttemptListQuery, TaskRunCursor, TaskRunFailureDisposition, TaskRunListQuery,
-    TaskSchedulerRepository,
+    MaterializeDueTasksRequest, PauseTaskCommand, ReconcileTaskRunRequest, ResumeTaskCommand,
+    TaskRunAttemptCursor, TaskRunAttemptListQuery, TaskRunCursor, TaskRunFailureDisposition,
+    TaskRunListQuery, TaskSchedulerRepository,
 };
 
 fn task(task_id: &str, tenant_id: u64, max_concurrent_runs: u16) -> AgentTaskRecord {
@@ -543,26 +543,26 @@ fn cancellation_distinguishes_pending_and_active_run_outcomes() {
     );
 
     assert!(repository
-        .reconcile_task_run(
-            100_001,
-            10,
-            &active.run_id,
-            reconciling.version.saturating_sub(1),
-            AgentTaskRunStatus::Succeeded,
-            None,
-            "2026-08-01T00:00:06.000Z",
-        )
+        .reconcile_task_run(&ReconcileTaskRunRequest {
+            tenant_id: 100_001,
+            organization_id: 10,
+            run_id: active.run_id.clone(),
+            expected_version: reconciling.version.saturating_sub(1),
+            terminal_status: AgentTaskRunStatus::Succeeded,
+            error_code: None,
+            reconciled_at: "2026-08-01T00:00:06.000Z".to_string(),
+        })
         .is_err());
     let succeeded = repository
-        .reconcile_task_run(
-            100_001,
-            10,
-            &active.run_id,
-            reconciling.version,
-            AgentTaskRunStatus::Succeeded,
-            None,
-            "2026-08-01T00:00:06.000Z",
-        )
+        .reconcile_task_run(&ReconcileTaskRunRequest {
+            tenant_id: 100_001,
+            organization_id: 10,
+            run_id: active.run_id.clone(),
+            expected_version: reconciling.version,
+            terminal_status: AgentTaskRunStatus::Succeeded,
+            error_code: None,
+            reconciled_at: "2026-08-01T00:00:06.000Z".to_string(),
+        })
         .expect("reconcile active Run");
     assert_eq!(succeeded.status, AgentTaskRunStatus::Succeeded);
 }

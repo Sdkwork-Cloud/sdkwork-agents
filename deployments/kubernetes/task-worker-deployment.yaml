@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdkwork-intelligence-agents-worker
+  labels:
+    app.kubernetes.io/name: sdkwork-agents
+    app.kubernetes.io/component: task-worker
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sdkwork-agents
+      app.kubernetes.io/component: task-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sdkwork-agents
+        app.kubernetes.io/component: task-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8096"
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 180
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sdkwork-agents
+              app.kubernetes.io/component: task-worker
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sdkwork-agents
+              app.kubernetes.io/component: task-worker
+      containers:
+        - name: task-worker
+          image: registry.sdkwork.com/apps/sdkwork-agents:0.1.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - sdkwork-intelligence-agents-worker
+          ports:
+            - name: operations
+              containerPort: 8096
+          envFrom:
+            - configMapRef:
+                name: sdkwork-agents-config
+            - secretRef:
+                name: sdkwork-agents-secrets
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: SDKWORK_NODE_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: SDKWORK_AGENTS_TASK_WORKER_ID
+              value: agents-task-worker:$(POD_NAME):$(POD_UID)
+            - name: SDKWORK_AGENTS_TASK_WORKER_BIND
+              value: 0.0.0.0:8096
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: operations
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 1
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: operations
+            failureThreshold: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: operations
+            failureThreshold: 3
+            periodSeconds: 15
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "4"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: temporary-files
+              mountPath: /tmp
+      volumes:
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 256Mi

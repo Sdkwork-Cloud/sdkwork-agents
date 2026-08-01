@@ -37,6 +37,9 @@ const selectedProcesses = topology.listOrchestrationProcesses(selectedProfile.pr
 const applicationIngressProcess = selectedProcesses.find(
   (processDefinition) => processDefinition.id === 'application.public-ingress',
 );
+const taskWorkerProcess = selectedProcesses.find(
+  (processDefinition) => processDefinition.id === 'application.task-worker',
+);
 const pcRendererProcess = selectedProcesses.find(
   (processDefinition) => processDefinition.id === 'pc-renderer',
 );
@@ -45,6 +48,10 @@ const gatewayBind = runtimeEnv.SDKWORK_AGENTS_APPLICATION_PUBLIC_INGRESS_BIND ??
 const applicationPublicHttpUrl = runtimeEnv.SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL ?? 'http://127.0.0.1:8095';
 const gatewayHealthUrl = runtimeEnv.SDKWORK_AGENTS_DEV_GATEWAY_HEALTH_URL
   ?? `${applicationPublicHttpUrl.replace(/\/+$/u, '')}/healthz`;
+const taskWorkerBind = runtimeEnv.SDKWORK_AGENTS_TASK_WORKER_BIND ?? '127.0.0.1:8096';
+const taskWorkerHttpUrl = runtimeEnv.SDKWORK_AGENTS_TASK_WORKER_HTTP_URL
+  ?? 'http://127.0.0.1:8096';
+const taskWorkerReadinessUrl = `${taskWorkerHttpUrl.replace(/\/+$/u, '')}/readyz`;
 const webHost = process.env.SDKWORK_AGENTS_PC_DEV_HOST
   ?? runtimeEnv.SDKWORK_AGENTS_PC_DEV_HOST
   ?? '0.0.0.0';
@@ -56,6 +63,7 @@ const gatewayProfileMarker = runtimeEnv.SDKWORK_AGENTS_DEV_GATEWAY_PROFILE_MARKE
 const requiredSourceFiles = [
   'Cargo.toml',
   'crates/sdkwork-api-agents-standalone-gateway/src/main.rs',
+  'crates/sdkwork-intelligence-agents-worker/src/main.rs',
   'apps/sdkwork-agents-pc/package.json',
   'apps/sdkwork-agents-pc/vite.config.ts',
 ];
@@ -99,8 +107,14 @@ function assertLocallyRunnableProfile() {
     if (!applicationIngressProcess?.crate) {
       throw new Error(`${selectedProfile.profileId} must declare application.public-ingress in topology orchestration`);
     }
+    if (!taskWorkerProcess?.crate) {
+      throw new Error(`${selectedProfile.profileId} must declare application.task-worker in topology orchestration`);
+    }
     if (!healthSurfaces.includes('application.public-ingress')) {
       throw new Error(`${selectedProfile.profileId} must health-check application.public-ingress`);
+    }
+    if (!healthSurfaces.includes('application.task-worker-operations')) {
+      throw new Error(`${selectedProfile.profileId} must health-check application.task-worker-operations`);
     }
     return;
   }
@@ -203,6 +217,15 @@ async function gatewayIsHealthy() {
   }
 }
 
+async function taskWorkerIsReady() {
+  try {
+    const response = await fetch(taskWorkerReadinessUrl, { signal: AbortSignal.timeout(1_000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 function gatewayProfileMatchesRuntime() {
   if (!existsSync(gatewayProfileMarker)) return false;
   try {
@@ -236,6 +259,18 @@ async function waitForGateway(timeoutMs = 300_000) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`Agents gateway did not become healthy within ${timeoutMs}ms: ${gatewayHealthUrl}`);
+}
+
+async function waitForTaskWorker(timeoutMs = 300_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (startupFailure) throw startupFailure;
+    if (await taskWorkerIsReady()) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Agents task worker did not become ready within ${timeoutMs}ms: ${taskWorkerReadinessUrl}`,
+  );
 }
 
 function waitForChildExit(child, timeoutMs = 5_000) {
@@ -289,6 +324,16 @@ try {
   ensureStandaloneRustToolchain();
   await prepareStandaloneDatabase();
   if (selectedProfile.deploymentProfile === 'standalone') {
+    if (await taskWorkerIsReady()) {
+      throw new Error(
+        `An Agents task worker is already listening at ${taskWorkerReadinessUrl}. Stop it before running pnpm dev.`,
+      );
+    }
+    start('cargo', ['run', '-p', taskWorkerProcess.crate], {
+      env: {
+        SDKWORK_AGENTS_TASK_WORKER_BIND: taskWorkerBind,
+      },
+    });
     const healthyGateway = await gatewayIsHealthy();
     if (healthyGateway && gatewayProfileMatchesRuntime()) {
       console.log(`[sdkwork-agents-dev] reusing healthy API gateway: ${gatewayHealthUrl}`);
@@ -308,7 +353,9 @@ try {
       await waitForGateway();
       writeGatewayProfileMarker();
     }
+    await waitForTaskWorker();
     console.log(`[sdkwork-agents-dev] API health: ${gatewayHealthUrl}`);
+    console.log(`[sdkwork-agents-dev] task worker readiness: ${taskWorkerReadinessUrl}`);
   } else {
     console.log(
       `[sdkwork-agents-dev] using deployed cloud APIs: ${runtimeEnv.SDKWORK_AGENTS_APPLICATION_PUBLIC_HTTP_URL}`,

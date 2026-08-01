@@ -65,10 +65,24 @@ function verifyFamily(family) {
     assertFileExists(filePath, `${family.familyDir} required ownership file is missing`);
   }
   for (const target of languageTargets) {
+    const generatedOutputPath = path.join(
+      familyRoot,
+      target.workspace,
+      SDKWORK_SDKGEN_STANDARD.generatedOutput
+    );
     assertDirectoryExists(
-      path.join(familyRoot, target.workspace, SDKWORK_SDKGEN_STANDARD.generatedOutput),
+      generatedOutputPath,
       `${family.familyDir} generated ${target.language} output directory is missing`
     );
+    if (target.language === 'typescript') {
+      const generatedPackage = readJson(path.join(generatedOutputPath, target.manifestFile));
+      const commonPackage = SDKWORK_SDKGEN_STANDARD.typescriptCommonPackage;
+      assert.equal(
+        generatedPackage.dependencies?.[commonPackage.name],
+        commonPackage.version,
+        `${family.familyDir} TypeScript transport common package version`
+      );
+    }
   }
 
   const expectedAuthority = ensureTrailingNewline(

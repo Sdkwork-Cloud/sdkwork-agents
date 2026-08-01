@@ -1,12 +1,19 @@
 use sdkwork_agent_kernel::{KernelError, KernelResult};
 use sdkwork_utils_rust::{
     encoding::{base64url_decode, base64url_encode},
-    sha256_hash,
+    parse_datetime, sha256_hash,
 };
 use serde::{Deserialize, Serialize};
 
 const TASK_EXECUTION_CURSOR_VERSION: u8 = 1;
 const MAX_TASK_EXECUTION_CURSOR_BYTES: usize = 2048;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskCursor {
+    pub updated_at: String,
+    pub task_internal_id: u64,
+    pub scope_fingerprint: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskRunCursor {
@@ -29,6 +36,28 @@ struct TaskExecutionCursorPayload {
     position: String,
     internal_id: String,
     scope_fingerprint: String,
+}
+
+pub(crate) fn encode_task_cursor(cursor: &TaskCursor) -> KernelResult<String> {
+    encode_cursor(TaskExecutionCursorPayload {
+        version: TASK_EXECUTION_CURSOR_VERSION,
+        kind: "task".to_string(),
+        position: cursor.updated_at.clone(),
+        internal_id: cursor.task_internal_id.to_string(),
+        scope_fingerprint: cursor.scope_fingerprint.clone(),
+    })
+}
+
+pub(crate) fn decode_task_cursor(value: &str) -> KernelResult<TaskCursor> {
+    let payload = decode_cursor(value, "task")?;
+    if parse_datetime(&payload.position, None).is_none() {
+        return Err(invalid_cursor());
+    }
+    Ok(TaskCursor {
+        updated_at: payload.position,
+        task_internal_id: parse_positive_u64(&payload.internal_id)?,
+        scope_fingerprint: payload.scope_fingerprint,
+    })
 }
 
 pub(crate) fn encode_task_run_cursor(cursor: &TaskRunCursor) -> KernelResult<String> {
@@ -105,6 +134,29 @@ pub(crate) fn task_run_scope_fingerprint(
     )
 }
 
+pub(crate) fn task_scope_fingerprint(
+    tenant_id: u64,
+    organization_id: u64,
+    agent_id: Option<&str>,
+    owner_user_id: Option<u64>,
+    status: Option<&str>,
+) -> String {
+    sha256_hash(
+        serde_json::json!({
+            "version": TASK_EXECUTION_CURSOR_VERSION,
+            "kind": "task",
+            "tenantId": tenant_id.to_string(),
+            "organizationId": organization_id.to_string(),
+            "agentId": agent_id,
+            "ownerUserId": owner_user_id.map(|value| value.to_string()),
+            "status": status,
+            "sort": ["-updatedAt", "-id"],
+        })
+        .to_string()
+        .as_bytes(),
+    )
+}
+
 pub(crate) fn task_run_attempt_scope_fingerprint(
     tenant_id: u64,
     organization_id: u64,
@@ -166,6 +218,26 @@ fn invalid_cursor() -> KernelError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_cursor_preserves_keyset_and_rejects_other_kinds() {
+        let cursor = TaskCursor {
+            updated_at: "2026-07-31T09:30:00.000Z".to_string(),
+            task_internal_id: 21,
+            scope_fingerprint: task_scope_fingerprint(
+                10,
+                20,
+                Some("agent.cursor"),
+                Some(30),
+                Some("active"),
+            ),
+        };
+        let encoded = encode_task_cursor(&cursor).expect("encode cursor");
+        assert!(!encoded.contains("agent.cursor"));
+        assert_eq!(decode_task_cursor(&encoded).unwrap(), cursor);
+        assert!(decode_task_run_cursor(&encoded).is_err());
+        assert!(decode_task_cursor("21").is_err());
+    }
 
     #[test]
     fn run_cursor_is_versioned_opaque_and_scope_bound() {

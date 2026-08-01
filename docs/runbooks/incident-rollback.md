@@ -22,6 +22,12 @@ tokens while collecting evidence.
   incident is provider-specific.
 - Preserve read access when safe; reject new execution when write integrity is
   uncertain.
+- For a scheduler-wide incident, remove Task Worker readiness and scale the
+  Worker Deployment to zero only after its configured graceful drain window.
+  For scoped incidents, pause the affected Task through the governed API so
+  unrelated tenants and schedules continue safely.
+- Do not delete, rewrite, shorten or transfer Run leases in PostgreSQL. Lease
+  expiry, recovery and monotonic fencing are the only supported ownership path.
 - Do not enable an in-memory store, raw provider transport, alternate Session
   path or relaxed authorization as a workaround.
 
@@ -32,7 +38,11 @@ tokens while collecting evidence.
 2. Redeploy through the same profile and configuration authority.
 3. Verify `GET /healthz`, `GET /livez`, `GET /readyz`, `GET /metrics`, one
    authenticated Session retrieve and one idempotency reconciliation.
-4. Monitor error, Turn latency, database pool and outbox backlog until stable.
+4. Restore the Task Worker independently, verify its `/readyz` and `/metrics`,
+   and allow expired leases to recover into new fenced Attempts.
+5. Monitor eligible Run age, materialization lag, active/recovered leases,
+   fencing rejection, retry/dead-letter, reconciliation age, Turn latency,
+   database pool and outbox backlog until stable.
 
 ## 4. Database Recovery
 
@@ -42,7 +52,8 @@ tokens while collecting evidence.
    compatible with the deployed binary.
 4. Restore a verified PostgreSQL snapshot only under the platform recovery
    procedure, then validate migration history and table registry.
-5. Reconcile idempotent Turn/outbox state before reopening writes.
+5. Reconcile idempotent Turn, Task Run/Attempt and outbox facts before reopening
+   writes. Never repair scheduling state by deleting Runs or bypassing fences.
 
 Cross-module data is never repaired by writing IM, Drive, Skill or other
 dependency tables from Agents.
@@ -55,9 +66,12 @@ node scripts/check-agent-sdk-workspace.mjs
 pnpm db:validate
 pnpm topology:validate
 cargo test -p sdkwork-intelligence-agents-service --features http-axum --test http_axum_contracts
+cargo test -p sdkwork-intelligence-agents-worker
 ```
 
 Repeat the live [smoke test](./smoke-test.md) against the recovered candidate.
+External outbox delivery is not part of recovery evidence until the approved
+platform publisher SPI exists and its relay has passed release verification.
 
 ## 6. Follow-Up
 

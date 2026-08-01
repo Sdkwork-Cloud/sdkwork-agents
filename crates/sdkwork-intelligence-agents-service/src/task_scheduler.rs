@@ -118,9 +118,33 @@ pub struct FailTaskRunRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconcileTaskRunRequest {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub run_id: String,
+    pub expected_version: u64,
+    pub terminal_status: AgentTaskRunStatus,
+    pub error_code: Option<String>,
+    pub reconciled_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskTransitionResult {
     pub task: AgentTaskRecord,
     pub cancelled_pending_run_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TaskSchedulerMetricsSnapshot {
+    pub due_tasks: u64,
+    pub materialization_lag_seconds: u64,
+    pub eligible_runs: u64,
+    pub eligible_run_oldest_age_seconds: u64,
+    pub active_leases: u64,
+    pub reconciling_runs: u64,
+    pub reconciliation_oldest_age_seconds: u64,
+    pub pending_outbox_events: u64,
+    pub outbox_oldest_age_seconds: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,6 +304,10 @@ pub trait TaskSchedulerRepository: Send + Sync {
 
     fn recover_expired_task_run_leases(&self, now: &str, limit: usize) -> KernelResult<u64>;
 
+    fn scheduler_metrics_snapshot(&self, _now: &str) -> KernelResult<TaskSchedulerMetricsSnapshot> {
+        Ok(TaskSchedulerMetricsSnapshot::default())
+    }
+
     /// Pending Runs are cancelled immediately. Claimed or running Runs move to
     /// reconciling until the canonical Turn/provider outcome is known.
     fn request_task_run_cancellation(
@@ -293,13 +321,7 @@ pub trait TaskSchedulerRepository: Send + Sync {
 
     fn reconcile_task_run(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        run_id: &str,
-        expected_version: u64,
-        terminal_status: AgentTaskRunStatus,
-        error_code: Option<&str>,
-        reconciled_at: &str,
+        request: &ReconcileTaskRunRequest,
     ) -> KernelResult<AgentTaskRunRecord>;
 
     fn list_reconciling_task_runs(

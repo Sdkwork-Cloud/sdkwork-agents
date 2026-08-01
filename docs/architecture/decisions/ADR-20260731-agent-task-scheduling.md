@@ -8,10 +8,10 @@
 ## Context
 
 SDKWork Agents needs durable, high-volume cron scheduling across standalone and
-cloud deployments. The current Task record combines definition and execution,
-has no recurrence or distributed ownership, and bypasses the persisted
-Session/Turn aggregate. Process timers, Redis sorted sets, and broker delivery
-alone cannot atomically establish an occurrence and advance its schedule.
+cloud deployments. A schedule definition, logical occurrence, infrastructure
+delivery, and business Turn have different lifecycle and concurrency
+boundaries. Process timers, Redis sorted sets, and broker delivery alone cannot
+atomically establish an occurrence and advance its schedule.
 
 ## Decision
 
@@ -50,11 +50,12 @@ Run so history and billing remain explicit.
 
 ### Delivery Topology
 
-Standalone workers may poll PostgreSQL directly. Cloud deployments may publish
-transactional outbox events to a Kafka-compatible bus and wake workers through
-that bus. Polling reconciliation remains active, so broker loss or duplication
-does not affect correctness. Redis may cache due hints or rate limits but may
-not own occurrences, leases, or completion state.
+The current standalone and cloud runtime polls PostgreSQL directly. Outbox rows
+are committed transactionally, but cross-service publication is enabled only
+after the platform exposes an approved event-publisher SPI with delivery,
+idempotency, and observability evidence. Agents must not add a local Kafka or
+raw HTTP publisher. A future broker or Redis integration may accelerate wakeups
+or rate limits, but it never owns occurrences, leases, or completion state.
 
 ### External Side Effects
 
@@ -95,6 +96,8 @@ different lifecycle, concurrency, retention, retry, and audit boundaries.
 - Capacity planning must account for due-scan, Run backlog, lease churn,
   outbox, and retained history.
 - Provider integrations need idempotency/reconciliation capability metadata.
+- Cross-service outbox relay is a release gate for event-dependent consumers;
+  transactional row creation alone is not delivery evidence.
 
 ## Verification
 
@@ -105,8 +108,8 @@ different lifecycle, concurrency, retention, retry, and audit boundaries.
 - API/SDK, database, security, performance, deployment, and documentation
   validators are release gates.
 
-## Supersedes / Superseded By
+## Related Decisions
 
-This decision replaces the one-shot/deferred interpretation of `AgentTask` in
-the pre-release baseline. It does not supersede the Session aggregate or Kernel
-runtime ownership decisions.
+This decision preserves the Session aggregate and Kernel runtime ownership
+boundaries. Task scheduling composes those authorities rather than creating an
+alternate provider execution path.

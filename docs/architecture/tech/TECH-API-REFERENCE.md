@@ -30,7 +30,7 @@ the app/backend token manager. Do not deep-import generated transport files.
 | Interactions | Approval and user-question pause points | `agents.interactions.*` |
 | Checkpoints | Resume points | `agents.checkpoints.*` |
 | Runtime bindings | Session runtime selection | `agents.sessionRuntimeBindings.*` |
-| Tasks | Scheduled/deferred commands | `agents.tasks.*` |
+| Tasks | Durable one-time/cron definitions, Runs and Attempts | `agents.tasks.*` |
 | Composition slots | Independent capability references | `agents.compositionSlots.*` |
 
 Surface-specific availability is authoritative in the generated inventory.

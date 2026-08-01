@@ -40,7 +40,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "49fcc02fad52000267ef525edb2c73a6f5219a8a464b79bb8d59b148adf29e1a"
+      "sha256": "17760273e9fb108c26f72fe69719bf15dc2b5df687239ab62107778a5e6afc0e"
     },
     {
       "path": "README.md",
@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "ceb292c1053a5b098ee7f5b8e027fd3c03137782532d7a60a591c108820f014e"
+      "sha256": "c7e4e606b25d8c1178a042a3589c54165e8d18eefb5614ec332270d742bcacaa"
     },
     {
       "path": "src/api/base.ts",
@@ -344,11 +344,35 @@
     },
     {
       "path": "src/types/agent-task-record.ts",
-      "sha256": "c3f7d601d817370da3f814f53de6c5b7ef49bc71b9b76f399a8bd6d08a1273a2"
+      "sha256": "7dbae0b44d5dce107cf61f2894367e3706e102eab938ae33decff92c877aa06b"
     },
     {
       "path": "src/types/agent-task-response.ts",
       "sha256": "c053e4c59619f07c47ab44ddc6d5c0350b27fa9ea0a3776e0b6ca2ed56630862"
+    },
+    {
+      "path": "src/types/agent-task-run-attempt-list-response.ts",
+      "sha256": "1ee2c4007cd5b9171985a880496de5deb61144d1f8bae5d6dd7330a2acb10d2a"
+    },
+    {
+      "path": "src/types/agent-task-run-attempt-record.ts",
+      "sha256": "2b1545037ecb5f99282e6601136b2a61683acd521f2435384cdf13651efe288d"
+    },
+    {
+      "path": "src/types/agent-task-run-list-response.ts",
+      "sha256": "48295ce40b8e83c2bffacc45cfb9047079f1eef40bccb079ce8cfa5cf040d109"
+    },
+    {
+      "path": "src/types/agent-task-run-record.ts",
+      "sha256": "8af68fc32fc019e94535b3184d8e2434fa0d9a56adeb3ea1ad4ad2120cdfdf67"
+    },
+    {
+      "path": "src/types/agent-task-run-response.ts",
+      "sha256": "75eb9b5f19fc4fb3efa0eb1472e36d69a3f1c8aadcdf1f64c2c0581e59307fcb"
+    },
+    {
+      "path": "src/types/agent-task-state-change-request.ts",
+      "sha256": "38c5b471a886d785ad6de23da43cde89bbad6b805482e8b69176639c0a7f74c0"
     },
     {
       "path": "src/types/agent-turn-execution-response.ts",
@@ -445,6 +469,10 @@
     {
       "path": "src/types/cancel-agent-task-request.ts",
       "sha256": "d2124fe27baf80624d8e2748a17799045f5296678f9169f4ca848f72b81a20b2"
+    },
+    {
+      "path": "src/types/cancel-agent-task-run-request.ts",
+      "sha256": "81a33a10a68f416af96cbb37dfb3f379f9a5620103724258c561f095febf9296"
     },
     {
       "path": "src/types/cancel-agent-turn-request.ts",
@@ -548,7 +576,7 @@
     },
     {
       "path": "src/types/create-agent-task-request.ts",
-      "sha256": "8839195d2be7c0d7402bdfa227950718ddf8b4aa16ea06a5b7cd90e7bc0158d6"
+      "sha256": "c827f4eab5e33713d271dd9ec6885dec4a3e50c0ee7ca79bd6abc09fa5765aee"
     },
     {
       "path": "src/types/create-agent-turn-input-queue-entry-request.ts",
@@ -567,6 +595,10 @@
       "sha256": "5b6722f4a9dfc48088b9532c4f1749cd9ca52b52602e094ee6431eb2db8e8c91"
     },
     {
+      "path": "src/types/execute-agent-task-request.ts",
+      "sha256": "585d75bf88ab2482eee360bb5efae428ce4924a88e42bcb439fad039ce7a2add"
+    },
+    {
       "path": "src/types/fail-agent-turn-input-queue-entry-request.ts",
       "sha256": "55b6e702114267c50dc02c6dd8f5e6a530cc87d4020ef2abcde84641e0e1b757"
     },
@@ -580,7 +612,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "f8b18a1687b873b616e77ea506fc68eeb24bc5fae527d1a0936fd87c59d74f45"
+      "sha256": "6205414f22807a71237566883742c53388c9d986131652688f8f06c8fcd3f9cb"
     },
     {
       "path": "src/types/int64-string.ts",
@@ -627,12 +659,20 @@
       "sha256": "d30d5da8078a406600a856a0fbe03b7db6bfce31e969214dbdf73f3d0275e389"
     },
     {
+      "path": "src/types/replace-agent-task-request.ts",
+      "sha256": "09fc5110e909d2e4b492a8368fd2db3d01a4e774816bf867f617356a7e688384"
+    },
+    {
       "path": "src/types/restore-agent-request.ts",
       "sha256": "eb2b3273bc50cc8ad3e7608c0024d771d7c0a420c448d4972ea44efc28c56e26"
     },
     {
       "path": "src/types/restore-agent-session-checkpoint-request.ts",
       "sha256": "842827a99c25dddb41ca6bbfa4f3b240cf5bc5dbe67b0dae3d3d885c1c9d9f8e"
+    },
+    {
+      "path": "src/types/retry-agent-task-run-request.ts",
+      "sha256": "d0dfe188f33a79f8d6871d8e96309d897f519a9f6687228ce6fc1abd4bc20183"
     },
     {
       "path": "src/types/retry-agent-turn-input-queue-entry-request.ts",

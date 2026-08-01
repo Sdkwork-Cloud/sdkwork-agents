@@ -864,9 +864,10 @@ class AiApi {
   }
 
   /// List scheduled tasks for one managed agent
-  Future<AgentTaskListResponse?> agentsTasksList(String agentId, [int? page, int? pageSize]) async {
+  Future<AgentTaskListResponse?> agentsTasksList(String agentId, [String? status, String? cursor, int? pageSize]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('status', status, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks'), query));
@@ -895,6 +896,36 @@ class AiApi {
     })();
   }
 
+  /// Replace one scheduled task definition and execution policy
+  Future<AgentTaskResponse?> agentsTasksUpdate(String agentId, String taskId, ReplaceAgentTaskRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.put(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskResponse.fromJson(map);
+    })();
+  }
+
+  /// Pause future materialization for one scheduled task
+  Future<AgentTaskResponse?> agentsTasksPause(String agentId, String taskId, AgentTaskStateChangeRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/pause'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskResponse.fromJson(map);
+    })();
+  }
+
+  /// Resume future materialization for one paused scheduled task
+  Future<AgentTaskResponse?> agentsTasksResume(String agentId, String taskId, AgentTaskStateChangeRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/resume'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskResponse.fromJson(map);
+    })();
+  }
+
   /// Cancel one scheduled task
   Future<AgentTaskResponse?> agentsTasksCancel(String agentId, String taskId, CancelAgentTaskRequest body) async {
     final payload = body.toJson();
@@ -905,13 +936,70 @@ class AiApi {
     })();
   }
 
-  /// Execute one deferred scheduled task
-  Future<AgentTaskResponse?> agentsTasksExecute(String agentId, String taskId, CancelAgentTaskRequest body) async {
+  /// Materialize one idempotent manual Run for an active scheduled task
+  Future<AgentTaskRunResponse?> agentsTasksExecute(String agentId, String taskId, ExecuteAgentTaskRequest body) async {
     final payload = body.toJson();
     final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/execute'), body: payload, contentType: 'application/json');
     return (() {
       final map = sdkworkResponseAsMap(response);
-      return map == null ? null : AgentTaskResponse.fromJson(map);
+      return map == null ? null : AgentTaskRunResponse.fromJson(map);
+    })();
+  }
+
+  /// List Runs for one scheduled task using opaque keyset pagination
+  Future<AgentTaskRunListResponse?> agentsTaskRunsList(String agentId, String taskId, [String? status, String? triggerKind, String? cursor, int? pageSize]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('status', status, 'form', true, false, null),
+      QueryParameterSpec('trigger_kind', triggerKind, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/runs'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskRunListResponse.fromJson(map);
+    })();
+  }
+
+  /// Retrieve one scheduled task Run
+  Future<AgentTaskRunResponse?> agentsTaskRunsRetrieve(String agentId, String taskId, String runId) async {
+    final response = await _client.get(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/runs/${serializePathParameter(runId, const PathParameterSpec('runId', 'simple', false))}'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskRunResponse.fromJson(map);
+    })();
+  }
+
+  /// Create an idempotent business retry Run from a terminal Run
+  Future<AgentTaskRunResponse?> agentsTaskRunsRetry(String agentId, String taskId, String runId, RetryAgentTaskRunRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/runs/${serializePathParameter(runId, const PathParameterSpec('runId', 'simple', false))}/retry'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskRunResponse.fromJson(map);
+    })();
+  }
+
+  /// Cancel a pending Run or request cancellation and reconciliation for an active Run
+  Future<AgentTaskRunResponse?> agentsTaskRunsCancel(String agentId, String taskId, String runId, CancelAgentTaskRunRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/runs/${serializePathParameter(runId, const PathParameterSpec('runId', 'simple', false))}/cancel'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskRunResponse.fromJson(map);
+    })();
+  }
+
+  /// List execution Attempts for one scheduled task Run
+  Future<AgentTaskRunAttemptListResponse?> agentsTaskRunAttemptsList(String agentId, String taskId, String runId, [String? cursor, int? pageSize]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
+      QueryParameterSpec('page_size', pageSize, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/tasks/${serializePathParameter(taskId, const PathParameterSpec('taskId', 'simple', false))}/runs/${serializePathParameter(runId, const PathParameterSpec('runId', 'simple', false))}/attempts'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentTaskRunAttemptListResponse.fromJson(map);
     })();
   }
 

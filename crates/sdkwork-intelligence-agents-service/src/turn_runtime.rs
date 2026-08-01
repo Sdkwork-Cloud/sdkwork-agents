@@ -9,12 +9,14 @@ use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
 use sdkwork_agent_kernel::{
     KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
+    ModelStreamChunk, ModelStreamSink,
 };
 use sdkwork_agents_runtime_facade::{
     bootstrap_code_engine, execute_code_engine_turn, execute_code_engine_turn_with_stream,
-    CodeEngineTurnInput,
+    execute_code_engine_turn_with_stream_sink, CodeEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::Semaphore;
@@ -48,6 +50,8 @@ static PROVIDER_WORKER_LIMIT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
 /// Input for one durable turn execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnExecutionInput {
+    /// Canonical SDKWork Turn identity established before provider execution.
+    pub turn_id: String,
     pub agent_display_name: String,
     pub welcome_message: Option<String>,
     pub session: AgentSessionRecord,
@@ -80,6 +84,21 @@ pub struct TurnExecutionOutput {
     pub stream_events: Vec<KernelEvent>,
 }
 
+/// Provider-neutral observer for one Turn's live output.
+///
+/// Implementations must remain synchronous because provider SDK callbacks are
+/// synchronous. A closed consumer must not fail or cancel durable Turn
+/// execution; persistence remains authoritative even after an HTTP disconnect.
+pub trait TurnExecutionStreamSink: Send + Sync {
+    fn begin_turn(&self, _session_id: &str, _turn_id: &str) {}
+
+    fn push_delta(&self, delta: &str);
+
+    fn push_event(&self, event: &KernelEvent);
+
+    fn close(&self) {}
+}
+
 /// Pluggable turn execution strategy (Open/Closed: swap at service bootstrap).
 pub trait TurnExecutor: Send + Sync {
     fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput;
@@ -91,6 +110,16 @@ pub trait TurnExecutor: Send + Sync {
     ) -> TurnExecutionOutput {
         let _ = prefer_stream;
         self.complete(input)
+    }
+
+    fn complete_with_stream_sink(
+        &self,
+        input: &TurnExecutionInput,
+        sink: Arc<dyn TurnExecutionStreamSink>,
+    ) -> TurnExecutionOutput {
+        let output = self.complete_with_stream_preference(input, true);
+        replay_turn_execution_stream(&output, sink.as_ref());
+        output
     }
 }
 
@@ -126,6 +155,26 @@ pub fn complete_with_timeout(
     completer.complete_with_stream_preference(input, prefer_stream)
 }
 
+/// Run streaming Turn inference with the same worker bound and timeout as the
+/// buffered path while forwarding provider output as it arrives.
+pub fn complete_with_timeout_and_sink(
+    completer: Arc<dyn TurnExecutor>,
+    input: &TurnExecutionInput,
+    sink: Arc<dyn TurnExecutionStreamSink>,
+    timeout: Duration,
+) -> TurnExecutionOutput {
+    #[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return run_with_bounded_timeout_and_sink(&handle, completer, input, sink, timeout);
+        }
+        tracing::warn!(
+            "no tokio runtime available; running streamed turn inference inline without timeout isolation"
+        );
+    }
+    completer.complete_with_stream_sink(input, sink)
+}
+
 #[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
 fn run_with_bounded_timeout(
     handle: &tokio::runtime::Handle,
@@ -139,17 +188,7 @@ fn run_with_bounded_timeout(
         Err(_) => {
             crate::infrastructure::AgentMetricsRegistry::global()
                 .record_provider_worker_rejection();
-            return TurnExecutionOutput {
-                content: "provider concurrency limit reached".to_string(),
-                model_id: input.model_id.clone(),
-                provider_id: input.provider_id.clone(),
-                provider_session_id: input.provider_session_id.clone(),
-                input_tokens: 0,
-                output_tokens: 0,
-                runtime_mode: RUNTIME_MODE_CAPACITY_ERROR,
-                stream_deltas: Vec::new(),
-                stream_events: Vec::new(),
-            };
+            return capacity_error(input);
         }
     };
     let input_owned = input.clone();
@@ -163,6 +202,42 @@ fn run_with_bounded_timeout(
         Ok(Ok(output)) => output,
         Ok(Err(_join_error)) => inference_error("turn inference task failed"),
         Err(_elapsed) => inference_error("turn inference timed out"),
+    }
+}
+
+#[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
+fn run_with_bounded_timeout_and_sink(
+    handle: &tokio::runtime::Handle,
+    completer: Arc<dyn TurnExecutor>,
+    input: &TurnExecutionInput,
+    sink: Arc<dyn TurnExecutionStreamSink>,
+    timeout: Duration,
+) -> TurnExecutionOutput {
+    let permit = match PROVIDER_WORKER_LIMIT.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            crate::infrastructure::AgentMetricsRegistry::global()
+                .record_provider_worker_rejection();
+            sink.close();
+            return capacity_error(input);
+        }
+    };
+    let input_owned = input.clone();
+    let worker_sink = Arc::clone(&sink);
+    let join_handle = handle.spawn_blocking(move || {
+        let _permit = permit;
+        completer.complete_with_stream_sink(&input_owned, worker_sink)
+    });
+    match handle.block_on(tokio::time::timeout(timeout, join_handle)) {
+        Ok(Ok(output)) => output,
+        Ok(Err(_join_error)) => {
+            sink.close();
+            inference_error("turn inference task failed")
+        }
+        Err(_elapsed) => {
+            sink.close();
+            inference_error("turn inference timed out")
+        }
     }
 }
 
@@ -226,7 +301,7 @@ pub struct RuntimeFacadeTurnExecutor;
 
 impl TurnExecutor for RuntimeFacadeTurnExecutor {
     fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
-        self.complete_with_stream_preference(input, false)
+        execute_runtime_facade_turn(input, false, None)
     }
 
     fn complete_with_stream_preference(
@@ -234,62 +309,99 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
         input: &TurnExecutionInput,
         prefer_stream: bool,
     ) -> TurnExecutionOutput {
-        if !input.provider_has_model_chat {
-            return execute_agent_turn(input);
-        }
+        execute_runtime_facade_turn(input, prefer_stream, None)
+    }
 
-        let binding_id = input
-            .binding_id
-            .as_deref()
-            .filter(|value| !is_blank(Some(*value)))
-            .unwrap_or("");
-        let Some(engine_key) = engine_key_for_binding_id(binding_id) else {
-            return inference_error(
-                "active provider binding is not mapped to a canonical code engine",
-            );
-        };
+    fn complete_with_stream_sink(
+        &self,
+        input: &TurnExecutionInput,
+        sink: Arc<dyn TurnExecutionStreamSink>,
+    ) -> TurnExecutionOutput {
+        execute_runtime_facade_turn(input, true, Some(sink))
+    }
+}
 
-        let Ok(slot) = bootstrap_code_engine(engine_key) else {
-            return inference_error(format!("code engine bootstrap failed for {engine_key}"));
-        };
+struct RuntimeFacadeModelStreamSink {
+    sink: Arc<dyn TurnExecutionStreamSink>,
+}
 
-        let model_id = resolve_turn_model_id(input, &slot);
-        let prompt = build_managed_chat_prompt(input);
-        let turn_input = CodeEngineTurnInput {
-            engine_key: engine_key.to_string(),
-            model_id: model_id.clone(),
-            provider_session_id: input.provider_session_id.clone(),
-            prompt,
-            access_mode_id: input.access_mode_id.clone(),
-            ..Default::default()
-        };
+impl ModelStreamSink for RuntimeFacadeModelStreamSink {
+    fn push_chunk(&mut self, chunk: ModelStreamChunk) -> KernelResult<()> {
+        self.sink.push_delta(&chunk.content);
+        Ok(())
+    }
 
-        let turn_result = if prefer_stream {
-            execute_code_engine_turn_with_stream(&slot, &turn_input)
+    fn push_event(&mut self, event: KernelEvent) -> KernelResult<()> {
+        self.sink.push_event(&event);
+        Ok(())
+    }
+}
+
+fn execute_runtime_facade_turn(
+    input: &TurnExecutionInput,
+    prefer_stream: bool,
+    sink: Option<Arc<dyn TurnExecutionStreamSink>>,
+) -> TurnExecutionOutput {
+    if !input.provider_has_model_chat {
+        return execute_agent_turn(input);
+    }
+
+    let binding_id = input
+        .binding_id
+        .as_deref()
+        .filter(|value| !is_blank(Some(*value)))
+        .unwrap_or("");
+    let Some(engine_key) = engine_key_for_binding_id(binding_id) else {
+        return inference_error("active provider binding is not mapped to a canonical code engine");
+    };
+
+    let Ok(slot) = bootstrap_code_engine(engine_key) else {
+        return inference_error(format!("code engine bootstrap failed for {engine_key}"));
+    };
+
+    let model_id = resolve_turn_model_id(input, &slot);
+    let prompt = build_managed_chat_prompt(input);
+    let turn_input = CodeEngineTurnInput {
+        engine_key: engine_key.to_string(),
+        model_id: model_id.clone(),
+        session_id: Some(input.session.session_id.clone()),
+        turn_id: Some(input.turn_id.clone()),
+        provider_session_id: input.provider_session_id.clone(),
+        prompt,
+        access_mode_id: input.access_mode_id.clone(),
+        ..Default::default()
+    };
+
+    let turn_result = if prefer_stream {
+        if let Some(sink) = sink {
+            let mut facade_sink = RuntimeFacadeModelStreamSink { sink };
+            execute_code_engine_turn_with_stream_sink(&slot, &turn_input, &mut facade_sink)
         } else {
-            execute_code_engine_turn(&slot, &turn_input)
-        };
-
-        match turn_result {
-            Ok(output) => {
-                let content = output.assistant_content.trim().to_string();
-                if content.is_empty() {
-                    return inference_error("code engine returned empty assistant content");
-                }
-                TurnExecutionOutput {
-                    content,
-                    model_id: Some(model_id),
-                    provider_id: input.provider_id.clone(),
-                    provider_session_id: output.provider_session_id,
-                    input_tokens: estimate_tokens(input.user_content.as_str()),
-                    output_tokens: estimate_tokens(output.assistant_content.as_str()),
-                    runtime_mode: RUNTIME_MODE_FACADE,
-                    stream_deltas: output.stream_deltas,
-                    stream_events: output.stream_events,
-                }
-            }
-            Err(error) => inference_error(format!("code engine turn failed: {error}")),
+            execute_code_engine_turn_with_stream(&slot, &turn_input)
         }
+    } else {
+        execute_code_engine_turn(&slot, &turn_input)
+    };
+
+    match turn_result {
+        Ok(output) => {
+            let content = output.assistant_content.trim().to_string();
+            if content.is_empty() {
+                return inference_error("code engine returned empty assistant content");
+            }
+            TurnExecutionOutput {
+                content,
+                model_id: Some(model_id),
+                provider_id: input.provider_id.clone(),
+                provider_session_id: output.provider_session_id,
+                input_tokens: estimate_tokens(input.user_content.as_str()),
+                output_tokens: estimate_tokens(output.assistant_content.as_str()),
+                runtime_mode: RUNTIME_MODE_FACADE,
+                stream_deltas: output.stream_deltas,
+                stream_events: output.stream_events,
+            }
+        }
+        Err(error) => inference_error(format!("code engine turn failed: {error}")),
     }
 }
 
@@ -326,6 +438,58 @@ fn build_managed_chat_prompt(input: &TurnExecutionInput) -> String {
     lines.join("\n")
 }
 
+fn replay_turn_execution_stream(output: &TurnExecutionOutput, sink: &dyn TurnExecutionStreamSink) {
+    let mut delta_index = 0usize;
+    let mut agent_message_text_by_item = HashMap::new();
+    for event in &output.stream_events {
+        sink.push_event(event);
+        if let Some(expected_delta) =
+            buffered_agent_message_delta(event, &mut agent_message_text_by_item)
+        {
+            if let Some(delta) = output
+                .stream_deltas
+                .get(delta_index)
+                .filter(|delta| delta.as_str() == expected_delta)
+            {
+                sink.push_delta(delta);
+                delta_index += 1;
+            }
+        }
+    }
+    for delta in output.stream_deltas.iter().skip(delta_index) {
+        sink.push_delta(delta);
+    }
+}
+
+fn buffered_agent_message_delta(
+    event: &KernelEvent,
+    text_by_item: &mut HashMap<String, String>,
+) -> Option<String> {
+    if !matches!(
+        event.event_type.as_str(),
+        "agent.message.started" | "agent.message.updated" | "agent.message.completed"
+    ) {
+        return None;
+    }
+    let payload = serde_json::from_str::<serde_json::Value>(&event.payload).ok()?;
+    let item = payload.get("item")?;
+    if item.get("type")?.as_str()? != "agent_message" {
+        return None;
+    }
+    let item_id = item.get("id")?.as_str()?.to_string();
+    let current = item.get("text")?.as_str()?.to_string();
+    let previous = text_by_item
+        .insert(item_id, current.clone())
+        .unwrap_or_default();
+    if event.event_type == "agent.message.started"
+        || !current.starts_with(&previous)
+        || current.len() == previous.len()
+    {
+        return None;
+    }
+    Some(current[previous.len()..].to_string())
+}
+
 fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
     TurnExecutionOutput {
         content: message.into(),
@@ -335,6 +499,20 @@ fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
         input_tokens: 0,
         output_tokens: 0,
         runtime_mode: RUNTIME_MODE_INFERENCE_ERROR,
+        stream_deltas: Vec::new(),
+        stream_events: Vec::new(),
+    }
+}
+
+fn capacity_error(input: &TurnExecutionInput) -> TurnExecutionOutput {
+    TurnExecutionOutput {
+        content: "provider concurrency limit reached".to_string(),
+        model_id: input.model_id.clone(),
+        provider_id: input.provider_id.clone(),
+        provider_session_id: input.provider_session_id.clone(),
+        input_tokens: 0,
+        output_tokens: 0,
+        runtime_mode: RUNTIME_MODE_CAPACITY_ERROR,
         stream_deltas: Vec::new(),
         stream_events: Vec::new(),
     }
@@ -367,7 +545,11 @@ fn invoke_kernel_model(
     );
     let model_id = input.model_id.clone();
     let mut request = ModelRequest::new(model_request_id.clone(), build_model_items(input))
-        .for_session(input.session.session_id.clone());
+        .for_session(input.session.session_id.clone())
+        .for_step(input.turn_id.clone());
+    if let Some(provider_session_id) = input.provider_session_id.as_ref() {
+        request = request.for_provider_session(provider_session_id.clone());
+    }
     if let Some(model_id) = model_id.clone() {
         request = request.with_model_id(model_id);
     }
@@ -546,6 +728,7 @@ mod tests {
     #[test]
     fn execute_agent_turn_returns_assistant_content() {
         let output = execute_agent_turn(&TurnExecutionInput {
+            turn_id: "turn.test".to_string(),
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: Some("Welcome".to_string()),
             session: sample_session(),
@@ -567,6 +750,7 @@ mod tests {
     #[test]
     fn execute_agent_turn_marks_provider_bound_runtime_mode() {
         let output = execute_agent_turn(&TurnExecutionInput {
+            turn_id: "turn.test".to_string(),
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: None,
             session: sample_session(),
@@ -601,6 +785,12 @@ mod tests {
         }
 
         fn invoke(&self, request: ModelRequest) -> KernelResult<ModelResponse> {
+            assert_eq!(request.session_id.as_deref(), Some("session.test"));
+            assert_eq!(request.step_id.as_deref(), Some("turn.test"));
+            assert_eq!(
+                request.provider_session_id.as_deref(),
+                Some("provider-session.fake")
+            );
             Ok(ModelResponse::text(
                 request.model_request_id,
                 "provider.model.fake",
@@ -611,9 +801,10 @@ mod tests {
     }
 
     #[test]
-    fn kernel_model_turn_executor_invokes_provider() {
+    fn kernel_model_turn_executor_preserves_session_identities() {
         let completer = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider));
         let output = completer.complete(&TurnExecutionInput {
+            turn_id: "turn.test".to_string(),
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: None,
             session: sample_session(),

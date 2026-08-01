@@ -173,5 +173,6 @@ fn app_database_migrate_only_succeeds_with_postgres_baseline_contract() {
     let baseline = include_str!("../../../database/ddl/baseline/postgres/0001_agents_baseline.sql");
     assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_session"));
     assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_task"));
-    assert!(!baseline.contains("ai_agent_task_run"));
+    assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_task_run"));
+    assert!(baseline.contains("CREATE TABLE IF NOT EXISTS ai_agent_task_run_attempt"));
 }

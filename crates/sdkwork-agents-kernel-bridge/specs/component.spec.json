@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-kernel-bridge",
+    "displayName": "SDKWork Agents Kernel Bridge",
+    "version": "0.1.0",
+    "type": "rust-crate",
+    "root": "crates/sdkwork-agents-kernel-bridge",
+    "domain": "intelligence",
+    "declaredDomain": null,
+    "capability": "agents-kernel-composition",
+    "status": "active",
+    "surfaceNotRequiredReason": "This composition crate exports runtime wiring and does not own an HTTP API surface.",
+    "languages": ["rust"],
+    "generated": false,
+    "private": true,
+    "manifests": ["Cargo.toml"]
+  },
+  "canonicalSpecs": [
+    {
+      "file": "COMPONENT_SPEC.md",
+      "path": "../../../sdkwork-specs/COMPONENT_SPEC.md",
+      "purpose": "Component-local contracts and public port declarations."
+    },
+    {
+      "file": "CODE_STYLE_SPEC.md",
+      "path": "../../../sdkwork-specs/CODE_STYLE_SPEC.md",
+      "purpose": "Authored source structure and public export rules."
+    },
+    {
+      "file": "NAMING_SPEC.md",
+      "path": "../../../sdkwork-specs/NAMING_SPEC.md",
+      "purpose": "Canonical crate and capability naming."
+    },
+    {
+      "file": "RUST_CODE_SPEC.md",
+      "path": "../../../sdkwork-specs/RUST_CODE_SPEC.md",
+      "purpose": "Rust composition crate implementation rules."
+    },
+    {
+      "file": "APP_COMPOSITION_SPEC.md",
+      "path": "../../../sdkwork-specs/APP_COMPOSITION_SPEC.md",
+      "purpose": "Application-owned runtime composition boundaries."
+    },
+    {
+      "file": "WEB_FRAMEWORK_SPEC.md",
+      "path": "../../../sdkwork-specs/WEB_FRAMEWORK_SPEC.md",
+      "purpose": "Framework router and HTTP state composition rules."
+    },
+    {
+      "file": "HEALTH_CHECK_SPEC.md",
+      "path": "../../../sdkwork-specs/HEALTH_CHECK_SPEC.md",
+      "purpose": "Kernel and Agents readiness composition."
+    },
+    {
+      "file": "TEST_SPEC.md",
+      "path": "../../../sdkwork-specs/TEST_SPEC.md",
+      "purpose": "Composition boundary verification."
+    },
+    {
+      "file": "AGENTS_KERNEL_BOUNDARY_SPEC.md",
+      "path": "../../specs/AGENTS_KERNEL_BOUNDARY_SPEC.md",
+      "purpose": "Repository-local Kernel and Agents ownership boundary."
+    }
+  ],
+  "contracts": {
+    "publicExports": [
+      "sdkwork_agents_kernel_bridge::build_agent_http_state",
+      "sdkwork_agents_kernel_bridge::build_agents_served_router",
+      "sdkwork_agents_kernel_bridge::AGENTS_OWNED_CAPABILITIES",
+      "sdkwork_agents_kernel_bridge::KERNEL_OWNED_CAPABILITIES"
+    ],
+    "providedPorts": [
+      {
+        "name": "agentsHttpStateComposition",
+        "export": "sdkwork_agents_kernel_bridge::build_agent_http_state"
+      },
+      {
+        "name": "agentsServedRouterComposition",
+        "export": "sdkwork_agents_kernel_bridge::build_agents_served_router"
+      },
+      {
+        "name": "agentsKernelOwnershipInventory",
+        "export": "sdkwork_agents_kernel_bridge::AGENTS_OWNED_CAPABILITIES"
+      }
+    ],
+    "requiredPorts": [
+      {
+        "name": "kernelAgentServer",
+        "export": "sdkwork_agent_server::app::build_app"
+      },
+      {
+        "name": "agentsDatabaseHost",
+        "export": "sdkwork_agents_database_host::bootstrap_agents_database"
+      },
+      {
+        "name": "agentsHttpService",
+        "export": "sdkwork_intelligence_agents_service::AgentHttpState"
+      },
+      {
+        "name": "agentsCombinedHttpRouter",
+        "export": "sdkwork_routes_agents_http_shared::build_served_combined_router"
+      }
+    ],
+    "runtimeEntrypoints": [
+      "src/lib.rs#build_agents_served_router",
+      "src/agent_http_state.rs#build_agent_http_state"
+    ],
+    "sdkDependencies": [],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": [],
+    "sdkClients": [],
+    "events": [],
+    "configKeys": [],
+    "routeManifest": null,
+    "layerRole": "runtime-composition"
+  },
+  "integration": {
+    "authority": "Composition only: sdkwork-kernel owns provider runtime and execution mechanics, while SDKWork Agents owns managed-agent business state and orchestration.",
+    "dependencyPolicy": "The bridge composes declared Kernel, database-host, Agents service and route ports without duplicating Kernel runtime or domain behavior.",
+    "sdkPolicy": "No generated SDK is consumed because all dependencies are in-process Rust ports.",
+    "languagePolicy": "Rust implementation follows the workspace and canonical Rust standards."
+  },
+  "verification": {
+    "commands": [
+      "cargo check -p sdkwork-agents-kernel-bridge",
+      "cargo test -p sdkwork-agents-kernel-bridge"
+    ]
+  },
+  "metadata": {
+    "managedBy": "manual",
+    "standardVersion": "2026-06-01"
+  }
+}

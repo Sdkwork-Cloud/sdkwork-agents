@@ -15,6 +15,7 @@ canon:
   monitoring: docs/runbooks/monitoring.md
   smokeTest: docs/runbooks/smoke-test.md
   incidentRollback: docs/runbooks/incident-rollback.md
+  operatorGuide: docs/guides/operator/README.md
 domains:
   - id: product
     path: docs/product
@@ -65,6 +66,10 @@ entries:
     title: Agent task scheduling contract
     path: specs/AGENTS_TASK_SCHEDULING_SPEC.md
     domain: architecture
+  - id: agent-task-scheduling-review
+    title: Agent task scheduling production review
+    path: docs/engineering/reviews/REVIEW-20260731-agent-task-scheduling.md
+    domain: architecture
   - id: provider-taxonomy-spec
     title: Agent provider taxonomy
     path: specs/AGENTS_PROVIDER_TAXONOMY_SPEC.md
@@ -89,6 +94,10 @@ entries:
     title: Incident and rollback
     path: docs/runbooks/incident-rollback.md
     domain: runbooks
+  - id: operator-guide
+    title: Operator guide
+    path: docs/guides/operator/README.md
+    domain: guides
   - id: developer-guide
     title: Developer guide
     path: docs/guides/developer/README.md

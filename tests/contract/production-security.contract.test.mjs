@@ -276,7 +276,6 @@ test("agent repository port does not compile incomplete persistence adapters", (
     "update_task",
     "get_task",
     "list_tasks",
-    "count_tasks",
   ]) {
     assert.match(
       source,
@@ -284,6 +283,43 @@ test("agent repository port does not compile incomplete persistence adapters", (
       `AgentRepository.${methodName} must be a required trait method`,
     );
   }
+  assert.doesNotMatch(
+    source,
+    /fn count_tasks\(/,
+    "high-volume Task lists must not reintroduce COUNT plus offset pagination",
+  );
+});
+
+test("task worker is packaged and deployed as a hardened independently scalable process", () => {
+  const dockerfile = readText("deployments/docker/Dockerfile");
+  const deployment = readText("deployments/kubernetes/task-worker-deployment.yaml");
+  const service = readText("deployments/kubernetes/task-worker-service.yaml");
+  const pdb = readText("deployments/kubernetes/task-worker-pdb.yaml");
+  const hpa = readText("deployments/kubernetes/task-worker-hpa.yaml");
+  const topology = readText("specs/topology.spec.json");
+
+  assert.match(dockerfile, /-p sdkwork-intelligence-agents-worker/);
+  assert.match(dockerfile, /COPY sdkwork-kernel \.\/sdkwork-kernel/);
+  assert.match(dockerfile, /COPY sdkwork-web-framework \.\/sdkwork-web-framework/);
+  assert.match(dockerfile, /USER 65532:65532/);
+  assert.match(deployment, /args:\s*\n\s*- sdkwork-intelligence-agents-worker/);
+  assert.match(deployment, /fieldPath: metadata\.name/);
+  assert.match(deployment, /fieldPath: metadata\.uid/);
+  assert.match(deployment, /SDKWORK_AGENTS_TASK_WORKER_ID/);
+  assert.match(deployment, /path: \/readyz/);
+  assert.match(deployment, /path: \/healthz/);
+  assert.match(deployment, /readOnlyRootFilesystem: true/);
+  assert.match(deployment, /allowPrivilegeEscalation: false/);
+  assert.match(deployment, /automountServiceAccountToken: false/);
+  assert.match(service, /type: ClusterIP/);
+  assert.match(pdb, /minAvailable: 1/);
+  assert.match(hpa, /maxReplicas: 100/);
+  assert.match(topology, /"id": "application\.task-worker"/);
+  assert.doesNotMatch(
+    `${deployment}\n${service}\n${pdb}\n${hpa}`,
+    /lease[_-]?token|fencing[_-]?token/i,
+    "deployment metadata must not expose scheduler lease or fencing material",
+  );
 });
 
 test("SQL row adapter ports remain database-dialect neutral", () => {

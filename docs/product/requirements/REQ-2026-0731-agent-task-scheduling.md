@@ -9,12 +9,11 @@
 
 ## Problem
 
-The existing `AgentTask` resource is a deferred one-shot command. It has no
-cron expression, timezone, next occurrence, distributed claim, lease, fencing,
-run history, retry evidence, or recovery model. Execution constructs a
-transient Session and calls a provider directly, bypassing the canonical
-Session/Turn aggregate. It therefore cannot schedule high-volume tenant work
-or provide truthful multi-node delivery guarantees.
+SDKWork Agents must schedule high-volume tenant work without process-local
+timers, duplicate logical occurrences, stale-worker completion, or a parallel
+execution model. Scheduling must preserve the canonical Session/Turn aggregate
+while remaining deterministic across multiple nodes, restarts, timezones, and
+provider outcomes that cannot be confirmed immediately.
 
 ## Goals
 
@@ -115,6 +114,9 @@ or provide truthful multi-node delivery guarantees.
   duplicate occurrences or accept stale completions.
 - Production security, deployment, observability, database, topology, API,
   documentation, and full repository verification gates pass.
+- Transactional outbox persistence is verified independently from external
+  publication. Any release that requires cross-service event delivery remains
+  gated on a platform-owned publisher SPI and its end-to-end delivery evidence.
 
 ## Traceability
 

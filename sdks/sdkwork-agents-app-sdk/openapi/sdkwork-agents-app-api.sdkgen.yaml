@@ -3254,7 +3254,13 @@ paths:
       x-sdkwork-tenant-scope: tenant
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/Page'
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [active, paused, completed, cancelled]
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
@@ -3336,6 +3342,119 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+    put:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Replace one scheduled task definition and execution policy
+      operationId: agents.tasks.update
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_updated
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceAgentTaskRequest'
+      responses:
+        '200':
+          description: Managed agent task replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Pause future materialization for one scheduled task
+      operationId: agents.tasks.pause
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_paused
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTaskStateChangeRequest'
+      responses:
+        '200':
+          description: Managed agent task paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Resume future materialization for one paused scheduled task
+      operationId: agents.tasks.resume
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.tasks
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_resumed
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTaskStateChangeRequest'
+      responses:
+        '200':
+          description: Managed agent task resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel:
     post:
       x-sdkwork-owner: sdkwork-agents
@@ -3380,7 +3499,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Execute one deferred scheduled task
+      summary: Materialize one idempotent manual Run for an active scheduled task
       operationId: agents.tasks.execute
       security:
       - AuthToken: []
@@ -3398,14 +3517,203 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CancelAgentTaskRequest'
+              $ref: '#/components/schemas/ExecuteAgentTaskRequest'
       responses:
         '200':
-          description: Managed agent task executed
+          description: Idempotent manual task Run materialized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentTaskResponse'
+                $ref: '#/components/schemas/AgentTaskRunResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List Runs for one scheduled task using opaque keyset pagination
+      operationId: agents.taskRuns.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.taskRuns
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [pending, claimed, running, succeeded, failed, cancelled, reconciling, dead_letter]
+      - name: trigger_kind
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [scheduled, manual, business_retry]
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Managed agent task Run list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskRunListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Retrieve one scheduled task Run
+      operationId: agents.taskRuns.retrieve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.taskRuns
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/RunIdPath'
+      responses:
+        '200':
+          description: Managed agent task Run response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskRunResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Create an idempotent business retry Run from a terminal Run
+      operationId: agents.taskRuns.retry
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.taskRuns
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_run_created
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/RunIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryAgentTaskRunRequest'
+      responses:
+        '200':
+          description: Business retry task Run materialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskRunResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Cancel a pending Run or request cancellation and reconciliation for an active Run
+      operationId: agents.taskRuns.cancel
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.taskRuns
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.task_run_cancel_requested
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/RunIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAgentTaskRunRequest'
+      responses:
+        '200':
+          description: Task Run cancellation state response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskRunResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List execution Attempts for one scheduled task Run
+      operationId: agents.taskRunAttempts.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.taskRunAttempts
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/TaskIdPath'
+      - $ref: '#/components/parameters/RunIdPath'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Managed agent task Run Attempt list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTaskRunAttemptListResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -3786,6 +4094,15 @@ components:
         minimum: 1
         maximum: 200
         default: 20
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque, versioned continuation token returned in data.pageInfo.nextCursor.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 2048
     StreamQuery:
       name: stream
       in: query
@@ -3854,6 +4171,15 @@ components:
         minLength: 1
         maxLength: 128
         pattern: ^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
+    RunIdPath:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^run\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
     SessionIdPath:
       name: sessionId
       in: path
@@ -5583,27 +5909,130 @@ components:
       required:
       - taskId
       - agentId
+      - tenantId
+      - organizationId
+      - ownerUserId
+      - sessionId
       - title
       - prompt
+      - scheduleKind
+      - cronExpression
+      - timezone
+      - scheduledAt
+      - startsAt
+      - endsAt
+      - nextFireAt
+      - misfirePolicy
+      - overlapPolicy
+      - maxConcurrentRuns
+      - maxCatchUpRuns
+      - maxAttempts
+      - retryInitialDelaySeconds
+      - retryMaxDelaySeconds
+      - timeoutSeconds
+      - priority
       - status
+      - generation
+      - externalRef
+      - metadataJson
       - version
       - createdAt
       - updatedAt
+      - completedAt
+      - pausedAt
+      - cancelledAt
       properties:
         taskId:
           type: string
+          pattern: '^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
         agentId:
           type: string
-        title:
+          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        tenantId:
+          $ref: '#/components/schemas/Int64String'
+        organizationId:
+          $ref: '#/components/schemas/Int64String'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        sessionId:
           type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        title:
+          type: [string, 'null']
+          maxLength: 512
         prompt:
           type: string
+          minLength: 1
+          maxLength: 262144
+        scheduleKind:
+          type: string
+          enum: [one_time, cron]
+        cronExpression:
+          type: [string, 'null']
+          minLength: 9
+          maxLength: 256
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: IANA time zone identifier used for cron evaluation.
+        scheduledAt:
+          type: [string, 'null']
+          format: date-time
+        startsAt:
+          type: [string, 'null']
+          format: date-time
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+        nextFireAt:
+          type: [string, 'null']
+          format: date-time
+        misfirePolicy:
+          type: string
+          enum: [skip, fire_once, catch_up]
+        overlapPolicy:
+          type: string
+          enum: [skip, queue]
+        maxConcurrentRuns:
+          type: integer
+          minimum: 1
+          maximum: 32
+        maxCatchUpRuns:
+          type: integer
+          minimum: 1
+          maximum: 100
+        maxAttempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+        retryInitialDelaySeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+        retryMaxDelaySeconds:
+          type: integer
+          minimum: 1
+          maximum: 604800
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+        priority:
+          type: integer
+          minimum: -100
+          maximum: 100
         status:
           type: string
+          enum: [active, paused, completed, cancelled]
+        generation:
+          $ref: '#/components/schemas/Int64String'
         externalRef:
-          type: string
+          type: [string, 'null']
+          maxLength: 256
         metadataJson:
           type: string
+          maxLength: 65536
         version:
           $ref: '#/components/schemas/Int64String'
         createdAt:
@@ -5612,14 +6041,14 @@ components:
         updatedAt:
           type: string
           format: date-time
-        startedAt:
-          type: string
-          format: date-time
         completedAt:
-          type: string
+          type: [string, 'null']
+          format: date-time
+        pausedAt:
+          type: [string, 'null']
           format: date-time
         cancelledAt:
-          type: string
+          type: [string, 'null']
           format: date-time
     AgentTaskResponse:
       allOf:
@@ -5659,18 +6088,199 @@ components:
       type: object
       additionalProperties: false
       required:
+      - sessionId
       - title
       - prompt
+      - scheduleKind
+      - timezone
+      - requestedAt
+      properties:
+        taskId:
+          type: [string, 'null']
+          pattern: '^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 512
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 262144
+        scheduleKind:
+          type: string
+          enum: [one_time, cron]
+        cronExpression:
+          type: [string, 'null']
+          minLength: 9
+          maxLength: 256
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 128
+        scheduledAt:
+          type: [string, 'null']
+          format: date-time
+        startsAt:
+          type: [string, 'null']
+          format: date-time
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+        misfirePolicy:
+          type: string
+          enum: [skip, fire_once, catch_up]
+          default: fire_once
+        overlapPolicy:
+          type: string
+          enum: [skip, queue]
+          default: skip
+        maxConcurrentRuns:
+          type: integer
+          minimum: 1
+          maximum: 32
+          default: 1
+        maxCatchUpRuns:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+        maxAttempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 3
+        retryInitialDelaySeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 5
+        retryMaxDelaySeconds:
+          type: integer
+          minimum: 1
+          maximum: 604800
+          default: 300
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 900
+        priority:
+          type: integer
+          minimum: -100
+          maximum: 100
+          default: 0
+        externalRef:
+          type: [string, 'null']
+          maxLength: 256
+        metadataJson:
+          type: [string, 'null']
+          maxLength: 65536
+        requestedAt:
+          type: string
+          format: date-time
+    ReplaceAgentTaskRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - title
+      - prompt
+      - scheduleKind
+      - timezone
+      - expectedVersion
       - requestedAt
       properties:
         title:
           type: string
+          minLength: 1
+          maxLength: 512
         prompt:
           type: string
+          minLength: 1
+          maxLength: 262144
+        scheduleKind:
+          type: string
+          enum: [one_time, cron]
+        cronExpression:
+          type: [string, 'null']
+          minLength: 9
+          maxLength: 256
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 128
+        scheduledAt:
+          type: [string, 'null']
+          format: date-time
+        startsAt:
+          type: [string, 'null']
+          format: date-time
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+        misfirePolicy:
+          type: string
+          enum: [skip, fire_once, catch_up]
+          default: fire_once
+        overlapPolicy:
+          type: string
+          enum: [skip, queue]
+          default: skip
+        maxConcurrentRuns:
+          type: integer
+          minimum: 1
+          maximum: 32
+          default: 1
+        maxCatchUpRuns:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+        maxAttempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 3
+        retryInitialDelaySeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 5
+        retryMaxDelaySeconds:
+          type: integer
+          minimum: 1
+          maximum: 604800
+          default: 300
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 900
+        priority:
+          type: integer
+          minimum: -100
+          maximum: 100
+          default: 0
         externalRef:
-          type: string
+          type: [string, 'null']
+          maxLength: 256
         metadataJson:
+          type: [string, 'null']
+          maxLength: 65536
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
           type: string
+          format: date-time
+    AgentTaskStateChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
         requestedAt:
           type: string
           format: date-time
@@ -6382,6 +6992,243 @@ components:
         requestedAt:
           type: string
           format: date-time
+    ExecuteAgentTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotencyKey, requestedAt]
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    RetryAgentTaskRunRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotencyKey, requestedAt]
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        requestedAt:
+          type: string
+          format: date-time
+    CancelAgentTaskRunRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedAt]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    AgentTaskRunRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - runId
+      - taskId
+      - sessionId
+      - agentId
+      - ownerUserId
+      - triggerKind
+      - scheduleGeneration
+      - scheduledFor
+      - retryOfRunId
+      - priority
+      - status
+      - turnId
+      - attemptCount
+      - maxAttempts
+      - availableAt
+      - timeoutAt
+      - failureClass
+      - errorCode
+      - version
+      - createdAt
+      - updatedAt
+      - claimedAt
+      - startedAt
+      - finishedAt
+      - cancelledAt
+      properties:
+        runId:
+          type: string
+          pattern: '^run\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        taskId:
+          type: string
+          pattern: '^task\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        sessionId:
+          type: string
+          pattern: '^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        agentId:
+          type: string
+          pattern: '^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        ownerUserId:
+          $ref: '#/components/schemas/Int64String'
+        triggerKind:
+          type: string
+          enum: [scheduled, manual, business_retry]
+        scheduleGeneration:
+          $ref: '#/components/schemas/Int64String'
+        scheduledFor:
+          type: string
+          format: date-time
+        retryOfRunId:
+          type: [string, 'null']
+          pattern: '^run\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        priority:
+          type: integer
+          minimum: -100
+          maximum: 100
+        status:
+          type: string
+          enum: [pending, claimed, running, succeeded, failed, cancelled, reconciling, dead_letter]
+        turnId:
+          type: [string, 'null']
+          pattern: '^turn\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        attemptCount:
+          type: integer
+          minimum: 0
+          maximum: 20
+        maxAttempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+        availableAt:
+          type: string
+          format: date-time
+        timeoutAt:
+          type: [string, 'null']
+          format: date-time
+        failureClass:
+          type: [string, 'null']
+          maxLength: 64
+        errorCode:
+          type: [string, 'null']
+          maxLength: 128
+        version:
+          $ref: '#/components/schemas/Int64String'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        claimedAt:
+          type: [string, 'null']
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        finishedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledAt:
+          type: [string, 'null']
+          format: date-time
+    AgentTaskRunAttemptRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - attemptId
+      - runId
+      - attemptNo
+      - status
+      - failureClass
+      - errorCode
+      - createdAt
+      - updatedAt
+      - startedAt
+      - heartbeatAt
+      - finishedAt
+      properties:
+        attemptId:
+          type: string
+          pattern: '^attempt\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        runId:
+          type: string
+          pattern: '^run\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'
+        attemptNo:
+          type: integer
+          minimum: 1
+          maximum: 20
+        status:
+          type: string
+          enum: [claimed, running, succeeded, failed, lease_expired, cancelled]
+        failureClass:
+          type: [string, 'null']
+          maxLength: 64
+        errorCode:
+          type: [string, 'null']
+          maxLength: 128
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        heartbeatAt:
+          type: [string, 'null']
+          format: date-time
+        finishedAt:
+          type: [string, 'null']
+          format: date-time
+    AgentTaskRunResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentTaskRunRecord'
+    AgentTaskRunListResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentTaskRunRecord'
+    AgentTaskRunAttemptListResponse:
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentTaskRunAttemptRecord'
     CloseAgentSessionRequest:
       type: object
       additionalProperties: false

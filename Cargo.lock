@@ -2869,6 +2869,7 @@ dependencies = [
  "sha1",
  "sha2",
  "sqlx",
+ "tracing",
  "urlencoding",
  "uuid",
 ]
@@ -2906,6 +2907,7 @@ dependencies = [
  "sqlx",
  "time",
  "tokio",
+ "tokio-stream",
  "tower 0.5.3",
  "tracing",
 ]

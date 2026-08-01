@@ -1,7 +1,7 @@
 use crate::agent_turn::AgentTurnRecord;
 use crate::agent_turn_input_queue::{
     AgentTurnInputQueueEntry, TurnInputQueueClaimOutcome, TurnInputQueueClaimRequest,
-    TurnInputQueueListQuery, TurnInputQueueReorderEntry,
+    TurnInputQueueFailureRequest, TurnInputQueueListQuery, TurnInputQueueReorderEntry,
 };
 use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
@@ -16,6 +16,7 @@ use crate::session_activity::{
     session_activity_scope_fingerprint, SessionActivityCursor, SessionActivitySummaryRecord,
 };
 use crate::session_item_cursor::{session_item_scope_fingerprint, SessionItemCursor};
+use crate::task_execution_cursor::{task_scope_fingerprint, TaskCursor};
 use crate::validation::optional_non_blank;
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelResult};
@@ -1099,7 +1100,8 @@ pub struct TaskListQuery {
     pub agent_id: Option<String>,
     pub owner_user_id: Option<u64>,
     pub status: Option<String>,
-    pub pagination: PaginationParams,
+    pub cursor: Option<TaskCursor>,
+    pub page_size: usize,
 }
 
 impl TaskListQuery {
@@ -1110,7 +1112,8 @@ impl TaskListQuery {
             agent_id: None,
             owner_user_id: None,
             status: None,
-            pagination: PaginationParams::default(),
+            cursor: None,
+            page_size: DEFAULT_PAGE_SIZE,
         }
     }
 
@@ -1129,9 +1132,24 @@ impl TaskListQuery {
         self
     }
 
-    pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
-        self.pagination = pagination;
+    pub fn with_cursor_page(mut self, page_size: usize, cursor: Option<TaskCursor>) -> Self {
+        self.page_size = page_size.clamp(1, MAX_PAGE_SIZE);
+        self.cursor = cursor;
         self
+    }
+
+    pub fn scope_fingerprint(&self) -> String {
+        task_scope_fingerprint(
+            self.tenant_id,
+            self.organization_id,
+            self.agent_id.as_deref(),
+            self.owner_user_id,
+            self.status.as_deref(),
+        )
+    }
+
+    pub fn store_limit(&self) -> usize {
+        self.page_size.saturating_add(1)
     }
 }
 
@@ -1641,17 +1659,7 @@ pub trait AgentRepository: Send + Sync {
 
     fn fail_turn_input_queue_entry(
         &self,
-        tenant_id: u64,
-        organization_id: u64,
-        session_id: &str,
-        owner_user_id: u64,
-        queue_entry_id: &str,
-        expected_version: u64,
-        expected_fencing_token: u64,
-        claim_token_hash: &str,
-        error_code: &str,
-        error_detail: Option<&str>,
-        requested_at: &str,
+        request: &TurnInputQueueFailureRequest,
     ) -> KernelResult<AgentTurnInputQueueEntry>;
 
     fn list_reconcilable_turns(
@@ -1745,8 +1753,6 @@ pub trait AgentRepository: Send + Sync {
     ) -> KernelResult<Option<AgentTaskRecord>>;
 
     fn list_tasks(&self, query: &TaskListQuery) -> KernelResult<Vec<AgentTaskRecord>>;
-
-    fn count_tasks(&self, query: &TaskListQuery) -> KernelResult<u64>;
 }
 
 /// Thread-safe audit event sink port.

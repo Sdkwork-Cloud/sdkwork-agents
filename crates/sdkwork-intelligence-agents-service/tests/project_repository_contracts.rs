@@ -226,7 +226,7 @@ fn project_postgres_sql_is_scoped_parameterized_and_versioned() {
     assert!(SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME.contains("LOWER(BTRIM(name))"));
     assert!(SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME.contains("workspace_id = $3"));
     assert!(SQL_LIST_AGENT_PROJECTS.contains("workspace_id = $4"));
-    assert!(SQL_LIST_AGENT_PROJECTS.contains("LIMIT $8 OFFSET $9"));
+    assert!(SQL_LIST_AGENT_PROJECTS.contains("LIMIT $9 OFFSET $10"));
     assert!(SQL_UPDATE_AGENT_PROJECT.contains("version = $25"));
     assert!(SQL_UPDATE_AGENT_WORKSPACE.contains("version = $15"));
 }

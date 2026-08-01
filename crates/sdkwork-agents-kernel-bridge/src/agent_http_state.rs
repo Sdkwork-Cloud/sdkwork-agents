@@ -5,9 +5,9 @@ use sdkwork_agents_contract::{
     agents_use_dev_inline_auth_resolver, ensure_dev_auth_bypass_allowed,
 };
 use sdkwork_intelligence_agents_service::{
-    AgentBusinessIdGenerator, AgentHttpState, AllowAllPolicyProvider, IamGatedPolicyProvider,
-    InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink,
-    SqlAgentRepository, SyncPostgresAdapter, AUDIT_SINK_NODE_ID,
+    AgentHttpState, AllowAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink,
+    InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink, SqlAgentRepository,
+    SyncPostgresAdapter,
 };
 use std::sync::Arc;
 
@@ -69,18 +69,10 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
         .context("apply canonical Agents schema via lifecycle orchestrator")?;
     }
 
-    // The audit sink shares the same physical postgres pool as the repository
-    // but uses a dedicated snowflake node id so concurrent `next_id` calls
-    // cannot collide. The audit sink extracts tenant/organization/agent
-    // metadata from each event's structured context (populated by
-    // `AgentsService::emit_audit_event`), so a single global sink serves
-    // audit events for every agent in the process.
-    let audit_adapter = {
-        let audit_pool = repository_adapter.pool().clone();
-        let audit_id_generator = AgentBusinessIdGenerator::with_node_id(AUDIT_SINK_NODE_ID)
-            .context("build agents audit sink snowflake id generator")?;
-        SyncPostgresAdapter::with_pool_and_id_generator(audit_pool, audit_id_generator)
-    };
+    // Repository and audit writes share one process-level leased Snowflake
+    // generator. Its cloned sequence state is the collision boundary for all
+    // Agents modules in this process; other pods receive distinct node leases.
+    let audit_adapter = repository_adapter.clone();
 
     let repository = SqlAgentRepository::new(repository_adapter);
     let audit_sink = SqlAgentAuditSink::new_global(audit_adapter);

@@ -103,7 +103,10 @@
   ],
   "contracts": {
     "publicExports": [],
-    "runtimeEntrypoints": ["crates/sdkwork-api-agents-standalone-gateway"],
+    "runtimeEntrypoints": [
+      "crates/sdkwork-api-agents-standalone-gateway",
+      "crates/sdkwork-intelligence-agents-worker"
+    ],
     "routeManifest": "apis/agents/authority-index.json",
     "apiAuthorities": [
       "crates/sdkwork-intelligence-agents-service/specs/openapi/agents-open-api.openapi.yaml",
