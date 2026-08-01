@@ -9993,7 +9993,7 @@ WHERE tenant_id = $2 AND organization_id = $3 AND attempt_id = $4
         self.pool.run_kernel(async {
             let mut tx = pool.begin().await?;
             let locking_sql = format!("{} FOR UPDATE", SQL_SELECT_TASK_RUN_BY_ID.trim());
-            let row = sqlx::query(&locking_sql)
+            let row = sqlx::query(sqlx::AssertSqlSafe(locking_sql.as_str()))
                 .bind(tenant_id)
                 .bind(organization_id)
                 .bind(&request.lease.run_id)
@@ -10277,7 +10277,7 @@ RETURNING version
         self.pool.run_kernel(async {
             let mut tx = pool.begin().await?;
             let locking_sql = format!("{} FOR UPDATE", SQL_SELECT_TASK_RUN_BY_ID.trim());
-            let row = sqlx::query(&locking_sql)
+            let row = sqlx::query(sqlx::AssertSqlSafe(locking_sql.as_str()))
                 .bind(tenant_id_db)
                 .bind(organization_id_db)
                 .bind(run_id)

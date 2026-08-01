@@ -8,7 +8,9 @@ use sdkwork_agent_kernel::{
 use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
 };
-use sdkwork_agent_provider_codex::{CodexConfigurationProvider, CodexSdkIntegration};
+use sdkwork_agent_provider_codex::{
+    CodexConfigurationProvider, CodexSdkIntegration, ThreadItemsListParams, ThreadListParams,
+};
 use sdkwork_agent_provider_core::{SessionLifecycleProvider, SessionListQuery};
 use sdkwork_agent_provider_gemini_cli::{GeminiCliConfigurationProvider, GeminiCliSdkIntegration};
 use sdkwork_agent_provider_hermes::{HermesConfigurationProvider, HermesSdkIntegration};
@@ -366,7 +368,26 @@ impl CodeEngineSlot {
 
     pub fn list_provider_sessions(&self) -> KernelResult<Vec<AgentSession>> {
         match self {
-            Self::Codex(integration) => integration.list_provider_sessions(),
+            Self::Codex(integration) => {
+                let page = futures::executor::block_on(integration.list_provider_sessions(
+                    ThreadListParams {
+                        cursor: None,
+                        limit: None,
+                        sort_key: None,
+                        sort_direction: None,
+                        model_providers: None,
+                        source_kinds: None,
+                        archived: None,
+                        section_id: None,
+                        cwd: None,
+                        use_state_db_only: false,
+                        search_term: None,
+                        parent_thread_id: None,
+                        ancestor_thread_id: None,
+                    },
+                ))?;
+                Ok(page.data.into_iter().map(|record| record.session).collect())
+            }
             Self::ClaudeCode(integration) => integration.list_provider_sessions(),
             Self::Gemini(integration) => integration.list_provider_sessions(),
             Self::OpenCode(integration) => integration.list_provider_sessions(),
@@ -385,7 +406,16 @@ impl CodeEngineSlot {
     ) -> KernelResult<Vec<AgentMessage>> {
         match self {
             Self::Codex(integration) => {
-                integration.get_provider_session_history(provider_session_id)
+                let page = futures::executor::block_on(integration.get_provider_session_history(
+                    ThreadItemsListParams {
+                        thread_id: provider_session_id.to_owned(),
+                        turn_id: None,
+                        cursor: None,
+                        limit: None,
+                        sort_direction: None,
+                    },
+                ))?;
+                Ok(page.data.into_iter().map(|record| record.message).collect())
             }
             Self::ClaudeCode(integration) => {
                 integration.get_provider_session_history(provider_session_id)
