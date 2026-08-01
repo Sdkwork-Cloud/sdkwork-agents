@@ -10353,6 +10353,7 @@ dependencies = [
 name = "sdkwork-agent-kernel"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "sdkwork-intelligence-sandbox-service",
  "sdkwork-sandbox-provider-spi",
  "sdkwork-utils-rust",

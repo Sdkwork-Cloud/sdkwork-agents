@@ -249,6 +249,14 @@ fn select_top_level_provider_sessions(
     candidates: Vec<ProviderSessionInventoryItem>,
     selected_cwd: Option<&str>,
 ) -> Vec<ProviderSessionInventoryItem> {
+    // Without a resolved project directory no provider session can be attributed
+    // to the project. Never fall back to sessions whose cwd is unknown (provider
+    // adapters such as openclaw/hermes do not populate cwd): selecting them here
+    // would leak every runtime's sessions into every project whose directory
+    // could not be resolved, making each project's Session list wrong.
+    if selected_cwd.is_none() {
+        return Vec::new();
+    }
     let mut dedupe = HashSet::new();
     let mut selected = candidates
         .into_iter()
@@ -455,6 +463,39 @@ mod tests {
 
         assert_eq!(selected.len(), 2);
         assert_ne!(selected[0].binding_id, selected[1].binding_id);
+    }
+
+    #[test]
+    fn unresolved_project_directory_never_selects_cwdless_provider_sessions() {
+        // openclaw/hermes adapters do not populate AgentSession.cwd. When the
+        // project directory cannot be resolved (selected_cwd is None), those
+        // sessions must NOT be attributed to the project, otherwise every
+        // project would receive the same cross-project Session list.
+        let mut cwdless = item("openclaw", "global-session", "");
+        cwdless.session.cwd = None;
+        let root = item("codex", "root-session", r"E:\Work\BirdCoder");
+
+        let selected = select_top_level_provider_sessions(
+            vec![cwdless, root],
+            None,
+        );
+
+        assert_eq!(selected.len(), 0);
+    }
+
+    #[test]
+    fn resolved_project_directory_keeps_cwdless_provider_sessions_out() {
+        let mut cwdless = item("openclaw", "global-session", "");
+        cwdless.session.cwd = None;
+        let root = item("codex", "root-session", r"E:\Work\BirdCoder");
+
+        let selected = select_top_level_provider_sessions(
+            vec![cwdless, root],
+            Some("e:/work/birdcoder"),
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].session.session_id, "root-session");
     }
 
     #[test]
