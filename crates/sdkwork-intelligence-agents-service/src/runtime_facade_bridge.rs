@@ -6,6 +6,7 @@
 use sdkwork_agents_runtime_facade::{
     bootstrap_code_engine, canonical_code_engine_keys, code_engine_binding_id,
     execute_code_engine_turn, AgentsCodeEngineHost, CodeEngineTurnInput,
+    CANONICAL_CODE_ENGINE_KEYS,
 };
 use sdkwork_utils_rust::string::is_blank;
 
@@ -144,8 +145,15 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
 pub fn shared_code_engine_host() -> Option<&'static AgentsCodeEngineHost> {
     use std::sync::OnceLock;
     static HOST: OnceLock<Option<AgentsCodeEngineHost>> = OnceLock::new();
-    HOST.get_or_init(|| AgentsCodeEngineHost::bootstrap().ok())
-        .as_ref()
+    HOST.get_or_init(|| {
+        let host = AgentsCodeEngineHost::bootstrap_selected(
+            &CANONICAL_CODE_ENGINE_KEYS,
+            sdkwork_agents_runtime_facade::LiveInteractionRegistry::new(),
+        );
+        let has_available_engine = host.engine_keys().next().is_some();
+        has_available_engine.then_some(host)
+    })
+    .as_ref()
 }
 
 fn normalize_prompt_text(value: &str) -> String {

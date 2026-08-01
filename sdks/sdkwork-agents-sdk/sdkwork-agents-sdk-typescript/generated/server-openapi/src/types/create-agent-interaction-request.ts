@@ -1,5 +1,6 @@
 import type { AgentInteractionKind } from './agent-interaction-kind';
 import type { AgentInteractionOption } from './agent-interaction-option';
+import type { AgentInteractionRequest } from './agent-interaction-request';
 
 export interface CreateAgentInteractionRequest {
   interactionId?: string;
@@ -9,6 +10,7 @@ export interface CreateAgentInteractionRequest {
   kind: AgentInteractionKind;
   prompt: string;
   options?: AgentInteractionOption[];
+  request?: AgentInteractionRequest;
   retentionUntil?: string;
   requestedAt: string;
 }

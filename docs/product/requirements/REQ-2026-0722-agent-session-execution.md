@@ -21,7 +21,7 @@ independent capability entities remain outside the Agents persistence boundary.
 - Turn completion persists ordered typed Session Items, usage, audit and outbox
   facts consistently.
 - Interaction claim and resolution are race-safe and versioned.
-- App, Backend and Open OpenAPI authorities expose 100, 57 and 55 operations
+- App, Backend and Open OpenAPI authorities expose 102, 58 and 56 operations
   respectively with standard envelopes, problem details and pagination.
 - TypeScript and Flutter App SDKs expose Session, Turn, SessionItem, feedback and
   Interaction resources from package roots.

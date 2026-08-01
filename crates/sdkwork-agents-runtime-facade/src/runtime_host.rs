@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 use crate::code_engines::{
-    bootstrap_code_engine, canonical_code_engine_keys, CodeEngineBootstrapError, CodeEngineSlot,
+    bootstrap_code_engine, canonical_code_engine_keys, CodeEngineBootstrapError,
+    CodeEngineInteractionResolution, CodeEngineSlot,
 };
 use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
 use crate::provider_sessions::{
-    discover_provider_sessions, load_provider_session_messages, ProviderSessionInventoryItem,
-    ProviderSessionInventorySelector,
+    discover_provider_sessions, load_provider_session_messages, ProviderSessionInventorySelector,
+    ProviderSessionInventorySnapshot,
 };
 use crate::turn::{execute_code_engine_turn, CodeEngineTurnInput, CodeEngineTurnOutput};
 
@@ -120,7 +121,7 @@ impl AgentsCodeEngineHost {
     pub fn discover_provider_sessions(
         &self,
         selector: &ProviderSessionInventorySelector,
-    ) -> RuntimeFacadeResult<Vec<ProviderSessionInventoryItem>> {
+    ) -> RuntimeFacadeResult<ProviderSessionInventorySnapshot> {
         discover_provider_sessions(&self.slots, selector)
     }
 
@@ -173,6 +174,18 @@ impl AgentsCodeEngineHost {
     ) -> RuntimeFacadeResult<()> {
         self.validate_engine_key(engine_key)?;
         self.live.submit_user_question(engine_key, answer)
+    }
+
+    pub fn resolve_interaction(
+        &self,
+        engine_key: &str,
+        resolution: &CodeEngineInteractionResolution,
+    ) -> RuntimeFacadeResult<serde_json::Value> {
+        self.validate_engine_key(engine_key)?;
+        self.slots
+            .get(engine_key)
+            .expect("validated engine slot must exist")
+            .resolve_interaction(resolution)
     }
 
     pub fn validate_engine_key(&self, engine_key: &str) -> RuntimeFacadeResult<()> {

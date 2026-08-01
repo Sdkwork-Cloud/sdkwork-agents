@@ -16,6 +16,7 @@ remain authoritative under `../sdkwork-kernel/specs/`.
 | [AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md](./AGENTS_IM_DEPENDENCY_BOUNDARY_SPEC.md) | Mandatory `sdkwork-im -> sdkwork-agents` dependency direction and database ownership boundary |
 | [AGENTS_AI_COMPOSITION_DATABASE_SPEC.md](../crates/sdkwork-intelligence-agents-service/specs/AGENTS_AI_COMPOSITION_DATABASE_SPEC.md) | Canonical 23-table Agents PostgreSQL contract |
 | [agent-task-scheduling.contract.json](./agent-task-scheduling.contract.json) | Machine-readable Task scheduling invariants and review authority |
+| [agent-interaction-envelope.contract.json](./agent-interaction-envelope.contract.json) | Machine-readable typed Interaction request, resolution, compatibility, and review authority |
 | [agents-birdcoder-alignment.spec.json](./agents-birdcoder-alignment.spec.json) | Machine-readable cross-repo alignment tracker |
 | [agent-execution-placement-orchestration.contract.json](./agent-execution-placement-orchestration.contract.json) | Draft machine contract for explicit local/cloud intent, Agents orchestration, and Kernel-owned execution placement |
 | [docs/architecture/AGENTS_LAYERING.md](../docs/architecture/AGENTS_LAYERING.md) | Crate and SDK layering |

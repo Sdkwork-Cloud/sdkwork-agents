@@ -49,6 +49,7 @@ pub struct AgentsSessionRuntimeBindingDescriptor {
     pub provider_session_tree_id: Option<String>,
     pub provider_parent_session_id: Option<String>,
     pub provider_forked_from_session_id: Option<String>,
+    pub provider_directory: Option<crate::ProviderSessionDirectoryEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -332,6 +333,7 @@ mod tests {
                 provider_session_tree_id: Some("provider-tree-001".to_string()),
                 provider_parent_session_id: Some("provider-session-parent".to_string()),
                 provider_forked_from_session_id: Some("provider-session-origin".to_string()),
+                provider_directory: None,
             }),
             actor: AgentsSessionActor {
                 subject_id: "user:300001".to_string(),

@@ -58,9 +58,9 @@ The current authored API inventories are:
 
 | Surface | Prefix | Operations | SDK |
 | --- | --- | ---: | --- |
-| Open API | `/agent/v3/api` | 55 | `@sdkwork/agents-sdk` |
-| App API | `/app/v3/api` | 100 | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
-| Backend API | `/backend/v3/api` | 57 | `@sdkwork/agents-backend-sdk` |
+| Open API | `/agent/v3/api` | 56 | `@sdkwork/agents-sdk` |
+| App API | `/app/v3/api` | 102 | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| Backend API | `/backend/v3/api` | 58 | `@sdkwork/agents-backend-sdk` |
 
 Counts are derived from the three authored OpenAPI documents. The Open API uses
 `X-API-Key`; App and Backend APIs use the SDKWork dual-token request context.

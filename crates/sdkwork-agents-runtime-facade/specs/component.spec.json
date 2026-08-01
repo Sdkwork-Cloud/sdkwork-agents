@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.component.spec",
+  "component": {
+    "name": "sdkwork-agents-runtime-facade",
+    "displayName": "SDKWork Agents Runtime Facade",
+    "version": "0.1.0",
+    "type": "rust-crate",
+    "root": "crates/sdkwork-agents-runtime-facade",
+    "domain": "intelligence",
+    "capability": "agents-runtime-facade",
+    "surface": "application-internal",
+    "languages": ["rust"],
+    "generated": false,
+    "manifests": ["Cargo.toml"]
+  },
+  "canonicalSpecs": [
+    {
+      "file": "CODE_STYLE_SPEC.md",
+      "path": "../../../sdkwork-specs/CODE_STYLE_SPEC.md",
+      "purpose": "Authored source structure and generated code boundaries."
+    },
+    {
+      "file": "NAMING_SPEC.md",
+      "path": "../../../sdkwork-specs/NAMING_SPEC.md",
+      "purpose": "Canonical SDKWork naming rules."
+    },
+    {
+      "file": "MODULE_SPEC.md",
+      "path": "../../../sdkwork-specs/MODULE_SPEC.md",
+      "purpose": "Reusable runtime facade module boundaries."
+    },
+    {
+      "file": "RUST_CODE_SPEC.md",
+      "path": "../../../sdkwork-specs/RUST_CODE_SPEC.md",
+      "purpose": "Rust crate and module rules."
+    },
+    {
+      "file": "TEST_SPEC.md",
+      "path": "../../../sdkwork-specs/TEST_SPEC.md",
+      "purpose": "Runtime facade verification requirements."
+    },
+    {
+      "file": "AGENT_KERNEL_SPEC.md",
+      "path": "../../../sdkwork-kernel/specs/AGENT_KERNEL_SPEC.md",
+      "purpose": "Provider-neutral agent runtime and SPI authority."
+    }
+  ],
+  "contracts": {
+    "layerRole": "runtime-composition",
+    "publicExports": ["."],
+    "providedPorts": [
+      {
+        "name": "agentsCodeEngineRuntimeFacade",
+        "export": "."
+      }
+    ],
+    "requiredPorts": [
+      {
+        "name": "agentProviderRuntime",
+        "export": ".",
+        "provider": "sdkwork-agent-provider-spi"
+      },
+      {
+        "name": "codexProviderIntegration",
+        "export": ".",
+        "provider": "sdkwork-agent-provider-codex"
+      }
+    ],
+    "runtimeEntrypoints": [
+      "bootstrap_code_engine",
+      "AgentsCodeEngineHost"
+    ],
+    "routeManifest": null,
+    "sdkClients": [],
+    "sdkDependencies": [],
+    "dependencyApiExports": [],
+    "dependencyApiSurfaces": [],
+    "events": [],
+    "configKeys": []
+  },
+  "verification": {
+    "commands": [
+      "cargo test -p sdkwork-agents-runtime-facade",
+      "node ../sdkwork-specs/tools/check-component-port-bindings.mjs --root ."
+    ]
+  }
+}

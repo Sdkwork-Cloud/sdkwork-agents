@@ -34,7 +34,7 @@ test("agents database manifest declares one canonical PostgreSQL engine", () => 
   assert.deepEqual(manifest.engines, ["postgres"]);
   assert.equal(manifest.defaultEngine, "postgres");
   assert.equal(manifest.tablePrefix, "ai_");
-  assert.equal(manifest.contractVersion, "7.0.0");
+  assert.equal(manifest.contractVersion, "7.2.0");
   assert.equal(manifest.baselineStrategy, "baseline-plus-migrations");
   assert.equal(
     manifest.lifecycle.autoMigrate,
@@ -66,7 +66,7 @@ test("agents database contract is materialized without placeholders", () => {
   const schema = readFileSync(schemaPath, "utf8");
   assert.doesNotMatch(schema, /<module-id>/);
   assert.match(schema, /table_prefix: ai_/u);
-  assert.match(schema, /contract_version: 7\.0\.0/u);
+  assert.match(schema, /contract_version: 7\.2\.0/u);
   assert.match(
     schema,
     /ddl_authority: ddl\/baseline\/postgres\/0001_agents_baseline\.sql/u,
@@ -87,11 +87,11 @@ test("agents database contract is materialized without placeholders", () => {
   const registry = JSON.parse(
     readFileSync(path.join(repoRoot, "database/contract/table-registry.json"), "utf8"),
   );
-  assert.equal(registry.contractVersion, "7.0.0");
+  assert.equal(registry.contractVersion, "7.2.0");
   assert.equal(registry.tables.length, 23);
   assert.ok(
     registry.tables.every((entry) => entry.lifecycle_status === "active"),
-    "every Agents 7.0 table must be active in the contract registry",
+    "every Agents 7.2 table must be active in the contract registry",
   );
 });
 
@@ -297,11 +297,11 @@ test("composition slot enums and canonical module pairs stay aligned", () => {
   }
 });
 
-test("pre-launch PostgreSQL contract has no compatibility migrations", () => {
+test("pre-launch PostgreSQL contract has ordered forward development migrations", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
-  const activeMigrations = readdirSync(migrationRoot).filter((fileName) =>
-    /\.(?:up|down)\.sql$/u.test(fileName),
-  );
+  const activeMigrations = readdirSync(migrationRoot)
+    .filter((fileName) => /\.(?:up|down)\.sql$/u.test(fileName))
+    .sort();
   const baseline = readFileSync(
     path.join(repoRoot, "database/ddl/baseline/postgres/0001_agents_baseline.sql"),
     "utf8",
@@ -313,13 +313,27 @@ test("pre-launch PostgreSQL contract has no compatibility migrations", () => {
     "provider_forked_from_session_id",
   ];
 
-  assert.deepEqual(activeMigrations, []);
+  assert.deepEqual(activeMigrations, [
+    "0001_complete_agents_7_0_0_schema.up.sql",
+    "0002_add_provider_session_directory.up.sql",
+    "0003_add_typed_agent_interaction_envelope.up.sql",
+  ]);
   for (const canonicalName of canonicalLineageColumns) {
     assert.match(baseline, new RegExp(`\\b${canonicalName}\\s+VARCHAR\\(256\\)`, "u"));
   }
   assert.match(
     baseline,
     /CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_runtime_binding_provider_session/iu,
+  );
+  const interactionSql = extractCreateTableSql(baseline, "ai_agent_interaction");
+  assert.match(interactionSql, /request_json\s+JSONB,/iu);
+  assert.match(
+    interactionSql,
+    /CONSTRAINT\s+ck_ai_agent_interaction_kind\s+CHECK\s*\(kind\s+IN\s*\(0,\s*1,\s*2,\s*3\)\)/iu,
+  );
+  assert.match(
+    interactionSql,
+    /jsonb_typeof\(request_json\)\s*=\s*'object'/iu,
   );
 });
 

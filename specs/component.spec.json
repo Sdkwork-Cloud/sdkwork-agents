@@ -71,6 +71,11 @@
       "purpose": "Machine-readable scheduling invariants and approved boundary."
     },
     {
+      "file": "agent-interaction-envelope.contract.json",
+      "path": "specs/agent-interaction-envelope.contract.json",
+      "purpose": "Machine-readable typed Interaction request, resolution, compatibility, and approved boundary."
+    },
+    {
       "file": "AGENTS_KERNEL_BOUNDARY_SPEC.md",
       "path": "specs/AGENTS_KERNEL_BOUNDARY_SPEC.md",
       "purpose": "Kernel vs agents vs product application responsibility boundary."

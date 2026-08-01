@@ -26,11 +26,11 @@ use crate::application::{
     ListProjectsCommand, ListSessionActivitySummariesCommand, ListSessionCheckpointsCommand,
     ListSessionRuntimeBindingsCommand, ListSessionUserStatesCommand,
     ListTurnInputQueueEntriesCommand, ListTurnsCommand, ListWorkspacesCommand,
-    ProjectMutationCommand, ProviderBindingListCommand, RemoveTurnInputQueueEntryCommand,
-    ReorderTurnInputQueueEntriesCommand, RetryTurnInputQueueEntryCommand,
-    UpdateItemFeedbackCommand, UpdateProjectCommand, UpdateProjectCompositionSlotCommand,
-    UpdateSessionCommand, UpdateSessionUserStateCommand, UpdateTurnInputQueueEntryCommand,
-    UpdateWorkspaceCommand, WorkspaceMutationCommand,
+    PersistProviderInteractionEventCommand, ProjectMutationCommand, ProviderBindingListCommand,
+    RemoveTurnInputQueueEntryCommand, ReorderTurnInputQueueEntriesCommand,
+    RetryTurnInputQueueEntryCommand, UpdateItemFeedbackCommand, UpdateProjectCommand,
+    UpdateProjectCompositionSlotCommand, UpdateSessionCommand, UpdateSessionUserStateCommand,
+    UpdateTurnInputQueueEntryCommand, UpdateWorkspaceCommand, WorkspaceMutationCommand,
 };
 use crate::domain::{
     AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentCompositionTargetModule,
@@ -56,9 +56,10 @@ use crate::dto::{
     ExecuteTaskRequestDto, GetAgentRequestDto, InteractionClaimResultDto, ListAgentsRequestDto,
     ListInteractionsRequestDto, ListSessionItemsRequestDto, ListSessionsRequestDto,
     ListTaskRunAttemptsRequestDto, ListTaskRunsRequestDto, ListTasksRequestDto,
-    ReconcileTaskRunRequestDto, ReplaceTaskRequestDto, RestoreAgentRequestDto,
-    RetryTaskRunRequestDto, SessionActivitySummaryDto, TaskStateChangeRequestDto,
-    UpdateAgentRequestDto, UpdateAgentStatusRequestDto, UpdateSessionRuntimeBindingRequestDto,
+    ReconcileTaskRunRequestDto, ReplaceTaskRequestDto, ResolveInteractionRequestDto,
+    RestoreAgentRequestDto, RetryTaskRunRequestDto, SessionActivitySummaryDto,
+    TaskStateChangeRequestDto, UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
+    UpdateSessionRuntimeBindingRequestDto,
 };
 use crate::mcp_marketplace::McpServerMarketplaceRecord;
 use crate::ports::{
@@ -107,8 +108,9 @@ use axum::{Json, Router};
 #[cfg(test)]
 use sdkwork_agent_kernel::ProviderManifest;
 use sdkwork_agent_kernel::{
-    AgentManifest, KernelError, KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider,
-    PolicyRequest, PolicySubject, ProviderHealth,
+    AgentManifest, InMemorySecretProvider, KernelError, KernelErrorKind, KernelResult,
+    PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject, ProviderHealth,
+    SecretCreateRequest, SecretProvider, SecretRotateRequest, SecretType,
 };
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -116,7 +118,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
@@ -1200,9 +1202,34 @@ impl PolicyProvider for DynPolicyProvider {
 pub(crate) type HttpService =
     AgentsService<DynAgentRepository, DynAgentAuditSink, DynPolicyProvider>;
 
+struct AgentModelConfigurationRuntime {
+    secrets: Mutex<Box<dyn SecretProvider>>,
+    configurations: Mutex<Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>>,
+}
+
+impl AgentModelConfigurationRuntime {
+    fn new() -> Self {
+        Self::with_providers(
+            Box::new(InMemorySecretProvider::new()),
+            Box::new(sdkwork_agents_runtime_facade::InMemoryAgentConfigurationStore::new()),
+        )
+    }
+
+    fn with_providers(
+        secret_provider: Box<dyn SecretProvider>,
+        configuration_store: Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>,
+    ) -> Self {
+        Self {
+            secrets: Mutex::new(secret_provider),
+            configurations: Mutex::new(configuration_store),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AgentHttpState {
     pub(crate) service: Arc<HttpService>,
+    model_configuration_runtime: Arc<AgentModelConfigurationRuntime>,
     provider_session_cwd_resolver:
         Option<Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>>,
 }
@@ -1246,6 +1273,7 @@ impl AgentHttpState {
         .with_turn_executor(turn_executor);
         Self {
             service: Arc::new(service),
+            model_configuration_runtime: Arc::new(AgentModelConfigurationRuntime::new()),
             provider_session_cwd_resolver: None,
         }
     }
@@ -1255,6 +1283,17 @@ impl AgentHttpState {
         resolver: Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>,
     ) -> Self {
         self.provider_session_cwd_resolver = Some(resolver);
+        self
+    }
+
+    pub fn with_model_configuration_providers(
+        mut self,
+        secret_provider: Box<dyn SecretProvider>,
+        configuration_store: Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>,
+    ) -> Self {
+        self.model_configuration_runtime = Arc::new(
+            AgentModelConfigurationRuntime::with_providers(secret_provider, configuration_store),
+        );
         self
     }
 
@@ -1476,7 +1515,7 @@ impl HttpAgentsSessionFacade {
             });
         match existing {
             Ok(existing) => {
-                if !runtime_binding_matches_descriptor(&existing, descriptor) {
+                if !runtime_binding_identity_matches_descriptor(&existing, descriptor) {
                     return Err(
                         sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
                             "runtime binding descriptor conflicts with the current session binding"
@@ -1484,6 +1523,14 @@ impl HttpAgentsSessionFacade {
                         ),
                     );
                 }
+                self.reconcile_runtime_binding_provider_directory(
+                    existing,
+                    descriptor,
+                    owner_user_id,
+                    agent_id,
+                    subject,
+                    requested_at,
+                )?;
                 return Ok(());
             }
             Err(KernelError::Validation { message })
@@ -1511,6 +1558,7 @@ impl HttpAgentsSessionFacade {
             provider_session_tree_id: descriptor.provider_session_tree_id.clone(),
             provider_parent_session_id: descriptor.provider_parent_session_id.clone(),
             provider_forked_from_session_id: descriptor.provider_forked_from_session_id.clone(),
+            provider_directory: descriptor.provider_directory.clone(),
             owner_scope: Some(owner_user_id),
             requested_by: subject.clone(),
             requested_at: requested_at.to_string(),
@@ -1536,14 +1584,14 @@ impl HttpAgentsSessionFacade {
                         session_id: session_id.to_string(),
                         runtime_binding_id: descriptor.runtime_binding_id.clone(),
                         owner_scope: Some(owner_user_id),
-                        requested_by: subject,
+                        requested_by: subject.clone(),
                     })
                     .map_err(|read_error| {
                         sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
                             read_error.to_string(),
                         )
                     })?;
-                if !runtime_binding_matches_descriptor(&existing, descriptor) {
+                if !runtime_binding_identity_matches_descriptor(&existing, descriptor) {
                     return Err(
                         sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
                             "concurrent provider Session runtime binding conflicts with the requested descriptor"
@@ -1551,6 +1599,14 @@ impl HttpAgentsSessionFacade {
                         ),
                     );
                 }
+                self.reconcile_runtime_binding_provider_directory(
+                    existing,
+                    descriptor,
+                    owner_user_id,
+                    agent_id,
+                    subject,
+                    requested_at,
+                )?;
             }
             Err(error) => {
                 return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
@@ -1560,9 +1616,96 @@ impl HttpAgentsSessionFacade {
         }
         Ok(())
     }
+
+    fn reconcile_runtime_binding_provider_directory(
+        &self,
+        existing: AgentSessionRuntimeBindingRecord,
+        descriptor: &sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor,
+        owner_user_id: u64,
+        agent_id: &str,
+        subject: sdkwork_agent_kernel::PolicySubject,
+        requested_at: &str,
+    ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
+        let Some(provider_directory) = descriptor.provider_directory.clone() else {
+            return Ok(());
+        };
+        if !self.provider_session_history_reconciliation {
+            if !runtime_binding_directory_matches_descriptor(&existing, descriptor) {
+                return Err(
+                    sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                        "runtime binding provider directory conflicts with the current session binding"
+                            .into(),
+                    ),
+                );
+            }
+            return Ok(());
+        }
+        let mut current = existing;
+        for attempt in 0..2 {
+            match self
+                .service
+                .reconcile_provider_session_history_runtime_binding_directory(
+                    crate::application::ReconcileProviderSessionRuntimeBindingDirectoryCommand {
+                        tenant_id: current.tenant_id,
+                        organization_id: current.organization_id,
+                        path_agent_id: agent_id.to_string(),
+                        session_id: current.session_id.clone(),
+                        runtime_binding_id: current.runtime_binding_id.clone(),
+                        expected_version: current.version,
+                        provider_directory: provider_directory.clone(),
+                        owner_scope: Some(owner_user_id),
+                        requested_by: subject.clone(),
+                        requested_at: requested_at.to_string(),
+                    },
+                ) {
+                Ok(_) => return Ok(()),
+                Err(error)
+                    if attempt == 0
+                        && error.kind() == sdkwork_agent_kernel::KernelErrorKind::Conflict =>
+                {
+                    current = self
+                        .service
+                        .get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+                            tenant_id: current.tenant_id,
+                            organization_id: current.organization_id,
+                            path_agent_id: agent_id.to_string(),
+                            session_id: current.session_id.clone(),
+                            runtime_binding_id: current.runtime_binding_id.clone(),
+                            owner_scope: Some(owner_user_id),
+                            requested_by: subject.clone(),
+                        })
+                        .map_err(|read_error| {
+                            sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                                read_error.to_string(),
+                            )
+                        })?;
+                    if !runtime_binding_identity_matches_descriptor(&current, descriptor) {
+                        return Err(
+                            sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                                "concurrent provider Session runtime binding conflicts with the requested descriptor"
+                                    .into(),
+                            ),
+                        );
+                    }
+                    if runtime_binding_directory_matches_descriptor(&current, descriptor) {
+                        return Ok(());
+                    }
+                }
+                Err(error) => {
+                    return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                        error.to_string(),
+                    ));
+                }
+            }
+        }
+        Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+            "provider Session runtime binding directory reconciliation exhausted its retry"
+                .to_string(),
+        ))
+    }
 }
 
-fn runtime_binding_matches_descriptor(
+fn runtime_binding_identity_matches_descriptor(
     record: &AgentSessionRuntimeBindingRecord,
     descriptor: &sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor,
 ) -> bool {
@@ -1579,6 +1722,38 @@ fn runtime_binding_matches_descriptor(
         && record.provider_session_tree_id == descriptor.provider_session_tree_id
         && record.provider_parent_session_id == descriptor.provider_parent_session_id
         && record.provider_forked_from_session_id == descriptor.provider_forked_from_session_id
+}
+
+fn runtime_binding_directory_matches_descriptor(
+    record: &AgentSessionRuntimeBindingRecord,
+    descriptor: &sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor,
+) -> bool {
+    descriptor
+        .provider_directory
+        .as_ref()
+        .is_none_or(|directory| {
+            record.provider_title == directory.title
+                && record.provider_title_source == directory.title_source
+                && record.provider_preview == directory.preview
+                && record.provider_created_at == directory.created_at
+                && record.provider_updated_at == directory.updated_at
+                && record.provider_recency_at == directory.recency_at
+                && record.provider_pinned == directory.pinned
+                && record.provider_archived == directory.archived
+                && record.provider_visible == directory.visible
+                && record.provider_sort_key
+                    == (!directory.sort_key.trim().is_empty()).then(|| directory.sort_key.clone())
+                && record.provider_source == directory.source
+        })
+}
+
+#[cfg(test)]
+fn runtime_binding_matches_descriptor(
+    record: &AgentSessionRuntimeBindingRecord,
+    descriptor: &sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor,
+) -> bool {
+    runtime_binding_identity_matches_descriptor(record, descriptor)
+        && runtime_binding_directory_matches_descriptor(record, descriptor)
 }
 
 fn map_facade_session_kind(
@@ -2144,6 +2319,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             post(app_answer_interaction),
         )
         .route(
+            "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve",
+            post(app_resolve_interaction),
+        )
+        .route(
             "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
             get(app_list_session_checkpoints).post(app_create_session_checkpoint),
         )
@@ -2222,6 +2401,14 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/code_engines",
             get(app_list_code_engines),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations/apply",
+            post(app_apply_model_configuration),
+        )
+        .route(
+            "/app/v3/api/ai/model_selections/apply",
+            post(app_apply_model_selection),
         )
         .route(
             "/app/v3/api/ai/mcp_servers",
@@ -2322,6 +2509,10 @@ pub fn build_open_routes() -> Router<AgentHttpState> {
         .route(
             "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
             post(backend_answer_interaction),
+        )
+        .route(
+            "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve",
+            post(backend_resolve_interaction),
         )
         .route(
             "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
@@ -2502,6 +2693,10 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
             post(backend_answer_interaction),
         )
         .route(
+            "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve",
+            post(backend_resolve_interaction),
+        )
+        .route(
             "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
             get(backend_list_session_checkpoints).post(backend_create_session_checkpoint),
         )
@@ -2606,6 +2801,444 @@ pub fn build_combined_routes() -> Router<AgentHttpState> {
         .merge(build_app_routes())
         .merge(build_backend_routes())
         .route("/metrics/agents", get(serve_agents_metrics))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplyAgentModelConfigurationRequest {
+    configuration_id: String,
+    engine_id: String,
+    vendor_code: String,
+    base_url: String,
+    api_key: Option<String>,
+    default_model_id: String,
+    supported_model_ids: Vec<String>,
+    #[serde(default)]
+    supported_provider_ids: Vec<String>,
+    input_context_tokens: Option<i64>,
+    output_context_tokens: Option<i64>,
+    tool_call_rounds: Option<i64>,
+    #[serde(default)]
+    supports_multimodal: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppliedAgentModelConfigurationResponse {
+    configuration_id: String,
+    profile_id: String,
+    engine_id: String,
+    agent_id: String,
+    provider_scope: String,
+    vendor_code: String,
+    base_url: String,
+    default_model_id: String,
+    supported_model_ids: Vec<String>,
+    supported_provider_ids: Vec<String>,
+    input_context_tokens: Option<i64>,
+    output_context_tokens: Option<i64>,
+    tool_call_rounds: Option<i64>,
+    supports_multimodal: bool,
+    api_key_configured: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplyAgentModelSelectionRequest {
+    configuration_id: Option<String>,
+    engine_id: String,
+    model_id: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppliedAgentModelSelectionResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    configuration_id: Option<String>,
+    profile_id: String,
+    engine_id: String,
+    agent_id: String,
+    provider_scope: String,
+    model_id: String,
+}
+
+async fn app_apply_model_configuration(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    body: Result<Json<ApplyAgentModelConfigurationRequest>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AppliedAgentModelConfigurationResponse>> = async {
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let item =
+            apply_agent_model_configuration(state, scope, web_ctx.request_id.0.as_str(), body)?;
+        Ok(ResourceData { item })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+fn apply_agent_model_configuration(
+    state: AgentHttpState,
+    scope: RequestScope,
+    request_id: &str,
+    body: ApplyAgentModelConfigurationRequest,
+) -> ApiResult<AppliedAgentModelConfigurationResponse> {
+    validate_model_configuration_identifier("configurationId", &body.configuration_id, 160)?;
+    let engine_id = body.engine_id.trim();
+    let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_id)
+        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+
+    let supported_provider_ids =
+        normalize_supported_model_provider_ids(body.supported_provider_ids, engine_id)?;
+    let profile_id =
+        model_configuration_profile_id(&scope, engine_id, body.configuration_id.trim());
+    let existing_profile = state
+        .model_configuration_runtime
+        .configurations
+        .lock()
+        .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+        .find_profile(agent_id, &profile_id)
+        .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?;
+    let existing_secret_ref = existing_profile.as_ref().and_then(|profile| {
+        profile
+            .secret_bindings
+            .iter()
+            .find(|binding| {
+                matches!(
+                    binding.binding_kind,
+                    sdkwork_agent_kernel::AgentSecretBindingKind::LlmApiKey
+                )
+            })
+            .map(|binding| binding.secret_ref.clone())
+    });
+    if existing_profile.is_some() && existing_secret_ref.is_none() {
+        return Err(ApiProblem::internal(
+            "stored model configuration is missing its credential binding",
+        ));
+    }
+    let supplied_api_key = body.api_key.filter(|value| !value.trim().is_empty());
+    if supplied_api_key
+        .as_ref()
+        .is_some_and(|value| value.len() > 16_384)
+    {
+        return Err(ApiProblem::validation("apiKey exceeds the maximum length"));
+    }
+
+    let mut created_secret_ref = None;
+    let api_key_secret_ref = if let Some(secret_ref) = &existing_secret_ref {
+        secret_ref.clone()
+    } else {
+        let api_key = supplied_api_key.as_ref().ok_or_else(|| {
+            ApiProblem::validation("apiKey is required for a new model configuration")
+        })?;
+        let metadata = state
+            .model_configuration_runtime
+            .secrets
+            .lock()
+            .map_err(|_| ApiProblem::internal("model credential store is unavailable"))?
+            .create_secret(
+                SecretCreateRequest::new(
+                    format!("Model credential for {}", body.configuration_id),
+                    SecretType::ApiKey,
+                    api_key,
+                )
+                .with_description("Agent model configuration credential")
+                .with_tag("tenant_id", &scope.tenant_id)
+                .with_tag("owner_user_id", &scope.owner_user_id),
+            )
+            .map_err(|_| ApiProblem::internal("model credential could not be stored"))?;
+        created_secret_ref = Some(metadata.secret_id.clone());
+        metadata.secret_id
+    };
+
+    let mut kernel_request = sdkwork_agents_runtime_facade::AgentModelConfigurationRequest::new(
+        request_id,
+        agent_id,
+        &profile_id,
+        body.vendor_code.trim(),
+        body.base_url.trim(),
+        &api_key_secret_ref,
+        body.default_model_id.trim(),
+    )
+    .with_supported_models(body.supported_model_ids)
+    .with_multimodal_support(body.supports_multimodal);
+    if let Some(value) = body.input_context_tokens {
+        kernel_request = kernel_request.with_input_context_tokens(value);
+    }
+    if let Some(value) = body.output_context_tokens {
+        kernel_request = kernel_request.with_output_context_tokens(value);
+    }
+    if let Some(value) = body.tool_call_rounds {
+        kernel_request = kernel_request.with_tool_call_rounds(value);
+    }
+
+    let application = match sdkwork_agents_runtime_facade::apply_code_engine_model_configuration(
+        engine_id,
+        &kernel_request,
+    ) {
+        Ok(application) => application,
+        Err(error) => {
+            if let Some(secret_ref) = created_secret_ref {
+                if let Ok(mut secrets) = state.model_configuration_runtime.secrets.lock() {
+                    let _ = secrets.delete_secret(&secret_ref);
+                }
+            }
+            return Err(ApiProblem::validation(error.to_string()));
+        }
+    };
+
+    if let Err(_error) = state
+        .model_configuration_runtime
+        .configurations
+        .lock()
+        .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+        .save_profile(application.profile.clone())
+    {
+        if let Some(secret_ref) = created_secret_ref {
+            if let Ok(mut secrets) = state.model_configuration_runtime.secrets.lock() {
+                let _ = secrets.delete_secret(&secret_ref);
+            }
+        }
+        return Err(ApiProblem::internal(
+            "provider model configuration could not be stored",
+        ));
+    }
+
+    if let (Some(api_key), Some(secret_ref)) = (supplied_api_key, existing_secret_ref.as_ref()) {
+        state
+            .model_configuration_runtime
+            .secrets
+            .lock()
+            .map_err(|_| ApiProblem::internal("model credential store is unavailable"))?
+            .rotate_secret(
+                SecretRotateRequest::new(secret_ref, api_key, scope.owner_user_id.clone())
+                    .with_reason("Agent model configuration updated"),
+            )
+            .map_err(|_| ApiProblem::internal("model credential could not be updated"))?;
+    }
+
+    let response = AppliedAgentModelConfigurationResponse {
+        configuration_id: body.configuration_id.trim().to_string(),
+        profile_id: application.profile.profile_id,
+        engine_id: engine_id.to_string(),
+        agent_id: agent_id.to_string(),
+        provider_scope: application.provider_scope,
+        vendor_code: kernel_request.vendor_code,
+        base_url: kernel_request.base_url,
+        default_model_id: kernel_request.default_model_id,
+        supported_model_ids: kernel_request.supported_model_ids,
+        supported_provider_ids,
+        input_context_tokens: kernel_request.input_context_tokens,
+        output_context_tokens: kernel_request.output_context_tokens,
+        tool_call_rounds: kernel_request.tool_call_rounds,
+        supports_multimodal: kernel_request.supports_multimodal,
+        api_key_configured: true,
+    };
+    Ok(response)
+}
+
+async fn app_apply_model_selection(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    body: Result<Json<ApplyAgentModelSelectionRequest>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AppliedAgentModelSelectionResponse>> = async {
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        if body
+            .configuration_id
+            .as_ref()
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            let subject = scope.subject().clone();
+            let catalog = with_service(&state, move |service| {
+                service.list_code_engine_catalog(subject)
+            })
+            .await?;
+            validate_catalog_model_selection(&catalog, &body.engine_id, &body.model_id)?;
+        }
+        let item = apply_agent_model_selection(state, scope, web_ctx.request_id.0.as_str(), body)?;
+        Ok(ResourceData { item })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+fn apply_agent_model_selection(
+    state: AgentHttpState,
+    scope: RequestScope,
+    request_id: &str,
+    body: ApplyAgentModelSelectionRequest,
+) -> ApiResult<AppliedAgentModelSelectionResponse> {
+    let engine_id = body.engine_id.trim();
+    let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_id)
+        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+    validate_model_configuration_identifier("modelId", &body.model_id, 256)?;
+    let configuration_id = body
+        .configuration_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(configuration_id) = &configuration_id {
+        validate_model_configuration_identifier("configurationId", configuration_id, 160)?;
+    }
+
+    let profile_id = configuration_id
+        .as_deref()
+        .map(|configuration_id| model_configuration_profile_id(&scope, engine_id, configuration_id))
+        .unwrap_or_else(|| {
+            model_configuration_profile_id(&scope, engine_id, "model.selection.builtin")
+        });
+    let current_profile = if configuration_id.is_some() {
+        let profile = state
+            .model_configuration_runtime
+            .configurations
+            .lock()
+            .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+            .find_profile(agent_id, &profile_id)
+            .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?
+            .ok_or_else(|| {
+                ApiProblem::validation(
+                    "configurationId does not identify a saved model configuration",
+                )
+            })?;
+        Some(profile)
+    } else {
+        None
+    };
+
+    let mut kernel_request = sdkwork_agents_runtime_facade::AgentModelSelectionRequest::new(
+        request_id,
+        agent_id,
+        &profile_id,
+        body.model_id.trim(),
+    );
+    if let Some(profile) = current_profile {
+        kernel_request = kernel_request
+            .with_current_profile(profile)
+            .with_supported_model_enforcement();
+    }
+    let application = sdkwork_agents_runtime_facade::apply_code_engine_model_selection(
+        engine_id,
+        &kernel_request,
+    )
+    .map_err(|error| ApiProblem::validation(error.to_string()))?;
+    state
+        .model_configuration_runtime
+        .configurations
+        .lock()
+        .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+        .save_profile(application.profile.clone())
+        .map_err(|_| ApiProblem::internal("provider model selection could not be stored"))?;
+
+    Ok(AppliedAgentModelSelectionResponse {
+        configuration_id,
+        profile_id: application.profile.profile_id,
+        engine_id: engine_id.to_string(),
+        agent_id: agent_id.to_string(),
+        provider_scope: application.provider_scope,
+        model_id: kernel_request.model_id,
+    })
+}
+
+fn validate_catalog_model_selection(
+    catalog: &CodeEngineCatalog,
+    engine_id: &str,
+    model_id: &str,
+) -> ApiResult<()> {
+    let engine_id = engine_id.trim();
+    let model_id = model_id.trim();
+    let engine = catalog
+        .engines
+        .iter()
+        .find(|engine| engine.engine_key == engine_id)
+        .ok_or_else(|| ApiProblem::validation("engineId is not available in the Agent catalog"))?;
+    if !engine.models.iter().any(|model| model.model_id == model_id) {
+        return Err(ApiProblem::validation(
+            "modelId is not available for the selected Agent provider",
+        ));
+    }
+    Ok(())
+}
+
+fn model_configuration_profile_id(
+    scope: &RequestScope,
+    engine_id: &str,
+    configuration_id: &str,
+) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for value in [
+        scope.tenant_id.as_str(),
+        scope.organization_id.as_str(),
+        scope.owner_user_id.as_str(),
+        engine_id,
+        configuration_id,
+    ] {
+        for byte in value
+            .as_bytes()
+            .iter()
+            .copied()
+            .chain(std::iter::once(0xff))
+        {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    format!("profile.model_configuration.{hash:016x}")
+}
+
+fn normalize_supported_model_provider_ids(
+    provider_ids: Vec<String>,
+    selected_engine_id: &str,
+) -> ApiResult<Vec<String>> {
+    let supported = sdkwork_agents_runtime_facade::bootstrappable_engine_keys();
+    let requested = if provider_ids.is_empty() {
+        supported.iter().map(|value| (*value).to_string()).collect()
+    } else {
+        provider_ids
+    };
+    let mut normalized = Vec::new();
+    for provider_id in requested {
+        let provider_id = provider_id.trim();
+        if !supported.contains(&provider_id) {
+            return Err(ApiProblem::validation(
+                "supportedProviderIds contains an unsupported Agent provider",
+            ));
+        }
+        if !normalized.iter().any(|value| value == provider_id) {
+            normalized.push(provider_id.to_string());
+        }
+    }
+    if !normalized.iter().any(|value| value == selected_engine_id) {
+        return Err(ApiProblem::validation(
+            "engineId must be included in supportedProviderIds",
+        ));
+    }
+    Ok(normalized)
+}
+
+fn validate_model_configuration_identifier(
+    field: &str,
+    value: &str,
+    max_length: usize,
+) -> ApiResult<()> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > max_length {
+        return Err(ApiProblem::validation(format!(
+            "{field} must contain between 1 and {max_length} characters"
+        )));
+    }
+    if !value
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+    {
+        return Err(ApiProblem::validation(format!(
+            "{field} contains unsupported characters"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -7517,6 +8150,44 @@ async fn app_answer_interaction(
     finish_api_json(&web_ctx, result)
 }
 
+async fn app_resolve_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Json<ResolveInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_scope = scope.owner_scope()?;
+        let mut command = body
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        command.owner_scope = owner_scope;
+        let record =
+            with_service(&state, move |service| service.resolve_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
 // ===========================================================================
 // Session item and turn handlers  - App API
 // ===========================================================================
@@ -10035,6 +10706,42 @@ async fn backend_answer_interaction(
     finish_api_json(&web_ctx, result)
 }
 
+async fn backend_resolve_interaction(
+    State(state): State<AgentHttpState>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    Extension(context): Extension<AgentRequestContext>,
+    body: Result<Json<ResolveInteractionRequestDto>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentInteractionRecordDto>> = async {
+        let Path((agent_id, session_id, interaction_id)) =
+            path.map_err(ApiProblem::from_path_rejection)?;
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let tenant_id = parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let command = body
+            .into_command(
+                tenant_id,
+                organization_id,
+                agent_id,
+                session_id,
+                interaction_id,
+                scope.subject,
+            )
+            .map_err(ApiProblem::from_kernel_error)?;
+        let record =
+            with_service(&state, move |service| service.resolve_interaction(command)).await?;
+        Ok(ResourceData {
+            item: AgentInteractionRecordDto::from_record(&record)
+                .map_err(ApiProblem::from_kernel_error)?,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
 /// Invoke a service operation without Mutex locking.
 ///
 /// Since `AgentsService`, `AgentRepository`, and `AgentAuditSink` are all
@@ -10716,6 +11423,12 @@ struct TurnHttpStreamIdentity {
 }
 
 struct HttpTurnExecutionStreamSink {
+    service: Arc<HttpService>,
+    tenant_id: u64,
+    organization_id: u64,
+    agent_id: String,
+    requested_by: PolicySubject,
+    requested_at: String,
     sender: mpsc::Sender<TurnHttpStreamSignal>,
     rich_events_requested: bool,
     identity: OnceLock<TurnHttpStreamIdentity>,
@@ -10725,8 +11438,19 @@ struct HttpTurnExecutionStreamSink {
 }
 
 impl HttpTurnExecutionStreamSink {
-    fn new(sender: mpsc::Sender<TurnHttpStreamSignal>, rich_events_requested: bool) -> Self {
+    fn new(
+        service: Arc<HttpService>,
+        command: &CreateTurnCommand,
+        sender: mpsc::Sender<TurnHttpStreamSignal>,
+        rich_events_requested: bool,
+    ) -> Self {
         Self {
+            service,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            agent_id: command.agent_id.clone(),
+            requested_by: command.requested_by.clone(),
+            requested_at: command.requested_at.clone(),
             sender,
             rich_events_requested,
             identity: OnceLock::new(),
@@ -10792,16 +11516,39 @@ impl TurnExecutionStreamSink for HttpTurnExecutionStreamSink {
         self.send_chunk(encoded);
     }
 
-    fn push_event(&self, event: &sdkwork_agent_kernel::KernelEvent) {
-        if !self.rich_events_requested || self.closed.load(Ordering::Acquire) {
-            return;
-        }
+    fn push_event(&self, event: &sdkwork_agent_kernel::KernelEvent) -> KernelResult<()> {
         let Some(identity) = self.identity.get() else {
             self.fail(ApiProblem::internal(
                 "Turn stream event arrived before execution identity was established",
             ));
-            return;
+            return Err(KernelError::Internal {
+                message: "Turn stream event arrived before execution identity was established"
+                    .to_string(),
+            });
         };
+        if matches!(
+            event.event_type.as_str(),
+            "agent.policy.paused" | "agent.message.paused"
+        ) {
+            self.service.persist_provider_interaction_event(
+                PersistProviderInteractionEventCommand {
+                    tenant_id: self.tenant_id,
+                    organization_id: self.organization_id,
+                    path_agent_id: self.agent_id.clone(),
+                    session_id: identity.session_id.clone(),
+                    turn_id: identity.turn_id.clone(),
+                    requested_by: self.requested_by.clone(),
+                    received_at: event
+                        .occurred_at
+                        .clone()
+                        .unwrap_or_else(|| self.requested_at.clone()),
+                    event: event.clone(),
+                },
+            )?;
+        }
+        if !self.rich_events_requested || self.closed.load(Ordering::Acquire) {
+            return Ok(());
+        }
         let sequence = self.event_sequence.fetch_add(1, Ordering::AcqRel);
         let encoded =
             agent_turn_runtime_event_json(sequence, event, &identity.session_id, &identity.turn_id)
@@ -10811,6 +11558,7 @@ impl TurnExecutionStreamSink for HttpTurnExecutionStreamSink {
                     Ok(chunk)
                 });
         self.send_chunk(encoded);
+        Ok(())
     }
 
     fn close(&self) {
@@ -10835,6 +11583,8 @@ async fn streaming_turn_execution_http_response(
     let trace_id = ctx.resolved_trace_id();
     let (sender, mut receiver) = mpsc::channel(TURN_STREAM_CHANNEL_CAPACITY);
     let transport_sink = Arc::new(HttpTurnExecutionStreamSink::new(
+        Arc::clone(&service),
+        &command,
         sender.clone(),
         rich_events_requested,
     ));
@@ -11308,6 +12058,267 @@ mod tests {
             .with_request_id("req-test-fixed")
     }
 
+    fn model_configuration_body(
+        engine_id: &str,
+        configuration_id: &str,
+        api_key: Option<&str>,
+    ) -> Value {
+        let mut body = json!({
+            "configurationId": configuration_id,
+            "engineId": engine_id,
+            "vendorCode": "openai-compatible",
+            "baseUrl": "https://models.example.test/v1",
+            "defaultModelId": "example-chat",
+            "supportedModelIds": ["example-chat", "example-reasoning"],
+            "inputContextTokens": 128000,
+            "outputContextTokens": 16000,
+            "toolCallRounds": 32,
+            "supportsMultimodal": true
+        });
+        if let Some(api_key) = api_key {
+            body["apiKey"] = Value::String(api_key.to_string());
+        }
+        body
+    }
+
+    async fn post_model_configuration(app: &axum::Router, body: Value) -> Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/app/v3/api/ai/model_configurations/apply")
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("model configuration request should be built"),
+            )
+            .await
+            .expect("model configuration request should complete")
+    }
+
+    fn model_selection_body(
+        engine_id: &str,
+        model_id: &str,
+        configuration_id: Option<&str>,
+    ) -> Value {
+        let mut body = json!({
+            "engineId": engine_id,
+            "modelId": model_id
+        });
+        if let Some(configuration_id) = configuration_id {
+            body["configurationId"] = Value::String(configuration_id.to_string());
+        }
+        body
+    }
+
+    async fn post_model_selection(app: &axum::Router, body: Value) -> Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/app/v3/api/ai/model_selections/apply")
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("model selection request should be built"),
+            )
+            .await
+            .expect("model selection request should complete")
+    }
+
+    #[tokio::test]
+    async fn model_configuration_dispatches_all_providers_without_exposing_credentials() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+
+        for engine_id in sdkwork_agents_runtime_facade::bootstrappable_engine_keys() {
+            let api_key = format!("secret-value-for-{engine_id}");
+            let response = post_model_configuration(
+                &app,
+                model_configuration_body(
+                    engine_id,
+                    &format!("model.{engine_id}.custom"),
+                    Some(&api_key),
+                ),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK, "engine {engine_id}");
+            let bytes = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("response body should be readable");
+            let response_text =
+                String::from_utf8(bytes.to_vec()).expect("response body should be UTF-8");
+            assert!(!response_text.contains(&api_key));
+            assert!(!response_text.contains("secret-"));
+            let payload: Value =
+                serde_json::from_str(&response_text).expect("response should be JSON");
+            let item = &payload["data"]["item"];
+            assert_eq!(item["engineId"], engine_id);
+            assert_eq!(item["apiKeyConfigured"], true);
+            assert_eq!(
+                item["supportedProviderIds"]
+                    .as_array()
+                    .expect("provider ids should be an array")
+                    .len(),
+                6
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn model_configuration_requires_a_credential_only_for_new_profiles() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+        let configuration_id = "model.codex.reusable";
+
+        let missing = post_model_configuration(
+            &app,
+            model_configuration_body("codex", configuration_id, None),
+        )
+        .await;
+        assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+
+        let created = post_model_configuration(
+            &app,
+            model_configuration_body("codex", configuration_id, Some("initial-secret")),
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::OK);
+        let created_payload: Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), usize::MAX)
+                .await
+                .expect("created response should be readable"),
+        )
+        .expect("created response should be JSON");
+
+        let reapplied = post_model_configuration(
+            &app,
+            model_configuration_body("codex", configuration_id, None),
+        )
+        .await;
+        assert_eq!(reapplied.status(), StatusCode::OK);
+        let reapplied_payload: Value = serde_json::from_slice(
+            &to_bytes(reapplied.into_body(), usize::MAX)
+                .await
+                .expect("reapplied response should be readable"),
+        )
+        .expect("reapplied response should be JSON");
+        assert_eq!(
+            created_payload["data"]["item"]["profileId"],
+            reapplied_payload["data"]["item"]["profileId"]
+        );
+    }
+
+    #[tokio::test]
+    async fn model_configuration_requires_selected_provider_support() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+        let mut body = model_configuration_body(
+            "codex",
+            "model.codex.unsupported-selection",
+            Some("unused-secret"),
+        );
+        body["supportedProviderIds"] = json!(["claude-code"]);
+
+        let response = post_model_configuration(&app, body).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn catalog_model_selection_dispatches_every_provider_config_spi() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+        let catalog = sdkwork_agents_runtime_facade::bootstrap_bootstrappable_code_engine_catalog()
+            .expect("code engine catalog should bootstrap");
+
+        for engine in catalog.engines {
+            let model_id = engine
+                .models
+                .first()
+                .expect("bootstrappable engine should publish a model")
+                .model_id
+                .clone();
+            let response = post_model_selection(
+                &app,
+                model_selection_body(&engine.engine_key, &model_id, None),
+            )
+            .await;
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "engine {}",
+                engine.engine_key
+            );
+            let payload: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("selection response should be readable"),
+            )
+            .expect("selection response should be JSON");
+            let item = &payload["data"]["item"];
+            assert_eq!(item["engineId"], engine.engine_key);
+            assert_eq!(item["modelId"], model_id);
+            assert!(item.get("configurationId").is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn custom_model_selection_reuses_saved_configuration_and_supported_models() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+        let configuration_id = "model.codex.selection";
+        let configured = post_model_configuration(
+            &app,
+            model_configuration_body("codex", configuration_id, Some("selection-secret")),
+        )
+        .await;
+        assert_eq!(configured.status(), StatusCode::OK);
+
+        let selected = post_model_selection(
+            &app,
+            model_selection_body("codex", "example-reasoning", Some(configuration_id)),
+        )
+        .await;
+        assert_eq!(selected.status(), StatusCode::OK);
+        let response_text = String::from_utf8(
+            to_bytes(selected.into_body(), usize::MAX)
+                .await
+                .expect("selection response should be readable")
+                .to_vec(),
+        )
+        .expect("selection response should be UTF-8");
+        assert!(!response_text.contains("selection-secret"));
+        let payload: Value =
+            serde_json::from_str(&response_text).expect("selection response should be JSON");
+        assert_eq!(payload["data"]["item"]["configurationId"], configuration_id);
+        assert_eq!(payload["data"]["item"]["modelId"], "example-reasoning");
+
+        let unsupported = post_model_selection(
+            &app,
+            model_selection_body("codex", "outside-configuration", Some(configuration_id)),
+        )
+        .await;
+        assert_eq!(unsupported.status(), StatusCode::BAD_REQUEST);
+    }
+
     fn facade_actor() -> sdkwork_agents_runtime_facade::AgentsSessionActor {
         sdkwork_agents_runtime_facade::AgentsSessionActor {
             subject_id: "user:100".to_string(),
@@ -11330,6 +12341,7 @@ mod tests {
             provider_session_tree_id: Some("provider-tree-001".to_string()),
             provider_parent_session_id: Some("provider-parent-001".to_string()),
             provider_forked_from_session_id: Some("provider-origin-001".to_string()),
+            provider_directory: None,
         }
     }
 

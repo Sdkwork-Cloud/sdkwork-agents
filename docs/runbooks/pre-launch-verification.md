@@ -31,7 +31,7 @@ pnpm check:docs
 
 Pass criteria:
 
-- operation counts are App 100, Backend 57 and Open 55;
+- operation counts are App 102, Backend 58 and Open 56;
 - no client-writable tenant, organization or user selector exists;
 - all list operations use store-level pagination;
 - offset and cursor list declarations match their `PageInfo` mode;
@@ -56,7 +56,7 @@ flutter test apps/sdkwork-agents-flutter-mobile/packages/sdkwork_agents_flutter_
 Pass criteria:
 
 - dry run reports `hasChanges: false` for every family/language;
-- Open SDK exposes exactly its 55 API-key operations;
+- Open SDK exposes exactly its 56 API-key operations;
 - TypeScript consumers use scoped package roots;
 - Flutter package root contains `pubspec.yaml` and
   `lib/sdkwork_agents_app_sdk.dart`;

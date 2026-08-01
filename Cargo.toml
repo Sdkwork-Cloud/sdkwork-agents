@@ -89,3 +89,8 @@ sdkwork-api-agents-assembly = { path = "crates/sdkwork-api-agents-assembly" }
 sdkwork-api-agents-standalone-gateway = { path = "crates/sdkwork-api-agents-standalone-gateway" }
 sdkwork-intelligence-agents-worker = { path = "crates/sdkwork-intelligence-agents-worker" }
 sdkwork-agents-integration-tests = { path = "crates/sdkwork-agents-integration-tests" }
+
+[patch.crates-io]
+# Codex app-server-client enables websocket proxy support supplied by these upstream forks.
+tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "0e5b2d73aa18dd9f0a50ee9ff199d5aef7594186" }
+tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }

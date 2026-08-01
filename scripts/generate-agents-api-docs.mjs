@@ -19,7 +19,7 @@ const surfaces = [
     name: 'App API',
     key: 'app',
     prefix: '/app/v3/api',
-    expectedCount: 100,
+    expectedCount: 102,
     auth: '`Authorization` and `Access-Token` through the global app session',
     sdk: '`@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk`',
     source:
@@ -29,7 +29,7 @@ const surfaces = [
     name: 'Backend API',
     key: 'backend',
     prefix: '/backend/v3/api',
-    expectedCount: 57,
+    expectedCount: 58,
     auth: '`Authorization` and `Access-Token` for operator context',
     sdk: '`@sdkwork/agents-backend-sdk`',
     source:
@@ -39,7 +39,7 @@ const surfaces = [
     name: 'Open API',
     key: 'open',
     prefix: '/agent/v3/api',
-    expectedCount: 55,
+    expectedCount: 56,
     auth: '`X-API-Key`',
     sdk: '`@sdkwork/agents-sdk`',
     source:

@@ -7,12 +7,13 @@
 
 use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
+use crate::runtime_facade_bridge::shared_code_engine_host;
 use sdkwork_agent_kernel::{
     KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
     ModelStreamChunk, ModelStreamSink,
 };
 use sdkwork_agents_runtime_facade::{
-    bootstrap_code_engine, execute_code_engine_turn, execute_code_engine_turn_with_stream,
+    execute_code_engine_turn, execute_code_engine_turn_with_stream,
     execute_code_engine_turn_with_stream_sink, CodeEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
@@ -94,7 +95,7 @@ pub trait TurnExecutionStreamSink: Send + Sync {
 
     fn push_delta(&self, delta: &str);
 
-    fn push_event(&self, event: &KernelEvent);
+    fn push_event(&self, event: &KernelEvent) -> KernelResult<()>;
 
     fn close(&self) {}
 }
@@ -332,8 +333,7 @@ impl ModelStreamSink for RuntimeFacadeModelStreamSink {
     }
 
     fn push_event(&mut self, event: KernelEvent) -> KernelResult<()> {
-        self.sink.push_event(&event);
-        Ok(())
+        self.sink.push_event(&event)
     }
 }
 
@@ -355,11 +355,14 @@ fn execute_runtime_facade_turn(
         return inference_error("active provider binding is not mapped to a canonical code engine");
     };
 
-    let Ok(slot) = bootstrap_code_engine(engine_key) else {
+    let Some(host) = shared_code_engine_host() else {
+        return inference_error("shared code engine host is unavailable");
+    };
+    let Some(slot) = host.slot(engine_key) else {
         return inference_error(format!("code engine bootstrap failed for {engine_key}"));
     };
 
-    let model_id = resolve_turn_model_id(input, &slot);
+    let model_id = resolve_turn_model_id(input, slot);
     let prompt = build_managed_chat_prompt(input);
     let turn_input = CodeEngineTurnInput {
         engine_key: engine_key.to_string(),
@@ -375,12 +378,12 @@ fn execute_runtime_facade_turn(
     let turn_result = if prefer_stream {
         if let Some(sink) = sink {
             let mut facade_sink = RuntimeFacadeModelStreamSink { sink };
-            execute_code_engine_turn_with_stream_sink(&slot, &turn_input, &mut facade_sink)
+            execute_code_engine_turn_with_stream_sink(slot, &turn_input, &mut facade_sink)
         } else {
-            execute_code_engine_turn_with_stream(&slot, &turn_input)
+            execute_code_engine_turn_with_stream(slot, &turn_input)
         }
     } else {
-        execute_code_engine_turn(&slot, &turn_input)
+        execute_code_engine_turn(slot, &turn_input)
     };
 
     match turn_result {
@@ -442,7 +445,7 @@ fn replay_turn_execution_stream(output: &TurnExecutionOutput, sink: &dyn TurnExe
     let mut delta_index = 0usize;
     let mut agent_message_text_by_item = HashMap::new();
     for event in &output.stream_events {
-        sink.push_event(event);
+        let _ = sink.push_event(event);
         if let Some(expected_delta) =
             buffered_agent_message_delta(event, &mut agent_message_text_by_item)
         {

@@ -1,20 +1,23 @@
 use sdkwork_agent_kernel::{
     AgentConfigurationProvider, AgentExecutionSettingsRequest, AgentExecutionSettingsResolution,
-    AgentExecutionSettingsSpec, KernelResult, ModelDescriptor, ModelProvider, ModelRequest,
-    ModelResponse, ModelStreamChunk, ModelStreamSink, ProviderSessionActivityProvider,
-    SessionActivitySnapshot,
+    AgentExecutionSettingsSpec, AgentMessage, AgentModelConfigurationApplication,
+    AgentModelConfigurationRequest, AgentModelSelectionRequest, AgentSession, KernelResult,
+    ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk, ModelStreamSink,
+    ProviderSessionActivityProvider, SessionActivitySnapshot,
 };
 use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
 };
 use sdkwork_agent_provider_codex::{CodexConfigurationProvider, CodexSdkIntegration};
+use sdkwork_agent_provider_core::{SessionLifecycleProvider, SessionListQuery};
 use sdkwork_agent_provider_gemini_cli::{GeminiCliConfigurationProvider, GeminiCliSdkIntegration};
-use sdkwork_agent_provider_hermes::HermesSdkIntegration;
-use sdkwork_agent_provider_openclaw::OpenClawSdkIntegration;
+use sdkwork_agent_provider_hermes::{HermesConfigurationProvider, HermesSdkIntegration};
+use sdkwork_agent_provider_openclaw::{OpenClawConfigurationProvider, OpenClawSdkIntegration};
 use sdkwork_agent_provider_opencode::{OpenCodeConfigurationProvider, OpenCodeSdkIntegration};
 use sdkwork_agent_provider_spi::{
-    SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
-    HERMES_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
+    SdkRuntimeInteractionResolution, SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID,
+    CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID, HERMES_BINDING_ID, OPENCLAW_BINDING_ID,
+    OPENCODE_BINDING_ID,
 };
 
 /// Canonical T1 code-engine keys bootstrapped by default in production hosts.
@@ -50,6 +53,60 @@ pub fn is_canonical_code_engine(engine_key: &str) -> bool {
     CANONICAL_CODE_ENGINE_KEYS.contains(&engine_key)
 }
 
+pub fn apply_code_engine_model_configuration(
+    engine_key: &str,
+    request: &AgentModelConfigurationRequest,
+) -> crate::RuntimeFacadeResult<AgentModelConfigurationApplication> {
+    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+        crate::RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        }
+    })?;
+    if request.agent_id != expected_agent_id {
+        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
+            "model configuration agentId does not match engineId {engine_key}"
+        )));
+    }
+
+    let result = match engine_key {
+        "codex" => CodexConfigurationProvider::new().apply_model_configuration(request),
+        "claude-code" => ClaudeCodeConfigurationProvider::new().apply_model_configuration(request),
+        "gemini" => GeminiCliConfigurationProvider::new().apply_model_configuration(request),
+        "opencode" => OpenCodeConfigurationProvider::new().apply_model_configuration(request),
+        "openclaw" => OpenClawConfigurationProvider::new().apply_model_configuration(request),
+        "hermes" => HermesConfigurationProvider::new().apply_model_configuration(request),
+        _ => unreachable!("validated code engine"),
+    };
+    result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
+}
+
+pub fn apply_code_engine_model_selection(
+    engine_key: &str,
+    request: &AgentModelSelectionRequest,
+) -> crate::RuntimeFacadeResult<AgentModelConfigurationApplication> {
+    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+        crate::RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        }
+    })?;
+    if request.agent_id != expected_agent_id {
+        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
+            "model selection agentId does not match engineId {engine_key}"
+        )));
+    }
+
+    let result = match engine_key {
+        "codex" => CodexConfigurationProvider::new().apply_model_selection(request),
+        "claude-code" => ClaudeCodeConfigurationProvider::new().apply_model_selection(request),
+        "gemini" => GeminiCliConfigurationProvider::new().apply_model_selection(request),
+        "opencode" => OpenCodeConfigurationProvider::new().apply_model_selection(request),
+        "openclaw" => OpenClawConfigurationProvider::new().apply_model_selection(request),
+        "hermes" => HermesConfigurationProvider::new().apply_model_selection(request),
+        _ => unreachable!("validated code engine"),
+    };
+    result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
+}
+
 pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" => Some("agent.intelligence.codex"),
@@ -80,6 +137,17 @@ pub struct CodeEngineRuntimeIdentity {
     pub agent_id: String,
     pub binding_id: String,
     pub provider_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CodeEngineInteractionResolution {
+    pub model_request_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub provider_session_id: String,
+    pub provider_turn_id: String,
+    pub provider_request_id: serde_json::Value,
+    pub resolution: serde_json::Value,
 }
 
 pub fn resolve_code_engine_runtime_identity(
@@ -249,6 +317,30 @@ impl CodeEngineSlot {
         self.model_provider().stream_into(request, sink)
     }
 
+    pub fn resolve_interaction(
+        &self,
+        resolution: &CodeEngineInteractionResolution,
+    ) -> crate::RuntimeFacadeResult<serde_json::Value> {
+        let runtime_resolution = SdkRuntimeInteractionResolution {
+            model_request_id: resolution.model_request_id.clone(),
+            session_id: resolution.session_id.clone(),
+            turn_id: resolution.turn_id.clone(),
+            provider_session_id: resolution.provider_session_id.clone(),
+            provider_turn_id: resolution.provider_turn_id.clone(),
+            provider_request_id: resolution.provider_request_id.clone(),
+            resolution: resolution.resolution.clone(),
+        };
+        match self {
+            Self::Codex(integration) => integration
+                .resolve_interaction(&runtime_resolution)
+                .map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string())),
+            _ => Err(crate::RuntimeFacadeError::InvalidInput(format!(
+                "code engine {} does not support typed interaction resolution",
+                self.engine_key()
+            ))),
+        }
+    }
+
     pub fn get_provider_session_activity(
         &self,
         provider_session_id: &str,
@@ -269,6 +361,47 @@ impl CodeEngineSlot {
             Self::OpenClaw(_) | Self::Hermes(_) => {
                 Ok(SessionActivitySnapshot::unsupported(provider_session_id))
             }
+        }
+    }
+
+    pub fn list_provider_sessions(&self) -> KernelResult<Vec<AgentSession>> {
+        match self {
+            Self::Codex(integration) => integration.list_provider_sessions(),
+            Self::ClaudeCode(integration) => integration.list_provider_sessions(),
+            Self::Gemini(integration) => integration.list_provider_sessions(),
+            Self::OpenCode(integration) => integration.list_provider_sessions(),
+            Self::OpenClaw(integration) => integration
+                .lifecycle
+                .list_sessions(&SessionListQuery::default()),
+            Self::Hermes(integration) => integration
+                .lifecycle
+                .list_sessions(&SessionListQuery::default()),
+        }
+    }
+
+    pub fn get_provider_session_history(
+        &self,
+        provider_session_id: &str,
+    ) -> KernelResult<Vec<AgentMessage>> {
+        match self {
+            Self::Codex(integration) => {
+                integration.get_provider_session_history(provider_session_id)
+            }
+            Self::ClaudeCode(integration) => {
+                integration.get_provider_session_history(provider_session_id)
+            }
+            Self::Gemini(integration) => {
+                integration.get_provider_session_history(provider_session_id)
+            }
+            Self::OpenCode(integration) => {
+                integration.get_provider_session_history(provider_session_id)
+            }
+            Self::OpenClaw(integration) => integration
+                .lifecycle
+                .get_conversation_history(provider_session_id),
+            Self::Hermes(integration) => integration
+                .lifecycle
+                .get_conversation_history(provider_session_id),
         }
     }
 
@@ -389,5 +522,44 @@ mod tests {
                 .expect("unknown identity resolution")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn model_configuration_dispatches_to_each_code_engine_config_spi() {
+        for engine_key in bootstrappable_engine_keys() {
+            let agent_id = code_engine_agent_id(engine_key).expect("agent id");
+            let request = AgentModelConfigurationRequest::new(
+                format!("request.model.{engine_key}"),
+                agent_id,
+                format!("profile.model.{engine_key}"),
+                "openai-compatible",
+                "https://models.example.test/v1",
+                format!("secret-model-{engine_key}"),
+                "example-chat",
+            );
+            let application = apply_code_engine_model_configuration(engine_key, &request)
+                .expect("provider Config SPI applies model configuration");
+            assert_eq!(application.profile.agent_id, agent_id);
+            assert_eq!(application.profile.profile_id, request.profile_id);
+            assert_ne!(application.provider_scope, "process_adapter");
+        }
+    }
+
+    #[test]
+    fn model_selection_dispatches_to_each_code_engine_config_spi() {
+        for engine_key in bootstrappable_engine_keys() {
+            let agent_id = code_engine_agent_id(engine_key).expect("agent id");
+            let request = AgentModelSelectionRequest::new(
+                format!("request.selection.{engine_key}"),
+                agent_id,
+                format!("profile.selection.{engine_key}"),
+                "catalog-model",
+            );
+            let application = apply_code_engine_model_selection(engine_key, &request)
+                .expect("provider Config SPI applies model selection");
+            assert_eq!(application.profile.agent_id, agent_id);
+            assert_eq!(application.profile.profile_id, request.profile_id);
+            assert_ne!(application.provider_scope, "process_adapter");
+        }
     }
 }

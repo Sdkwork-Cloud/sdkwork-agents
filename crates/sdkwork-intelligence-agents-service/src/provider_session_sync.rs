@@ -9,7 +9,8 @@ use sdkwork_agent_kernel::{
 use sdkwork_agents_runtime_facade::{
     AgentsSessionActor, AgentsSessionEntrySurface, AgentsSessionFacade, AgentsSessionKind,
     AgentsSessionRuntimeBindingDescriptor, ProviderSessionInventoryItem,
-    ProviderSessionInventorySelector, ResolveAgentsSessionRequest, RuntimeFacadeError,
+    ProviderSessionInventorySelector, ProviderSessionInventorySnapshot,
+    ResolveAgentsSessionRequest, RuntimeFacadeError,
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -164,11 +165,8 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
             unique_basename,
         })
         .map_err(runtime_facade_error)?;
-    if inventory.is_empty() {
-        return Ok(ProviderSessionSynchronizationResult::default());
-    }
 
-    synchronize_provider_session_inventory(service, project, subject, inventory)
+    synchronize_provider_session_snapshot(service, project, subject, inventory)
 }
 
 pub(crate) fn synchronize_provider_session_transcript(
@@ -545,6 +543,155 @@ fn synchronize_provider_session_inventory(
     )
 }
 
+fn synchronize_provider_session_snapshot(
+    service: Arc<HttpService>,
+    project: &AgentProjectRecord,
+    subject: PolicySubject,
+    snapshot: ProviderSessionInventorySnapshot,
+) -> KernelResult<ProviderSessionSynchronizationResult> {
+    let ProviderSessionInventorySnapshot {
+        directory_resolved,
+        items,
+        successful_engine_keys,
+        issues,
+    } = snapshot;
+    let visible_provider_sessions = items
+        .iter()
+        .map(|item| {
+            (
+                item.engine_key.clone(),
+                item.binding_id.trim().to_string(),
+                item.provider_id.trim().to_string(),
+                item.session.session_id.trim().to_string(),
+            )
+        })
+        .collect::<HashSet<_>>();
+    let mut result =
+        synchronize_provider_session_inventory(service.clone(), project, subject.clone(), items)?;
+    for _issue in issues {
+        result.record_failed("provider_inventory_unavailable");
+    }
+    if directory_resolved {
+        reconcile_missing_provider_session_directories(
+            service,
+            project,
+            subject,
+            &successful_engine_keys,
+            &visible_provider_sessions,
+            &mut result,
+        )?;
+    }
+    Ok(result)
+}
+
+fn reconcile_missing_provider_session_directories(
+    service: Arc<HttpService>,
+    project: &AgentProjectRecord,
+    subject: PolicySubject,
+    successful_engine_keys: &[String],
+    visible_provider_sessions: &HashSet<(String, String, String, String)>,
+    result: &mut ProviderSessionSynchronizationResult,
+) -> KernelResult<()> {
+    for engine_key in successful_engine_keys {
+        let Some(agent_id) = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) else {
+            continue;
+        };
+        let mut page = 1;
+        loop {
+            let sessions = service.list_sessions(crate::application::ListSessionsCommand {
+                query: crate::ports::SessionListQuery::for_tenant(project.tenant_id)
+                    .for_organization(project.organization_id)
+                    .for_owner(project.owner_user_id)
+                    .for_project(project.project_id.clone())
+                    .for_agent(agent_id)
+                    .include_archived()
+                    .with_pagination(
+                        PaginationParams::default()
+                            .with_page_size(200)
+                            .with_page(page),
+                    ),
+                requested_by: subject.clone(),
+            })?;
+            let item_count = sessions.items.len();
+            for session in sessions.items {
+                if session.source_module.as_deref() != Some("birdcoder")
+                    || session.source_context_kind.as_deref() != Some("provider_session")
+                    || session.deleted_at.is_some()
+                {
+                    continue;
+                }
+                let bindings =
+                    service.list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+                        query: SessionRuntimeBindingListQuery::for_session(
+                            project.tenant_id,
+                            project.organization_id,
+                            session.session_id.clone(),
+                        )
+                        .current_only()
+                        .with_pagination(PaginationParams::default().with_page_size(1)),
+                        path_agent_id: agent_id.to_string(),
+                        owner_scope: Some(project.owner_user_id),
+                        requested_by: subject.clone(),
+                    })?;
+                let Some(binding) = bindings.items.into_iter().next() else {
+                    continue;
+                };
+                let Some(provider_session_id) = binding.provider_session_id.clone() else {
+                    continue;
+                };
+                if visible_provider_sessions.contains(&(
+                    engine_key.clone(),
+                    binding.provider_binding_id.clone(),
+                    binding.provider_id.clone(),
+                    provider_session_id,
+                )) || (!binding.provider_visible && binding.provider_archived)
+                {
+                    continue;
+                }
+                let requested_at = OffsetDateTime::now_utc()
+                    .format(&Rfc3339)
+                    .map_err(|error| KernelError::Internal {
+                        message: error.to_string(),
+                    })?;
+                let mut directory = sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry {
+                    title: binding.provider_title.clone(),
+                    title_source: binding.provider_title_source.clone(),
+                    preview: binding.provider_preview.clone(),
+                    created_at: binding.provider_created_at.clone(),
+                    updated_at: binding.provider_updated_at.clone(),
+                    recency_at: binding.provider_recency_at.clone(),
+                    pinned: binding.provider_pinned,
+                    archived: true,
+                    visible: false,
+                    source: binding.provider_source.clone(),
+                    sort_key: binding.provider_sort_key.clone().unwrap_or_default(),
+                };
+                directory.pinned = false;
+                service.reconcile_provider_session_history_runtime_binding_directory(
+                    crate::application::ReconcileProviderSessionRuntimeBindingDirectoryCommand {
+                        tenant_id: project.tenant_id,
+                        organization_id: project.organization_id,
+                        path_agent_id: agent_id.to_string(),
+                        session_id: session.session_id,
+                        runtime_binding_id: binding.runtime_binding_id,
+                        expected_version: binding.version,
+                        provider_directory: directory,
+                        owner_scope: Some(project.owner_user_id),
+                        requested_by: subject.clone(),
+                        requested_at,
+                    },
+                )?;
+                result.synchronized_session_count += 1;
+            }
+            if item_count < 200 {
+                break;
+            }
+            page += 1;
+        }
+    }
+    Ok(())
+}
+
 fn synchronize_provider_session_inventory_with_timeout(
     service: Arc<HttpService>,
     project: &AgentProjectRecord,
@@ -682,6 +829,7 @@ fn synchronize_provider_session_inventory_with_timeout(
                 provider_session_tree_id: Some(provider_session_id),
                 provider_parent_session_id: item.session.parent_session_id.clone(),
                 provider_forked_from_session_id: item.session.forked_from_id.clone(),
+                provider_directory: Some(item.directory.clone()),
             }),
             actor: actor.clone(),
             requested_at,
@@ -1079,14 +1227,266 @@ mod tests {
             .with_cwd(r"E:\sdkwork-space\sdkwork-birdcoder");
         session.created_at = Some(timestamp.clone());
         session.updated_at = Some(timestamp);
+        let directory = sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry {
+            title: session.title.clone(),
+            title_source: Some("provider".to_string()),
+            preview: session.preview.clone(),
+            created_at: session.created_at.clone(),
+            updated_at: session.updated_at.clone(),
+            recency_at: session.updated_at.clone(),
+            pinned: false,
+            archived: false,
+            visible: true,
+            source: None,
+            sort_key: session.session_id.clone(),
+        };
         ProviderSessionInventoryItem {
             engine_key: engine.engine_key.clone(),
             agent_id: engine.agent_id.clone(),
             binding_id: engine.binding_id.clone(),
             provider_id: default_model.provider_id.clone(),
             default_model_id: default_model.model_id.clone(),
+            directory,
             session,
         }
+    }
+
+    fn current_provider_binding(
+        state: &AgentHttpState,
+        project: &AgentProjectRecord,
+        engine_key: &str,
+    ) -> crate::domain::AgentSessionRuntimeBindingRecord {
+        let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+            .unwrap_or_else(|| panic!("missing canonical agent id for {engine_key}"));
+        let session = state
+            .service
+            .list_sessions(ListSessionsCommand {
+                query: SessionListQuery::for_tenant(project.tenant_id)
+                    .for_organization(project.organization_id)
+                    .for_owner(project.owner_user_id)
+                    .for_project(project.project_id.clone())
+                    .for_agent(agent_id)
+                    .include_archived(),
+                requested_by: read_subject(),
+            })
+            .expect("provider session list")
+            .items
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("missing synchronized {engine_key} session"));
+        state
+            .service
+            .list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+                query: SessionRuntimeBindingListQuery::for_session(
+                    project.tenant_id,
+                    project.organization_id,
+                    session.session_id,
+                )
+                .current_only()
+                .with_pagination(PaginationParams::default().with_page_size(1)),
+                path_agent_id: agent_id.to_string(),
+                owner_scope: Some(project.owner_user_id),
+                requested_by: read_subject(),
+            })
+            .expect("current provider binding")
+            .items
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("missing current {engine_key} provider binding"))
+    }
+
+    #[test]
+    fn successful_resolved_empty_snapshot_invalidates_missing_provider_sessions() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let codex = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![inventory_item(codex, "codex-missing".to_string(), 1)],
+        )
+        .expect("seed provider session");
+
+        let result = synchronize_provider_session_snapshot(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            ProviderSessionInventorySnapshot {
+                directory_resolved: true,
+                items: Vec::new(),
+                successful_engine_keys: vec!["codex".to_string()],
+                issues: Vec::new(),
+            },
+        )
+        .expect("reconcile empty successful snapshot");
+
+        assert_eq!(result.synchronized_session_count, 1);
+        assert_eq!(result.skipped_session_count, 0);
+        assert_eq!(result.failed_session_count, 0);
+        let binding = current_provider_binding(&state, &project, "codex");
+        assert!(!binding.provider_visible);
+        assert!(binding.provider_archived);
+        assert!(!binding.provider_pinned);
+        assert_eq!(binding.version, 1);
+    }
+
+    #[test]
+    fn failed_provider_snapshot_does_not_invalidate_previous_directory() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let codex = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![inventory_item(codex, "codex-retained".to_string(), 1)],
+        )
+        .expect("seed provider session");
+
+        let result = synchronize_provider_session_snapshot(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            ProviderSessionInventorySnapshot {
+                directory_resolved: true,
+                items: Vec::new(),
+                successful_engine_keys: Vec::new(),
+                issues: vec![
+                    sdkwork_agents_runtime_facade::ProviderSessionInventoryIssue {
+                        engine_key: "codex".to_string(),
+                        reason: "fixture provider failure".to_string(),
+                    },
+                ],
+            },
+        )
+        .expect("record failed provider snapshot");
+
+        assert_eq!(result.failed_session_count, 1);
+        let binding = current_provider_binding(&state, &project, "codex");
+        assert!(binding.provider_visible);
+        assert!(!binding.provider_archived);
+        assert_eq!(binding.version, 0);
+    }
+
+    #[test]
+    fn mixed_snapshot_invalidates_only_successful_provider_rows() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let engine = |key: &str| {
+            catalog
+                .engines
+                .iter()
+                .find(|engine| engine.engine_key == key)
+                .unwrap_or_else(|| panic!("missing {key} engine"))
+        };
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![
+                inventory_item(engine("codex"), "codex-old".to_string(), 1),
+                inventory_item(engine("opencode"), "opencode-old".to_string(), 2),
+            ],
+        )
+        .expect("seed mixed provider sessions");
+
+        synchronize_provider_session_snapshot(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            ProviderSessionInventorySnapshot {
+                directory_resolved: true,
+                items: Vec::new(),
+                successful_engine_keys: vec!["codex".to_string()],
+                issues: vec![
+                    sdkwork_agents_runtime_facade::ProviderSessionInventoryIssue {
+                        engine_key: "opencode".to_string(),
+                        reason: "fixture provider failure".to_string(),
+                    },
+                ],
+            },
+        )
+        .expect("reconcile mixed provider snapshot");
+
+        let codex_binding = current_provider_binding(&state, &project, "codex");
+        assert!(!codex_binding.provider_visible);
+        assert!(codex_binding.provider_archived);
+        let opencode_binding = current_provider_binding(&state, &project, "opencode");
+        assert!(opencode_binding.provider_visible);
+        assert!(!opencode_binding.provider_archived);
+    }
+
+    #[test]
+    fn unresolved_directory_does_not_invalidate_successful_provider_rows() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let codex = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![inventory_item(codex, "codex-unresolved".to_string(), 1)],
+        )
+        .expect("seed provider session");
+
+        synchronize_provider_session_snapshot(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            ProviderSessionInventorySnapshot {
+                directory_resolved: false,
+                items: Vec::new(),
+                successful_engine_keys: vec!["codex".to_string()],
+                issues: Vec::new(),
+            },
+        )
+        .expect("ignore unresolved provider directory");
+
+        let binding = current_provider_binding(&state, &project, "codex");
+        assert!(binding.provider_visible);
+        assert!(!binding.provider_archived);
+        assert_eq!(binding.version, 0);
     }
 
     #[test]
@@ -1454,6 +1854,11 @@ mod tests {
         .expect("initial provider inventory sync");
 
         item.session.title = Some("Renamed provider title".to_string());
+        item.directory.title = item.session.title.clone();
+        item.directory.recency_at = Some("2026-07-26T00:02:00Z".to_string());
+        item.directory.updated_at = item.directory.recency_at.clone();
+        item.directory.pinned = true;
+        item.directory.sort_key = "codex-renamed-refreshed".to_string();
         synchronize_provider_session_inventory(
             state.service.clone(),
             &project,
@@ -1477,6 +1882,39 @@ mod tests {
             sessions.items[0].title.as_deref(),
             Some("Renamed provider title")
         );
+        let binding = state
+            .service
+            .list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+                query: SessionRuntimeBindingListQuery::for_session(
+                    project.tenant_id,
+                    project.organization_id,
+                    sessions.items[0].session_id.clone(),
+                )
+                .current_only()
+                .with_pagination(PaginationParams::default().with_page_size(1)),
+                path_agent_id: sessions.items[0].agent_id.clone(),
+                owner_scope: Some(project.owner_user_id),
+                requested_by: read_subject(),
+            })
+            .expect("current provider binding")
+            .items
+            .into_iter()
+            .next()
+            .expect("provider binding exists");
+        assert_eq!(
+            binding.provider_title.as_deref(),
+            Some("Renamed provider title")
+        );
+        assert_eq!(
+            binding.provider_recency_at.as_deref(),
+            Some("2026-07-26T00:02:00Z")
+        );
+        assert!(binding.provider_pinned);
+        assert_eq!(
+            binding.provider_sort_key.as_deref(),
+            Some("codex-renamed-refreshed")
+        );
+        assert_eq!(binding.version, 1);
     }
 
     #[test]
@@ -1667,8 +2105,8 @@ mod tests {
             organization_id: project.organization_id,
             session_id: session.session_id.clone(),
             item_id: item_id.clone(),
-            kind: AgentSessionItemKind::UserInput,
-            content: Some("provider user message".to_string()),
+            kind: AgentSessionItemKind::AssistantOutput,
+            content: Some("provider partial response".to_string()),
             content_type: "text/plain".to_string(),
             status: AgentSessionItemStatus::Completed,
             model_id: Some(engine.models[0].model_id.clone()),
@@ -1687,8 +2125,35 @@ mod tests {
             .expect("provider transcript item");
         state
             .service
-            .reconcile_provider_session_history_session_item(command, "codex")
+            .reconcile_provider_session_history_session_item(command.clone(), "codex")
             .expect("idempotent provider transcript replay");
+        let corrected = state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    content: Some("provider user message final".to_string()),
+                    requested_at: "2026-07-26T00:01:01Z".to_string(),
+                    ..command.clone()
+                },
+                "codex",
+            )
+            .expect("newer provider narrative snapshot");
+        assert_eq!(corrected.version, 1);
+        assert_eq!(
+            corrected.content.as_deref(),
+            Some("provider user message final")
+        );
+        let stale_correction = state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    content: Some("stale partial".to_string()),
+                    requested_at: "2026-07-26T00:01:00Z".to_string(),
+                    ..command
+                },
+                "codex",
+            );
+        assert!(stale_correction.is_err());
         let tool_item_id = format!(
             "item.provider.codex.{}",
             stable_provider_session_item_key(
@@ -1829,12 +2294,16 @@ mod tests {
             })
             .expect("provider transcript items");
         assert_eq!(items.total_count, Some(3));
-        let user_item = items
+        let narrative_item = items
             .items
             .iter()
             .find(|item| item.item_id == item_id)
-            .expect("provider user item");
-        assert_eq!(user_item.content.as_deref(), Some("provider user message"));
+            .expect("provider narrative item");
+        assert_eq!(
+            narrative_item.content.as_deref(),
+            Some("provider user message final")
+        );
+        assert_eq!(narrative_item.version, 1);
         let tool_item = items
             .items
             .iter()

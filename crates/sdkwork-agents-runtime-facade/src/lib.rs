@@ -13,9 +13,12 @@ mod sessions;
 mod turn;
 
 pub use code_engines::{
-    bootstrap_code_engine, canonical_code_engine_keys, code_engine_agent_id,
-    code_engine_binding_id, is_canonical_code_engine, resolve_code_engine_runtime_identity,
-    CodeEngineBootstrapError, CodeEngineRuntimeIdentity, CodeEngineSlot,
+    apply_code_engine_model_configuration, apply_code_engine_model_selection,
+    bootstrap_code_engine, bootstrappable_engine_keys, canonical_code_engine_keys,
+    code_engine_agent_id, code_engine_binding_id, is_canonical_code_engine,
+    resolve_code_engine_runtime_identity, CodeEngineBootstrapError,
+    CodeEngineInteractionResolution, CodeEngineRuntimeIdentity, CodeEngineSlot,
+    CANONICAL_CODE_ENGINE_KEYS,
 };
 pub use engine_catalog::{
     bootstrap_bootstrappable_code_engine_catalog, bootstrap_canonical_code_engine_catalog,
@@ -28,11 +31,14 @@ pub use live_interaction::{
     ApprovalDecision, EngineLiveInteraction, LiveInteractionRegistry, UserQuestionAnswer,
 };
 pub use provider_sessions::{
-    ProviderSessionInventoryItem, ProviderSessionInventorySelector,
+    ProviderSessionDirectoryEntry, ProviderSessionInventoryIssue, ProviderSessionInventoryItem,
+    ProviderSessionInventorySelector, ProviderSessionInventorySnapshot,
     ProviderSessionProjectCwdResolver, ProviderSessionProjectCwdSelector,
 };
 pub use runtime_host::AgentsCodeEngineHost;
 pub use sdkwork_agent_kernel::{
+    AgentConfigurationProfile, AgentConfigurationStore, AgentModelConfigurationApplication,
+    AgentModelConfigurationRequest, AgentModelSelectionRequest, InMemoryAgentConfigurationStore,
     KernelError, KernelResult, ModelDescriptor, ModelResponseFormat, ModelStreamChunk,
     ModelStreamSink, ToolCall,
 };

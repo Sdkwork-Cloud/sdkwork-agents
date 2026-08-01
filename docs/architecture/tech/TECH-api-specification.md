@@ -4,7 +4,7 @@
 
 - Version: `6.0.0`
 - Status: active
-- Total operations: 212
+- Total operations: 216
 - Domain model: `AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction`
 
 ## 1. Authorities
@@ -14,9 +14,9 @@ deterministic inventory and must be regenerated after an authority change.
 
 | Surface | Prefix | Operations | Authentication | Consumer SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 100 | `Authorization` and `Access-Token` through the global app session | `@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk` |
-| Backend API | `/backend/v3/api` | 57 | `Authorization` and `Access-Token` for operator context | `@sdkwork/agents-backend-sdk` |
-| Open API | `/agent/v3/api` | 55 | `X-API-Key` | `@sdkwork/agents-sdk` |
+| App API | `/app/v3/api` | 102 | `Authorization` and `Access-Token` through the global app session | `@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk` |
+| Backend API | `/backend/v3/api` | 58 | `Authorization` and `Access-Token` for operator context | `@sdkwork/agents-backend-sdk` |
+| Open API | `/agent/v3/api` | 56 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
 ## 2. Common Contract
 
@@ -115,42 +115,44 @@ Authority: [agents-app-api.openapi.yaml](../../../crates/sdkwork-intelligence-ag
 | 62 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/fail` | `agents.turnInputQueueEntries.fail` | Mark one claimed queue entry failed and pause automatic execution |
 | 63 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/retry` | `agents.turnInputQueueEntries.retry` | Reset one failed queued Turn input for an explicit retry |
 | 64 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.list` | List durable interactions for one agent session |
-| 65 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.create` | Create one durable approval or user-question interaction |
+| 65 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.create` | Create one durable typed or legacy agent interaction |
 | 66 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}` | `agents.interactions.retrieve` | Retrieve one durable agent interaction |
 | 67 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim` | `agents.interactions.claim` | Claim one pending agent interaction for exclusive resolution |
 | 68 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve` | `agents.interactions.approve` | Approve or reject one approval interaction |
 | 69 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer` | `agents.interactions.answer` | Answer or reject one user-question interaction |
-| 70 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.list` | List resumable checkpoints for one agent session |
-| 71 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.create` | Create one bounded agent session checkpoint |
-| 72 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}` | `agents.checkpoints.retrieve` | Retrieve one agent session checkpoint |
-| 73 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore` | `agents.checkpoints.restore` | Restore one resumable agent session checkpoint |
-| 74 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate` | `agents.checkpoints.invalidate` | Invalidate one agent session checkpoint |
-| 75 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.list` | List runtime bindings for one agent session |
-| 76 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.create` | Create the current runtime binding for one agent session |
-| 77 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.retrieve` | Retrieve one agent session runtime binding |
-| 78 | PATCH | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.update` | Update one agent session runtime binding |
-| 79 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate` | `agents.sessionRuntimeBindings.activate` | Activate one agent session runtime binding as current |
-| 80 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate` | `agents.sessionRuntimeBindings.deactivate` | Deactivate one agent session runtime binding |
-| 81 | GET | `/app/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
-| 82 | POST | `/app/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
-| 83 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
-| 84 | PUT | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
-| 85 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
-| 86 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
-| 87 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
-| 88 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
-| 89 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
-| 90 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
-| 91 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
-| 92 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
-| 93 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
-| 94 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
-| 95 | POST | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
-| 96 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
-| 97 | PATCH | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
-| 98 | DELETE | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
-| 99 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog |
-| 100 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
+| 70 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve` | `agents.interactions.resolve` | Resolve one typed agent interaction |
+| 71 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.list` | List resumable checkpoints for one agent session |
+| 72 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.create` | Create one bounded agent session checkpoint |
+| 73 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}` | `agents.checkpoints.retrieve` | Retrieve one agent session checkpoint |
+| 74 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore` | `agents.checkpoints.restore` | Restore one resumable agent session checkpoint |
+| 75 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate` | `agents.checkpoints.invalidate` | Invalidate one agent session checkpoint |
+| 76 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.list` | List runtime bindings for one agent session |
+| 77 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.create` | Create the current runtime binding for one agent session |
+| 78 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.retrieve` | Retrieve one agent session runtime binding |
+| 79 | PATCH | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.update` | Update one agent session runtime binding |
+| 80 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate` | `agents.sessionRuntimeBindings.activate` | Activate one agent session runtime binding as current |
+| 81 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate` | `agents.sessionRuntimeBindings.deactivate` | Deactivate one agent session runtime binding |
+| 82 | GET | `/app/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
+| 83 | POST | `/app/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
+| 84 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
+| 85 | PUT | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
+| 86 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
+| 87 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
+| 88 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
+| 89 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
+| 90 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
+| 91 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
+| 92 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
+| 93 | POST | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
+| 94 | GET | `/app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
+| 95 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
+| 96 | POST | `/app/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
+| 97 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
+| 98 | PATCH | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
+| 99 | DELETE | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 100 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog |
+| 101 | POST | `/app/v3/api/ai/model_configurations/apply` | `agents.modelConfigurations.apply` | Apply one unified model configuration to an Agent provider |
+| 102 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
 
 ### 4.2 Backend API
 
@@ -179,42 +181,43 @@ Authority: [agents-backend-api.openapi.yaml](../../../crates/sdkwork-intelligenc
 | 19 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}` | `agents.turns.retrieve` | Retrieve one durable agent turn |
 | 20 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel` | `agents.turns.cancel` | Request cancellation of one agent turn |
 | 21 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.list` | List durable interactions for one agent session |
-| 22 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.create` | Create one durable approval or user-question interaction |
+| 22 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.create` | Create one durable typed or legacy agent interaction |
 | 23 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}` | `agents.interactions.retrieve` | Retrieve one durable agent interaction |
 | 24 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim` | `agents.interactions.claim` | Claim one pending agent interaction for exclusive resolution |
 | 25 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve` | `agents.interactions.approve` | Approve or reject one approval interaction |
 | 26 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer` | `agents.interactions.answer` | Answer or reject one user-question interaction |
-| 27 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.list` | List resumable checkpoints for one agent session |
-| 28 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.create` | Create one bounded agent session checkpoint |
-| 29 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}` | `agents.checkpoints.retrieve` | Retrieve one agent session checkpoint |
-| 30 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore` | `agents.checkpoints.restore` | Restore one resumable agent session checkpoint |
-| 31 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate` | `agents.checkpoints.invalidate` | Invalidate one agent session checkpoint |
-| 32 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.list` | List runtime bindings for one agent session |
-| 33 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.create` | Create the current runtime binding for one agent session |
-| 34 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.retrieve` | Retrieve one agent session runtime binding |
-| 35 | PATCH | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.update` | Update one agent session runtime binding |
-| 36 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate` | `agents.sessionRuntimeBindings.activate` | Activate one agent session runtime binding as current |
-| 37 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate` | `agents.sessionRuntimeBindings.deactivate` | Deactivate one agent session runtime binding |
-| 38 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
-| 39 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
-| 40 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
-| 41 | PUT | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
-| 42 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
-| 43 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
-| 44 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
-| 45 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
-| 46 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
-| 47 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
-| 48 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
-| 49 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
-| 50 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
-| 51 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/reconcile` | `agents.taskRuns.reconcile` | Reconcile an indeterminate task Run to a verified terminal outcome |
-| 52 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive` | `agents.sessions.archive` | Archive one agent session |
-| 53 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
-| 54 | POST | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
-| 55 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
-| 56 | PATCH | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
-| 57 | DELETE | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 27 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve` | `agents.interactions.resolve` | Resolve one typed agent interaction |
+| 28 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.list` | List resumable checkpoints for one agent session |
+| 29 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.create` | Create one bounded agent session checkpoint |
+| 30 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}` | `agents.checkpoints.retrieve` | Retrieve one agent session checkpoint |
+| 31 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore` | `agents.checkpoints.restore` | Restore one resumable agent session checkpoint |
+| 32 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate` | `agents.checkpoints.invalidate` | Invalidate one agent session checkpoint |
+| 33 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.list` | List runtime bindings for one agent session |
+| 34 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.create` | Create the current runtime binding for one agent session |
+| 35 | GET | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.retrieve` | Retrieve one agent session runtime binding |
+| 36 | PATCH | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.update` | Update one agent session runtime binding |
+| 37 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate` | `agents.sessionRuntimeBindings.activate` | Activate one agent session runtime binding as current |
+| 38 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate` | `agents.sessionRuntimeBindings.deactivate` | Deactivate one agent session runtime binding |
+| 39 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
+| 40 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
+| 41 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
+| 42 | PUT | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
+| 43 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
+| 44 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
+| 45 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
+| 46 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
+| 47 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
+| 48 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
+| 49 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
+| 50 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
+| 51 | GET | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
+| 52 | POST | `/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/reconcile` | `agents.taskRuns.reconcile` | Reconcile an indeterminate task Run to a verified terminal outcome |
+| 53 | POST | `/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/archive` | `agents.sessions.archive` | Archive one agent session |
+| 54 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
+| 55 | POST | `/backend/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
+| 56 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
+| 57 | PATCH | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
+| 58 | DELETE | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
 
 ### 4.3 Open API
 
@@ -243,40 +246,41 @@ Authority: [agents-open-api.openapi.yaml](../../../crates/sdkwork-intelligence-a
 | 19 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}` | `agents.turns.retrieve` | Retrieve one durable agent turn |
 | 20 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel` | `agents.turns.cancel` | Request cancellation of one agent turn |
 | 21 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.list` | List durable interactions for one agent session |
-| 22 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.create` | Create one durable approval or user-question interaction |
+| 22 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions` | `agents.interactions.create` | Create one durable typed or legacy agent interaction |
 | 23 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}` | `agents.interactions.retrieve` | Retrieve one durable agent interaction |
 | 24 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim` | `agents.interactions.claim` | Claim one pending agent interaction for exclusive resolution |
 | 25 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve` | `agents.interactions.approve` | Approve or reject one approval interaction |
 | 26 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer` | `agents.interactions.answer` | Answer or reject one user-question interaction |
-| 27 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.list` | List resumable checkpoints for one agent session |
-| 28 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.create` | Create one bounded agent session checkpoint |
-| 29 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}` | `agents.checkpoints.retrieve` | Retrieve one agent session checkpoint |
-| 30 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore` | `agents.checkpoints.restore` | Restore one resumable agent session checkpoint |
-| 31 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate` | `agents.checkpoints.invalidate` | Invalidate one agent session checkpoint |
-| 32 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.list` | List runtime bindings for one agent session |
-| 33 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.create` | Create the current runtime binding for one agent session |
-| 34 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.retrieve` | Retrieve one agent session runtime binding |
-| 35 | PATCH | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.update` | Update one agent session runtime binding |
-| 36 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate` | `agents.sessionRuntimeBindings.activate` | Activate one agent session runtime binding as current |
-| 37 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate` | `agents.sessionRuntimeBindings.deactivate` | Deactivate one agent session runtime binding |
-| 38 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
-| 39 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
-| 40 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
-| 41 | PUT | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
-| 42 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
-| 43 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
-| 44 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
-| 45 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
-| 46 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
-| 47 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
-| 48 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
-| 49 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
-| 50 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
-| 51 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
-| 52 | POST | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
-| 53 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
-| 54 | PATCH | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
-| 55 | DELETE | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 27 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve` | `agents.interactions.resolve` | Resolve one typed agent interaction |
+| 28 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.list` | List resumable checkpoints for one agent session |
+| 29 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints` | `agents.checkpoints.create` | Create one bounded agent session checkpoint |
+| 30 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}` | `agents.checkpoints.retrieve` | Retrieve one agent session checkpoint |
+| 31 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore` | `agents.checkpoints.restore` | Restore one resumable agent session checkpoint |
+| 32 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate` | `agents.checkpoints.invalidate` | Invalidate one agent session checkpoint |
+| 33 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.list` | List runtime bindings for one agent session |
+| 34 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings` | `agents.sessionRuntimeBindings.create` | Create the current runtime binding for one agent session |
+| 35 | GET | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.retrieve` | Retrieve one agent session runtime binding |
+| 36 | PATCH | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}` | `agents.sessionRuntimeBindings.update` | Update one agent session runtime binding |
+| 37 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate` | `agents.sessionRuntimeBindings.activate` | Activate one agent session runtime binding as current |
+| 38 | POST | `/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate` | `agents.sessionRuntimeBindings.deactivate` | Deactivate one agent session runtime binding |
+| 39 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.list` | List scheduled tasks for one managed agent |
+| 40 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks` | `agents.tasks.create` | Create a scheduled task for one managed agent |
+| 41 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.retrieve` | Retrieve one scheduled task |
+| 42 | PUT | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}` | `agents.tasks.update` | Replace one scheduled task definition and execution policy |
+| 43 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause` | `agents.tasks.pause` | Pause future materialization for one scheduled task |
+| 44 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume` | `agents.tasks.resume` | Resume future materialization for one paused scheduled task |
+| 45 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel` | `agents.tasks.cancel` | Cancel one scheduled task |
+| 46 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute` | `agents.tasks.execute` | Materialize one idempotent manual Run for an active scheduled task |
+| 47 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs` | `agents.taskRuns.list` | List Runs for one scheduled task using opaque keyset pagination |
+| 48 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}` | `agents.taskRuns.retrieve` | Retrieve one scheduled task Run |
+| 49 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry` | `agents.taskRuns.retry` | Create an idempotent business retry Run from a terminal Run |
+| 50 | POST | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel` | `agents.taskRuns.cancel` | Cancel a pending Run or request cancellation and reconciliation for an active Run |
+| 51 | GET | `/agent/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts` | `agents.taskRunAttempts.list` | List execution Attempts for one scheduled task Run |
+| 52 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.list` | List composition slots for one managed agent |
+| 53 | POST | `/agent/v3/api/ai/agents/{agentId}/composition_slots` | `agents.compositionSlots.create` | Create a composition slot for one managed agent |
+| 54 | GET | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
+| 55 | PATCH | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
+| 56 | DELETE | `/agent/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
 
 ## 5. Verification
 

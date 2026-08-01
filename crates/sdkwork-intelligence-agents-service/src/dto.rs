@@ -2114,18 +2114,6 @@ pub struct AgentInteractionOptionDto {
     pub label: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AgentInteractionResolutionDto {
-    pub outcome: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub answer: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_option_value: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInteractionRecordDto {
@@ -2140,7 +2128,8 @@ pub struct AgentInteractionRecordDto {
     pub status: String,
     pub prompt: String,
     pub options: Vec<AgentInteractionOptionDto>,
-    pub resolution: Option<AgentInteractionResolutionDto>,
+    pub request: Option<serde_json::Value>,
+    pub resolution: Option<serde_json::Value>,
     pub claim_owner: Option<String>,
     pub claim_expires_at: Option<String>,
     pub fencing_token: String,
@@ -2177,6 +2166,14 @@ impl AgentInteractionRecordDto {
             status: record.status.as_str().to_string(),
             prompt: record.prompt.clone(),
             options,
+            request: record
+                .request_json
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|error| KernelError::Internal {
+                    message: format!("stored interaction request is invalid: {error}"),
+                })?,
             resolution,
             claim_owner: record.claim_owner.clone(),
             claim_expires_at: record.claim_expires_at.clone(),
@@ -2208,6 +2205,7 @@ pub struct CreateInteractionRequestDto {
     pub prompt: String,
     #[serde(default)]
     pub options: Vec<AgentInteractionOptionInputDto>,
+    pub request: Option<serde_json::Value>,
     pub retention_until: Option<String>,
     pub requested_at: String,
 }
@@ -2227,6 +2225,13 @@ impl CreateInteractionRequestDto {
         let options_json = serde_json::to_string(&self.options).map_err(|error| {
             KernelError::validation(format!("options serialization failed: {error}"))
         })?;
+        let request_json = self
+            .request
+            .map(|request| serde_json::to_string(&request))
+            .transpose()
+            .map_err(|error| {
+                KernelError::validation(format!("request serialization failed: {error}"))
+            })?;
         Ok(CreateInteractionCommand {
             tenant_id,
             organization_id,
@@ -2239,6 +2244,7 @@ impl CreateInteractionRequestDto {
             kind,
             prompt: self.prompt,
             options_json,
+            request_json,
             retention_until: self.retention_until,
             owner_scope: None,
             requested_by,
@@ -2331,6 +2337,47 @@ pub struct AnswerInteractionRequestDto {
     pub fencing_token: String,
     pub expected_version: String,
     pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResolveInteractionRequestDto {
+    pub resolution: serde_json::Value,
+    pub claim_token: String,
+    pub fencing_token: String,
+    pub expected_version: String,
+    pub requested_at: String,
+}
+
+impl ResolveInteractionRequestDto {
+    pub fn into_command(
+        self,
+        tenant_id: u64,
+        organization_id: u64,
+        path_agent_id: String,
+        session_id: String,
+        interaction_id: String,
+        requested_by: PolicySubject,
+    ) -> KernelResult<crate::application::ResolveInteractionCommand> {
+        validate_requested_at(&self.requested_at)?;
+        let resolution_json = serde_json::to_string(&self.resolution).map_err(|error| {
+            KernelError::validation(format!("resolution serialization failed: {error}"))
+        })?;
+        Ok(crate::application::ResolveInteractionCommand {
+            tenant_id,
+            organization_id,
+            path_agent_id,
+            session_id,
+            interaction_id,
+            resolution_json,
+            claim_token: self.claim_token,
+            fencing_token: parse_u64(&self.fencing_token, "fencingToken")?,
+            expected_version: parse_expected_version(&self.expected_version)?,
+            owner_scope: None,
+            requested_by,
+            requested_at: self.requested_at,
+        })
+    }
 }
 
 impl AnswerInteractionRequestDto {
@@ -3011,6 +3058,17 @@ pub struct AgentSessionRuntimeBindingRecordDto {
     pub provider_session_tree_id: Option<String>,
     pub provider_parent_session_id: Option<String>,
     pub provider_forked_from_session_id: Option<String>,
+    pub provider_title: Option<String>,
+    pub provider_title_source: Option<String>,
+    pub provider_preview: Option<String>,
+    pub provider_created_at: Option<String>,
+    pub provider_updated_at: Option<String>,
+    pub provider_recency_at: Option<String>,
+    pub provider_pinned: bool,
+    pub provider_archived: bool,
+    pub provider_visible: bool,
+    pub provider_sort_key: Option<String>,
+    pub provider_source: Option<String>,
     pub status: String,
     pub is_current: bool,
     pub version: String,
@@ -3037,6 +3095,17 @@ impl AgentSessionRuntimeBindingRecordDto {
             provider_session_tree_id: record.provider_session_tree_id.clone(),
             provider_parent_session_id: record.provider_parent_session_id.clone(),
             provider_forked_from_session_id: record.provider_forked_from_session_id.clone(),
+            provider_title: record.provider_title.clone(),
+            provider_title_source: record.provider_title_source.clone(),
+            provider_preview: record.provider_preview.clone(),
+            provider_created_at: record.provider_created_at.clone(),
+            provider_updated_at: record.provider_updated_at.clone(),
+            provider_recency_at: record.provider_recency_at.clone(),
+            provider_pinned: record.provider_pinned,
+            provider_archived: record.provider_archived,
+            provider_visible: record.provider_visible,
+            provider_sort_key: record.provider_sort_key.clone(),
+            provider_source: record.provider_source.clone(),
             status: record.status.as_str().to_string(),
             is_current: record.is_current,
             version: record.version.to_string(),
@@ -3091,6 +3160,7 @@ impl CreateSessionRuntimeBindingRequestDto {
             provider_session_tree_id: self.provider_session_tree_id,
             provider_parent_session_id: self.provider_parent_session_id,
             provider_forked_from_session_id: self.provider_forked_from_session_id,
+            provider_directory: None,
             owner_scope: None,
             requested_by,
             requested_at: self.requested_at,

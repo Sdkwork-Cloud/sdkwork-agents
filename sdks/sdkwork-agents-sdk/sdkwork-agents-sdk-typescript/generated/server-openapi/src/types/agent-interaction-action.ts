@@ -1,0 +1,1 @@
+export type AgentInteractionAction = 'accept' | 'accept_for_session' | 'accept_with_exec_policy_amendment' | 'apply_network_policy_amendment' | 'decline' | 'cancel' | 'grant' | 'submit' | 'skip' | 'dismiss' | 'continue';

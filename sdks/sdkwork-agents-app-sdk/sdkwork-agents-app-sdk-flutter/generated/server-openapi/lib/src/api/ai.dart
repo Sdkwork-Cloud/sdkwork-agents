@@ -700,7 +700,7 @@ class AiApi {
     })();
   }
 
-  /// Create one durable approval or user-question interaction
+  /// Create one durable typed or legacy agent interaction
   Future<AgentInteractionResponse?> agentsInteractionsCreate(String agentId, String sessionId, CreateAgentInteractionRequest body) async {
     final payload = body.toJson();
     final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/interactions'), body: payload, contentType: 'application/json');
@@ -743,6 +743,16 @@ class AiApi {
   Future<AgentInteractionResponse?> agentsInteractionsAnswer(String agentId, String sessionId, String interactionId, AnswerAgentInteractionRequest body) async {
     final payload = body.toJson();
     final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/interactions/${serializePathParameter(interactionId, const PathParameterSpec('interactionId', 'simple', false))}/answer'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentInteractionResponse.fromJson(map);
+    })();
+  }
+
+  /// Resolve one typed agent interaction
+  Future<AgentInteractionResponse?> agentsInteractionsResolve(String agentId, String sessionId, String interactionId, ResolveAgentInteractionRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/interactions/${serializePathParameter(interactionId, const PathParameterSpec('interactionId', 'simple', false))}/resolve'), body: payload, contentType: 'application/json');
     return (() {
       final map = sdkworkResponseAsMap(response);
       return map == null ? null : AgentInteractionResponse.fromJson(map);
@@ -1056,6 +1066,26 @@ class AiApi {
     return (() {
       final map = sdkworkResponseAsMap(response);
       return map == null ? null : CodeEngineCatalogListResponse.fromJson(map);
+    })();
+  }
+
+  /// Apply one unified model configuration to an Agent provider
+  Future<AppliedAgentModelConfigurationResponse?> agentsModelConfigurationsApply(ApplyAgentModelConfigurationRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/model_configurations/apply'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AppliedAgentModelConfigurationResponse.fromJson(map);
+    })();
+  }
+
+  /// Apply a catalog or saved custom model selection to an Agent provider
+  Future<AppliedAgentModelSelectionResponse?> agentsModelSelectionsApply(ApplyAgentModelSelectionRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/model_selections/apply'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AppliedAgentModelSelectionResponse.fromJson(map);
     })();
   }
 

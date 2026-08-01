@@ -1,1 +1,1 @@
-export type AgentInteractionKind = 'approval' | 'user_question';
+export type AgentInteractionKind = 'approval' | 'user_question' | 'elicitation' | 'setup';

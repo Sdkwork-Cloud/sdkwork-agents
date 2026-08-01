@@ -168,6 +168,12 @@ pub const AGENT_OPEN_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.interactions.answer",
     },
     ApiOperation {
+        method: "POST",
+        path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve",
+        tag: "ai",
+        operation_id: "agents.interactions.resolve",
+    },
+    ApiOperation {
         method: "GET",
         path: "/agent/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
         tag: "ai",
@@ -759,6 +765,12 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.interactions.answer",
     },
     ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve",
+        tag: "ai",
+        operation_id: "agents.interactions.resolve",
+    },
+    ApiOperation {
         method: "GET",
         path: "/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints",
         tag: "ai",
@@ -1102,6 +1114,12 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer",
         tag: "ai",
         operation_id: "agents.interactions.answer",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/backend/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve",
+        tag: "ai",
+        operation_id: "agents.interactions.resolve",
     },
     ApiOperation {
         method: "GET",
@@ -1711,9 +1729,9 @@ mod tests {
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
-        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 55);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 100);
-        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 57);
+        assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 56);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 101);
+        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 58);
 
         assert_eq!(
             AGENT_OPEN_API_OPERATIONS.len(),

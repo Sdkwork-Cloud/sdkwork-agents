@@ -104,9 +104,9 @@ assert.doesNotMatch(
 );
 
 const openApiContracts = [
-  ['app', 'agents-app-api.openapi.yaml', 100],
-  ['backend', 'agents-backend-api.openapi.yaml', 57],
-  ['open', 'agents-open-api.openapi.yaml', 55],
+  ['app', 'agents-app-api.openapi.yaml', 102],
+  ['backend', 'agents-backend-api.openapi.yaml', 58],
+  ['open', 'agents-open-api.openapi.yaml', 56],
 ];
 const forbiddenScopeFields = new Set(['tenantId', 'organizationId', 'ownerUserId']);
 const forbiddenScopeParameters = new Set([

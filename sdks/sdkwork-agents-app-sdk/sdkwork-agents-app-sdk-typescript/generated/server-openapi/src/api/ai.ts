@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
 
 
 export interface AiAgentsMcpServersListParams {
@@ -26,6 +26,34 @@ export class AiAgentsMcpServersApi {
       { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.request<SdkWorkPageData & { items: McpServerMarketplaceRecord[]; }>(appendQueryString(appApiPath(`/ai/mcp_servers`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+}
+
+export class AiAgentsModelSelectionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Apply a catalog or saved custom model selection to an Agent provider */
+  async apply(body: ApplyAgentModelSelectionRequest, requestOptions?: ApiRequestOptions): Promise<AppliedAgentModelSelectionRecord> {
+    return this.client.request<AppliedAgentModelSelectionRecord>(appApiPath(`/ai/model_selections/apply`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+}
+
+export class AiAgentsModelConfigurationsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Apply one unified model configuration to an Agent provider */
+  async apply(body: ApplyAgentModelConfigurationRequest, requestOptions?: ApiRequestOptions): Promise<AppliedAgentModelConfigurationRecord> {
+    return this.client.request<AppliedAgentModelConfigurationRecord>(appApiPath(`/ai/model_configurations/apply`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
 }
 
@@ -328,7 +356,7 @@ export class AiAgentsInteractionsApi {
     return this.client.request<SdkWorkPageData & { items: AgentInteractionRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
   }
 
-/** Create one durable approval or user-question interaction */
+/** Create one durable typed or legacy agent interaction */
   async create(agentId: string, sessionId: string, body: CreateAgentInteractionRequest, requestOptions?: ApiRequestOptions): Promise<AgentInteractionRecord> {
     return this.client.request<AgentInteractionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
@@ -351,6 +379,11 @@ export class AiAgentsInteractionsApi {
 /** Answer or reject one user-question interaction */
   async answer(agentId: string, sessionId: string, interactionId: string, body: AnswerAgentInteractionRequest, requestOptions?: ApiRequestOptions): Promise<AgentInteractionRecord> {
     return this.client.request<AgentInteractionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions/${serializePathParameter(interactionId, { name: 'interactionId', style: 'simple', explode: false })}/answer`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Resolve one typed agent interaction */
+  async resolve(agentId: string, sessionId: string, interactionId: string, body: ResolveAgentInteractionRequest, requestOptions?: ApiRequestOptions): Promise<AgentInteractionRecord> {
+    return this.client.request<AgentInteractionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions/${serializePathParameter(interactionId, { name: 'interactionId', style: 'simple', explode: false })}/resolve`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
 }
 
@@ -1028,6 +1061,8 @@ export class AiAgentsApi {
   public readonly taskRunAttempts: AiAgentsTaskRunAttemptsApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
   public readonly codeEngines: AiAgentsCodeEnginesApi;
+  public readonly modelConfigurations: AiAgentsModelConfigurationsApi;
+  public readonly modelSelections: AiAgentsModelSelectionsApi;
   public readonly mcpServers: AiAgentsMcpServersApi;
 
   constructor(client: HttpClient) {
@@ -1055,6 +1090,8 @@ export class AiAgentsApi {
     this.taskRunAttempts = new AiAgentsTaskRunAttemptsApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
     this.codeEngines = new AiAgentsCodeEnginesApi(client);
+    this.modelConfigurations = new AiAgentsModelConfigurationsApi(client);
+    this.modelSelections = new AiAgentsModelSelectionsApi(client);
     this.mcpServers = new AiAgentsMcpServersApi(client);
   }
 

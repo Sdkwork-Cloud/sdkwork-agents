@@ -9,11 +9,16 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "29a0a22e58581b7f41fbebc9ed75a4c9f02cf5d0218ffe7fb49558fcf07bc5b7",
+  "changeFingerprint": "a77f40493ace9a2e9d204e1906e0f95f1b3405df38425d80280a2b784c5be4b1",
   "changes": {
-    "createdGeneratedFiles": [],
+    "createdGeneratedFiles": [
+      "src/types/applied-agent-model-selection-record.ts",
+      "src/types/applied-agent-model-selection-response.ts",
+      "src/types/apply-agent-model-selection-request.ts"
+    ],
     "updatedGeneratedFiles": [
-      "package.json"
+      "src/api/ai.ts",
+      "src/types/index.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -23,9 +28,9 @@
       "bin/sdk-gen.sh",
       "CHANGELOG.md",
       "LICENSE",
+      "package.json",
       "README.md",
       "sdkwork-sdk.json",
-      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
@@ -42,11 +47,19 @@
       "src/types/agent-composition-target-module.ts",
       "src/types/agent-implementation-kind.ts",
       "src/types/agent-implementation-type.ts",
+      "src/types/agent-interaction-action.ts",
       "src/types/agent-interaction-claim-response.ts",
+      "src/types/agent-interaction-correlation.ts",
       "src/types/agent-interaction-kind.ts",
       "src/types/agent-interaction-list-response.ts",
       "src/types/agent-interaction-option.ts",
+      "src/types/agent-interaction-question-option.ts",
+      "src/types/agent-interaction-question.ts",
       "src/types/agent-interaction-record.ts",
+      "src/types/agent-interaction-request-category.ts",
+      "src/types/agent-interaction-request-data.ts",
+      "src/types/agent-interaction-request-kind.ts",
+      "src/types/agent-interaction-request.ts",
       "src/types/agent-interaction-resolution.ts",
       "src/types/agent-interaction-response.ts",
       "src/types/agent-interaction-status.ts",
@@ -56,6 +69,7 @@
       "src/types/agent-item-feedback-response.ts",
       "src/types/agent-list-response.ts",
       "src/types/agent-management-profile.ts",
+      "src/types/agent-model-provider-id.ts",
       "src/types/agent-project-composition-slot-list-response.ts",
       "src/types/agent-project-composition-slot-record.ts",
       "src/types/agent-project-composition-slot-response.ts",
@@ -128,6 +142,9 @@
       "src/types/agent-workspace-status.ts",
       "src/types/answer-agent-interaction-request.ts",
       "src/types/app-update-agent-session-request.ts",
+      "src/types/applied-agent-model-configuration-record.ts",
+      "src/types/applied-agent-model-configuration-response.ts",
+      "src/types/apply-agent-model-configuration-request.ts",
       "src/types/approve-agent-interaction-request.ts",
       "src/types/cancel-agent-task-request.ts",
       "src/types/cancel-agent-task-run-request.ts",
@@ -165,9 +182,9 @@
       "src/types/fail-agent-turn-input-queue-entry-request.ts",
       "src/types/field-error.ts",
       "src/types/import-agent-project-request.ts",
-      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
+      "src/types/legacy-agent-interaction-resolution.ts",
       "src/types/mcp-server-marketplace-list-response.ts",
       "src/types/mcp-server-marketplace-record.ts",
       "src/types/page-info.ts",
@@ -178,6 +195,7 @@
       "src/types/reorder-agent-turn-input-queue-entries-request.ts",
       "src/types/reorder-agent-turn-input-queue-entries-response.ts",
       "src/types/replace-agent-task-request.ts",
+      "src/types/resolve-agent-interaction-request.ts",
       "src/types/restore-agent-request.ts",
       "src/types/restore-agent-session-checkpoint-request.ts",
       "src/types/retry-agent-task-run-request.ts",
@@ -191,6 +209,7 @@
       "src/types/session-presentation-phase.ts",
       "src/types/session-provider-activity-observation.ts",
       "src/types/session-provider-identity.ts",
+      "src/types/typed-agent-interaction-resolution.ts",
       "src/types/update-agent-composition-slot-request.ts",
       "src/types/update-agent-item-feedback-request.ts",
       "src/types/update-agent-project-composition-slot-request.ts",
@@ -213,29 +232,39 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "build-metadata"
+      "api-surface",
+      "models"
     ],
     "details": [
       {
-        "area": "build-metadata",
+        "area": "api-surface",
         "paths": [
-          "package.json"
+          "src/api/ai.ts"
+        ]
+      },
+      {
+        "area": "models",
+        "paths": [
+          "src/types/applied-agent-model-selection-record.ts",
+          "src/types/applied-agent-model-selection-response.ts",
+          "src/types/apply-agent-model-selection-request.ts",
+          "src/types/index.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: build-metadata. Verification is required."
+    "summary": "Detected impact areas: api-surface, models. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: build-metadata. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: build-metadata.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -253,7 +282,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: build-metadata.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

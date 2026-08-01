@@ -1072,6 +1072,7 @@ pub struct CreateInteractionCommand {
     pub kind: AgentInteractionKind,
     pub prompt: String,
     pub options_json: String,
+    pub request_json: Option<String>,
     pub retention_until: Option<String>,
     /// When set, the parent session must belong to this owner (app-api scope).
     pub owner_scope: Option<u64>,
@@ -1164,6 +1165,36 @@ pub struct AnswerInteractionCommand {
     pub requested_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolveInteractionCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    /// Agent id from the nested HTTP path; must match the parent session.
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub interaction_id: String,
+    pub resolution_json: String,
+    pub claim_token: String,
+    pub fencing_token: u64,
+    pub expected_version: u64,
+    /// When set, the parent session must belong to this owner (app-api scope).
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PersistProviderInteractionEventCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub requested_by: PolicySubject,
+    pub received_at: String,
+    pub event: KernelEvent,
+}
+
 // ---------------------------------------------------------------------------
 // Session runtime binding commands
 // ---------------------------------------------------------------------------
@@ -1185,6 +1216,7 @@ pub struct CreateSessionRuntimeBindingCommand {
     pub provider_session_tree_id: Option<String>,
     pub provider_parent_session_id: Option<String>,
     pub provider_forked_from_session_id: Option<String>,
+    pub provider_directory: Option<sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry>,
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,
@@ -1227,6 +1259,20 @@ pub struct UpdateSessionRuntimeBindingCommand {
     pub provider_parent_session_id: Option<String>,
     pub provider_forked_from_session_id: Option<String>,
     pub expected_version: u64,
+    pub owner_scope: Option<u64>,
+    pub requested_by: PolicySubject,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconcileProviderSessionRuntimeBindingDirectoryCommand {
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub path_agent_id: String,
+    pub session_id: String,
+    pub runtime_binding_id: String,
+    pub expected_version: u64,
+    pub provider_directory: sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry,
     pub owner_scope: Option<u64>,
     pub requested_by: PolicySubject,
     pub requested_at: String,

@@ -1,6 +1,6 @@
 # SDKWork Agents Database Specification
 
-- Version: `7.0.0`
+- Version: `7.2.0`
 - Status: active
 - Domain: `intelligence`
 - Capability: `agents`
@@ -116,7 +116,7 @@ pair. The application service applies the same rule before persistence.
 | `ai_agent_session_item` | tenant entity | Ordered typed input, output, tool, artifact or status item |
 | `ai_agent_item_drive_ref` | relation entity | Typed relation from an item to Drive-owned resources |
 | `ai_agent_item_feedback` | user entity | Per-user positive/negative quality feedback for an item |
-| `ai_agent_interaction` | operational state | Approval or user-question pause point with claimed resolution |
+| `ai_agent_interaction` | operational state | Typed approval, user-question, elicitation or setup pause point with claimed resolution |
 | `ai_agent_session_checkpoint` | operational state | Provider-backed or Drive-backed resumable checkpoint reference |
 
 The aggregate relationships are tenant and organization scoped. Session
@@ -238,9 +238,11 @@ feedback, not delivery state or an IM reaction.
 
 An interaction claim returns a random raw claim token once. The database stores
 only `claim_token_hash` together with claim owner, expiry, fencing token and
-version. Approval/answer commands must prove the token, unexpired lease,
-fencing token and expected version. A successful resolution is atomic and
-cannot be repeated by another service instance.
+version. Typed interactions store one bounded provider-neutral object in
+`request_json`; provider request ids, methods and callbacks remain Kernel-private.
+Legacy approval/answer and typed resolve commands must prove the token,
+unexpired lease, fencing token and expected version. A successful resolution is
+atomic and cannot be repeated by another service instance.
 
 A checkpoint has exactly one backing form:
 
@@ -334,15 +336,16 @@ partial indexes declared by the baseline.
 
 ## 11. Schema Lifecycle
 
-PostgreSQL `0001_agents_baseline.sql` is the greenfield `7.0.0` authority and
+PostgreSQL `0001_agents_baseline.sql` is the greenfield `7.2.0` authority and
 contains the complete 23-table model. The application is pre-launch, so every
 development, test, staging and release-candidate database must be created from
 that baseline. Importing or reinterpreting databases created from an earlier
 application contract is unsupported.
 
-After the first production release, changes use ordered forward migrations and
-the expand/contract rules from `MIGRATION_SPEC.md`. Baseline rewrites then stop.
-Migration files must not repeat baseline columns, indexes, constraints or data.
+Shared development schemas use the ordered forward migrations in
+`database/migrations/postgres/`. After the first production release, changes
+continue to use forward migrations and the expand/contract rules from
+`MIGRATION_SPEC.md`; baseline rewrites then stop.
 
 ## 12. Verification
 

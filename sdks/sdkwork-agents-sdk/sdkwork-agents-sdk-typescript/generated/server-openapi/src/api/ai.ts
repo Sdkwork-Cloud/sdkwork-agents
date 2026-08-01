@@ -1,7 +1,7 @@
 import { customApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentProviderBindingRecord, AgentRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnRecord, AgentTurnStreamEvent, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, ExecuteAgentTaskRequest, Int64String, InvalidateAgentSessionCheckpointRequest, ReplaceAgentTaskRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, SdkWorkPageData, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentProviderBindingRecord, AgentRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnRecord, AgentTurnStreamEvent, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, ExecuteAgentTaskRequest, Int64String, InvalidateAgentSessionCheckpointRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, SdkWorkPageData, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest } from '../types';
 
 
 export class AiAgentsCompositionSlotsApi {
@@ -280,7 +280,7 @@ export class AiAgentsInteractionsApi {
     return this.client.request<SdkWorkPageData & { items: AgentInteractionRecord[]; }>(appendQueryString(customApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
   }
 
-/** Create one durable approval or user-question interaction */
+/** Create one durable typed or legacy agent interaction */
   async create(agentId: string, sessionId: string, body: CreateAgentInteractionRequest, requestOptions?: ApiRequestOptions): Promise<AgentInteractionRecord> {
     return this.client.request<AgentInteractionRecord>(customApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
@@ -303,6 +303,11 @@ export class AiAgentsInteractionsApi {
 /** Answer or reject one user-question interaction */
   async answer(agentId: string, sessionId: string, interactionId: string, body: AnswerAgentInteractionRequest, requestOptions?: ApiRequestOptions): Promise<AgentInteractionRecord> {
     return this.client.request<AgentInteractionRecord>(customApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions/${serializePathParameter(interactionId, { name: 'interactionId', style: 'simple', explode: false })}/answer`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Resolve one typed agent interaction */
+  async resolve(agentId: string, sessionId: string, interactionId: string, body: ResolveAgentInteractionRequest, requestOptions?: ApiRequestOptions): Promise<AgentInteractionRecord> {
+    return this.client.request<AgentInteractionRecord>(customApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/interactions/${serializePathParameter(interactionId, { name: 'interactionId', style: 'simple', explode: false })}/resolve`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
 }
 

@@ -119,9 +119,9 @@ stays under `generated/server-openapi` and is never hand-edited.
 
 | Surface | Authority | Prefix | Operations | Auth |
 | --- | --- | --- | ---: | --- |
-| App | `sdkwork-agents-app-api` | `/app/v3/api` | 100 | dual token |
-| Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 57 | dual token/operator |
-| Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 55 | API key |
+| App | `sdkwork-agents-app-api` | `/app/v3/api` | 102 | dual token |
+| Backend | `sdkwork-agents-backend-api` | `/backend/v3/api` | 58 | dual token/operator |
+| Open | `sdkwork-agents-open-api` | `/agent/v3/api` | 56 | API key |
 
 Every operation carries `WebRequestContext`, surface metadata, permission,
 tenant scope and audit metadata. Full inventory:

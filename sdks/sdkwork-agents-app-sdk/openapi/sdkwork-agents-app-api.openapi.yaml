@@ -2340,7 +2340,7 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Create one durable approval or user-question interaction
+      summary: Create one durable typed or legacy agent interaction
       operationId: agents.interactions.create
       security:
       - AuthToken: []
@@ -2494,6 +2494,41 @@ paths:
       responses:
         '200':
           description: Resolved agent interaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInteractionResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Resolve one typed agent interaction
+      operationId: agents.interactions.resolve
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agents.interactions
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.interaction_resolved
+      parameters:
+      - $ref: '#/components/parameters/AgentIdPath'
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/InteractionIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveAgentInteractionRequest'
+      responses:
+        '200':
+          description: Resolved typed agent interaction
           content:
             application/json:
               schema:
@@ -3482,6 +3517,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CodeEngineCatalogListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/model_configurations/apply:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Apply one unified model configuration to an Agent provider
+      operationId: agents.modelConfigurations.apply
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.applied
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyAgentModelConfigurationRequest'
+      responses:
+        '200':
+          description: Provider-specific Config SPI application result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppliedAgentModelConfigurationResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/model_selections/apply:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Apply a catalog or saved custom model selection to an Agent provider
+      operationId: agents.modelSelections.apply
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_selection
+      x-sdkwork-permission: ai.agents.use
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_selection.applied
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyAgentModelSelectionRequest'
+      responses:
+        '200':
+          description: Provider-specific Config SPI model selection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppliedAgentModelSelectionResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/mcp_servers:
@@ -5782,6 +5881,203 @@ components:
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         clearProject:
           type: boolean
+    AgentModelProviderId:
+      type: string
+      enum: [codex, claude-code, gemini, opencode, openclaw, hermes]
+    ApplyAgentModelConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - configurationId
+      - engineId
+      - vendorCode
+      - baseUrl
+      - defaultModelId
+      - supportedModelIds
+      properties:
+        configurationId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          pattern: '^[A-Za-z0-9._-]+$'
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        vendorCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+        baseUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+        apiKey:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          writeOnly: true
+          description: Plaintext credential accepted only for immediate Secret Provider storage.
+        defaultModelId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        supportedModelIds:
+          type: array
+          minItems: 1
+          maxItems: 256
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        supportedProviderIds:
+          type: array
+          maxItems: 6
+          uniqueItems: true
+          description: Defaults to every supported Agent provider when omitted or empty.
+          items:
+            $ref: '#/components/schemas/AgentModelProviderId'
+        inputContextTokens:
+          type: integer
+          format: int64
+          minimum: 1
+        outputContextTokens:
+          type: integer
+          format: int64
+          minimum: 1
+        toolCallRounds:
+          type: integer
+          format: int64
+          minimum: 1
+        supportsMultimodal:
+          type: boolean
+          default: false
+    AppliedAgentModelConfigurationRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - configurationId
+      - profileId
+      - engineId
+      - agentId
+      - providerScope
+      - vendorCode
+      - baseUrl
+      - defaultModelId
+      - supportedModelIds
+      - supportedProviderIds
+      - supportsMultimodal
+      - apiKeyConfigured
+      properties:
+        configurationId:
+          type: string
+        profileId:
+          type: string
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+        providerScope:
+          type: string
+        vendorCode:
+          type: string
+        baseUrl:
+          type: string
+          format: uri
+        defaultModelId:
+          type: string
+        supportedModelIds:
+          type: array
+          items:
+            type: string
+        supportedProviderIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentModelProviderId'
+        inputContextTokens:
+          type: [integer, 'null']
+          format: int64
+        outputContextTokens:
+          type: [integer, 'null']
+          format: int64
+        toolCallRounds:
+          type: [integer, 'null']
+          format: int64
+        supportsMultimodal:
+          type: boolean
+        apiKeyConfigured:
+          type: boolean
+    AppliedAgentModelConfigurationResponse:
+      description: Single applied Agent model configuration response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AppliedAgentModelConfigurationRecord'
+    ApplyAgentModelSelectionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - engineId
+      - modelId
+      properties:
+        configurationId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          pattern: '^[A-Za-z0-9._-]+$'
+          description: Saved custom configuration identity. Omit for catalog models.
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 256
+    AppliedAgentModelSelectionRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - profileId
+      - engineId
+      - agentId
+      - providerScope
+      - modelId
+      properties:
+        configurationId:
+          type: string
+          description: Saved custom configuration identity. Omitted for catalog models.
+        profileId:
+          type: string
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+        providerScope:
+          type: string
+        modelId:
+          type: string
+    AppliedAgentModelSelectionResponse:
+      description: Single applied Agent model selection response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AppliedAgentModelSelectionRecord'
     CodeEngineCatalogListResponse:
       description: Code engine catalog response following SdkWorkApiResponse envelope;
         the catalog is returned as a single composite resource under data.item.
@@ -7670,7 +7966,7 @@ components:
           format: date-time
     AgentInteractionKind:
       type: string
-      enum: [approval, user_question]
+      enum: [approval, user_question, elicitation, setup]
     AgentInteractionStatus:
       type: string
       enum: [pending, resolved, rejected, expired, cancelled]
@@ -7687,7 +7983,7 @@ components:
           type: string
           minLength: 1
           maxLength: 512
-    AgentInteractionResolution:
+    LegacyAgentInteractionResolution:
       type: object
       additionalProperties: false
       required: [outcome]
@@ -7704,6 +8000,223 @@ components:
         reason:
           type: string
           maxLength: 2048
+    AgentInteractionRequestCategory:
+      type: string
+      enum: [approval, user_input, elicitation, setup]
+    AgentInteractionRequestKind:
+      type: string
+      enum: [command_execution, file_change, permission_profile, question_set, onboarding_question_set, option_picker, context_source_picker, setup_step, mcp_elicitation]
+    AgentInteractionAction:
+      type: string
+      enum: [accept, accept_for_session, accept_with_exec_policy_amendment, apply_network_policy_amendment, decline, cancel, grant, submit, skip, dismiss, continue]
+    AgentInteractionQuestionOption:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 512
+        description:
+          type: [string, 'null']
+          maxLength: 2048
+    AgentInteractionQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, header, prompt, allowOther, secret, options]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        header:
+          type: string
+          minLength: 1
+          maxLength: 512
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        allowOther:
+          type: boolean
+        secret:
+          type: boolean
+        options:
+          oneOf:
+          - type: array
+            maxItems: 128
+            items:
+              $ref: '#/components/schemas/AgentInteractionQuestionOption'
+          - type: 'null'
+    AgentInteractionRequestData:
+      type: object
+      additionalProperties: true
+      properties:
+        itemId:
+          type: [string, 'null']
+          maxLength: 256
+        command:
+          type: [string, 'null']
+          maxLength: 65536
+        cwd:
+          type: [string, 'null']
+          maxLength: 4096
+        reason:
+          type: [string, 'null']
+          maxLength: 2048
+        changes:
+          type: object
+          additionalProperties: true
+        proposedExecPolicyAmendment:
+          type: object
+          additionalProperties: true
+        proposedNetworkPolicyAmendment:
+          type: object
+          additionalProperties: true
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/AgentInteractionQuestion'
+        autoResolutionMs:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+        isBlocking:
+          type: boolean
+        question:
+          type: string
+          maxLength: 65536
+        options:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/AgentInteractionQuestionOption'
+        allowMultiple:
+          type: boolean
+        submitLabel:
+          type: [string, 'null']
+          maxLength: 256
+        skipLabel:
+          type: [string, 'null']
+          maxLength: 256
+        step:
+          type: string
+          enum: [role, task, context]
+        mode:
+          type: string
+          enum: [form, openai/form, url]
+        serverName:
+          type: string
+          maxLength: 512
+        message:
+          type: string
+          maxLength: 65536
+        elicitationId:
+          type: string
+          maxLength: 512
+        url:
+          type: string
+          format: uri
+        requestedSchema: {}
+        requestedPermissions:
+          type: object
+          additionalProperties: true
+    AgentInteractionCorrelation:
+      type: object
+      additionalProperties: false
+      required: [modelRequestId, providerId, providerInteractionId, providerItemId, providerRequestId, providerRequestIdType, providerSessionId, providerToolCallId, providerToolName, providerToolNamespace, providerTurnId, protocolMethod]
+      properties:
+        modelRequestId: { type: string, minLength: 1, maxLength: 256 }
+        providerId: { type: string, minLength: 1, maxLength: 128 }
+        providerInteractionId: { type: [string, 'null'], maxLength: 256 }
+        providerItemId: { type: [string, 'null'], maxLength: 256 }
+        providerRequestId:
+          oneOf:
+          - { type: string, minLength: 1, maxLength: 256 }
+          - { type: integer, minimum: -9007199254740991, maximum: 9007199254740991 }
+        providerRequestIdType: { type: string, enum: [string, number] }
+        providerSessionId: { type: string, minLength: 1, maxLength: 256 }
+        providerToolCallId: { type: [string, 'null'], maxLength: 256 }
+        providerToolName: { type: [string, 'null'], maxLength: 256 }
+        providerToolNamespace: { type: [string, 'null'], maxLength: 256 }
+        providerTurnId: { type: string, minLength: 1, maxLength: 256 }
+        protocolMethod: { type: string, minLength: 1, maxLength: 256 }
+    AgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, category, kind, allowedActions, data]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        category:
+          $ref: '#/components/schemas/AgentInteractionRequestCategory'
+        kind:
+          $ref: '#/components/schemas/AgentInteractionRequestKind'
+        allowedActions:
+          type: array
+          minItems: 2
+          maxItems: 6
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AgentInteractionAction'
+        data:
+          $ref: '#/components/schemas/AgentInteractionRequestData'
+        correlation:
+          $ref: '#/components/schemas/AgentInteractionCorrelation'
+    TypedAgentInteractionResolution:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/AgentInteractionAction'
+        answers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        selectedOptions:
+          type: array
+          items:
+            type: string
+        freeformAnswer:
+          type: [string, 'null']
+          maxLength: 65536
+        selectedSources:
+          type: array
+          items:
+            type: string
+        selectedRoles:
+          type: array
+          items:
+            type: string
+        execPolicyAmendment:
+          type: object
+          additionalProperties: true
+        networkPolicyAmendment:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties: true
+        scope:
+          type: string
+          enum: [turn, session]
+        strictAutoReview:
+          type: boolean
+        content: {}
+        metadata:
+          type: object
+          additionalProperties: true
+    AgentInteractionResolution:
+      oneOf:
+      - $ref: '#/components/schemas/LegacyAgentInteractionResolution'
+      - $ref: '#/components/schemas/TypedAgentInteractionResolution'
     AgentInteractionRecord:
       type: object
       additionalProperties: false
@@ -7753,6 +8266,10 @@ components:
           maxItems: 128
           items:
             $ref: '#/components/schemas/AgentInteractionOption'
+        request:
+          oneOf:
+          - $ref: '#/components/schemas/AgentInteractionRequest'
+          - type: 'null'
         resolution:
           oneOf:
           - $ref: '#/components/schemas/AgentInteractionResolution'
@@ -7817,6 +8334,7 @@ components:
       required: [kind, prompt, requestedAt]
       dependentRequired:
         providerInteractionId: [runtimeBindingId]
+        request: [runtimeBindingId, providerInteractionId]
       properties:
         interactionId:
           type: string
@@ -7841,6 +8359,8 @@ components:
           maxItems: 128
           items:
             $ref: '#/components/schemas/AgentInteractionOption'
+        request:
+          $ref: '#/components/schemas/AgentInteractionRequest'
         retentionUntil:
           type: string
           format: date-time
@@ -7929,6 +8449,24 @@ components:
           maxLength: 256
         rejected:
           type: boolean
+        claimToken:
+          type: string
+          minLength: 32
+          maxLength: 256
+        fencingToken:
+          $ref: '#/components/schemas/Int64String'
+        expectedVersion:
+          $ref: '#/components/schemas/Int64String'
+        requestedAt:
+          type: string
+          format: date-time
+    ResolveAgentInteractionRequest:
+      type: object
+      additionalProperties: false
+      required: [resolution, claimToken, fencingToken, expectedVersion, requestedAt]
+      properties:
+        resolution:
+          $ref: '#/components/schemas/TypedAgentInteractionResolution'
         claimToken:
           type: string
           minLength: 32
@@ -8164,6 +8702,36 @@ components:
           type: [string, 'null']
           maxLength: 256
         providerForkedFromSessionId:
+          type: [string, 'null']
+          maxLength: 256
+        providerTitle:
+          type: [string, 'null']
+          maxLength: 512
+        providerTitleSource:
+          type: [string, 'null']
+          maxLength: 64
+        providerPreview:
+          type: [string, 'null']
+          maxLength: 4096
+        providerCreatedAt:
+          type: [string, 'null']
+          format: date-time
+        providerUpdatedAt:
+          type: [string, 'null']
+          format: date-time
+        providerRecencyAt:
+          type: [string, 'null']
+          format: date-time
+        providerPinned:
+          type: boolean
+        providerArchived:
+          type: boolean
+        providerVisible:
+          type: boolean
+        providerSortKey:
+          type: [string, 'null']
+          maxLength: 512
+        providerSource:
           type: [string, 'null']
           maxLength: 256
         status:

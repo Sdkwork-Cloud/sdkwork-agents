@@ -148,9 +148,9 @@ claim that the current runtime implements placement.
 
 | Surface | Prefix | Operations | Credential mode | SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 100 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
-| Backend API | `/backend/v3/api` | 57 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
-| Open API | `/agent/v3/api` | 55 | `X-API-Key` | `@sdkwork/agents-sdk` |
+| App API | `/app/v3/api` | 102 | dual token | `@sdkwork/agents-app-sdk`, `sdkwork_agents_app_sdk` |
+| Backend API | `/backend/v3/api` | 58 | dual token/operator context | `@sdkwork/agents-backend-sdk` |
+| Open API | `/agent/v3/api` | 56 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
 The complete generated inventory is
 [TECH-api-specification.md](../../architecture/tech/TECH-api-specification.md).

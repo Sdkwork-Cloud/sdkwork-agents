@@ -16,6 +16,17 @@ export interface AgentSessionRuntimeBindingRecord {
   providerSessionTreeId?: string | null;
   providerParentSessionId?: string | null;
   providerForkedFromSessionId?: string | null;
+  providerTitle?: string | null;
+  providerTitleSource?: string | null;
+  providerPreview?: string | null;
+  providerCreatedAt?: string | null;
+  providerUpdatedAt?: string | null;
+  providerRecencyAt?: string | null;
+  providerPinned?: boolean;
+  providerArchived?: boolean;
+  providerVisible?: boolean;
+  providerSortKey?: string | null;
+  providerSource?: string | null;
   status: AgentSessionRuntimeBindingStatus;
   isCurrent: boolean;
   version: Int64String;

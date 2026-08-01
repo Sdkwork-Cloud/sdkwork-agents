@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "kind": "sdkwork.agents.interaction-envelope",
+  "contractVersion": "1.0.0",
+  "status": "active",
+  "authority": "agents-platform",
+  "categories": ["approval", "user_input", "elicitation", "setup"],
+  "requestKinds": {
+    "command_execution": {
+      "category": "approval",
+      "actions": ["accept", "accept_for_session", "accept_with_exec_policy_amendment", "apply_network_policy_amendment", "decline", "cancel"],
+      "dataFields": ["itemId", "command", "cwd", "reason", "proposedExecPolicyAmendment", "proposedNetworkPolicyAmendment"]
+    },
+    "file_change": {
+      "category": "approval",
+      "actions": ["accept", "accept_for_session", "decline", "cancel"],
+      "dataFields": ["itemId", "cwd", "reason", "changes"]
+    },
+    "permission_profile": {
+      "category": "approval",
+      "actions": ["grant", "decline", "cancel"]
+    },
+    "question_set": {
+      "category": "user_input",
+      "actions": ["submit", "cancel"]
+    },
+    "onboarding_question_set": {
+      "category": "user_input",
+      "actions": ["submit", "cancel"]
+    },
+    "option_picker": {
+      "category": "user_input",
+      "actions": ["submit", "skip", "dismiss"]
+    },
+    "context_source_picker": {
+      "category": "user_input",
+      "actions": ["continue", "skip", "dismiss"]
+    },
+    "setup_step": {
+      "category": "setup",
+      "actionsByStep": {
+        "role": ["submit", "skip", "dismiss"],
+        "task": ["submit", "skip", "dismiss"],
+        "context": ["continue", "skip", "dismiss"]
+      }
+    },
+    "mcp_elicitation": {
+      "category": "elicitation",
+      "actions": ["accept", "decline", "cancel"]
+    }
+  },
+  "persistence": {
+    "table": "ai_agent_interaction",
+    "requestColumn": "request_json",
+    "resolutionColumn": "resolution_json",
+    "maximumJsonBytes": 65536,
+    "providerCorrelation": {
+      "storage": "typed-request-correlation",
+      "requiredFields": [
+        "modelRequestId",
+        "providerId",
+        "providerInteractionId",
+        "providerItemId",
+        "providerRequestId",
+        "providerRequestIdType",
+        "providerSessionId",
+        "providerToolCallId",
+        "providerToolName",
+        "providerToolNamespace",
+        "providerTurnId",
+        "protocolMethod"
+      ],
+      "providerRequestIdPreservesJsonType": true,
+      "providerProjectedInteractionRequiresCompleteCorrelation": true
+    }
+  },
+  "compatibility": {
+    "legacyKinds": ["approval", "user_question"],
+    "legacyOperations": ["approve", "answer"],
+    "typedOperation": "resolve",
+    "lossyTypedFallbackAllowed": false
+  },
+  "review": {
+    "requirement": "docs/product/requirements/REQ-2026-0801-agent-interaction-envelope.md",
+    "decision": "docs/architecture/decisions/ADR-20260801-agent-interaction-envelope.md",
+    "approval": "docs/engineering/reviews/REVIEW-20260801-agent-interaction-envelope.md",
+    "status": "approved"
+  }
+}

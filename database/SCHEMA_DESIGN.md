@@ -2,7 +2,7 @@
 
 Status: active
 
-Contract: `7.0.0`
+Contract: `7.2.0`
 
 Managed engine: PostgreSQL
 
@@ -25,13 +25,13 @@ stable reference columns.
 | `ai_agent_project` | Reusable orchestration project and access policy |
 | `ai_agent_project_composition_slot` | Project references to sibling-owned capabilities |
 | `ai_agent_session` | Single durable execution session authority |
-| `ai_agent_session_runtime_binding` | Session runtime selection and provider Session lineage |
+| `ai_agent_session_runtime_binding` | Session runtime selection, provider Session lineage, and provider directory metadata |
 | `ai_agent_turn` | Idempotent turn, retry, lease, fencing, usage, and terminal state |
 | `ai_agent_turn_input_queue_entry` | Durable owner-scoped FIFO input awaiting Turn execution |
 | `ai_agent_session_item` | Ordered typed transcript or execution item |
 | `ai_agent_item_drive_ref` | Typed relation to Drive-owned resources |
 | `ai_agent_item_feedback` | Per-user assistant-output quality feedback |
-| `ai_agent_interaction` | Approval or user-question pause point with claim fencing |
+| `ai_agent_interaction` | Typed approval, user-question, elicitation or setup pause point with claim fencing |
 | `ai_agent_session_checkpoint` | Provider or Drive-backed resumable checkpoint reference |
 | `ai_agent_task` | Session-bound one-time or cron schedule definition |
 | `ai_agent_task_run` | One logical scheduled, manual, or business-retry occurrence |
@@ -61,6 +61,10 @@ resource snapshots. Turns own idempotency and worker concurrency state.
 Checkpoints store exactly one opaque provider checkpoint reference or one
 Drive space/node pair. They never store plaintext resume tokens or unconstrained
 provider state documents.
+
+Interactions keep legacy options as a bounded array and store typed requests in
+the separate bounded `request_json` object. Provider request ids, methods and
+callbacks remain outside Agents persistence.
 
 ## Isolation And Concurrency
 

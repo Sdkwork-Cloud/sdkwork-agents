@@ -586,6 +586,17 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_runtime_binding (
     provider_session_tree_id VARCHAR(256),
     provider_parent_session_id VARCHAR(256),
     provider_forked_from_session_id VARCHAR(256),
+    provider_title VARCHAR(512),
+    provider_title_source VARCHAR(64),
+    provider_preview VARCHAR(4096),
+    provider_created_at TIMESTAMPTZ,
+    provider_updated_at TIMESTAMPTZ,
+    provider_recency_at TIMESTAMPTZ,
+    provider_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    provider_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    provider_visible BOOLEAN NOT NULL DEFAULT TRUE,
+    provider_sort_key VARCHAR(512),
+    provider_source VARCHAR(256),
     status SMALLINT NOT NULL DEFAULT 0,
     is_current BOOLEAN NOT NULL DEFAULT TRUE,
     version BIGINT NOT NULL DEFAULT 0,
@@ -638,6 +649,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_session_runtime_location
     ON ai_agent_session_runtime_binding (
         tenant_id, organization_id, runtime_location_id, updated_at DESC, id DESC
     ) WHERE runtime_location_id IS NOT NULL AND is_current = TRUE;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_session_runtime_binding_provider_directory
+    ON ai_agent_session_runtime_binding (
+        tenant_id, organization_id, owner_user_id, provider_binding_id,
+        provider_visible, provider_archived, provider_pinned DESC,
+        provider_recency_at DESC, provider_sort_key, id DESC
+    ) WHERE provider_session_id IS NOT NULL AND is_current = TRUE;
 
 CREATE TABLE IF NOT EXISTS ai_agent_turn (
     id BIGINT NOT NULL PRIMARY KEY,
@@ -1062,6 +1079,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_interaction (
     status SMALLINT NOT NULL DEFAULT 0,
     prompt TEXT NOT NULL,
     options_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    request_json JSONB,
     resolution_json JSONB,
     claim_owner VARCHAR(128),
     claim_token_hash VARCHAR(128),
@@ -1076,10 +1094,14 @@ CREATE TABLE IF NOT EXISTS ai_agent_interaction (
     CONSTRAINT uk_ai_agent_interaction_scope UNIQUE (
         tenant_id, organization_id, session_id, interaction_id
     ),
-    CONSTRAINT ck_ai_agent_interaction_kind CHECK (kind IN (0, 1)),
+    CONSTRAINT ck_ai_agent_interaction_kind CHECK (kind IN (0, 1, 2, 3)),
     CONSTRAINT ck_ai_agent_interaction_status CHECK (status IN (0, 1, 2, 3, 4)),
     CONSTRAINT ck_ai_agent_interaction_options CHECK (
         jsonb_typeof(options_json) = 'array' AND octet_length(options_json::text) <= 65536
+    ),
+    CONSTRAINT ck_ai_agent_interaction_request CHECK (
+        request_json IS NULL
+        OR (jsonb_typeof(request_json) = 'object' AND octet_length(request_json::text) <= 65536)
     ),
     CONSTRAINT ck_ai_agent_interaction_resolution CHECK (
         resolution_json IS NULL

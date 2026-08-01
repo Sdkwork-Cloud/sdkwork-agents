@@ -1,5 +1,6 @@
 import type { AgentInteractionKind } from './agent-interaction-kind';
 import type { AgentInteractionOption } from './agent-interaction-option';
+import type { AgentInteractionRequest } from './agent-interaction-request';
 import type { AgentInteractionResolution } from './agent-interaction-resolution';
 import type { AgentInteractionStatus } from './agent-interaction-status';
 import type { Int64String } from './int64-string';
@@ -16,6 +17,7 @@ export interface AgentInteractionRecord {
   status: AgentInteractionStatus;
   prompt: string;
   options: AgentInteractionOption[];
+  request?: AgentInteractionRequest | null;
   resolution?: AgentInteractionResolution | null;
   claimOwner?: string | null;
   claimExpiresAt?: string | null;

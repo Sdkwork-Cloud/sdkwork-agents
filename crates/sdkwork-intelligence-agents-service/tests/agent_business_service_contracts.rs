@@ -17,8 +17,9 @@ use sdkwork_intelligence_agents_service::{
     GetInteractionCommand, GetSessionCommand, GetTurnByIdempotencyCommand, GetTurnCommand,
     IamGatedPolicyProvider, InMemoryAgentRepository, InteractionListQuery,
     ListAgentAuditEventsCommand, ListAgentsCommand, ListInteractionsCommand, PaginatedResult,
-    PaginationParams, ProviderBindingListCommand, ProviderBindingListQuery, RestoreAgentCommand,
-    UpdateAgentCommand, DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, MAX_PAGE_SIZE,
+    PaginationParams, ProviderBindingListCommand, ProviderBindingListQuery,
+    ResolveInteractionCommand, RestoreAgentCommand, UpdateAgentCommand,
+    DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY, MAX_PAGE_SIZE,
 };
 use sdkwork_utils_rust::http_api::offset_limit_page_from_iter;
 
@@ -1191,6 +1192,7 @@ fn execute_turn_persists_user_input_and_assistant_output() {
             provider_session_tree_id: None,
             provider_parent_session_id: None,
             provider_forked_from_session_id: None,
+            provider_directory: None,
             owner_scope: None,
             requested_by: sample_subject(),
             requested_at: "2026-06-01T05:01:20Z".to_string(),
@@ -1432,6 +1434,7 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
             kind: AgentInteractionKind::Approval,
             prompt: "Approve write?".to_string(),
             options_json: "[]".to_string(),
+            request_json: None,
             retention_until: None,
             owner_scope: None,
             requested_by: sample_subject(),
@@ -1497,4 +1500,264 @@ fn interaction_approval_lifecycle_persists_and_resolves() {
         })
         .expect("get interaction should succeed");
     assert_eq!(retrieved.status.as_str(), "resolved");
+}
+
+#[test]
+fn typed_interaction_envelopes_validate_and_resolve_without_loss() {
+    let repository = InMemoryAgentRepository::new();
+    let (audit_sink, _events) = RecordingAuditSink::new();
+    let service = AgentsService::new(repository, audit_sink, test_policy_provider());
+    let agent = service
+        .create_agent(create_agent_cmd(
+            "agent.typed.interaction",
+            100_001,
+            0,
+            100,
+            "typed-interaction",
+            "Typed Interaction Agent",
+            "2026-08-01T00:00:00Z",
+        ))
+        .expect("create typed interaction agent");
+    let session = service
+        .create_session(CreateSessionCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: agent.agent_id.clone(),
+            owner_user_id: 100,
+            session_id: "session.typed.interaction".to_string(),
+            project_id: None,
+            session_kind: AgentSessionKind::Coding,
+            entry_surface: AgentSessionEntrySurface::Api,
+            source_module: None,
+            source_context_kind: None,
+            source_context_id: None,
+            parent_session_id: None,
+            forked_from_turn_id: None,
+            title: Some("Typed interactions".to_string()),
+            idempotency_key: None,
+            payload_hash: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-08-01T00:00:01Z".to_string(),
+        })
+        .expect("create typed interaction session");
+    let provider_binding = service
+        .add_provider_binding(AgentProviderBindingCommand {
+            tenant_id: 100_001,
+            agent_id: agent.agent_id.clone(),
+            binding_id: "binding.typed.interaction".to_string(),
+            provider_id: "provider.codex".to_string(),
+            implementation_kind: AgentImplementationKind::ManifestOnly,
+            configuration_profile_id: "profile.typed.interaction".to_string(),
+            capabilities: Vec::new(),
+            make_default: true,
+            requested_by: sample_subject(),
+            requested_at: "2026-08-01T00:00:02Z".to_string(),
+        })
+        .expect("create typed interaction provider binding");
+    let runtime_binding = service
+        .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: agent.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            runtime_binding_id: Some("runtime_binding.typed.interaction".to_string()),
+            runtime_location_id: None,
+            host_mode: "managed".to_string(),
+            transport_kind: "typescript_node".to_string(),
+            provider_binding_id: provider_binding.binding_id,
+            model_id: "gpt-5.6-codex".to_string(),
+            provider_id: provider_binding.provider_id,
+            provider_session_id: Some("provider-session-typed".to_string()),
+            provider_session_tree_id: None,
+            provider_parent_session_id: None,
+            provider_forked_from_session_id: None,
+            provider_directory: None,
+            owner_scope: None,
+            requested_by: sample_subject(),
+            requested_at: "2026-08-01T00:00:03Z".to_string(),
+        })
+        .expect("create typed interaction runtime binding");
+
+    let cases = [
+        (
+            AgentInteractionKind::UserQuestion,
+            "question-set",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "category": "user_input",
+                "kind": "question_set",
+                "allowedActions": ["submit", "cancel"],
+                "data": {
+                    "autoResolutionMs": 60000,
+                    "questions": [
+                        {"id": "workspace", "header": "Workspace", "prompt": "Which workspace?", "allowOther": true, "secret": false, "options": null},
+                        {"id": "mode", "header": "Mode", "prompt": "Which mode?", "allowOther": false, "secret": false, "options": [{"label": "Local", "description": "Use this device"}]}
+                    ]
+                }
+            }),
+            serde_json::json!({
+                "action": "submit",
+                "answers": {"workspace": ["E:\\workspace"], "mode": ["Local"]}
+            }),
+        ),
+        (
+            AgentInteractionKind::Approval,
+            "session-command",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "category": "approval",
+                "kind": "command_execution",
+                "allowedActions": ["accept", "accept_for_session", "accept_with_exec_policy_amendment", "apply_network_policy_amendment", "decline", "cancel"],
+                "data": {"command": "pnpm test", "cwd": "E:\\workspace"}
+            }),
+            serde_json::json!({"action": "accept_for_session"}),
+        ),
+        (
+            AgentInteractionKind::Approval,
+            "permission-profile",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "category": "approval",
+                "kind": "permission_profile",
+                "allowedActions": ["grant", "decline", "cancel"],
+                "data": {"cwd": "E:\\workspace", "requestedPermissions": {"network": {"enabled": true}}}
+            }),
+            serde_json::json!({
+                "action": "grant",
+                "permissions": {"network": {"enabled": true}},
+                "scope": "session",
+                "strictAutoReview": true
+            }),
+        ),
+        (
+            AgentInteractionKind::Elicitation,
+            "mcp-elicitation",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "category": "elicitation",
+                "kind": "mcp_elicitation",
+                "allowedActions": ["accept", "decline", "cancel"],
+                "data": {"mode": "form", "serverName": "deployments", "message": "Provide deployment details", "requestedSchema": {"type": "object"}}
+            }),
+            serde_json::json!({
+                "action": "accept",
+                "content": {"environment": "test"},
+                "metadata": {"source": "contract-test"}
+            }),
+        ),
+    ];
+
+    for (index, (kind, suffix, request, resolution)) in cases.into_iter().enumerate() {
+        let interaction = service
+            .create_interaction(CreateInteractionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                interaction_id: format!("interaction.typed.{suffix}"),
+                turn_id: None,
+                runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
+                provider_interaction_id: Some(format!("provider-interaction-{suffix}")),
+                kind,
+                prompt: format!("Resolve {suffix}"),
+                options_json: "[]".to_string(),
+                request_json: Some(request.to_string()),
+                retention_until: None,
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: format!("2026-08-01T00:01:{index:02}Z"),
+            })
+            .expect("create typed interaction");
+        assert_eq!(
+            interaction.request_json.as_deref(),
+            Some(request.to_string().as_str())
+        );
+
+        if suffix == "session-command" {
+            let legacy_error = service
+                .approve_interaction(ApproveInteractionCommand {
+                    tenant_id: 100_001,
+                    organization_id: 0,
+                    path_agent_id: agent.agent_id.clone(),
+                    session_id: session.session_id.clone(),
+                    interaction_id: interaction.interaction_id.clone(),
+                    approved: true,
+                    reason: None,
+                    claim_token: "not-used-for-typed-interactions".to_string(),
+                    fencing_token: 0,
+                    expected_version: interaction.version,
+                    owner_scope: None,
+                    requested_by: sample_subject(),
+                    requested_at: "2026-08-01T00:02:00Z".to_string(),
+                })
+                .expect_err("typed interaction must reject legacy approve");
+            assert!(legacy_error.to_string().contains("typed interaction"));
+        }
+
+        let claim = service
+            .claim_interaction(ClaimInteractionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                interaction_id: interaction.interaction_id.clone(),
+                claim_owner: "worker.typed.contract".to_string(),
+                lease_seconds: 60,
+                expected_version: interaction.version,
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-01T00:02:01Z".to_string(),
+            })
+            .expect("claim typed interaction");
+
+        if suffix == "question-set" {
+            for (invalid_resolution, expected_error) in [
+                (serde_json::json!({"action": "grant"}), "not allowed"),
+                (
+                    serde_json::json!({"action": "submit", "answers": {"unknown": ["value"]}}),
+                    "unknown question id",
+                ),
+            ] {
+                let error = service
+                    .resolve_interaction(ResolveInteractionCommand {
+                        tenant_id: 100_001,
+                        organization_id: 0,
+                        path_agent_id: agent.agent_id.clone(),
+                        session_id: session.session_id.clone(),
+                        interaction_id: interaction.interaction_id.clone(),
+                        resolution_json: invalid_resolution.to_string(),
+                        claim_token: claim.claim_token.clone(),
+                        fencing_token: claim.fencing_token,
+                        expected_version: claim.interaction.version,
+                        owner_scope: None,
+                        requested_by: sample_subject(),
+                        requested_at: "2026-08-01T00:02:02Z".to_string(),
+                    })
+                    .expect_err("invalid typed resolution must fail");
+                assert!(error.to_string().contains(expected_error));
+            }
+        }
+
+        let resolved = service
+            .resolve_interaction(ResolveInteractionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                interaction_id: interaction.interaction_id,
+                resolution_json: resolution.to_string(),
+                claim_token: claim.claim_token,
+                fencing_token: claim.fencing_token,
+                expected_version: claim.interaction.version,
+                owner_scope: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-01T00:02:03Z".to_string(),
+            })
+            .expect("resolve typed interaction");
+        assert_eq!(resolved.status.as_str(), "resolved");
+        assert_eq!(
+            resolved.resolution_json.as_deref(),
+            Some(resolution.to_string().as_str())
+        );
+    }
 }

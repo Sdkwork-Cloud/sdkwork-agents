@@ -1269,6 +1269,17 @@ pub struct AgentSessionRuntimeBindingRecord {
     pub provider_session_tree_id: Option<String>,
     pub provider_parent_session_id: Option<String>,
     pub provider_forked_from_session_id: Option<String>,
+    pub provider_title: Option<String>,
+    pub provider_title_source: Option<String>,
+    pub provider_preview: Option<String>,
+    pub provider_created_at: Option<String>,
+    pub provider_updated_at: Option<String>,
+    pub provider_recency_at: Option<String>,
+    pub provider_pinned: bool,
+    pub provider_archived: bool,
+    pub provider_visible: bool,
+    pub provider_sort_key: Option<String>,
+    pub provider_source: Option<String>,
     pub status: AgentSessionRuntimeBindingStatus,
     pub is_current: bool,
     pub version: u64,
@@ -1780,6 +1791,10 @@ pub enum AgentInteractionKind {
     Approval,
     /// User question with selectable options or free-text answer.
     UserQuestion,
+    /// Structured MCP or provider elicitation.
+    Elicitation,
+    /// Structured provider setup step.
+    Setup,
 }
 
 impl AgentInteractionKind {
@@ -1787,6 +1802,8 @@ impl AgentInteractionKind {
         match self {
             Self::Approval => "approval",
             Self::UserQuestion => "user_question",
+            Self::Elicitation => "elicitation",
+            Self::Setup => "setup",
         }
     }
 
@@ -1794,6 +1811,8 @@ impl AgentInteractionKind {
         match value {
             "approval" => Some(Self::Approval),
             "user_question" => Some(Self::UserQuestion),
+            "elicitation" => Some(Self::Elicitation),
+            "setup" => Some(Self::Setup),
             _ => None,
         }
     }
@@ -1802,6 +1821,8 @@ impl AgentInteractionKind {
         match self {
             Self::Approval => 0,
             Self::UserQuestion => 1,
+            Self::Elicitation => 2,
+            Self::Setup => 3,
         }
     }
 
@@ -1809,6 +1830,8 @@ impl AgentInteractionKind {
         match value {
             0 => Some(Self::Approval),
             1 => Some(Self::UserQuestion),
+            2 => Some(Self::Elicitation),
+            3 => Some(Self::Setup),
             _ => None,
         }
     }
@@ -1835,6 +1858,8 @@ pub struct AgentInteractionRecord {
     pub prompt: String,
     /// Selectable options for user-question interactions (JSON array of strings).
     pub options_json: String,
+    /// Versioned provider-neutral typed request envelope.
+    pub request_json: Option<String>,
     /// The user's resolution payload (JSON: approved/answer/reason).
     pub resolution_json: Option<String>,
     pub claim_owner: Option<String>,

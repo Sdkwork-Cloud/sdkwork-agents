@@ -4456,6 +4456,474 @@ class AppUpdateAgentSessionRequest {
   }
 }
 
+class ApplyAgentModelConfigurationRequest {
+  final String configurationId;
+  final String engineId;
+  final String vendorCode;
+  final String baseUrl;
+  final String? apiKey;
+  final String defaultModelId;
+  final List<String> supportedModelIds;
+  final List<String>? supportedProviderIds;
+  final int? inputContextTokens;
+  final int? outputContextTokens;
+  final int? toolCallRounds;
+  final bool? supportsMultimodal;
+
+  ApplyAgentModelConfigurationRequest({
+    required this.configurationId,
+    required this.engineId,
+    required this.vendorCode,
+    required this.baseUrl,
+    this.apiKey,
+    required this.defaultModelId,
+    required this.supportedModelIds,
+    this.supportedProviderIds,
+    this.inputContextTokens,
+    this.outputContextTokens,
+    this.toolCallRounds,
+    this.supportsMultimodal
+  });
+
+  factory ApplyAgentModelConfigurationRequest.fromJson(Map<String, dynamic> json) {
+    return ApplyAgentModelConfigurationRequest(
+      configurationId: (() {
+        final value = json['configurationId']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelConfigurationRequest.configurationId is required');
+        }
+        return value;
+      })(),
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelConfigurationRequest.engineId is required');
+        }
+        return value;
+      })(),
+      vendorCode: (() {
+        final value = json['vendorCode']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelConfigurationRequest.vendorCode is required');
+        }
+        return value;
+      })(),
+      baseUrl: (() {
+        final value = json['baseUrl']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelConfigurationRequest.baseUrl is required');
+        }
+        return value;
+      })(),
+      apiKey: json['apiKey']?.toString(),
+      defaultModelId: (() {
+        final value = json['defaultModelId']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelConfigurationRequest.defaultModelId is required');
+        }
+        return value;
+      })(),
+      supportedModelIds: (() {
+        final list = _sdkworkAsList(json['supportedModelIds']);
+        if (list == null) {
+          throw FormatException('ApplyAgentModelConfigurationRequest.supportedModelIds is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      supportedProviderIds: (() {
+        final list = _sdkworkAsList(json['supportedProviderIds']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      inputContextTokens: json['inputContextTokens'] is int ? json['inputContextTokens'] : null,
+      outputContextTokens: json['outputContextTokens'] is int ? json['outputContextTokens'] : null,
+      toolCallRounds: json['toolCallRounds'] is int ? json['toolCallRounds'] : null,
+      supportsMultimodal: json['supportsMultimodal'] is bool ? json['supportsMultimodal'] : null
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'configurationId': configurationId,
+      'engineId': engineId,
+      'vendorCode': vendorCode,
+      'baseUrl': baseUrl,
+      'apiKey': apiKey,
+      'defaultModelId': defaultModelId,
+      'supportedModelIds': supportedModelIds.map((item) => item).toList(),
+      'supportedProviderIds': supportedProviderIds?.map((item) => item).toList(),
+      'inputContextTokens': inputContextTokens,
+      'outputContextTokens': outputContextTokens,
+      'toolCallRounds': toolCallRounds,
+      'supportsMultimodal': supportsMultimodal,
+    };
+  }
+}
+
+class AppliedAgentModelConfigurationRecord {
+  final String configurationId;
+  final String profileId;
+  final String engineId;
+  final String agentId;
+  final String providerScope;
+  final String vendorCode;
+  final String baseUrl;
+  final String defaultModelId;
+  final List<String> supportedModelIds;
+  final List<String> supportedProviderIds;
+  final int? inputContextTokens;
+  final int? outputContextTokens;
+  final int? toolCallRounds;
+  final bool supportsMultimodal;
+  final bool apiKeyConfigured;
+
+  AppliedAgentModelConfigurationRecord({
+    required this.configurationId,
+    required this.profileId,
+    required this.engineId,
+    required this.agentId,
+    required this.providerScope,
+    required this.vendorCode,
+    required this.baseUrl,
+    required this.defaultModelId,
+    required this.supportedModelIds,
+    required this.supportedProviderIds,
+    this.inputContextTokens,
+    this.outputContextTokens,
+    this.toolCallRounds,
+    required this.supportsMultimodal,
+    required this.apiKeyConfigured
+  });
+
+  factory AppliedAgentModelConfigurationRecord.fromJson(Map<String, dynamic> json) {
+    return AppliedAgentModelConfigurationRecord(
+      configurationId: (() {
+        final value = json['configurationId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.configurationId is required');
+        }
+        return value;
+      })(),
+      profileId: (() {
+        final value = json['profileId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.profileId is required');
+        }
+        return value;
+      })(),
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.engineId is required');
+        }
+        return value;
+      })(),
+      agentId: (() {
+        final value = json['agentId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.agentId is required');
+        }
+        return value;
+      })(),
+      providerScope: (() {
+        final value = json['providerScope']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.providerScope is required');
+        }
+        return value;
+      })(),
+      vendorCode: (() {
+        final value = json['vendorCode']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.vendorCode is required');
+        }
+        return value;
+      })(),
+      baseUrl: (() {
+        final value = json['baseUrl']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.baseUrl is required');
+        }
+        return value;
+      })(),
+      defaultModelId: (() {
+        final value = json['defaultModelId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.defaultModelId is required');
+        }
+        return value;
+      })(),
+      supportedModelIds: (() {
+        final list = _sdkworkAsList(json['supportedModelIds']);
+        if (list == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.supportedModelIds is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      supportedProviderIds: (() {
+        final list = _sdkworkAsList(json['supportedProviderIds']);
+        if (list == null) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.supportedProviderIds is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      inputContextTokens: json['inputContextTokens'] is int ? json['inputContextTokens'] : null,
+      outputContextTokens: json['outputContextTokens'] is int ? json['outputContextTokens'] : null,
+      toolCallRounds: json['toolCallRounds'] is int ? json['toolCallRounds'] : null,
+      supportsMultimodal: (() {
+        final value = json['supportsMultimodal'];
+        if (value is! bool) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.supportsMultimodal is required');
+        }
+        return value;
+      })(),
+      apiKeyConfigured: (() {
+        final value = json['apiKeyConfigured'];
+        if (value is! bool) {
+          throw FormatException('AppliedAgentModelConfigurationRecord.apiKeyConfigured is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'configurationId': configurationId,
+      'profileId': profileId,
+      'engineId': engineId,
+      'agentId': agentId,
+      'providerScope': providerScope,
+      'vendorCode': vendorCode,
+      'baseUrl': baseUrl,
+      'defaultModelId': defaultModelId,
+      'supportedModelIds': supportedModelIds.map((item) => item).toList(),
+      'supportedProviderIds': supportedProviderIds.map((item) => item).toList(),
+      'inputContextTokens': inputContextTokens,
+      'outputContextTokens': outputContextTokens,
+      'toolCallRounds': toolCallRounds,
+      'supportsMultimodal': supportsMultimodal,
+      'apiKeyConfigured': apiKeyConfigured,
+    };
+  }
+}
+
+class AppliedAgentModelConfigurationResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AppliedAgentModelConfigurationResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AppliedAgentModelConfigurationResponse.fromJson(Map<String, dynamic> json) {
+    return AppliedAgentModelConfigurationResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AppliedAgentModelConfigurationResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AppliedAgentModelConfigurationResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelConfigurationResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ApplyAgentModelSelectionRequest {
+  final String? configurationId;
+  final String engineId;
+  final String modelId;
+
+  ApplyAgentModelSelectionRequest({
+    this.configurationId,
+    required this.engineId,
+    required this.modelId
+  });
+
+  factory ApplyAgentModelSelectionRequest.fromJson(Map<String, dynamic> json) {
+    return ApplyAgentModelSelectionRequest(
+      configurationId: json['configurationId']?.toString(),
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelSelectionRequest.engineId is required');
+        }
+        return value;
+      })(),
+      modelId: (() {
+        final value = json['modelId']?.toString();
+        if (value == null) {
+          throw FormatException('ApplyAgentModelSelectionRequest.modelId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'configurationId': configurationId,
+      'engineId': engineId,
+      'modelId': modelId,
+    };
+  }
+}
+
+class AppliedAgentModelSelectionRecord {
+  final String? configurationId;
+  final String profileId;
+  final String engineId;
+  final String agentId;
+  final String providerScope;
+  final String modelId;
+
+  AppliedAgentModelSelectionRecord({
+    this.configurationId,
+    required this.profileId,
+    required this.engineId,
+    required this.agentId,
+    required this.providerScope,
+    required this.modelId
+  });
+
+  factory AppliedAgentModelSelectionRecord.fromJson(Map<String, dynamic> json) {
+    return AppliedAgentModelSelectionRecord(
+      configurationId: json['configurationId']?.toString(),
+      profileId: (() {
+        final value = json['profileId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelSelectionRecord.profileId is required');
+        }
+        return value;
+      })(),
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelSelectionRecord.engineId is required');
+        }
+        return value;
+      })(),
+      agentId: (() {
+        final value = json['agentId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelSelectionRecord.agentId is required');
+        }
+        return value;
+      })(),
+      providerScope: (() {
+        final value = json['providerScope']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelSelectionRecord.providerScope is required');
+        }
+        return value;
+      })(),
+      modelId: (() {
+        final value = json['modelId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelSelectionRecord.modelId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'configurationId': configurationId,
+      'profileId': profileId,
+      'engineId': engineId,
+      'agentId': agentId,
+      'providerScope': providerScope,
+      'modelId': modelId,
+    };
+  }
+}
+
+class AppliedAgentModelSelectionResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AppliedAgentModelSelectionResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AppliedAgentModelSelectionResponse.fromJson(Map<String, dynamic> json) {
+    return AppliedAgentModelSelectionResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AppliedAgentModelSelectionResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AppliedAgentModelSelectionResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AppliedAgentModelSelectionResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
 class CodeEngineCatalogListResponse {
   final int code;
   final dynamic data;
@@ -9497,25 +9965,25 @@ class AgentInteractionOption {
   }
 }
 
-class AgentInteractionResolution {
+class LegacyAgentInteractionResolution implements AgentInteractionResolution {
   final String outcome;
   final String? answer;
   final String? selectedOptionValue;
   final String? reason;
 
-  AgentInteractionResolution({
+  LegacyAgentInteractionResolution({
     required this.outcome,
     this.answer,
     this.selectedOptionValue,
     this.reason
   });
 
-  factory AgentInteractionResolution.fromJson(Map<String, dynamic> json) {
-    return AgentInteractionResolution(
+  factory LegacyAgentInteractionResolution.fromJson(Map<String, dynamic> json) {
+    return LegacyAgentInteractionResolution(
       outcome: (() {
         final value = json['outcome']?.toString();
         if (value == null) {
-          throw FormatException('AgentInteractionResolution.outcome is required');
+          throw FormatException('LegacyAgentInteractionResolution.outcome is required');
         }
         return value;
       })(),
@@ -9535,6 +10003,653 @@ class AgentInteractionResolution {
   }
 }
 
+class AgentInteractionQuestionOption {
+  final String label;
+  final String? description;
+
+  AgentInteractionQuestionOption({
+    required this.label,
+    this.description
+  });
+
+  factory AgentInteractionQuestionOption.fromJson(Map<String, dynamic> json) {
+    return AgentInteractionQuestionOption(
+      label: (() {
+        final value = json['label']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionQuestionOption.label is required');
+        }
+        return value;
+      })(),
+      description: json['description']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'label': label,
+      'description': description,
+    };
+  }
+}
+
+class AgentInteractionQuestion {
+  final String id;
+  final String header;
+  final String prompt;
+  final bool allowOther;
+  final bool secret;
+  final List<AgentInteractionQuestionOption>? options;
+
+  AgentInteractionQuestion({
+    required this.id,
+    required this.header,
+    required this.prompt,
+    required this.allowOther,
+    required this.secret,
+    required this.options
+  });
+
+  factory AgentInteractionQuestion.fromJson(Map<String, dynamic> json) {
+    return AgentInteractionQuestion(
+      id: (() {
+        final value = json['id']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionQuestion.id is required');
+        }
+        return value;
+      })(),
+      header: (() {
+        final value = json['header']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionQuestion.header is required');
+        }
+        return value;
+      })(),
+      prompt: (() {
+        final value = json['prompt']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionQuestion.prompt is required');
+        }
+        return value;
+      })(),
+      allowOther: (() {
+        final value = json['allowOther'];
+        if (value is! bool) {
+          throw FormatException('AgentInteractionQuestion.allowOther is required');
+        }
+        return value;
+      })(),
+      secret: (() {
+        final value = json['secret'];
+        if (value is! bool) {
+          throw FormatException('AgentInteractionQuestion.secret is required');
+        }
+        return value;
+      })(),
+      options: (() {
+        if (!json.containsKey('options')) {
+          throw FormatException('AgentInteractionQuestion.options is required');
+        }
+        final _sdkworkRequiredValue = json['options'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final list = _sdkworkAsList(_sdkworkRequiredValue);
+        if (list == null) {
+          throw FormatException('AgentInteractionQuestion.options is required');
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentInteractionQuestionOption.fromJson(map);
+      })())
+            .whereType<AgentInteractionQuestionOption>()
+            .toList();
+      })();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'id': id,
+      'header': header,
+      'prompt': prompt,
+      'allowOther': allowOther,
+      'secret': secret,
+      'options': options?.map((item) => item.toJson()).toList(),
+    };
+  }
+}
+
+class AgentInteractionRequestData {
+  final String? itemId;
+  final String? command;
+  final String? cwd;
+  final String? reason;
+  final Map<String, dynamic>? changes;
+  final Map<String, dynamic>? proposedExecPolicyAmendment;
+  final Map<String, dynamic>? proposedNetworkPolicyAmendment;
+  final List<AgentInteractionQuestion>? questions;
+  final int? autoResolutionMs;
+  final bool? isBlocking;
+  final String? question;
+  final List<AgentInteractionQuestionOption>? options;
+  final bool? allowMultiple;
+  final String? submitLabel;
+  final String? skipLabel;
+  final String? step;
+  final String? mode;
+  final String? serverName;
+  final String? message;
+  final String? elicitationId;
+  final String? url;
+  final dynamic requestedSchema;
+  final Map<String, dynamic>? requestedPermissions;
+
+  AgentInteractionRequestData({
+    this.itemId,
+    this.command,
+    this.cwd,
+    this.reason,
+    this.changes,
+    this.proposedExecPolicyAmendment,
+    this.proposedNetworkPolicyAmendment,
+    this.questions,
+    this.autoResolutionMs,
+    this.isBlocking,
+    this.question,
+    this.options,
+    this.allowMultiple,
+    this.submitLabel,
+    this.skipLabel,
+    this.step,
+    this.mode,
+    this.serverName,
+    this.message,
+    this.elicitationId,
+    this.url,
+    this.requestedSchema,
+    this.requestedPermissions
+  });
+
+  factory AgentInteractionRequestData.fromJson(Map<String, dynamic> json) {
+    return AgentInteractionRequestData(
+      itemId: json['itemId']?.toString(),
+      command: json['command']?.toString(),
+      cwd: json['cwd']?.toString(),
+      reason: json['reason']?.toString(),
+      changes: _sdkworkAsMap(json['changes']),
+      proposedExecPolicyAmendment: _sdkworkAsMap(json['proposedExecPolicyAmendment']),
+      proposedNetworkPolicyAmendment: _sdkworkAsMap(json['proposedNetworkPolicyAmendment']),
+      questions: (() {
+        final list = _sdkworkAsList(json['questions']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentInteractionQuestion.fromJson(map);
+      })())
+            .whereType<AgentInteractionQuestion>()
+            .toList();
+      })(),
+      autoResolutionMs: json['autoResolutionMs'] is int ? json['autoResolutionMs'] : null,
+      isBlocking: json['isBlocking'] is bool ? json['isBlocking'] : null,
+      question: json['question']?.toString(),
+      options: (() {
+        final list = _sdkworkAsList(json['options']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => (() {
+        final map = _sdkworkAsMap(item);
+        return map == null ? null : AgentInteractionQuestionOption.fromJson(map);
+      })())
+            .whereType<AgentInteractionQuestionOption>()
+            .toList();
+      })(),
+      allowMultiple: json['allowMultiple'] is bool ? json['allowMultiple'] : null,
+      submitLabel: json['submitLabel']?.toString(),
+      skipLabel: json['skipLabel']?.toString(),
+      step: json['step']?.toString(),
+      mode: json['mode']?.toString(),
+      serverName: json['serverName']?.toString(),
+      message: json['message']?.toString(),
+      elicitationId: json['elicitationId']?.toString(),
+      url: json['url']?.toString(),
+      requestedSchema: json['requestedSchema'],
+      requestedPermissions: _sdkworkAsMap(json['requestedPermissions'])
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'itemId': itemId,
+      'command': command,
+      'cwd': cwd,
+      'reason': reason,
+      'changes': changes,
+      'proposedExecPolicyAmendment': proposedExecPolicyAmendment,
+      'proposedNetworkPolicyAmendment': proposedNetworkPolicyAmendment,
+      'questions': questions?.map((item) => item.toJson()).toList(),
+      'autoResolutionMs': autoResolutionMs,
+      'isBlocking': isBlocking,
+      'question': question,
+      'options': options?.map((item) => item.toJson()).toList(),
+      'allowMultiple': allowMultiple,
+      'submitLabel': submitLabel,
+      'skipLabel': skipLabel,
+      'step': step,
+      'mode': mode,
+      'serverName': serverName,
+      'message': message,
+      'elicitationId': elicitationId,
+      'url': url,
+      'requestedSchema': requestedSchema,
+      'requestedPermissions': requestedPermissions,
+    };
+  }
+}
+
+class AgentInteractionCorrelation {
+  final String modelRequestId;
+  final String providerId;
+  final String? providerInteractionId;
+  final String? providerItemId;
+  final dynamic providerRequestId;
+  final String providerRequestIdType;
+  final String providerSessionId;
+  final String? providerToolCallId;
+  final String? providerToolName;
+  final String? providerToolNamespace;
+  final String providerTurnId;
+  final String protocolMethod;
+
+  AgentInteractionCorrelation({
+    required this.modelRequestId,
+    required this.providerId,
+    required this.providerInteractionId,
+    required this.providerItemId,
+    required this.providerRequestId,
+    required this.providerRequestIdType,
+    required this.providerSessionId,
+    required this.providerToolCallId,
+    required this.providerToolName,
+    required this.providerToolNamespace,
+    required this.providerTurnId,
+    required this.protocolMethod
+  });
+
+  factory AgentInteractionCorrelation.fromJson(Map<String, dynamic> json) {
+    return AgentInteractionCorrelation(
+      modelRequestId: (() {
+        final value = json['modelRequestId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.modelRequestId is required');
+        }
+        return value;
+      })(),
+      providerId: (() {
+        final value = json['providerId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerId is required');
+        }
+        return value;
+      })(),
+      providerInteractionId: (() {
+        if (!json.containsKey('providerInteractionId')) {
+          throw FormatException('AgentInteractionCorrelation.providerInteractionId is required');
+        }
+        final _sdkworkRequiredValue = json['providerInteractionId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerInteractionId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerItemId: (() {
+        if (!json.containsKey('providerItemId')) {
+          throw FormatException('AgentInteractionCorrelation.providerItemId is required');
+        }
+        final _sdkworkRequiredValue = json['providerItemId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerItemId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerRequestId: (() {
+        final value = json['providerRequestId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerRequestId is required');
+        }
+        return value;
+      })(),
+      providerRequestIdType: (() {
+        final value = json['providerRequestIdType']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerRequestIdType is required');
+        }
+        return value;
+      })(),
+      providerSessionId: (() {
+        final value = json['providerSessionId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerSessionId is required');
+        }
+        return value;
+      })(),
+      providerToolCallId: (() {
+        if (!json.containsKey('providerToolCallId')) {
+          throw FormatException('AgentInteractionCorrelation.providerToolCallId is required');
+        }
+        final _sdkworkRequiredValue = json['providerToolCallId'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerToolCallId is required');
+        }
+        return value;
+      })();
+      })(),
+      providerToolName: (() {
+        if (!json.containsKey('providerToolName')) {
+          throw FormatException('AgentInteractionCorrelation.providerToolName is required');
+        }
+        final _sdkworkRequiredValue = json['providerToolName'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerToolName is required');
+        }
+        return value;
+      })();
+      })(),
+      providerToolNamespace: (() {
+        if (!json.containsKey('providerToolNamespace')) {
+          throw FormatException('AgentInteractionCorrelation.providerToolNamespace is required');
+        }
+        final _sdkworkRequiredValue = json['providerToolNamespace'];
+        if (_sdkworkRequiredValue == null) {
+          return null;
+        }
+        return (() {
+        final value = _sdkworkRequiredValue?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerToolNamespace is required');
+        }
+        return value;
+      })();
+      })(),
+      providerTurnId: (() {
+        final value = json['providerTurnId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.providerTurnId is required');
+        }
+        return value;
+      })(),
+      protocolMethod: (() {
+        final value = json['protocolMethod']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionCorrelation.protocolMethod is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'modelRequestId': modelRequestId,
+      'providerId': providerId,
+      'providerInteractionId': providerInteractionId,
+      'providerItemId': providerItemId,
+      'providerRequestId': providerRequestId,
+      'providerRequestIdType': providerRequestIdType,
+      'providerSessionId': providerSessionId,
+      'providerToolCallId': providerToolCallId,
+      'providerToolName': providerToolName,
+      'providerToolNamespace': providerToolNamespace,
+      'providerTurnId': providerTurnId,
+      'protocolMethod': protocolMethod,
+    };
+  }
+}
+
+class AgentInteractionRequest {
+  final int schemaVersion;
+  final String category;
+  final String kind;
+  final List<String> allowedActions;
+  final AgentInteractionRequestData data;
+  final AgentInteractionCorrelation? correlation;
+
+  AgentInteractionRequest({
+    required this.schemaVersion,
+    required this.category,
+    required this.kind,
+    required this.allowedActions,
+    required this.data,
+    this.correlation
+  });
+
+  factory AgentInteractionRequest.fromJson(Map<String, dynamic> json) {
+    return AgentInteractionRequest(
+      schemaVersion: (() {
+        final value = json['schemaVersion'];
+        if (value is! int) {
+          throw FormatException('AgentInteractionRequest.schemaVersion is required');
+        }
+        return value;
+      })(),
+      category: (() {
+        final value = json['category']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionRequest.category is required');
+        }
+        return value;
+      })(),
+      kind: (() {
+        final value = json['kind']?.toString();
+        if (value == null) {
+          throw FormatException('AgentInteractionRequest.kind is required');
+        }
+        return value;
+      })(),
+      allowedActions: (() {
+        final list = _sdkworkAsList(json['allowedActions']);
+        if (list == null) {
+          throw FormatException('AgentInteractionRequest.allowedActions is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentInteractionRequest.data is required');
+        }
+        return AgentInteractionRequestData.fromJson(map);
+      })(),
+      correlation: (() {
+        final map = _sdkworkAsMap(json['correlation']);
+        return map == null ? null : AgentInteractionCorrelation.fromJson(map);
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'schemaVersion': schemaVersion,
+      'category': category,
+      'kind': kind,
+      'allowedActions': allowedActions.map((item) => item).toList(),
+      'data': data.toJson(),
+      'correlation': correlation?.toJson(),
+    };
+  }
+}
+
+class TypedAgentInteractionResolution implements AgentInteractionResolution {
+  final String action;
+  final Map<String, List<String>>? answers;
+  final List<String>? selectedOptions;
+  final String? freeformAnswer;
+  final List<String>? selectedSources;
+  final List<String>? selectedRoles;
+  final Map<String, dynamic>? execPolicyAmendment;
+  final Map<String, dynamic>? networkPolicyAmendment;
+  final Map<String, dynamic>? permissions;
+  final String? scope;
+  final bool? strictAutoReview;
+  final dynamic content;
+  final Map<String, dynamic>? metadata;
+
+  TypedAgentInteractionResolution({
+    required this.action,
+    this.answers,
+    this.selectedOptions,
+    this.freeformAnswer,
+    this.selectedSources,
+    this.selectedRoles,
+    this.execPolicyAmendment,
+    this.networkPolicyAmendment,
+    this.permissions,
+    this.scope,
+    this.strictAutoReview,
+    this.content,
+    this.metadata
+  });
+
+  factory TypedAgentInteractionResolution.fromJson(Map<String, dynamic> json) {
+    return TypedAgentInteractionResolution(
+      action: (() {
+        final value = json['action']?.toString();
+        if (value == null) {
+          throw FormatException('TypedAgentInteractionResolution.action is required');
+        }
+        return value;
+      })(),
+      answers: (() {
+        final map = _sdkworkAsMap(json['answers']);
+        if (map == null) {
+          return null;
+        }
+        final result = <String, List<String>>{};
+        map.forEach((key, item) {
+          final deserialized = (() {
+        final list = _sdkworkAsList(item);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((nestedItem) => nestedItem?.toString())
+            .whereType<String>()
+            .toList();
+      })();
+          if (deserialized is List<String>) {
+            result[key] = deserialized;
+          }
+        });
+        return result;
+      })(),
+      selectedOptions: (() {
+        final list = _sdkworkAsList(json['selectedOptions']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      freeformAnswer: json['freeformAnswer']?.toString(),
+      selectedSources: (() {
+        final list = _sdkworkAsList(json['selectedSources']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      selectedRoles: (() {
+        final list = _sdkworkAsList(json['selectedRoles']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      execPolicyAmendment: _sdkworkAsMap(json['execPolicyAmendment']),
+      networkPolicyAmendment: _sdkworkAsMap(json['networkPolicyAmendment']),
+      permissions: _sdkworkAsMap(json['permissions']),
+      scope: json['scope']?.toString(),
+      strictAutoReview: json['strictAutoReview'] is bool ? json['strictAutoReview'] : null,
+      content: json['content'],
+      metadata: _sdkworkAsMap(json['metadata'])
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'action': action,
+      'answers': answers?.map((key, item) => MapEntry(key, item.map((nestedItem) => nestedItem).toList())),
+      'selectedOptions': selectedOptions?.map((item) => item).toList(),
+      'freeformAnswer': freeformAnswer,
+      'selectedSources': selectedSources?.map((item) => item).toList(),
+      'selectedRoles': selectedRoles?.map((item) => item).toList(),
+      'execPolicyAmendment': execPolicyAmendment,
+      'networkPolicyAmendment': networkPolicyAmendment,
+      'permissions': permissions,
+      'scope': scope,
+      'strictAutoReview': strictAutoReview,
+      'content': content,
+      'metadata': metadata,
+    };
+  }
+}
+
+class AgentInteractionResolution {
+
+
+  AgentInteractionResolution();
+
+  factory AgentInteractionResolution.fromJson(Map<String, dynamic> json) {
+    return AgentInteractionResolution();
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{};
+  }
+}
+
 class AgentInteractionRecord {
   final String interactionId;
   final String tenantId;
@@ -9547,6 +10662,7 @@ class AgentInteractionRecord {
   final String status;
   final String prompt;
   final List<AgentInteractionOption> options;
+  final AgentInteractionRequest? request;
   final AgentInteractionResolution? resolution;
   final String? claimOwner;
   final String? claimExpiresAt;
@@ -9569,6 +10685,7 @@ class AgentInteractionRecord {
     required this.status,
     required this.prompt,
     required this.options,
+    this.request,
     this.resolution,
     this.claimOwner,
     this.claimExpiresAt,
@@ -9647,6 +10764,10 @@ class AgentInteractionRecord {
             .whereType<AgentInteractionOption>()
             .toList();
       })(),
+      request: (() {
+        final map = _sdkworkAsMap(json['request']);
+        return map == null ? null : AgentInteractionRequest.fromJson(map);
+      })(),
       resolution: (() {
         final map = _sdkworkAsMap(json['resolution']);
         return map == null ? null : AgentInteractionResolution.fromJson(map);
@@ -9699,6 +10820,7 @@ class AgentInteractionRecord {
       'status': status,
       'prompt': prompt,
       'options': options.map((item) => item.toJson()).toList(),
+      'request': request?.toJson(),
       'resolution': resolution?.toJson(),
       'claimOwner': claimOwner,
       'claimExpiresAt': claimExpiresAt,
@@ -9812,6 +10934,7 @@ class CreateAgentInteractionRequest {
   final String kind;
   final String prompt;
   final List<AgentInteractionOption>? options;
+  final AgentInteractionRequest? request;
   final String? retentionUntil;
   final String requestedAt;
 
@@ -9823,6 +10946,7 @@ class CreateAgentInteractionRequest {
     required this.kind,
     required this.prompt,
     this.options,
+    this.request,
     this.retentionUntil,
     required this.requestedAt
   });
@@ -9860,6 +10984,10 @@ class CreateAgentInteractionRequest {
             .whereType<AgentInteractionOption>()
             .toList();
       })(),
+      request: (() {
+        final map = _sdkworkAsMap(json['request']);
+        return map == null ? null : AgentInteractionRequest.fromJson(map);
+      })(),
       retentionUntil: json['retentionUntil']?.toString(),
       requestedAt: (() {
         final value = json['requestedAt']?.toString();
@@ -9880,6 +11008,7 @@ class CreateAgentInteractionRequest {
       'kind': kind,
       'prompt': prompt,
       'options': options?.map((item) => item.toJson()).toList(),
+      'request': request?.toJson(),
       'retentionUntil': retentionUntil,
       'requestedAt': requestedAt,
     };
@@ -10124,6 +11253,72 @@ class AnswerAgentInteractionRequest {
       'answer': answer,
       'selectedOptionValue': selectedOptionValue,
       'rejected': rejected,
+      'claimToken': claimToken,
+      'fencingToken': fencingToken,
+      'expectedVersion': expectedVersion,
+      'requestedAt': requestedAt,
+    };
+  }
+}
+
+class ResolveAgentInteractionRequest {
+  final TypedAgentInteractionResolution resolution;
+  final String claimToken;
+  final String fencingToken;
+  final String expectedVersion;
+  final String requestedAt;
+
+  ResolveAgentInteractionRequest({
+    required this.resolution,
+    required this.claimToken,
+    required this.fencingToken,
+    required this.expectedVersion,
+    required this.requestedAt
+  });
+
+  factory ResolveAgentInteractionRequest.fromJson(Map<String, dynamic> json) {
+    return ResolveAgentInteractionRequest(
+      resolution: (() {
+        final map = _sdkworkAsMap(json['resolution']);
+        if (map == null) {
+          throw FormatException('ResolveAgentInteractionRequest.resolution is required');
+        }
+        return TypedAgentInteractionResolution.fromJson(map);
+      })(),
+      claimToken: (() {
+        final value = json['claimToken']?.toString();
+        if (value == null) {
+          throw FormatException('ResolveAgentInteractionRequest.claimToken is required');
+        }
+        return value;
+      })(),
+      fencingToken: (() {
+        final value = json['fencingToken']?.toString();
+        if (value == null) {
+          throw FormatException('ResolveAgentInteractionRequest.fencingToken is required');
+        }
+        return value;
+      })(),
+      expectedVersion: (() {
+        final value = json['expectedVersion']?.toString();
+        if (value == null) {
+          throw FormatException('ResolveAgentInteractionRequest.expectedVersion is required');
+        }
+        return value;
+      })(),
+      requestedAt: (() {
+        final value = json['requestedAt']?.toString();
+        if (value == null) {
+          throw FormatException('ResolveAgentInteractionRequest.requestedAt is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'resolution': resolution.toJson(),
       'claimToken': claimToken,
       'fencingToken': fencingToken,
       'expectedVersion': expectedVersion,
@@ -10547,6 +11742,17 @@ class AgentSessionRuntimeBindingRecord {
   final String? providerSessionTreeId;
   final String? providerParentSessionId;
   final String? providerForkedFromSessionId;
+  final String? providerTitle;
+  final String? providerTitleSource;
+  final String? providerPreview;
+  final String? providerCreatedAt;
+  final String? providerUpdatedAt;
+  final String? providerRecencyAt;
+  final bool? providerPinned;
+  final bool? providerArchived;
+  final bool? providerVisible;
+  final String? providerSortKey;
+  final String? providerSource;
   final String status;
   final bool isCurrent;
   final String version;
@@ -10570,6 +11776,17 @@ class AgentSessionRuntimeBindingRecord {
     this.providerSessionTreeId,
     this.providerParentSessionId,
     this.providerForkedFromSessionId,
+    this.providerTitle,
+    this.providerTitleSource,
+    this.providerPreview,
+    this.providerCreatedAt,
+    this.providerUpdatedAt,
+    this.providerRecencyAt,
+    this.providerPinned,
+    this.providerArchived,
+    this.providerVisible,
+    this.providerSortKey,
+    this.providerSource,
     required this.status,
     required this.isCurrent,
     required this.version,
@@ -10649,6 +11866,17 @@ class AgentSessionRuntimeBindingRecord {
       providerSessionTreeId: json['providerSessionTreeId']?.toString(),
       providerParentSessionId: json['providerParentSessionId']?.toString(),
       providerForkedFromSessionId: json['providerForkedFromSessionId']?.toString(),
+      providerTitle: json['providerTitle']?.toString(),
+      providerTitleSource: json['providerTitleSource']?.toString(),
+      providerPreview: json['providerPreview']?.toString(),
+      providerCreatedAt: json['providerCreatedAt']?.toString(),
+      providerUpdatedAt: json['providerUpdatedAt']?.toString(),
+      providerRecencyAt: json['providerRecencyAt']?.toString(),
+      providerPinned: json['providerPinned'] is bool ? json['providerPinned'] : null,
+      providerArchived: json['providerArchived'] is bool ? json['providerArchived'] : null,
+      providerVisible: json['providerVisible'] is bool ? json['providerVisible'] : null,
+      providerSortKey: json['providerSortKey']?.toString(),
+      providerSource: json['providerSource']?.toString(),
       status: (() {
         final value = json['status']?.toString();
         if (value == null) {
@@ -10705,6 +11933,17 @@ class AgentSessionRuntimeBindingRecord {
       'providerSessionTreeId': providerSessionTreeId,
       'providerParentSessionId': providerParentSessionId,
       'providerForkedFromSessionId': providerForkedFromSessionId,
+      'providerTitle': providerTitle,
+      'providerTitleSource': providerTitleSource,
+      'providerPreview': providerPreview,
+      'providerCreatedAt': providerCreatedAt,
+      'providerUpdatedAt': providerUpdatedAt,
+      'providerRecencyAt': providerRecencyAt,
+      'providerPinned': providerPinned,
+      'providerArchived': providerArchived,
+      'providerVisible': providerVisible,
+      'providerSortKey': providerSortKey,
+      'providerSource': providerSource,
       'status': status,
       'isCurrent': isCurrent,
       'version': version,

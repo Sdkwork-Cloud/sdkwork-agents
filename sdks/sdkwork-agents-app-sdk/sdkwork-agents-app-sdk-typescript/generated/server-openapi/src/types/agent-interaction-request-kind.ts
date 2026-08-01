@@ -1,0 +1,1 @@
+export type AgentInteractionRequestKind = 'command_execution' | 'file_change' | 'permission_profile' | 'question_set' | 'onboarding_question_set' | 'option_picker' | 'context_source_picker' | 'setup_step' | 'mcp_elicitation';

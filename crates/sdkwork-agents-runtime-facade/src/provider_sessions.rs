@@ -1,18 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use sdkwork_agent_kernel::{AgentMessage, AgentSession, SessionKind};
-use sdkwork_agent_provider_claude_code::{
-    discover_claude_code_provider_session_messages, discover_claude_code_provider_sessions,
-};
-use sdkwork_agent_provider_codex::{
-    discover_codex_provider_session_messages, discover_codex_provider_sessions,
-};
 use sdkwork_agent_provider_core::{
     normalize_provider_session_path, provider_session_directory_fingerprint,
     provider_session_path_basename,
-};
-use sdkwork_agent_provider_opencode::{
-    discover_opencode_provider_session_messages, discover_opencode_provider_sessions,
 };
 
 use crate::code_engines::CodeEngineSlot;
@@ -53,57 +44,205 @@ pub struct ProviderSessionInventoryItem {
     pub binding_id: String,
     pub provider_id: String,
     pub default_model_id: String,
+    pub directory: ProviderSessionDirectoryEntry,
     pub session: AgentSession,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderSessionInventoryIssue {
+    pub engine_key: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProviderSessionInventorySnapshot {
+    pub directory_resolved: bool,
+    pub items: Vec<ProviderSessionInventoryItem>,
+    pub successful_engine_keys: Vec<String>,
+    pub issues: Vec<ProviderSessionInventoryIssue>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderSessionDirectoryEntry {
+    pub title: Option<String>,
+    pub title_source: Option<String>,
+    pub preview: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub recency_at: Option<String>,
+    pub pinned: bool,
+    pub archived: bool,
+    pub visible: bool,
+    pub source: Option<String>,
+    pub sort_key: String,
+}
+
+impl ProviderSessionDirectoryEntry {
+    fn from_session(session: &AgentSession) -> Self {
+        Self {
+            title: metadata_or(
+                session,
+                "sdkwork.provider.session.directory.title",
+                session.title.as_deref(),
+            ),
+            title_source: metadata_or(
+                session,
+                "sdkwork.provider.session.directory.title_source",
+                Some("provider"),
+            ),
+            preview: metadata_or(
+                session,
+                "sdkwork.provider.session.directory.preview",
+                session.preview.as_deref(),
+            ),
+            created_at: metadata_or(
+                session,
+                "sdkwork.provider.session.directory.created_at",
+                session.created_at.as_deref(),
+            ),
+            updated_at: metadata_or(
+                session,
+                "sdkwork.provider.session.directory.updated_at",
+                session.updated_at.as_deref(),
+            ),
+            recency_at: metadata_or(
+                session,
+                "sdkwork.provider.session.directory.recency_at",
+                session.updated_at.as_deref(),
+            ),
+            pinned: metadata_bool(session, "sdkwork.provider.session.directory.pinned", false),
+            archived: metadata_bool(
+                session,
+                "sdkwork.provider.session.directory.archived",
+                false,
+            ),
+            visible: metadata_bool(session, "sdkwork.provider.session.directory.visible", true),
+            source: metadata_or(session, "sdkwork.provider.session.directory.source", None),
+            sort_key: metadata_or(session, "sdkwork.provider.session.directory.sort_key", None)
+                .unwrap_or_else(|| descending_lexical_sort_key(&session.session_id)),
+        }
+    }
+}
+
+fn descending_lexical_sort_key(value: &str) -> String {
+    let value = value.trim();
+    let mut key = String::with_capacity(value.len().saturating_mul(2).saturating_add(2));
+    for byte in value.as_bytes() {
+        use std::fmt::Write;
+        let _ = write!(key, "{:02x}", !byte);
+    }
+    key.push_str("ff");
+    key
+}
+
+fn metadata_or(session: &AgentSession, key: &str, fallback: Option<&str>) -> Option<String> {
+    session
+        .metadata_value(key)
+        .or(fallback)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn metadata_bool(session: &AgentSession, key: &str, fallback: bool) -> bool {
+    session
+        .metadata_value(key)
+        .and_then(|value| value.parse::<bool>().ok())
+        .unwrap_or(fallback)
 }
 
 pub(crate) fn discover_provider_sessions(
     slots: &HashMap<String, CodeEngineSlot>,
     selector: &ProviderSessionInventorySelector,
-) -> RuntimeFacadeResult<Vec<ProviderSessionInventoryItem>> {
+) -> RuntimeFacadeResult<ProviderSessionInventorySnapshot> {
+    discover_provider_sessions_with(
+        slots,
+        selector,
+        |_, slot| slot.list_provider_sessions(),
+        |engine_key, slot| {
+            let default_model = slot
+                .list_model_descriptors()
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
+                    format!("code engine {engine_key} did not publish a model provider")
+                })?;
+            let agent_id =
+                crate::code_engines::code_engine_agent_id(engine_key).ok_or_else(|| {
+                    format!("code engine {engine_key} did not publish an agent identity")
+                })?;
+            Ok((
+                agent_id.to_string(),
+                default_model.provider_id,
+                default_model.model_id,
+            ))
+        },
+    )
+}
+
+fn discover_provider_sessions_with(
+    slots: &HashMap<String, CodeEngineSlot>,
+    selector: &ProviderSessionInventorySelector,
+    mut list_sessions: impl FnMut(
+        &str,
+        &CodeEngineSlot,
+    ) -> sdkwork_agent_kernel::KernelResult<Vec<AgentSession>>,
+    mut resolve_identity: impl FnMut(&str, &CodeEngineSlot) -> Result<(String, String, String), String>,
+) -> RuntimeFacadeResult<ProviderSessionInventorySnapshot> {
     let mut candidates = Vec::new();
-    for engine_key in ["codex", "claude-code", "opencode"] {
-        let Some(slot) = slots.get(engine_key) else {
-            continue;
+    let mut successful_engine_keys = Vec::new();
+    let mut issues = Vec::new();
+    for (engine_key, slot) in slots {
+        let sessions = match list_sessions(engine_key, slot) {
+            Ok(sessions) => sessions,
+            Err(error) => {
+                issues.push(ProviderSessionInventoryIssue {
+                    engine_key: engine_key.clone(),
+                    reason: error.to_string(),
+                });
+                continue;
+            }
         };
-        let sessions = match engine_key {
-            "codex" => discover_codex_provider_sessions(),
-            "claude-code" => discover_claude_code_provider_sessions(),
-            "opencode" => discover_opencode_provider_sessions(),
-            _ => unreachable!(),
-        }
-        .map_err(|error| RuntimeFacadeError::EngineUnavailable {
-            engine_key: engine_key.to_string(),
-            reason: error.to_string(),
-        })?;
-        let descriptors = slot.list_model_descriptors();
-        let Some(default_model) = descriptors.first() else {
-            continue;
+        let (agent_id, provider_id, default_model_id) = match resolve_identity(engine_key, slot) {
+            Ok(identity) => identity,
+            Err(reason) => {
+                issues.push(ProviderSessionInventoryIssue {
+                    engine_key: engine_key.clone(),
+                    reason,
+                });
+                continue;
+            }
         };
-        let Some(agent_id) = crate::code_engines::code_engine_agent_id(engine_key) else {
-            continue;
-        };
+        successful_engine_keys.push(engine_key.clone());
         for session in sessions {
             if candidates.len() >= MAX_PROVIDER_SESSION_INVENTORY_ITEMS {
                 return Err(RuntimeFacadeError::InvalidInput(format!(
                     "provider session inventory exceeds {MAX_PROVIDER_SESSION_INVENTORY_ITEMS} items"
                 )));
             }
+            let directory = ProviderSessionDirectoryEntry::from_session(&session);
             candidates.push(ProviderSessionInventoryItem {
                 engine_key: engine_key.to_string(),
-                agent_id: agent_id.to_string(),
+                agent_id: agent_id.clone(),
                 binding_id: slot.binding_id().to_string(),
-                provider_id: default_model.provider_id.clone(),
-                default_model_id: default_model.model_id.clone(),
+                provider_id: provider_id.clone(),
+                default_model_id: default_model_id.clone(),
+                directory,
                 session,
             });
         }
     }
 
     let selected_cwd = resolve_selected_cwd(&candidates, selector)?;
-    Ok(select_top_level_provider_sessions(
-        candidates,
-        selected_cwd.as_deref(),
-    ))
+    successful_engine_keys.sort();
+    issues.sort_by(|left, right| left.engine_key.cmp(&right.engine_key));
+    Ok(ProviderSessionInventorySnapshot {
+        directory_resolved: selected_cwd.is_some(),
+        items: select_top_level_provider_sessions(candidates, selected_cwd.as_deref()),
+        successful_engine_keys,
+        issues,
+    })
 }
 
 fn select_top_level_provider_sessions(
@@ -124,6 +263,7 @@ fn select_top_level_provider_sessions(
         .filter(|item| {
             item.session.kind != SessionKind::Subagent && item.session.parent_session_id.is_none()
         })
+        .filter(|item| item.directory.visible && !item.directory.archived)
         .filter(|item| {
             dedupe.insert((
                 item.binding_id.trim().to_string(),
@@ -134,13 +274,19 @@ fn select_top_level_provider_sessions(
         .collect::<Vec<_>>();
     selected.sort_by(|left, right| {
         right
-            .session
-            .updated_at
-            .as_deref()
-            .unwrap_or_default()
-            .cmp(left.session.updated_at.as_deref().unwrap_or_default())
+            .directory
+            .pinned
+            .cmp(&left.directory.pinned)
+            .then_with(|| {
+                right
+                    .directory
+                    .recency_at
+                    .as_deref()
+                    .unwrap_or_default()
+                    .cmp(left.directory.recency_at.as_deref().unwrap_or_default())
+            })
             .then_with(|| left.engine_key.cmp(&right.engine_key))
-            .then_with(|| left.session.session_id.cmp(&right.session.session_id))
+            .then_with(|| left.directory.sort_key.cmp(&right.directory.sort_key))
     });
     selected
 }
@@ -150,31 +296,21 @@ pub(crate) fn load_provider_session_messages(
     engine_key: &str,
     provider_session_id: &str,
 ) -> RuntimeFacadeResult<Vec<AgentMessage>> {
-    if !slots.contains_key(engine_key) {
+    let Some(slot) = slots.get(engine_key) else {
         return Err(RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         });
-    }
+    };
     if provider_session_id.trim().is_empty() {
         return Err(RuntimeFacadeError::InvalidInput(
             "provider session id is required to load transcript messages".to_string(),
         ));
     }
-    match engine_key {
-        "codex" => discover_codex_provider_session_messages(provider_session_id),
-        "claude-code" => discover_claude_code_provider_session_messages(provider_session_id),
-        "opencode" => discover_opencode_provider_session_messages(provider_session_id),
-        _ => {
-            return Err(RuntimeFacadeError::UnsupportedCapability {
-                engine_key: engine_key.to_string(),
-                capability_id: "sdk.session.history".to_string(),
-            })
-        }
-    }
-    .map_err(|error| RuntimeFacadeError::EngineUnavailable {
-        engine_key: engine_key.to_string(),
-        reason: error.to_string(),
-    })
+    slot.get_provider_session_history(provider_session_id)
+        .map_err(|error| RuntimeFacadeError::EngineUnavailable {
+            engine_key: engine_key.to_string(),
+            reason: error.to_string(),
+        })
 }
 
 fn resolve_selected_cwd(
@@ -244,13 +380,15 @@ mod tests {
     use crate::code_engines::bootstrap_code_engine;
 
     fn item(engine: &str, session_id: &str, cwd: &str) -> ProviderSessionInventoryItem {
+        let session = AgentSession::new(session_id).with_cwd(cwd);
         ProviderSessionInventoryItem {
             engine_key: engine.to_string(),
             agent_id: format!("agent.intelligence.{engine}"),
             binding_id: format!("binding.agent-provider.{engine}"),
             provider_id: format!("provider.model.{engine}"),
             default_model_id: "model.default".to_string(),
-            session: AgentSession::new(session_id).with_cwd(cwd),
+            directory: ProviderSessionDirectoryEntry::from_session(&session),
+            session,
         }
     }
 
@@ -320,22 +458,151 @@ mod tests {
     }
 
     #[test]
-    fn registered_engine_without_history_reports_missing_capability() {
+    fn descending_lexical_sort_key_preserves_descending_provider_ids() {
+        let mut values = ["thread-a", "thread-aa", "thread-b"];
+        values.sort_by_key(|value| descending_lexical_sort_key(value));
+        assert_eq!(values, ["thread-b", "thread-aa", "thread-a"]);
+    }
+
+    #[test]
+    fn registered_gemini_engine_routes_provider_history_through_the_slot() {
         let mut slots = HashMap::new();
         slots.insert(
             "gemini".to_string(),
             bootstrap_code_engine("gemini").expect("Gemini bootstrap"),
         );
 
-        let error = load_provider_session_messages(&slots, "gemini", "session-1")
-            .expect_err("Gemini history is not implemented");
-        assert!(matches!(
-            error,
-            RuntimeFacadeError::UnsupportedCapability {
-                ref engine_key,
-                ref capability_id,
-            } if engine_key == "gemini" && capability_id == "sdk.session.history"
-        ));
+        load_provider_session_messages(&slots, "gemini", "session-does-not-exist")
+            .expect("Gemini history discovery should be supported");
+    }
+
+    #[test]
+    fn one_provider_inventory_failure_does_not_hide_working_provider_sessions() {
+        let mut slots = HashMap::new();
+        slots.insert(
+            "codex".to_string(),
+            bootstrap_code_engine("codex").expect("Codex bootstrap"),
+        );
+        slots.insert(
+            "gemini".to_string(),
+            bootstrap_code_engine("gemini").expect("Gemini bootstrap"),
+        );
+
+        let snapshot = discover_provider_sessions_with(
+            &slots,
+            &ProviderSessionInventorySelector {
+                directory_fingerprint: None,
+                exact_cwd: Some("E:/Work/BirdCoder".to_string()),
+                unique_basename: None,
+            },
+            |engine_key, _| {
+                if engine_key == "gemini" {
+                    return Err(sdkwork_agent_kernel::KernelError::provider_error(
+                        "gemini_inventory_failure",
+                        "fixture failure",
+                    ));
+                }
+                Ok(vec![
+                    AgentSession::new("codex-session").with_cwd("E:/Work/BirdCoder")
+                ])
+            },
+            |engine_key, slot| {
+                let default_model = slot
+                    .list_model_descriptors()
+                    .into_iter()
+                    .next()
+                    .expect("fixture model descriptor");
+                Ok((
+                    crate::code_engines::code_engine_agent_id(engine_key)
+                        .expect("fixture agent id")
+                        .to_string(),
+                    default_model.provider_id,
+                    default_model.model_id,
+                ))
+            },
+        )
+        .expect("working provider inventory");
+
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].engine_key, "codex");
+        assert_eq!(snapshot.items[0].session.session_id, "codex-session");
+        assert_eq!(snapshot.successful_engine_keys, vec!["codex"]);
+        assert_eq!(snapshot.issues.len(), 1);
+        assert_eq!(snapshot.issues[0].engine_key, "gemini");
+    }
+
+    #[test]
+    fn provider_without_projection_identity_is_not_marked_successful() {
+        let mut slots = HashMap::new();
+        slots.insert(
+            "codex".to_string(),
+            bootstrap_code_engine("codex").expect("Codex bootstrap"),
+        );
+
+        let snapshot = discover_provider_sessions_with(
+            &slots,
+            &ProviderSessionInventorySelector {
+                directory_fingerprint: None,
+                exact_cwd: Some("E:/Work/BirdCoder".to_string()),
+                unique_basename: None,
+            },
+            |_, _| {
+                Ok(vec![
+                    AgentSession::new("codex-session").with_cwd("E:/Work/BirdCoder")
+                ])
+            },
+            |engine_key, _| {
+                Err(format!(
+                    "code engine {engine_key} did not publish a model provider"
+                ))
+            },
+        )
+        .expect("degraded provider inventory snapshot");
+
+        assert!(snapshot.items.is_empty());
+        assert!(snapshot.successful_engine_keys.is_empty());
+        assert_eq!(snapshot.issues.len(), 1);
+        assert_eq!(snapshot.issues[0].engine_key, "codex");
+        assert!(snapshot.issues[0].reason.contains("model provider"));
+    }
+
+    #[test]
+    fn empty_provider_inventory_is_successful_when_the_exact_directory_is_known() {
+        let mut slots = HashMap::new();
+        slots.insert(
+            "codex".to_string(),
+            bootstrap_code_engine("codex").expect("Codex bootstrap"),
+        );
+
+        let snapshot = discover_provider_sessions_with(
+            &slots,
+            &ProviderSessionInventorySelector {
+                directory_fingerprint: None,
+                exact_cwd: Some("E:/Work/BirdCoder".to_string()),
+                unique_basename: None,
+            },
+            |_, _| Ok(Vec::new()),
+            |engine_key, slot| {
+                let default_model = slot
+                    .list_model_descriptors()
+                    .into_iter()
+                    .next()
+                    .expect("fixture model descriptor");
+                Ok((
+                    crate::code_engines::code_engine_agent_id(engine_key)
+                        .expect("fixture agent id")
+                        .to_string(),
+                    default_model.provider_id,
+                    default_model.model_id,
+                ))
+            },
+        )
+        .expect("empty provider inventory snapshot");
+
+        assert!(snapshot.directory_resolved);
+        assert!(snapshot.items.is_empty());
+        assert_eq!(snapshot.successful_engine_keys, vec!["codex"]);
+        assert!(snapshot.issues.is_empty());
     }
 
     #[test]

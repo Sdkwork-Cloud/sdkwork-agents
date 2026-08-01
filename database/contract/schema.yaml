@@ -2,7 +2,7 @@ schema_version: 1
 kind: sdkwork.database.schema
 database_role: authoritative-server
 module_id: agents
-contract_version: 7.0.0
+contract_version: 7.2.0
 owner_team: agents-platform
 compliance_level: L2
 engines:
@@ -79,7 +79,7 @@ tables:
     profile: tenant_entity
     lifecycle_status: active
     owner: agents-platform
-    description: Selected runtime, owner-scoped provider Session lineage with database-enforced uniqueness, and runtime-location reference for a session.
+    description: Selected runtime, owner-scoped provider Session lineage, provider directory snapshot for title and provider-native ordering, and runtime-location reference for a session.
   - name: ai_agent_turn
     profile: operational_state
     lifecycle_status: active
@@ -109,7 +109,7 @@ tables:
     profile: operational_state
     lifecycle_status: active
     owner: agents-platform
-    description: Approval or user-question pause point with claim fencing.
+    description: Typed approval, user-question, elicitation, or setup pause point with claim fencing and a bounded provider-neutral request envelope.
   - name: ai_agent_session_checkpoint
     profile: operational_state
     lifecycle_status: active

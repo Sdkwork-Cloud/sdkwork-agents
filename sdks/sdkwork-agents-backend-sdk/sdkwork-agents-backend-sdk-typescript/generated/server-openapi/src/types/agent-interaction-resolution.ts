@@ -1,6 +1,4 @@
-export interface AgentInteractionResolution {
-  outcome: 'approved' | 'rejected' | 'answered' | 'expired' | 'cancelled';
-  answer?: string;
-  selectedOptionValue?: string;
-  reason?: string;
-}
+import type { LegacyAgentInteractionResolution } from './legacy-agent-interaction-resolution';
+import type { TypedAgentInteractionResolution } from './typed-agent-interaction-resolution';
+
+export type AgentInteractionResolution = LegacyAgentInteractionResolution | TypedAgentInteractionResolution;

@@ -65,11 +65,13 @@ use sdkwork_agent_kernel::{
     PolicyProvider, PolicyRequest, PolicySubject,
 };
 use sdkwork_agents_contract::agents_allow_contract_runtime_fallback;
+use sdkwork_agents_runtime_facade::CodeEngineInteractionResolution;
 use sdkwork_utils_rust::{sha256_hash, trim};
 use time::OffsetDateTime;
 
 const MAX_TURN_DRIVE_REFS: usize = 64;
 const MAX_INTERACTION_LEASE_SECONDS: u32 = 300;
+const MAX_INTERACTION_JSON_BYTES: usize = 64 * 1024;
 const MAX_JSON_PAYLOAD_BYTES: usize = 1024 * 1024;
 const MAX_METADATA_JSON_BYTES: usize = 64 * 1024;
 const MAX_TOOL_ARGUMENTS_JSON_BYTES: usize = 256 * 1024;
@@ -294,6 +296,436 @@ fn validate_interaction_options(value: &serde_json::Value) -> KernelResult<()> {
                 "interaction option values must be unique",
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_typed_interaction_request(
+    interaction_kind: AgentInteractionKind,
+    request_json: &str,
+) -> KernelResult<serde_json::Value> {
+    validate_bounded_json_payload(request_json, "request", MAX_INTERACTION_JSON_BYTES)?;
+    let request: serde_json::Value = serde_json::from_str(request_json)
+        .map_err(|error| KernelError::validation(format!("request must be valid JSON: {error}")))?;
+    let object = request
+        .as_object()
+        .ok_or_else(|| KernelError::validation("request must be an object"))?;
+    reject_unknown_json_fields(
+        object,
+        &[
+            "schemaVersion",
+            "category",
+            "kind",
+            "allowedActions",
+            "data",
+            "correlation",
+        ],
+        "request",
+    )?;
+    if object
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        != Some(1)
+    {
+        return Err(KernelError::validation("request.schemaVersion must be 1"));
+    }
+    let category = required_json_string(object, "category", "request")?;
+    let request_kind = required_json_string(object, "kind", "request")?;
+    let data = object
+        .get("data")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| KernelError::validation("request.data must be an object"))?;
+    let (expected_category, expected_actions): (&str, &[&str]) = match request_kind {
+        "command_execution" => (
+            "approval",
+            &[
+                "accept",
+                "accept_for_session",
+                "accept_with_exec_policy_amendment",
+                "apply_network_policy_amendment",
+                "decline",
+                "cancel",
+            ],
+        ),
+        "file_change" => (
+            "approval",
+            &["accept", "accept_for_session", "decline", "cancel"],
+        ),
+        "permission_profile" => ("approval", &["grant", "decline", "cancel"]),
+        "question_set" | "onboarding_question_set" => {
+            validate_interaction_questions(data)?;
+            ("user_input", &["submit", "cancel"])
+        }
+        "option_picker" => {
+            require_json_array(data, "options", "request.data")?;
+            required_json_bool(data, "allowMultiple", "request.data")?;
+            ("user_input", &["submit", "skip", "dismiss"])
+        }
+        "context_source_picker" => ("user_input", &["continue", "skip", "dismiss"]),
+        "setup_step" => {
+            let step = required_json_string(data, "step", "request.data")?;
+            match step {
+                "context" => ("setup", &["continue", "skip", "dismiss"]),
+                "role" | "task" => ("setup", &["submit", "skip", "dismiss"]),
+                _ => return Err(KernelError::validation("request.data.step is invalid")),
+            }
+        }
+        "mcp_elicitation" => {
+            let mode = required_json_string(data, "mode", "request.data")?;
+            if !matches!(mode, "form" | "openai/form" | "url") {
+                return Err(KernelError::validation("request.data.mode is invalid"));
+            }
+            required_json_string(data, "serverName", "request.data")?;
+            required_json_string(data, "message", "request.data")?;
+            if mode == "url" {
+                required_json_string(data, "elicitationId", "request.data")?;
+                required_json_string(data, "url", "request.data")?;
+            } else if !data.contains_key("requestedSchema") {
+                return Err(KernelError::validation(
+                    "request.data.requestedSchema is required",
+                ));
+            }
+            ("elicitation", &["accept", "decline", "cancel"])
+        }
+        _ => return Err(KernelError::validation("request.kind is unsupported")),
+    };
+    if category != expected_category || interaction_kind.as_str() != category_to_kind(category)? {
+        return Err(KernelError::validation(
+            "request category does not match interaction kind",
+        ));
+    }
+    let actions = require_json_array(object, "allowedActions", "request")?;
+    let actual_actions = actions
+        .iter()
+        .map(|action| {
+            action.as_str().ok_or_else(|| {
+                KernelError::validation("request.allowedActions must contain strings")
+            })
+        })
+        .collect::<KernelResult<Vec<_>>>()?;
+    if actual_actions != expected_actions {
+        return Err(KernelError::validation(
+            "request.allowedActions does not match request kind",
+        ));
+    }
+    if let Some(correlation) = object.get("correlation") {
+        validate_provider_interaction_correlation(correlation)?;
+    }
+    Ok(request)
+}
+
+fn validate_provider_interaction_correlation(correlation: &serde_json::Value) -> KernelResult<()> {
+    let correlation = correlation
+        .as_object()
+        .ok_or_else(|| KernelError::validation("request.correlation must be an object"))?;
+    reject_unknown_json_fields(
+        correlation,
+        &[
+            "modelRequestId",
+            "providerId",
+            "providerInteractionId",
+            "providerItemId",
+            "providerRequestId",
+            "providerRequestIdType",
+            "providerSessionId",
+            "providerToolCallId",
+            "providerToolName",
+            "providerToolNamespace",
+            "providerTurnId",
+            "protocolMethod",
+        ],
+        "request.correlation",
+    )?;
+    for field in [
+        "modelRequestId",
+        "providerId",
+        "providerSessionId",
+        "providerTurnId",
+        "protocolMethod",
+    ] {
+        require_non_blank(
+            required_json_string(correlation, field, "request.correlation")?,
+            field,
+        )?;
+    }
+    for field in [
+        "providerInteractionId",
+        "providerItemId",
+        "providerToolCallId",
+        "providerToolName",
+        "providerToolNamespace",
+    ] {
+        if let Some(value) = correlation.get(field).filter(|value| !value.is_null()) {
+            let value = value.as_str().ok_or_else(|| {
+                KernelError::validation(format!(
+                    "request.correlation.{field} must be a string or null"
+                ))
+            })?;
+            require_non_blank(value, field)?;
+        }
+    }
+    let request_id = correlation.get("providerRequestId").ok_or_else(|| {
+        KernelError::validation("request.correlation.providerRequestId is required")
+    })?;
+    let request_id_type =
+        required_json_string(correlation, "providerRequestIdType", "request.correlation")?;
+    match (request_id_type, request_id) {
+        ("string", serde_json::Value::String(value)) if !value.trim().is_empty() => {}
+        ("number", serde_json::Value::Number(value))
+            if value
+                .as_i64()
+                .map(|value| value.unsigned_abs() <= 9_007_199_254_740_991)
+                .or_else(|| value.as_u64().map(|value| value <= 9_007_199_254_740_991))
+                == Some(true) => {}
+        _ => {
+            return Err(KernelError::validation(
+                "request.correlation providerRequestId type is invalid",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_typed_interaction_resolution(
+    request_json: &str,
+    resolution_json: &str,
+) -> KernelResult<AgentInteractionStatus> {
+    validate_bounded_json_payload(resolution_json, "resolution", MAX_INTERACTION_JSON_BYTES)?;
+    let request: serde_json::Value = serde_json::from_str(request_json)
+        .map_err(|error| KernelError::validation(format!("request must be valid JSON: {error}")))?;
+    let request = request
+        .as_object()
+        .ok_or_else(|| KernelError::validation("request must be an object"))?;
+    let request_kind = required_json_string(request, "kind", "request")?;
+    let request_data = request
+        .get("data")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| KernelError::validation("request.data must be an object"))?;
+    let allowed_actions = require_json_array(request, "allowedActions", "request")?;
+    let resolution: serde_json::Value = serde_json::from_str(resolution_json).map_err(|error| {
+        KernelError::validation(format!("resolution must be valid JSON: {error}"))
+    })?;
+    let resolution = resolution
+        .as_object()
+        .ok_or_else(|| KernelError::validation("resolution must be an object"))?;
+    let action = required_json_string(resolution, "action", "resolution")?;
+    if !allowed_actions
+        .iter()
+        .any(|allowed| allowed.as_str() == Some(action))
+    {
+        return Err(KernelError::validation(
+            "resolution.action is not allowed for this request",
+        ));
+    }
+    validate_resolution_payload(request_kind, request_data, action, resolution)?;
+    Ok(match action {
+        "cancel" => AgentInteractionStatus::Cancelled,
+        "decline" | "dismiss" => AgentInteractionStatus::Rejected,
+        _ => AgentInteractionStatus::Resolved,
+    })
+}
+
+fn validate_resolution_payload(
+    request_kind: &str,
+    request_data: &serde_json::Map<String, serde_json::Value>,
+    action: &str,
+    resolution: &serde_json::Map<String, serde_json::Value>,
+) -> KernelResult<()> {
+    match (request_kind, action) {
+        ("command_execution", "accept_with_exec_policy_amendment") => {
+            require_json_object(resolution, "execPolicyAmendment", "resolution")?;
+        }
+        ("command_execution", "apply_network_policy_amendment") => {
+            require_json_object(resolution, "networkPolicyAmendment", "resolution")?;
+        }
+        ("permission_profile", "grant") => {
+            require_json_object(resolution, "permissions", "resolution")?;
+            if !matches!(
+                required_json_string(resolution, "scope", "resolution")?,
+                "turn" | "session"
+            ) {
+                return Err(KernelError::validation("resolution.scope is invalid"));
+            }
+            if resolution.contains_key("strictAutoReview") {
+                required_json_bool(resolution, "strictAutoReview", "resolution")?;
+            }
+        }
+        ("question_set" | "onboarding_question_set", "submit") => {
+            validate_answer_map(request_data, resolution)?;
+        }
+        ("option_picker", "submit") => {
+            validate_string_array(resolution, "selectedOptions", "resolution")?;
+            if let Some(value) = resolution.get("freeformAnswer") {
+                if !value.is_null() && !value.is_string() {
+                    return Err(KernelError::validation(
+                        "resolution.freeformAnswer must be a string or null",
+                    ));
+                }
+            }
+        }
+        ("context_source_picker", "continue") => {
+            validate_string_array(resolution, "selectedSources", "resolution")?;
+        }
+        ("setup_step", "submit" | "continue") => {
+            match required_json_string(request_data, "step", "request.data")? {
+                "role" => validate_string_array(resolution, "selectedRoles", "resolution")?,
+                "task" => validate_answer_map(request_data, resolution)?,
+                "context" => validate_string_array(resolution, "selectedSources", "resolution")?,
+                _ => return Err(KernelError::validation("request.data.step is invalid")),
+            }
+        }
+        ("mcp_elicitation", "accept") => {
+            if !resolution.contains_key("content") {
+                return Err(KernelError::validation("resolution.content is required"));
+            }
+            if resolution.contains_key("metadata") {
+                require_json_object(resolution, "metadata", "resolution")?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_interaction_questions(
+    data: &serde_json::Map<String, serde_json::Value>,
+) -> KernelResult<()> {
+    let questions = require_json_array(data, "questions", "request.data")?;
+    if questions.is_empty() || questions.len() > 128 {
+        return Err(KernelError::validation(
+            "request.data.questions must contain between 1 and 128 items",
+        ));
+    }
+    let mut ids = std::collections::HashSet::with_capacity(questions.len());
+    for question in questions {
+        let question = question
+            .as_object()
+            .ok_or_else(|| KernelError::validation("each question must be an object"))?;
+        let id = required_json_string(question, "id", "request.data.questions[]")?;
+        require_non_blank(id, "request.data.questions[].id")?;
+        if !ids.insert(id) {
+            return Err(KernelError::conflict("question ids must be unique"));
+        }
+        required_json_string(question, "header", "request.data.questions[]")?;
+        required_json_string(question, "prompt", "request.data.questions[]")?;
+        required_json_bool(question, "allowOther", "request.data.questions[]")?;
+        required_json_bool(question, "secret", "request.data.questions[]")?;
+        if let Some(options) = question.get("options") {
+            if !options.is_null() {
+                require_json_array(question, "options", "request.data.questions[]")?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_answer_map(
+    request_data: &serde_json::Map<String, serde_json::Value>,
+    resolution: &serde_json::Map<String, serde_json::Value>,
+) -> KernelResult<()> {
+    let answers = require_json_object(resolution, "answers", "resolution")?;
+    let question_ids = request_data
+        .get("questions")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|question| question.get("id").and_then(serde_json::Value::as_str))
+        .collect::<std::collections::HashSet<_>>();
+    for (question_id, values) in answers {
+        if !question_ids.contains(question_id.as_str()) {
+            return Err(KernelError::validation(
+                "resolution.answers contains an unknown question id",
+            ));
+        }
+        let values = values
+            .as_array()
+            .ok_or_else(|| KernelError::validation("each answer must be a string array"))?;
+        if values.iter().any(|value| !value.is_string()) {
+            return Err(KernelError::validation(
+                "each answer must be a string array",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn category_to_kind(category: &str) -> KernelResult<&'static str> {
+    match category {
+        "approval" => Ok("approval"),
+        "user_input" => Ok("user_question"),
+        "elicitation" => Ok("elicitation"),
+        "setup" => Ok("setup"),
+        _ => Err(KernelError::validation("request.category is invalid")),
+    }
+}
+
+fn reject_unknown_json_fields(
+    object: &serde_json::Map<String, serde_json::Value>,
+    allowed: &[&str],
+    field_name: &str,
+) -> KernelResult<()> {
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(KernelError::validation(format!(
+            "{field_name} contains an unsupported field"
+        )));
+    }
+    Ok(())
+}
+
+fn required_json_string<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    parent: &str,
+) -> KernelResult<&'a str> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| KernelError::validation(format!("{parent}.{field} is required")))
+}
+
+fn required_json_bool(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    parent: &str,
+) -> KernelResult<bool> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| KernelError::validation(format!("{parent}.{field} is required")))
+}
+
+fn require_json_array<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    parent: &str,
+) -> KernelResult<&'a Vec<serde_json::Value>> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| KernelError::validation(format!("{parent}.{field} must be an array")))
+}
+
+fn require_json_object<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    parent: &str,
+) -> KernelResult<&'a serde_json::Map<String, serde_json::Value>> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| KernelError::validation(format!("{parent}.{field} must be an object")))
+}
+
+fn validate_string_array(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    parent: &str,
+) -> KernelResult<()> {
+    let values = require_json_array(object, field, parent)?;
+    if values.iter().any(|value| !value.is_string()) {
+        return Err(KernelError::validation(format!(
+            "{parent}.{field} must contain strings"
+        )));
     }
     Ok(())
 }
@@ -4700,6 +5132,10 @@ where
             "providerForkedFromSessionId",
             256,
         )?;
+        command.provider_directory = command
+            .provider_directory
+            .map(normalize_provider_session_directory)
+            .transpose()?;
         validate_requested_at(&command.requested_at)?;
         let session = self.load_session_for_nested_route(
             command.tenant_id,
@@ -4784,6 +5220,7 @@ where
             ));
         }
         validate_optional_bounded(&command.runtime_location_id, "runtimeLocationId", 256)?;
+        let provider_directory = command.provider_directory.unwrap_or_default();
         let record = AgentSessionRuntimeBindingRecord {
             id: self.repository.next_id()?,
             tenant_id: command.tenant_id,
@@ -4801,6 +5238,18 @@ where
             provider_session_tree_id: command.provider_session_tree_id,
             provider_parent_session_id: command.provider_parent_session_id,
             provider_forked_from_session_id: command.provider_forked_from_session_id,
+            provider_title: provider_directory.title,
+            provider_title_source: provider_directory.title_source,
+            provider_preview: provider_directory.preview,
+            provider_created_at: provider_directory.created_at,
+            provider_updated_at: provider_directory.updated_at,
+            provider_recency_at: provider_directory.recency_at,
+            provider_pinned: provider_directory.pinned,
+            provider_archived: provider_directory.archived,
+            provider_visible: provider_directory.visible,
+            provider_sort_key: (!provider_directory.sort_key.is_empty())
+                .then_some(provider_directory.sort_key),
+            provider_source: provider_directory.source,
             status: AgentSessionRuntimeBindingStatus::Active,
             is_current: true,
             version: 0,
@@ -4813,6 +5262,74 @@ where
             .insert_session_runtime_binding(record.clone())?;
         self.emit_session_resource_audit_event(
             AgentAuditAction::SessionRuntimeBindingCreated,
+            "runtime_binding",
+            &record.runtime_binding_id,
+            &record.session_id,
+            record.tenant_id,
+            record.organization_id,
+            record.version,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub(crate) fn reconcile_provider_session_history_runtime_binding_directory(
+        &self,
+        command: ReconcileProviderSessionRuntimeBindingDirectoryCommand,
+    ) -> KernelResult<SessionRuntimeBindingResult> {
+        validate_requested_at(&command.requested_at)?;
+        let engine_key = command
+            .path_agent_id
+            .strip_prefix("agent.intelligence.")
+            .ok_or_else(|| {
+                KernelError::validation("provider Session history agent is not canonical")
+            })?;
+        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+            != Some(command.path_agent_id.as_str())
+            || !command
+                .session_id
+                .starts_with(&format!("session.provider.{engine_key}."))
+            || !command
+                .runtime_binding_id
+                .starts_with(&format!("runtime_binding.provider.{engine_key}."))
+        {
+            return Err(KernelError::validation(
+                "provider Session history runtime binding directory reconciliation is not canonical",
+            ));
+        }
+        let directory = normalize_provider_session_directory(command.provider_directory)?;
+        let mut record = self.get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            path_agent_id: command.path_agent_id,
+            session_id: command.session_id,
+            runtime_binding_id: command.runtime_binding_id,
+            owner_scope: command.owner_scope,
+            requested_by: command.requested_by.clone(),
+        })?;
+        if record.transport_kind != "provider-session-history"
+            || !record.is_current
+            || record.status != AgentSessionRuntimeBindingStatus::Active
+        {
+            return Err(KernelError::validation(
+                "provider Session history runtime binding directory target is not active",
+            ));
+        }
+        ensure_expected_version(
+            record.version,
+            Some(command.expected_version),
+            "session runtime binding",
+        )?;
+        if runtime_binding_provider_directory_matches(&record, &directory) {
+            return Ok(record);
+        }
+        apply_provider_session_directory(&mut record, directory);
+        record.mark_updated(command.requested_at.clone());
+        self.repository
+            .update_session_runtime_binding(record.clone())?;
+        self.emit_session_resource_audit_event(
+            AgentAuditAction::SessionRuntimeBindingUpdated,
             "runtime_binding",
             &record.runtime_binding_id,
             &record.session_id,
@@ -5587,7 +6104,16 @@ where
             if unchanged {
                 return Ok(existing);
             }
-            if existing.status != AgentSessionItemStatus::Pending {
+            let is_newer_terminal_narrative_snapshot = matches!(
+                existing.kind,
+                AgentSessionItemKind::AssistantOutput | AgentSessionItemKind::Reasoning
+            ) && existing.status == command.status
+                && command.status == AgentSessionItemStatus::Completed
+                && parse_rfc3339_datetime(&command.requested_at, "requestedAt")?
+                    > parse_rfc3339_datetime(&existing.updated_at, "existing.updatedAt")?;
+            if existing.status != AgentSessionItemStatus::Pending
+                && !is_newer_terminal_narrative_snapshot
+            {
                 return Err(KernelError::conflict(
                     "terminal provider Session history item is immutable",
                 ));
@@ -6301,11 +6827,14 @@ where
                         "accessModeId is not supported by the active provider binding",
                     )
                 })?;
-            let slot = sdkwork_agents_runtime_facade::bootstrap_code_engine(engine_key).map_err(
-                |error| {
-                    KernelError::provider_error("code_engine_bootstrap_failed", error.to_string())
-                },
-            )?;
+            let slot = crate::runtime_facade_bridge::shared_code_engine_host()
+                .and_then(|host| host.slot(engine_key))
+                .ok_or_else(|| {
+                    KernelError::provider_error(
+                        "code_engine_bootstrap_failed",
+                        format!("shared code engine slot is unavailable for {engine_key}"),
+                    )
+                })?;
             slot.resolve_execution_settings(access_mode_id)?;
         }
         let history_items =
@@ -7285,6 +7814,27 @@ where
         let options_value: serde_json::Value = serde_json::from_str(&options_json)
             .map_err(|error| KernelError::validation(format!("options is invalid: {error}")))?;
         validate_interaction_options(&options_value)?;
+        let request_json = command
+            .request_json
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        if let Some(request_json) = request_json.as_deref() {
+            validate_typed_interaction_request(command.kind, request_json)?;
+            if command.provider_interaction_id.is_none() || command.runtime_binding_id.is_none() {
+                return Err(KernelError::validation(
+                    "typed provider interaction requires runtimeBindingId and providerInteractionId",
+                ));
+            }
+        } else if matches!(
+            command.kind,
+            AgentInteractionKind::Elicitation | AgentInteractionKind::Setup
+        ) {
+            return Err(KernelError::validation(
+                "elicitation and setup interactions require a typed request",
+            ));
+        }
         if command.provider_interaction_id.is_some() && command.runtime_binding_id.is_none() {
             return Err(KernelError::validation(
                 "runtimeBindingId is required with providerInteractionId",
@@ -7363,6 +7913,7 @@ where
             status: AgentInteractionStatus::Pending,
             prompt: command.prompt,
             options_json,
+            request_json,
             resolution_json: None,
             claim_owner: None,
             claim_token_hash: None,
@@ -7381,6 +7932,264 @@ where
             &record,
             command.requested_by,
             command.requested_at,
+        )?;
+        Ok(record)
+    }
+
+    pub(crate) fn persist_provider_interaction_event(
+        &self,
+        command: PersistProviderInteractionEventCommand,
+    ) -> KernelResult<AgentInteractionRecord> {
+        if !matches!(
+            command.event.event_type.as_str(),
+            "agent.policy.paused" | "agent.message.paused"
+        ) {
+            return Err(KernelError::validation(
+                "provider interaction event must be a paused event",
+            ));
+        }
+        validate_requested_at(&command.received_at)?;
+        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
+        validate_standard_id(&command.turn_id, "turnId", Some("turn."))?;
+        validate_agent_id(&command.path_agent_id)?;
+        if command.event.session_id.as_deref() != Some(command.session_id.as_str()) {
+            return Err(KernelError::validation(
+                "provider interaction event Session does not match the active Turn",
+            ));
+        }
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&command.event.payload).map_err(|error| {
+                KernelError::validation(format!(
+                    "provider interaction event payload must be valid JSON: {error}"
+                ))
+            })?;
+        let payload = payload.as_object().ok_or_else(|| {
+            KernelError::validation("provider interaction event payload must be an object")
+        })?;
+        if payload
+            .get("schemaVersion")
+            .and_then(serde_json::Value::as_u64)
+            != Some(1)
+        {
+            return Err(KernelError::validation(
+                "provider interaction event payload schemaVersion must be 1",
+            ));
+        }
+        let interaction = payload
+            .get("interaction")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| {
+                KernelError::validation(
+                    "provider paused event must include a normalized interaction",
+                )
+            })?;
+        if interaction
+            .get("sessionId")
+            .and_then(serde_json::Value::as_str)
+            != Some(command.session_id.as_str())
+        {
+            return Err(KernelError::validation(
+                "provider interaction canonical Session does not match the active Turn",
+            ));
+        }
+        let category = required_json_string(interaction, "category", "interaction")?;
+        let kind = required_json_string(interaction, "kind", "interaction")?;
+        let allowed_actions = interaction
+            .get("allowedActions")
+            .ok_or_else(|| KernelError::validation("interaction.allowedActions is required"))?;
+        let data = interaction
+            .get("request")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| KernelError::validation("interaction.request must be an object"))?;
+        let correlation = interaction
+            .get("correlation")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| KernelError::validation("interaction.correlation must be an object"))?;
+        for field in [
+            "modelRequestId",
+            "providerId",
+            "providerInteractionId",
+            "providerItemId",
+            "providerRequestId",
+            "providerRequestIdType",
+            "providerSessionId",
+            "providerToolCallId",
+            "providerToolName",
+            "providerToolNamespace",
+            "providerTurnId",
+            "protocolMethod",
+        ] {
+            if !correlation.contains_key(field) {
+                return Err(KernelError::validation(format!(
+                    "provider interaction correlation is missing {field}"
+                )));
+            }
+        }
+        let request = serde_json::json!({
+            "schemaVersion": 1,
+            "category": category,
+            "kind": kind,
+            "allowedActions": allowed_actions,
+            "data": data,
+            "correlation": correlation,
+        });
+        let interaction_kind = match category {
+            "approval" => AgentInteractionKind::Approval,
+            "user_input" => AgentInteractionKind::UserQuestion,
+            "elicitation" => AgentInteractionKind::Elicitation,
+            "setup" => AgentInteractionKind::Setup,
+            _ => {
+                return Err(KernelError::validation(
+                    "interaction.category is unsupported",
+                ))
+            }
+        };
+        let request_json =
+            serde_json::to_string(&request).map_err(|error| KernelError::Internal {
+                message: format!("failed to encode provider interaction request: {error}"),
+            })?;
+        validate_typed_interaction_request(interaction_kind, &request_json)?;
+
+        let model_request_id =
+            required_json_string(correlation, "modelRequestId", "interaction.correlation")?;
+        if command.event.run_id.as_deref() != Some(model_request_id)
+            || command.event.correlation_id.as_deref() != Some(model_request_id)
+        {
+            return Err(KernelError::validation(
+                "provider interaction model request does not match the Kernel event",
+            ));
+        }
+        let provider_id =
+            required_json_string(correlation, "providerId", "interaction.correlation")?;
+        let turn = self
+            .repository
+            .get_turn(command.tenant_id, command.organization_id, &command.turn_id)?
+            .ok_or_else(|| KernelError::validation("turn not found"))?;
+        if turn.session_id != command.session_id {
+            return Err(KernelError::validation(
+                "provider interaction does not match the active Turn",
+            ));
+        }
+        let runtime_binding_id = turn.runtime_binding_id.as_deref().ok_or_else(|| {
+            KernelError::validation("active Turn is missing its Session runtime binding")
+        })?;
+        let runtime_binding = self
+            .repository
+            .get_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                runtime_binding_id,
+            )?
+            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+        if runtime_binding.provider_id != provider_id {
+            return Err(KernelError::validation(
+                "provider interaction does not match the Session runtime provider",
+            ));
+        }
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &command.path_agent_id,
+            None,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("session not found"));
+        }
+
+        let provider_request_id = correlation
+            .get("providerRequestId")
+            .expect("validated provider request id must exist");
+        let provider_request_id_type = required_json_string(
+            correlation,
+            "providerRequestIdType",
+            "interaction.correlation",
+        )?;
+        let protocol_method =
+            required_json_string(correlation, "protocolMethod", "interaction.correlation")?;
+        let digest_input = format!(
+            "{model_request_id}:{provider_request_id_type}:{}:{protocol_method}",
+            serde_json::to_string(provider_request_id).map_err(|error| KernelError::Internal {
+                message: format!("failed to encode provider request identity: {error}"),
+            })?
+        );
+        let digest = sha256_hash(digest_input.as_bytes());
+        let interaction_id = format!("interaction.{}", &digest[..32]);
+        let provider_interaction_id = correlation
+            .get("providerInteractionId")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| {
+                interaction
+                    .get("interactionId")
+                    .and_then(serde_json::Value::as_str)
+            })
+            .map(str::to_string)
+            .unwrap_or_else(|| provider_request_id.to_string());
+        if provider_interaction_id.len() > 256 {
+            return Err(KernelError::validation(
+                "provider interaction id exceeds 256 bytes",
+            ));
+        }
+        let prompt = required_json_string(interaction, "prompt", "interaction")?.to_string();
+        require_non_blank(&prompt, "interaction.prompt")?;
+        if prompt.len() > MAX_TURN_INPUT_CONTENT_BYTES {
+            return Err(KernelError::validation(
+                "provider interaction prompt exceeds the maximum size",
+            ));
+        }
+
+        if let Some(existing) = self.repository.get_interaction(
+            command.tenant_id,
+            command.organization_id,
+            &command.session_id,
+            &interaction_id,
+        )? {
+            if existing.turn_id.as_deref() == Some(command.turn_id.as_str())
+                && existing.runtime_binding_id.as_deref() == Some(runtime_binding_id)
+                && existing.provider_interaction_id.as_deref()
+                    == Some(provider_interaction_id.as_str())
+                && existing.request_json.as_deref() == Some(request_json.as_str())
+            {
+                return Ok(existing);
+            }
+            return Err(KernelError::conflict(
+                "provider interaction identity was reused with different content",
+            ));
+        }
+
+        let record = AgentInteractionRecord {
+            id: self.repository.next_id()?,
+            interaction_id,
+            tenant_id: command.tenant_id,
+            organization_id: command.organization_id,
+            session_id: command.session_id,
+            turn_id: Some(command.turn_id),
+            runtime_binding_id: Some(runtime_binding_id.to_string()),
+            provider_interaction_id: Some(provider_interaction_id),
+            kind: interaction_kind,
+            status: AgentInteractionStatus::Pending,
+            prompt,
+            options_json: "[]".to_string(),
+            request_json: Some(request_json),
+            resolution_json: None,
+            claim_owner: None,
+            claim_token_hash: None,
+            claim_expires_at: None,
+            fencing_token: 0,
+            version: 0,
+            created_at: command.received_at.clone(),
+            updated_at: command.received_at.clone(),
+            resolved_at: None,
+            retention_until: None,
+        };
+        self.repository.insert_interaction(record.clone())?;
+        self.emit_interaction_audit_event(
+            AgentAuditAction::InteractionCreated,
+            &record,
+            command.requested_by,
+            command.received_at,
         )?;
         Ok(record)
     }
@@ -7583,6 +8392,11 @@ where
                 "interaction is not an approval type; use answer instead",
             ));
         }
+        if record.request_json.is_some() {
+            return Err(KernelError::validation(
+                "typed interaction must use the resolve operation",
+            ));
+        }
 
         ensure_expected_version(
             record.version,
@@ -7675,6 +8489,11 @@ where
                 "interaction is not a user-question type; use approve instead",
             ));
         }
+        if record.request_json.is_some() {
+            return Err(KernelError::validation(
+                "typed interaction must use the resolve operation",
+            ));
+        }
 
         ensure_expected_version(
             record.version,
@@ -7715,6 +8534,173 @@ where
             command.requested_at,
         )?;
 
+        Ok(record)
+    }
+
+    pub fn resolve_interaction(
+        &self,
+        command: ResolveInteractionCommand,
+    ) -> KernelResult<AgentInteractionRecord> {
+        validate_standard_id(
+            command.interaction_id.as_str(),
+            "interactionId",
+            Some("interaction."),
+        )?;
+        self.authorize(
+            "agent.business.interaction.resolve",
+            command.requested_by.clone(),
+            format!("agent.business.session.{}", command.session_id),
+            "interaction.resolve",
+        )?;
+        let session = self.load_session_for_nested_route(
+            command.tenant_id,
+            command.organization_id,
+            command.session_id.as_str(),
+            command.path_agent_id.as_str(),
+            command.owner_scope,
+        )?;
+        if session.organization_id != command.organization_id {
+            return Err(KernelError::validation("interaction not found"));
+        }
+        let mut record = self
+            .repository
+            .get_interaction(
+                command.tenant_id,
+                command.organization_id,
+                command.session_id.as_str(),
+                command.interaction_id.as_str(),
+            )?
+            .ok_or_else(|| KernelError::validation("interaction not found"))?;
+        if !record.is_pending() {
+            return Err(KernelError::validation(
+                "interaction is no longer pending and cannot be resolved",
+            ));
+        }
+        ensure_expected_version(
+            record.version,
+            Some(command.expected_version),
+            "interaction",
+        )?;
+        validate_interaction_claim(&record, &command.claim_token, command.fencing_token)?;
+        let request_json = record.request_json.as_deref().ok_or_else(|| {
+            KernelError::validation(
+                "legacy interaction must use the approve or answer compatibility operation",
+            )
+        })?;
+        let new_status =
+            validate_typed_interaction_resolution(request_json, &command.resolution_json)?;
+        let request: serde_json::Value = serde_json::from_str(request_json).map_err(|error| {
+            KernelError::validation(format!("request must be valid JSON: {error}"))
+        })?;
+        if let Some(correlation) = request.get("correlation") {
+            let correlation = correlation
+                .as_object()
+                .ok_or_else(|| KernelError::validation("request.correlation must be an object"))?;
+            let runtime_binding_id = record.runtime_binding_id.as_deref().ok_or_else(|| {
+                KernelError::validation(
+                    "provider interaction is missing its Session runtime binding",
+                )
+            })?;
+            let runtime_binding = self
+                .repository
+                .get_session_runtime_binding(
+                    command.tenant_id,
+                    command.organization_id,
+                    &command.session_id,
+                    runtime_binding_id,
+                )?
+                .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+            let provider_id =
+                required_json_string(correlation, "providerId", "request.correlation")?;
+            if runtime_binding.provider_id != provider_id {
+                return Err(KernelError::conflict(
+                    "provider interaction no longer matches its Session runtime provider",
+                ));
+            }
+            let provider_session_id =
+                required_json_string(correlation, "providerSessionId", "request.correlation")?;
+            if runtime_binding
+                .provider_session_id
+                .as_deref()
+                .is_some_and(|value| value != provider_session_id)
+            {
+                return Err(KernelError::conflict(
+                    "provider interaction no longer matches its provider Session",
+                ));
+            }
+            let engine_key = engine_key_for_binding_id(&runtime_binding.provider_binding_id)
+                .ok_or_else(|| {
+                    KernelError::provider_error(
+                        "provider_interaction_resolution_unsupported",
+                        "provider binding does not expose interaction resolution",
+                    )
+                })?;
+            let host =
+                crate::runtime_facade_bridge::shared_code_engine_host().ok_or_else(|| {
+                    KernelError::provider_error(
+                        "code_engine_bootstrap_failed",
+                        "shared code engine host is unavailable",
+                    )
+                })?;
+            let turn_id = record.turn_id.as_deref().ok_or_else(|| {
+                KernelError::validation("provider interaction is missing its canonical Turn")
+            })?;
+            let resolution: serde_json::Value = serde_json::from_str(&command.resolution_json)
+                .map_err(|error| {
+                    KernelError::validation(format!("resolution must be valid JSON: {error}"))
+                })?;
+            host.resolve_interaction(
+                engine_key,
+                &CodeEngineInteractionResolution {
+                    model_request_id: required_json_string(
+                        correlation,
+                        "modelRequestId",
+                        "request.correlation",
+                    )?
+                    .to_string(),
+                    session_id: command.session_id.clone(),
+                    turn_id: turn_id.to_string(),
+                    provider_session_id: provider_session_id.to_string(),
+                    provider_turn_id: required_json_string(
+                        correlation,
+                        "providerTurnId",
+                        "request.correlation",
+                    )?
+                    .to_string(),
+                    provider_request_id: correlation.get("providerRequestId").cloned().ok_or_else(
+                        || {
+                            KernelError::validation(
+                                "request.correlation.providerRequestId is required",
+                            )
+                        },
+                    )?,
+                    resolution,
+                },
+            )
+            .map_err(|error| {
+                KernelError::provider_error(
+                    "provider_interaction_resolution_failed",
+                    error.to_string(),
+                )
+            })?;
+        }
+        record.resolve(
+            new_status,
+            command.resolution_json,
+            command.requested_at.as_str(),
+        );
+        self.repository.update_interaction(record.clone())?;
+        let audit_action = if new_status == AgentInteractionStatus::Rejected {
+            AgentAuditAction::InteractionRejected
+        } else {
+            AgentAuditAction::InteractionResolved
+        };
+        self.emit_interaction_audit_event(
+            audit_action,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
         Ok(record)
     }
 
@@ -7820,6 +8806,80 @@ where
         validate_audit_aggregate_context(&event)?;
         self.audit_sink.record(event)
     }
+}
+
+fn normalize_provider_session_directory(
+    mut directory: sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry,
+) -> KernelResult<sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry> {
+    directory.title =
+        normalize_optional_bounded(directory.title.take(), "providerDirectory.title", 512)?;
+    directory.title_source = normalize_optional_bounded(
+        directory.title_source.take(),
+        "providerDirectory.titleSource",
+        64,
+    )?;
+    directory.preview =
+        normalize_optional_bounded(directory.preview.take(), "providerDirectory.preview", 4096)?;
+    directory.source =
+        normalize_optional_bounded(directory.source.take(), "providerDirectory.source", 256)?;
+    directory.sort_key = trim(&directory.sort_key).to_string();
+    if directory.sort_key.len() > 512 {
+        return Err(KernelError::validation(
+            "providerDirectory.sortKey exceeds 512 bytes",
+        ));
+    }
+    for (value, field) in [
+        (
+            directory.created_at.as_deref(),
+            "providerDirectory.createdAt",
+        ),
+        (
+            directory.updated_at.as_deref(),
+            "providerDirectory.updatedAt",
+        ),
+        (
+            directory.recency_at.as_deref(),
+            "providerDirectory.recencyAt",
+        ),
+    ] {
+        parse_optional_rfc3339_datetime(value, field)?;
+    }
+    Ok(directory)
+}
+
+fn runtime_binding_provider_directory_matches(
+    record: &AgentSessionRuntimeBindingRecord,
+    directory: &sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry,
+) -> bool {
+    record.provider_title == directory.title
+        && record.provider_title_source == directory.title_source
+        && record.provider_preview == directory.preview
+        && record.provider_created_at == directory.created_at
+        && record.provider_updated_at == directory.updated_at
+        && record.provider_recency_at == directory.recency_at
+        && record.provider_pinned == directory.pinned
+        && record.provider_archived == directory.archived
+        && record.provider_visible == directory.visible
+        && record.provider_sort_key
+            == (!directory.sort_key.is_empty()).then(|| directory.sort_key.clone())
+        && record.provider_source == directory.source
+}
+
+fn apply_provider_session_directory(
+    record: &mut AgentSessionRuntimeBindingRecord,
+    directory: sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry,
+) {
+    record.provider_title = directory.title;
+    record.provider_title_source = directory.title_source;
+    record.provider_preview = directory.preview;
+    record.provider_created_at = directory.created_at;
+    record.provider_updated_at = directory.updated_at;
+    record.provider_recency_at = directory.recency_at;
+    record.provider_pinned = directory.pinned;
+    record.provider_archived = directory.archived;
+    record.provider_visible = directory.visible;
+    record.provider_sort_key = (!directory.sort_key.is_empty()).then_some(directory.sort_key);
+    record.provider_source = directory.source;
 }
 
 /// JSON field name under which structured context metadata is embedded

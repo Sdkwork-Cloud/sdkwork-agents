@@ -890,6 +890,17 @@ pub struct AgentSessionRuntimeBindingRow {
     pub provider_session_tree_id: Option<String>,
     pub provider_parent_session_id: Option<String>,
     pub provider_forked_from_session_id: Option<String>,
+    pub provider_title: Option<String>,
+    pub provider_title_source: Option<String>,
+    pub provider_preview: Option<String>,
+    pub provider_created_at: Option<String>,
+    pub provider_updated_at: Option<String>,
+    pub provider_recency_at: Option<String>,
+    pub provider_pinned: bool,
+    pub provider_archived: bool,
+    pub provider_visible: bool,
+    pub provider_sort_key: Option<String>,
+    pub provider_source: Option<String>,
     pub status: i16,
     pub is_current: bool,
     pub version: u64,
@@ -924,6 +935,17 @@ impl AgentSessionRuntimeBindingRow {
             provider_session_tree_id: record.provider_session_tree_id.clone(),
             provider_parent_session_id: record.provider_parent_session_id.clone(),
             provider_forked_from_session_id: record.provider_forked_from_session_id.clone(),
+            provider_title: record.provider_title.clone(),
+            provider_title_source: record.provider_title_source.clone(),
+            provider_preview: record.provider_preview.clone(),
+            provider_created_at: record.provider_created_at.clone(),
+            provider_updated_at: record.provider_updated_at.clone(),
+            provider_recency_at: record.provider_recency_at.clone(),
+            provider_pinned: record.provider_pinned,
+            provider_archived: record.provider_archived,
+            provider_visible: record.provider_visible,
+            provider_sort_key: record.provider_sort_key.clone(),
+            provider_source: record.provider_source.clone(),
             status: record.status.as_db_code(),
             is_current: record.is_current,
             version: record.version,
@@ -952,6 +974,17 @@ impl AgentSessionRuntimeBindingRow {
             provider_session_tree_id: self.provider_session_tree_id,
             provider_parent_session_id: self.provider_parent_session_id,
             provider_forked_from_session_id: self.provider_forked_from_session_id,
+            provider_title: self.provider_title,
+            provider_title_source: self.provider_title_source,
+            provider_preview: self.provider_preview,
+            provider_created_at: self.provider_created_at,
+            provider_updated_at: self.provider_updated_at,
+            provider_recency_at: self.provider_recency_at,
+            provider_pinned: self.provider_pinned,
+            provider_archived: self.provider_archived,
+            provider_visible: self.provider_visible,
+            provider_sort_key: self.provider_sort_key,
+            provider_source: self.provider_source,
             status: AgentSessionRuntimeBindingStatus::from_db_code(self.status)
                 .ok_or_else(|| KernelError::validation("invalid session runtime binding status"))?,
             is_current: self.is_current,
@@ -1528,6 +1561,7 @@ pub struct AgentInteractionRow {
     pub status: i16,
     pub prompt: String,
     pub options_json: String,
+    pub request_json: Option<String>,
     pub resolution_json: Option<String>,
     pub claim_owner: Option<String>,
     pub claim_token_hash: Option<String>,
@@ -1560,6 +1594,7 @@ impl AgentInteractionRow {
             status: record.status.as_db_code(),
             prompt: record.prompt.clone(),
             options_json: record.options_json.clone(),
+            request_json: record.request_json.clone(),
             resolution_json: record.resolution_json.clone(),
             claim_owner: record.claim_owner.clone(),
             claim_token_hash: record.claim_token_hash.clone(),
@@ -1596,6 +1631,7 @@ impl AgentInteractionRow {
             provider_interaction_id: self.provider_interaction_id,
             prompt: self.prompt,
             options_json: self.options_json,
+            request_json: self.request_json,
             resolution_json: self.resolution_json,
             claim_owner: self.claim_owner,
             claim_token_hash: self.claim_token_hash,
@@ -6207,6 +6243,17 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.provider_session_tree_id,
                 row.provider_parent_session_id,
                 row.provider_forked_from_session_id,
+                row.provider_title,
+                row.provider_title_source,
+                row.provider_preview,
+                row.provider_created_at,
+                row.provider_updated_at,
+                row.provider_recency_at,
+                row.provider_pinned,
+                row.provider_archived,
+                row.provider_visible,
+                row.provider_sort_key,
+                row.provider_source,
                 row.status,
                 row.is_current,
                 version,
@@ -6242,6 +6289,17 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.provider_session_tree_id,
                 row.provider_parent_session_id,
                 row.provider_forked_from_session_id,
+                row.provider_title,
+                row.provider_title_source,
+                row.provider_preview,
+                row.provider_created_at,
+                row.provider_updated_at,
+                row.provider_recency_at,
+                row.provider_pinned,
+                row.provider_archived,
+                row.provider_visible,
+                row.provider_sort_key,
+                row.provider_source,
                 row.status,
                 row.is_current,
                 version,
@@ -8278,6 +8336,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.status,
                 row.prompt,
                 row.options_json,
+                row.request_json,
                 row.resolution_json,
                 row.claim_owner,
                 row.claim_token_hash,
@@ -8309,6 +8368,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.status,
                 row.prompt,
                 row.options_json,
+                row.request_json,
                 row.resolution_json,
                 row.claim_owner,
                 row.claim_token_hash,
@@ -11335,7 +11395,7 @@ fn deserialize_optional_interaction_projection_row(
                     ),
                 })?;
             if let Some(record) = value.as_object_mut() {
-                for field in ["options_json", "resolution_json"] {
+                for field in ["options_json", "request_json", "resolution_json"] {
                     if let Some(field_value) = record.get_mut(field) {
                         if !field_value.is_null() && !field_value.is_string() {
                             *field_value = serde_json::Value::String(field_value.to_string());
@@ -11461,6 +11521,31 @@ fn pg_row_to_agent_session_runtime_binding_row(
         provider_forked_from_session_id: row
             .try_get("provider_forked_from_session_id")
             .map_err(map_sqlx_error)?,
+        provider_title: row.try_get("provider_title").map_err(map_sqlx_error)?,
+        provider_title_source: row
+            .try_get("provider_title_source")
+            .map_err(map_sqlx_error)?,
+        provider_preview: row.try_get("provider_preview").map_err(map_sqlx_error)?,
+        provider_created_at: row
+            .try_get::<Option<OffsetDateTime>, _>("provider_created_at")
+            .map_err(map_sqlx_error)?
+            .map(|value| format_postgres_instant(value, "provider createdAt"))
+            .transpose()?,
+        provider_updated_at: row
+            .try_get::<Option<OffsetDateTime>, _>("provider_updated_at")
+            .map_err(map_sqlx_error)?
+            .map(|value| format_postgres_instant(value, "provider updatedAt"))
+            .transpose()?,
+        provider_recency_at: row
+            .try_get::<Option<OffsetDateTime>, _>("provider_recency_at")
+            .map_err(map_sqlx_error)?
+            .map(|value| format_postgres_instant(value, "provider recencyAt"))
+            .transpose()?,
+        provider_pinned: row.try_get("provider_pinned").map_err(map_sqlx_error)?,
+        provider_archived: row.try_get("provider_archived").map_err(map_sqlx_error)?,
+        provider_visible: row.try_get("provider_visible").map_err(map_sqlx_error)?,
+        provider_sort_key: row.try_get("provider_sort_key").map_err(map_sqlx_error)?,
+        provider_source: row.try_get("provider_source").map_err(map_sqlx_error)?,
         status: row.try_get("status").map_err(map_sqlx_error)?,
         is_current: row.try_get("is_current").map_err(map_sqlx_error)?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
@@ -11862,6 +11947,7 @@ fn pg_row_to_agent_interaction_row(row: PgRow) -> KernelResult<AgentInteractionR
         status: row.try_get("status").map_err(map_sqlx_error)?,
         prompt: row.try_get("prompt").map_err(map_sqlx_error)?,
         options_json: row.try_get("options_json").map_err(map_sqlx_error)?,
+        request_json: row.try_get("request_json").map_err(map_sqlx_error)?,
         resolution_json: row.try_get("resolution_json").map_err(map_sqlx_error)?,
         claim_owner: row.try_get("claim_owner").map_err(map_sqlx_error)?,
         claim_token_hash: row.try_get("claim_token_hash").map_err(map_sqlx_error)?,

@@ -2133,6 +2133,100 @@ async fn agent_interactions_should_work_over_http() {
             .map(Vec::len),
         Some(0)
     );
+
+    let typed_runtime_binding_id =
+        create_turn_runtime(&app, agent_id, session_id, "typed-interaction-http").await;
+    let typed_create_response = post_json(
+        &app,
+        create_uri.as_str(),
+        json!({
+            "runtimeBindingId": typed_runtime_binding_id,
+            "providerInteractionId": "provider-interaction-http-question-set",
+            "kind": "user_question",
+            "prompt": "Choose the workspace and execution mode.",
+            "request": {
+                "schemaVersion": 1,
+                "category": "user_input",
+                "kind": "question_set",
+                "allowedActions": ["submit", "cancel"],
+                "data": {
+                    "questions": [
+                        {
+                            "id": "workspace",
+                            "header": "Workspace",
+                            "prompt": "Which workspace?",
+                            "allowOther": true,
+                            "secret": false,
+                            "options": null
+                        },
+                        {
+                            "id": "mode",
+                            "header": "Mode",
+                            "prompt": "Which mode?",
+                            "allowOther": false,
+                            "secret": false,
+                            "options": [
+                                {
+                                    "label": "Local",
+                                    "description": "Use this device"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "requestedAt": "2026-06-17T00:00:04Z"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let typed_interaction = &typed_create_response["data"]["item"];
+    let typed_interaction_id = typed_interaction["interactionId"]
+        .as_str()
+        .expect("typed interaction id");
+    assert_eq!(typed_interaction["request"]["kind"], "question_set");
+
+    let typed_claim_response = post_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{typed_interaction_id}/claim"
+        ),
+        json!({
+            "claimOwner": "worker.http-typed-contract",
+            "expectedVersion": typed_interaction["version"],
+            "requestedAt": "2026-06-17T00:00:05Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    let typed_claim = &typed_claim_response["data"]["item"];
+    let typed_resolution = json!({
+        "action": "submit",
+        "answers": {
+            "workspace": ["E:\\workspace"],
+            "mode": ["Local"]
+        }
+    });
+    let typed_resolve_response = post_json(
+        &app,
+        &format!(
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions/{typed_interaction_id}/resolve"
+        ),
+        json!({
+            "resolution": typed_resolution,
+            "claimToken": typed_claim["claimToken"],
+            "fencingToken": typed_claim["fencingToken"],
+            "expectedVersion": typed_claim["interaction"]["version"],
+            "requestedAt": "2026-06-17T00:00:06Z"
+        }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(typed_resolve_response["data"]["item"]["status"], "resolved");
+    assert_eq!(
+        typed_resolve_response["data"]["item"]["resolution"],
+        typed_resolution
+    );
 }
 
 #[tokio::test]
@@ -5785,6 +5879,17 @@ async fn app_session_activity_snapshot_preserves_latest_failed_runtime_binding()
             provider_session_tree_id: None,
             provider_parent_session_id: None,
             provider_forked_from_session_id: None,
+            provider_title: None,
+            provider_title_source: None,
+            provider_preview: None,
+            provider_created_at: None,
+            provider_updated_at: None,
+            provider_recency_at: None,
+            provider_pinned: false,
+            provider_archived: false,
+            provider_visible: false,
+            provider_sort_key: None,
+            provider_source: None,
             status: AgentSessionRuntimeBindingStatus::Failed,
             is_current: false,
             version: 1,
