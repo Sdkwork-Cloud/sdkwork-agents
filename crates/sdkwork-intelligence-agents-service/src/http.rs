@@ -11083,6 +11083,20 @@ fn agent_turn_runtime_event_json(
             ))
         })?,
     };
+    let provider_session_id = payload
+        .get("providerSessionId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        // Compatibility for provider events emitted before the normalized
+        // payload adopted providerSessionId. event.session_id is canonical.
+        .or_else(|| {
+            payload
+                .get("threadId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        });
     let trace_context = event.trace_context.as_ref().map(|trace| {
         json!({
             "traceId": trace.trace_id,
@@ -11102,7 +11116,7 @@ fn agent_turn_runtime_event_json(
             "severity": kernel_event_severity(event.severity),
             "sessionId": session_id,
             "turnId": turn_id,
-            "providerSessionId": event.session_id,
+            "providerSessionId": provider_session_id,
             "taskId": event.task_id,
             "runId": event.run_id,
             "itemId": event.step_id,

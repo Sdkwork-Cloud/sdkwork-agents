@@ -220,7 +220,7 @@ fn rich_runtime_event(
         "providerId": "codex",
         "providerEventType": provider_event_type,
         "sequence": sequence,
-        "threadId": "provider-session.rich",
+        "providerSessionId": "provider-session.rich",
         "item": item,
         "usage": null,
         "error": null,
@@ -233,7 +233,7 @@ fn rich_runtime_event(
     )
     .occurred_at(format!("2026-07-30T00:00:{sequence:02}Z"))
     .from_source(source)
-    .for_session("provider-session.rich")
+    .for_session("session.canonical.rich")
     .for_run("provider-run.rich")
     .with_correlation("provider-run.rich")
     .with_redaction(redaction)

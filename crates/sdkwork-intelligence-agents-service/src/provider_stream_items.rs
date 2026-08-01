@@ -157,9 +157,17 @@ fn parse_provider_item_event(
         ));
     }
     let provider_id = required_string(payload, "providerId", 128)?;
-    let provider_session_id = optional_string(payload, "threadId", MAX_PROVIDER_ITEM_ID_BYTES)?
-        .or_else(|| event.session_id.clone())
-        .unwrap_or_default();
+    let provider_session_id =
+        optional_string(payload, "providerSessionId", MAX_PROVIDER_ITEM_ID_BYTES)?
+            // Compatibility for provider events persisted before the normalized
+            // payload adopted providerSessionId. KernelEvent.session_id is canonical
+            // SDKWork Session identity and must never be used as this fallback.
+            .or(optional_string(
+                payload,
+                "threadId",
+                MAX_PROVIDER_ITEM_ID_BYTES,
+            )?)
+            .unwrap_or_default();
     let run_id = event
         .run_id
         .as_deref()
@@ -589,7 +597,7 @@ mod tests {
                 "providerId": "codex",
                 "providerEventType": provider_event_type,
                 "sequence": sequence,
-                "threadId": "provider-session.test",
+                "providerSessionId": "provider-session.test",
                 "item": item,
                 "usage": null,
                 "error": null,
@@ -598,7 +606,7 @@ mod tests {
         )
         .occurred_at(format!("2026-07-30T00:00:{sequence:02}Z"))
         .from_source(KernelEventSource::Provider)
-        .for_session("provider-session.test")
+        .for_session("session.canonical.test")
         .for_run("provider-run.test")
         .for_step(item_id)
         .with_redaction(redaction)
@@ -668,6 +676,45 @@ mod tests {
         assert_eq!(facts[2].parent_item_id, Some(facts[1].item_id.clone()));
         assert_eq!(facts[4].status, AgentSessionItemStatus::Failed);
         assert!(facts.iter().all(|fact| fact.provider_id == "codex"));
+    }
+
+    #[test]
+    fn provider_item_identity_uses_payload_provider_session_not_canonical_event_session() {
+        let source = event(
+            0,
+            "item.completed",
+            json!({"id":"command-1","type":"command_execution","command":"cargo test","aggregated_output":"passed","exit_code":0,"status":"completed"}),
+            KernelEventRedaction::TenantSensitive,
+        );
+        let mut different_canonical_session = source.clone();
+        different_canonical_session.session_id = Some("session.canonical.other".to_string());
+        let mut different_provider_session = source.clone();
+        let mut payload: Value =
+            serde_json::from_str(&different_provider_session.payload).expect("provider payload");
+        payload["providerSessionId"] = json!("provider-session.other");
+        different_provider_session.payload = payload.to_string();
+
+        let source_facts = project_terminal_provider_turn_items(
+            &[source],
+            "session.canonical.test",
+            "turn.canonical.test",
+        )
+        .expect("source provider facts");
+        let canonical_alias_facts = project_terminal_provider_turn_items(
+            &[different_canonical_session],
+            "session.canonical.test",
+            "turn.canonical.test",
+        )
+        .expect("canonical alias provider facts");
+        let provider_alias_facts = project_terminal_provider_turn_items(
+            &[different_provider_session],
+            "session.canonical.test",
+            "turn.canonical.test",
+        )
+        .expect("provider alias facts");
+
+        assert_eq!(source_facts[0].item_id, canonical_alias_facts[0].item_id);
+        assert_ne!(source_facts[0].item_id, provider_alias_facts[0].item_id);
     }
 
     #[test]
