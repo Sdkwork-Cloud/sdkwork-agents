@@ -38,7 +38,10 @@ impl GatewayTestEnvironment {
             runtime_dir,
         };
 
-        let database_path = environment.runtime_dir.join("agent-server.sqlite");
+        // Agents session persistence supports PostgreSQL (production) and the
+        // in-memory repository (dev/test). SQLite is intentionally not a
+        // supported engine for agent session storage; the canonical test
+        // database below is the shared PostgreSQL URL.
         environment.set("SDKWORK_DEPLOYMENT_ENV", "development");
         environment.set("ENVIRONMENT", "development");
         environment.set("SDKWORK_AGENTS_ENVIRONMENT", "development");
@@ -50,8 +53,6 @@ impl GatewayTestEnvironment {
         environment.remove("SDKWORK_KERNEL_PROFILE_ID");
         environment.set("SDKWORK_KERNEL_INGRESS_AUTH_MODE", "open");
         environment.set("SDKWORK_KERNEL_METRICS_AUTH_MODE", "open");
-        environment.set("SDKWORK_DATABASE_ENGINE", "sqlite");
-        environment.set("SDKWORK_DATABASE_PATH", database_path.to_string_lossy());
         let iam_database_url = std::env::var("SDKWORK_DATABASE_TEST_POSTGRES_URL")
             .expect("SDKWORK_DATABASE_TEST_POSTGRES_URL must be set for ignored IAM gateway tests");
         environment.set("SDKWORK_DATABASE_URL", iam_database_url);

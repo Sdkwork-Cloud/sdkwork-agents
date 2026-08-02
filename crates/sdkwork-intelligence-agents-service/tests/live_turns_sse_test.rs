@@ -86,7 +86,7 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
             provider_id: "provider.model.opencode".to_string(),
             implementation_kind: AgentImplementationKind::ManifestOnly,
             configuration_profile_id: "profile.live.opencode".to_string(),
-            capabilities: Vec::new(),
+            capabilities: vec!["model.chat".to_string()],
             make_default: true,
             requested_by: sample_subject(),
             requested_at: "2026-08-01T00:01:10Z".to_string(),
