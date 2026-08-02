@@ -700,6 +700,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_turn (
     cancel_requested_at TIMESTAMPTZ,
     cancelled_at TIMESTAMPTZ,
     retention_until TIMESTAMPTZ,
+    streaming_content TEXT,
     CONSTRAINT uk_ai_agent_turn_uuid UNIQUE (uuid),
     CONSTRAINT uk_ai_agent_turn_scope UNIQUE (tenant_id, organization_id, turn_id),
     CONSTRAINT uk_ai_agent_turn_session_scope UNIQUE (

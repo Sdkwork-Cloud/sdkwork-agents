@@ -2471,6 +2471,34 @@ pub trait AgentRepositoryAdapter: Send + Sync {
             message: "list_reconcilable_turn_rows requires an adapter override".to_string(),
         })
     }
+    /// Checkpoints accumulated streaming deltas onto the running turn row
+    /// (H4). Only pending/running turns accept writes; a completed turn
+    /// ignores late checkpoints.
+    fn append_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+        updated_at: &str,
+    ) -> KernelResult<()> {
+        let _ = (tenant_id, organization_id, turn_id, content, updated_at);
+        Err(KernelError::Internal {
+            message: "append_turn_streaming_content requires an adapter override".to_string(),
+        })
+    }
+    /// Clears the streaming checkpoint after the turn completes durably.
+    fn clear_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<()> {
+        let _ = (tenant_id, organization_id, turn_id);
+        Err(KernelError::Internal {
+            message: "clear_turn_streaming_content requires an adapter override".to_string(),
+        })
+    }
     fn insert_turn_request_rows(
         &self,
         _turn: AgentTurnRow,
@@ -3516,6 +3544,32 @@ where
             .into_iter()
             .map(AgentTurnRow::into_record)
             .collect()
+    }
+
+    fn append_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+        updated_at: &str,
+    ) -> KernelResult<()> {
+        self.adapter.append_turn_streaming_content(
+            tenant_id,
+            organization_id,
+            turn_id,
+            content,
+            updated_at,
+        )
+    }
+
+    fn clear_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<()> {
+        self.adapter.clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 
     fn insert_turn_request(
@@ -8234,6 +8288,50 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 .into_iter()
                 .map(pg_row_to_agent_turn_row)
                 .collect()
+        })
+    }
+
+    fn append_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+        updated_at: &str,
+    ) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_APPEND_TURN_STREAMING_CONTENT,
+                tenant_id,
+                organization_id,
+                turn_id,
+                content,
+                updated_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn clear_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<()> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_CLEAR_TURN_STREAMING_CONTENT,
+                tenant_id,
+                organization_id,
+                turn_id
+            )?;
+            Ok(())
         })
     }
 

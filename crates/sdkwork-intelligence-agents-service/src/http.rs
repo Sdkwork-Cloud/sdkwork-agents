@@ -946,6 +946,26 @@ impl AgentRepository for DynAgentRepository {
         self.0.list_reconcilable_turns(stale_before, limit)
     }
 
+    fn append_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+        updated_at: &str,
+    ) -> KernelResult<()> {
+        self.0.append_turn_streaming_content(tenant_id, organization_id, turn_id, content, updated_at)
+    }
+
+    fn clear_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<()> {
+        self.0.clear_turn_streaming_content(tenant_id, organization_id, turn_id)
+    }
+
     fn insert_turn_request(
         &self,
         turn: crate::agent_turn::AgentTurnRecord,
@@ -4486,9 +4506,7 @@ impl ApiProblem {
             }
             KernelErrorKind::Timeout => Self::gateway_timeout(error.safe_message()),
             KernelErrorKind::Cancelled => Self::conflict(error.safe_message()),
-            KernelErrorKind::RateLimited => {
-                Self::too_many_requests(error.safe_message(), None)
-            }
+            KernelErrorKind::RateLimited => Self::too_many_requests(error.safe_message(), None),
             KernelErrorKind::ResourceExhausted => {
                 Self::dependency_unavailable(error.safe_message())
             }

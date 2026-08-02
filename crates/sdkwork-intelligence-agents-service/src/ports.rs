@@ -1692,6 +1692,25 @@ pub trait AgentRepository: Send + Sync {
         limit: usize,
     ) -> KernelResult<Vec<AgentTurnRecord>>;
 
+    /// Checkpoints accumulated streaming deltas onto the running turn row so
+    /// a crash during a long turn retains the partial reply (H4).
+    fn append_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+        updated_at: &str,
+    ) -> KernelResult<()>;
+
+    /// Clears the streaming checkpoint after the turn completes durably.
+    fn clear_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<()>;
+
     /// Atomically persist a requested turn, its user-input item, any Drive
     /// references, and the corresponding session counter update.
     fn insert_turn_request(
