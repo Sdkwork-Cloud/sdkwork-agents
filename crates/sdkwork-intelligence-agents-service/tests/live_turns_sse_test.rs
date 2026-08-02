@@ -6,12 +6,12 @@ use sdkwork_agent_kernel::{
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_intelligence_agents_service::{
     ActivateAgentProviderBindingCommand, AgentAuditSink, AgentBusinessStatus,
-    AgentImplementationKind, AgentItemDriveRefInput, AgentItemResourceRole, AgentSessionEntrySurface,
-    AgentSessionItemKind, AgentSessionKind, AgentTurnMode, AgentVisibility, AgentsService,
-    AgentProviderBindingCommand, ChangeAgentStatusCommand, CreateAgentCommand,
+    AgentImplementationKind, AgentItemDriveRefInput, AgentSessionEntrySurface,
+    AgentSessionKind, AgentTurnMode, AgentVisibility, AgentsService,
+    AgentProviderBindingCommand, AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand,
     CreateSessionCommand, CreateSessionRuntimeBindingCommand, CreateTurnCommand,
-    IamGatedPolicyProvider, InMemoryAgentRepository, RuntimeFacadeTurnExecutor,
-    TurnExecutionStreamSink,
+    GetSessionRuntimeBindingCommand, IamGatedPolicyProvider, InMemoryAgentRepository,
+    PaginatedResult, RuntimeFacadeTurnExecutor, TurnExecutionStreamSink,
 };
 
 /// Live end-to-end proof: one real provider turn through the agents business
@@ -102,13 +102,14 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         })
         .expect("provider binding should be activated");
 
-    let runtime_binding = service
+    let runtime_binding_id = "runtime_binding.live.opencode".to_string();
+    let _runtime_binding = service
         .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
             tenant_id: 100_001,
             organization_id: 0,
             path_agent_id: created.agent_id.clone(),
             session_id: session.session_id.clone(),
-            runtime_binding_id: Some("runtime_binding.live.opencode".to_string()),
+            runtime_binding_id: Some(runtime_binding_id.clone()),
             runtime_location_id: None,
             host_mode: "managed".to_string(),
             transport_kind: "in_process".to_string(),
@@ -136,7 +137,7 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         content: "Reply with exactly one word: OK".to_string(),
         content_type: "text/plain".to_string(),
         turn_mode: AgentTurnMode::Interactive,
-        runtime_binding_id: Some(runtime_binding.runtime_binding_id),
+        runtime_binding_id: Some(runtime_binding_id.clone()),
         requested_model_id: Some(configured_opencode_model_id()),
         access_mode_id: None,
         idempotency_key: "live-sse-idempotency-1".to_string(),
@@ -149,8 +150,29 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         prefer_stream: true,
     };
     let result = service
-        .execute_turn_with_stream_sink(turn_command, Arc::new(sink.clone()))
+        .execute_turn_with_stream_sink(turn_command.clone(), Arc::new(sink.clone()))
         .expect("live turn execution should succeed");
+    eprintln!(
+        "live_turns_sse_phase=raw result content={:?} status={:?}",
+        result.assistant_output_item.content.as_deref(),
+        result.turn.status,
+    );
+
+    let runtime_binding_after_turn = service
+        .get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            path_agent_id: created.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            runtime_binding_id: runtime_binding_id.clone(),
+            owner_scope: None,
+            requested_by: sample_subject(),
+        })
+        .expect("runtime binding must be readable after the turn");
+    let provider_session_id = runtime_binding_after_turn
+        .provider_session_id
+        .clone()
+        .expect("live turn must persist the provider session id into the runtime binding");
 
     eprintln!(
         "live_turns_sse_phase=stream_sink begin={} deltas={} events={}",
@@ -159,16 +181,12 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         sink.events().len(),
     );
     eprintln!(
-        "live_turns_sse_phase=result content={:?} provider_session_id={:?} deltas={} events={}",
+        "live_turns_sse_phase=result content={:?} provider_session_id={provider_session_id:?} deltas={} events={}",
         result
             .assistant_output_item
             .content
             .as_deref()
             .map(str::trim),
-        result
-            .assistant_output_item
-            .provider_session_id
-            .as_deref(),
         result.stream_deltas.len(),
         result.stream_events.len(),
     );
@@ -185,11 +203,7 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         "live opencode turn must return the real model reply: {content:?}"
     );
     assert!(
-        result
-            .assistant_output_item
-            .provider_session_id
-            .as_deref()
-            .is_some_and(|id| !id.is_empty()),
+        !provider_session_id.is_empty(),
         "live turn must return a provider session id for resumption"
     );
     assert!(
@@ -311,9 +325,15 @@ impl AgentAuditSink for RecordingAuditSink {
 
     fn list_events(
         &self,
-        _query: &sdkwork_intelligence_agents_service::AuditEventListQuery,
-    ) -> KernelResult<Vec<KernelEvent>> {
-        Ok(self.events.lock().expect("audit lock").clone())
+        _query: &AuditEventListQuery,
+    ) -> KernelResult<PaginatedResult<KernelEvent>> {
+        let items = self.events.lock().expect("audit lock").clone();
+        Ok(PaginatedResult {
+            items,
+            next_page_token: None,
+            total_count: None,
+            has_more: false,
+        })
     }
 }
 

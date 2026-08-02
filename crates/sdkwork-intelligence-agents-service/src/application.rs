@@ -9041,7 +9041,19 @@ where
 
     fn record_audit_event(&self, event: KernelEvent) -> KernelResult<()> {
         validate_audit_aggregate_context(&event)?;
-        self.audit_sink.record(event)
+        // Audit persistence is best-effort by design: the business write is
+        // the authority and must not be rolled back (or reported as failed)
+        // when the audit sink is unavailable. Failures surface through
+        // structured logs and sink-side monitoring so compliance gaps stay
+        // detectable without corrupting the client-visible outcome (H2).
+        if let Err(error) = self.audit_sink.record(event) {
+            tracing::error!(
+                target: "sdkwork.agents.audit",
+                error = %error,
+                "failed to persist audit event; business operation already committed"
+            );
+        }
+        Ok(())
     }
 }
 

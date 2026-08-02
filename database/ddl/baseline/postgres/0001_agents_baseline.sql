@@ -749,6 +749,9 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_turn_session_timeline
     ON ai_agent_turn (
         tenant_id, organization_id, session_id, created_at ASC, id ASC
     );
+CREATE INDEX IF NOT EXISTS idx_ai_agent_turn_session_activity
+    ON ai_agent_turn (tenant_id, organization_id, session_id, updated_at DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS idx_ai_agent_turn_worker
     ON ai_agent_turn (status, available_at, lease_expires_at, id)
     WHERE status IN (0, 1);
@@ -1144,6 +1147,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_interaction_pending
     ON ai_agent_interaction (
         tenant_id, organization_id, session_id, status, created_at DESC, id DESC
     );
+CREATE INDEX IF NOT EXISTS idx_ai_agent_interaction_session_activity
+    ON ai_agent_interaction (tenant_id, organization_id, session_id, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_agent_interaction_session_kind_activity
+    ON ai_agent_interaction (tenant_id, organization_id, session_id, kind ASC, updated_at DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS idx_ai_agent_interaction_claim
     ON ai_agent_interaction (status, claim_expires_at, id) WHERE status = 0;
 
@@ -1513,6 +1522,9 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_resource_user_state_recent
         tenant_id, organization_id, user_id, resource_type,
         pinned_at DESC, last_opened_at DESC, id DESC
     ) WHERE hidden_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_resource_user_state_session_activity
+    ON ai_agent_resource_user_state (tenant_id, organization_id, session_id, updated_at DESC, id DESC);
+
 
 CREATE TABLE IF NOT EXISTS ai_agent_project_member (
     id BIGINT NOT NULL PRIMARY KEY,
