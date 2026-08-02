@@ -35,11 +35,12 @@ pub fn map_sqlx_error(error: sqlx::Error) -> sdkwork_agent_kernel::KernelError {
                 .map(|code| code.into_owned())
                 .unwrap_or_else(|| "unknown".to_string());
             let constraint = database.constraint().unwrap_or("unknown");
+            let message = database.message().to_string();
             tracing::warn!(
                 target: "sdkwork.agents.postgres",
                 sqlstate,
                 constraint,
-                "postgres rejected a database operation"
+                "postgres rejected a database operation: {message}"
             );
             match sqlstate.as_str() {
                 "23505" => KernelError::conflict("database uniqueness conflict"),

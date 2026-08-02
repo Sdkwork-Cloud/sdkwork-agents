@@ -1,9 +1,9 @@
-import type { SdkworkAppClient } from '../generated/server-openapi/src/index';
-import { appApiPath } from '../generated/server-openapi/src/api/paths';
+import type { SdkworkAppClient } from '../generated/server-openapi/src/index.ts';
+import { appApiPath } from '../generated/server-openapi/src/api/paths.ts';
 import type {
   AgentTurnExecutionResponse,
   CreateAgentTurnRequest,
-} from '../generated/server-openapi/src/types';
+} from '../generated/server-openapi/src/types/index.ts';
 
 export type CompleteAgentTurnResult = AgentTurnExecutionResponse['data']['item'];
 

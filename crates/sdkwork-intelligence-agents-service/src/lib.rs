@@ -85,10 +85,10 @@ pub use sdkwork_intelligence_prompts_ai_contract::{
 };
 pub use turn_runtime::{
     complete_with_timeout, complete_with_timeout_and_sink, execute_agent_turn, is_capacity_error,
-    is_inference_error, ContractTurnExecutor, KernelModelTurnExecutor, RuntimeFacadeTurnExecutor,
-    TurnExecutionInput, TurnExecutionOutput, TurnExecutionStreamSink, TurnExecutor,
-    RUNTIME_MODE_CAPACITY_ERROR, RUNTIME_MODE_FACADE, RUNTIME_MODE_INFERENCE_ERROR,
-    TURN_EXECUTION_TIMEOUT,
+    is_inference_error, turn_model_request_id, ContractTurnExecutor, KernelModelTurnExecutor,
+    RuntimeFacadeTurnExecutor, TurnCancellationInput, TurnCancellationOutput, TurnExecutionInput,
+    TurnExecutionOutput, TurnExecutionStreamSink, TurnExecutor, RUNTIME_MODE_CAPACITY_ERROR,
+    RUNTIME_MODE_FACADE, RUNTIME_MODE_INFERENCE_ERROR, TURN_EXECUTION_TIMEOUT,
 };
 
 pub use domain::{

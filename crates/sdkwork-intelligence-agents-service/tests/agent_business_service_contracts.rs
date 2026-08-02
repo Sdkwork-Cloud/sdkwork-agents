@@ -1198,6 +1198,10 @@ fn execute_turn_persists_user_input_and_assistant_output() {
             requested_at: "2026-06-01T05:01:20Z".to_string(),
         })
         .expect("session runtime binding should be created");
+    assert!(
+        runtime_binding.provider_visible,
+        "runtime bindings without a Provider directory must remain visible"
+    );
 
     let turn_command = CreateTurnCommand {
         tenant_id: 100_001,

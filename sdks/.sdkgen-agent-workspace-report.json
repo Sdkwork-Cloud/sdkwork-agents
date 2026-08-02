@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "app": "agents",
-  "mode": "apply",
+  "mode": "dry-run",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-08-01T09:00:52.664Z",
+  "startedAt": "2026-08-02T02:57:34.753Z",
   "families": [
     {
       "key": "app",
@@ -80,14 +80,14 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "a77f40493ace9a2e9d204e1906e0f95f1b3405df38425d80280a2b784c5be4b1",
+      "fingerprint": "a30139df8c9d2368f442c28a5f05f2477efe78b1387e1eff19cfc649384dc409",
       "fingerprints": {
-        "typescript": "a77f40493ace9a2e9d204e1906e0f95f1b3405df38425d80280a2b784c5be4b1",
-        "flutter": "9c102f59152dd739f8494d5c7f5abb0d168c172659fa8d4d39f542befb96f10a"
+        "typescript": "a30139df8c9d2368f442c28a5f05f2477efe78b1387e1eff19cfc649384dc409",
+        "flutter": "614a545ec713c87a3fa01815575cad7c15af66ef558a38e42760cd7641208374"
       },
       "hasChanges": false,
-      "riskLevel": "medium",
-      "generated": true,
+      "riskLevel": "low",
+      "generated": false,
       "languages": [
         {
           "language": "typescript",
@@ -95,10 +95,10 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi",
           "packageName": "@sdkwork/agents-app-sdk",
           "version": "0.1.0",
-          "fingerprint": "a77f40493ace9a2e9d204e1906e0f95f1b3405df38425d80280a2b784c5be4b1",
+          "fingerprint": "a30139df8c9d2368f442c28a5f05f2477efe78b1387e1eff19cfc649384dc409",
           "hasChanges": false,
-          "riskLevel": "medium",
-          "generated": true
+          "riskLevel": "low",
+          "generated": false
         },
         {
           "language": "flutter",
@@ -106,13 +106,13 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi",
           "packageName": "sdkwork_agents_app_sdk",
           "version": "0.1.0",
-          "fingerprint": "9c102f59152dd739f8494d5c7f5abb0d168c172659fa8d4d39f542befb96f10a",
+          "fingerprint": "614a545ec713c87a3fa01815575cad7c15af66ef558a38e42760cd7641208374",
           "hasChanges": false,
-          "riskLevel": "medium",
-          "generated": true
+          "riskLevel": "low",
+          "generated": false
         }
       ]
     }
   ],
-  "finishedAt": "2026-08-01T09:00:53.882Z"
+  "finishedAt": "2026-08-02T02:57:35.217Z"
 }

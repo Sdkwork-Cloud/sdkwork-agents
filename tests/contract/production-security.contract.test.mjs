@@ -130,6 +130,11 @@ test("production HTTP bootstrap uses IAM, Postgres, and runtime facade completio
   );
   assert.match(
     source,
+    /fn dev_agent_http_state\(\) -> Result<AgentHttpState>\s*\{[\s\S]*AgentHttpState::with_turn_executor\([\s\S]*InMemoryAgentRepository::try_new[\s\S]*AllowAllPolicyProvider::try_allow\("policy\.agents\.dev"\)[\s\S]*RuntimeFacadeTurnExecutor/,
+    "dev state must keep disposable storage and dev auth while executing turns through the runtime facade",
+  );
+  assert.match(
+    source,
     /fn production_postgres_agent_http_state\(\) -> Result<AgentHttpState>\s*\{[\s\S]*SqlAgentRepository::new[\s\S]*SqlAgentAuditSink::new_global[\s\S]*IamGatedPolicyProvider::default\(\)[\s\S]*RuntimeFacadeTurnExecutor/,
     "production state must use Postgres repository, Postgres audit, IAM policy, and RuntimeFacadeTurnExecutor",
   );

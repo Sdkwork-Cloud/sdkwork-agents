@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use sdkwork_agent_kernel::{
     AgentExecutionProviderOptionValue, KernelEvent, KernelResult, ModelRequest, ModelResponse,
-    ModelStreamChunk, ModelStreamSink, ToolCall,
+    ModelStatus, ModelStreamChunk, ModelStreamSink, ToolCall,
 };
 use sdkwork_agent_provider_spi::SdkRuntimeStreamCompletion;
 use sdkwork_utils_rust::string::is_blank;
@@ -16,6 +16,8 @@ pub const MAX_CODE_ENGINE_PROMPT_BYTES: usize = 1_048_576;
 pub const MAX_CODE_ENGINE_STREAM_CHUNKS: usize = 8_192;
 /// Maximum aggregated stream output size (4 MiB).
 pub const MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES: usize = 4_194_304;
+/// Maximum provider request identity size accepted by the runtime facade.
+pub const MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES: usize = 512;
 
 const WORKING_DIRECTORY_METADATA_KEY: &str = "sdkwork.code_engine.working_directory";
 const APPROVAL_POLICY_METADATA_KEY: &str = "sdkwork.code_engine.approval_policy";
@@ -42,6 +44,8 @@ const PROVIDER_SESSION_DIAGNOSTIC_KEYS: [&str; 6] = [
 pub struct CodeEngineTurnInput {
     pub engine_key: String,
     pub model_id: String,
+    /// Stable request identity established by the application before execution.
+    pub model_request_id: Option<String>,
     /// Canonical SDKWork Session identity used by kernel-owned lifecycle state.
     pub session_id: Option<String>,
     /// Canonical SDKWork Turn identity used for provider event correlation.
@@ -80,6 +84,8 @@ pub struct CodeEngineTurnStreamCompletion {
 /// Product-neutral code-engine turn output produced by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeEngineTurnOutput {
+    pub model_request_id: String,
+    pub finish_reason: Option<String>,
     pub assistant_content: String,
     pub provider_session_id: Option<String>,
     /// Provider-neutral tool calls returned by the kernel model provider.
@@ -91,6 +97,18 @@ pub struct CodeEngineTurnOutput {
     /// Verified terminal metadata for a streamed turn. `None` means the turn
     /// used invoke-only execution or the provider cannot prove completion.
     pub stream_completion: Option<CodeEngineTurnStreamCompletion>,
+}
+
+/// Correlated provider acknowledgement for one cancelled code-engine Turn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodeEngineTurnCancellation {
+    pub model_request_id: String,
+    pub finish_reason: String,
+}
+
+/// Derives the stable provider request identity for one canonical SDKWork Turn.
+pub fn code_engine_model_request_id(turn_id: &str) -> String {
+    format!("agents-turn-{turn_id}")
 }
 
 pub fn execute_code_engine_turn(
@@ -127,6 +145,8 @@ pub fn execute_code_engine_turn(
 fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> CodeEngineTurnOutput {
     let assistant_content = response.messages.join("\n");
     CodeEngineTurnOutput {
+        model_request_id: response.model_request_id.clone(),
+        finish_reason: response.finish_reason.clone(),
         assistant_content,
         provider_session_id: resolve_provider_session_id(&response, input),
         tool_calls: response.tool_calls,
@@ -150,7 +170,22 @@ fn build_model_request(
                 .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))
         })
         .transpose()?;
-    let model_request_id = format!("agents-turn-{}", sdkwork_utils_rust::uuid());
+    let model_request_id = match input.model_request_id.as_deref() {
+        Some(model_request_id) if is_blank(Some(model_request_id)) => {
+            return Err(RuntimeFacadeError::InvalidInput(
+                "model_request_id must not be blank".to_string(),
+            ));
+        }
+        Some(model_request_id)
+            if model_request_id.len() > MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES =>
+        {
+            return Err(RuntimeFacadeError::InvalidInput(format!(
+                "model_request_id exceeds {MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES} bytes"
+            )));
+        }
+        Some(model_request_id) => model_request_id.to_string(),
+        None => format!("agents-turn-{}", sdkwork_utils_rust::uuid()),
+    };
     let mut model_request = ModelRequest::new(model_request_id, vec![input.prompt.clone()]);
     if !is_blank(Some(input.model_id.as_str())) {
         model_request.model_id = Some(input.model_id.clone());
@@ -300,19 +335,26 @@ pub fn execute_code_engine_turn_with_stream_sink(
             "prompt exceeds maximum size of {MAX_CODE_ENGINE_PROMPT_BYTES} bytes"
         )));
     }
+    if slot.supports_streaming_completion() {
+        return execute_with_stream_completion(slot, input, sink);
+    }
     if input.provider_session_id.is_none() {
-        if slot.supports_first_turn_streaming_completion() {
-            return execute_first_turn_with_stream_completion(slot, input, sink);
-        }
         return execute_code_engine_turn(slot, input);
     }
 
     let model_request = build_model_request(slot, input)?;
+    let model_request_id = model_request.model_request_id.clone();
     let mut collector = ForwardingStreamCollector::new(sink);
     match slot.stream_model_into(model_request, &mut collector) {
         Ok(()) if !collector.is_empty() => {
             let (stream_deltas, stream_events) = collector.into_parts();
-            return build_streamed_turn_output(input, stream_deltas, stream_events, None);
+            return build_streamed_turn_output(
+                input,
+                model_request_id,
+                stream_deltas,
+                stream_events,
+                None,
+            );
         }
         Ok(()) => {
             return Err(RuntimeFacadeError::Kernel(
@@ -329,7 +371,7 @@ pub fn execute_code_engine_turn_with_stream_sink(
     execute_code_engine_turn(slot, input)
 }
 
-fn execute_first_turn_with_stream_completion(
+fn execute_with_stream_completion(
     slot: &CodeEngineSlot,
     input: &CodeEngineTurnInput,
     sink: &mut dyn ModelStreamSink,
@@ -337,12 +379,18 @@ fn execute_first_turn_with_stream_completion(
     let model_request = build_model_request(slot, input)?;
     let mut collector = ForwardingStreamCollector::new(sink);
     let runtime_completion = slot
-        .stream_first_turn_model_into(model_request, &mut collector)
+        .stream_model_into_with_completion(model_request, &mut collector)
         .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
     let completion = code_engine_stream_completion(runtime_completion)?;
 
     let (stream_deltas, stream_events) = collector.into_parts();
-    build_streamed_turn_output(input, stream_deltas, stream_events, Some(completion))
+    build_streamed_turn_output(
+        input,
+        completion.model_request_id.clone(),
+        stream_deltas,
+        stream_events,
+        Some(completion),
+    )
 }
 
 fn code_engine_stream_completion(
@@ -366,11 +414,16 @@ fn code_engine_stream_completion(
 
 fn build_streamed_turn_output(
     input: &CodeEngineTurnInput,
+    model_request_id: String,
     stream_deltas: Vec<String>,
     stream_events: Vec<KernelEvent>,
     stream_completion: Option<CodeEngineTurnStreamCompletion>,
 ) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
-    if stream_deltas.is_empty() {
+    let finish_reason = stream_completion
+        .as_ref()
+        .map(|completion| completion.finish_reason.clone());
+    let cancelled = finish_reason.as_deref() == Some("cancelled");
+    if stream_deltas.is_empty() && !cancelled {
         return Err(RuntimeFacadeError::Kernel(
             "provider stream completed without output".to_string(),
         ));
@@ -378,7 +431,7 @@ fn build_streamed_turn_output(
 
     let assistant_content = stream_deltas.join("");
     validate_output_size(assistant_content.len(), effective_max_output_bytes(input))?;
-    if assistant_content.trim().is_empty() {
+    if assistant_content.trim().is_empty() && !cancelled {
         return Err(RuntimeFacadeError::Kernel(
             "provider stream completed with blank output".to_string(),
         ));
@@ -395,12 +448,41 @@ fn build_streamed_turn_output(
         })?;
 
     Ok(CodeEngineTurnOutput {
+        model_request_id,
+        finish_reason,
         assistant_content,
         provider_session_id: Some(provider_session_id),
         tool_calls: Vec::new(),
         stream_deltas,
         stream_events,
         stream_completion,
+    })
+}
+
+pub fn cancel_code_engine_turn(
+    slot: &CodeEngineSlot,
+    model_request_id: &str,
+) -> RuntimeFacadeResult<CodeEngineTurnCancellation> {
+    if is_blank(Some(model_request_id)) {
+        return Err(RuntimeFacadeError::InvalidInput(
+            "model_request_id must not be blank".to_string(),
+        ));
+    }
+    let response = slot
+        .cancel_model(model_request_id)
+        .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
+    if response.model_request_id != model_request_id
+        || response.status != ModelStatus::Cancelled
+        || response.finish_reason.as_deref() != Some("cancelled")
+    {
+        return Err(RuntimeFacadeError::Kernel(
+            "provider cancellation did not return a correlated cancelled acknowledgement"
+                .to_string(),
+        ));
+    }
+    Ok(CodeEngineTurnCancellation {
+        model_request_id: response.model_request_id,
+        finish_reason: "cancelled".to_string(),
     })
 }
 
@@ -422,7 +504,7 @@ impl<'a> ForwardingStreamCollector<'a> {
     }
 
     fn is_empty(&self) -> bool {
-        self.deltas.is_empty()
+        self.deltas.is_empty() && self.events.is_empty()
     }
 
     fn into_parts(self) -> (Vec<String>, Vec<KernelEvent>) {
@@ -475,7 +557,9 @@ impl ModelStreamSink for DiscardingModelStreamSink {
 mod tests {
     use super::*;
     use crate::code_engines::{bootstrap_code_engine, canonical_code_engine_keys};
-    use sdkwork_agent_kernel::{ModelProvider, ProviderHealth, ProviderManifest};
+    use sdkwork_agent_kernel::{
+        KernelEventSeverity, ModelDescriptor, ModelProvider, ProviderHealth, ProviderManifest,
+    };
     use sdkwork_agent_provider_codex::CodexSdkIntegration;
     use sdkwork_agent_provider_spi::{
         NegotiatedCapability, SdkBackendKind, SdkBackendRuntime, SdkCapabilityNegotiation,
@@ -516,6 +600,15 @@ mod tests {
             ProviderHealth::available()
         }
 
+        fn list_models(&self) -> Vec<ModelDescriptor> {
+            vec![ModelDescriptor::new(
+                "gpt-test",
+                "provider.model.codex.test-fallback",
+                "Codex test model",
+                "codex",
+            )]
+        }
+
         fn invoke(&self, _request: ModelRequest) -> KernelResult<ModelResponse> {
             panic!("the controlled Codex stream test must not invoke a fallback provider")
         }
@@ -540,12 +633,20 @@ mod tests {
             request: &SdkRuntimeRequest,
         ) -> Result<SdkRuntimeResponse, SdkRuntimeError> {
             self.invoke_count.fetch_add(1, Ordering::SeqCst);
+            let model_request_id = request
+                .operation
+                .request_id()
+                .expect("model invoke operation has a request id");
             Ok(SdkRuntimeResponse::success(
                 SdkBackendKind::RustNative,
                 &request.capability_id,
                 serde_json::json!({
                     "ok": true,
-                    "items": ["unexpected invoke"],
+                    "mode": "sdk_live",
+                    "model_request_id": model_request_id,
+                    "messages": ["controlled response"],
+                    "finish_reason": "stop",
+                    "provider_session_id": "thread-controlled",
                 }),
             ))
         }
@@ -653,6 +754,26 @@ mod tests {
     }
 
     #[test]
+    fn forwarding_stream_collector_treats_provider_events_as_started_execution() {
+        let mut sink = RecordingStreamSink::default();
+        let mut collector = ForwardingStreamCollector::new(&mut sink);
+
+        collector
+            .push_event(KernelEvent::new(
+                "event-1",
+                "tool.call.started",
+                KernelEventSeverity::Info,
+                "{}",
+            ))
+            .expect("provider event");
+
+        assert!(!collector.is_empty());
+        let (deltas, events) = collector.into_parts();
+        assert!(deltas.is_empty());
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
     fn verified_runtime_completion_becomes_provider_neutral_turn_completion() {
         let completion = code_engine_stream_completion(SdkRuntimeStreamCompletion {
             model_request_id: "request-1".to_string(),
@@ -692,6 +813,7 @@ mod tests {
 
         let output = build_streamed_turn_output(
             &input,
+            completion.model_request_id.clone(),
             vec!["first ".to_string(), "second".to_string()],
             Vec::new(),
             Some(completion.clone()),
@@ -757,14 +879,21 @@ mod tests {
             resumed.provider_session_id.as_deref(),
             Some("thread-controlled")
         );
-        assert_eq!(resumed.stream_completion, None);
+        assert_eq!(
+            resumed
+                .stream_completion
+                .as_ref()
+                .map(|completion| completion.provider_session_id.as_str()),
+            Some("thread-controlled")
+        );
         assert_eq!(invoke_count.load(Ordering::SeqCst), 0);
         assert_eq!(stream_count.load(Ordering::SeqCst), 2);
     }
 
     #[test]
     fn executes_turn_for_canonical_codex_engine() {
-        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let invoke_count = Arc::new(AtomicUsize::new(0));
+        let slot = controlled_codex_slot(invoke_count.clone(), Arc::new(AtomicUsize::new(0)));
         let model_id = slot.list_model_ids().into_iter().next().expect("model id");
         let output = execute_code_engine_turn(
             &slot,
@@ -776,13 +905,23 @@ mod tests {
             },
         )
         .expect("turn execution");
-        assert!(!output.assistant_content.trim().is_empty());
+        assert_eq!(output.assistant_content, "controlled response");
+        assert_eq!(output.finish_reason.as_deref(), Some("stop"));
+        assert_eq!(
+            output.provider_session_id.as_deref(),
+            Some("thread-controlled")
+        );
+        assert_eq!(invoke_count.load(Ordering::SeqCst), 1);
     }
 
     #[test]
     fn all_canonical_engines_execute_turn() {
         for engine in canonical_code_engine_keys() {
-            let slot = bootstrap_code_engine(engine).expect("bootstrap");
+            let slot = if *engine == "codex" {
+                controlled_codex_slot(Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)))
+            } else {
+                bootstrap_code_engine(engine).expect("bootstrap")
+            };
             let model_id = slot.list_model_ids().into_iter().next().expect("model id");
             let output = execute_code_engine_turn(
                 &slot,
@@ -839,6 +978,7 @@ mod tests {
             &CodeEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-5-codex".to_string(),
+                model_request_id: Some("agents-turn-turn-canonical".to_string()),
                 session_id: Some("session-canonical".to_string()),
                 turn_id: Some("turn-canonical".to_string()),
                 provider_session_id: Some("provider-session-existing".to_string()),
@@ -861,6 +1001,7 @@ mod tests {
         .expect("model request");
 
         assert_eq!(request.model_id.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(request.model_request_id, "agents-turn-turn-canonical");
         assert_eq!(request.session_id.as_deref(), Some("session-canonical"));
         assert_eq!(request.step_id.as_deref(), Some("turn-canonical"));
         assert_eq!(

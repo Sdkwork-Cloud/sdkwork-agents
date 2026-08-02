@@ -2137,6 +2137,28 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned())
     }
 
+    fn get_session_runtime_binding_by_provider_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
+        Ok(self
+            .session_runtime_bindings
+            .recovering_read()
+            .values()
+            .find(|binding| {
+                binding.tenant_id == tenant_id
+                    && binding.organization_id == organization_id
+                    && binding.owner_user_id == owner_user_id
+                    && binding.provider_binding_id == provider_binding_id
+                    && binding.provider_session_id.as_deref() == Some(provider_session_id)
+            })
+            .cloned())
+    }
+
     fn get_current_session_runtime_binding(
         &self,
         tenant_id: u64,

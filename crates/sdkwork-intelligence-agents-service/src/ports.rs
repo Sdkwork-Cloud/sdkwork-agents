@@ -1438,6 +1438,18 @@ pub trait AgentRepository: Send + Sync {
         runtime_binding_id: &str,
     ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>>;
 
+    /// Finds the runtime binding that currently claims a provider Session
+    /// identity across Sessions, so legacy imports can be retired before the
+    /// canonical provider-history Session takes the identity over.
+    fn get_session_runtime_binding_by_provider_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>>;
+
     fn get_current_session_runtime_binding(
         &self,
         tenant_id: u64,

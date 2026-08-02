@@ -44,7 +44,8 @@ pub use sdkwork_agent_kernel::{
 };
 pub use sessions::*;
 pub use turn::{
-    execute_code_engine_turn, execute_code_engine_turn_with_stream,
-    execute_code_engine_turn_with_stream_sink, CodeEngineTurnInput, CodeEngineTurnOutput,
-    CodeEngineTurnStreamCompletion,
+    cancel_code_engine_turn, code_engine_model_request_id, execute_code_engine_turn,
+    execute_code_engine_turn_with_stream, execute_code_engine_turn_with_stream_sink,
+    CodeEngineTurnCancellation, CodeEngineTurnInput, CodeEngineTurnOutput,
+    CodeEngineTurnStreamCompletion, MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES,
 };

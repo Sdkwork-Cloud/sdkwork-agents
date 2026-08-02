@@ -62,7 +62,7 @@ pub struct ProviderSessionInventorySnapshot {
     pub issues: Vec<ProviderSessionInventoryIssue>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderSessionDirectoryEntry {
     pub title: Option<String>,
@@ -76,6 +76,24 @@ pub struct ProviderSessionDirectoryEntry {
     pub visible: bool,
     pub source: Option<String>,
     pub sort_key: String,
+}
+
+impl Default for ProviderSessionDirectoryEntry {
+    fn default() -> Self {
+        Self {
+            title: None,
+            title_source: None,
+            preview: None,
+            created_at: None,
+            updated_at: None,
+            recency_at: None,
+            pinned: false,
+            archived: false,
+            visible: true,
+            source: None,
+            sort_key: String::new(),
+        }
+    }
 }
 
 impl ProviderSessionDirectoryEntry {
@@ -159,7 +177,7 @@ pub(crate) fn discover_provider_sessions(
     discover_provider_sessions_with(
         slots,
         selector,
-        |_, slot| slot.list_provider_sessions(),
+        |_, slot| slot.list_provider_sessions_for_directory(selector.exact_cwd.as_deref()),
         |engine_key, slot| {
             let default_model = slot
                 .list_model_descriptors()
@@ -304,6 +322,15 @@ pub(crate) fn load_provider_session_messages(
     engine_key: &str,
     provider_session_id: &str,
 ) -> RuntimeFacadeResult<Vec<AgentMessage>> {
+    load_provider_session_messages_for_directory(slots, engine_key, provider_session_id, None)
+}
+
+pub(crate) fn load_provider_session_messages_for_directory(
+    slots: &HashMap<String, CodeEngineSlot>,
+    engine_key: &str,
+    provider_session_id: &str,
+    working_directory: Option<&str>,
+) -> RuntimeFacadeResult<Vec<AgentMessage>> {
     let Some(slot) = slots.get(engine_key) else {
         return Err(RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
@@ -314,7 +341,7 @@ pub(crate) fn load_provider_session_messages(
             "provider session id is required to load transcript messages".to_string(),
         ));
     }
-    slot.get_provider_session_history(provider_session_id)
+    slot.get_provider_session_history_for_directory(provider_session_id, working_directory)
         .map_err(|error| RuntimeFacadeError::EngineUnavailable {
             engine_key: engine_key.to_string(),
             reason: error.to_string(),
@@ -475,10 +502,7 @@ mod tests {
         cwdless.session.cwd = None;
         let root = item("codex", "root-session", r"E:\Work\BirdCoder");
 
-        let selected = select_top_level_provider_sessions(
-            vec![cwdless, root],
-            None,
-        );
+        let selected = select_top_level_provider_sessions(vec![cwdless, root], None);
 
         assert_eq!(selected.len(), 0);
     }
@@ -489,10 +513,8 @@ mod tests {
         cwdless.session.cwd = None;
         let root = item("codex", "root-session", r"E:\Work\BirdCoder");
 
-        let selected = select_top_level_provider_sessions(
-            vec![cwdless, root],
-            Some("e:/work/birdcoder"),
-        );
+        let selected =
+            select_top_level_provider_sessions(vec![cwdless, root], Some("e:/work/birdcoder"));
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].session.session_id, "root-session");
@@ -720,6 +742,15 @@ mod tests {
         );
         assert!(matches!(result, Err(RuntimeFacadeError::InvalidInput(_))));
         std::fs::remove_dir_all(fixture_root).expect("remove fixtures");
+    }
+
+    #[test]
+    fn default_provider_directory_remains_visible() {
+        let directory = ProviderSessionDirectoryEntry::default();
+
+        assert!(directory.visible);
+        assert!(!directory.pinned);
+        assert!(!directory.archived);
     }
 
     fn create_fingerprint_fixture_root(label: &str) -> std::path::PathBuf {

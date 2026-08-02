@@ -39,12 +39,13 @@ pub fn build_agent_http_state() -> Result<AgentHttpState> {
 }
 
 fn dev_agent_http_state() -> Result<AgentHttpState> {
-    Ok(AgentHttpState::new(
+    Ok(AgentHttpState::with_turn_executor(
         InMemoryAgentRepository::try_new().context("build agents dev in-memory repository")?,
         InMemoryAgentAuditSink::default(),
         AllowAllPolicyProvider::try_allow("policy.agents.dev")
             .map_err(anyhow::Error::msg)
             .context("build agents dev-only policy provider")?,
+        Arc::new(RuntimeFacadeTurnExecutor),
     ))
 }
 

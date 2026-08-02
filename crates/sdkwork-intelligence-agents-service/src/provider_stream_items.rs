@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use sdkwork_agent_kernel::{KernelError, KernelEvent, KernelEventRedaction, KernelResult};
-use sdkwork_utils_rust::sha256_hash;
 use serde_json::{json, Map, Value};
 
 use crate::domain::{AgentSessionItemKind, AgentSessionItemStatus};
 use crate::ports::MAX_TURN_INPUT_CONTENT_BYTES;
+use crate::provider_session_sync::stable_provider_session_item_id;
 
 const PROVIDER_STREAM_PAYLOAD_SCHEMA: &str = "sdkwork.agent.provider_stream_event.v1";
 const MAX_PROVIDER_ITEM_ID_BYTES: usize = 512;
@@ -39,7 +39,6 @@ struct ParsedProviderItemEvent {
     identity: String,
     provider_id: String,
     provider_session_id: String,
-    run_id: String,
     provider_event_type: String,
     item_id: String,
     item_type: String,
@@ -57,7 +56,7 @@ struct ProviderItemLifecycle {
 /// Collapse provider item lifecycle events and project only terminal snapshots.
 ///
 /// Provider-native ids remain correlation fields, while durable Agents item ids
-/// are deterministic hashes over the full provider/turn/item identity.
+/// are deterministic hashes over the provider Session and item identity.
 pub(crate) fn project_terminal_provider_turn_items(
     events: &[KernelEvent],
     session_id: &str,
@@ -114,6 +113,35 @@ pub(crate) fn project_terminal_provider_turn_items(
     Ok(facts)
 }
 
+pub(crate) fn terminal_provider_assistant_item_id(
+    events: &[KernelEvent],
+    fallback_provider_session_id: Option<&str>,
+) -> KernelResult<Option<String>> {
+    let mut terminal = None;
+    for event in events {
+        let Some(parsed) = parse_provider_item_event(event, "")? else {
+            continue;
+        };
+        if parsed.provider_event_type == "item.completed" && parsed.item_type == "agent_message" {
+            terminal = Some(parsed);
+        }
+    }
+    Ok(terminal.and_then(|item| {
+        let provider_session_id = if item.provider_session_id.trim().is_empty() {
+            fallback_provider_session_id.unwrap_or_default().trim()
+        } else {
+            item.provider_session_id.trim()
+        };
+        (!provider_session_id.is_empty()).then(|| {
+            stable_provider_session_item_id(
+                &item.provider_id,
+                provider_session_id,
+                &item.item_id,
+            )
+        })
+    }))
+}
+
 fn parse_provider_item_event(
     event: &KernelEvent,
     turn_id: &str,
@@ -147,13 +175,22 @@ fn parse_provider_item_event(
         .ok_or_else(|| KernelError::validation("provider item event payload must contain item"))?;
     let item_id = required_string(item, "id", MAX_PROVIDER_ITEM_ID_BYTES)?;
     let item_type = required_string(item, "type", MAX_PROVIDER_ITEM_TYPE_BYTES)?;
-    if event
-        .step_id
-        .as_deref()
-        .is_some_and(|step_id| step_id != item_id)
+    if !turn_id.is_empty()
+        && event
+            .step_id
+            .as_deref()
+            .is_some_and(|step_id| step_id != turn_id)
     {
         return Err(KernelError::validation(
-            "provider stream event step identity does not match item identity",
+            "provider stream event step identity does not match Turn identity",
+        ));
+    }
+    if optional_string(payload, "providerItemId", MAX_PROVIDER_ITEM_ID_BYTES)?
+        .as_deref()
+        .is_some_and(|provider_item_id| provider_item_id != item_id)
+    {
+        return Err(KernelError::validation(
+            "provider stream payload item identity does not match item snapshot",
         ));
     }
     let provider_id = required_string(payload, "providerId", 128)?;
@@ -183,7 +220,6 @@ fn parse_provider_item_event(
         identity,
         provider_id,
         provider_session_id,
-        run_id,
         provider_event_type,
         item_id,
         item_type,
@@ -492,23 +528,21 @@ fn item_status(
 }
 
 fn durable_item_id(
-    session_id: &str,
-    turn_id: &str,
+    _session_id: &str,
+    _turn_id: &str,
     terminal: &ParsedProviderItemEvent,
     fact_kind: &str,
 ) -> String {
-    let digest = sha256_hash(
-        format!(
-            "provider-turn-item-v1\u{0}{session_id}\u{0}{turn_id}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{fact_kind}",
-            terminal.provider_id,
-            terminal.provider_session_id,
-            terminal.run_id,
-            terminal.item_id,
-            terminal.item_type,
-        )
-        .as_bytes(),
-    );
-    format!("item.provider.{}", &digest[..32])
+    let provider_item_key = if fact_kind == "tool_result" {
+        format!("{}\u{0}result", terminal.item_id)
+    } else {
+        terminal.item_id.clone()
+    };
+    stable_provider_session_item_id(
+        &terminal.provider_id,
+        &terminal.provider_session_id,
+        &provider_item_key,
+    )
 }
 
 fn required_string(
@@ -583,7 +617,7 @@ mod tests {
         item: Value,
         redaction: KernelEventRedaction,
     ) -> KernelEvent {
-        let item_id = item["id"].as_str().expect("item id");
+        let item_id = item["id"].as_str().expect("item id").to_string();
         KernelEvent::new(
             format!("event.test.{sequence}"),
             if item["type"] == "error" {
@@ -598,6 +632,7 @@ mod tests {
                 "providerEventType": provider_event_type,
                 "sequence": sequence,
                 "providerSessionId": "provider-session.test",
+                "providerItemId": item_id,
                 "item": item,
                 "usage": null,
                 "error": null,
@@ -608,7 +643,6 @@ mod tests {
         .from_source(KernelEventSource::Provider)
         .for_session("session.canonical.test")
         .for_run("provider-run.test")
-        .for_step(item_id)
         .with_redaction(redaction)
         .with_payload_schema(PROVIDER_STREAM_PAYLOAD_SCHEMA)
     }
@@ -715,6 +749,28 @@ mod tests {
 
         assert_eq!(source_facts[0].item_id, canonical_alias_facts[0].item_id);
         assert_ne!(source_facts[0].item_id, provider_alias_facts[0].item_id);
+    }
+
+    #[test]
+    fn terminal_assistant_identity_matches_provider_history_identity() {
+        let assistant = event(
+            0,
+            "item.completed",
+            json!({"id":"message-1","type":"agent_message","text":"Done"}),
+            KernelEventRedaction::TenantSensitive,
+        );
+
+        let item_id = terminal_provider_assistant_item_id(
+            &[assistant],
+            Some("provider-session.fallback"),
+        )
+        .expect("assistant identity")
+        .expect("terminal assistant");
+
+        assert_eq!(
+            item_id,
+            stable_provider_session_item_id("codex", "provider-session.test", "message-1")
+        );
     }
 
     #[test]

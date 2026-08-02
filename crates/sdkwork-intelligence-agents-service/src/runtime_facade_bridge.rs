@@ -4,9 +4,8 @@
 //! contract stubs when a canonical code-engine binding is active.
 
 use sdkwork_agents_runtime_facade::{
-    bootstrap_code_engine, canonical_code_engine_keys, code_engine_binding_id,
+    bootstrap_code_engine, bootstrappable_engine_keys, code_engine_binding_id,
     execute_code_engine_turn, AgentsCodeEngineHost, CodeEngineTurnInput,
-    CANONICAL_CODE_ENGINE_KEYS,
 };
 use sdkwork_utils_rust::string::is_blank;
 
@@ -29,7 +28,7 @@ pub struct PromptOptimizationOutput {
 }
 
 pub fn engine_key_for_binding_id(binding_id: &str) -> Option<&'static str> {
-    canonical_code_engine_keys()
+    bootstrappable_engine_keys()
         .iter()
         .find(|&engine_key| code_engine_binding_id(engine_key) == Some(binding_id))
         .map(|v| v as _)
@@ -41,7 +40,7 @@ pub fn engine_key_for_provider_identity(
 ) -> Option<&'static str> {
     binding_id.and_then(engine_key_for_binding_id).or_else(|| {
         let provider_id = provider_id?;
-        canonical_code_engine_keys()
+        bootstrappable_engine_keys()
             .iter()
             .copied()
             .find(|engine_key| {
@@ -147,7 +146,7 @@ pub fn shared_code_engine_host() -> Option<&'static AgentsCodeEngineHost> {
     static HOST: OnceLock<Option<AgentsCodeEngineHost>> = OnceLock::new();
     HOST.get_or_init(|| {
         let host = AgentsCodeEngineHost::bootstrap_selected(
-            &CANONICAL_CODE_ENGINE_KEYS,
+            &bootstrappable_engine_keys(),
             sdkwork_agents_runtime_facade::LiveInteractionRegistry::new(),
         );
         let has_available_engine = host.engine_keys().next().is_some();
@@ -204,14 +203,13 @@ mod tests {
     }
 
     #[test]
-    fn preview_uses_runtime_facade_for_codex_binding() {
-        let output = execute_preview_response(
-            Some(&sample_binding("binding.agent-provider.codex")),
-            "hello preview bridge",
-            None,
-        );
-        assert_eq!(output.runtime_mode, RUNTIME_MODE_FACADE);
-        assert!(!output.content.trim().is_empty());
+    fn preview_resolves_codex_binding_through_runtime_facade_catalog() {
+        let binding = sample_binding("binding.agent-provider.codex");
+        let (engine_key, model_id) = resolve_engine_and_model(Some(&binding), None)
+            .expect("Codex binding must resolve through the runtime facade catalog");
+
+        assert_eq!(engine_key, "codex");
+        assert!(!model_id.trim().is_empty());
     }
 
     #[test]

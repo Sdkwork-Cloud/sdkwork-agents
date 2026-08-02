@@ -47,6 +47,8 @@ impl TurnExecutor for RichTurnExecutor {
             })
         };
         TurnExecutionOutput {
+            model_request_id: Some(input.model_request_id.clone()),
+            finish_reason: Some("stop".to_string()),
             content: "Hello world".to_string(),
             model_id: input.model_id.clone(),
             provider_id: input.provider_id.clone(),
@@ -142,6 +144,8 @@ impl GatedStreamingTurnExecutor {
 
     fn output(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
         TurnExecutionOutput {
+            model_request_id: Some(input.model_request_id.clone()),
+            finish_reason: Some("stop".to_string()),
             content: "first second".to_string(),
             model_id: input.model_id.clone(),
             provider_id: input.provider_id.clone(),
@@ -189,6 +193,8 @@ struct FailingTurnExecutor;
 impl TurnExecutor for FailingTurnExecutor {
     fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
         TurnExecutionOutput {
+            model_request_id: None,
+            finish_reason: None,
             content: "provider unavailable before first stream frame".to_string(),
             model_id: input.model_id.clone(),
             provider_id: input.provider_id.clone(),

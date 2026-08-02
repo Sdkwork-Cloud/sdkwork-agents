@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 
 use crate::code_engines::{
-    bootstrap_code_engine, canonical_code_engine_keys, CodeEngineBootstrapError,
+    bootstrap_code_engine, bootstrappable_engine_keys, CodeEngineBootstrapError,
     CodeEngineInteractionResolution, CodeEngineSlot,
 };
 use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
 use crate::provider_sessions::{
-    discover_provider_sessions, load_provider_session_messages, ProviderSessionInventorySelector,
+    discover_provider_sessions, load_provider_session_messages,
+    load_provider_session_messages_for_directory, ProviderSessionInventorySelector,
     ProviderSessionInventorySnapshot,
 };
-use crate::turn::{execute_code_engine_turn, CodeEngineTurnInput, CodeEngineTurnOutput};
+use crate::turn::{
+    cancel_code_engine_turn, execute_code_engine_turn, CodeEngineTurnCancellation,
+    CodeEngineTurnInput, CodeEngineTurnOutput,
+};
 
 /// Agents-owned runtime host for canonical code-engine provider slots.
 pub struct AgentsCodeEngineHost {
@@ -31,7 +35,7 @@ impl AgentsCodeEngineHost {
     ) -> Result<Self, CodeEngineBootstrapError> {
         let mut slots = HashMap::new();
         let mut engine_order = Vec::new();
-        for engine_key in canonical_code_engine_keys() {
+        for engine_key in bootstrappable_engine_keys() {
             let slot = bootstrap_code_engine(engine_key)?;
             slots.insert(engine_key.to_string(), slot);
             engine_order.push(engine_key.to_string());
@@ -133,6 +137,20 @@ impl AgentsCodeEngineHost {
         load_provider_session_messages(&self.slots, engine_key, provider_session_id)
     }
 
+    pub fn load_provider_session_messages_for_directory(
+        &self,
+        engine_key: &str,
+        provider_session_id: &str,
+        working_directory: Option<&str>,
+    ) -> RuntimeFacadeResult<Vec<sdkwork_agent_kernel::AgentMessage>> {
+        load_provider_session_messages_for_directory(
+            &self.slots,
+            engine_key,
+            provider_session_id,
+            working_directory,
+        )
+    }
+
     pub fn get_provider_session_activity(
         &self,
         engine_key: &str,
@@ -156,6 +174,19 @@ impl AgentsCodeEngineHost {
             .get(input.engine_key.as_str())
             .expect("validated engine slot must exist");
         execute_code_engine_turn(slot, input)
+    }
+
+    pub fn cancel_turn(
+        &self,
+        engine_key: &str,
+        model_request_id: &str,
+    ) -> RuntimeFacadeResult<CodeEngineTurnCancellation> {
+        self.validate_engine_key(engine_key)?;
+        let slot = self
+            .slots
+            .get(engine_key)
+            .expect("validated engine slot must exist");
+        cancel_code_engine_turn(slot, model_request_id)
     }
 
     pub fn submit_approval_decision(
@@ -209,20 +240,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn host_bootstraps_all_canonical_engines() {
+    fn host_bootstraps_all_available_engines() {
         let host = AgentsCodeEngineHost::bootstrap().expect("host bootstrap");
-        assert_eq!(host.slots.len(), canonical_code_engine_keys().len());
-        assert_eq!(
-            host.engine_keys().collect::<Vec<_>>(),
-            canonical_code_engine_keys()
-        );
+        let expected = bootstrappable_engine_keys();
+        assert_eq!(host.slots.len(), expected.len());
+        assert_eq!(host.engine_keys().collect::<Vec<_>>(), expected);
         assert_eq!(
             host.catalog()
                 .engines
                 .iter()
                 .map(|engine| engine.engine_key.as_str())
                 .collect::<Vec<_>>(),
-            canonical_code_engine_keys()
+            expected
         );
     }
 

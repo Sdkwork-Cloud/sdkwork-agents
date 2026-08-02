@@ -1,25 +1,31 @@
+use std::collections::{BTreeMap, HashSet};
+
 use sdkwork_agent_kernel::{
     AgentConfigurationProvider, AgentExecutionSettingsRequest, AgentExecutionSettingsResolution,
-    AgentExecutionSettingsSpec, AgentMessage, AgentModelConfigurationApplication,
-    AgentModelConfigurationRequest, AgentModelSelectionRequest, AgentSession, KernelResult,
-    ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk, ModelStreamSink,
-    ProviderSessionActivityProvider, SessionActivitySnapshot,
+    AgentExecutionSettingsSpec, AgentMessage, AgentMessageRole, AgentModelConfigurationApplication,
+    AgentModelConfigurationRequest, AgentModelSelectionRequest, AgentSession, KernelError,
+    KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
+    ModelStreamSink, ProviderSessionActivityProvider, SessionActivitySnapshot, SessionKind,
+    SessionSource, SessionState,
 };
 use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
 };
 use sdkwork_agent_provider_codex::{
-    CodexConfigurationProvider, CodexSdkIntegration, ThreadItemsListParams, ThreadListParams,
+    CodexConfigurationProvider, CodexSdkIntegration, CodexSortDirection, ThreadListCwdFilter,
+    ThreadListParams, ThreadTurnsListParams, TurnItemsView,
 };
-use sdkwork_agent_provider_core::{SessionLifecycleProvider, SessionListQuery};
+use sdkwork_agent_provider_core::{
+    finalize_provider_session_snapshot, SessionLifecycleProvider, SessionListQuery,
+};
 use sdkwork_agent_provider_gemini_cli::{GeminiCliConfigurationProvider, GeminiCliSdkIntegration};
 use sdkwork_agent_provider_hermes::{HermesConfigurationProvider, HermesSdkIntegration};
 use sdkwork_agent_provider_openclaw::{OpenClawConfigurationProvider, OpenClawSdkIntegration};
 use sdkwork_agent_provider_opencode::{OpenCodeConfigurationProvider, OpenCodeSdkIntegration};
 use sdkwork_agent_provider_spi::{
-    SdkRuntimeInteractionResolution, SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID,
-    CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID, HERMES_BINDING_ID, OPENCLAW_BINDING_ID,
-    OPENCODE_BINDING_ID,
+    SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord, SdkRuntimeSessionRecord,
+    SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
+    HERMES_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
 };
 
 /// Canonical T1 code-engine keys bootstrapped by default in production hosts.
@@ -27,6 +33,8 @@ pub const CANONICAL_CODE_ENGINE_KEYS: [&str; 4] = ["codex", "claude-code", "gemi
 
 /// T2 autonomous agent engines (bootstrap on demand; included in full catalog).
 pub const EXTENDED_AUTONOMOUS_ENGINE_KEYS: [&str; 2] = ["openclaw", "hermes"];
+
+const MAX_PROVIDER_SESSION_COLLECTION_ITEMS: usize = 10_000;
 
 pub fn canonical_code_engine_keys() -> &'static [&'static str] {
     &CANONICAL_CODE_ENGINE_KEYS
@@ -303,6 +311,10 @@ impl CodeEngineSlot {
         self.model_provider().invoke(request)
     }
 
+    pub fn cancel_model(&self, model_request_id: &str) -> KernelResult<ModelResponse> {
+        self.model_provider().cancel(model_request_id)
+    }
+
     pub fn stream_model(&self, request: ModelRequest) -> KernelResult<Vec<ModelStreamChunk>> {
         self.model_provider().stream(request)
     }
@@ -367,36 +379,40 @@ impl CodeEngineSlot {
     }
 
     pub fn list_provider_sessions(&self) -> KernelResult<Vec<AgentSession>> {
+        self.list_provider_sessions_for_directory(None)
+    }
+
+    pub fn list_provider_sessions_for_directory(
+        &self,
+        working_directory: Option<&str>,
+    ) -> KernelResult<Vec<AgentSession>> {
         match self {
             Self::Codex(integration) => {
-                let page = futures::executor::block_on(integration.list_provider_sessions(
-                    ThreadListParams {
-                        cursor: None,
-                        limit: None,
-                        sort_key: None,
-                        sort_direction: None,
-                        model_providers: None,
-                        source_kinds: None,
-                        archived: None,
-                        section_id: None,
-                        cwd: None,
-                        use_state_db_only: false,
-                        search_term: None,
-                        parent_thread_id: None,
-                        ancestor_thread_id: None,
-                    },
-                ))?;
-                Ok(page.data.into_iter().map(|record| record.session).collect())
+                collect_codex_provider_sessions(integration, working_directory)
             }
-            Self::ClaudeCode(integration) => integration.list_provider_sessions(),
+            Self::ClaudeCode(integration) => adapt_sdk_provider_sessions(
+                "claude-code",
+                integration.list_provider_sessions_for_directory(working_directory)?,
+            ),
             Self::Gemini(integration) => integration.list_provider_sessions(),
-            Self::OpenCode(integration) => integration.list_provider_sessions(),
+            Self::OpenCode(integration) => adapt_sdk_provider_sessions(
+                "opencode",
+                integration.list_provider_sessions_for_directory(working_directory)?,
+            ),
             Self::OpenClaw(integration) => integration
                 .lifecycle
                 .list_sessions(&SessionListQuery::default()),
-            Self::Hermes(integration) => integration
-                .lifecycle
-                .list_sessions(&SessionListQuery::default()),
+            Self::Hermes(integration) => adapt_sdk_provider_sessions(
+                "hermes",
+                integration
+                    .list_provider_sessions(working_directory.map(str::to_string))
+                    .map_err(|error| {
+                        sdkwork_agent_kernel::KernelError::provider_error(
+                            "hermes_session_list_failed",
+                            error.message,
+                        )
+                    })?,
+            ),
         }
     }
 
@@ -404,56 +420,78 @@ impl CodeEngineSlot {
         &self,
         provider_session_id: &str,
     ) -> KernelResult<Vec<AgentMessage>> {
+        self.get_provider_session_history_for_directory(provider_session_id, None)
+    }
+
+    pub fn get_provider_session_history_for_directory(
+        &self,
+        provider_session_id: &str,
+        working_directory: Option<&str>,
+    ) -> KernelResult<Vec<AgentMessage>> {
         match self {
             Self::Codex(integration) => {
-                let page = futures::executor::block_on(integration.get_provider_session_history(
-                    ThreadItemsListParams {
-                        thread_id: provider_session_id.to_owned(),
-                        turn_id: None,
-                        cursor: None,
-                        limit: None,
-                        sort_direction: None,
-                    },
-                ))?;
-                Ok(page.data.into_iter().map(|record| record.message).collect())
+                collect_codex_provider_messages(integration, provider_session_id)
             }
-            Self::ClaudeCode(integration) => {
-                integration.get_provider_session_history(provider_session_id)
-            }
+            Self::ClaudeCode(integration) => adapt_sdk_provider_messages(
+                "claude-code",
+                integration.get_provider_session_history_for_directory(
+                    provider_session_id,
+                    working_directory,
+                )?,
+            ),
             Self::Gemini(integration) => {
                 integration.get_provider_session_history(provider_session_id)
             }
-            Self::OpenCode(integration) => {
-                integration.get_provider_session_history(provider_session_id)
-            }
+            Self::OpenCode(integration) => adapt_sdk_provider_messages(
+                "opencode",
+                integration.get_provider_session_history_for_directory(
+                    provider_session_id,
+                    working_directory,
+                )?,
+            ),
             Self::OpenClaw(integration) => integration
                 .lifecycle
                 .get_conversation_history(provider_session_id),
-            Self::Hermes(integration) => integration
-                .lifecycle
-                .get_conversation_history(provider_session_id),
+            Self::Hermes(integration) => adapt_sdk_provider_messages(
+                "hermes",
+                integration
+                    .get_provider_session_history(provider_session_id)
+                    .map_err(|error| {
+                        sdkwork_agent_kernel::KernelError::provider_error(
+                            "hermes_session_history_failed",
+                            error.message,
+                        )
+                    })?,
+            ),
         }
     }
 
     /// Whether this engine can establish a new provider session from a verified
-    /// runtime stream completion. Codex is the first provider with that
-    /// end-to-end contract; other providers remain invoke-only for initial
-    /// turns until their runtime can prove the same identity.
-    pub(crate) fn supports_first_turn_streaming_completion(&self) -> bool {
-        matches!(self, Self::Codex(_))
+    /// runtime stream completion.
+    pub(crate) fn supports_streaming_completion(&self) -> bool {
+        matches!(
+            self,
+            Self::Codex(_) | Self::ClaudeCode(_) | Self::OpenCode(_)
+        )
     }
 
     /// Streams an initial turn through the runtime-backed completion boundary.
     ///
     /// This intentionally remains crate-private: callers consume the
     /// provider-neutral facade completion rather than transport metadata.
-    pub(crate) fn stream_first_turn_model_into(
+    pub(crate) fn stream_model_into_with_completion(
         &self,
         request: ModelRequest,
         sink: &mut dyn ModelStreamSink,
     ) -> KernelResult<SdkRuntimeStreamCompletion> {
         match self {
             Self::Codex(integration) => {
+                integration.model.stream_into_with_completion(request, sink)
+            }
+            Self::ClaudeCode(integration) => {
+                integration.model.stream_into_with_completion(request, sink)
+            }
+            Self::OpenCode(integration) => {
                 integration.model.stream_into_with_completion(request, sink)
             }
             _ => Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
@@ -472,6 +510,252 @@ impl CodeEngineSlot {
             Self::Hermes(integration) => &integration.model,
         }
     }
+}
+
+fn adapt_sdk_provider_sessions(
+    provider_id: &str,
+    records: Vec<SdkRuntimeSessionRecord>,
+) -> KernelResult<Vec<AgentSession>> {
+    records
+        .into_iter()
+        .map(|record| adapt_sdk_provider_session(provider_id, record))
+        .collect()
+}
+
+fn adapt_sdk_provider_session(
+    provider_id: &str,
+    record: SdkRuntimeSessionRecord,
+) -> KernelResult<AgentSession> {
+    let archived = record.archived_at.is_some();
+    let mut session = AgentSession::new(record.provider_session_id);
+    session.source = SessionSource::Cli;
+    session.kind = if record.parent_provider_session_id.is_some() {
+        SessionKind::Subagent
+    } else {
+        SessionKind::Main
+    };
+    session.parent_session_id = record.parent_provider_session_id;
+    session.title = record.title;
+    session.summary = record.summary;
+    session.preview = record.preview;
+    session.created_at = record.created_at;
+    session.updated_at = record.updated_at;
+    session.archived_at = record.archived_at;
+    session.model = record.model;
+    session.model_provider = record.model_provider;
+    if let Some(cwd) = record.cwd {
+        session.cwd = Some(cwd.clone());
+        session.workspace_roots.push(cwd);
+    }
+    session.message_count = record.message_count;
+    session.tool_call_count = record.tool_call_count;
+    session.token_usage.input_tokens = record.input_tokens;
+    session.token_usage.output_tokens = record.output_tokens;
+    session.token_usage.cached_tokens = record.cached_tokens;
+    session.token_usage.reasoning_tokens = record.reasoning_tokens;
+    session.cost_cents = record.cost_cents;
+    session.change_summary.additions = record.additions;
+    session.change_summary.deletions = record.deletions;
+    session.change_summary.files_changed = record.files_changed;
+    session.metadata.extend(sdk_metadata_pairs(record.metadata));
+    if archived {
+        session.state = SessionState::Archived;
+        session.metadata.push((
+            "sdkwork.provider.session.directory.archived".to_string(),
+            "true".to_string(),
+        ));
+    }
+    finalize_provider_session_snapshot(provider_id, session)
+}
+
+fn adapt_sdk_provider_messages(
+    provider_id: &str,
+    records: Vec<SdkRuntimeMessageRecord>,
+) -> KernelResult<Vec<AgentMessage>> {
+    records
+        .into_iter()
+        .map(|record| adapt_sdk_provider_message(provider_id, record))
+        .collect()
+}
+
+fn adapt_sdk_provider_message(
+    provider_id: &str,
+    record: SdkRuntimeMessageRecord,
+) -> KernelResult<AgentMessage> {
+    let role = match record.role.as_str() {
+        "user" => AgentMessageRole::User,
+        "agent" => AgentMessageRole::Agent,
+        "model" => AgentMessageRole::Model,
+        "system" => AgentMessageRole::System,
+        "tool" => AgentMessageRole::Tool,
+        "policy" => AgentMessageRole::Policy,
+        "adapter" => AgentMessageRole::Adapter,
+        other => {
+            return Err(KernelError::provider_error(
+                "provider_sdk_message_role_invalid",
+                format!("{provider_id} returned unsupported message role: {other}"),
+            ))
+        }
+    };
+    let parts = record
+        .parts
+        .into_iter()
+        .map(|part| {
+            part.into_agent_part()
+                .map(|part| part.from_provider(provider_id))
+        })
+        .collect::<KernelResult<Vec<_>>>()?;
+    let mut message = AgentMessage::new(record.provider_message_id, role, parts)
+        .for_session(record.provider_session_id);
+    if let Some(parent_provider_message_id) = record.parent_provider_message_id {
+        message = message.with_parent_message(parent_provider_message_id);
+    }
+    if let Some(created_at) = record.created_at {
+        message = message.created_at(created_at);
+    }
+    message.metadata.extend(sdk_metadata_pairs(record.metadata));
+    message
+        .metadata
+        .push(("sdkwork.provider.id".to_string(), provider_id.to_string()));
+    message.validate()?;
+    Ok(message)
+}
+
+fn sdk_metadata_pairs(metadata: BTreeMap<String, serde_json::Value>) -> Vec<(String, String)> {
+    metadata
+        .into_iter()
+        .map(|(key, value)| {
+            let value = match value {
+                serde_json::Value::String(value) => value,
+                value => value.to_string(),
+            };
+            (key, value)
+        })
+        .collect()
+}
+
+fn collect_codex_provider_sessions(
+    integration: &CodexSdkIntegration,
+    working_directory: Option<&str>,
+) -> KernelResult<Vec<AgentSession>> {
+    let records = collect_provider_pages(
+        "codex",
+        "session inventory",
+        |cursor| {
+            let page = futures::executor::block_on(integration.list_provider_sessions(
+                ThreadListParams {
+                    cursor,
+                    limit: Some(sdkwork_utils_rust::DEFAULT_LIST_PAGE_SIZE as u32),
+                    sort_key: None,
+                    sort_direction: None,
+                    model_providers: None,
+                    source_kinds: None,
+                    archived: None,
+                    section_id: None,
+                    cwd: working_directory.map(|cwd| ThreadListCwdFilter::One(cwd.to_string())),
+                    use_state_db_only: false,
+                    search_term: None,
+                    parent_thread_id: None,
+                    ancestor_thread_id: None,
+                },
+            ))?;
+            Ok((
+                page.data.into_iter().map(|record| record.session).collect(),
+                page.next_cursor,
+            ))
+        },
+        |session| session.provider_session_id.as_str(),
+    )?;
+    adapt_sdk_provider_sessions("codex", records)
+}
+
+fn collect_codex_provider_messages(
+    integration: &CodexSdkIntegration,
+    provider_session_id: &str,
+) -> KernelResult<Vec<AgentMessage>> {
+    let records = collect_provider_pages(
+        "codex",
+        "session transcript",
+        |cursor| {
+            let page = futures::executor::block_on(integration.get_provider_session_history(
+                ThreadTurnsListParams {
+                    thread_id: provider_session_id.to_owned(),
+                    cursor,
+                    limit: Some(sdkwork_utils_rust::DEFAULT_LIST_PAGE_SIZE as u32),
+                    sort_direction: Some(CodexSortDirection::Asc),
+                    items_view: Some(TurnItemsView::Full),
+                },
+            ))?;
+            Ok((
+                page.data.into_iter().map(|record| record.message).collect(),
+                page.next_cursor,
+            ))
+        },
+        |message| message.provider_message_id.as_str(),
+    )?;
+    adapt_sdk_provider_messages("codex", records)
+}
+
+fn collect_provider_pages<T>(
+    provider_id: &str,
+    resource: &str,
+    mut load_page: impl FnMut(Option<String>) -> KernelResult<(Vec<T>, Option<String>)>,
+    item_id: impl Fn(&T) -> &str,
+) -> KernelResult<Vec<T>> {
+    let mut cursor = None;
+    let mut seen_cursors = HashSet::new();
+    let mut seen_item_ids = HashSet::new();
+    let mut items = Vec::new();
+    loop {
+        let (page_items, next_cursor) = load_page(cursor.clone())?;
+        for item in page_items {
+            if seen_item_ids.insert(item_id(&item).to_string()) {
+                items.push(item);
+            }
+        }
+        ensure_provider_collection_size(provider_id, resource, items.len())?;
+        let Some(next_cursor) = normalized_provider_cursor(next_cursor) else {
+            return Ok(items);
+        };
+        ensure_new_provider_cursor(provider_id, resource, &mut seen_cursors, &next_cursor)?;
+        cursor = Some(next_cursor);
+    }
+}
+
+fn normalized_provider_cursor(cursor: Option<String>) -> Option<String> {
+    cursor.and_then(|cursor| {
+        let cursor = cursor.trim();
+        (!cursor.is_empty()).then(|| cursor.to_string())
+    })
+}
+
+fn ensure_new_provider_cursor(
+    provider_id: &str,
+    resource: &str,
+    seen_cursors: &mut HashSet<String>,
+    cursor: &str,
+) -> KernelResult<()> {
+    if seen_cursors.insert(cursor.to_string()) {
+        return Ok(());
+    }
+    Err(sdkwork_agent_kernel::KernelError::provider_error(
+        "provider_session_cursor_cycle",
+        format!("{provider_id} repeated an opaque cursor while reading {resource}"),
+    ))
+}
+
+fn ensure_provider_collection_size(
+    provider_id: &str,
+    resource: &str,
+    size: usize,
+) -> KernelResult<()> {
+    if size <= MAX_PROVIDER_SESSION_COLLECTION_ITEMS {
+        return Ok(());
+    }
+    Err(sdkwork_agent_kernel::KernelError::provider_error(
+        "provider_session_collection_too_large",
+        format!("{provider_id} {resource} exceeds {MAX_PROVIDER_SESSION_COLLECTION_ITEMS} items"),
+    ))
 }
 
 pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEngineBootstrapError> {
@@ -503,6 +787,7 @@ pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEng
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
 
     #[test]
     fn canonical_code_engines_map_to_binding_ids() {
@@ -510,6 +795,114 @@ mod tests {
             assert!(code_engine_agent_id(engine).is_some());
             assert!(code_engine_binding_id(engine).is_some());
         }
+    }
+
+    #[test]
+    fn provider_page_collection_drains_opaque_cursors_and_deduplicates_items() {
+        let mut pages = VecDeque::from([
+            (
+                None,
+                vec!["session-new".to_string(), "session-shared".to_string()],
+                Some("provider-cursor-1".to_string()),
+            ),
+            (
+                Some("provider-cursor-1".to_string()),
+                vec!["session-shared".to_string(), "session-old".to_string()],
+                None,
+            ),
+        ]);
+
+        let sessions = collect_provider_pages(
+            "provider-under-test",
+            "session inventory",
+            |cursor| {
+                let (expected_cursor, items, next_cursor) =
+                    pages.pop_front().expect("expected provider page");
+                assert_eq!(cursor, expected_cursor);
+                Ok((items, next_cursor))
+            },
+            String::as_str,
+        )
+        .expect("complete provider inventory");
+
+        assert_eq!(sessions, ["session-new", "session-shared", "session-old"]);
+        assert!(pages.is_empty());
+    }
+
+    #[test]
+    fn provider_page_collection_rejects_repeated_opaque_cursor() {
+        let mut request_count = 0;
+        let error = collect_provider_pages(
+            "provider-under-test",
+            "session transcript",
+            |_| {
+                request_count += 1;
+                Ok((
+                    vec![format!("message-{request_count}")],
+                    Some("repeated-provider-cursor".to_string()),
+                ))
+            },
+            String::as_str,
+        )
+        .expect_err("cursor cycle must fail closed");
+
+        assert!(error.to_string().contains("repeated an opaque cursor"));
+        assert_eq!(request_count, 2);
+    }
+
+    #[test]
+    fn sdk_provider_records_are_explicitly_adopted_at_the_runtime_boundary() {
+        let session: SdkRuntimeSessionRecord = serde_json::from_value(serde_json::json!({
+            "provider_session_id": "provider-session-1",
+            "parent_provider_session_id": "provider-session-parent",
+            "title": "Provider session",
+            "cwd": "E:/workspace/project",
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-01T01:00:00Z",
+            "archived_at": "2026-08-01T02:00:00Z",
+            "input_tokens": 7,
+            "output_tokens": 11,
+            "metadata": {"provider.tag": "history"}
+        }))
+        .expect("SDK session record");
+        let session = adapt_sdk_provider_session("provider-under-test", session)
+            .expect("adopt provider session");
+
+        assert_eq!(session.session_id, "provider-session-1");
+        assert_eq!(session.kind, SessionKind::Subagent);
+        assert_eq!(session.state, SessionState::Archived);
+        assert_eq!(session.token_usage.total_tokens, 18);
+        assert_eq!(
+            session.metadata_value("sdkwork.provider.session.directory.archived"),
+            Some("true")
+        );
+
+        let message: SdkRuntimeMessageRecord = serde_json::from_value(serde_json::json!({
+            "provider_message_id": "provider-message-1",
+            "provider_session_id": "provider-session-1",
+            "role": "agent",
+            "parts": [{
+                "part_id": "provider-part-1",
+                "kind": "text",
+                "text": "done",
+                "metadata": {"sdkwork.provider.content_type": "reasoning"}
+            }],
+            "created_at": "2026-08-01T01:00:00Z"
+        }))
+        .expect("SDK message record");
+        let message = adapt_sdk_provider_message("provider-under-test", message)
+            .expect("adopt provider message");
+
+        assert_eq!(message.message_id, "provider-message-1");
+        assert_eq!(message.session_id.as_deref(), Some("provider-session-1"));
+        assert_eq!(
+            message.parts[0].provenance.as_deref(),
+            Some("provider-under-test")
+        );
+        assert_eq!(
+            message.parts[0].metadata_value("sdkwork.provider.content_type"),
+            Some("reasoning")
+        );
     }
 
     #[test]
@@ -524,12 +917,16 @@ mod tests {
     }
 
     #[test]
-    fn only_codex_is_enabled_for_verified_first_turn_streaming() {
+    fn session_sdk_engines_enable_verified_first_turn_streaming() {
         let codex = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let claude = bootstrap_code_engine("claude-code").expect("claude bootstrap");
+        let opencode = bootstrap_code_engine("opencode").expect("opencode bootstrap");
         let gemini = bootstrap_code_engine("gemini").expect("gemini bootstrap");
 
-        assert!(codex.supports_first_turn_streaming_completion());
-        assert!(!gemini.supports_first_turn_streaming_completion());
+        assert!(codex.supports_streaming_completion());
+        assert!(claude.supports_streaming_completion());
+        assert!(opencode.supports_streaming_completion());
+        assert!(!gemini.supports_streaming_completion());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -15,12 +15,13 @@ use sdkwork_agents_runtime_facade::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::application::{
-    GetSessionCommand, ListSessionRuntimeBindingsCommand,
+    GetProjectCommand, GetSessionCommand, ListSessionItemsCommand,
+    ListSessionRuntimeBindingsCommand,
     ReconcileProviderSessionHistoryItemCommand,
 };
 use crate::domain::{AgentSessionItemKind, AgentSessionItemStatus};
 use crate::http::{HttpAgentsSessionFacade, HttpService};
-use crate::ports::{PaginationParams, SessionRuntimeBindingListQuery};
+use crate::ports::{PaginationParams, SessionItemListQuery, SessionRuntimeBindingListQuery};
 use crate::project::AgentProjectRecord;
 use crate::runtime_facade_bridge::shared_code_engine_host;
 
@@ -177,6 +178,9 @@ pub(crate) fn synchronize_provider_session_transcript(
     agent_id: String,
     session_id: String,
     subject: PolicySubject,
+    provider_session_cwd_resolver: Option<
+        &dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver,
+    >,
 ) -> KernelResult<usize> {
     let Some(engine_key) = agent_id.strip_prefix("agent.intelligence.") else {
         return Ok(0);
@@ -194,6 +198,29 @@ pub(crate) fn synchronize_provider_session_transcript(
         owner_scope: Some(owner_user_id),
         requested_by: subject.clone(),
     })?;
+    let exact_cwd = match (provider_session_cwd_resolver, session.project_id.as_deref()) {
+        (Some(resolver), Some(project_id)) => {
+            let project = service.get_project(GetProjectCommand {
+                tenant_id,
+                organization_id,
+                project_id: project_id.to_string(),
+                owner_scope: Some(owner_user_id),
+                requested_by: subject.clone(),
+            })?;
+            resolver
+                .resolve_project_cwd(
+                    &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
+                        tenant_id: project.tenant_id,
+                        organization_id: project.organization_id,
+                        owner_user_id: project.owner_user_id,
+                        project_id: project.project_id,
+                        project_name: project.name,
+                    },
+                )
+                .map_err(runtime_facade_error)?
+        }
+        _ => None,
+    };
     let binding_page =
         service.list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
             query: SessionRuntimeBindingListQuery::for_session(
@@ -228,8 +255,22 @@ pub(crate) fn synchronize_provider_session_transcript(
         return Ok(0);
     };
     let messages = host
-        .load_provider_session_messages(engine_key, provider_session_id)
+        .load_provider_session_messages_for_directory(
+            engine_key,
+            provider_session_id,
+            exact_cwd.as_deref(),
+        )
         .map_err(runtime_facade_error)?;
+    let mut unmatched_local_user_inputs = local_user_inputs_for_provider_reconciliation(
+        service,
+        tenant_id,
+        organization_id,
+        owner_user_id,
+        &agent_id,
+        &session_id,
+        engine_key,
+        &subject,
+    )?;
     let mut synchronized = 0;
     let mut tool_calls = HashMap::<String, (String, Option<String>)>::new();
     for message in messages {
@@ -238,12 +279,20 @@ pub(crate) fn synchronize_provider_session_transcript(
             .clone()
             .unwrap_or_else(|| session.updated_at.clone());
         for mut item in provider_session_history_items(engine_key, &message) {
-            let item_key = stable_provider_session_item_key(
+            if item.kind == AgentSessionItemKind::UserInput
+                && unmatched_local_user_inputs.front().is_some_and(|content| {
+                    content == item.content.as_deref().unwrap_or_default().trim()
+                })
+            {
+                unmatched_local_user_inputs.pop_front();
+                synchronized += 1;
+                continue;
+            }
+            let item_id = stable_provider_session_item_id(
                 engine_key,
                 provider_session_id,
                 item.provider_item_key.as_str(),
             );
-            let item_id = format!("item.provider.{engine_key}.{item_key}");
             if item.kind == AgentSessionItemKind::ToolResult {
                 if let Some((parent_item_id, tool_name)) = item
                     .tool_call_id
@@ -289,6 +338,66 @@ pub(crate) fn synchronize_provider_session_transcript(
     Ok(synchronized)
 }
 
+fn local_user_inputs_for_provider_reconciliation(
+    service: &HttpService,
+    tenant_id: u64,
+    organization_id: u64,
+    owner_user_id: u64,
+    agent_id: &str,
+    session_id: &str,
+    engine_key: &str,
+    subject: &PolicySubject,
+) -> KernelResult<VecDeque<String>> {
+    let mut contents = VecDeque::new();
+    let provider_item_prefix = format!("item.provider.{engine_key}.");
+    let mut offset = 0usize;
+    loop {
+        let pagination = PaginationParams {
+            page_size: 200,
+            offset,
+            page_token: None,
+        };
+        let page = service.list_session_items(ListSessionItemsCommand {
+            query: SessionItemListQuery::for_session(
+                tenant_id,
+                organization_id,
+                session_id.to_string(),
+            )
+            .with_kind(AgentSessionItemKind::UserInput.as_str())
+            .with_pagination(pagination),
+            path_agent_id: agent_id.to_string(),
+            owner_scope: Some(owner_user_id),
+            requested_by: subject.clone(),
+        })?;
+        let page_len = page.items.len();
+        for item in page.items {
+            if item.item_id.starts_with(&provider_item_prefix) {
+                continue;
+            }
+            if let Some(content) = item
+                .content
+                .as_deref()
+                .map(str::trim)
+                .filter(|content| !content.is_empty())
+            {
+                contents.push_back(content.to_string());
+            }
+        }
+        if page_len < 200 {
+            break;
+        }
+        offset = offset.checked_add(page_len).ok_or_else(|| {
+            KernelError::conflict("provider Session user input pagination overflow")
+        })?;
+        if offset >= PROVIDER_SESSION_RECONCILIATION_MAX_ITEMS {
+            return Err(KernelError::validation(format!(
+                "provider Session history exceeds {PROVIDER_SESSION_RECONCILIATION_MAX_ITEMS} local user items"
+            )));
+        }
+    }
+    Ok(contents)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProviderSessionHistoryItem {
     provider_item_key: String,
@@ -307,11 +416,23 @@ fn provider_session_history_items(
     engine_key: &str,
     message: &AgentMessage,
 ) -> Vec<ProviderSessionHistoryItem> {
+    let raw_provider_payload = message
+        .parts
+        .iter()
+        .find(|part| is_raw_provider_item(engine_key, part))
+        .and_then(|part| part.json.clone());
+    let has_semantic_parts = message
+        .parts
+        .iter()
+        .any(|part| !is_raw_provider_item(engine_key, part));
     let mut legacy_text_item_available = true;
     message
         .parts
         .iter()
         .flat_map(|part| {
+            if has_semantic_parts && is_raw_provider_item(engine_key, part) {
+                return Vec::new();
+            }
             let content_type = provider_part_content_type(engine_key, part);
             let Some(kind) = provider_session_item_kind(message.role, part.kind, content_type)
             else {
@@ -337,17 +458,19 @@ fn provider_session_history_items(
             let tool_payload = if kind == AgentSessionItemKind::ToolCall
                 || kind == AgentSessionItemKind::ToolResult
             {
-                provider_json.or_else(|| {
-                    Some(
-                        serde_json::json!({
-                            "id": tool_call_id.as_deref(),
-                            "type": kind.as_str(),
-                            "name": part.name.as_deref(),
-                            "output": part.text.as_deref(),
-                        })
-                        .to_string(),
-                    )
-                })
+                provider_json
+                    .or_else(|| raw_provider_payload.clone())
+                    .or_else(|| {
+                        Some(
+                            serde_json::json!({
+                                "id": tool_call_id.as_deref(),
+                                "type": kind.as_str(),
+                                "name": part.name.as_deref(),
+                                "output": part.text.as_deref(),
+                            })
+                            .to_string(),
+                        )
+                    })
             } else {
                 None
             };
@@ -413,6 +536,10 @@ fn provider_session_history_items(
             }
         })
         .collect()
+}
+
+fn is_raw_provider_item(engine_key: &str, part: &AgentPart) -> bool {
+    provider_part_content_type(engine_key, part) == Some("raw_provider_item")
 }
 
 fn provider_session_item_kind(
@@ -521,6 +648,9 @@ fn provider_part_metadata<'a>(
     part: &'a AgentPart,
     field_name: &str,
 ) -> Option<&'a str> {
+    if let Some(value) = part.metadata_value(format!("sdkwork.provider.{field_name}").as_str()) {
+        return Some(value);
+    }
     let namespace = match engine_key {
         "claude-code" => "claude",
         other => other,
@@ -709,7 +839,7 @@ fn synchronize_provider_session_inventory_with_timeout(
     let inventory_len = inventory.len();
     let mut result = ProviderSessionSynchronizationResult::default();
     let mut seen_provider_sessions = HashSet::new();
-    for (index, item) in inventory.into_iter().enumerate() {
+    for (index, mut item) in inventory.into_iter().enumerate() {
         if index >= PROVIDER_SESSION_RECONCILIATION_MAX_ITEMS {
             result.record_issue(
                 "inventory_item_limit_exceeded",
@@ -793,6 +923,40 @@ fn synchronize_provider_session_inventory_with_timeout(
             "runtime_binding.provider.{}.{}",
             item.engine_key, stable_key
         );
+        item.directory = clamp_provider_session_directory(item.directory);
+        match service.retire_legacy_provider_session_bindings(
+            project.tenant_id,
+            project.organization_id,
+            project.owner_user_id,
+            &item.engine_key,
+            &provider_binding_id,
+            &provider_session_id,
+            &session_id,
+            &project.project_id,
+            subject.clone(),
+            &requested_at,
+        ) {
+            Ok(crate::application::ProviderSessionBindingClaim::Free)
+            | Ok(crate::application::ProviderSessionBindingClaim::AlreadyTarget)
+            | Ok(crate::application::ProviderSessionBindingClaim::Retired) => {}
+            Ok(crate::application::ProviderSessionBindingClaim::AlreadyBoundByUserSession) => {
+                result.record_skipped("provider_session_already_bound");
+                continue;
+            }
+            Err(error) => {
+                if is_fatal_provider_session_synchronization_error(&error) {
+                    return Err(error);
+                }
+                record_provider_session_reconciliation_failure(
+                    project,
+                    &item.engine_key,
+                    "legacy_runtime_binding_retirement_failed",
+                    &error,
+                );
+                result.record_failed("legacy_runtime_binding_retirement_failed");
+                continue;
+            }
+        }
         let title = provider_session_title(item.session.title.as_deref(), &item.engine_key);
         let model_id = item
             .session
@@ -875,7 +1039,7 @@ fn record_provider_session_reconciliation_failure(
         issue_code,
         error_code = error.code(),
         error_kind = error.kind().as_str(),
-        "provider session inventory item reconciliation failed"
+        "provider session inventory item reconciliation failed: {error}"
     );
 }
 
@@ -935,11 +1099,30 @@ fn provider_session_title(value: Option<&str>, engine_key: &str) -> String {
     } else {
         compact
     };
-    if value.len() <= PROVIDER_SESSION_TITLE_MAX_BYTES {
+    clamp_provider_text(value, PROVIDER_SESSION_TITLE_MAX_BYTES)
+}
+
+/// Clamps provider directory fields to the service-side limits so a single
+/// oversized provider field can never fail the whole Session reconciliation.
+fn clamp_provider_session_directory(
+    mut directory: sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry,
+) -> sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry {
+    directory.title = directory.title.map(|value| clamp_provider_text(value, 512));
+    directory.preview = directory
+        .preview
+        .map(|value| clamp_provider_text(value, 4096));
+    directory.source = directory
+        .source
+        .map(|value| clamp_provider_text(value, 256));
+    directory.sort_key = clamp_provider_text(directory.sort_key, 512);
+    directory
+}
+
+fn clamp_provider_text(value: String, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
         return value;
     }
-
-    let mut end = PROVIDER_SESSION_TITLE_MAX_BYTES;
+    let mut end = max_bytes;
     while !value.is_char_boundary(end) {
         end -= 1;
     }
@@ -964,7 +1147,7 @@ fn stable_provider_session_key(
     digest[..32].to_string()
 }
 
-fn stable_provider_session_item_key(
+pub(crate) fn stable_provider_session_item_id(
     engine_key: &str,
     provider_session_id: &str,
     provider_message_id: &str,
@@ -975,7 +1158,7 @@ fn stable_provider_session_item_key(
         )
         .as_bytes(),
     );
-    digest[..32].to_string()
+    format!("item.provider.{engine_key}.{}", &digest[..32])
 }
 
 pub(crate) fn runtime_facade_error(error: RuntimeFacadeError) -> KernelError {
@@ -1008,8 +1191,10 @@ pub(crate) fn runtime_facade_error(error: RuntimeFacadeError) -> KernelError {
 mod tests {
     use super::*;
     use crate::application::{
-        CreateProjectCommand, ListSessionActivitySummariesCommand, ListSessionItemsCommand,
-        ListSessionRuntimeBindingsCommand, ListSessionsCommand, UpdateSessionCommand,
+        CreateProjectCommand, CreateSessionCommand, CreateSessionRuntimeBindingCommand,
+        GetSessionCommand, GetSessionRuntimeBindingCommand, ListSessionActivitySummariesCommand,
+        ListSessionItemsCommand, ListSessionRuntimeBindingsCommand, ListSessionsCommand,
+        UpdateSessionCommand,
     };
     use crate::http::AgentHttpState;
     use crate::infrastructure::{
@@ -1137,6 +1322,119 @@ mod tests {
         assert_eq!(items[2].tool_call_id.as_deref(), Some("call-1"));
         assert_eq!(items[3].provider_item_key, "message-1");
         assert_eq!(items[4].content_type, "application/json");
+    }
+
+    #[test]
+    fn projects_provider_neutral_sdk_part_metadata_before_legacy_namespaces() {
+        let message = AgentMessage::new(
+            "message-neutral",
+            AgentMessageRole::Agent,
+            vec![AgentPart::text("part-neutral", "inspect the code")
+                .with_metadata("sdkwork.provider.content_type", "reasoning")
+                .with_metadata("opencode.content_type", "text")],
+        );
+
+        let items = provider_session_history_items("opencode", &message);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, AgentSessionItemKind::Reasoning);
+    }
+
+    #[test]
+    fn hides_codex_raw_provider_parts_when_semantic_content_is_available() {
+        let raw_payload = serde_json::json!({
+            "type": "agentMessage",
+            "id": "message-codex",
+            "text": "finished"
+        })
+        .to_string();
+        let message = AgentMessage::new(
+            "message-codex",
+            AgentMessageRole::Agent,
+            vec![
+                AgentPart::text("part-text", "finished")
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "agent_message"),
+                AgentPart::json("part-raw", raw_payload)
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "raw_provider_item"),
+            ],
+        );
+
+        let items = provider_session_history_items("codex", &message);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, AgentSessionItemKind::AssistantOutput);
+        assert_eq!(items[0].content.as_deref(), Some("finished"));
+    }
+
+    #[test]
+    fn preserves_codex_raw_provider_payload_inside_tool_items() {
+        let raw_payload = serde_json::json!({
+            "type": "commandExecution",
+            "id": "command-1",
+            "command": "cargo test",
+            "aggregatedOutput": "passed",
+            "status": "completed"
+        })
+        .to_string();
+        let message = AgentMessage::new(
+            "command-1",
+            AgentMessageRole::Tool,
+            vec![
+                AgentPart::tool_call_ref("part-tool", "command-1")
+                    .with_name("shell_command")
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "command_execution")
+                    .with_metadata("codex.status", "completed"),
+                AgentPart::text("part-output", "passed")
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "tool_output"),
+                AgentPart::json("part-raw", raw_payload.clone())
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "raw_provider_item"),
+            ],
+        );
+
+        let items = provider_session_history_items("codex", &message);
+
+        assert_eq!(
+            items.iter().map(|item| item.kind).collect::<Vec<_>>(),
+            vec![
+                AgentSessionItemKind::ToolCall,
+                AgentSessionItemKind::ToolResult,
+            ]
+        );
+        assert_eq!(
+            items[0].tool_arguments_json.as_deref(),
+            Some(raw_payload.as_str())
+        );
+        assert_eq!(
+            items[1].tool_result_json.as_deref(),
+            Some(raw_payload.as_str())
+        );
+    }
+
+    #[test]
+    fn keeps_raw_provider_payload_as_a_visible_fallback_without_semantic_parts() {
+        let raw_payload = serde_json::json!({
+            "type": "futureProviderItem",
+            "id": "future-1"
+        })
+        .to_string();
+        let message = AgentMessage::new(
+            "future-1",
+            AgentMessageRole::Agent,
+            vec![AgentPart::json("part-raw", raw_payload.clone())
+                .from_provider("codex")
+                .with_metadata("codex.content_type", "raw_provider_item")],
+        );
+
+        let items = provider_session_history_items("codex", &message);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, AgentSessionItemKind::ArtifactReference);
+        assert_eq!(items[0].content.as_deref(), Some(raw_payload.as_str()));
     }
 
     #[test]
@@ -2096,9 +2394,10 @@ mod tests {
             .into_iter()
             .next()
             .expect("provider session");
-        let item_id = format!(
-            "item.provider.codex.{}",
-            stable_provider_session_item_key("codex", "provider-session-transcript-1", "message-1")
+        let item_id = stable_provider_session_item_id(
+            "codex",
+            "provider-session-transcript-1",
+            "message-1",
         );
         let command = ReconcileProviderSessionHistoryItemCommand {
             tenant_id: project.tenant_id,
@@ -2154,13 +2453,10 @@ mod tests {
                 "codex",
             );
         assert!(stale_correction.is_err());
-        let tool_item_id = format!(
-            "item.provider.codex.{}",
-            stable_provider_session_item_key(
-                "codex",
-                "provider-session-transcript-1",
-                "tool-message-1\u{0}tool-part-1"
-            )
+        let tool_item_id = stable_provider_session_item_id(
+            "codex",
+            "provider-session-transcript-1",
+            "tool-message-1\u{0}tool-part-1",
         );
         let pending_tool = serde_json::json!({
             "type": "function_call",
@@ -2311,5 +2607,326 @@ mod tests {
             .expect("provider tool item");
         assert_eq!(tool_item.status, AgentSessionItemStatus::Completed);
         assert_eq!(tool_item.version, 1);
+    }
+
+    fn manage_subject() -> PolicySubject {
+        PolicySubject {
+            subject_id: "100".to_string(),
+            tenant_id: "100001".to_string(),
+            roles: vec![
+                "ai.agents.manage".to_string(),
+                "ai.agents.read".to_string(),
+                "ai.agents.use".to_string(),
+            ],
+        }
+    }
+
+    fn create_test_session(
+        state: &AgentHttpState,
+        session_id: &str,
+        project_id: &str,
+        source_context_kind: &str,
+    ) -> crate::domain::AgentSessionRecord {
+        state
+            .service
+            .create_session(CreateSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: "agent.intelligence.codex".to_string(),
+                owner_user_id: 100,
+                project_id: Some(project_id.to_string()),
+                session_id: session_id.to_string(),
+                session_kind: crate::domain::AgentSessionKind::Coding,
+                entry_surface: crate::domain::AgentSessionEntrySurface::Pc,
+                source_module: Some("birdcoder".to_string()),
+                source_context_kind: Some(source_context_kind.to_string()),
+                source_context_id: Some(project_id.to_string()),
+                parent_session_id: None,
+                forked_from_turn_id: None,
+                title: Some("legacy".to_string()),
+                idempotency_key: None,
+                payload_hash: None,
+                requested_by: manage_subject(),
+                requested_at: "2026-07-26T00:00:00Z".to_string(),
+            })
+            .expect("test session")
+    }
+
+    fn create_test_binding(
+        state: &AgentHttpState,
+        session_id: &str,
+        runtime_binding_id: &str,
+        transport_kind: &str,
+        provider_session_id: Option<&str>,
+    ) -> crate::domain::AgentSessionRuntimeBindingRecord {
+        state
+            .service
+            .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: "agent.intelligence.codex".to_string(),
+                session_id: session_id.to_string(),
+                runtime_binding_id: Some(runtime_binding_id.to_string()),
+                runtime_location_id: None,
+                host_mode: "server".to_string(),
+                transport_kind: transport_kind.to_string(),
+                provider_binding_id: "binding.agent-provider.codex".to_string(),
+                model_id: "codex-1".to_string(),
+                provider_id: "provider.model.codex".to_string(),
+                provider_session_id: provider_session_id.map(str::to_string),
+                provider_session_tree_id: provider_session_id.map(str::to_string),
+                provider_parent_session_id: None,
+                provider_forked_from_session_id: None,
+                provider_directory: None,
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+                requested_at: "2026-07-26T00:00:00Z".to_string(),
+            })
+            .expect("test binding")
+    }
+
+    #[test]
+    fn retires_legacy_native_binding_before_provider_import() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let legacy = create_test_session(
+            &state,
+            "session.native.codex.legacy1",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &legacy.session_id,
+            "runtime_binding.native.legacy1",
+            "native-history",
+            Some("provider-thread-legacy-1"),
+        );
+        let outcome = state
+            .service
+            .retire_legacy_provider_session_bindings(
+                100_001,
+                0,
+                100,
+                "codex",
+                "binding.agent-provider.codex",
+                "provider-thread-legacy-1",
+                "session.provider.codex.target1",
+                &project.project_id,
+                manage_subject(),
+                "2026-07-26T00:00:00Z",
+            )
+            .expect("legacy retirement");
+        assert!(matches!(
+            outcome,
+            crate::application::ProviderSessionBindingClaim::Retired
+        ));
+        let retired = state
+            .service
+            .get_session_runtime_binding(GetSessionRuntimeBindingCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: "agent.intelligence.codex".to_string(),
+                session_id: legacy.session_id.clone(),
+                runtime_binding_id: "runtime_binding.native.legacy1".to_string(),
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+            })
+            .expect("retired binding lookup");
+        assert_eq!(retired.provider_session_id, None);
+        assert_eq!(
+            retired.status,
+            crate::domain::AgentSessionRuntimeBindingStatus::Deactivated
+        );
+        let archived = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: "agent.intelligence.codex".to_string(),
+                session_id: legacy.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+            })
+            .expect("archived session lookup");
+        assert_eq!(
+            archived.status,
+            crate::domain::AgentSessionStatus::Archived
+        );
+    }
+
+    #[test]
+    fn retires_stale_provider_import_that_claims_the_same_thread() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let stale = create_test_session(
+            &state,
+            "session.provider.codex.stale-scheme-1",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &stale.session_id,
+            "runtime_binding.provider.stale-scheme-1",
+            "provider-session-history",
+            Some("provider-thread-stale-1"),
+        );
+        let outcome = state
+            .service
+            .retire_legacy_provider_session_bindings(
+                100_001,
+                0,
+                100,
+                "codex",
+                "binding.agent-provider.codex",
+                "provider-thread-stale-1",
+                "session.provider.codex.canonical-1",
+                &project.project_id,
+                manage_subject(),
+                "2026-07-26T00:00:00Z",
+            )
+            .expect("stale import retirement");
+        assert!(matches!(
+            outcome,
+            crate::application::ProviderSessionBindingClaim::Retired
+        ));
+    }
+
+    #[test]
+    fn never_retires_user_created_session_binding() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let user_session = create_test_session(
+            &state,
+            "session.340000000000000000",
+            &project.project_id,
+            "coding-workbench",
+        );
+        create_test_binding(
+            &state,
+            &user_session.session_id,
+            "runtime_binding.user.1",
+            "provider-session-history",
+            Some("provider-thread-user-1"),
+        );
+        let outcome = state
+            .service
+            .retire_legacy_provider_session_bindings(
+                100_001,
+                0,
+                100,
+                "codex",
+                "binding.agent-provider.codex",
+                "provider-thread-user-1",
+                "session.provider.codex.canonical-2",
+                &project.project_id,
+                manage_subject(),
+                "2026-07-26T00:00:00Z",
+            )
+            .expect("user session claim");
+        assert!(matches!(
+            outcome,
+            crate::application::ProviderSessionBindingClaim::AlreadyBoundByUserSession
+        ));
+        let still_active = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: "agent.intelligence.codex".to_string(),
+                session_id: user_session.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+            })
+            .expect("user session lookup");
+        assert_eq!(
+            still_active.status,
+            crate::domain::AgentSessionStatus::Active
+        );
+    }
+
+    #[test]
+    fn target_binding_is_reported_as_already_claimed() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let canonical = create_test_session(
+            &state,
+            "session.provider.codex.canonical-3",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &canonical.session_id,
+            "runtime_binding.provider.canonical-3",
+            "provider-session-history",
+            Some("provider-thread-target-1"),
+        );
+        let outcome = state
+            .service
+            .retire_legacy_provider_session_bindings(
+                100_001,
+                0,
+                100,
+                "codex",
+                "binding.agent-provider.codex",
+                "provider-thread-target-1",
+                &canonical.session_id,
+                &project.project_id,
+                manage_subject(),
+                "2026-07-26T00:00:00Z",
+            )
+            .expect("target claim");
+        assert!(matches!(
+            outcome,
+            crate::application::ProviderSessionBindingClaim::AlreadyTarget
+        ));
+    }
+
+    #[test]
+    fn clamps_oversized_provider_directory_fields() {
+        use sdkwork_agents_runtime_facade::ProviderSessionDirectoryEntry;
+        let long_title = "t".repeat(600);
+        let long_preview = "p".repeat(5_000);
+        let directory = clamp_provider_session_directory(ProviderSessionDirectoryEntry {
+            title: Some(long_title),
+            title_source: Some("provider".to_string()),
+            preview: Some(long_preview),
+            created_at: None,
+            updated_at: None,
+            recency_at: None,
+            pinned: false,
+            archived: false,
+            visible: true,
+            source: Some("codex".to_string()),
+            sort_key: "s".repeat(600),
+        });
+        assert!(directory.title.as_deref().unwrap_or_default().len() <= 512);
+        assert!(
+            directory
+                .preview
+                .as_deref()
+                .unwrap_or_default()
+                .len()
+                <= 4096
+        );
+        assert!(directory.sort_key.len() <= 512);
     }
 }

@@ -32,7 +32,10 @@ use crate::project::{
     project_names_equal, AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode,
     AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
 };
-use crate::provider_stream_items::{project_terminal_provider_turn_items, MAX_PROVIDER_TURN_FACTS};
+use crate::provider_stream_items::{
+    project_terminal_provider_turn_items, terminal_provider_assistant_item_id,
+    MAX_PROVIDER_TURN_FACTS,
+};
 use crate::runtime_facade_bridge::{
     engine_key_for_binding_id, execute_preview_response, execute_prompt_optimization,
     RUNTIME_MODE_CONTRACT_FALLBACK,
@@ -49,9 +52,9 @@ use crate::task_scheduler::{
 };
 use crate::task_scheduling::{AgentTaskRunRecord, AgentTaskRunStatus};
 use crate::turn_runtime::{
-    complete_with_timeout, complete_with_timeout_and_sink, is_inference_error,
-    ContractTurnExecutor, TurnExecutionInput, TurnExecutionStreamSink, TurnExecutor,
-    TURN_EXECUTION_TIMEOUT,
+    complete_with_timeout, complete_with_timeout_and_sink, is_capacity_error, is_inference_error,
+    turn_model_request_id, ContractTurnExecutor, TurnCancellationInput, TurnExecutionInput,
+    TurnExecutionStreamSink, TurnExecutor, TURN_EXECUTION_TIMEOUT,
 };
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
@@ -822,6 +825,22 @@ where
     audit_sink: A,
     policy_provider: P,
     turn_executor: Arc<dyn TurnExecutor>,
+}
+
+/// Outcome of claiming a provider Session identity for the canonical
+/// `session.provider.*` Session during inventory synchronization.
+pub(crate) enum ProviderSessionBindingClaim {
+    /// No binding currently claims the provider Session identity.
+    Free,
+    /// The canonical target Session already owns the binding.
+    AlreadyTarget,
+    /// A provider-import Session (`session.native.*` / `session.provider.*`
+    /// from an older scheme or another project) claimed the identity and
+    /// was retired (archived Session + released binding).
+    Retired,
+    /// A user-created Session owns the binding; the provider Session is
+    /// already a live Session and must not be imported again.
+    AlreadyBoundByUserSession,
 }
 
 impl<R, A, P> AgentsService<R, A, P>
@@ -5109,6 +5128,104 @@ where
         self.create_session_runtime_binding_with_authorization(command, false)
     }
 
+    /// Claims a provider Session identity for the canonical provider-history
+    /// Session, retiring stale provider-import bindings that violate the unique
+    /// provider Session constraint.
+    ///
+    /// Provider-import Sessions from older schemes (`session.native.*`) or
+    /// attributed to other projects are archived and their bindings released.
+    /// User-created Sessions that already own the identity are left untouched
+    /// and reported so the caller skips the redundant import.
+    pub(crate) fn retire_legacy_provider_session_bindings(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        _engine_key: &str,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+        target_session_id: &str,
+        _target_project_id: &str,
+        requested_by: PolicySubject,
+        requested_at: &str,
+    ) -> KernelResult<ProviderSessionBindingClaim> {
+        if provider_binding_id.trim().is_empty() || provider_session_id.trim().is_empty() {
+            return Ok(ProviderSessionBindingClaim::Free);
+        }
+        let Some(binding) = self
+            .repository
+            .get_session_runtime_binding_by_provider_session(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                provider_binding_id,
+                provider_session_id,
+            )?
+        else {
+            return Ok(ProviderSessionBindingClaim::Free);
+        };
+        if binding.session_id == target_session_id {
+            return Ok(ProviderSessionBindingClaim::AlreadyTarget);
+        }
+        let Some(session) = self
+            .repository
+            .get_session(tenant_id, organization_id, &binding.session_id)?
+        else {
+            return Ok(ProviderSessionBindingClaim::Free);
+        };
+        // A provider Session may be bound to only one SDKWork Session. Retire
+        // only provider-import Sessions (older import schemes or imports
+        // attributed to another project); user-created Sessions that already
+        // own the provider identity must never be archived.
+        let is_provider_import = binding.session_id.starts_with("session.native.")
+            || binding.session_id.starts_with("session.provider.");
+        if !is_provider_import {
+            return Ok(ProviderSessionBindingClaim::AlreadyBoundByUserSession);
+        }
+        let session_agent_id = session.agent_id.clone();
+        if session.deleted_at.is_none() && session.status != AgentSessionStatus::Archived {
+            // Legacy imports were never closed; close then archive so the
+            // retired Session disappears from the active inventory.
+            let closed = if session.status == AgentSessionStatus::Active {
+                self.close_session(CloseSessionCommand {
+                    tenant_id,
+                    organization_id,
+                    path_agent_id: session_agent_id.clone(),
+                    session_id: session.session_id.clone(),
+                    expected_version: Some(session.version),
+                    owner_scope: Some(owner_user_id),
+                    requested_by: requested_by.clone(),
+                    requested_at: requested_at.to_string(),
+                })?
+            } else {
+                session.clone()
+            };
+            self.archive_session(ArchiveSessionCommand {
+                tenant_id,
+                organization_id,
+                path_agent_id: session_agent_id.clone(),
+                session_id: session.session_id.clone(),
+                expected_version: Some(closed.version),
+                owner_scope: Some(owner_user_id),
+                requested_by: requested_by.clone(),
+                requested_at: requested_at.to_string(),
+            })?;
+        }
+        // Release the unique provider Session identity slot even when a
+        // previous retirement already deactivated the row: NULL the provider
+        // identity so the canonical provider-history binding can be created.
+        let mut retired = binding;
+        retired.provider_session_id = None;
+        retired.provider_session_tree_id = None;
+        retired.status = AgentSessionRuntimeBindingStatus::Deactivated;
+        retired.is_current = false;
+        retired.version = retired.version.saturating_add(1);
+        retired.updated_at = requested_at.to_string();
+        retired.deactivated_at = Some(requested_at.to_string());
+        self.repository.update_session_runtime_binding(retired)?;
+        Ok(ProviderSessionBindingClaim::Retired)
+    }
+
     fn create_session_runtime_binding_with_authorization(
         &self,
         command: CreateSessionRuntimeBindingCommand,
@@ -6486,15 +6603,71 @@ where
         ) {
             return Err(KernelError::validation("turn cannot be cancelled"));
         }
-        let expected_version = turn.version;
-        turn.mark_cancelled(command.requested_at.clone());
-        let turn = self.repository.update_turn_state(turn, expected_version)?;
         self.emit_turn_audit_event(
             AgentAuditAction::TurnCancelRequested,
             &turn,
             audit_subject.clone(),
             command.requested_at.clone(),
         )?;
+
+        let model_request_id = turn_model_request_id(&turn.turn_id);
+        let finish_reason = if turn.status == AgentTurnStatus::Running {
+            let provider_binding = match turn.provider_binding_id.as_deref() {
+                Some(provider_binding_id) => Some(
+                    self.repository
+                        .get_provider_binding(turn.tenant_id, &turn.agent_id, provider_binding_id)?
+                        .ok_or_else(|| {
+                            KernelError::validation("agent provider binding not found")
+                        })?,
+                ),
+                None => None,
+            };
+            let cancellation = self.turn_executor.cancel(&TurnCancellationInput {
+                turn_id: turn.turn_id.clone(),
+                model_request_id: model_request_id.clone(),
+                session_id: turn.session_id.clone(),
+                binding_id: provider_binding
+                    .as_ref()
+                    .map(|binding| binding.binding_id.clone()),
+                provider_has_model_chat: provider_binding.as_ref().is_some_and(|binding| {
+                    binding
+                        .capabilities
+                        .iter()
+                        .any(|capability| capability == "model.chat")
+                }),
+            })?;
+            if cancellation.model_request_id != model_request_id
+                || cancellation.finish_reason != "cancelled"
+            {
+                return Err(KernelError::provider_error(
+                    "turn_cancellation_unconfirmed",
+                    "Turn executor did not return a correlated cancelled acknowledgement",
+                ));
+            }
+            cancellation.finish_reason
+        } else {
+            "cancelled".to_string()
+        };
+
+        turn = self
+            .repository
+            .get_turn(turn.tenant_id, turn.organization_id, &turn.turn_id)?
+            .ok_or_else(|| KernelError::validation("turn not found"))?;
+        if turn.status == AgentTurnStatus::Cancelled {
+            return Ok(turn);
+        }
+        if !matches!(
+            turn.status,
+            AgentTurnStatus::Requested | AgentTurnStatus::Running
+        ) {
+            return Err(KernelError::conflict(
+                "turn reached a terminal state before cancellation was acknowledged",
+            ));
+        }
+        let expected_version = turn.version;
+        turn.finish_reason = Some(finish_reason);
+        turn.mark_cancelled(command.requested_at.clone());
+        let turn = self.repository.update_turn_state(turn, expected_version)?;
         self.emit_turn_audit_event(
             AgentAuditAction::TurnCancelled,
             &turn,
@@ -6997,6 +7170,7 @@ where
 
         let execution_input = TurnExecutionInput {
             turn_id: turn_id.clone(),
+            model_request_id: turn_model_request_id(&turn_id),
             agent_display_name: agent.display_name.clone(),
             welcome_message,
             session: session.clone(),
@@ -7025,10 +7199,37 @@ where
                 TURN_EXECUTION_TIMEOUT,
             )
         };
-        if is_inference_error(completion.runtime_mode) {
+        if is_inference_error(completion.runtime_mode) || is_capacity_error(completion.runtime_mode)
+        {
+            let capacity_exhausted = is_capacity_error(completion.runtime_mode);
+            let (error_code, error_detail) = if capacity_exhausted {
+                (
+                    "turn_provider_capacity_exhausted",
+                    "provider execution capacity is exhausted",
+                )
+            } else {
+                ("turn_inference_failed", "managed turn inference failed")
+            };
+            turn.mark_failed(error_code, error_detail, command.requested_at.clone());
+            let failed_turn = self.repository.update_turn_state(turn, 1)?;
+            self.emit_turn_audit_event(
+                AgentAuditAction::TurnFailed,
+                &failed_turn,
+                command.requested_by,
+                command.requested_at,
+            )?;
+            return if capacity_exhausted {
+                Err(KernelError::resource_exhausted(completion.content))
+            } else {
+                Err(KernelError::provider_error(error_code, completion.content))
+            };
+        }
+
+        let expected_model_request_id = turn_model_request_id(&turn_id);
+        if completion.model_request_id.as_deref() != Some(expected_model_request_id.as_str()) {
             turn.mark_failed(
-                "turn_inference_failed",
-                "managed turn inference failed",
+                "turn_execution_identity_mismatch",
+                "Turn executor returned an uncorrelated model request identity",
                 command.requested_at.clone(),
             );
             let failed_turn = self.repository.update_turn_state(turn, 1)?;
@@ -7039,8 +7240,8 @@ where
                 command.requested_at,
             )?;
             return Err(KernelError::provider_error(
-                "turn_inference_failed",
-                completion.content,
+                "turn_execution_identity_mismatch",
+                "Turn executor returned an uncorrelated model request identity",
             ));
         }
 
@@ -7050,6 +7251,33 @@ where
             command.requested_by.clone(),
             &command.requested_at,
         )?;
+
+        if completion.finish_reason.as_deref() == Some("cancelled") {
+            let mut current_turn = self
+                .repository
+                .get_turn(command.tenant_id, command.organization_id, &turn_id)?
+                .ok_or_else(|| KernelError::validation("turn not found"))?;
+            if current_turn.status != AgentTurnStatus::Cancelled {
+                if current_turn.status != AgentTurnStatus::Running {
+                    return Err(KernelError::conflict(
+                        "cancelled provider Turn reached an incompatible terminal state",
+                    ));
+                }
+                let expected_version = current_turn.version;
+                current_turn.finish_reason = Some("cancelled".to_string());
+                current_turn.mark_cancelled(command.requested_at.clone());
+                let cancelled_turn = self
+                    .repository
+                    .update_turn_state(current_turn, expected_version)?;
+                self.emit_turn_audit_event(
+                    AgentAuditAction::TurnCancelled,
+                    &cancelled_turn,
+                    command.requested_by,
+                    command.requested_at,
+                )?;
+            }
+            return Err(KernelError::cancelled("agent Turn was cancelled"));
+        }
 
         let provider_item_facts = project_terminal_provider_turn_items(
             &completion.stream_events,
@@ -7107,7 +7335,13 @@ where
             })
             .collect::<KernelResult<Vec<_>>>()?;
 
-        let assistant_output_item_id = format!("item.{}", self.repository.next_id()?);
+        let assistant_output_item_id = match terminal_provider_assistant_item_id(
+            &completion.stream_events,
+            completion.provider_session_id.as_deref(),
+        )? {
+            Some(item_id) => item_id,
+            None => format!("item.{}", self.repository.next_id()?),
+        };
         let assistant_output_item = AgentSessionItemRecord {
             id: self.repository.next_id()?,
             item_id: assistant_output_item_id,
@@ -7155,6 +7389,7 @@ where
         turn.provider_id = assistant_output_item.provider_id.clone();
         turn.input_tokens = completion.input_tokens;
         turn.output_tokens = completion.output_tokens;
+        turn.finish_reason = completion.finish_reason.clone();
         let expected_turn_version = turn.version;
         let expected_fencing_token = turn.fencing_token;
         let expected_lease_token = turn.lease_token.clone();
@@ -9205,6 +9440,7 @@ fn reject_secret_material(value: &str, field_name: &str) -> KernelResult<()> {
 #[cfg(test)]
 mod task_tests {
     use super::*;
+    use crate::agent_turn::AgentTurnMode;
     use crate::application::{
         CancelTaskCommand, CreateAgentCommand, CreateTaskCommand, ExecuteTaskCommand,
         GetTaskCommand, ListTasksCommand,
@@ -9214,7 +9450,10 @@ mod task_tests {
         IamGatedPolicyProvider, InMemoryAgentAuditSink, InMemoryAgentRepository,
     };
     use crate::ports::TaskListQuery;
+    use crate::turn_runtime::{TurnCancellationOutput, TurnExecutionOutput};
     use sdkwork_agent_kernel::{AgentManifest, PolicySubject};
+    use std::sync::{Condvar, Mutex};
+    use std::time::Duration;
 
     fn sample_subject() -> PolicySubject {
         PolicySubject {
@@ -9279,6 +9518,97 @@ mod task_tests {
 
     type TaskTestService =
         AgentsService<InMemoryAgentRepository, InMemoryAgentAuditSink, IamGatedPolicyProvider>;
+
+    #[derive(Debug, Default)]
+    struct BlockingCancellationState {
+        started: bool,
+        released: bool,
+        cancelled_model_request_id: Option<String>,
+    }
+
+    #[derive(Debug, Default)]
+    struct BlockingCancellationExecutor {
+        state: Mutex<BlockingCancellationState>,
+        changed: Condvar,
+    }
+
+    impl BlockingCancellationExecutor {
+        fn wait_until_started(&self) {
+            let state = self
+                .state
+                .lock()
+                .expect("blocking cancellation executor state should lock");
+            let (state, timeout) = self
+                .changed
+                .wait_timeout_while(state, Duration::from_secs(10), |state| !state.started)
+                .expect("blocking cancellation executor start wait should not be poisoned");
+            assert!(state.started, "turn provider did not start before timeout");
+            assert!(!timeout.timed_out(), "turn provider start wait timed out");
+        }
+
+        fn release(&self) {
+            let mut state = self
+                .state
+                .lock()
+                .expect("blocking cancellation executor state should lock");
+            state.released = true;
+            self.changed.notify_all();
+        }
+
+        fn cancelled_model_request_id(&self) -> Option<String> {
+            self.state
+                .lock()
+                .expect("blocking cancellation executor state should lock")
+                .cancelled_model_request_id
+                .clone()
+        }
+    }
+
+    impl TurnExecutor for BlockingCancellationExecutor {
+        fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+            let mut state = self
+                .state
+                .lock()
+                .expect("blocking cancellation executor state should lock");
+            state.started = true;
+            self.changed.notify_all();
+            let (state, timeout) = self
+                .changed
+                .wait_timeout_while(state, Duration::from_secs(10), |state| !state.released)
+                .expect("blocking cancellation executor release wait should not be poisoned");
+            assert!(
+                state.released,
+                "turn provider was not released before timeout"
+            );
+            assert!(!timeout.timed_out(), "turn provider release wait timed out");
+            drop(state);
+
+            TurnExecutionOutput {
+                model_request_id: Some(input.model_request_id.clone()),
+                finish_reason: Some("stop".to_string()),
+                content: "late provider completion".to_string(),
+                model_id: input.model_id.clone(),
+                provider_id: input.provider_id.clone(),
+                provider_session_id: input.provider_session_id.clone(),
+                input_tokens: 3,
+                output_tokens: 5,
+                runtime_mode: "in-memory-blocking-provider",
+                stream_deltas: Vec::new(),
+                stream_events: Vec::new(),
+            }
+        }
+
+        fn cancel(&self, input: &TurnCancellationInput) -> KernelResult<TurnCancellationOutput> {
+            self.state
+                .lock()
+                .expect("blocking cancellation executor state should lock")
+                .cancelled_model_request_id = Some(input.model_request_id.clone());
+            Ok(TurnCancellationOutput {
+                model_request_id: input.model_request_id.clone(),
+                finish_reason: "cancelled".to_string(),
+            })
+        }
+    }
 
     fn create_task_cmd(
         service: &TaskTestService,
@@ -9942,5 +10272,171 @@ mod task_tests {
             .expect("the owning organization still sees its task");
         assert_eq!(unchanged.status, AgentTaskStatus::Active);
         assert_eq!(unchanged.version, organization_one_only_task.version);
+    }
+
+    #[test]
+    fn cancel_turn_confirms_model_request_id_and_blocks_late_completion_in_memory() {
+        let executor = Arc::new(BlockingCancellationExecutor::default());
+        let service = Arc::new(
+            AgentsService::new(
+                InMemoryAgentRepository::new(),
+                InMemoryAgentAuditSink::default(),
+                test_policy_provider(),
+            )
+            .with_turn_executor(executor.clone()),
+        );
+        let agent = service
+            .create_agent(create_agent_cmd(
+                "agent.turn.cancel-race",
+                100_001,
+                0,
+                100,
+                "turn-cancel-race",
+                "Turn Cancel Race",
+                "2026-08-02T00:00:00Z",
+            ))
+            .expect("create cancellation test agent");
+        service
+            .change_status(ChangeAgentStatusCommand {
+                tenant_id: 100_001,
+                agent_id: agent.agent_id.clone(),
+                expected_version: Some(agent.version),
+                target_status: AgentBusinessStatus::Active,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:01Z".to_string(),
+            })
+            .expect("activate cancellation test agent");
+        let provider_binding = service
+            .add_provider_binding(AgentProviderBindingCommand {
+                tenant_id: 100_001,
+                agent_id: agent.agent_id.clone(),
+                binding_id: "binding.turn.cancel-race".to_string(),
+                provider_id: "provider.model.cancel-race".to_string(),
+                implementation_kind: AgentImplementationKind::TypedLocalProvider,
+                configuration_profile_id: "profile.turn.cancel-race".to_string(),
+                capabilities: vec!["model.chat".to_string()],
+                make_default: true,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:02Z".to_string(),
+            })
+            .expect("create cancellation test provider binding");
+        let session = service
+            .create_session(CreateSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: agent.agent_id.clone(),
+                owner_user_id: 100,
+                project_id: None,
+                session_id: "session.turn.cancel-race".to_string(),
+                session_kind: AgentSessionKind::Coding,
+                entry_surface: AgentSessionEntrySurface::Pc,
+                source_module: None,
+                source_context_kind: None,
+                source_context_id: None,
+                parent_session_id: None,
+                forked_from_turn_id: None,
+                title: Some("Cancellation race".to_string()),
+                idempotency_key: None,
+                payload_hash: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:03Z".to_string(),
+            })
+            .expect("create cancellation test session");
+        let runtime_binding = service
+            .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                runtime_binding_id: Some("runtime_binding.turn.cancel-race".to_string()),
+                runtime_location_id: None,
+                host_mode: "managed".to_string(),
+                transport_kind: "in_process".to_string(),
+                provider_binding_id: provider_binding.binding_id,
+                model_id: "model.cancel-race".to_string(),
+                provider_id: provider_binding.provider_id,
+                provider_session_id: Some("provider-session.cancel-race".to_string()),
+                provider_session_tree_id: None,
+                provider_parent_session_id: None,
+                provider_forked_from_session_id: None,
+                provider_directory: None,
+                owner_scope: Some(100),
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:04Z".to_string(),
+            })
+            .expect("create cancellation test runtime binding");
+        let turn_id = "turn.cancel-race".to_string();
+        let execution_service = Arc::clone(&service);
+        let execution_agent_id = agent.agent_id.clone();
+        let execution_session_id = session.session_id.clone();
+        let execution_turn_id = turn_id.clone();
+        let execution = std::thread::spawn(move || {
+            execution_service.execute_turn(CreateTurnCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: execution_agent_id,
+                session_id: execution_session_id,
+                turn_id: Some(execution_turn_id),
+                content: "complete after cancellation".to_string(),
+                content_type: "text/plain".to_string(),
+                turn_mode: AgentTurnMode::Interactive,
+                runtime_binding_id: Some(runtime_binding.runtime_binding_id),
+                requested_model_id: Some("model.cancel-race".to_string()),
+                access_mode_id: None,
+                idempotency_key: "idempotency.turn.cancel-race".to_string(),
+                payload_hash: "sha256:turn-cancel-race".to_string(),
+                client_request_id: Some("request.turn.cancel-race".to_string()),
+                drive_refs: Vec::new(),
+                owner_scope: Some(100),
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:05Z".to_string(),
+                prefer_stream: false,
+            })
+        });
+        executor.wait_until_started();
+
+        let expected_model_request_id = turn_model_request_id(&turn_id);
+        let cancelled = service
+            .cancel_turn(CancelTurnCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                turn_id: turn_id.clone(),
+                expected_version: Some(1),
+                owner_scope: Some(100),
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:06Z".to_string(),
+            })
+            .expect("running turn cancellation must be acknowledged");
+        assert_eq!(cancelled.status, AgentTurnStatus::Cancelled);
+        assert_eq!(cancelled.finish_reason.as_deref(), Some("cancelled"));
+        assert_eq!(
+            executor.cancelled_model_request_id().as_deref(),
+            Some(expected_model_request_id.as_str())
+        );
+
+        executor.release();
+        let late_completion = execution
+            .join()
+            .expect("late completion worker should not panic")
+            .expect_err("late completion must not overwrite a cancelled turn");
+        assert_eq!(late_completion.kind(), KernelErrorKind::Conflict);
+
+        let persisted = service
+            .get_turn(GetTurnCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id,
+                session_id: session.session_id,
+                turn_id,
+                owner_scope: Some(100),
+                requested_by: sample_subject(),
+            })
+            .expect("read cancelled turn");
+        assert_eq!(persisted.status, AgentTurnStatus::Cancelled);
+        assert_eq!(persisted.finish_reason.as_deref(), Some("cancelled"));
+        assert!(persisted.response_item_id.is_none());
+        assert_eq!((persisted.input_tokens, persisted.output_tokens), (0, 0));
     }
 }

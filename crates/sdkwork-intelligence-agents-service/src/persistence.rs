@@ -181,6 +181,7 @@ pub use sql::{
     SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
     SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
+    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION,
     SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
     SQL_SELECT_TURN_INPUT_QUEUE_ENTRY, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
@@ -2242,6 +2243,14 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         session_id: &str,
         runtime_binding_id: &str,
     ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>>;
+    fn get_session_runtime_binding_row_by_provider_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>>;
     fn get_current_session_runtime_binding_row(
         &self,
         tenant_id: u64,
@@ -3021,6 +3030,26 @@ where
                 organization_id,
                 session_id,
                 runtime_binding_id,
+            )?
+            .map(AgentSessionRuntimeBindingRow::into_record)
+            .transpose()
+    }
+
+    fn get_session_runtime_binding_by_provider_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRecord>> {
+        self.adapter
+            .get_session_runtime_binding_row_by_provider_session(
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                provider_binding_id,
+                provider_session_id,
             )?
             .map(AgentSessionRuntimeBindingRow::into_record)
             .transpose()
@@ -5887,7 +5916,6 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.uuid,
                 tenant_id,
                 organization_id,
-                owner_user_id,
                 row.session_id,
                 row.agent_id,
                 owner_user_id,
@@ -6359,6 +6387,32 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 tenant_id,
                 organization_id,
                 session_id
+            )?
+            .map(pg_row_to_agent_session_runtime_binding_row)
+            .transpose()
+        })
+    }
+
+    fn get_session_runtime_binding_row_by_provider_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+    ) -> KernelResult<Option<AgentSessionRuntimeBindingRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                provider_binding_id,
+                provider_session_id
             )?
             .map(pg_row_to_agent_session_runtime_binding_row)
             .transpose()

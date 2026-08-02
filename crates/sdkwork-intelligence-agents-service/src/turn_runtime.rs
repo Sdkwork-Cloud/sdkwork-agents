@@ -9,11 +9,11 @@ use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
 use crate::runtime_facade_bridge::shared_code_engine_host;
 use sdkwork_agent_kernel::{
-    KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse, ModelStatus,
-    ModelStreamChunk, ModelStreamSink,
+    KernelError, KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse,
+    ModelStatus, ModelStreamChunk, ModelStreamSink,
 };
 use sdkwork_agents_runtime_facade::{
-    execute_code_engine_turn, execute_code_engine_turn_with_stream,
+    code_engine_model_request_id, execute_code_engine_turn, execute_code_engine_turn_with_stream,
     execute_code_engine_turn_with_stream_sink, CodeEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
@@ -53,6 +53,8 @@ static PROVIDER_WORKER_LIMIT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
 pub struct TurnExecutionInput {
     /// Canonical SDKWork Turn identity established before provider execution.
     pub turn_id: String,
+    /// Stable provider request identity established from the canonical Turn.
+    pub model_request_id: String,
     pub agent_display_name: String,
     pub welcome_message: Option<String>,
     pub session: AgentSessionRecord,
@@ -74,6 +76,8 @@ pub struct TurnExecutionInput {
 /// Output from one durable turn execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnExecutionOutput {
+    pub model_request_id: Option<String>,
+    pub finish_reason: Option<String>,
     pub content: String,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
@@ -83,6 +87,27 @@ pub struct TurnExecutionOutput {
     pub runtime_mode: &'static str,
     pub stream_deltas: Vec<String>,
     pub stream_events: Vec<KernelEvent>,
+}
+
+/// Provider-neutral input for cancelling one active durable Turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnCancellationInput {
+    pub turn_id: String,
+    pub model_request_id: String,
+    pub session_id: String,
+    pub binding_id: Option<String>,
+    pub provider_has_model_chat: bool,
+}
+
+/// Correlated cancellation acknowledgement returned by the active executor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnCancellationOutput {
+    pub model_request_id: String,
+    pub finish_reason: String,
+}
+
+pub fn turn_model_request_id(turn_id: &str) -> String {
+    code_engine_model_request_id(turn_id)
 }
 
 /// Provider-neutral observer for one Turn's live output.
@@ -103,6 +128,10 @@ pub trait TurnExecutionStreamSink: Send + Sync {
 /// Pluggable turn execution strategy (Open/Closed: swap at service bootstrap).
 pub trait TurnExecutor: Send + Sync {
     fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput;
+
+    fn cancel(&self, input: &TurnCancellationInput) -> KernelResult<TurnCancellationOutput> {
+        Ok(local_turn_cancellation(input))
+    }
 
     fn complete_with_stream_preference(
         &self,
@@ -292,6 +321,14 @@ where
             }
         }
     }
+
+    fn cancel(&self, input: &TurnCancellationInput) -> KernelResult<TurnCancellationOutput> {
+        if !input.provider_has_model_chat {
+            return Ok(local_turn_cancellation(input));
+        }
+        let response = self.provider.cancel(&input.model_request_id)?;
+        cancellation_from_model_response(input, response)
+    }
 }
 
 /// Production chat completer: routes active provider bindings through the
@@ -320,6 +357,63 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
     ) -> TurnExecutionOutput {
         execute_runtime_facade_turn(input, true, Some(sink))
     }
+
+    fn cancel(&self, input: &TurnCancellationInput) -> KernelResult<TurnCancellationOutput> {
+        if !input.provider_has_model_chat {
+            return Ok(local_turn_cancellation(input));
+        }
+        let binding_id = input
+            .binding_id
+            .as_deref()
+            .filter(|value| !is_blank(Some(*value)))
+            .ok_or_else(|| KernelError::validation("active provider binding id is required"))?;
+        let engine_key = engine_key_for_binding_id(binding_id).ok_or_else(|| {
+            KernelError::validation(
+                "active provider binding is not mapped to a canonical code engine",
+            )
+        })?;
+        let host = shared_code_engine_host().ok_or_else(|| {
+            KernelError::provider_error(
+                "turn_cancellation_unavailable",
+                "shared code engine host is unavailable",
+            )
+        })?;
+        let cancellation = host
+            .cancel_turn(engine_key, &input.model_request_id)
+            .map_err(|error| {
+                KernelError::provider_error("turn_cancellation_failed", error.to_string())
+            })?;
+        Ok(TurnCancellationOutput {
+            model_request_id: cancellation.model_request_id,
+            finish_reason: cancellation.finish_reason,
+        })
+    }
+}
+
+fn local_turn_cancellation(input: &TurnCancellationInput) -> TurnCancellationOutput {
+    TurnCancellationOutput {
+        model_request_id: input.model_request_id.clone(),
+        finish_reason: "cancelled".to_string(),
+    }
+}
+
+fn cancellation_from_model_response(
+    input: &TurnCancellationInput,
+    response: ModelResponse,
+) -> KernelResult<TurnCancellationOutput> {
+    if response.model_request_id != input.model_request_id
+        || response.status != ModelStatus::Cancelled
+        || response.finish_reason.as_deref() != Some("cancelled")
+    {
+        return Err(KernelError::provider_error(
+            "turn_cancellation_unconfirmed",
+            "model provider did not return a correlated cancelled acknowledgement",
+        ));
+    }
+    Ok(TurnCancellationOutput {
+        model_request_id: response.model_request_id,
+        finish_reason: "cancelled".to_string(),
+    })
 }
 
 struct RuntimeFacadeModelStreamSink {
@@ -367,11 +461,13 @@ fn execute_runtime_facade_turn(
     let turn_input = CodeEngineTurnInput {
         engine_key: engine_key.to_string(),
         model_id: model_id.clone(),
+        model_request_id: Some(input.model_request_id.clone()),
         session_id: Some(input.session.session_id.clone()),
         turn_id: Some(input.turn_id.clone()),
         provider_session_id: input.provider_session_id.clone(),
         prompt,
         access_mode_id: input.access_mode_id.clone(),
+        require_live_provider: true,
         ..Default::default()
     };
 
@@ -389,10 +485,13 @@ fn execute_runtime_facade_turn(
     match turn_result {
         Ok(output) => {
             let content = output.assistant_content.trim().to_string();
-            if content.is_empty() {
+            let cancelled = output.finish_reason.as_deref() == Some("cancelled");
+            if content.is_empty() && !cancelled {
                 return inference_error("code engine returned empty assistant content");
             }
             TurnExecutionOutput {
+                model_request_id: Some(output.model_request_id),
+                finish_reason: output.finish_reason,
                 content,
                 model_id: Some(model_id),
                 provider_id: input.provider_id.clone(),
@@ -426,19 +525,7 @@ fn resolve_turn_model_id(
 }
 
 fn build_managed_chat_prompt(input: &TurnExecutionInput) -> String {
-    let mut lines = Vec::new();
-    if let Some(welcome) = input
-        .welcome_message
-        .as_deref()
-        .filter(|value| !is_blank(Some(*value)))
-    {
-        lines.push(format!("system: {welcome}"));
-    }
-    for (role, content) in &input.history {
-        lines.push(format!("{}: {content}", role.as_str()));
-    }
-    lines.push(format!("user: {}", input.user_content));
-    lines.join("\n")
+    input.user_content.clone()
 }
 
 fn replay_turn_execution_stream(output: &TurnExecutionOutput, sink: &dyn TurnExecutionStreamSink) {
@@ -495,6 +582,8 @@ fn buffered_agent_message_delta(
 
 fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
     TurnExecutionOutput {
+        model_request_id: None,
+        finish_reason: None,
         content: message.into(),
         model_id: None,
         provider_id: None,
@@ -509,6 +598,8 @@ fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
 
 fn capacity_error(input: &TurnExecutionInput) -> TurnExecutionOutput {
     TurnExecutionOutput {
+        model_request_id: Some(input.model_request_id.clone()),
+        finish_reason: None,
         content: "provider concurrency limit reached".to_string(),
         model_id: input.model_id.clone(),
         provider_id: input.provider_id.clone(),
@@ -541,11 +632,7 @@ fn invoke_kernel_model(
     provider: &dyn ModelProvider,
     input: &TurnExecutionInput,
 ) -> KernelResult<TurnExecutionOutput> {
-    let model_request_id = format!(
-        "managed-chat.{}.{}",
-        input.session.session_id,
-        input.history.len() + 1
-    );
+    let model_request_id = input.model_request_id.clone();
     let model_id = input.model_id.clone();
     let mut request = ModelRequest::new(model_request_id.clone(), build_model_items(input))
         .for_session(input.session.session_id.clone())
@@ -566,6 +653,21 @@ fn map_model_response(
     model_id: Option<String>,
     response: ModelResponse,
 ) -> KernelResult<TurnExecutionOutput> {
+    if response.status == ModelStatus::Cancelled {
+        return Ok(TurnExecutionOutput {
+            model_request_id: Some(response.model_request_id),
+            finish_reason: response.finish_reason,
+            content: String::new(),
+            model_id,
+            provider_id: Some(response.provider_id),
+            provider_session_id: input.provider_session_id.clone(),
+            input_tokens: 0,
+            output_tokens: 0,
+            runtime_mode: "managed-agent-kernel-model-v1",
+            stream_deltas: Vec::new(),
+            stream_events: Vec::new(),
+        });
+    }
     if response.status != ModelStatus::Succeeded {
         return Err(sdkwork_agent_kernel::KernelError::validation(format!(
             "model invoke returned status {:?}",
@@ -588,6 +690,8 @@ fn map_model_response(
             )
         });
     Ok(TurnExecutionOutput {
+        model_request_id: Some(response.model_request_id),
+        finish_reason: response.finish_reason,
         content,
         model_id,
         provider_id: Some(response.provider_id),
@@ -668,6 +772,8 @@ pub fn execute_agent_turn(input: &TurnExecutionInput) -> TurnExecutionOutput {
 
     let output_tokens = estimate_tokens(content.as_str());
     TurnExecutionOutput {
+        model_request_id: Some(input.model_request_id.clone()),
+        finish_reason: Some("stop".to_string()),
         content,
         model_id,
         provider_id,
@@ -732,6 +838,7 @@ mod tests {
     fn execute_agent_turn_returns_assistant_content() {
         let output = execute_agent_turn(&TurnExecutionInput {
             turn_id: "turn.test".to_string(),
+            model_request_id: turn_model_request_id("turn.test"),
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: Some("Welcome".to_string()),
             session: sample_session(),
@@ -754,6 +861,7 @@ mod tests {
     fn execute_agent_turn_marks_provider_bound_runtime_mode() {
         let output = execute_agent_turn(&TurnExecutionInput {
             turn_id: "turn.test".to_string(),
+            model_request_id: turn_model_request_id("turn.test"),
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: None,
             session: sample_session(),
@@ -770,7 +878,10 @@ mod tests {
         assert!(output.content.contains("canonical code-engine"));
     }
 
-    struct FakeKernelModelProvider;
+    #[derive(Default)]
+    struct FakeKernelModelProvider {
+        cancellation_model_request_id: Option<String>,
+    }
 
     impl ModelProvider for FakeKernelModelProvider {
         fn provider_manifest(&self) -> sdkwork_agent_kernel::ProviderManifest {
@@ -801,13 +912,23 @@ mod tests {
             )
             .with_usage(sdkwork_agent_kernel::ModelUsage::new(3, 5)))
         }
+
+        fn cancel(&self, model_request_id: &str) -> KernelResult<ModelResponse> {
+            Ok(ModelResponse::cancelled(
+                self.cancellation_model_request_id
+                    .as_deref()
+                    .unwrap_or(model_request_id),
+                "provider.model.fake",
+            ))
+        }
     }
 
     #[test]
     fn kernel_model_turn_executor_preserves_session_identities() {
-        let completer = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider));
+        let completer = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider::default()));
         let output = completer.complete(&TurnExecutionInput {
             turn_id: "turn.test".to_string(),
+            model_request_id: turn_model_request_id("turn.test"),
             agent_display_name: "Demo Agent".to_string(),
             welcome_message: None,
             session: sample_session(),
@@ -826,6 +947,33 @@ mod tests {
         assert_eq!(
             output.provider_session_id.as_deref(),
             Some("provider-session.fake")
+        );
+    }
+
+    #[test]
+    fn kernel_model_turn_executor_requires_correlated_cancellation_acknowledgement() {
+        let model_request_id = turn_model_request_id("turn.test");
+        let input = TurnCancellationInput {
+            turn_id: "turn.test".to_string(),
+            model_request_id: model_request_id.clone(),
+            session_id: "session.test".to_string(),
+            binding_id: None,
+            provider_has_model_chat: true,
+        };
+        let correlated = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider::default()))
+            .cancel(&input)
+            .expect("correlated cancellation acknowledgement");
+        assert_eq!(correlated.model_request_id, model_request_id);
+        assert_eq!(correlated.finish_reason, "cancelled");
+
+        let uncorrelated = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider {
+            cancellation_model_request_id: Some("agents-turn-wrong-turn".to_string()),
+        }))
+        .cancel(&input)
+        .expect_err("uncorrelated cancellation acknowledgement must fail closed");
+        assert_eq!(
+            uncorrelated.kind(),
+            sdkwork_agent_kernel::KernelErrorKind::ProviderError
         );
     }
 }

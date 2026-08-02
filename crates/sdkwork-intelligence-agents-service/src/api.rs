@@ -951,6 +951,18 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.codeEngines.list",
     },
     ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/model_configurations/apply",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.apply",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/model_selections/apply",
+        tag: "ai",
+        operation_id: "agents.modelSelections.apply",
+    },
+    ApiOperation {
         method: "GET",
         path: "/app/v3/api/ai/mcp_servers",
         tag: "ai",
@@ -1730,7 +1742,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 56);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 101);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 103);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 58);
 
         assert_eq!(

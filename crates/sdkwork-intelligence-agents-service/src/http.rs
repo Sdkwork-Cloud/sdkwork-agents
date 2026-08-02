@@ -539,6 +539,23 @@ impl AgentRepository for DynAgentRepository {
         )
     }
 
+    fn get_session_runtime_binding_by_provider_session(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        owner_user_id: u64,
+        provider_binding_id: &str,
+        provider_session_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentSessionRuntimeBindingRecord>> {
+        self.0.get_session_runtime_binding_by_provider_session(
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            provider_binding_id,
+            provider_session_id,
+        )
+    }
+
     fn get_current_session_runtime_binding(
         &self,
         tenant_id: u64,
@@ -2815,8 +2832,11 @@ struct ApplyAgentModelConfigurationRequest {
     supported_model_ids: Vec<String>,
     #[serde(default)]
     supported_provider_ids: Vec<String>,
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     input_context_tokens: Option<i64>,
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     output_context_tokens: Option<i64>,
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     tool_call_rounds: Option<i64>,
     #[serde(default)]
     supports_multimodal: bool,
@@ -3048,18 +3068,11 @@ async fn app_apply_model_selection(
     let result: ApiResult<ResourceData<AppliedAgentModelSelectionResponse>> = async {
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context);
-        if body
-            .configuration_id
-            .as_ref()
-            .is_none_or(|value| value.trim().is_empty())
-        {
-            let subject = scope.subject().clone();
-            let catalog = with_service(&state, move |service| {
-                service.list_code_engine_catalog(subject)
-            })
-            .await?;
-            validate_catalog_model_selection(&catalog, &body.engine_id, &body.model_id)?;
-        }
+        // Built-in model selection without a saved configuration switches the
+        // model directly on the provider-default credential binding. Platform
+        // catalog models are validated by the client model selector and are not
+        // part of the code-engine catalog, so no catalog membership check is
+        // applied here; malformed identifiers are rejected below.
         let item = apply_agent_model_selection(state, scope, web_ctx.request_id.0.as_str(), body)?;
         Ok(ResourceData { item })
     }
@@ -3141,26 +3154,6 @@ fn apply_agent_model_selection(
         provider_scope: application.provider_scope,
         model_id: kernel_request.model_id,
     })
-}
-
-fn validate_catalog_model_selection(
-    catalog: &CodeEngineCatalog,
-    engine_id: &str,
-    model_id: &str,
-) -> ApiResult<()> {
-    let engine_id = engine_id.trim();
-    let model_id = model_id.trim();
-    let engine = catalog
-        .engines
-        .iter()
-        .find(|engine| engine.engine_key == engine_id)
-        .ok_or_else(|| ApiProblem::validation("engineId is not available in the Agent catalog"))?;
-    if !engine.models.iter().any(|model| model.model_id == model_id) {
-        return Err(ApiProblem::validation(
-            "modelId is not available for the selected Agent provider",
-        ));
-    }
-    Ok(())
 }
 
 fn model_configuration_profile_id(
@@ -8246,6 +8239,7 @@ async fn app_session_items_window(
                 agent_id.clone(),
                 session_id.clone(),
                 scope.subject.clone(),
+                state.provider_session_cwd_resolver.clone(),
             ))
         } else {
             None
@@ -8264,7 +8258,15 @@ async fn app_session_items_window(
         let (records, synchronized_item_count) = with_service(&state, move |service| {
             let synchronized_item_count = synchronization_scope
                 .map(
-                    |(tenant_id, organization_id, owner_user_id, agent_id, session_id, subject)| {
+                    |(
+                        tenant_id,
+                        organization_id,
+                        owner_user_id,
+                        agent_id,
+                        session_id,
+                        subject,
+                        provider_session_cwd_resolver,
+                    )| {
                         crate::provider_session_sync::synchronize_provider_session_transcript(
                             service,
                             tenant_id,
@@ -8273,6 +8275,7 @@ async fn app_session_items_window(
                             agent_id,
                             session_id,
                             subject,
+                            provider_session_cwd_resolver.as_deref(),
                         )
                     },
                 )
@@ -12070,9 +12073,9 @@ mod tests {
             "baseUrl": "https://models.example.test/v1",
             "defaultModelId": "example-chat",
             "supportedModelIds": ["example-chat", "example-reasoning"],
-            "inputContextTokens": 128000,
-            "outputContextTokens": 16000,
-            "toolCallRounds": 32,
+            "inputContextTokens": "128000",
+            "outputContextTokens": "16000",
+            "toolCallRounds": "32",
             "supportsMultimodal": true
         });
         if let Some(api_key) = api_key {
@@ -12168,6 +12171,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn model_configuration_rejects_numeric_int64_settings() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+        let mut body = model_configuration_body("codex", "model.codex.custom", None);
+        body["inputContextTokens"] = json!(128000);
+        let response = post_model_configuration(&app, body).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn model_configuration_requires_a_credential_only_for_new_profiles() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
@@ -12235,15 +12252,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn catalog_model_selection_dispatches_every_provider_config_spi() {
+    async fn catalog_model_selection_dispatches_every_published_provider_config_spi() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
             test_policy_provider(),
         );
         let app = build_test_router(state);
-        let catalog = sdkwork_agents_runtime_facade::bootstrap_bootstrappable_code_engine_catalog()
-            .expect("code engine catalog should bootstrap");
+        let catalog = crate::code_engine_catalog::list_code_engine_catalog();
+        assert!(!catalog.engines.is_empty(), "app catalog must not be empty");
 
         for engine in catalog.engines {
             let model_id = engine
@@ -12317,6 +12334,33 @@ mod tests {
         )
         .await;
         assert_eq!(unsupported.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn builtin_platform_model_selection_switches_without_saved_configuration() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state);
+        // Platform catalog models (for example the built-in official channels)
+        // are not part of the code-engine catalog. Switching one directly must
+        // succeed without a saved configuration and without an API key.
+        let response = post_model_selection(
+            &app,
+            model_selection_body("codex", "gpt-5.4", None),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("selection response should be readable")
+                .to_vec(),
+        )
+        .expect("selection response should be JSON");
+        assert_eq!(payload["data"]["item"]["modelId"], "gpt-5.4");
     }
 
     fn facade_actor() -> sdkwork_agents_runtime_facade::AgentsSessionActor {
