@@ -2902,6 +2902,23 @@ where
             .update_session_row(AgentSessionRow::from_record(&record)?)
     }
 
+    fn delete_session_and_purge_queue(
+        &self,
+        deleted_session: AgentSessionRecord,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<()> {
+        self.adapter.delete_session_rows(
+            AgentSessionRow::from_record(&deleted_session)?,
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+        )
+    }
+
     fn get_session(
         &self,
         tenant_id: u64,
@@ -6027,6 +6044,102 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 }
                 return Err(KernelError::not_found("session not found"));
             }
+            Ok(())
+        })
+    }
+
+    fn delete_session_rows(
+        &self,
+        deleted_session: AgentSessionRow,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<()> {
+        let item_count = u64_to_i64(deleted_session.item_count, "item_count")?;
+        let last_item_sequence =
+            u64_to_i64(deleted_session.last_item_sequence, "last_item_sequence")?;
+        let total_input_tokens =
+            u64_to_i64(deleted_session.total_input_tokens, "total_input_tokens")?;
+        let total_output_tokens =
+            u64_to_i64(deleted_session.total_output_tokens, "total_output_tokens")?;
+        let updated_by = u64_to_i64(deleted_session.updated_by, "updated_by")?;
+        let archived_by = deleted_session
+            .archived_by
+            .map(|value| u64_to_i64(value, "archived_by"))
+            .transpose()?;
+        let deleted_by = deleted_session
+            .deleted_by
+            .map(|value| u64_to_i64(value, "deleted_by"))
+            .transpose()?;
+        let version = u64_to_i64(deleted_session.version, "version")?;
+        let previous_version = u64_to_i64(
+            expected_previous_version(deleted_session.version)?,
+            "previous_version",
+        )?;
+        let tenant_id_i64 = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id_i64 = u64_to_i64(organization_id, "organization_id")?;
+        let owner_user_id_i64 = u64_to_i64(owner_user_id, "owner_user_id")?;
+        let session_id_owned = session_id.to_owned();
+
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async move {
+            let mut tx = pool.begin().await?;
+            // Soft-delete the session and purge its queue entries in one
+            // transaction so a partial failure cannot leave a deleted session
+            // with queued inputs (or a live session with a purged queue).
+            let updated_rows = sqlx::query(SQL_UPDATE_AGENT_SESSION)
+                .bind(deleted_session.project_id)
+                .bind(deleted_session.title)
+                .bind(deleted_session.title_source)
+                .bind(deleted_session.status)
+                .bind(item_count)
+                .bind(last_item_sequence)
+                .bind(total_input_tokens)
+                .bind(total_output_tokens)
+                .bind(updated_by)
+                .bind(version)
+                .bind(deleted_session.updated_at)
+                .bind(deleted_session.last_item_at)
+                .bind(deleted_session.closed_at)
+                .bind(deleted_session.archived_at)
+                .bind(archived_by)
+                .bind(deleted_session.deleted_at)
+                .bind(deleted_by)
+                .bind(deleted_session.retention_until)
+                .bind(tenant_id_i64)
+                .bind(organization_id_i64)
+                .bind(&session_id_owned)
+                .bind(previous_version)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+            if updated_rows == 0 {
+                let exists = sqlx::query(SQL_SELECT_AGENT_SESSION)
+                    .bind(tenant_id_i64)
+                    .bind(organization_id_i64)
+                    .bind(&session_id_owned)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .is_some();
+                tx.rollback().await?;
+                if exists {
+                    return Err(transaction_error(KernelError::conflict(
+                        "session version mismatch",
+                    )));
+                }
+                return Err(transaction_error(KernelError::not_found("session not found")));
+            }
+            sqlx::query(
+                "DELETE FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4",
+            )
+            .bind(tenant_id_i64)
+            .bind(organization_id_i64)
+            .bind(&session_id_owned)
+            .bind(owner_user_id_i64)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
             Ok(())
         })
     }

@@ -1807,6 +1807,54 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(())
     }
 
+    fn delete_session_and_purge_queue(
+        &self,
+        deleted_session: AgentSessionRecord,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<()> {
+        // In-memory repository: mirror the transactional delete of the durable
+        // adapter — soft-delete the session row and purge its queue entries
+        // under the same lock so a partial failure cannot occur.
+        let activity_record = deleted_session.clone();
+        let primary_key = session_primary_key(&deleted_session);
+        let mut sessions = self.sessions.recovering_write();
+        let existing = sessions
+            .get(&primary_key)
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
+        let expected_version = existing.version.saturating_add(1);
+        if deleted_session.version != expected_version {
+            return Err(KernelError::conflict(format!(
+                "session version mismatch: expected={expected_version}, actual={}",
+                deleted_session.version
+            )));
+        }
+        let previous_index_key = session_index_key(existing);
+        let next_index_key = session_index_key(&deleted_session);
+        sessions.insert(primary_key.clone(), deleted_session);
+        let mut index = self.session_index.recovering_write();
+        index.remove(&previous_index_key);
+        index.insert(next_index_key, primary_key);
+        let mut queue = self.turn_input_queue.recovering_lock();
+        queue.retain(|_, entry| {
+            entry.tenant_id != tenant_id
+                || entry.organization_id != organization_id
+                || entry.session_id != session_id
+                || entry.owner_user_id != owner_user_id
+        });
+        drop(queue);
+        drop(index);
+        drop(sessions);
+        self.advance_session_activity(
+            &activity_record,
+            &activity_record.updated_at,
+            SessionActivitySource::Session,
+        );
+        Ok(())
+    }
+
     fn get_session(
         &self,
         tenant_id: u64,

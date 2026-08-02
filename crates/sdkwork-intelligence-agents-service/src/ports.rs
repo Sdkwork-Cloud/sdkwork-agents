@@ -1396,6 +1396,18 @@ pub trait AgentRepository: Send + Sync {
 
     fn update_session(&self, record: AgentSessionRecord) -> KernelResult<()>;
 
+    /// Atomically soft-deletes the session and purges its turn-input-queue
+    /// entries. Durable backends run both writes in one transaction so a
+    /// partial failure cannot leave a deleted session with queued inputs.
+    fn delete_session_and_purge_queue(
+        &self,
+        deleted_session: AgentSessionRecord,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<()>;
+
     fn get_session(
         &self,
         tenant_id: u64,

@@ -3619,8 +3619,10 @@ where
             return Err(KernelError::validation("session organization mismatch"));
         }
         record.soft_delete(command.requested_at.clone());
-        self.repository.update_session(record.clone())?;
-        self.repository.purge_turn_input_queue_entries(
+        // Soft-delete and queue purge are atomic in durable backends: a
+        // partial failure cannot leave a deleted session with queued inputs.
+        self.repository.delete_session_and_purge_queue(
+            record.clone(),
             command.tenant_id,
             command.organization_id,
             &command.session_id,

@@ -468,6 +468,23 @@ impl AgentRepository for DynAgentRepository {
         self.0.update_session(record)
     }
 
+    fn delete_session_and_purge_queue(
+        &self,
+        deleted_session: crate::domain::AgentSessionRecord,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<()> {
+        self.0.delete_session_and_purge_queue(
+            deleted_session,
+            tenant_id,
+            organization_id,
+            session_id,
+            owner_user_id,
+        )
+    }
+
     fn get_session(
         &self,
         tenant_id: u64,
@@ -1550,8 +1567,12 @@ impl HttpAgentsSessionFacade {
                 )?;
                 return Ok(());
             }
-            Err(KernelError::Validation { message })
-                if message == "session runtime binding not found" => {}
+            Err(error)
+                if error.detail_value("sdkwork.not_found") == Some("true")
+                    && error.message() == "session runtime binding not found" =>
+            {
+                // No runtime binding yet: fall through to create it.
+            }
             Err(error) => {
                 return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
                     error.to_string(),
@@ -1909,7 +1930,12 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                     version: existing.version,
                 });
             }
-            Err(KernelError::Validation { message }) if message == "session not found" => {}
+            Err(error)
+                if error.detail_value("sdkwork.not_found") == Some("true")
+                    && error.message() == "session not found" =>
+            {
+                // Session does not exist yet: fall through to create it.
+            }
             Err(error) => {
                 return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
                     error.to_string(),
