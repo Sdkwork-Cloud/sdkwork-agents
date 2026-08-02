@@ -3469,6 +3469,55 @@ impl AgentRepository for InMemoryAgentRepository {
         Ok(turns)
     }
 
+    fn append_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+        updated_at: &str,
+    ) -> KernelResult<()> {
+        // The in-memory repository is a dev/test store that does not survive
+        // restarts, so there is no durable checkpoint to write. Keeping the
+        // contract honest: the turn timestamp is advanced so reconciliation
+        // semantics match the durable adapter, and `content` is intentionally
+        // not retained (nothing to recover from in a process-local store).
+        let _ = content;
+        let mut turns = self.turns.recovering_write();
+        let mut matched = false;
+        for (key, turn) in turns.iter_mut() {
+            if key.0 != tenant_id || key.1 != organization_id || turn.turn_id != turn_id {
+                continue;
+            }
+            let running = matches!(
+                turn.status,
+                crate::agent_turn::AgentTurnStatus::Requested
+                    | crate::agent_turn::AgentTurnStatus::Running
+            );
+            if !running {
+                continue;
+            }
+            turn.updated_at = updated_at.to_string();
+            matched = true;
+            break;
+        }
+        drop(turns);
+        if !matched {
+            return Err(KernelError::not_found("turn not found or not running"));
+        }
+        Ok(())
+    }
+
+    fn clear_turn_streaming_content(
+        &self,
+        _tenant_id: u64,
+        _organization_id: u64,
+        _turn_id: &str,
+    ) -> KernelResult<()> {
+        // Nothing to clear in the in-memory store (see append above).
+        Ok(())
+    }
+
     fn insert_turn_request(
         &self,
         turn: AgentTurnRecord,

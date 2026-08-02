@@ -11505,7 +11505,17 @@ struct HttpTurnExecutionStreamSink {
     delta_index: AtomicUsize,
     event_sequence: AtomicUsize,
     closed: AtomicBool,
+    // Streaming checkpoint (H4): accumulated deltas flushed to the turn row on
+    // a size/time throttle so a crash mid-turn retains the partial reply.
+    streaming_buffer: std::sync::Mutex<String>,
+    streaming_last_persist: std::sync::Mutex<std::time::Instant>,
 }
+
+/// Flush the streaming checkpoint after at most this many accumulated bytes.
+const TURN_STREAMING_CHECKPOINT_BYTES: usize = 8 * 1024;
+/// Flush the streaming checkpoint at least this often while deltas arrive.
+const TURN_STREAMING_CHECKPOINT_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(2);
 
 impl HttpTurnExecutionStreamSink {
     fn new(
@@ -11527,6 +11537,40 @@ impl HttpTurnExecutionStreamSink {
             delta_index: AtomicUsize::new(0),
             event_sequence: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
+            streaming_buffer: std::sync::Mutex::new(String::new()),
+            streaming_last_persist: std::sync::Mutex::new(std::time::Instant::now()),
+        }
+    }
+
+    fn flush_streaming_checkpoint(&self) {
+        let Some(identity) = self.identity.get() else {
+            return;
+        };
+        let content = {
+            let mut buffer = self.streaming_buffer.lock().expect("streaming buffer lock");
+            if buffer.is_empty() {
+                return;
+            }
+            std::mem::take(&mut *buffer)
+        };
+        *self
+            .streaming_last_persist
+            .lock()
+            .expect("streaming persist lock") = std::time::Instant::now();
+        if let Err(error) = self.service.checkpoint_turn_streaming_content(
+            self.tenant_id,
+            self.organization_id,
+            &identity.turn_id,
+            &content,
+        ) {
+            // Checkpoint failures are non-fatal for streaming: the durable
+            // completion write remains authoritative. Log for observability.
+            tracing::warn!(
+                target: "sdkwork.agents.streaming",
+                turn_id = %identity.turn_id,
+                error = %error,
+                "failed to checkpoint streaming content"
+            );
         }
     }
 
@@ -11584,6 +11628,22 @@ impl TurnExecutionStreamSink for HttpTurnExecutionStreamSink {
         let mut chunk = String::new();
         let encoded = append_turn_delta_event(&mut chunk, index, delta).map(|_| chunk);
         self.send_chunk(encoded);
+
+        // Streaming checkpoint (H4): accumulate and flush on a size/time
+        // throttle so a crash mid-turn retains the partial reply.
+        let mut buffer = self.streaming_buffer.lock().expect("streaming buffer lock");
+        buffer.push_str(delta);
+        let size_threshold_reached = buffer.len() >= TURN_STREAMING_CHECKPOINT_BYTES;
+        let interval_elapsed = self
+            .streaming_last_persist
+            .lock()
+            .expect("streaming persist lock")
+            .elapsed()
+            >= TURN_STREAMING_CHECKPOINT_INTERVAL;
+        drop(buffer);
+        if size_threshold_reached || interval_elapsed {
+            self.flush_streaming_checkpoint();
+        }
     }
 
     fn push_event(&self, event: &sdkwork_agent_kernel::KernelEvent) -> KernelResult<()> {
@@ -11633,6 +11693,9 @@ impl TurnExecutionStreamSink for HttpTurnExecutionStreamSink {
 
     fn close(&self) {
         self.closed.store(true, Ordering::Release);
+        // Flush any remaining checkpoint so the last deltas are durable even
+        // if the consumer disconnects mid-turn.
+        self.flush_streaming_checkpoint();
     }
 }
 

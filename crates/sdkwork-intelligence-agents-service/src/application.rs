@@ -7398,6 +7398,7 @@ where
         turn.mark_completed(command.requested_at.clone());
         let completed_turn = turn.clone();
 
+        let completed_turn_id = turn.turn_id.clone();
         let (session, completed_items) = self.repository.complete_turn(
             turn,
             expected_turn_version,
@@ -7405,6 +7406,14 @@ where
             expected_lease_token,
             completed_items,
         )?;
+        // The streaming checkpoint is consumed: the durable completion write
+        // is authoritative now. A late sink flush after completion is ignored
+        // by the adapter (status guard), so clearing here is safe.
+        let _ = self.clear_turn_streaming_content(
+            session.tenant_id,
+            session.organization_id,
+            &completed_turn_id,
+        );
         let assistant_output_item = completed_items
             .last()
             .filter(|item| item.item_id == assistant_output_item.item_id)
@@ -9054,6 +9063,37 @@ where
             );
         }
         Ok(())
+    }
+
+    /// Checkpoints accumulated streaming deltas onto the running turn row so
+    /// a crash during a long turn retains the partial reply (H4). Called by
+    /// the HTTP stream sink on a throttle; the durable adapter only accepts
+    /// writes while the turn is pending/running.
+    pub(crate) fn checkpoint_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+        content: &str,
+    ) -> KernelResult<()> {
+        let updated_at = format_utc_seconds(OffsetDateTime::now_utc());
+        self.repository.append_turn_streaming_content(
+            tenant_id,
+            organization_id,
+            turn_id,
+            content,
+            &updated_at,
+        )
+    }
+
+    /// Clears the streaming checkpoint after the turn completes durably.
+    pub(crate) fn clear_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<()> {
+        self.repository.clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 }
 
