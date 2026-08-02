@@ -876,7 +876,7 @@ where
     ) -> KernelResult<()> {
         if let Some(required_owner) = owner_scope {
             if session.owner_user_id != required_owner {
-                return Err(KernelError::validation("session not found"));
+                return Err(KernelError::not_found("session not found"));
             }
         }
         Ok(())
@@ -888,7 +888,7 @@ where
     ) -> KernelResult<()> {
         if let Some(required_owner) = owner_scope {
             if project.owner_user_id != required_owner {
-                return Err(KernelError::validation("project not found"));
+                return Err(KernelError::not_found("project not found"));
             }
         }
         Ok(())
@@ -907,7 +907,7 @@ where
             validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
             self.repository
                 .get_workspace(tenant_id, organization_id, workspace_id)?
-                .ok_or_else(|| KernelError::validation("workspace not found"))?
+                .ok_or_else(|| KernelError::not_found("workspace not found"))?
         } else {
             self.ensure_default_workspace(EnsureDefaultWorkspaceCommand {
                 tenant_id,
@@ -921,7 +921,7 @@ where
         if workspace.owner_user_id != owner_user_id
             || workspace.status != AgentWorkspaceStatus::Active
         {
-            return Err(KernelError::validation("workspace not found"));
+            return Err(KernelError::not_found("workspace not found"));
         }
         Ok(workspace)
     }
@@ -937,7 +937,7 @@ where
         let project = self
             .repository
             .get_project(tenant_id, organization_id, project_id)?
-            .ok_or_else(|| KernelError::validation("project not found"))?;
+            .ok_or_else(|| KernelError::not_found("project not found"))?;
         Self::ensure_project_owner_scope(&project, owner_scope)?;
         if project.status != AgentProjectStatus::Active {
             return Err(KernelError::validation("project is not active"));
@@ -951,7 +951,7 @@ where
     ) -> KernelResult<()> {
         if let Some(required_owner) = owner_scope {
             if task.owner_user_id != required_owner {
-                return Err(KernelError::validation("task not found"));
+                return Err(KernelError::not_found("task not found"));
             }
         }
         Ok(())
@@ -970,7 +970,7 @@ where
         let task = self
             .repository
             .get_task(tenant_id, organization_id, task_id)?
-            .ok_or_else(|| KernelError::validation("task not found"))?;
+            .ok_or_else(|| KernelError::not_found("task not found"))?;
         Self::ensure_task_owner_scope(&task, owner_scope)?;
         Self::ensure_nested_agent_id(&task.agent_id, path_agent_id, "task")?;
         Ok(task)
@@ -984,7 +984,7 @@ where
         if run.task_id != task_id
             || owner_scope.is_some_and(|owner_user_id| run.owner_user_id != owner_user_id)
         {
-            return Err(KernelError::validation("task Run not found"));
+            return Err(KernelError::not_found("task Run not found"));
         }
         Ok(())
     }
@@ -1050,7 +1050,7 @@ where
         let session = self
             .repository
             .get_session(tenant_id, organization_id, session_id)?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&session, owner_scope)?;
         Self::ensure_nested_agent_id(&session.agent_id, path_agent_id, "session")?;
         Ok(session)
@@ -1264,7 +1264,7 @@ where
 
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
         validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
         validate_standard_id(
@@ -1340,7 +1340,7 @@ where
 
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
 
         let record = self.repository.activate_provider_binding_atomic(
@@ -1399,7 +1399,7 @@ where
         )?;
         self.repository
             .get(command.query.tenant_id, command.query.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         let total_count = self.repository.count_provider_bindings(&command.query)?;
         let items = self.repository.list_provider_bindings(&command.query)?;
         Ok(offset_paginated_result(
@@ -1425,10 +1425,10 @@ where
         )?;
         self.repository
             .get(tenant_id, agent_id)?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         self.repository
             .get_provider_binding(tenant_id, agent_id, binding_id)?
-            .ok_or_else(|| KernelError::validation("provider binding not found"))
+            .ok_or_else(|| KernelError::not_found("provider binding not found"))
     }
 
     pub fn deactivate_provider_binding(
@@ -1449,7 +1449,7 @@ where
         let mut record = self
             .repository
             .get_provider_binding(tenant_id, agent_id, binding_id)?
-            .ok_or_else(|| KernelError::validation("provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("provider binding not found"))?;
         if !record.active {
             return Err(KernelError::validation(
                 "provider binding is already inactive",
@@ -1485,7 +1485,7 @@ where
         let mut record = self
             .repository
             .get_session(tenant_id, organization_id, session_id)?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         if let Some(title) = title {
             record.title = Some(title);
         }
@@ -1546,7 +1546,7 @@ where
 
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         validate_standard_id(
             command.execution_id.as_str(),
             "executionId",
@@ -1626,7 +1626,7 @@ where
 
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         validate_standard_id(
             command.execution_id.as_str(),
             "executionId",
@@ -1695,7 +1695,7 @@ where
         require_non_blank(command.target_ref.as_str(), "targetRef")?;
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         if self
             .repository
             .get_composition_slot(
@@ -1755,7 +1755,7 @@ where
         validate_agent_id(command.query.agent_id.as_str())?;
         self.repository
             .get(command.query.tenant_id, command.query.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         let total_count = self.repository.count_composition_slots(&command.query)?;
         let items = self.repository.list_composition_slots(&command.query)?;
         Ok(offset_paginated_result(
@@ -1786,7 +1786,7 @@ where
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("composition slot not found"))
+            .ok_or_else(|| KernelError::not_found("composition slot not found"))
     }
 
     pub fn update_composition_slot(
@@ -1811,7 +1811,7 @@ where
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("composition slot not found"))?;
+            .ok_or_else(|| KernelError::not_found("composition slot not found"))?;
         if record.is_deleted() {
             return Err(KernelError::validation("composition slot is deleted"));
         }
@@ -1885,7 +1885,7 @@ where
                 command.agent_id.as_str(),
                 command.slot_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("composition slot not found"))?;
+            .ok_or_else(|| KernelError::not_found("composition slot not found"))?;
         if record.is_deleted() {
             return Err(KernelError::validation("composition slot already deleted"));
         }
@@ -1927,7 +1927,7 @@ where
         let mut record = self
             .repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
         if record.is_deleted() {
             return Err(KernelError::validation("deleted agent cannot be updated"));
@@ -1994,7 +1994,7 @@ where
         let mut record = self
             .repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
         if record.is_deleted() {
             return Err(KernelError::validation(
@@ -2034,7 +2034,7 @@ where
         let mut record = self
             .repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
         if record.is_deleted() {
             return Err(KernelError::validation("agent already deleted"));
@@ -2073,7 +2073,7 @@ where
         let mut record = self
             .repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
         if !record.is_deleted() {
             return Err(KernelError::validation("agent is not deleted"));
@@ -2104,10 +2104,10 @@ where
 
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))
+            .ok_or_else(|| KernelError::not_found("agent not found"))
             .and_then(|record| {
                 if record.is_deleted() {
-                    return Err(KernelError::validation("agent not found"));
+                    return Err(KernelError::not_found("agent not found"));
                 }
                 Ok(record)
             })
@@ -2279,7 +2279,7 @@ where
                 command.organization_id,
                 &command.workspace_id,
             )?
-            .ok_or_else(|| KernelError::validation("workspace not found"))?;
+            .ok_or_else(|| KernelError::not_found("workspace not found"))?;
         Self::ensure_workspace_owner_scope(&record, command.owner_user_id)?;
         Ok(record)
     }
@@ -2428,7 +2428,7 @@ where
         let record = self
             .repository
             .get_workspace(tenant_id, organization_id, workspace_id)?
-            .ok_or_else(|| KernelError::validation("workspace not found"))?;
+            .ok_or_else(|| KernelError::not_found("workspace not found"))?;
         Self::ensure_workspace_owner_scope(&record, owner_user_id)?;
         Ok(record)
     }
@@ -2438,7 +2438,7 @@ where
         owner_user_id: u64,
     ) -> KernelResult<()> {
         if record.owner_user_id != owner_user_id {
-            return Err(KernelError::validation("workspace not found"));
+            return Err(KernelError::not_found("workspace not found"));
         }
         Ok(())
     }
@@ -2513,9 +2513,9 @@ where
             let agent = self
                 .repository
                 .get(command.tenant_id, agent_id)?
-                .ok_or_else(|| KernelError::validation("default agent not found"))?;
+                .ok_or_else(|| KernelError::not_found("default agent not found"))?;
             if agent.organization_id != command.organization_id {
-                return Err(KernelError::validation("default agent not found"));
+                return Err(KernelError::not_found("default agent not found"));
             }
         }
         if self
@@ -2723,7 +2723,7 @@ where
                 command.organization_id,
                 &command.project_id,
             )?
-            .ok_or_else(|| KernelError::validation("project not found"))?;
+            .ok_or_else(|| KernelError::not_found("project not found"))?;
         Self::ensure_project_owner_scope(&record, command.owner_scope)?;
         ensure_expected_version(record.version, command.expected_version, "project")?;
         if record.status != AgentProjectStatus::Active {
@@ -2767,9 +2767,9 @@ where
                 let agent = self
                     .repository
                     .get(command.tenant_id, agent_id)?
-                    .ok_or_else(|| KernelError::validation("default agent not found"))?;
+                    .ok_or_else(|| KernelError::not_found("default agent not found"))?;
                 if agent.organization_id != command.organization_id {
-                    return Err(KernelError::validation("default agent not found"));
+                    return Err(KernelError::not_found("default agent not found"));
                 }
             }
             record.default_agent_id = default_agent_id;
@@ -2836,7 +2836,7 @@ where
                 command.organization_id,
                 &command.project_id,
             )?
-            .ok_or_else(|| KernelError::validation("project not found"))?;
+            .ok_or_else(|| KernelError::not_found("project not found"))?;
         Self::ensure_project_owner_scope(&record, command.owner_scope)?;
         if target != AgentProjectStatus::Deleted || command.expected_version.is_some() {
             ensure_expected_version(record.version, command.expected_version, "project")?;
@@ -2874,7 +2874,7 @@ where
                 command.organization_id,
                 &command.project_id,
             )?
-            .ok_or_else(|| KernelError::validation("project not found"))
+            .ok_or_else(|| KernelError::not_found("project not found"))
             .and_then(|record| {
                 Self::ensure_project_owner_scope(&record, command.owner_scope)?;
                 Ok(record)
@@ -3005,7 +3005,7 @@ where
                 &command.project_id,
                 &command.slot_id,
             )?
-            .ok_or_else(|| KernelError::validation("project composition slot not found"))
+            .ok_or_else(|| KernelError::not_found("project composition slot not found"))
     }
 
     pub fn list_project_composition_slots(
@@ -3068,7 +3068,7 @@ where
                 &command.project_id,
                 &command.slot_id,
             )?
-            .ok_or_else(|| KernelError::validation("project composition slot not found"))?;
+            .ok_or_else(|| KernelError::not_found("project composition slot not found"))?;
         ensure_expected_version(
             record.version,
             command.expected_version,
@@ -3143,7 +3143,7 @@ where
                 &command.project_id,
                 &command.slot_id,
             )?
-            .ok_or_else(|| KernelError::validation("project composition slot not found"))?;
+            .ok_or_else(|| KernelError::not_found("project composition slot not found"))?;
         ensure_expected_version(
             record.version,
             command.expected_version,
@@ -3183,7 +3183,7 @@ where
             .map_err(|error| {
                 KernelError::provider_error("code_engine_runtime_identity", error.to_string())
             })?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
             return self.ensure_code_engine_runtime_identity(
                 command.tenant_id,
                 command.organization_id,
@@ -3201,7 +3201,7 @@ where
             .get(command.tenant_id, command.agent_id.as_str())?
             .filter(|agent| !agent.is_deleted())
             .map(|_| ())
-            .ok_or_else(|| KernelError::validation("agent not found"))
+            .ok_or_else(|| KernelError::not_found("agent not found"))
     }
 
     fn find_session_creation_replay(
@@ -3373,7 +3373,7 @@ where
                     command.organization_id,
                     parent_session_id,
                 )?
-                .ok_or_else(|| KernelError::validation("parent session not found"))?;
+                .ok_or_else(|| KernelError::not_found("parent session not found"))?;
             if parent.organization_id != command.organization_id
                 || parent.owner_user_id != command.owner_user_id
             {
@@ -3386,7 +3386,7 @@ where
                     command.organization_id,
                     forked_from_turn_id,
                 )?
-                .ok_or_else(|| KernelError::validation("fork turn not found"))?;
+                .ok_or_else(|| KernelError::not_found("fork turn not found"))?;
             if fork_turn.session_id != parent_session_id {
                 return Err(KernelError::validation(
                     "forkedFromTurnId does not belong to parentSessionId",
@@ -3398,7 +3398,7 @@ where
             let project = self
                 .repository
                 .get_project(command.tenant_id, command.organization_id, project_id)?
-                .ok_or_else(|| KernelError::validation("project not found"))?;
+                .ok_or_else(|| KernelError::not_found("project not found"))?;
             Self::ensure_project_owner_scope(&project, Some(command.owner_user_id))?;
             if project.status != AgentProjectStatus::Active {
                 return Err(KernelError::validation("project is not active"));
@@ -3526,7 +3526,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
         if record.organization_id != command.organization_id {
@@ -3536,7 +3536,7 @@ where
             ensure_expected_version(record.version, command.expected_version, "session")?;
         }
         if record.deleted_at.is_some() {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         if require_provider_session_history
             && (record.source_module.as_deref() != Some("birdcoder")
@@ -3574,7 +3574,7 @@ where
                 let project = self
                     .repository
                     .get_project(command.tenant_id, command.organization_id, project_id)?
-                    .ok_or_else(|| KernelError::validation("project not found"))?;
+                    .ok_or_else(|| KernelError::not_found("project not found"))?;
                 Self::ensure_project_owner_scope(&project, command.owner_scope)?;
                 if project.status != AgentProjectStatus::Active {
                     return Err(KernelError::validation("project is not active"));
@@ -3612,7 +3612,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
         if record.organization_id != command.organization_id {
@@ -3652,7 +3652,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
@@ -3694,7 +3694,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
 
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "session")?;
@@ -3736,7 +3736,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))
+            .ok_or_else(|| KernelError::not_found("session not found"))
             .and_then(|record| {
                 Self::ensure_session_owner_scope(&record, command.owner_scope)?;
                 Self::ensure_nested_agent_id(
@@ -3767,12 +3767,12 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&record, command.owner_scope)?;
         if record.project_id.as_deref() != Some(command.project_id.as_str())
             || record.deleted_at.is_some()
         {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         Ok(record)
     }
@@ -3891,7 +3891,7 @@ where
             Some(command.user_id),
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         self.repository
             .get_resource_user_state(
@@ -3901,7 +3901,7 @@ where
                 AgentResourceType::Session,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session user state not found"))
+            .ok_or_else(|| KernelError::not_found("session user state not found"))
     }
 
     pub fn update_session_user_state(
@@ -3934,7 +3934,7 @@ where
             Some(command.user_id),
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
 
         let existing = self.repository.get_resource_user_state(
@@ -4051,7 +4051,7 @@ where
             Some(command.query.user_id),
         )?;
         if session.organization_id != command.query.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         let total_count = self.repository.count_item_feedback(&command.query)?;
         let items = self.repository.list_item_feedback(&command.query)?;
@@ -4083,7 +4083,7 @@ where
             Some(command.user_id),
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session item not found"));
+            return Err(KernelError::not_found("session item not found"));
         }
         let item = self
             .repository
@@ -4093,7 +4093,7 @@ where
                 command.session_id.as_str(),
                 command.item_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session item not found"))?;
+            .ok_or_else(|| KernelError::not_found("session item not found"))?;
         if item.kind != AgentSessionItemKind::AssistantOutput {
             return Err(KernelError::validation(
                 "feedback is only supported for assistant items",
@@ -4180,7 +4180,7 @@ where
                     record
                 }
                 (_, None) => {
-                    return Err(KernelError::validation("message feedback not found"));
+                    return Err(KernelError::not_found("message feedback not found"));
                 }
             };
         record.updated_at = command.requested_at.clone();
@@ -4232,9 +4232,9 @@ where
         let agent = self
             .repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         if agent.organization_id != command.organization_id {
-            return Err(KernelError::validation("agent not found"));
+            return Err(KernelError::not_found("agent not found"));
         }
 
         validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
@@ -4245,12 +4245,12 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         if session.agent_id != command.agent_id
             || session.owner_user_id != command.owner_user_id
             || !session.status.is_active()
         {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
 
         if self
@@ -4353,7 +4353,7 @@ where
                 command.organization_id,
                 command.task_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("task not found"))?;
+            .ok_or_else(|| KernelError::not_found("task not found"))?;
 
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "task")?;
@@ -4425,7 +4425,7 @@ where
         let mut record = self
             .repository
             .get_task(command.tenant_id, command.organization_id, &command.task_id)?
-            .ok_or_else(|| KernelError::validation("task not found"))?;
+            .ok_or_else(|| KernelError::not_found("task not found"))?;
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, &command.path_agent_id, "task")?;
         if !matches!(
@@ -4579,7 +4579,7 @@ where
                 command.organization_id,
                 command.task_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("task not found"))?;
+            .ok_or_else(|| KernelError::not_found("task not found"))?;
 
         Self::ensure_task_owner_scope(&record, command.owner_scope)?;
         Self::ensure_nested_agent_id(&record.agent_id, command.path_agent_id.as_str(), "task")?;
@@ -4764,7 +4764,7 @@ where
                 command.organization_id,
                 command.task_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("task not found"))
+            .ok_or_else(|| KernelError::not_found("task not found"))
             .and_then(|record| {
                 Self::ensure_task_owner_scope(&record, command.owner_scope)?;
                 Self::ensure_nested_agent_id(
@@ -4886,7 +4886,7 @@ where
         let run = self
             .repository
             .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
         Ok(run)
     }
@@ -4914,7 +4914,7 @@ where
         let source = self
             .repository
             .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         Self::ensure_task_run_scope(&source, &command.task_id, command.owner_scope)?;
         if !matches!(
             source.status,
@@ -4961,7 +4961,7 @@ where
         let current = self
             .repository
             .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         Self::ensure_task_run_scope(&current, &command.task_id, command.owner_scope)?;
         let run = self.repository.request_task_run_cancellation(
             command.tenant_id,
@@ -5006,7 +5006,7 @@ where
                 command.query.organization_id,
                 &command.query.run_id,
             )?
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
         let scope_fingerprint = command.query.scope_fingerprint();
         if command
@@ -5063,7 +5063,7 @@ where
         let run = self
             .repository
             .get_task_run(command.tenant_id, command.organization_id, &command.run_id)?
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         Self::ensure_task_run_scope(&run, &command.task_id, command.owner_scope)?;
         self.ensure_reconciliation_matches_turn(&run, command.outcome)?;
         let reconciled = self
@@ -5262,7 +5262,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         if !session.status.is_active() {
             return Err(KernelError::validation(
@@ -5294,7 +5294,7 @@ where
                 &command.path_agent_id,
                 &command.provider_binding_id,
             )?
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
         if provider_binding.provider_id != command.provider_id || !provider_binding.active {
             return Err(KernelError::validation(
                 "agent provider binding is not active for providerId",
@@ -5480,7 +5480,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.query.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         let total_count = self
             .repository
@@ -5521,7 +5521,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session runtime binding not found"));
+            return Err(KernelError::not_found("session runtime binding not found"));
         }
         self.repository
             .get_session_runtime_binding(
@@ -5530,7 +5530,7 @@ where
                 &command.session_id,
                 &command.runtime_binding_id,
             )?
-            .ok_or_else(|| KernelError::validation("session runtime binding not found"))
+            .ok_or_else(|| KernelError::not_found("session runtime binding not found"))
     }
 
     pub fn update_session_runtime_binding(
@@ -5587,7 +5587,7 @@ where
                 &command.path_agent_id,
                 &provider_binding_id,
             )?
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
         if provider_binding.provider_id != provider_id || !provider_binding.active {
             return Err(KernelError::validation(
                 "agent provider binding is not active for providerId",
@@ -5751,7 +5751,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         if !session.status.is_active() {
             return Err(KernelError::validation(
@@ -5794,7 +5794,7 @@ where
                     &command.session_id,
                     runtime_binding_id,
                 )?
-                .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+                .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
         } else {
             require_non_blank(
                 command.drive_space_id.as_deref().ok_or_else(|| {
@@ -5818,9 +5818,9 @@ where
             let turn = self
                 .repository
                 .get_turn(command.tenant_id, command.organization_id, turn_id)?
-                .ok_or_else(|| KernelError::validation("turn not found"))?;
+                .ok_or_else(|| KernelError::not_found("turn not found"))?;
             if turn.session_id != command.session_id {
-                return Err(KernelError::validation("turn not found"));
+                return Err(KernelError::not_found("turn not found"));
             }
         }
         let checkpoint_id = match command.checkpoint_id {
@@ -5898,7 +5898,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.query.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         let total_count = self.repository.count_session_checkpoints(&command.query)?;
         let items = self.repository.list_session_checkpoints(&command.query)?;
@@ -5931,7 +5931,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session checkpoint not found"));
+            return Err(KernelError::not_found("session checkpoint not found"));
         }
         self.repository
             .get_session_checkpoint(
@@ -5940,7 +5940,7 @@ where
                 &command.session_id,
                 &command.checkpoint_id,
             )?
-            .ok_or_else(|| KernelError::validation("session checkpoint not found"))
+            .ok_or_else(|| KernelError::not_found("session checkpoint not found"))
     }
 
     pub fn restore_session_checkpoint(
@@ -6045,7 +6045,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
 
         if !session.status.is_active() {
             return Err(KernelError::validation(
@@ -6145,7 +6145,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         if session.agent_id != expected_agent_id
             || session.source_module.as_deref() != Some("birdcoder")
             || session.source_context_kind.as_deref() != Some("provider_session")
@@ -6341,7 +6341,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
         Self::ensure_nested_agent_id(&session.agent_id, command.path_agent_id.as_str(), "session")?;
         self.repository
@@ -6351,7 +6351,7 @@ where
                 command.session_id.as_str(),
                 command.item_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session item not found"))
+            .ok_or_else(|| KernelError::not_found("session item not found"))
     }
 
     pub fn list_session_items(
@@ -6482,19 +6482,19 @@ where
                 command.organization_id,
                 &command.session_id,
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
         if session.organization_id != command.organization_id
             || session.agent_id != command.path_agent_id
         {
-            return Err(KernelError::validation("turn not found"));
+            return Err(KernelError::not_found("turn not found"));
         }
         let turn = self
             .repository
             .get_turn(command.tenant_id, command.organization_id, &command.turn_id)?
-            .ok_or_else(|| KernelError::validation("turn not found"))?;
+            .ok_or_else(|| KernelError::not_found("turn not found"))?;
         if turn.session_id != command.session_id || turn.agent_id != command.path_agent_id {
-            return Err(KernelError::validation("turn not found"));
+            return Err(KernelError::not_found("turn not found"));
         }
         Ok(turn)
     }
@@ -6517,7 +6517,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.query.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         let total_count = self.repository.count_turns(&command.query)?;
         let items = self.repository.list_turns(&command.query)?;
@@ -6554,12 +6554,12 @@ where
                 command.organization_id,
                 &command.session_id,
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         Self::ensure_session_owner_scope(&session, Some(command.owner_user_id))?;
         if session.organization_id != command.organization_id
             || session.agent_id != command.path_agent_id
         {
-            return Err(KernelError::validation("turn not found"));
+            return Err(KernelError::not_found("turn not found"));
         }
         let turn = self.repository.get_turn_by_idempotency(
             command.tenant_id,
@@ -6569,7 +6569,7 @@ where
         )?;
         if let Some(turn) = turn.as_ref() {
             if turn.session_id != command.session_id || turn.agent_id != command.path_agent_id {
-                return Err(KernelError::validation("turn not found"));
+                return Err(KernelError::not_found("turn not found"));
             }
         }
         Ok(turn)
@@ -6617,7 +6617,7 @@ where
                     self.repository
                         .get_provider_binding(turn.tenant_id, &turn.agent_id, provider_binding_id)?
                         .ok_or_else(|| {
-                            KernelError::validation("agent provider binding not found")
+                            KernelError::not_found("agent provider binding not found")
                         })?,
                 ),
                 None => None,
@@ -6652,7 +6652,7 @@ where
         turn = self
             .repository
             .get_turn(turn.tenant_id, turn.organization_id, &turn.turn_id)?
-            .ok_or_else(|| KernelError::validation("turn not found"))?;
+            .ok_or_else(|| KernelError::not_found("turn not found"))?;
         if turn.status == AgentTurnStatus::Cancelled {
             return Ok(turn);
         }
@@ -6898,7 +6898,7 @@ where
         let agent = self
             .repository
             .get(command.tenant_id, command.agent_id.as_str())?
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
         let session = self
             .repository
@@ -6907,14 +6907,14 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
 
         Self::ensure_session_owner_scope(&session, command.owner_scope)?;
 
         if session.agent_id != command.agent_id
             || session.organization_id != command.organization_id
         {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         if !session.status.is_active() {
             return Err(KernelError::validation(
@@ -6962,7 +6962,7 @@ where
                 &command.session_id,
             )?,
         }
-        .ok_or_else(|| KernelError::validation("active session runtime binding not found"))?;
+        .ok_or_else(|| KernelError::not_found("active session runtime binding not found"))?;
         if !session_runtime_binding.is_current
             || session_runtime_binding.status != AgentSessionRuntimeBindingStatus::Active
         {
@@ -6984,7 +6984,7 @@ where
                 command.agent_id.as_str(),
                 &session_runtime_binding.provider_binding_id,
             )?
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
         if !provider_binding.active
             || provider_binding.provider_id != session_runtime_binding.provider_id
         {
@@ -7256,7 +7256,7 @@ where
             let mut current_turn = self
                 .repository
                 .get_turn(command.tenant_id, command.organization_id, &turn_id)?
-                .ok_or_else(|| KernelError::validation("turn not found"))?;
+                .ok_or_else(|| KernelError::not_found("turn not found"))?;
             if current_turn.status != AgentTurnStatus::Cancelled {
                 if current_turn.status != AgentTurnStatus::Running {
                     return Err(KernelError::conflict(
@@ -8083,7 +8083,7 @@ where
                     &command.session_id,
                     runtime_binding_id,
                 )?
-                .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+                .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
         }
 
         self.repository
@@ -8092,7 +8092,7 @@ where
                 command.organization_id,
                 command.session_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("session not found"))
+            .ok_or_else(|| KernelError::not_found("session not found"))
             .and_then(|session| {
                 Self::ensure_session_owner_scope(&session, command.owner_scope)?;
                 Self::ensure_nested_agent_id(
@@ -8101,7 +8101,7 @@ where
                     "session",
                 )?;
                 if session.organization_id != command.organization_id {
-                    return Err(KernelError::validation("session not found"));
+                    return Err(KernelError::not_found("session not found"));
                 }
                 if !session.status.is_active() {
                     return Err(KernelError::validation(
@@ -8116,9 +8116,9 @@ where
             let turn = self
                 .repository
                 .get_turn(command.tenant_id, command.organization_id, turn_id)?
-                .ok_or_else(|| KernelError::validation("turn not found"))?;
+                .ok_or_else(|| KernelError::not_found("turn not found"))?;
             if turn.session_id != command.session_id {
-                return Err(KernelError::validation("turn not found"));
+                return Err(KernelError::not_found("turn not found"));
             }
         }
 
@@ -8300,7 +8300,7 @@ where
         let turn = self
             .repository
             .get_turn(command.tenant_id, command.organization_id, &command.turn_id)?
-            .ok_or_else(|| KernelError::validation("turn not found"))?;
+            .ok_or_else(|| KernelError::not_found("turn not found"))?;
         if turn.session_id != command.session_id {
             return Err(KernelError::validation(
                 "provider interaction does not match the active Turn",
@@ -8317,7 +8317,7 @@ where
                 &command.session_id,
                 runtime_binding_id,
             )?
-            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
         if runtime_binding.provider_id != provider_id {
             return Err(KernelError::validation(
                 "provider interaction does not match the Session runtime provider",
@@ -8331,7 +8331,7 @@ where
             None,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
 
         let provider_request_id = correlation
@@ -8447,7 +8447,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.query.organization_id {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         let total_count = self.repository.count_interactions(&command.query)?;
         let items = self.repository.list_interactions(&command.query)?;
@@ -8476,7 +8476,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("interaction not found"));
+            return Err(KernelError::not_found("interaction not found"));
         }
         self.repository
             .get_interaction(
@@ -8485,7 +8485,7 @@ where
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("interaction not found"))
+            .ok_or_else(|| KernelError::not_found("interaction not found"))
     }
 
     pub fn claim_interaction(
@@ -8521,7 +8521,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("interaction not found"));
+            return Err(KernelError::not_found("interaction not found"));
         }
         let mut record = self
             .repository
@@ -8531,7 +8531,7 @@ where
                 &command.session_id,
                 &command.interaction_id,
             )?
-            .ok_or_else(|| KernelError::validation("interaction not found"))?;
+            .ok_or_else(|| KernelError::not_found("interaction not found"))?;
         if !record.is_pending() {
             return Err(KernelError::validation(
                 "interaction is no longer pending and cannot be claimed",
@@ -8604,7 +8604,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("interaction not found"));
+            return Err(KernelError::not_found("interaction not found"));
         }
         let mut record = self
             .repository
@@ -8614,7 +8614,7 @@ where
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("interaction not found"))?;
+            .ok_or_else(|| KernelError::not_found("interaction not found"))?;
 
         if !record.is_pending() {
             return Err(KernelError::validation(
@@ -8701,7 +8701,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("interaction not found"));
+            return Err(KernelError::not_found("interaction not found"));
         }
         let mut record = self
             .repository
@@ -8711,7 +8711,7 @@ where
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("interaction not found"))?;
+            .ok_or_else(|| KernelError::not_found("interaction not found"))?;
 
         if !record.is_pending() {
             return Err(KernelError::validation(
@@ -8795,7 +8795,7 @@ where
             command.owner_scope,
         )?;
         if session.organization_id != command.organization_id {
-            return Err(KernelError::validation("interaction not found"));
+            return Err(KernelError::not_found("interaction not found"));
         }
         let mut record = self
             .repository
@@ -8805,7 +8805,7 @@ where
                 command.session_id.as_str(),
                 command.interaction_id.as_str(),
             )?
-            .ok_or_else(|| KernelError::validation("interaction not found"))?;
+            .ok_or_else(|| KernelError::not_found("interaction not found"))?;
         if !record.is_pending() {
             return Err(KernelError::validation(
                 "interaction is no longer pending and cannot be resolved",
@@ -8844,7 +8844,7 @@ where
                     &command.session_id,
                     runtime_binding_id,
                 )?
-                .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+                .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
             let provider_id =
                 required_json_string(correlation, "providerId", "request.correlation")?;
             if runtime_binding.provider_id != provider_id {

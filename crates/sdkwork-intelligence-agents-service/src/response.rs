@@ -170,6 +170,14 @@ impl ApiProblem {
         }
     }
 
+    pub fn gateway_timeout(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            status: StatusCode::GATEWAY_TIMEOUT,
+            result_code: None,
+        }
+    }
+
     pub fn internal_server_error(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),

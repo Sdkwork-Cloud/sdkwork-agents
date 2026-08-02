@@ -1008,7 +1008,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut agents = self.agents.recovering_write();
         let existing = agents
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("agent not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent not found"))?;
         let expected_version = existing.version.saturating_add(1);
         if record.version != expected_version {
             return Err(KernelError::conflict(format!(
@@ -1094,9 +1094,9 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut workspaces = self.workspaces.recovering_write();
         let existing = workspaces
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("workspace not found"))?;
+            .ok_or_else(|| KernelError::not_found("workspace not found"))?;
         if existing.status == AgentWorkspaceStatus::Deleted {
-            return Err(KernelError::validation("workspace not found"));
+            return Err(KernelError::not_found("workspace not found"));
         }
         if record.version != existing.version.saturating_add(1) {
             return Err(KernelError::conflict("workspace version mismatch"));
@@ -1231,7 +1231,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut projects = self.projects.recovering_write();
         let existing = projects
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("project not found"))?;
+            .ok_or_else(|| KernelError::not_found("project not found"))?;
         let expected_version = existing.version.saturating_add(1);
         if record.version != expected_version {
             return Err(KernelError::conflict(format!(
@@ -1400,7 +1400,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut slots = self.project_composition_slots.recovering_write();
         let existing = slots
             .get(&key)
-            .ok_or_else(|| KernelError::validation("project composition slot not found"))?;
+            .ok_or_else(|| KernelError::not_found("project composition slot not found"))?;
         if record.version != existing.version.saturating_add(1) {
             return Err(KernelError::conflict(
                 "project composition slot version mismatch",
@@ -1516,7 +1516,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut bindings = self.provider_bindings.recovering_write();
         let existing = bindings
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
         let expected_version = existing.version.saturating_add(1);
         if record.version != expected_version {
             return Err(KernelError::conflict(format!(
@@ -1621,7 +1621,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut slots = self.composition_slots.recovering_write();
         let existing = slots
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("composition slot not found"))?;
+            .ok_or_else(|| KernelError::not_found("composition slot not found"))?;
         let expected_version = existing.version.saturating_add(1);
         if record.version != expected_version {
             return Err(KernelError::conflict(format!(
@@ -1785,7 +1785,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut sessions = self.sessions.recovering_write();
         let existing = sessions
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         let expected_version = existing.version.saturating_add(1);
         if record.version != expected_version {
             return Err(KernelError::conflict(format!(
@@ -2080,7 +2080,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut bindings = self.session_runtime_bindings.recovering_write();
         let existing = bindings
             .get(&key)
-            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
         if record.version != existing.version.saturating_add(1) {
             return Err(KernelError::conflict(
                 "session runtime binding version mismatch",
@@ -2240,7 +2240,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let target = bindings
             .get(&target_key)
             .cloned()
-            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
         if target.version != expected_version {
             return Err(KernelError::conflict(
                 "session runtime binding version mismatch",
@@ -2263,7 +2263,7 @@ impl AgentRepository for InMemoryAgentRepository {
         }
         let target = bindings
             .get_mut(&target_key)
-            .ok_or_else(|| KernelError::validation("session runtime binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("session runtime binding not found"))?;
         target.activate(updated_at);
         let target = target.clone();
         self.current_session_runtime_bindings
@@ -2312,7 +2312,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut checkpoints = self.session_checkpoints.recovering_write();
         let existing = checkpoints
             .get(&key)
-            .ok_or_else(|| KernelError::validation("session checkpoint not found"))?;
+            .ok_or_else(|| KernelError::not_found("session checkpoint not found"))?;
         if record.version != existing.version.saturating_add(1) {
             return Err(KernelError::conflict("session checkpoint version mismatch"));
         }
@@ -2536,12 +2536,12 @@ impl AgentRepository for InMemoryAgentRepository {
         let existing_session = sessions
             .get(&session_primary_key)
             .cloned()
-            .ok_or_else(|| KernelError::validation("active session not found"))?;
+            .ok_or_else(|| KernelError::not_found("active session not found"))?;
         if !existing_session.status.is_active()
             || existing_session.deleted_at.is_some()
             || existing_session.owner_user_id != record.created_by
         {
-            return Err(KernelError::validation("active session not found"));
+            return Err(KernelError::not_found("active session not found"));
         }
         record.sequence = existing_session.last_item_sequence.saturating_add(1);
         let primary_key = session_item_primary_key(&record);
@@ -2579,7 +2579,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let primary_key = session_item_primary_key(&record);
         let mut items = self.items.recovering_write();
         let Some(existing) = items.get(&primary_key) else {
-            return Err(KernelError::validation("session item not found"));
+            return Err(KernelError::not_found("session item not found"));
         };
         let expected_version = existing
             .version
@@ -3060,7 +3060,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut queue = self.turn_input_queue.recovering_lock();
         let existing = queue
             .get(&key)
-            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+            .ok_or_else(|| KernelError::not_found("queued Turn input not found"))?;
         if existing.owner_user_id != entry.owner_user_id
             || existing.version != expected_version
             || entry.version != expected_version.saturating_add(1)
@@ -3109,7 +3109,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut queue = self.turn_input_queue.recovering_lock();
         let entry = queue
             .get(&key)
-            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+            .ok_or_else(|| KernelError::not_found("queued Turn input not found"))?;
         if entry.owner_user_id != owner_user_id
             || entry.version != expected_version
             || entry.status == AgentTurnInputQueueStatus::Executing
@@ -3373,7 +3373,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut queue = self.turn_input_queue.recovering_lock();
         let entry = queue
             .get_mut(&key)
-            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+            .ok_or_else(|| KernelError::not_found("queued Turn input not found"))?;
         if entry.owner_user_id != request.owner_user_id
             || entry.status != AgentTurnInputQueueStatus::Executing
             || entry.version != request.expected_version
@@ -3525,9 +3525,9 @@ impl AgentRepository for InMemoryAgentRepository {
         let existing_session = sessions
             .get(&session_primary_key)
             .cloned()
-            .ok_or_else(|| KernelError::validation("active session not found"))?;
+            .ok_or_else(|| KernelError::not_found("active session not found"))?;
         if !existing_session.status.is_active() || existing_session.deleted_at.is_some() {
-            return Err(KernelError::validation("active session not found"));
+            return Err(KernelError::not_found("active session not found"));
         }
         let request_primary_key = session_item_primary_key(&request_item);
         if items.contains_key(&request_primary_key) {
@@ -3598,7 +3598,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut turns = self.turns.recovering_write();
         let existing = turns
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("turn not found"))?;
+            .ok_or_else(|| KernelError::not_found("turn not found"))?;
         if existing.version != expected_version
             || turn.version != expected_version.saturating_add(1)
         {
@@ -3652,7 +3652,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let existing_turn = turns
             .get(&turn_primary_key)
             .cloned()
-            .ok_or_else(|| KernelError::validation("turn not found"))?;
+            .ok_or_else(|| KernelError::not_found("turn not found"))?;
         if existing_turn.version != expected_turn_version
             || existing_turn.fencing_token != expected_fencing_token
             || existing_turn.lease_token != expected_lease_token
@@ -3668,9 +3668,9 @@ impl AgentRepository for InMemoryAgentRepository {
         let existing_session = sessions
             .get(&session_primary_key)
             .cloned()
-            .ok_or_else(|| KernelError::validation("session not found"))?;
+            .ok_or_else(|| KernelError::not_found("session not found"))?;
         if existing_session.deleted_at.is_some() {
-            return Err(KernelError::validation("session not found"));
+            return Err(KernelError::not_found("session not found"));
         }
         let mut updated_session = existing_session.clone();
         let mut pending_items = Vec::with_capacity(completed_items.len());
@@ -3945,7 +3945,7 @@ impl AgentRepository for InMemoryAgentRepository {
         let mut tasks = self.tasks.recovering_write();
         let existing = tasks
             .get(&primary_key)
-            .ok_or_else(|| KernelError::validation("task not found"))?;
+            .ok_or_else(|| KernelError::not_found("task not found"))?;
         let expected_version = existing.version.saturating_add(1);
         if record.version != expected_version {
             return Err(KernelError::conflict(format!(
@@ -4013,7 +4013,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
         let mut tasks = self.tasks.recovering_write();
         let existing = tasks
             .get(&key)
-            .ok_or_else(|| KernelError::validation("task not found"))?;
+            .ok_or_else(|| KernelError::not_found("task not found"))?;
         if task.version != existing.version.saturating_add(1)
             || task.generation != existing.generation.saturating_add(1)
         {
@@ -4243,7 +4243,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
         for (_, _, _, key) in due_keys {
             let task = tasks
                 .get_mut(&key)
-                .ok_or_else(|| KernelError::validation("task not found"))?;
+                .ok_or_else(|| KernelError::not_found("task not found"))?;
             let previous_index_key = task_index_key(task);
             let active_count = runs
                 .values()
@@ -4397,7 +4397,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
             let run_snapshot = runs
                 .get(&key)
                 .cloned()
-                .ok_or_else(|| KernelError::validation("task Run not found"))?;
+                .ok_or_else(|| KernelError::not_found("task Run not found"))?;
             let Some(task) = tasks.get(&(
                 run_snapshot.tenant_id,
                 run_snapshot.organization_id,
@@ -4446,7 +4446,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
             let attempt_id = format!("attempt.{attempt_id_value}");
             let run = runs
                 .get_mut(&key)
-                .ok_or_else(|| KernelError::validation("task Run not found"))?;
+                .ok_or_else(|| KernelError::not_found("task Run not found"))?;
             run.status = AgentTaskRunStatus::Claimed;
             run.attempt_count = run.attempt_count.saturating_add(1);
             run.lease_owner = Some(request.worker_id.clone());
@@ -4527,7 +4527,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 lease.organization_id,
                 lease.attempt_id.clone(),
             ))
-            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run Attempt not found"))?;
         attempt.status = AgentTaskRunAttemptStatus::Running;
         attempt.started_at = Some(started_at.to_string());
         attempt.heartbeat_at = Some(started_at.to_string());
@@ -4564,7 +4564,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 lease.organization_id,
                 lease.attempt_id.clone(),
             ))
-            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run Attempt not found"))?;
         attempt.heartbeat_at = Some(heartbeat_at.to_string());
         attempt.updated_at = heartbeat_at.to_string();
         Ok(run.clone())
@@ -4609,7 +4609,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 lease.organization_id,
                 lease.attempt_id.clone(),
             ))
-            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run Attempt not found"))?;
         attempt.status = AgentTaskRunAttemptStatus::Succeeded;
         attempt.finished_at = Some(completed_at.to_string());
         attempt.updated_at = completed_at.to_string();
@@ -4658,7 +4658,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 request.lease.organization_id,
                 request.lease.attempt_id.clone(),
             ))
-            .ok_or_else(|| KernelError::validation("task Run Attempt not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run Attempt not found"))?;
         attempt.status = AgentTaskRunAttemptStatus::Failed;
         attempt.failure_class = Some(request.failure_class.clone());
         attempt.error_code = Some(request.error_code.clone());
@@ -4692,7 +4692,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
         for (_, _, key) in &keys {
             let run = runs
                 .get_mut(key)
-                .ok_or_else(|| KernelError::validation("task Run not found"))?;
+                .ok_or_else(|| KernelError::not_found("task Run not found"))?;
             if let Some(attempt) = attempts.values_mut().find(|attempt| {
                 attempt.tenant_id == run.tenant_id
                     && attempt.organization_id == run.organization_id
@@ -4739,7 +4739,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
         let mut attempts = self.task_run_attempts.recovering_write();
         let run = runs
             .get_mut(&(tenant_id, organization_id, run_id.to_string()))
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         if expected_version.is_some_and(|version| version != run.version) {
             return Err(KernelError::conflict("task Run version mismatch"));
         }
@@ -4812,7 +4812,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 request.organization_id,
                 request.run_id.clone(),
             ))
-            .ok_or_else(|| KernelError::validation("task Run not found"))?;
+            .ok_or_else(|| KernelError::not_found("task Run not found"))?;
         if run.status != AgentTaskRunStatus::Reconciling || run.version != request.expected_version
         {
             return Err(KernelError::conflict(
@@ -4945,7 +4945,7 @@ fn checked_in_memory_run_lease<'a>(
         .ok_or_else(|| KernelError::validation("lease operation timestamp is invalid"))?;
     let run = runs
         .get_mut(&(lease.tenant_id, lease.organization_id, lease.run_id.clone()))
-        .ok_or_else(|| KernelError::validation("task Run not found"))?;
+        .ok_or_else(|| KernelError::not_found("task Run not found"))?;
     if run.lease_owner.as_deref() != Some(lease.worker_id.as_str())
         || run.lease_token_hash.as_deref()
             != Some(sha256_hash(lease.lease_token.as_bytes()).as_str())

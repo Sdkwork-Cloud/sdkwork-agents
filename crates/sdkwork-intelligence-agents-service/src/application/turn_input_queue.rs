@@ -450,7 +450,7 @@ where
                 session.owner_user_id,
                 &command.queue_entry_id,
             )?
-            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+            .ok_or_else(|| KernelError::not_found("queued Turn input not found"))?;
         if entry.status == AgentTurnInputQueueStatus::Executing {
             return Err(KernelError::conflict(
                 "executing queued Turn input cannot be edited",
@@ -733,7 +733,7 @@ where
                 session.owner_user_id,
                 &command.queue_entry_id,
             )?
-            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+            .ok_or_else(|| KernelError::not_found("queued Turn input not found"))?;
         if entry.status != AgentTurnInputQueueStatus::Failed {
             return Err(KernelError::conflict(
                 "only failed queued Turn input can be retried",

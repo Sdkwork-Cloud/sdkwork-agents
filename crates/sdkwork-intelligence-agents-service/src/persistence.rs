@@ -2209,6 +2209,18 @@ pub trait AgentRepositoryAdapter: Send + Sync {
     // Session operations
     fn insert_session_row(&self, row: AgentSessionRow) -> KernelResult<()>;
     fn update_session_row(&self, row: AgentSessionRow) -> KernelResult<()>;
+    /// Atomically soft-deletes a session row and purges its turn-input-queue
+    /// entries. Durable backends must run both writes in one transaction so a
+    /// partial failure cannot leave a deleted session with queued inputs or a
+    /// live session with a purged queue.
+    fn delete_session_rows(
+        &self,
+        deleted_session: AgentSessionRow,
+        tenant_id: u64,
+        organization_id: u64,
+        session_id: &str,
+        owner_user_id: u64,
+    ) -> KernelResult<()>;
     fn get_session_row(
         &self,
         tenant_id: u64,
@@ -4656,7 +4668,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 if exists {
                     return Err(KernelError::conflict("agent version mismatch"));
                 }
-                return Err(KernelError::validation("agent not found"));
+                return Err(KernelError::not_found("agent not found"));
             }
             Ok(())
         })
@@ -4852,7 +4864,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 if exists {
                     return Err(KernelError::conflict("workspace version mismatch"));
                 }
-                return Err(KernelError::validation("workspace not found"));
+                return Err(KernelError::not_found("workspace not found"));
             }
             Ok(())
         })
@@ -5536,7 +5548,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         "agent provider binding version mismatch",
                     ));
                 }
-                return Err(KernelError::validation("agent provider binding not found"));
+                return Err(KernelError::not_found("agent provider binding not found"));
             }
             Ok(())
         })
@@ -5576,7 +5588,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .transpose()
                         .map_err(kernel_err)?
                         .ok_or_else(|| {
-                            kernel_err(KernelError::validation("agent provider binding not found"))
+                            kernel_err(KernelError::not_found("agent provider binding not found"))
                         })?;
 
                     if current.active {
@@ -6013,7 +6025,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 if exists {
                     return Err(KernelError::conflict("session version mismatch"));
                 }
-                return Err(KernelError::validation("session not found"));
+                return Err(KernelError::not_found("session not found"));
             }
             Ok(())
         })
@@ -6533,7 +6545,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         .transpose()
                         .map_err(kernel_err)?
                         .ok_or_else(|| {
-                            kernel_err(KernelError::validation("session runtime binding not found"))
+                            kernel_err(KernelError::not_found("session runtime binding not found"))
                         })?;
                     let target_version =
                         u64_to_i64(target.version, "version").map_err(kernel_err)?;
@@ -6986,7 +6998,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 if exists {
                     return Err(KernelError::conflict("session-item update conflict"));
                 }
-                return Err(KernelError::validation("session item not found"));
+                return Err(KernelError::not_found("session item not found"));
             }
             Ok(())
         })
@@ -7509,7 +7521,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .fetch_optional(&mut *tx)
             .await?;
             if session.is_none() {
-                return Err(transaction_error(KernelError::validation("session not found")));
+                return Err(transaction_error(KernelError::not_found("session not found")));
             }
             if let Some(existing) = sqlx::query(SQL_SELECT_TURN_INPUT_QUEUE_ENTRY)
                 .bind(tenant_id)
@@ -7642,7 +7654,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .fetch_optional(&mut *tx)
             .await?;
             if session.is_none() {
-                return Err(transaction_error(KernelError::validation("session not found")));
+                return Err(transaction_error(KernelError::not_found("session not found")));
             }
             let content_bytes: i64 = sqlx::query_scalar(
                 "SELECT COALESCE(SUM(octet_length(content) + octet_length(display_text) + (SELECT COALESCE(SUM(octet_length(value)), 0) FROM jsonb_array_elements_text(attachment_names_json) AS attachment_name(value))), 0)::bigint FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND queue_entry_id <> $5",
@@ -7717,7 +7729,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 owner_user_id,
                 queue_entry_id,
             )?
-            .ok_or_else(|| KernelError::validation("queued Turn input not found"))?;
+            .ok_or_else(|| KernelError::not_found("queued Turn input not found"))?;
         let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
         let organization_id = u64_to_i64(organization_id, "organization_id")?;
         let owner_user_id = u64_to_i64(owner_user_id, "owner_user_id")?;
@@ -7792,7 +7804,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .fetch_optional(&mut *tx)
             .await?;
             if session.is_none() {
-                return Err(transaction_error(KernelError::validation("session not found")));
+                return Err(transaction_error(KernelError::not_found("session not found")));
             }
             let rows = sqlx::query(
                 "SELECT queue_entry_id, version FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND status <> 1 ORDER BY position ASC, id ASC FOR UPDATE",
@@ -7909,7 +7921,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .fetch_optional(&mut *tx)
             .await?;
             if session.is_none() {
-                return Err(transaction_error(KernelError::validation("session not found")));
+                return Err(transaction_error(KernelError::not_found("session not found")));
             }
             let executing = sqlx::query(
                 "SELECT queue_entry_id, idempotency_key, claim_expires_at FROM ai_agent_turn_input_queue_entry WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND owner_user_id = $4 AND status = 1 ORDER BY position ASC, id ASC LIMIT 1 FOR UPDATE",
@@ -8166,10 +8178,15 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                         let existing = get_turn_by_idempotency_in_transaction(&mut tx, &turn)
                             .await?
                             .ok_or_else(|| {
-                                transaction_error(KernelError::Internal {
-                                    message: "idempotent turn conflict has no existing row"
-                                        .to_string(),
-                                })
+                                // The idempotency-key conflict matched but the
+                                // row is not visible in this transaction (for
+                                // example an in-flight concurrent insert or a
+                                // scope mismatch). This is a conflict, not an
+                                // internal failure: report 409 so the client
+                                // can reconcile instead of retrying blindly.
+                                transaction_error(KernelError::conflict(
+                                    "a turn with the same idempotency key already exists",
+                                ))
                             })?;
                         tx.rollback().await?;
                         return Ok(AgentTurnRequestRowsOutcome::Existing(Box::new(existing)));
@@ -8452,7 +8469,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 if exists {
                     return Err(KernelError::conflict("interaction version mismatch"));
                 }
-                return Err(KernelError::validation("interaction not found"));
+                return Err(KernelError::not_found("interaction not found"));
             }
             Ok(())
         })
@@ -8663,7 +8680,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 if exists {
                     return Err(KernelError::conflict("task version mismatch"));
                 }
-                return Err(KernelError::validation("task not found"));
+                return Err(KernelError::not_found("task not found"));
             }
             Ok(())
         })
@@ -8769,7 +8786,7 @@ FOR UPDATE
         .bind(&task.task_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| transaction_error(KernelError::validation("task Run not found")))?;
+        .ok_or_else(|| transaction_error(KernelError::not_found("task Run not found")))?;
         let source_status: i16 = source.try_get("status")?;
         if !matches!(source_status, 4 | 5 | 7) {
             return Err(transaction_error(KernelError::validation(
@@ -8789,7 +8806,7 @@ FOR SHARE
         .bind(&task.task_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| transaction_error(KernelError::validation("task not found")))?;
+        .ok_or_else(|| transaction_error(KernelError::not_found("task not found")))?;
         if current.try_get::<i64, _>("generation")? != task_generation
             || current.try_get::<i16, _>("status")? == AgentTaskStatus::Cancelled.as_db_code()
         {
@@ -10337,7 +10354,7 @@ RETURNING version
                 .bind(run_id)
                 .fetch_optional(&mut *tx)
                 .await?
-                .ok_or_else(|| transaction_error(KernelError::validation("task Run not found")))?;
+                .ok_or_else(|| transaction_error(KernelError::not_found("task Run not found")))?;
             let run = pg_row_to_task_run(row).map_err(transaction_error)?;
             if expected_version.is_some_and(|version| version != run.version) {
                 return Err(transaction_error(KernelError::conflict(

@@ -4431,14 +4431,19 @@ fn validate_profile_suggested_prompts(values: &[String]) -> Result<(), ApiProble
 /// response module must not import.
 impl ApiProblem {
     pub(crate) fn from_kernel_error(error: KernelError) -> Self {
-        let safe_message = error.safe_message();
-        if safe_message.contains("not found") {
-            return Self::not_found(safe_message);
+        // Structured not-found classification first: adapters may construct
+        // validation errors whose message contains "not found" without meaning
+        // HTTP 404, so the mapping must key on the structured marker.
+        if error.detail_value("sdkwork.not_found") == Some("true") {
+            return Self::not_found(error.safe_message());
         }
+        let safe_message = error.safe_message();
         match error.kind() {
             KernelErrorKind::ValidationError => Self::validation(error.safe_message()),
             KernelErrorKind::Conflict => {
-                if safe_message.contains("version mismatch") {
+                if error.detail_value("sdkwork.version_mismatch") == Some("true")
+                    || safe_message.contains("version mismatch")
+                {
                     Self::version_conflict(safe_message)
                 } else {
                     Self::conflict(safe_message)
@@ -4447,10 +4452,22 @@ impl ApiProblem {
             KernelErrorKind::PermissionRequired | KernelErrorKind::PolicyDenied => {
                 Self::permission(error.safe_message())
             }
+            KernelErrorKind::CapabilityMissing | KernelErrorKind::SecurityViolation => {
+                Self::permission(error.safe_message())
+            }
             KernelErrorKind::ProviderUnavailable | KernelErrorKind::ProviderError => {
                 Self::dependency_unavailable(error.safe_message())
             }
-            _ => Self::internal(error.safe_message()),
+            KernelErrorKind::Timeout => Self::gateway_timeout(error.safe_message()),
+            KernelErrorKind::Cancelled => Self::conflict(error.safe_message()),
+            KernelErrorKind::RateLimited => {
+                Self::too_many_requests(error.safe_message(), None)
+            }
+            KernelErrorKind::ResourceExhausted => {
+                Self::dependency_unavailable(error.safe_message())
+            }
+            KernelErrorKind::UnsafeContent => Self::unprocessable(error.safe_message()),
+            KernelErrorKind::InternalError => Self::internal(error.safe_message()),
         }
     }
 
@@ -11379,6 +11396,12 @@ pub(crate) fn normalized_pagination(
                 "page_size must be less than or equal to {MAX_PAGE_SIZE}"
             )));
         }
+    }
+    if page.is_some_and(|value| value as i64 > sdkwork_utils_rust::http_api::MAX_LIST_PAGE) {
+        return Err(ApiProblem::validation(format!(
+            "page must be less than or equal to {}",
+            sdkwork_utils_rust::http_api::MAX_LIST_PAGE
+        )));
     }
 
     let params = sdkwork_utils_rust::http_api::OffsetListPageParams::parse(

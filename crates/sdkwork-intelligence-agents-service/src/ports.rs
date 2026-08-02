@@ -1325,7 +1325,7 @@ pub trait AgentRepository: Send + Sync {
     ) -> KernelResult<AgentProviderBindingRecord> {
         let mut record = self
             .get_provider_binding(tenant_id, agent_id, binding_id)?
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
         if record.active {
             return Ok(record);
         }
@@ -1356,7 +1356,7 @@ pub trait AgentRepository: Send + Sync {
         }
         record = self
             .get_provider_binding(tenant_id, agent_id, binding_id)?
-            .ok_or_else(|| KernelError::validation("agent provider binding not found"))?;
+            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
         record.active = true;
         record.mark_updated(updated_at);
         self.update_provider_binding(record.clone())?;

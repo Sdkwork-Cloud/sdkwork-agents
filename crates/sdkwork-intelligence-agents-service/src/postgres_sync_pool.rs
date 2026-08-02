@@ -65,7 +65,7 @@ pub fn map_sqlx_error(error: sqlx::Error) -> sdkwork_agent_kernel::KernelError {
         sqlx::Error::PoolClosed | sqlx::Error::WorkerCrashed => KernelError::ProviderUnavailable {
             provider_id: "postgres".to_string(),
         },
-        sqlx::Error::RowNotFound => KernelError::validation("database row not found"),
+        sqlx::Error::RowNotFound => KernelError::not_found("database row not found"),
         error => {
             tracing::error!(
                 target: "sdkwork.agents.postgres",
