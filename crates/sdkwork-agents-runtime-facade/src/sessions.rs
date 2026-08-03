@@ -198,14 +198,11 @@ pub fn validate_resolve_agents_session_request(
         "sourceModule, sourceContextKind and sourceContextId must be supplied together",
     )?;
 
-    let fork_lineage = [
-        ("parentSessionId", request.parent_session_id.as_deref()),
-        ("forkedFromTurnId", request.forked_from_turn_id.as_deref()),
-    ];
-    validate_optional_group(
-        &fork_lineage,
-        "parentSessionId and forkedFromTurnId must be supplied together",
-    )?;
+    if request.forked_from_turn_id.is_some() && request.parent_session_id.is_none() {
+        return Err(RuntimeFacadeError::InvalidInput(
+            "forkedFromTurnId requires parentSessionId".into(),
+        ));
+    }
     if request.parent_session_id.as_deref() == Some(request.session_id.as_str()) {
         return Err(RuntimeFacadeError::InvalidInput(
             "parentSessionId must differ from sessionId".into(),
@@ -393,10 +390,16 @@ mod tests {
     }
 
     #[test]
-    fn validation_rejects_partial_or_self_referencing_fork_lineage() {
-        let mut partial = sample_request();
-        partial.forked_from_turn_id = None;
-        assert!(validate_resolve_agents_session_request(&partial).is_err());
+    fn validation_allows_parent_only_lineage_and_rejects_fork_without_parent() {
+        // Sub-agent sessions carry a canonical parent edge without a fork
+        // turn, so parent-only lineage is valid.
+        let mut parent_only = sample_request();
+        parent_only.forked_from_turn_id = None;
+        assert!(validate_resolve_agents_session_request(&parent_only).is_ok());
+
+        let mut fork_without_parent = sample_request();
+        fork_without_parent.parent_session_id = None;
+        assert!(validate_resolve_agents_session_request(&fork_without_parent).is_err());
 
         let mut self_referencing = sample_request();
         self_referencing.parent_session_id = Some(self_referencing.session_id.clone());

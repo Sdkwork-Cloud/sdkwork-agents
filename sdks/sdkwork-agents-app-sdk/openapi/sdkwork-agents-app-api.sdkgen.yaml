@@ -1612,6 +1612,8 @@ paths:
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: offset
+      x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/Page'
@@ -1946,6 +1948,8 @@ paths:
       x-sdkwork-resource: agents.itemFeedback
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: offset
+      x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -1984,6 +1988,8 @@ paths:
       x-sdkwork-resource: agents.sessionItems
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: cursor
+      x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -2170,6 +2176,8 @@ paths:
       x-sdkwork-resource: agents.turns
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: offset
+      x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
@@ -4195,6 +4203,7 @@ components:
       schema:
         type: integer
         minimum: 1
+        maximum: 10000
         default: 1
     PageSize:
       name: page_size
@@ -7681,6 +7690,10 @@ components:
           type: [object, 'null']
           additionalProperties: true
         toolResult:
+          type: [object, 'null']
+          additionalProperties: true
+        providerPayload:
+          description: Full raw provider protocol payload (provider thread item JSON) preserved without loss.
           type: [object, 'null']
           additionalProperties: true
         parentItemId:

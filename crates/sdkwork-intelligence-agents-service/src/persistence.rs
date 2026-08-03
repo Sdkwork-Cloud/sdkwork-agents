@@ -152,8 +152,9 @@ pub use sql::{
 };
 #[cfg(feature = "postgres-sync")]
 pub use sql::{
-    SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING, SQL_COMPLETE_AGENT_TURN_STATE,
-    SQL_COUNT_AGENT_INTERACTIONS, SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_PROJECTS,
+    SQL_ACTIVATE_AGENT_SESSION_RUNTIME_BINDING, SQL_APPEND_TURN_STREAMING_CONTENT,
+    SQL_CLEAR_TURN_STREAMING_CONTENT, SQL_COMPLETE_AGENT_TURN_STATE, SQL_COUNT_AGENT_INTERACTIONS,
+    SQL_COUNT_AGENT_ITEM_FEEDBACK, SQL_COUNT_AGENT_PROJECTS,
     SQL_COUNT_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_COUNT_AGENT_RESOURCE_USER_STATES,
     SQL_COUNT_AGENT_SESSIONS, SQL_COUNT_AGENT_SESSION_CHECKPOINTS, SQL_COUNT_AGENT_SESSION_ITEMS,
     SQL_COUNT_AGENT_SESSION_RUNTIME_BINDINGS, SQL_COUNT_AGENT_TURNS, SQL_COUNT_AGENT_WORKSPACES,
@@ -179,17 +180,16 @@ pub use sql::{
     SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
     SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY,
     SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_AGENT_TASK, SQL_SELECT_AGENT_TURN,
-    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
-    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION,
+    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION, SQL_SELECT_AGENT_TASK,
+    SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
     SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
     SQL_SELECT_TURN_INPUT_QUEUE_ENTRY, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
     SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
     SQL_UPDATE_AGENT_WORKSPACE, SQL_UPDATE_TURN_INPUT_QUEUE_ENTRY, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
-    SQL_UPSERT_AGENT_RESOURCE_USER_STATE, SQL_APPEND_TURN_STREAMING_CONTENT,
-    SQL_CLEAR_TURN_STREAMING_CONTENT,
+    SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1308,6 +1308,7 @@ pub struct AgentSessionItemRow {
     pub tool_call_id: Option<String>,
     pub tool_arguments_json: Option<String>,
     pub tool_result_json: Option<String>,
+    pub provider_payload_json: Option<String>,
     pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
     pub created_by: u64,
@@ -1342,6 +1343,7 @@ impl AgentSessionItemRow {
             tool_call_id: record.tool_call_id.clone(),
             tool_arguments_json: record.tool_arguments_json.clone(),
             tool_result_json: record.tool_result_json.clone(),
+            provider_payload_json: record.provider_payload_json.clone(),
             parent_item_id: record.parent_item_id.clone(),
             turn_id: record.turn_id.clone(),
             created_by: record.created_by,
@@ -1384,6 +1386,7 @@ impl AgentSessionItemRow {
             tool_call_id: self.tool_call_id,
             tool_arguments_json: self.tool_arguments_json,
             tool_result_json: self.tool_result_json,
+            provider_payload_json: self.provider_payload_json,
             parent_item_id: self.parent_item_id,
             turn_id: self.turn_id,
             created_by: self.created_by,
@@ -3570,7 +3573,8 @@ where
         organization_id: u64,
         turn_id: &str,
     ) -> KernelResult<()> {
-        self.adapter.clear_turn_streaming_content(tenant_id, organization_id, turn_id)
+        self.adapter
+            .clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 
     fn insert_turn_request(
@@ -4584,6 +4588,7 @@ async fn insert_session_item_in_transaction(
         .bind(&item.tool_call_id)
         .bind(&item.tool_arguments_json)
         .bind(&item.tool_result_json)
+        .bind(&item.provider_payload_json)
         .bind(&item.parent_item_id)
         .bind(&item.turn_id)
         .bind(created_by)
@@ -7138,6 +7143,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 row.tool_call_id,
                 row.tool_arguments_json,
                 row.tool_result_json,
+                row.provider_payload_json,
                 row.parent_item_id,
                 row.turn_id,
                 version,
@@ -12002,6 +12008,9 @@ fn pg_row_to_agent_session_item_row(row: PgRow) -> KernelResult<AgentSessionItem
         tool_call_id: row.try_get("tool_call_id").map_err(map_sqlx_error)?,
         tool_arguments_json: row.try_get("tool_arguments_json").map_err(map_sqlx_error)?,
         tool_result_json: row.try_get("tool_result_json").map_err(map_sqlx_error)?,
+        provider_payload_json: row
+            .try_get("provider_payload_json")
+            .map_err(map_sqlx_error)?,
         parent_item_id: row.try_get("parent_item_id").map_err(map_sqlx_error)?,
         turn_id: row.try_get("turn_id").map_err(map_sqlx_error)?,
         created_by: int64_to_u64(

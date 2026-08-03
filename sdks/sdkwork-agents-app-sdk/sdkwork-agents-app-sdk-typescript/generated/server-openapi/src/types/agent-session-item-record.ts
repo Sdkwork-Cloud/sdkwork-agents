@@ -21,6 +21,8 @@ export interface AgentSessionItemRecord {
   toolCallId?: string | null;
   toolArguments?: Record<string, unknown>;
   toolResult?: Record<string, unknown>;
+  /** Full raw provider protocol payload (provider thread item JSON) preserved without loss. */
+  providerPayload?: Record<string, unknown>;
   parentItemId?: string | null;
   turnId?: string | null;
   driveRefs: AgentItemDriveRefRecord[];

@@ -466,6 +466,26 @@ impl CodeEngineSlot {
         }
     }
 
+    /// Lists the direct child provider sessions (sub-agents) of the given
+    /// provider session. Engines without a sub-agent topology return an empty
+    /// list. Used to synchronize the full sub-agent execution context.
+    pub fn list_provider_session_children(
+        &self,
+        provider_session_id: &str,
+        working_directory: Option<&str>,
+    ) -> KernelResult<Vec<String>> {
+        match self {
+            Self::Codex(integration) => {
+                collect_codex_provider_children(integration, provider_session_id, working_directory)
+            }
+            Self::ClaudeCode(_)
+            | Self::Gemini(_)
+            | Self::OpenCode(_)
+            | Self::OpenClaw(_)
+            | Self::Hermes(_) => Ok(Vec::new()),
+        }
+    }
+
     /// Whether this engine can establish a new provider session from a verified
     /// runtime stream completion.
     pub(crate) fn supports_streaming_completion(&self) -> bool {
@@ -535,6 +555,10 @@ fn adapt_sdk_provider_session(
         SessionKind::Main
     };
     session.parent_session_id = record.parent_provider_session_id;
+    session.forked_from_id =
+        sdk_metadata_string(&record.metadata, "codex.forked_from_id");
+    session.agent_nickname = sdk_metadata_string(&record.metadata, "codex.agent_nickname");
+    session.agent_role = sdk_metadata_string(&record.metadata, "codex.agent_role");
     session.title = record.title;
     session.summary = record.summary;
     session.preview = record.preview;
@@ -634,6 +658,16 @@ fn sdk_metadata_pairs(metadata: BTreeMap<String, serde_json::Value>) -> Vec<(Str
         .collect()
 }
 
+/// Extracts a single string metadata value from a provider session record,
+/// returning `None` when the key is absent or not a string.
+fn sdk_metadata_string(metadata: &BTreeMap<String, serde_json::Value>, key: &str) -> Option<String> {
+    metadata
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .filter(|value| !value.trim().is_empty())
+}
+
 fn collect_codex_provider_sessions(
     integration: &CodexSdkIntegration,
     working_directory: Option<&str>,
@@ -667,6 +701,49 @@ fn collect_codex_provider_sessions(
         |session| session.provider_session_id.as_str(),
     )?;
     adapt_sdk_provider_sessions("codex", records)
+}
+
+/// Enumerates the direct sub-agent threads spawned under the given Codex
+/// thread via `thread/list` with `parentThreadId`. The sub-agent topology is
+/// otherwise invisible to the top-level inventory which only lists interactive
+/// root threads.
+fn collect_codex_provider_children(
+    integration: &CodexSdkIntegration,
+    provider_session_id: &str,
+    working_directory: Option<&str>,
+) -> KernelResult<Vec<String>> {
+    let records = collect_provider_pages(
+        "codex",
+        "sub-agent thread inventory",
+        |cursor| {
+            let page = futures::executor::block_on(integration.list_provider_sessions(
+                ThreadListParams {
+                    cursor,
+                    limit: Some(sdkwork_utils_rust::DEFAULT_LIST_PAGE_SIZE as u32),
+                    sort_key: None,
+                    sort_direction: None,
+                    model_providers: None,
+                    source_kinds: None,
+                    archived: None,
+                    section_id: None,
+                    cwd: working_directory.map(|cwd| ThreadListCwdFilter::One(cwd.to_string())),
+                    use_state_db_only: false,
+                    search_term: None,
+                    parent_thread_id: Some(provider_session_id.to_string()),
+                    ancestor_thread_id: None,
+                },
+            ))?;
+            Ok((
+                page.data.into_iter().map(|record| record.session).collect(),
+                page.next_cursor,
+            ))
+        },
+        |session| session.provider_session_id.as_str(),
+    )?;
+    Ok(records
+        .into_iter()
+        .map(|session| session.provider_session_id)
+        .collect())
 }
 
 fn collect_codex_provider_messages(
@@ -988,5 +1065,63 @@ mod tests {
             assert_eq!(application.profile.profile_id, request.profile_id);
             assert_ne!(application.provider_scope, "process_adapter");
         }
+    }
+
+    #[test]
+    fn adapts_provider_session_identity_metadata_without_losing_tree_fields() {
+        let record = SdkRuntimeSessionRecord {
+            provider_session_id: "0198-thread".to_string(),
+            parent_provider_session_id: Some("0196-thread".to_string()),
+            title: Some("Provider review".to_string()),
+            summary: None,
+            preview: Some("Review the provider".to_string()),
+            cwd: Some("E:/workspace/project".to_string()),
+            created_at: Some("2026-07-26T00:00:00Z".to_string()),
+            updated_at: None,
+            archived_at: None,
+            model: None,
+            model_provider: Some("openai".to_string()),
+            message_count: 2,
+            tool_call_count: 1,
+            input_tokens: 0,
+            output_tokens: 0,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
+            cost_cents: None,
+            additions: 1,
+            deletions: 0,
+            files_changed: 1,
+            metadata: BTreeMap::from([
+                (
+                    "codex.forked_from_id".to_string(),
+                    serde_json::Value::String("0197-thread".to_string()),
+                ),
+                (
+                    "codex.agent_nickname".to_string(),
+                    serde_json::Value::String("reviewer".to_string()),
+                ),
+                (
+                    "codex.agent_role".to_string(),
+                    serde_json::Value::String("code-review".to_string()),
+                ),
+                (
+                    "codex.session_id".to_string(),
+                    serde_json::Value::String("0198-session".to_string()),
+                ),
+            ]),
+        };
+
+        let session =
+            adapt_sdk_provider_session("codex", record).expect("provider session adaptation");
+
+        assert_eq!(session.kind, SessionKind::Subagent);
+        assert_eq!(session.parent_session_id.as_deref(), Some("0196-thread"));
+        assert_eq!(session.forked_from_id.as_deref(), Some("0197-thread"));
+        assert_eq!(session.agent_nickname.as_deref(), Some("reviewer"));
+        assert_eq!(session.agent_role.as_deref(), Some("code-review"));
+        assert!(session
+            .metadata
+            .iter()
+            .any(|(key, value)| key == "codex.session_id" && value == "0198-session"));
     }
 }

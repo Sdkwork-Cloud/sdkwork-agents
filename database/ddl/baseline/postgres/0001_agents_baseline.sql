@@ -860,6 +860,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_session_item (
     tool_call_id VARCHAR(256),
     tool_arguments_json JSONB,
     tool_result_json JSONB,
+    provider_payload_json JSONB,
     parent_item_id VARCHAR(128),
     turn_id VARCHAR(128),
     created_by BIGINT NOT NULL,
@@ -1524,7 +1525,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_resource_user_state_recent
         pinned_at DESC, last_opened_at DESC, id DESC
     ) WHERE hidden_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_agent_resource_user_state_session_activity
-    ON ai_agent_resource_user_state (tenant_id, organization_id, session_id, updated_at DESC, id DESC);
+    ON ai_agent_resource_user_state (tenant_id, organization_id, user_id, resource_type, resource_id, updated_at DESC, id DESC);
 
 
 CREATE TABLE IF NOT EXISTS ai_agent_project_member (

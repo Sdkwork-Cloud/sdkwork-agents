@@ -167,8 +167,8 @@ impl Drop for IsolatedPostgresDatabase {
         let pool = self.admin.pool();
         // The database identifier is a fixed-size Snowflake suffix produced by
         // this test itself, never user input: assert-safe by construction.
-        if let Err(error) = pool
-            .run(sqlx::query(sqlx::AssertSqlSafe(drop_database.as_str())).execute(pool.pool()))
+        if let Err(error) =
+            pool.run(sqlx::query(sqlx::AssertSqlSafe(drop_database.as_str())).execute(pool.pool()))
         {
             eprintln!(
                 "failed to drop ephemeral workspace test database {}: {error}",
@@ -210,7 +210,9 @@ fn create_isolated_database(
     let create_database = format!("CREATE DATABASE {database} OWNER sdkwork_ai_test");
     admin
         .pool()
-        .run(sqlx::query(sqlx::AssertSqlSafe(create_database.as_str())).execute(admin.pool().pool()))
+        .run(
+            sqlx::query(sqlx::AssertSqlSafe(create_database.as_str())).execute(admin.pool().pool()),
+        )
         .expect("ephemeral workspace test database should be created");
 
     let isolated_url = workspace_postgres_test_database_url(base_url, &database)
@@ -221,7 +223,10 @@ fn create_isolated_database(
     let create_schema = format!("CREATE SCHEMA {schema} AUTHORIZATION sdkwork_ai_test");
     schema_owner
         .pool()
-        .run(sqlx::query(sqlx::AssertSqlSafe(create_schema.as_str())).execute(schema_owner.pool().pool()))
+        .run(
+            sqlx::query(sqlx::AssertSqlSafe(create_schema.as_str()))
+                .execute(schema_owner.pool().pool()),
+        )
         .expect("same-named workspace test schema should be created");
     drop(schema_owner);
 
@@ -338,6 +343,7 @@ fn request_item_for_turn(id: u64, turn: &AgentTurnRecord) -> AgentSessionItemRec
         output_tokens: 0,
         model_id: None,
         provider_id: None,
+        provider_payload_json: None,
         tool_name: None,
         tool_call_id: None,
         tool_arguments_json: None,
@@ -1332,6 +1338,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             output_tokens: 2,
             model_id: None,
             provider_id: None,
+            provider_payload_json: None,
             parent_item_id: None,
             requested_by: subject(),
             requested_at: "2026-07-19T00:02:01Z".to_string(),

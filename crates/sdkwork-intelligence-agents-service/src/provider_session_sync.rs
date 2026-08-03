@@ -15,11 +15,13 @@ use sdkwork_agents_runtime_facade::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::application::{
-    GetProjectCommand, GetSessionCommand, ListSessionItemsCommand,
-    ListSessionRuntimeBindingsCommand,
+    CreateSessionCommand, CreateSessionRuntimeBindingCommand, GetProjectCommand, GetSessionCommand,
+    ListSessionItemsCommand, ListSessionRuntimeBindingsCommand,
     ReconcileProviderSessionHistoryItemCommand,
 };
-use crate::domain::{AgentSessionItemKind, AgentSessionItemStatus};
+use crate::domain::{
+    AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemStatus, AgentSessionKind,
+};
 use crate::http::{HttpAgentsSessionFacade, HttpService};
 use crate::ports::{PaginationParams, SessionItemListQuery, SessionRuntimeBindingListQuery};
 use crate::project::AgentProjectRecord;
@@ -251,25 +253,145 @@ pub(crate) fn synchronize_provider_session_transcript(
     else {
         return Ok(0);
     };
+    let mut seen = HashSet::new();
+    synchronize_provider_session_transcript_worker(
+        service,
+        tenant_id,
+        organization_id,
+        owner_user_id,
+        &agent_id,
+        engine_key,
+        session.project_id.as_deref().unwrap_or_default(),
+        &binding.provider_binding_id,
+        &binding.provider_id,
+        &binding.model_id,
+        &session_id,
+        provider_session_id,
+        None,
+        None,
+        &subject,
+        exact_cwd.as_deref(),
+        &mut seen,
+        0,
+    )
+}
+
+const MAX_PROVIDER_SUBAGENT_SYNC_DEPTH: usize = 16;
+
+#[allow(clippy::too_many_arguments)]
+fn synchronize_provider_session_transcript_worker(
+    service: &HttpService,
+    tenant_id: u64,
+    organization_id: u64,
+    owner_user_id: u64,
+    agent_id: &str,
+    engine_key: &str,
+    project_id: &str,
+    provider_binding_id: &str,
+    provider_id: &str,
+    model_id: &str,
+    session_id: &str,
+    provider_session_id: &str,
+    canonical_parent_session_id: Option<&str>,
+    parent_provider_session_id: Option<&str>,
+    subject: &PolicySubject,
+    exact_cwd: Option<&str>,
+    seen: &mut HashSet<String>,
+    depth: usize,
+) -> KernelResult<usize> {
+    if depth > MAX_PROVIDER_SUBAGENT_SYNC_DEPTH || !seen.insert(provider_session_id.to_string()) {
+        return Ok(0);
+    }
+    // Sub-agent sessions are not part of the top-level inventory; ensure their
+    // canonical Session and runtime binding exist before syncing messages so
+    // the full sub-agent execution context is durable.
+    if canonical_parent_session_id.is_some() {
+        let stable_key = stable_provider_session_key(
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            engine_key,
+            provider_binding_id,
+            provider_id,
+            provider_session_id,
+        );
+        let child_session_id = format!("session.provider.{engine_key}.{stable_key}");
+        let child_runtime_binding_id =
+            format!("runtime_binding.provider.{engine_key}.{stable_key}");
+        let requested_at = OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .map_err(|error| {
+                KernelError::validation(format!(
+                    "failed to format provider Session synchronization timestamp: {error}"
+                ))
+            })?;
+        service.reconcile_provider_session_history_session(CreateSessionCommand {
+            tenant_id,
+            organization_id,
+            agent_id: agent_id.to_string(),
+            owner_user_id,
+            session_id: child_session_id.clone(),
+            project_id: (!project_id.is_empty()).then(|| project_id.to_string()),
+            session_kind: AgentSessionKind::Coding,
+            entry_surface: AgentSessionEntrySurface::Pc,
+            source_module: Some("birdcoder".to_string()),
+            source_context_kind: Some("provider_session".to_string()),
+            source_context_id: Some(project_id.to_string()),
+            parent_session_id: canonical_parent_session_id.map(str::to_string),
+            forked_from_turn_id: None,
+            title: Some(provider_session_title(None, engine_key)),
+            idempotency_key: Some(format!("provider-session:{engine_key}:{stable_key}")),
+            payload_hash: Some(format!("provider-session-v1:{engine_key}:{stable_key}")),
+            requested_by: subject.clone(),
+            requested_at: requested_at.clone(),
+        })?;
+        service.reconcile_provider_session_history_runtime_binding(
+            CreateSessionRuntimeBindingCommand {
+                tenant_id,
+                organization_id,
+                path_agent_id: agent_id.to_string(),
+                session_id: child_session_id,
+                runtime_binding_id: Some(child_runtime_binding_id),
+                runtime_location_id: None,
+                host_mode: "server".to_string(),
+                transport_kind: "provider-session-history".to_string(),
+                provider_binding_id: provider_binding_id.to_string(),
+                model_id: model_id.to_string(),
+                provider_id: provider_id.to_string(),
+                provider_session_id: Some(provider_session_id.to_string()),
+                provider_session_tree_id: Some(provider_session_id.to_string()),
+                provider_parent_session_id: parent_provider_session_id.map(str::to_string),
+                provider_forked_from_session_id: None,
+                provider_directory: None,
+                owner_scope: Some(owner_user_id),
+                requested_by: subject.clone(),
+                requested_at,
+            },
+        )?;
+    }
+    let session = service.get_session(GetSessionCommand {
+        tenant_id,
+        organization_id,
+        path_agent_id: agent_id.to_string(),
+        session_id: session_id.to_string(),
+        owner_scope: Some(owner_user_id),
+        requested_by: subject.clone(),
+    })?;
     let Some(host) = shared_code_engine_host() else {
         return Ok(0);
     };
     let messages = host
-        .load_provider_session_messages_for_directory(
-            engine_key,
-            provider_session_id,
-            exact_cwd.as_deref(),
-        )
+        .load_provider_session_messages_for_directory(engine_key, provider_session_id, exact_cwd)
         .map_err(runtime_facade_error)?;
     let mut unmatched_local_user_inputs = local_user_inputs_for_provider_reconciliation(
         service,
         tenant_id,
         organization_id,
         owner_user_id,
-        &agent_id,
-        &session_id,
+        agent_id,
+        session_id,
         engine_key,
-        &subject,
+        subject,
     )?;
     let mut synchronized = 0;
     let mut tool_calls = HashMap::<String, (String, Option<String>)>::new();
@@ -305,28 +427,47 @@ pub(crate) fn synchronize_provider_session_transcript(
                     }
                 }
             }
-            service.reconcile_provider_session_history_session_item(
+            let reconcile_result = service.reconcile_provider_session_history_session_item(
                 ReconcileProviderSessionHistoryItemCommand {
                     tenant_id,
                     organization_id,
-                    session_id: session_id.clone(),
+                    session_id: session_id.to_string(),
                     item_id: item_id.clone(),
                     kind: item.kind,
                     content: item.content,
                     content_type: item.content_type,
                     status: item.status,
-                    model_id: Some(binding.model_id.clone()),
-                    provider_id: Some(binding.provider_id.clone()),
+                    model_id: Some(model_id.to_string()),
+                    provider_id: Some(provider_id.to_string()),
                     tool_name: item.tool_name.clone(),
                     tool_call_id: item.tool_call_id.clone(),
                     tool_arguments_json: item.tool_arguments_json,
                     tool_result_json: item.tool_result_json,
+                    provider_payload_json: item.provider_payload_json,
                     parent_item_id: item.parent_item_id,
                     requested_by: subject.clone(),
                     requested_at: requested_at.clone(),
                 },
                 engine_key,
-            )?;
+            );
+            if let Err(error) = reconcile_result {
+                if error.kind() == KernelErrorKind::Conflict {
+                    // A terminal provider Session history item is immutable; one
+                    // item that cannot be reconciled must not fail the whole
+                    // synchronization window read. Skip it and keep syncing the
+                    // remaining history so the caller still receives the window.
+                    tracing::warn!(
+                        target: "sdkwork.agents.provider_session_sync",
+                        agent_id = %agent_id,
+                        session_id = %session_id,
+                        item_id = %item_id,
+                        error_kind = error.kind().as_str(),
+                        "provider Session transcript item skipped during synchronization: {error}"
+                    );
+                    continue;
+                }
+                return Err(error);
+            }
             if item.kind == AgentSessionItemKind::ToolCall {
                 if let Some(tool_call_id) = item.tool_call_id {
                     tool_calls.insert(tool_call_id, (item_id, item.tool_name));
@@ -335,7 +476,45 @@ pub(crate) fn synchronize_provider_session_transcript(
             synchronized += 1;
         }
     }
-    Ok(synchronized)
+    // Recurse into the provider sub-agent tree so every spawned session's
+    // messages are synchronized with its canonical parent edge intact.
+    let children = host
+        .load_provider_session_children(engine_key, provider_session_id, exact_cwd)
+        .map_err(runtime_facade_error)?;
+    let mut total = synchronized;
+    for child in children {
+        let child_stable_key = stable_provider_session_key(
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            engine_key,
+            provider_binding_id,
+            provider_id,
+            &child,
+        );
+        let child_session_id = format!("session.provider.{engine_key}.{child_stable_key}");
+        total += synchronize_provider_session_transcript_worker(
+            service,
+            tenant_id,
+            organization_id,
+            owner_user_id,
+            agent_id,
+            engine_key,
+            project_id,
+            provider_binding_id,
+            provider_id,
+            model_id,
+            &child_session_id,
+            &child,
+            Some(session_id),
+            Some(provider_session_id),
+            subject,
+            exact_cwd,
+            seen,
+            depth + 1,
+        )?;
+    }
+    Ok(total)
 }
 
 fn local_user_inputs_for_provider_reconciliation(
@@ -409,6 +588,7 @@ struct ProviderSessionHistoryItem {
     tool_call_id: Option<String>,
     tool_arguments_json: Option<String>,
     tool_result_json: Option<String>,
+    provider_payload_json: Option<String>,
     parent_item_id: Option<String>,
 }
 
@@ -515,6 +695,7 @@ fn provider_session_history_items(
                 tool_result_json: (kind == AgentSessionItemKind::ToolResult)
                     .then_some(tool_payload)
                     .flatten(),
+                provider_payload_json: raw_provider_payload.clone(),
                 parent_item_id: None,
             };
             if kind == AgentSessionItemKind::ToolCall && has_result {
@@ -528,6 +709,7 @@ fn provider_session_history_items(
                     tool_call_id: item.tool_call_id.clone(),
                     tool_arguments_json: None,
                     tool_result_json: item.tool_arguments_json.clone(),
+                    provider_payload_json: raw_provider_payload.clone(),
                     parent_item_id: None,
                 };
                 vec![item, result]
@@ -547,7 +729,19 @@ fn provider_session_item_kind(
     part_kind: AgentPartKind,
     content_type: Option<&str>,
 ) -> Option<AgentSessionItemKind> {
-    if matches!(content_type, Some("reasoning" | "thinking")) {
+    // Codex projects reasoning as `reasoning_summary` / `reasoning_content`
+    // part types; other providers use `reasoning` / `thinking`. All of them
+    // map to the canonical Reasoning item so the history reconciliation path
+    // matches the live turn projection.
+    if matches!(
+        content_type,
+        Some(
+            "reasoning"
+                | "reasoning_summary"
+                | "reasoning_content"
+                | "thinking"
+        )
+    ) {
         return Some(AgentSessionItemKind::Reasoning);
     }
     if content_type.is_some_and(|value| {
@@ -556,6 +750,7 @@ fn provider_session_item_kind(
             "advisor_tool_result"
                 | "bash_code_execution_tool_result"
                 | "code_execution_tool_result"
+                | "collab_agent_tool_result"
                 | "function_call_output"
                 | "custom_tool_call_output"
                 | "mcp_tool_result"
@@ -856,8 +1051,19 @@ fn synchronize_provider_session_inventory_with_timeout(
             );
             break;
         }
-        if item.session.kind == SessionKind::Subagent || item.session.parent_session_id.is_some() {
-            result.record_skipped("non_root_session");
+        if item.session.kind == SessionKind::Subagent
+            && item
+                .session
+                .parent_session_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .is_empty()
+        {
+            // A subagent without a parent provider session has no canonical
+            // tree edge; keep it out of the project inventory until its parent
+            // can be resolved.
+            result.record_skipped("subagent_without_parent");
             continue;
         }
         let provider_id = item.provider_id.trim().to_string();
@@ -923,6 +1129,57 @@ fn synchronize_provider_session_inventory_with_timeout(
             "runtime_binding.provider.{}.{}",
             item.engine_key, stable_key
         );
+        // Sub-agent sessions persist the canonical parent session edge so the
+        // canonical session tree mirrors the provider sub-agent topology. The
+        // parent must already be synchronized; otherwise the edge is deferred
+        // to a later inventory pass.
+        let parent_session_id = item
+            .session
+            .parent_session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|parent_provider_session_id| {
+                let parent_stable_key = stable_provider_session_key(
+                    project.tenant_id,
+                    project.organization_id,
+                    project.owner_user_id,
+                    &item.engine_key,
+                    &provider_binding_id,
+                    &provider_id,
+                    parent_provider_session_id,
+                );
+                format!("session.provider.{}.{}", item.engine_key, parent_stable_key)
+            });
+        if let Some(parent_session_id) = parent_session_id.as_deref() {
+            match service.get_session(GetSessionCommand {
+                tenant_id: project.tenant_id,
+                organization_id: project.organization_id,
+                path_agent_id: item.agent_id.clone(),
+                session_id: parent_session_id.to_string(),
+                owner_scope: Some(project.owner_user_id),
+                requested_by: subject.clone(),
+            }) {
+                Ok(_) => {}
+                Err(error)
+                    if error.detail_value("sdkwork.not_found") == Some("true")
+                        && error.message() == "session not found" =>
+                {
+                    result.record_skipped("parent_session_not_synced");
+                    continue;
+                }
+                Err(error) => {
+                    record_provider_session_reconciliation_failure(
+                        project,
+                        &item.engine_key,
+                        "parent_session_resolution_failed",
+                        &error,
+                    );
+                    result.record_failed("parent_session_resolution_failed");
+                    continue;
+                }
+            }
+        }
         item.directory = clamp_provider_session_directory(item.directory);
         match service.retire_legacy_provider_session_bindings(
             project.tenant_id,
@@ -976,7 +1233,7 @@ fn synchronize_provider_session_inventory_with_timeout(
             source_module: Some("birdcoder".to_string()),
             source_context_kind: Some("provider_session".to_string()),
             source_context_id: Some(project.project_id.clone()),
-            parent_session_id: None,
+            parent_session_id,
             forked_from_turn_id: None,
             title,
             idempotency_key: format!("provider-session:{}:{}", item.engine_key, stable_key),
@@ -1209,6 +1466,76 @@ mod tests {
     use sdkwork_agents_runtime_facade::CodeEngineCatalogEngine;
 
     #[test]
+    fn classifies_provider_parts_across_all_code_engine_content_types() {
+        use sdkwork_agent_kernel::{AgentMessageRole, AgentPart, AgentPartKind};
+
+        let kind = |role, part_kind, content_type| {
+            provider_session_item_kind(role, part_kind, content_type).expect("classified kind")
+        };
+        // Codex reasoning projection uses summary/content part types; Claude
+        // Code and Gemini use reasoning/thinking. All map to Reasoning so the
+        // history reconciliation matches the live turn projection.
+        for content_type in [
+            "reasoning",
+            "reasoning_summary",
+            "reasoning_content",
+            "thinking",
+        ] {
+            assert_eq!(
+                kind(AgentMessageRole::Agent, AgentPartKind::Text, Some(content_type)),
+                AgentSessionItemKind::Reasoning,
+                "content type {content_type}"
+            );
+        }
+        // Provider-specific tool result content types all map to ToolResult.
+        for content_type in [
+            "mcp_tool_result",
+            "tool_result",
+            "bash_code_execution_tool_result",
+            "code_execution_tool_result",
+            "function_call_output",
+            "custom_tool_call_output",
+            "web_search_tool_result",
+            "collab_agent_tool_result",
+        ] {
+            assert_eq!(
+                kind(
+                    AgentMessageRole::Tool,
+                    AgentPartKind::Json,
+                    Some(content_type)
+                ),
+                AgentSessionItemKind::ToolResult,
+                "content type {content_type}"
+            );
+        }
+        // Tool call refs are ToolCall; text under tool role is a ToolResult.
+        assert_eq!(
+            kind(AgentMessageRole::Tool, AgentPartKind::ToolCallRef, None),
+            AgentSessionItemKind::ToolCall
+        );
+        assert_eq!(
+            kind(AgentMessageRole::Tool, AgentPartKind::Text, None),
+            AgentSessionItemKind::ToolResult
+        );
+        assert_eq!(
+            kind(AgentMessageRole::Agent, AgentPartKind::Error, None),
+            AgentSessionItemKind::ErrorNotice
+        );
+        assert_eq!(
+            kind(AgentMessageRole::Adapter, AgentPartKind::Text, None),
+            AgentSessionItemKind::StatusNotice
+        );
+        assert_eq!(
+            kind(
+                AgentMessageRole::User,
+                AgentPartKind::Text,
+                Some("input_text")
+            ),
+            AgentSessionItemKind::UserInput
+        );
+    }
+
+    #[test]
     fn provider_session_ids_are_stable_and_runtime_scoped() {
         let first = stable_provider_session_key(
             100001,
@@ -1389,7 +1716,8 @@ mod tests {
                     .with_metadata("codex.status", "completed"),
                 AgentPart::text("part-output", "passed")
                     .from_provider("codex")
-                    .with_metadata("codex.content_type", "tool_output"),
+                    .with_metadata("codex.content_type", "tool_output")
+                    .with_metadata("codex.tool_call_id", "command-1"),
                 AgentPart::json("part-raw", raw_payload.clone())
                     .from_provider("codex")
                     .with_metadata("codex.content_type", "raw_provider_item"),
@@ -1413,6 +1741,80 @@ mod tests {
             items[1].tool_result_json.as_deref(),
             Some(raw_payload.as_str())
         );
+        // The provider now carries the originating call id on the output part,
+        // so the sync loop can pair this result with its `ToolCall` item and
+        // persist the call → result parent chain.
+        assert_eq!(items[1].tool_call_id.as_deref(), Some("command-1"));
+        // The full raw provider item JSON is preserved on every projected item.
+        assert_eq!(
+            items[0].provider_payload_json.as_deref(),
+            Some(raw_payload.as_str())
+        );
+        assert_eq!(
+            items[1].provider_payload_json.as_deref(),
+            Some(raw_payload.as_str())
+        );
+    }
+
+    #[test]
+    fn codex_mcp_tool_call_result_pairs_through_tool_call_id() {
+        let raw_payload = serde_json::json!({
+            "type": "mcpToolCall",
+            "id": "mcp-1",
+            "server": "docs",
+            "tool": "search",
+            "status": "completed",
+            "arguments": {"query": "Codex"},
+            "result": {"content": [{"type": "text", "text": "Found 3 docs"}]}
+        })
+        .to_string();
+        let message = AgentMessage::new(
+            "mcp-1",
+            AgentMessageRole::Tool,
+            vec![
+                AgentPart::tool_call_ref("part-tool", "mcp-1")
+                    .with_name("search")
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "mcp_tool_call")
+                    .with_metadata("codex.status", "completed"),
+                AgentPart::json(
+                    "part-result",
+                    serde_json::json!({
+                        "result": {"content": [{"type": "text", "text": "Found 3 docs"}]}
+                    })
+                    .to_string(),
+                )
+                .from_provider("codex")
+                .with_metadata("codex.content_type", "mcp_tool_result")
+                .with_metadata("codex.status", "completed")
+                .with_metadata("codex.tool_call_id", "mcp-1"),
+                AgentPart::json("part-raw", raw_payload.clone())
+                    .from_provider("codex")
+                    .with_metadata("codex.content_type", "raw_provider_item"),
+            ],
+        );
+
+        let items = provider_session_history_items("codex", &message);
+
+        assert_eq!(
+            items.iter().map(|item| item.kind).collect::<Vec<_>>(),
+            vec![
+                AgentSessionItemKind::ToolCall,
+                AgentSessionItemKind::ToolResult,
+            ]
+        );
+        assert_eq!(items[0].status, AgentSessionItemStatus::Completed);
+        assert_eq!(items[1].tool_call_id.as_deref(), Some("mcp-1"));
+        assert_eq!(
+            items[1].tool_result_json.as_deref(),
+            Some(
+                serde_json::json!({
+                    "result": {"content": [{"type": "text", "text": "Found 3 docs"}]}
+                })
+                .to_string()
+                .as_str()
+            )
+        );
     }
 
     #[test]
@@ -1435,6 +1837,10 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].kind, AgentSessionItemKind::ArtifactReference);
         assert_eq!(items[0].content.as_deref(), Some(raw_payload.as_str()));
+        assert_eq!(
+            items[0].provider_payload_json.as_deref(),
+            Some(raw_payload.as_str())
+        );
     }
 
     #[test]
@@ -2044,8 +2450,17 @@ mod tests {
             vec![root, duplicate, subagent],
         )
         .expect("normalized provider inventory sync");
-        assert_eq!(synchronization.synchronized_session_count, 1);
-        assert_eq!(synchronization.skipped_session_count, 2);
+        assert_eq!(
+            synchronization.synchronized_session_count,
+            2,
+            "issues: {:?}",
+            synchronization
+                .issues
+                .iter()
+                .map(|issue| (issue.code, format!("{:?}", issue.disposition)))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(synchronization.skipped_session_count, 1);
         assert_eq!(synchronization.failed_session_count, 0);
 
         let sessions = state
@@ -2058,8 +2473,46 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("deduplicated provider sessions");
-        assert_eq!(sessions.total_count, Some(1));
-        let session = sessions.items.first().expect("root provider session");
+        assert_eq!(sessions.total_count, Some(2));
+        let root_session = sessions
+            .items
+            .iter()
+            .find(|session| session.parent_session_id.is_none())
+            .expect("root provider session");
+        let subagent_session = sessions
+            .items
+            .iter()
+            .find(|session| session.parent_session_id.is_some())
+            .expect("subagent provider session");
+        // The canonical session tree mirrors the provider sub-agent topology:
+        // the sub-agent session records the root session as its parent.
+        assert_eq!(
+            subagent_session.parent_session_id.as_deref(),
+            Some(root_session.session_id.as_str())
+        );
+        let subagent_bindings = state
+            .service
+            .list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+                query: SessionRuntimeBindingListQuery::for_session(
+                    project.tenant_id,
+                    project.organization_id,
+                    subagent_session.session_id.clone(),
+                ),
+                path_agent_id: subagent_session.agent_id.clone(),
+                owner_scope: Some(project.owner_user_id),
+                requested_by: read_subject(),
+            })
+            .expect("subagent provider binding");
+        let subagent_binding = subagent_bindings.items.first().expect("subagent binding");
+        assert_eq!(
+            subagent_binding.provider_parent_session_id.as_deref(),
+            Some("provider-session-1")
+        );
+        assert_eq!(
+            subagent_binding.provider_session_id.as_deref(),
+            Some("provider-subagent-1")
+        );
+        let session = root_session;
         let bindings = state
             .service
             .list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
@@ -2394,11 +2847,8 @@ mod tests {
             .into_iter()
             .next()
             .expect("provider session");
-        let item_id = stable_provider_session_item_id(
-            "codex",
-            "provider-session-transcript-1",
-            "message-1",
-        );
+        let item_id =
+            stable_provider_session_item_id("codex", "provider-session-transcript-1", "message-1");
         let command = ReconcileProviderSessionHistoryItemCommand {
             tenant_id: project.tenant_id,
             organization_id: project.organization_id,
@@ -2414,6 +2864,7 @@ mod tests {
             tool_call_id: None,
             tool_arguments_json: None,
             tool_result_json: None,
+            provider_payload_json: None,
             parent_item_id: None,
             requested_by: read_subject(),
             requested_at: "2026-07-26T00:01:00Z".to_string(),
@@ -2481,6 +2932,7 @@ mod tests {
             tool_call_id: Some("provider-tool-call-1".to_string()),
             tool_arguments_json: Some(pending_tool),
             tool_result_json: None,
+            provider_payload_json: None,
             parent_item_id: None,
             requested_by: read_subject(),
             requested_at: "2026-07-26T00:02:00Z".to_string(),
@@ -2541,6 +2993,7 @@ mod tests {
                         .to_string(),
                     ),
                     tool_result_json: None,
+                    provider_payload_json: None,
                     parent_item_id: None,
                     requested_by: read_subject(),
                     requested_at: "2026-07-26T00:04:00Z".to_string(),
@@ -2569,6 +3022,7 @@ mod tests {
                     tool_result_json: Some(
                         serde_json::json!({ "output": "ok", "status": "completed" }).to_string(),
                     ),
+                    provider_payload_json: None,
                     parent_item_id: Some(tool_item_id.clone()),
                     requested_by: read_subject(),
                     requested_at: "2026-07-26T00:04:00Z".to_string(),
@@ -2753,10 +3207,7 @@ mod tests {
                 requested_by: manage_subject(),
             })
             .expect("archived session lookup");
-        assert_eq!(
-            archived.status,
-            crate::domain::AgentSessionStatus::Archived
-        );
+        assert_eq!(archived.status, crate::domain::AgentSessionStatus::Archived);
     }
 
     #[test]
@@ -2919,14 +3370,7 @@ mod tests {
             sort_key: "s".repeat(600),
         });
         assert!(directory.title.as_deref().unwrap_or_default().len() <= 512);
-        assert!(
-            directory
-                .preview
-                .as_deref()
-                .unwrap_or_default()
-                .len()
-                <= 4096
-        );
+        assert!(directory.preview.as_deref().unwrap_or_default().len() <= 4096);
         assert!(directory.sort_key.len() <= 512);
     }
 }

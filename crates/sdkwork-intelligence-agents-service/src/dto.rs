@@ -2488,6 +2488,7 @@ pub struct CreateSessionItemDataDto {
     pub output_tokens: Option<String>,
     pub model_id: Option<String>,
     pub provider_id: Option<String>,
+    pub provider_payload_json: Option<String>,
     pub parent_item_id: Option<String>,
 }
 
@@ -2534,6 +2535,7 @@ impl CreateSessionItemRequestDto {
             output_tokens,
             model_id: self.data.model_id,
             provider_id: self.data.provider_id,
+            provider_payload_json: self.data.provider_payload_json,
             parent_item_id: self.data.parent_item_id,
             requested_by,
             requested_at: self.requested_at,
@@ -2617,6 +2619,8 @@ pub struct AgentSessionItemRecordDto {
     pub tool_arguments: Option<Map<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_result: Option<Map<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_payload: Option<Map<String, Value>>,
     pub drive_refs: Vec<AgentItemDriveRefRecordDto>,
     pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
@@ -2709,6 +2713,10 @@ impl AgentSessionItemRecordDto {
             tool_result: parse_optional_json_object(
                 record.tool_result_json.as_deref(),
                 "toolResult",
+            )?,
+            provider_payload: parse_optional_json_object(
+                record.provider_payload_json.as_deref(),
+                "providerPayload",
             )?,
             drive_refs: Vec::new(),
             parent_item_id: record.parent_item_id.clone(),

@@ -110,7 +110,7 @@ use sdkwork_agent_kernel::ProviderManifest;
 use sdkwork_agent_kernel::{
     AgentManifest, InMemorySecretProvider, KernelError, KernelErrorKind, KernelResult,
     PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject, ProviderHealth,
-    SecretCreateRequest, SecretProvider, SecretRotateRequest, SecretType,
+    SecretAccessRequest, SecretCreateRequest, SecretProvider, SecretRotateRequest, SecretType,
 };
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -954,7 +954,13 @@ impl AgentRepository for DynAgentRepository {
         content: &str,
         updated_at: &str,
     ) -> KernelResult<()> {
-        self.0.append_turn_streaming_content(tenant_id, organization_id, turn_id, content, updated_at)
+        self.0.append_turn_streaming_content(
+            tenant_id,
+            organization_id,
+            turn_id,
+            content,
+            updated_at,
+        )
     }
 
     fn clear_turn_streaming_content(
@@ -963,7 +969,8 @@ impl AgentRepository for DynAgentRepository {
         organization_id: u64,
         turn_id: &str,
     ) -> KernelResult<()> {
-        self.0.clear_turn_streaming_content(tenant_id, organization_id, turn_id)
+        self.0
+            .clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 
     fn insert_turn_request(
@@ -3019,6 +3026,24 @@ fn apply_agent_model_configuration(
         metadata.secret_id
     };
 
+    // Resolve the plaintext credential for provider config-file materialization:
+    // prefer the freshly supplied key, then read the stored secret back so a
+    // re-apply refreshes the external CLI config with the same credential.
+    // The value is transient on the kernel request (never persisted into
+    // profiles) and is redacted from its Debug output.
+    let materialization_api_key = supplied_api_key.clone().or_else(|| {
+        state
+            .model_configuration_runtime
+            .secrets
+            .lock()
+            .ok()
+            .and_then(|secrets| {
+                secrets
+                    .access_secret(SecretAccessRequest::new(&api_key_secret_ref, agent_id))
+                    .ok()
+                    .and_then(|result| result.value)
+            })
+    });
     let mut kernel_request = sdkwork_agents_runtime_facade::AgentModelConfigurationRequest::new(
         request_id,
         agent_id,
@@ -3030,6 +3055,9 @@ fn apply_agent_model_configuration(
     )
     .with_supported_models(body.supported_model_ids)
     .with_multimodal_support(body.supports_multimodal);
+    if let Some(api_key) = materialization_api_key {
+        kernel_request = kernel_request.with_api_key_materialization(api_key);
+    }
     if let Some(value) = body.input_context_tokens {
         kernel_request = kernel_request.with_input_context_tokens(value);
     }
@@ -3269,12 +3297,9 @@ fn validate_model_configuration_identifier(
             "{field} must contain between 1 and {max_length} characters"
         )));
     }
-    if !value
-        .chars()
-        .all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | '/')
-        })
-    {
+    if !value.chars().all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | '/')
+    }) {
         return Err(ApiProblem::validation(format!(
             "{field} contains unsupported characters"
         )));
@@ -11516,8 +11541,7 @@ struct HttpTurnExecutionStreamSink {
 /// Flush the streaming checkpoint after at most this many accumulated bytes.
 const TURN_STREAMING_CHECKPOINT_BYTES: usize = 8 * 1024;
 /// Flush the streaming checkpoint at least this often while deltas arrive.
-const TURN_STREAMING_CHECKPOINT_INTERVAL: std::time::Duration =
-    std::time::Duration::from_secs(2);
+const TURN_STREAMING_CHECKPOINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl HttpTurnExecutionStreamSink {
     fn new(
@@ -12485,11 +12509,8 @@ mod tests {
         // Platform catalog models (for example the built-in official channels)
         // are not part of the code-engine catalog. Switching one directly must
         // succeed without a saved configuration and without an API key.
-        let response = post_model_selection(
-            &app,
-            model_selection_body("codex", "gpt-5.4", None),
-        )
-        .await;
+        let response =
+            post_model_selection(&app, model_selection_body("codex", "gpt-5.4", None)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let payload: Value = serde_json::from_slice(
             &to_bytes(response.into_body(), usize::MAX)
@@ -13517,6 +13538,7 @@ mod tests {
                 output_tokens: 2,
                 model_id: None,
                 provider_id: None,
+                provider_payload_json: None,
                 parent_item_id: None,
                 requested_by: sdkwork_agent_kernel::PolicySubject::new("u-1", "100001")
                     .with_role("ai.agents.manage"),
@@ -13659,6 +13681,7 @@ mod tests {
                 output_tokens: 3,
                 model_id: None,
                 provider_id: None,
+                provider_payload_json: None,
                 parent_item_id: None,
                 requested_by: sdkwork_agent_kernel::PolicySubject::new("100", "100001")
                     .with_role("ai.agents.manage"),

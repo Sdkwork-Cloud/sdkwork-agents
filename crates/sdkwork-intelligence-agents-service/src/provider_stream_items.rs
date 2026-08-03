@@ -12,6 +12,7 @@ const MAX_PROVIDER_ITEM_ID_BYTES: usize = 512;
 const MAX_PROVIDER_ITEM_TYPE_BYTES: usize = 128;
 const MAX_TOOL_ARGUMENTS_JSON_BYTES: usize = 256 * 1024;
 const MAX_TOOL_RESULT_JSON_BYTES: usize = 1024 * 1024;
+const MAX_PROVIDER_PAYLOAD_JSON_BYTES: usize = 1024 * 1024;
 const REDACTED_TEXT: &str = "[redacted]";
 
 /// Maximum number of durable canonical facts projected from one provider turn.
@@ -29,6 +30,7 @@ pub(crate) struct ProviderTurnItemFact {
     pub tool_call_id: Option<String>,
     pub tool_arguments_json: Option<String>,
     pub tool_result_json: Option<String>,
+    pub provider_payload_json: Option<String>,
     pub parent_item_id: Option<String>,
     pub created_at: Option<String>,
     pub completed_at: Option<String>,
@@ -133,11 +135,7 @@ pub(crate) fn terminal_provider_assistant_item_id(
             item.provider_session_id.trim()
         };
         (!provider_session_id.is_empty()).then(|| {
-            stable_provider_session_item_id(
-                &item.provider_id,
-                provider_session_id,
-                &item.item_id,
-            )
+            stable_provider_session_item_id(&item.provider_id, provider_session_id, &item.item_id)
         })
     }))
 }
@@ -163,6 +161,11 @@ fn parse_provider_item_event(
         ));
     }
     let provider_event_type = required_string(payload, "providerEventType", 64)?;
+    // The kernel forwards the raw JSON-RPC notification method names (for
+    // example "item/completed"); historical consumers used the dotted form.
+    // Both spellings are normalized so the live projection is
+    // convention-agnostic and never silently skips terminal items.
+    let provider_event_type = provider_event_type.replace('/', ".");
     if !matches!(
         provider_event_type.as_str(),
         "item.started" | "item.updated" | "item.completed"
@@ -242,13 +245,169 @@ fn project_terminal_item(
         // The existing assistant-output record remains the Turn response item.
         "agent_message" => Ok(Vec::new()),
         "reasoning" => project_reasoning(terminal, session_id, turn_id, first_occurred_at),
-        "command_execution" | "file_change" | "mcp_tool_call" | "web_search" => {
-            project_tool(terminal, session_id, turn_id, first_occurred_at)
-        }
+        "command_execution"
+        | "file_change"
+        | "mcp_tool_call"
+        | "web_search"
+        | "dynamic_tool_call"
+        | "collab_agent_tool_call"
+        | "sleep"
+        | "image_generation" => project_tool(terminal, session_id, turn_id, first_occurred_at),
+        "image_view" => project_image(terminal, session_id, turn_id, first_occurred_at),
+        "plan" => project_plan(terminal, session_id, turn_id, first_occurred_at),
+        "hook_prompt" => json_fact(
+            terminal,
+            session_id,
+            turn_id,
+            first_occurred_at,
+            AgentSessionItemKind::SystemInstruction,
+        ),
+        "user_message" => json_fact(
+            terminal,
+            session_id,
+            turn_id,
+            first_occurred_at,
+            AgentSessionItemKind::UserInput,
+        ),
         "todo_list" => project_status_notice(terminal, session_id, turn_id, first_occurred_at),
         "error" => project_error_notice(terminal, session_id, turn_id, first_occurred_at),
+        // sub_agent_activity, context_compaction, entered/exited review mode and
+        // any future provider item type remain visible status notices carrying
+        // the full typed item JSON.
         _ => project_status_notice(terminal, session_id, turn_id, first_occurred_at),
     }
+}
+
+fn project_plan(
+    terminal: ParsedProviderItemEvent,
+    session_id: &str,
+    turn_id: &str,
+    first_occurred_at: Option<String>,
+) -> KernelResult<Vec<ProviderTurnItemFact>> {
+    let content = if terminal.redacted {
+        REDACTED_TEXT.to_string()
+    } else {
+        let text = terminal
+            .item
+            .get("text")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| KernelError::validation("terminal plan item must contain text"))?;
+        bounded_text(text, "provider plan", MAX_TURN_INPUT_CONTENT_BYTES)?
+    };
+    Ok(vec![text_fact(
+        &terminal,
+        session_id,
+        turn_id,
+        first_occurred_at,
+        AgentSessionItemKind::AssistantOutput,
+        content,
+        if terminal.redacted {
+            AgentSessionItemStatus::Redacted
+        } else {
+            AgentSessionItemStatus::Completed
+        },
+    )?])
+}
+
+fn project_image(
+    terminal: ParsedProviderItemEvent,
+    session_id: &str,
+    turn_id: &str,
+    first_occurred_at: Option<String>,
+) -> KernelResult<Vec<ProviderTurnItemFact>> {
+    let content = if terminal.redacted {
+        REDACTED_TEXT.to_string()
+    } else {
+        let path = terminal
+            .item
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .ok_or_else(|| KernelError::validation("terminal image view item must contain path"))?;
+        bounded_text(path, "provider image path", MAX_TURN_INPUT_CONTENT_BYTES)?
+    };
+    Ok(vec![text_fact(
+        &terminal,
+        session_id,
+        turn_id,
+        first_occurred_at,
+        AgentSessionItemKind::ArtifactReference,
+        content,
+        if terminal.redacted {
+            AgentSessionItemStatus::Redacted
+        } else {
+            AgentSessionItemStatus::Completed
+        },
+    )?])
+}
+
+fn json_fact(
+    terminal: ParsedProviderItemEvent,
+    session_id: &str,
+    turn_id: &str,
+    first_occurred_at: Option<String>,
+    kind: AgentSessionItemKind,
+) -> KernelResult<Vec<ProviderTurnItemFact>> {
+    // Textual provider item types keep their readable text as item content so
+    // the canonical projection matches the provider-history reconciliation
+    // path; the full typed item JSON is preserved in `provider_payload_json`.
+    let content = if terminal.redacted {
+        REDACTED_TEXT.to_string()
+    } else {
+        match terminal.item_type.as_str() {
+            "hook_prompt" => {
+                let text = terminal
+                    .item
+                    .get("fragments")
+                    .and_then(Value::as_array)
+                    .map(|fragments| {
+                        fragments
+                            .iter()
+                            .filter_map(|fragment| fragment.get("text").and_then(Value::as_str))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default();
+                bounded_text(&text, "provider hook prompt", MAX_TURN_INPUT_CONTENT_BYTES)?
+            }
+            "user_message" => {
+                let text = terminal
+                    .item
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .map(|content| {
+                        content
+                            .iter()
+                            .filter_map(|input| input.get("text").and_then(Value::as_str))
+                            .collect::<Vec<_>>()
+                            .join("")
+                    })
+                    .unwrap_or_default();
+                bounded_text(&text, "provider user message", MAX_TURN_INPUT_CONTENT_BYTES)?
+            }
+            _ => bounded_json(
+                &terminal.item,
+                "provider item",
+                MAX_TURN_INPUT_CONTENT_BYTES,
+            )?,
+        }
+    };
+    Ok(vec![text_fact(
+        &terminal,
+        session_id,
+        turn_id,
+        first_occurred_at,
+        kind,
+        content,
+        if terminal.redacted {
+            AgentSessionItemStatus::Redacted
+        } else {
+            AgentSessionItemStatus::Completed
+        },
+    )?])
 }
 
 fn project_reasoning(
@@ -281,7 +440,7 @@ fn project_reasoning(
         } else {
             AgentSessionItemStatus::Completed
         },
-    )])
+    )?])
 }
 
 fn project_status_notice(
@@ -312,7 +471,7 @@ fn project_status_notice(
         AgentSessionItemKind::StatusNotice,
         content,
         status,
-    )])
+    )?])
 }
 
 fn project_error_notice(
@@ -345,7 +504,7 @@ fn project_error_notice(
         } else {
             AgentSessionItemStatus::Failed
         },
-    )])
+    )?])
 }
 
 fn project_tool(
@@ -398,6 +557,15 @@ fn project_tool(
         )?
     };
     let completed_at = terminal.occurred_at.clone();
+    let provider_payload_json = if terminal.redacted {
+        None
+    } else {
+        Some(bounded_json(
+            &terminal.item,
+            "provider payload",
+            MAX_PROVIDER_PAYLOAD_JSON_BYTES,
+        )?)
+    };
     Ok(vec![
         ProviderTurnItemFact {
             item_id: call_item_id.clone(),
@@ -410,6 +578,7 @@ fn project_tool(
             tool_call_id: Some(tool_call_id.clone()),
             tool_arguments_json: Some(arguments),
             tool_result_json: None,
+            provider_payload_json: provider_payload_json.clone(),
             parent_item_id: None,
             created_at: first_occurred_at.clone(),
             completed_at: completed_at.clone(),
@@ -425,6 +594,7 @@ fn project_tool(
             tool_call_id: Some(tool_call_id),
             tool_arguments_json: None,
             tool_result_json: Some(result),
+            provider_payload_json,
             parent_item_id: Some(call_item_id),
             created_at: first_occurred_at,
             completed_at,
@@ -440,8 +610,17 @@ fn text_fact(
     kind: AgentSessionItemKind,
     content: String,
     status: AgentSessionItemStatus,
-) -> ProviderTurnItemFact {
-    ProviderTurnItemFact {
+) -> KernelResult<ProviderTurnItemFact> {
+    let provider_payload_json = if terminal.redacted {
+        None
+    } else {
+        Some(bounded_json(
+            &terminal.item,
+            "provider payload",
+            MAX_PROVIDER_PAYLOAD_JSON_BYTES,
+        )?)
+    };
+    Ok(ProviderTurnItemFact {
         item_id: durable_item_id(session_id, turn_id, terminal, kind.as_str()),
         kind,
         content: Some(content),
@@ -458,10 +637,11 @@ fn text_fact(
         tool_call_id: None,
         tool_arguments_json: None,
         tool_result_json: None,
+        provider_payload_json,
         parent_item_id: None,
         created_at,
         completed_at: terminal.occurred_at.clone(),
-    }
+    })
 }
 
 fn tool_name(terminal: &ParsedProviderItemEvent) -> KernelResult<String> {
@@ -469,42 +649,31 @@ fn tool_name(terminal: &ParsedProviderItemEvent) -> KernelResult<String> {
         "command_execution" => Ok("shell_command".to_string()),
         "file_change" => Ok("apply_patch".to_string()),
         "web_search" => Ok("web_search".to_string()),
-        "mcp_tool_call" => terminal
+        "sleep" => Ok("sleep".to_string()),
+        "image_generation" => Ok("image_generation".to_string()),
+        "mcp_tool_call" | "dynamic_tool_call" | "collab_agent_tool_call" => terminal
             .item
             .get("tool")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|tool| !tool.is_empty())
             .map(str::to_string)
-            .ok_or_else(|| KernelError::validation("terminal MCP tool item must contain tool")),
+            .ok_or_else(|| {
+                KernelError::validation(format!(
+                    "terminal {} tool item must contain tool",
+                    terminal.item_type
+                ))
+            }),
         _ => Ok(terminal.item_type.clone()),
     }
 }
 
 fn tool_arguments(terminal: &ParsedProviderItemEvent) -> KernelResult<Value> {
-    let item = terminal
-        .item
-        .as_object()
-        .ok_or_else(|| KernelError::validation("terminal provider tool item must be an object"))?;
-    let arguments = match terminal.item_type.as_str() {
-        "command_execution" => json!({
-            "id": terminal.item_id,
-            "type": terminal.item_type,
-            "command": item.get("command").cloned().unwrap_or(Value::Null),
-            "status": item.get("status").cloned().unwrap_or(Value::Null),
-        }),
-        "mcp_tool_call" => json!({
-            "id": terminal.item_id,
-            "type": terminal.item_type,
-            "server": item.get("server").cloned().unwrap_or(Value::Null),
-            "tool": item.get("tool").cloned().unwrap_or(Value::Null),
-            "arguments": item.get("arguments").cloned().unwrap_or(Value::Null),
-            "status": item.get("status").cloned().unwrap_or(Value::Null),
-        }),
-        "file_change" | "web_search" => terminal.item.clone(),
-        _ => terminal.item.clone(),
-    };
-    Ok(arguments)
+    // Keep the full terminal provider item as the tool payload so every
+    // protocol field (command details, exit code, duration, app context,
+    // plugin identity, results, etc.) survives the canonical projection,
+    // mirroring the provider-history reconciliation payload.
+    Ok(terminal.item.clone())
 }
 
 fn item_status(
@@ -710,6 +879,241 @@ mod tests {
         assert_eq!(facts[2].parent_item_id, Some(facts[1].item_id.clone()));
         assert_eq!(facts[4].status, AgentSessionItemStatus::Failed);
         assert!(facts.iter().all(|fact| fact.provider_id == "codex"));
+        // The full raw provider item JSON is preserved on every projected fact
+        // so provider protocol data survives without loss.
+        assert!(facts
+            .iter()
+            .all(|fact| fact.provider_payload_json.is_some()));
+        assert_eq!(
+            facts[1].provider_payload_json.as_deref(),
+            Some(
+                serde_json::json!({
+                    "id": "command-1",
+                    "type": "command_execution",
+                    "command": "cargo test",
+                    "aggregated_output": "passed",
+                    "exit_code": 0,
+                    "status": "completed"
+                })
+                .to_string()
+                .as_str()
+            )
+        );
+    }
+
+    #[test]
+    fn slash_spelled_provider_event_types_still_project_terminal_facts() {
+        // The kernel forwards raw JSON-RPC notification method names
+        // ("item/started", "item/completed"); the projection must not depend
+        // on the dotted spelling used by older consumers.
+        let events = vec![
+            event(
+                0,
+                "item/started",
+                json!({"id":"reasoning-1","type":"reasoning","text":""}),
+                KernelEventRedaction::TenantSensitive,
+            ),
+            event(
+                1,
+                "item/completed",
+                json!({"id":"reasoning-1","type":"reasoning","text":"Inspect the repository"}),
+                KernelEventRedaction::TenantSensitive,
+            ),
+            event(
+                2,
+                "item/completed",
+                json!({"id":"message-1","type":"agent_message","text":"Done"}),
+                KernelEventRedaction::TenantSensitive,
+            ),
+        ];
+        let facts = project_terminal_provider_turn_items(&events, "session.test", "turn.test")
+            .expect("slash-spelled provider facts");
+        // assistant output is intentionally carried by the Turn response item,
+        // not as a terminal fact; the reasoning item must still project.
+        assert_eq!(
+            facts.iter().map(|fact| fact.kind).collect::<Vec<_>>(),
+            vec![AgentSessionItemKind::Reasoning]
+        );
+        assert_eq!(facts[0].provider_payload_json.is_some(), true);
+        let terminal = terminal_provider_assistant_item_id(&events, None)
+            .expect("terminal assistant id");
+        assert!(terminal.is_some());
+    }
+
+    #[test]
+    fn redacted_terminal_facts_do_not_preserve_raw_provider_payload() {
+        let source = event(
+            0,
+            "item.completed",
+            json!({"id":"secret-1","type":"command_execution","command":"export TOKEN=abc","aggregated_output":"token leaked","status":"completed"}),
+            KernelEventRedaction::Secret,
+        );
+        let facts = project_terminal_provider_turn_items(&[source], "session.test", "turn.test")
+            .expect("redacted provider facts");
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0].status, AgentSessionItemStatus::Redacted);
+        assert_eq!(facts[0].provider_payload_json, None);
+        assert_eq!(facts[1].provider_payload_json, None);
+        assert_eq!(
+            facts[0].tool_arguments_json.as_deref(),
+            Some("{\"redacted\":true,\"type\":\"command_execution\"}")
+        );
+    }
+
+    #[test]
+    fn command_execution_terminal_keeps_the_full_provider_payload() {
+        let terminal = event(
+            0,
+            "item.completed",
+            json!({
+                "id": "command-1",
+                "type": "command_execution",
+                "command": "cargo test",
+                "cwd": "E:/workspace",
+                "processId": "p-1",
+                "status": "completed",
+                "commandActions": [{"kind": "read", "name": "a.rs", "path": "E:/workspace/a.rs"}],
+                "aggregatedOutput": "passed",
+                "exitCode": 0,
+                "durationMs": 42,
+                "pluginId": null,
+                "scriptPath": null,
+                "source": "exec"
+            }),
+            KernelEventRedaction::TenantSensitive,
+        );
+        let facts = project_terminal_provider_turn_items(&[terminal], "session.test", "turn.test")
+            .expect("provider facts");
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0].kind, AgentSessionItemKind::ToolCall);
+        let arguments: Value = serde_json::from_str(
+            facts[0]
+                .tool_arguments_json
+                .as_deref()
+                .expect("tool arguments"),
+        )
+        .expect("tool arguments JSON");
+        // Every protocol field survives the live projection.
+        assert_eq!(arguments["command"], json!("cargo test"));
+        assert_eq!(arguments["cwd"], json!("E:/workspace"));
+        assert_eq!(arguments["processId"], json!("p-1"));
+        assert_eq!(arguments["exitCode"], json!(0));
+        assert_eq!(arguments["durationMs"], json!(42));
+        assert_eq!(arguments["source"], json!("exec"));
+        assert_eq!(arguments["commandActions"][0]["kind"], json!("read"));
+        assert_eq!(facts[1].kind, AgentSessionItemKind::ToolResult);
+    }
+
+    #[test]
+    fn mcp_tool_call_terminal_keeps_app_context_and_result() {
+        let terminal = event(
+            0,
+            "item.completed",
+            json!({
+                "id": "mcp-1",
+                "type": "mcp_tool_call",
+                "server": "docs",
+                "tool": "search",
+                "status": "completed",
+                "arguments": {"query": "codex"},
+                "appContext": {"connectorId": "c-1", "linkId": "l-1", "resourceUri": "res://1", "appName": "docs", "actionName": "search"},
+                "mcpAppResourceUri": "res://1",
+                "pluginId": "plugin-1",
+                "readOnlyHint": true,
+                "result": {"content": [{"type": "text", "text": "found"}]},
+                "error": null,
+                "durationMs": 7
+            }),
+            KernelEventRedaction::TenantSensitive,
+        );
+        let facts = project_terminal_provider_turn_items(&[terminal], "session.test", "turn.test")
+            .expect("provider facts");
+        assert_eq!(facts[0].kind, AgentSessionItemKind::ToolCall);
+        let arguments: Value = serde_json::from_str(
+            facts[0]
+                .tool_arguments_json
+                .as_deref()
+                .expect("tool arguments"),
+        )
+        .expect("tool arguments JSON");
+        assert_eq!(arguments["server"], json!("docs"));
+        assert_eq!(arguments["appContext"]["connectorId"], json!("c-1"));
+        assert_eq!(arguments["mcpAppResourceUri"], json!("res://1"));
+        assert_eq!(arguments["pluginId"], json!("plugin-1"));
+        assert_eq!(arguments["readOnlyHint"], json!(true));
+        assert_eq!(arguments["result"]["content"][0]["text"], json!("found"));
+        assert_eq!(facts[1].kind, AgentSessionItemKind::ToolResult);
+    }
+
+    #[test]
+    fn live_projection_covers_every_tool_and_activity_item_type() {
+        let cases: Vec<(Value, AgentSessionItemKind)> = vec![
+            (
+                json!({"id":"dyn-1","type":"dynamic_tool_call","tool":"lookup","status":"completed","arguments":{},"contentItems":[{"type":"inputText","text":"hit"}],"success":true}),
+                AgentSessionItemKind::ToolCall,
+            ),
+            (
+                json!({"id":"collab-1","type":"collab_agent_tool_call","tool":"spawnAgent","status":"completed","senderThreadId":"s-1","receiverThreadIds":["c-1"],"prompt":"go","model":"gpt-5","reasoningEffort":null,"agentsStates":{}}),
+                AgentSessionItemKind::ToolCall,
+            ),
+            (
+                json!({"id":"sleep-1","type":"sleep","durationMs":100}),
+                AgentSessionItemKind::ToolCall,
+            ),
+            (
+                json!({"id":"img-1","type":"image_generation","status":"completed","revisedPrompt":null,"result":"https://example.invalid/i.png","savedPath":null}),
+                AgentSessionItemKind::ToolCall,
+            ),
+            (
+                json!({"id":"view-1","type":"image_view","path":"E:/workspace/a.png"}),
+                AgentSessionItemKind::ArtifactReference,
+            ),
+            (
+                json!({"id":"plan-1","type":"plan","text":"step one"}),
+                AgentSessionItemKind::AssistantOutput,
+            ),
+            (
+                json!({"id":"hook-1","type":"hook_prompt","fragments":[{"text":"retry","hookRunId":"r-1"}]}),
+                AgentSessionItemKind::SystemInstruction,
+            ),
+            (
+                json!({"id":"user-1","type":"user_message","clientId":null,"content":[{"type":"inputText","text":"hello"}]}),
+                AgentSessionItemKind::UserInput,
+            ),
+            (
+                json!({"id":"sub-1","type":"sub_agent_activity","kind":"started","agentThreadId":"c-1","agentPath":"0.0"}),
+                AgentSessionItemKind::StatusNotice,
+            ),
+            (
+                json!({"id":"compaction-1","type":"context_compaction"}),
+                AgentSessionItemKind::StatusNotice,
+            ),
+        ];
+        for (item, expected_kind) in cases {
+            let facts = project_terminal_provider_turn_items(
+                &[event(
+                    0,
+                    "item.completed",
+                    item,
+                    KernelEventRedaction::TenantSensitive,
+                )],
+                "session.test",
+                "turn.test",
+            )
+            .unwrap_or_else(|error| {
+                panic!("item {} failed projection: {error}", expected_kind.as_str())
+            });
+            assert!(
+                facts.iter().any(|fact| fact.kind == expected_kind),
+                "item type {} did not project a {} fact: {:?}",
+                facts.first().map(|fact| fact.kind.as_str()).unwrap_or("?"),
+                expected_kind.as_str(),
+                facts
+                    .iter()
+                    .map(|fact| fact.kind.as_str())
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]
@@ -760,12 +1164,10 @@ mod tests {
             KernelEventRedaction::TenantSensitive,
         );
 
-        let item_id = terminal_provider_assistant_item_id(
-            &[assistant],
-            Some("provider-session.fallback"),
-        )
-        .expect("assistant identity")
-        .expect("terminal assistant");
+        let item_id =
+            terminal_provider_assistant_item_id(&[assistant], Some("provider-session.fallback"))
+                .expect("assistant identity")
+                .expect("terminal assistant");
 
         assert_eq!(
             item_id,

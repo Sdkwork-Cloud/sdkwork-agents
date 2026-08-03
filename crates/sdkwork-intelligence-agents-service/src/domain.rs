@@ -1605,6 +1605,7 @@ pub struct AgentSessionItemRecord {
     pub tool_call_id: Option<String>,
     pub tool_arguments_json: Option<String>,
     pub tool_result_json: Option<String>,
+    pub provider_payload_json: Option<String>,
     pub parent_item_id: Option<String>,
     pub turn_id: Option<String>,
     pub created_by: u64,

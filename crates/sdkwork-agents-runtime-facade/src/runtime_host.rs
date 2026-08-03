@@ -8,7 +8,7 @@ use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
 use crate::provider_sessions::{
-    discover_provider_sessions, load_provider_session_messages,
+    discover_provider_sessions, load_provider_session_children, load_provider_session_messages,
     load_provider_session_messages_for_directory, ProviderSessionInventorySelector,
     ProviderSessionInventorySnapshot,
 };
@@ -144,6 +144,20 @@ impl AgentsCodeEngineHost {
         working_directory: Option<&str>,
     ) -> RuntimeFacadeResult<Vec<sdkwork_agent_kernel::AgentMessage>> {
         load_provider_session_messages_for_directory(
+            &self.slots,
+            engine_key,
+            provider_session_id,
+            working_directory,
+        )
+    }
+
+    pub fn load_provider_session_children(
+        &self,
+        engine_key: &str,
+        provider_session_id: &str,
+        working_directory: Option<&str>,
+    ) -> RuntimeFacadeResult<Vec<String>> {
+        load_provider_session_children(
             &self.slots,
             engine_key,
             provider_session_id,

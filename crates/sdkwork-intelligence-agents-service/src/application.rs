@@ -79,6 +79,7 @@ const MAX_JSON_PAYLOAD_BYTES: usize = 1024 * 1024;
 const MAX_METADATA_JSON_BYTES: usize = 64 * 1024;
 const MAX_TOOL_ARGUMENTS_JSON_BYTES: usize = 256 * 1024;
 const MAX_TOOL_RESULT_JSON_BYTES: usize = 1024 * 1024;
+const MAX_PROVIDER_PAYLOAD_JSON_BYTES: usize = 1024 * 1024;
 const MAX_TASK_TITLE_BYTES: usize = 512;
 const MAX_TASK_CRON_EXPRESSION_BYTES: usize = 256;
 const MAX_TASK_TIMEZONE_BYTES: usize = 128;
@@ -3352,15 +3353,12 @@ where
                 )?;
             }
         }
-        if command.parent_session_id.is_some() != command.forked_from_turn_id.is_some() {
+        if command.forked_from_turn_id.is_some() && command.parent_session_id.is_none() {
             return Err(KernelError::validation(
-                "parentSessionId and forkedFromTurnId must be supplied together",
+                "forkedFromTurnId requires parentSessionId",
             ));
         }
-        if let (Some(parent_session_id), Some(forked_from_turn_id)) = (
-            command.parent_session_id.as_deref(),
-            command.forked_from_turn_id.as_deref(),
-        ) {
+        if let Some(parent_session_id) = command.parent_session_id.as_deref() {
             if parent_session_id == session_id {
                 return Err(KernelError::validation(
                     "parentSessionId must differ from sessionId",
@@ -3379,18 +3377,20 @@ where
             {
                 return Err(KernelError::validation("parent session scope mismatch"));
             }
-            let fork_turn = self
-                .repository
-                .get_turn(
-                    command.tenant_id,
-                    command.organization_id,
-                    forked_from_turn_id,
-                )?
-                .ok_or_else(|| KernelError::not_found("fork turn not found"))?;
-            if fork_turn.session_id != parent_session_id {
-                return Err(KernelError::validation(
-                    "forkedFromTurnId does not belong to parentSessionId",
-                ));
+            if let Some(forked_from_turn_id) = command.forked_from_turn_id.as_deref() {
+                let fork_turn = self
+                    .repository
+                    .get_turn(
+                        command.tenant_id,
+                        command.organization_id,
+                        forked_from_turn_id,
+                    )?
+                    .ok_or_else(|| KernelError::not_found("fork turn not found"))?;
+                if fork_turn.session_id != parent_session_id {
+                    return Err(KernelError::validation(
+                        "forkedFromTurnId does not belong to parentSessionId",
+                    ));
+                }
             }
         }
         if let Some(project_id) = command.project_id.as_deref() {
@@ -5169,9 +5169,9 @@ where
         if binding.session_id == target_session_id {
             return Ok(ProviderSessionBindingClaim::AlreadyTarget);
         }
-        let Some(session) = self
-            .repository
-            .get_session(tenant_id, organization_id, &binding.session_id)?
+        let Some(session) =
+            self.repository
+                .get_session(tenant_id, organization_id, &binding.session_id)?
         else {
             return Ok(ProviderSessionBindingClaim::Free);
         };
@@ -6096,6 +6096,7 @@ where
             tool_call_id: None,
             tool_arguments_json: None,
             tool_result_json: None,
+            provider_payload_json: command.provider_payload_json,
             parent_item_id: command.parent_item_id,
             turn_id: None,
             created_by: session.owner_user_id,
@@ -6181,6 +6182,11 @@ where
                 command.tool_result_json.as_deref(),
                 MAX_TOOL_RESULT_JSON_BYTES,
             ),
+            (
+                "providerPayloadJson",
+                command.provider_payload_json.as_deref(),
+                MAX_PROVIDER_PAYLOAD_JSON_BYTES,
+            ),
         ] {
             if let Some(value) = value {
                 validate_bounded_json_payload(value, field_name, max_bytes)?;
@@ -6219,6 +6225,7 @@ where
                 && existing.tool_call_id == command.tool_call_id
                 && existing.tool_arguments_json == command.tool_arguments_json
                 && existing.tool_result_json == command.tool_result_json
+                && existing.provider_payload_json == command.provider_payload_json
                 && existing.parent_item_id == command.parent_item_id;
             if unchanged {
                 return Ok(existing);
@@ -6264,6 +6271,7 @@ where
             existing.tool_call_id = command.tool_call_id;
             existing.tool_arguments_json = command.tool_arguments_json;
             existing.tool_result_json = command.tool_result_json;
+            existing.provider_payload_json = command.provider_payload_json;
             existing.parent_item_id = command.parent_item_id;
             existing.version = existing.version.checked_add(1).ok_or_else(|| {
                 KernelError::conflict("provider Session history item version overflow")
@@ -6292,6 +6300,7 @@ where
             tool_call_id: command.tool_call_id,
             tool_arguments_json: command.tool_arguments_json,
             tool_result_json: command.tool_result_json,
+            provider_payload_json: command.provider_payload_json,
             parent_item_id: command.parent_item_id,
             turn_id: None,
             created_by: session.owner_user_id,
@@ -7097,6 +7106,7 @@ where
             tool_call_id: None,
             tool_arguments_json: None,
             tool_result_json: None,
+            provider_payload_json: None,
             parent_item_id: None,
             turn_id: Some(turn_id.clone()),
             created_by: session.owner_user_id,
@@ -7321,6 +7331,7 @@ where
                     tool_call_id: fact.tool_call_id,
                     tool_arguments_json: fact.tool_arguments_json,
                     tool_result_json: fact.tool_result_json,
+                    provider_payload_json: fact.provider_payload_json,
                     parent_item_id: fact
                         .parent_item_id
                         .or_else(|| Some(user_input_item.item_id.clone())),
@@ -7373,6 +7384,7 @@ where
             tool_call_id: None,
             tool_arguments_json: None,
             tool_result_json: None,
+            provider_payload_json: None,
             parent_item_id: Some(user_input_item.item_id.clone()),
             turn_id: Some(turn_id.clone()),
             created_by: session.owner_user_id,
@@ -9093,7 +9105,8 @@ where
         organization_id: u64,
         turn_id: &str,
     ) -> KernelResult<()> {
-        self.repository.clear_turn_streaming_content(tenant_id, organization_id, turn_id)
+        self.repository
+            .clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 }
 

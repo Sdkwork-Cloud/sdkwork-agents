@@ -6945,6 +6945,10 @@ components:
         toolResult:
           type: [object, 'null']
           additionalProperties: true
+        providerPayload:
+          description: Full raw provider protocol payload (provider thread item JSON) preserved without loss.
+          type: [object, 'null']
+          additionalProperties: true
         parentItemId:
           type: [string, 'null']
           pattern: '^item\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'

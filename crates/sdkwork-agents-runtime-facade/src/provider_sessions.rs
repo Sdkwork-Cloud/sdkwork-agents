@@ -348,6 +348,29 @@ pub(crate) fn load_provider_session_messages_for_directory(
         })
 }
 
+pub(crate) fn load_provider_session_children(
+    slots: &HashMap<String, CodeEngineSlot>,
+    engine_key: &str,
+    provider_session_id: &str,
+    working_directory: Option<&str>,
+) -> RuntimeFacadeResult<Vec<String>> {
+    let Some(slot) = slots.get(engine_key) else {
+        return Err(RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        });
+    };
+    if provider_session_id.trim().is_empty() {
+        return Err(RuntimeFacadeError::InvalidInput(
+            "provider session id is required to enumerate sub-agent sessions".to_string(),
+        ));
+    }
+    slot.list_provider_session_children(provider_session_id, working_directory)
+        .map_err(|error| RuntimeFacadeError::EngineUnavailable {
+            engine_key: engine_key.to_string(),
+            reason: error.to_string(),
+        })
+}
+
 fn resolve_selected_cwd(
     candidates: &[ProviderSessionInventoryItem],
     selector: &ProviderSessionInventorySelector,

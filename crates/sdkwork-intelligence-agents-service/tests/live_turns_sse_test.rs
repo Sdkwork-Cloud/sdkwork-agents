@@ -1,17 +1,15 @@
 use std::sync::{Arc, Mutex};
 
-use sdkwork_agent_kernel::{
-    AgentManifest, KernelEvent, KernelResult, PolicySubject,
-};
+use sdkwork_agent_kernel::{AgentManifest, KernelEvent, KernelResult, PolicySubject};
 use sdkwork_code_kernel::CodeTaskIntent;
 use sdkwork_intelligence_agents_service::{
     ActivateAgentProviderBindingCommand, AgentAuditSink, AgentBusinessStatus,
-    AgentImplementationKind, AgentItemDriveRefInput, AgentSessionEntrySurface,
-    AgentSessionKind, AgentTurnMode, AgentVisibility, AgentsService,
-    AgentProviderBindingCommand, AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand,
-    CreateSessionCommand, CreateSessionRuntimeBindingCommand, CreateTurnCommand,
-    GetSessionRuntimeBindingCommand, IamGatedPolicyProvider, InMemoryAgentRepository,
-    PaginatedResult, RuntimeFacadeTurnExecutor, TurnExecutionStreamSink,
+    AgentImplementationKind, AgentItemDriveRefInput, AgentProviderBindingCommand,
+    AgentSessionEntrySurface, AgentSessionKind, AgentTurnMode, AgentVisibility, AgentsService,
+    AuditEventListQuery, ChangeAgentStatusCommand, CreateAgentCommand, CreateSessionCommand,
+    CreateSessionRuntimeBindingCommand, CreateTurnCommand, GetSessionRuntimeBindingCommand,
+    IamGatedPolicyProvider, InMemoryAgentRepository, PaginatedResult, RuntimeFacadeTurnExecutor,
+    TurnExecutionStreamSink,
 };
 
 /// Live end-to-end proof: one real provider turn through the agents business
@@ -252,10 +250,7 @@ fn run_live_turns_flow(config: LiveProviderConfig) {
         sink.events().len() >= result.stream_events.len(),
         "stream sink must observe the same kernel events as the turn result"
     );
-    let terminal_events = [
-        "agent.turn.started",
-        "agent.turn.completed",
-    ];
+    let terminal_events = ["agent.turn.started", "agent.turn.completed"];
     for terminal in terminal_events {
         assert!(
             result
@@ -290,8 +285,7 @@ fn run_live_turns_flow(config: LiveProviderConfig) {
         .trim()
         .to_string();
     assert!(
-        !resumed_content.is_empty()
-            && resumed_content.to_ascii_uppercase().contains("DONE"),
+        !resumed_content.is_empty() && resumed_content.to_ascii_uppercase().contains("DONE"),
         "live resumed {} turn must return the real model reply: {resumed_content:?}",
         config.label
     );
@@ -355,7 +349,12 @@ struct RecordingAuditSink {
 impl RecordingAuditSink {
     fn new() -> (Self, Arc<Mutex<Vec<KernelEvent>>>) {
         let events = Arc::new(Mutex::new(Vec::new()));
-        (Self { events: events.clone() }, events)
+        (
+            Self {
+                events: events.clone(),
+            },
+            events,
+        )
     }
 }
 
@@ -414,7 +413,10 @@ impl TurnExecutionStreamSink for RecordingTurnStreamSink {
     }
 
     fn push_delta(&self, delta: &str) {
-        self.deltas.lock().expect("sink lock").push(delta.to_string());
+        self.deltas
+            .lock()
+            .expect("sink lock")
+            .push(delta.to_string());
     }
 
     fn push_event(&self, event: &KernelEvent) -> KernelResult<()> {

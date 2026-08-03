@@ -39,7 +39,11 @@ impl TurnExecutor for RichTurnExecutor {
                 "follow-up Turn must resume with the provider identity persisted from the first Turn",
             );
         }
-        let turn_suffix = if input.history.is_empty() { "first" } else { "second" };
+        let turn_suffix = if input.history.is_empty() {
+            "first"
+        } else {
+            "second"
+        };
         let message_item = |text: &str| {
             json!({
                 "id": format!("provider-item.message.rich.{turn_suffix}"),

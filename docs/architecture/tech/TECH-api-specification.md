@@ -4,7 +4,7 @@
 
 - Version: `6.0.0`
 - Status: active
-- Total operations: 216
+- Total operations: 217
 - Domain model: `AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction`
 
 ## 1. Authorities
@@ -14,7 +14,7 @@ deterministic inventory and must be regenerated after an authority change.
 
 | Surface | Prefix | Operations | Authentication | Consumer SDK |
 | --- | --- | ---: | --- | --- |
-| App API | `/app/v3/api` | 102 | `Authorization` and `Access-Token` through the global app session | `@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk` |
+| App API | `/app/v3/api` | 103 | `Authorization` and `Access-Token` through the global app session | `@sdkwork/agents-app-sdk` and `sdkwork_agents_app_sdk` |
 | Backend API | `/backend/v3/api` | 58 | `Authorization` and `Access-Token` for operator context | `@sdkwork/agents-backend-sdk` |
 | Open API | `/agent/v3/api` | 56 | `X-API-Key` | `@sdkwork/agents-sdk` |
 
@@ -152,7 +152,8 @@ Authority: [agents-app-api.openapi.yaml](../../../crates/sdkwork-intelligence-ag
 | 99 | DELETE | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
 | 100 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog |
 | 101 | POST | `/app/v3/api/ai/model_configurations/apply` | `agents.modelConfigurations.apply` | Apply one unified model configuration to an Agent provider |
-| 102 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
+| 102 | POST | `/app/v3/api/ai/model_selections/apply` | `agents.modelSelections.apply` | Apply a catalog or saved custom model selection to an Agent provider |
+| 103 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
 
 ### 4.2 Backend API
 

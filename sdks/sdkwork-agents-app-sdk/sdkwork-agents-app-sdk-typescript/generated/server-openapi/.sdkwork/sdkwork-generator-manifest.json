@@ -320,7 +320,7 @@
     },
     {
       "path": "src/types/agent-session-item-record.ts",
-      "sha256": "e5ee0418d3cdfe654731435f100fd2a955d586d4b0d187a1e377e1821b4a8566"
+      "sha256": "2af0be39c378a6629a7eed283c5f8b2212b796dc980ac43c5fc16e16a9fcb782"
     },
     {
       "path": "src/types/agent-session-item-response.ts",

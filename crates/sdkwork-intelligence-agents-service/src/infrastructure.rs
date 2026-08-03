@@ -6496,6 +6496,7 @@ mod tests {
             tool_call_id: None,
             tool_arguments_json: None,
             tool_result_json: None,
+            provider_payload_json: None,
             parent_item_id: None,
             turn_id: None,
             created_by: 30,

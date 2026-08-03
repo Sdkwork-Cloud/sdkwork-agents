@@ -7737,6 +7737,7 @@ class AgentSessionItemRecord {
   final String? toolCallId;
   final Map<String, dynamic>? toolArguments;
   final Map<String, dynamic>? toolResult;
+  final Map<String, dynamic>? providerPayload;
   final String? parentItemId;
   final String? turnId;
   final List<AgentItemDriveRefRecord> driveRefs;
@@ -7767,6 +7768,7 @@ class AgentSessionItemRecord {
     this.toolCallId,
     this.toolArguments,
     this.toolResult,
+    this.providerPayload,
     this.parentItemId,
     this.turnId,
     required this.driveRefs,
@@ -7853,6 +7855,7 @@ class AgentSessionItemRecord {
       toolCallId: json['toolCallId']?.toString(),
       toolArguments: _sdkworkAsMap(json['toolArguments']),
       toolResult: _sdkworkAsMap(json['toolResult']),
+      providerPayload: _sdkworkAsMap(json['providerPayload']),
       parentItemId: json['parentItemId']?.toString(),
       turnId: json['turnId']?.toString(),
       driveRefs: (() {
@@ -7922,6 +7925,7 @@ class AgentSessionItemRecord {
       'toolCallId': toolCallId,
       'toolArguments': toolArguments,
       'toolResult': toolResult,
+      'providerPayload': providerPayload,
       'parentItemId': parentItemId,
       'turnId': turnId,
       'driveRefs': driveRefs.map((item) => item.toJson()).toList(),

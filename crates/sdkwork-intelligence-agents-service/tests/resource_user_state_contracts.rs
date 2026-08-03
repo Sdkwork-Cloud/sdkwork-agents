@@ -231,6 +231,7 @@ fn item_feedback_service_persists_changes_and_soft_delete() {
             output_tokens: 1,
             model_id: None,
             provider_id: None,
+            provider_payload_json: None,
             parent_item_id: None,
             requested_by: subject(),
             requested_at: "2026-07-19T01:00:00Z".to_string(),
