@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, HashSet};
 
 use sdkwork_agent_kernel::{
-    AgentConfigurationProvider, AgentExecutionSettingsRequest, AgentExecutionSettingsResolution,
-    AgentExecutionSettingsSpec, AgentMessage, AgentMessageRole, AgentModelConfigurationApplication,
+    AgentConfigurationProvider, AgentConfigurationUpgradePlan, AgentConfigurationUpgradeRequest,
+    AgentExecutionSettingsRequest, AgentExecutionSettingsResolution, AgentExecutionSettingsSpec,
+    AgentMessage, AgentMessageRole, AgentModelConfigurationApplication,
     AgentModelConfigurationRequest, AgentModelSelectionRequest, AgentSession, KernelError,
     KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
-    ModelStreamSink, ProviderSessionActivityProvider, SessionActivitySnapshot, SessionKind,
-    SessionSource, SessionState,
+    ModelStreamSink, ProviderModelConfigurationStatus, ProviderSessionActivityProvider,
+    SessionActivitySnapshot, SessionKind, SessionSource, SessionState,
 };
 use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
@@ -117,6 +118,101 @@ pub fn apply_code_engine_model_selection(
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
 }
 
+/// Reads the currently effective model configuration back from the engine's
+/// provider native config surface, so callers can detect drift and stale CLI
+/// state relative to the stored profile.
+pub fn read_code_engine_model_configuration(
+    engine_key: &str,
+    agent_id: &str,
+    profile_id: &str,
+) -> crate::RuntimeFacadeResult<ProviderModelConfigurationStatus> {
+    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+        crate::RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        }
+    })?;
+    if agent_id != expected_agent_id {
+        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
+            "model configuration agentId does not match engineId {engine_key}"
+        )));
+    }
+    let result = match engine_key {
+        "codex" => CodexConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        "claude-code" => {
+            ClaudeCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
+        }
+        "gemini" => GeminiCliConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        "opencode" => OpenCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        "openclaw" => OpenClawConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        "hermes" => HermesConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        _ => unreachable!("validated code engine"),
+    };
+    result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
+}
+
+/// Reverts the engine's materialized provider configuration (restoring the
+/// pre-apply backup) when a profile is archived or removed.
+pub fn dematerialize_code_engine_model_configuration(
+    engine_key: &str,
+    agent_id: &str,
+    profile_id: &str,
+) -> crate::RuntimeFacadeResult<()> {
+    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+        crate::RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        }
+    })?;
+    if agent_id != expected_agent_id {
+        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
+            "model configuration agentId does not match engineId {engine_key}"
+        )));
+    }
+    let result = match engine_key {
+        "codex" => CodexConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        "claude-code" => ClaudeCodeConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        "gemini" => GeminiCliConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        "opencode" => OpenCodeConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        "openclaw" => OpenClawConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        "hermes" => HermesConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        _ => unreachable!("validated code engine"),
+    };
+    result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
+}
+
+/// Plans a configuration profile upgrade for the engine's provider. Providers
+/// without a migration plan report the capability as missing.
+pub fn plan_code_engine_configuration_upgrade(
+    engine_key: &str,
+    request: &AgentConfigurationUpgradeRequest,
+) -> crate::RuntimeFacadeResult<AgentConfigurationUpgradePlan> {
+    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+        crate::RuntimeFacadeError::UnsupportedEngine {
+            engine_key: engine_key.to_string(),
+        }
+    })?;
+    if request.agent_id != expected_agent_id {
+        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
+            "model configuration agentId does not match engineId {engine_key}"
+        )));
+    }
+    let result = match engine_key {
+        "codex" => CodexConfigurationProvider::new().plan_configuration_upgrade(request),
+        "claude-code" => ClaudeCodeConfigurationProvider::new().plan_configuration_upgrade(request),
+        "gemini" => GeminiCliConfigurationProvider::new().plan_configuration_upgrade(request),
+        "opencode" => OpenCodeConfigurationProvider::new().plan_configuration_upgrade(request),
+        "openclaw" => OpenClawConfigurationProvider::new().plan_configuration_upgrade(request),
+        "hermes" => HermesConfigurationProvider::new().plan_configuration_upgrade(request),
+        _ => unreachable!("validated code engine"),
+    };
+    result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
+}
+
 pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" => Some("agent.intelligence.codex"),
@@ -125,6 +221,20 @@ pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
         "opencode" => Some("agent.intelligence.opencode"),
         "openclaw" => Some("agent.intelligence.openclaw"),
         "hermes" => Some("agent.intelligence.hermes"),
+        _ => None,
+    }
+}
+
+/// Provider configuration scope materialized into profile entry keys for an
+/// engine (mirrors the provider `with_model_configuration_scope` values).
+pub fn code_engine_provider_scope(engine_key: &str) -> Option<&'static str> {
+    match engine_key {
+        "codex" => Some("codex"),
+        "claude-code" => Some("claude_code"),
+        "gemini" => Some("gemini_cli"),
+        "opencode" => Some("opencode"),
+        "openclaw" => Some("openclaw"),
+        "hermes" => Some("hermes"),
         _ => None,
     }
 }

@@ -957,6 +957,36 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.modelConfigurations.apply",
     },
     ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/model_configurations",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.list",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/model_configurations/{engineId}/{profileId}",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.get",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/status",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.status",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.archive",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/model_configurations/migrate",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.migrate",
+    },
+    ApiOperation {
         method: "POST",
         path: "/app/v3/api/ai/model_selections/apply",
         tag: "ai",
@@ -1742,7 +1772,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 56);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 103);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 108);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 58);
 
         assert_eq!(

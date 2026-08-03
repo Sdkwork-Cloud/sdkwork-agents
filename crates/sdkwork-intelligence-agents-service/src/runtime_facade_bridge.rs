@@ -3,6 +3,8 @@
 //! Preview responses and prompt optimizations must not use deterministic local
 //! contract stubs when a canonical code-engine binding is active.
 
+use std::sync::Arc;
+
 use sdkwork_agents_runtime_facade::{
     bootstrap_code_engine, bootstrappable_engine_keys, code_engine_binding_id,
     execute_code_engine_turn, AgentsCodeEngineHost, CodeEngineTurnInput,
@@ -141,18 +143,23 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
     }
 }
 
-pub fn shared_code_engine_host() -> Option<&'static AgentsCodeEngineHost> {
-    use std::sync::OnceLock;
-    static HOST: OnceLock<Option<AgentsCodeEngineHost>> = OnceLock::new();
-    HOST.get_or_init(|| {
+pub fn shared_code_engine_host() -> Option<Arc<AgentsCodeEngineHost>> {
+    use std::sync::{Arc, Mutex};
+    // A failed bootstrap must not be cached: engine availability can recover
+    // (e.g. the provider directory becomes readable again) and a permanently
+    // cached None would force a process restart to ever synchronize again.
+    static HOST: Mutex<Option<Arc<AgentsCodeEngineHost>>> = Mutex::new(None);
+    let mut guard = HOST.lock().expect("provider engine host mutex poisoned");
+    if guard.is_none() {
         let host = AgentsCodeEngineHost::bootstrap_selected(
             &bootstrappable_engine_keys(),
             sdkwork_agents_runtime_facade::LiveInteractionRegistry::new(),
         );
-        let has_available_engine = host.engine_keys().next().is_some();
-        has_available_engine.then_some(host)
-    })
-    .as_ref()
+        if host.engine_keys().next().is_some() {
+            *guard = Some(Arc::new(host));
+        }
+    }
+    guard.clone()
 }
 
 fn normalize_prompt_text(value: &str) -> String {

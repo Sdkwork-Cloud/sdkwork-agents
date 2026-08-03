@@ -12018,14 +12018,32 @@ fn pg_row_to_agent_session_item_row(row: PgRow) -> KernelResult<AgentSessionItem
             "created_by",
         )?,
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
-        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
-        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
-        completed_at: row.try_get("completed_at").map_err(map_sqlx_error)?,
-        redacted_at: row.try_get("redacted_at").map_err(map_sqlx_error)?,
+        created_at: format_postgres_instant(
+            row.try_get("created_at").map_err(map_sqlx_error)?,
+            "createdAt",
+        )?,
+        updated_at: format_postgres_instant(
+            row.try_get("updated_at").map_err(map_sqlx_error)?,
+            "updatedAt",
+        )?,
+        completed_at: row
+            .try_get::<Option<OffsetDateTime>, _>("completed_at")
+            .map_err(map_sqlx_error)?
+            .map(|value| format_postgres_instant(value, "completedAt"))
+            .transpose()?,
+        redacted_at: row
+            .try_get::<Option<OffsetDateTime>, _>("redacted_at")
+            .map_err(map_sqlx_error)?
+            .map(|value| format_postgres_instant(value, "redactedAt"))
+            .transpose()?,
         redacted_by: redacted_by
             .map(|value| int64_to_u64(value, "redacted_by"))
             .transpose()?,
-        retention_until: row.try_get("retention_until").map_err(map_sqlx_error)?,
+        retention_until: row
+            .try_get::<Option<OffsetDateTime>, _>("retention_until")
+            .map_err(map_sqlx_error)?
+            .map(|value| format_postgres_instant(value, "retentionUntil"))
+            .transpose()?,
     })
 }
 

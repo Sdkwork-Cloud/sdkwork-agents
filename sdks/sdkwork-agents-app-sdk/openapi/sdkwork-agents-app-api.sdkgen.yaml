@@ -2039,13 +2039,14 @@ paths:
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: Synchronize provider history and return one Session Item window
+      summary: Synchronize provider Session history for one Session
       description: >-
         Explicitly imports bounded provider Session history into the Agents
-        authority and returns a canonical keyset window. The operation rejects
+        authority and reports the best-effort outcome. The command never
+        returns an item window; read the persisted window through
+        agents.sessionItems.list and its opaque cursor. The operation rejects
         provider histories that exceed runtime record or byte budgets instead
-        of returning a silently truncated transcript. Continuation traversal
-        uses agents.sessionItems.list and its opaque cursor.
+        of returning a silently truncated transcript.
       operationId: agents.sessionItems.synchronize
       security:
       - AuthToken: []
@@ -2058,32 +2059,13 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/PageSize'
-      - name: kind
-        in: query
-        required: false
-        schema:
-          $ref: '#/components/schemas/AgentSessionItemKind'
-      - name: status
-        in: query
-        required: false
-        schema:
-          $ref: '#/components/schemas/AgentSessionItemStatus'
-      - name: sort
-        in: query
-        required: false
-        description: Stable item sequence order.
-        schema:
-          type: string
-          enum: [sequence, '-sequence']
-          default: sequence
       responses:
         '200':
-          description: Synchronized agent Session Item page
+          description: Provider Session history synchronization outcome
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentSessionItemListResponse'
+                $ref: '#/components/schemas/AgentSessionItemSynchronizeResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -4121,6 +4103,202 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AppliedAgentModelSelectionResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/model_configurations:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List applied model configuration profiles
+      operationId: agents.modelConfigurations.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.listed
+      parameters:
+      - name: engineId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Filter profiles by code engine id (codex, claude-code, gemini, opencode, openclaw, hermes). Defaults to all engines.
+      responses:
+        '200':
+          description: Applied model configuration profiles for the scoped engines
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConfigurationSummaryListResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/model_configurations/{engineId}/{profileId}:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Get one applied model configuration profile
+      operationId: agents.modelConfigurations.get
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.read
+      parameters:
+      - name: engineId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The applied model configuration profile (credentials always redacted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/model_configurations/{engineId}/{profileId}/status:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Read back the provider-native config state and detect drift
+      operationId: agents.modelConfigurations.status
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.status_read
+      parameters:
+      - name: engineId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Stored profile plus the provider-native config surface read-back with derived drift state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConfigurationStatusResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Archive a model configuration profile and dematerialize the provider config
+      operationId: agents.modelConfigurations.archive
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.manage
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.archived
+      parameters:
+      - name: engineId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The archived profile (the CLI-native config backup is restored)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
+        default:
+          description: RFC 9457 problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /app/v3/api/ai/model_configurations/migrate:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Plan and execute a model configuration profile upgrade
+      operationId: agents.modelConfigurations.migrate
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.manage
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.migrated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MigrateModelConfigurationRequest'
+      responses:
+        '200':
+          description: The migrated profile with its configuration version bumped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigratedModelConfigurationResponse'
         default:
           description: RFC 9457 problem detail response
           content:
@@ -6570,6 +6748,197 @@ components:
               properties:
                 item:
                   $ref: '#/components/schemas/AppliedAgentModelConfigurationRecord'
+    ModelConfigurationSummaryRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - profileId
+      - engineId
+      - agentId
+      - providerScope
+      - configurationVersion
+      - status
+      - baseUrl
+      - defaultModelId
+      - supportedModelIds
+      - apiKeyConfigured
+      properties:
+        profileId:
+          type: string
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+        providerScope:
+          type: string
+        configurationVersion:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, deprecated, archived]
+        baseUrl:
+          type: string
+          format: uri
+        defaultModelId:
+          type: string
+        supportedModelIds:
+          type: array
+          items:
+            type: string
+        apiKeyConfigured:
+          type: boolean
+    ModelConfigurationSummaryResponse:
+      description: Single applied model configuration profile response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/ModelConfigurationSummaryRecord'
+    ModelConfigurationSummaryListResponse:
+      description: Applied model configuration profiles list response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkPageData'
+            - type: object
+              required: [items, pageInfo]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ModelConfigurationSummaryRecord'
+                pageInfo:
+                  $ref: '#/components/schemas/PageInfo'
+    ModelConfigurationStatusRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - profileId
+      - engineId
+      - agentId
+      - providerScope
+      - status
+      - materialization
+      - derivedState
+      - credentialConfigured
+      - issues
+      properties:
+        profileId:
+          type: string
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+        providerScope:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, deprecated, archived]
+        materialization:
+          type: string
+          enum: [unsupported, not_materialized, materialized, diverged]
+          description: Provider-level read-back state of the native config surface.
+        derivedState:
+          type: string
+          enum: [materialized, diverged, not_materialized, unsupported]
+          description: Drift state derived by comparing the native config surface with the stored profile.
+        expectedBaseUrl:
+          type: [string, 'null']
+          format: uri
+        expectedDefaultModel:
+          type: [string, 'null']
+        effectiveBaseUrl:
+          type: [string, 'null']
+          format: uri
+        effectiveDefaultModel:
+          type: [string, 'null']
+        credentialConfigured:
+          type: boolean
+        issues:
+          type: array
+          items:
+            type: string
+    ModelConfigurationStatusResponse:
+      description: Stored profile plus provider-native config read-back response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/ModelConfigurationStatusRecord'
+    MigrateModelConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - engineId
+      - profileId
+      - fromConfigurationVersion
+      - toConfigurationVersion
+      properties:
+        engineId:
+          $ref: '#/components/schemas/AgentModelProviderId'
+        profileId:
+          type: string
+        fromConfigurationVersion:
+          type: string
+        toConfigurationVersion:
+          type: string
+    MigratedModelConfigurationResponse:
+      description: Single migrated model configuration profile response.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - profileId
+                  - engineId
+                  - agentId
+                  - configurationVersion
+                  - status
+                  - migrationPlanId
+                  properties:
+                    profileId:
+                      type: string
+                    engineId:
+                      $ref: '#/components/schemas/AgentModelProviderId'
+                    agentId:
+                      type: string
+                    configurationVersion:
+                      type: string
+                    status:
+                      type: string
+                      enum: [draft, active, deprecated, archived]
+                    migrationPlanId:
+                      type: string
     ApplyAgentModelSelectionRequest:
       type: object
       additionalProperties: false
@@ -7762,6 +8131,39 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AgentSessionItemRecord'
+    AgentSessionItemSynchronizeResponse:
+      description: >-
+        Provider Session history synchronization outcome following the
+        SDKWork resource envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required: [data]
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentSessionItemSynchronizationResult'
+    AgentSessionItemSynchronizationResult:
+      type: object
+      additionalProperties: false
+      required: [status, importedItemCount]
+      description: >-
+        Outcome of the best-effort provider transcript synchronization.
+        `imported` means the provider transcript was loaded and reconciled;
+        the other statuses describe why the synchronization did not run, in
+        which case the persisted item window read through
+        agents.sessionItems.list is authoritative.
+      properties:
+        status:
+          type: string
+          enum: [imported, not-provider-session, no-active-binding, engine-unavailable]
+        importedItemCount:
+          $ref: '#/components/schemas/Int64String'
     AgentTurnInputQueueDriveRef:
       type: object
       additionalProperties: false

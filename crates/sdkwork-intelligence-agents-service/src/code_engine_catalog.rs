@@ -9,6 +9,7 @@ use crate::runtime_facade_bridge::shared_code_engine_host;
 
 pub fn list_code_engine_catalog() -> CodeEngineCatalog {
     shared_code_engine_host()
+        .as_deref()
         .map(AgentsCodeEngineHostExt::catalog)
         .unwrap_or_else(empty_catalog)
 }

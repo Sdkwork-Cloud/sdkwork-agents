@@ -9,6 +9,7 @@ use sdkwork_intelligence_agents_service::{
     SQL_LIST_AGENT_COMPOSITION_SLOTS, SQL_LIST_AGENT_INTERACTIONS,
     SQL_LIST_AGENT_PROVIDER_BINDINGS, SQL_LIST_AGENT_SESSIONS,
     SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS, SQL_LIST_AGENT_SESSION_ITEMS,
+    SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC, SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC,
     SQL_LIST_AGENT_SESSION_ITEMS_DESC, SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
     SQL_LIST_AGENT_TASKS, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
     SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_BY_TENANT_AND_AGENT_ID,
@@ -304,6 +305,42 @@ fn postgres_session_item_sql_is_tenant_scoped() {
         SQL_UPDATE_AGENT_SESSION_ITEM.contains("WHERE tenant_id ="),
         "ai_agent_session_item update SQL must filter by tenant_id"
     );
+}
+
+#[test]
+fn postgres_session_item_selects_expose_raw_timestamptz_columns() {
+    // Provider-history reconciliation parses stored item instants as RFC3339
+    // (reconcile_provider_session_history_session_item compares
+    // "existing.updatedAt"); the row mapper normalizes raw timestamptz columns
+    // into RFC3339, so the projections must not text-cast the timestamp fields
+    // into PostgreSQL's display format (e.g. "2026-07-26 08:36:21+00"), which
+    // is not RFC3339.
+    let session_item_selects = [
+        SQL_SELECT_AGENT_SESSION_ITEM,
+        SQL_LIST_AGENT_SESSION_ITEMS,
+        SQL_LIST_AGENT_SESSION_ITEMS_DESC,
+        SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC,
+        SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC,
+        SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT,
+    ];
+    for sql in session_item_selects {
+        for column in [
+            "created_at",
+            "updated_at",
+            "completed_at",
+            "redacted_at",
+            "retention_until",
+        ] {
+            assert!(
+                !sql.contains(&format!("{column}::text AS {column}")),
+                "session item SELECT must expose {column} as raw timestamptz so the row mapper can format RFC3339"
+            );
+            assert!(
+                sql.contains(column),
+                "session item SELECT must still project the {column} column"
+            );
+        }
+    }
 }
 
 #[test]

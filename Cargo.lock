@@ -10655,6 +10655,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
+ "sdkwork-agent-kernel",
  "sdkwork-agent-server",
  "sdkwork-agents-contract",
  "sdkwork-agents-database-host",
@@ -10959,6 +10960,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "cron",
+ "rusqlite",
  "sdkwork-agent-kernel",
  "sdkwork-agents-contract",
  "sdkwork-agents-database-host",

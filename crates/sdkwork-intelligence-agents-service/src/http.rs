@@ -12,8 +12,9 @@ use crate::agent_turn_input_queue::{
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
-    AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService, CancelTurnCommand,
-    ClaimNextTurnInputQueueEntryCommand, ClearTurnInputQueueEntriesCommand, CreateProjectCommand,
+    AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService, ArchiveSessionCommand,
+    CancelTurnCommand, ClaimNextTurnInputQueueEntryCommand, ClearTurnInputQueueEntriesCommand,
+    CloseSessionCommand, CreateProjectCommand,
     CreateProjectCompositionSlotCommand, CreateSessionCommand, CreateTurnCommand,
     CreateTurnInputQueueEntryCommand, CreateWorkspaceCommand, DeleteProjectCompositionSlotCommand,
     DeleteSessionCommand, EnsureDefaultWorkspaceCommand, FailTurnInputQueueEntryCommand,
@@ -108,9 +109,11 @@ use axum::{Json, Router};
 #[cfg(test)]
 use sdkwork_agent_kernel::ProviderManifest;
 use sdkwork_agent_kernel::{
-    AgentManifest, InMemorySecretProvider, KernelError, KernelErrorKind, KernelResult,
-    PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject, ProviderHealth,
-    SecretAccessRequest, SecretCreateRequest, SecretProvider, SecretRotateRequest, SecretType,
+    AgentConfigValue, AgentConfigurationProfile, AgentConfigurationUpgradeRequest,
+    AgentManifest, AgentModelConfigurationFieldMapping, InMemorySecretProvider, KernelError,
+    KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject,
+    ProviderHealth, SecretAccessRequest, SecretCreateRequest, SecretProvider, SecretRotateRequest,
+    SecretType,
 };
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -2009,16 +2012,44 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                 ));
             }
         };
-        self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
+        if let Err(binding_error) = self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
             tenant_id: request.tenant_id,
             organization_id: request.organization_id,
             owner_user_id: request.owner_user_id,
             agent_id: &request.agent_id,
             session_id: &created.session_id,
             descriptor: request.runtime_binding.as_ref(),
-            subject,
+            subject: subject.clone(),
             requested_at: &request.requested_at,
-        })?;
+        }) {
+            // A Session created without its canonical runtime binding can
+            // never be synchronized or read meaningfully; it would linger as
+            // a permanently empty conversation. Best-effort close and archive
+            // the just-created Session, then surface the binding failure.
+            let close_result = self.service.close_session(CloseSessionCommand {
+                tenant_id: request.tenant_id,
+                organization_id: request.organization_id,
+                path_agent_id: request.agent_id.clone(),
+                session_id: created.session_id.clone(),
+                expected_version: Some(created.version),
+                owner_scope: Some(request.owner_user_id),
+                requested_by: subject.clone(),
+                requested_at: request.requested_at.clone(),
+            });
+            if let Ok(closed) = close_result {
+                let _ = self.service.archive_session(ArchiveSessionCommand {
+                    tenant_id: request.tenant_id,
+                    organization_id: request.organization_id,
+                    path_agent_id: request.agent_id.clone(),
+                    session_id: created.session_id.clone(),
+                    expected_version: Some(closed.version),
+                    owner_scope: Some(request.owner_user_id),
+                    requested_by: subject.clone(),
+                    requested_at: request.requested_at.clone(),
+                });
+            }
+            return Err(binding_error);
+        }
         Ok(sdkwork_agents_runtime_facade::ResolvedAgentsSession {
             session_id: created.session_id,
             created: true,
@@ -2475,6 +2506,26 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/model_configurations/apply",
             post(app_apply_model_configuration),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations",
+            get(app_list_model_configurations),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations/{engineId}/{profileId}",
+            get(app_get_model_configuration),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/status",
+            get(app_get_model_configuration_status),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive",
+            post(app_archive_model_configuration),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations/migrate",
+            post(app_migrate_model_configuration),
         )
         .route(
             "/app/v3/api/ai/model_selections/apply",
@@ -3254,6 +3305,402 @@ fn model_configuration_profile_id(
         }
     }
     format!("profile.model_configuration.{hash:016x}")
+}
+
+// ---------------------------------------------------------------------------
+// Model configuration read-back and lifecycle endpoints.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ListModelConfigurationsQuery {
+    engine_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelConfigurationSummaryView {
+    profile_id: String,
+    engine_id: String,
+    agent_id: String,
+    provider_scope: String,
+    configuration_version: String,
+    status: String,
+    base_url: String,
+    default_model_id: String,
+    supported_model_ids: Vec<String>,
+    api_key_configured: bool,
+}
+
+impl ModelConfigurationSummaryView {
+    fn from_profile(profile: &AgentConfigurationProfile, engine_id: &str) -> ApiResult<Self> {
+        let provider_scope = sdkwork_agents_runtime_facade::code_engine_provider_scope(engine_id)
+            .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+        let mapping = AgentModelConfigurationFieldMapping::namespaced(provider_scope);
+        let config = &profile.configuration;
+        Ok(Self {
+            profile_id: profile.profile_id.clone(),
+            engine_id: engine_id.to_string(),
+            agent_id: profile.agent_id.clone(),
+            provider_scope: provider_scope.to_string(),
+            configuration_version: profile.configuration_version.clone(),
+            status: profile.status.as_str().to_string(),
+            base_url: config_string(config, &mapping.base_url_key).unwrap_or_default(),
+            default_model_id: config_string(config, &mapping.default_model_key).unwrap_or_default(),
+            supported_model_ids: config_string_list(config, &mapping.supported_models_key),
+            api_key_configured: profile.requires_secret(&mapping.api_key_key),
+        })
+    }
+}
+
+fn config_string(config: &sdkwork_agent_kernel::AgentConfiguration, key: &str) -> Option<String> {
+    match config.value(key) {
+        Some(AgentConfigValue::String(value)) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn config_string_list(
+    config: &sdkwork_agent_kernel::AgentConfiguration,
+    key: &str,
+) -> Vec<String> {
+    match config.value(key) {
+        Some(AgentConfigValue::StringList(values)) => values.clone(),
+        _ => Vec::new(),
+    }
+}
+
+async fn app_list_model_configurations(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    query: Result<Query<ListModelConfigurationsQuery>, QueryRejection>,
+) -> Response {
+    let result: ApiResult<PageData<ModelConfigurationSummaryView>> = async {
+        let query = query.map_err(ApiProblem::from_query_rejection)?;
+        let _scope = RequestScope::from_context(context);
+        let engine_ids = match &query.engine_id {
+            Some(engine_id) => vec![engine_id.clone()],
+            None => sdkwork_agents_runtime_facade::bootstrappable_engine_keys()
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+        };
+        let mut items = Vec::new();
+        let configurations = state
+            .model_configuration_runtime
+            .configurations
+            .lock()
+            .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?;
+        for engine_id in engine_ids {
+            let Some(agent_id) = sdkwork_agents_runtime_facade::code_engine_agent_id(&engine_id)
+            else {
+                return Err(ApiProblem::validation(
+                    "engineId is not a supported Agent provider",
+                ));
+            };
+            let profiles = configurations
+                .list_profiles(agent_id)
+                .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?;
+            for profile in profiles {
+                items.push(ModelConfigurationSummaryView::from_profile(&profile, &engine_id)?);
+            }
+        }
+        let total_items = items.len();
+        let page_info = PageInfo {
+            mode: PageMode::Offset,
+            page: Some(1),
+            page_size: Some(total_items as i32),
+            total_items: Some(total_items.to_string()),
+            total_pages: Some(if total_items == 0 { 0 } else { 1 }),
+            next_cursor: None,
+            has_more: Some(false),
+        };
+        Ok(PageData { items, page_info })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_get_model_configuration(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    Path(path): Path<ModelConfigurationPath>,
+) -> Response {
+    let result: ApiResult<ResourceData<ModelConfigurationSummaryView>> = async {
+        let _scope = RequestScope::from_context(context);
+        let profile = load_model_configuration_profile(
+            &state,
+            &path.engine_id,
+            &path.profile_id,
+        )?;
+        Ok(ResourceData {
+            item: ModelConfigurationSummaryView::from_profile(&profile, &path.engine_id)?,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelConfigurationPath {
+    engine_id: String,
+    profile_id: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelConfigurationStatusView {
+    profile_id: String,
+    engine_id: String,
+    agent_id: String,
+    provider_scope: String,
+    status: String,
+    /// Provider-level read-back state of the native config surface.
+    materialization: String,
+    /// Derived state after comparing the native config surface with the
+    /// stored profile: `materialized`, `diverged`, `not_materialized`,
+    /// `unsupported`.
+    derived_state: String,
+    expected_base_url: Option<String>,
+    expected_default_model: Option<String>,
+    effective_base_url: Option<String>,
+    effective_default_model: Option<String>,
+    credential_configured: bool,
+    issues: Vec<String>,
+}
+
+async fn app_get_model_configuration_status(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    Path(path): Path<ModelConfigurationPath>,
+) -> Response {
+    let result: ApiResult<ResourceData<ModelConfigurationStatusView>> = async {
+        let _scope = RequestScope::from_context(context);
+        let profile = load_model_configuration_profile(
+            &state,
+            &path.engine_id,
+            &path.profile_id,
+        )?;
+        let provider_scope = sdkwork_agents_runtime_facade::code_engine_provider_scope(
+            &path.engine_id,
+        )
+        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+        let mapping = AgentModelConfigurationFieldMapping::namespaced(provider_scope);
+        let expected_base_url = config_string(&profile.configuration, &mapping.base_url_key);
+        let expected_default_model =
+            config_string(&profile.configuration, &mapping.default_model_key);
+        let read_back = sdkwork_agents_runtime_facade::read_code_engine_model_configuration(
+            &path.engine_id,
+            &profile.agent_id,
+            &path.profile_id,
+        )
+        .map_err(|error| ApiProblem::validation(error.to_string()))?;
+
+        // The provider reports its native surface; the divergence is derived
+        // here against the stored profile. The default model is only compared
+        // when the provider surfaces one (providers passing the model per
+        // turn report none, which is not a divergence).
+        let derived_state = match read_back.materialization {
+            sdkwork_agent_kernel::ProviderModelMaterializationState::Unsupported => "unsupported",
+            sdkwork_agent_kernel::ProviderModelMaterializationState::NotMaterialized => {
+                "not_materialized"
+            }
+            sdkwork_agent_kernel::ProviderModelMaterializationState::Materialized
+            | sdkwork_agent_kernel::ProviderModelMaterializationState::Diverged => {
+                let base_url_matches = read_back
+                    .effective_base_url
+                    .as_deref()
+                    .is_some_and(|effective| Some(effective) == expected_base_url.as_deref());
+                let model_matches = match (&read_back.effective_default_model, &expected_default_model)
+                {
+                    (Some(effective), Some(expected)) => effective == expected,
+                    // Per-turn model providers cannot be verified on read-back.
+                    (None, _) => true,
+                    (Some(_), None) => false,
+                };
+                if base_url_matches && model_matches {
+                    "materialized"
+                } else {
+                    "diverged"
+                }
+            }
+        };
+
+        Ok(ResourceData {
+            item: ModelConfigurationStatusView {
+                profile_id: profile.profile_id.clone(),
+                engine_id: path.engine_id.clone(),
+                agent_id: profile.agent_id.clone(),
+                provider_scope: provider_scope.to_string(),
+                status: profile.status.as_str().to_string(),
+                materialization: read_back.materialization.as_str().to_string(),
+                derived_state: derived_state.to_string(),
+                expected_base_url,
+                expected_default_model,
+                effective_base_url: read_back.effective_base_url,
+                effective_default_model: read_back.effective_default_model,
+                credential_configured: read_back.credential_configured,
+                issues: read_back.issues,
+            },
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_archive_model_configuration(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    Path(path): Path<ModelConfigurationPath>,
+) -> Response {
+    let result: ApiResult<ResourceData<ModelConfigurationSummaryView>> = async {
+        let scope = RequestScope::from_context(context);
+        let profile = load_model_configuration_profile(
+            &state,
+            &path.engine_id,
+            &path.profile_id,
+        )?;
+
+        // Only revert the CLI-native config when it actually carries the
+        // SDKWork-managed materialization; never touch a user-owned surface.
+        let read_back = sdkwork_agents_runtime_facade::read_code_engine_model_configuration(
+            &path.engine_id,
+            &profile.agent_id,
+            &path.profile_id,
+        )
+        .map_err(|error| ApiProblem::validation(error.to_string()))?;
+        if read_back.materialization
+            == sdkwork_agent_kernel::ProviderModelMaterializationState::Materialized
+            || read_back.materialization
+                == sdkwork_agent_kernel::ProviderModelMaterializationState::Diverged
+        {
+            sdkwork_agents_runtime_facade::dematerialize_code_engine_model_configuration(
+                &path.engine_id,
+                &profile.agent_id,
+                &path.profile_id,
+            )
+            .map_err(|error| ApiProblem::validation(error.to_string()))?;
+        }
+
+        let request_id = format!("request.{}", sdkwork_utils_rust::uuid());
+        let archived = state
+            .model_configuration_runtime
+            .configurations
+            .lock()
+            .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+            .archive_profile(&sdkwork_agent_kernel::AgentProfileArchiveRequest::new(
+                &request_id,
+                &profile.agent_id,
+                &path.profile_id,
+            ))
+            .map_err(|_| ApiProblem::internal("model configuration could not be archived"))?;
+        let _ = scope;
+        Ok(ResourceData {
+            item: ModelConfigurationSummaryView::from_profile(&archived.profile, &path.engine_id)?,
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MigrateModelConfigurationRequest {
+    engine_id: String,
+    profile_id: String,
+    from_configuration_version: String,
+    to_configuration_version: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigratedModelConfigurationResponse {
+    profile_id: String,
+    engine_id: String,
+    agent_id: String,
+    configuration_version: String,
+    status: String,
+    migration_plan_id: String,
+}
+
+async fn app_migrate_model_configuration(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    body: Result<Json<MigrateModelConfigurationRequest>, JsonRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<MigratedModelConfigurationResponse>> = async {
+        let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
+        let _scope = RequestScope::from_context(context);
+        let profile = load_model_configuration_profile(
+            &state,
+            &body.engine_id,
+            &body.profile_id,
+        )?;
+        if profile.configuration_version != body.from_configuration_version {
+            return Err(ApiProblem::validation(
+                "fromConfigurationVersion does not match the stored profile version",
+            ));
+        }
+        let request_id = format!("request.{}", sdkwork_utils_rust::uuid());
+        let plan_request = AgentConfigurationUpgradeRequest::new(
+            &request_id,
+            &profile.agent_id,
+            &body.profile_id,
+            &body.from_configuration_version,
+            &body.to_configuration_version,
+        )
+        .with_current_profile(profile.clone());
+        let plan = sdkwork_agents_runtime_facade::plan_code_engine_configuration_upgrade(
+            &body.engine_id,
+            &plan_request,
+        )
+        .map_err(|error| ApiProblem::validation(error.to_string()))?;
+        let record = state
+            .model_configuration_runtime
+            .configurations
+            .lock()
+            .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+            .migrate_profile(&plan, profile)
+            .map_err(|_| ApiProblem::internal("model configuration could not be migrated"))?;
+        Ok(ResourceData {
+            item: MigratedModelConfigurationResponse {
+                profile_id: record.profile.profile_id.clone(),
+                engine_id: body.engine_id,
+                agent_id: record.profile.agent_id.clone(),
+                configuration_version: record.profile.configuration_version.clone(),
+                status: record.profile.status.as_str().to_string(),
+                migration_plan_id: record
+                    .migration_plan_id
+                    .clone()
+                    .unwrap_or_else(|| plan.plan_id.clone()),
+            },
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+fn load_model_configuration_profile(
+    state: &AgentHttpState,
+    engine_id: &str,
+    profile_id: &str,
+) -> ApiResult<AgentConfigurationProfile> {
+    let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_id)
+        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+    let profile = state
+        .model_configuration_runtime
+        .configurations
+        .lock()
+        .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
+        .find_profile(agent_id, profile_id)
+        .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?
+        .ok_or_else(|| ApiProblem::not_found("model configuration profile not found"))?;
+    Ok(profile)
 }
 
 fn normalize_supported_model_provider_ids(
@@ -8273,6 +8720,17 @@ async fn app_resolve_interaction(
 // Session item and turn handlers  - App API
 // ===========================================================================
 
+/// Outcome of the best-effort provider transcript synchronization returned by
+/// `agents.sessionItems.synchronize`. The command never returns an item
+/// window: the persisted window is read through `agents.sessionItems.list`
+/// (API_SPEC §14.1.3 — commands MUST NOT hide list behavior behind POST).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentSessionItemSynchronizationResultDto {
+    pub(crate) status: &'static str,
+    pub(crate) imported_item_count: String,
+}
+
 async fn app_list_session_items(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
@@ -8280,37 +8738,11 @@ async fn app_list_session_items(
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
 ) -> Response {
-    app_session_items_window(state, context, web_ctx, path, query, false).await
-}
-
-async fn app_synchronize_session_items(
-    State(state): State<AgentHttpState>,
-    Extension(context): Extension<AgentRequestContext>,
-    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
-    path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
-) -> Response {
-    app_session_items_window(state, context, web_ctx, path, query, true).await
-}
-
-async fn app_session_items_window(
-    state: AgentHttpState,
-    context: AgentRequestContext,
-    web_ctx: sdkwork_web_core::WebRequestContext,
-    path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<AppListItemsQueryParams>, QueryRejection>,
-    synchronize: bool,
-) -> Response {
     let result: ApiResult<PageData<AgentSessionItemRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
-        if synchronize && query.cursor.is_some() {
-            return Err(ApiProblem::validation(
-                "Session Item synchronization does not accept a continuation cursor",
-            ));
-        }
         let page_size = normalized_cursor_page_size(query.page_size)?;
         let cursor = query
             .cursor
@@ -8318,20 +8750,6 @@ async fn app_session_items_window(
             .map(decode_session_item_cursor)
             .transpose()
             .map_err(ApiProblem::from_kernel_error)?;
-        let synchronization_scope = if synchronize {
-            Some((
-                scope.tenant_id_u64()?,
-                parse_organization_id(&scope.organization_id)
-                    .map_err(ApiProblem::from_kernel_error)?,
-                owner_scope.ok_or_else(|| ApiProblem::validation("owner user id is required"))?,
-                agent_id.clone(),
-                session_id.clone(),
-                scope.subject.clone(),
-                state.provider_session_cwd_resolver.clone(),
-            ))
-        } else {
-            None
-        };
         let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -8343,44 +8761,10 @@ async fn app_session_items_window(
         .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = owner_scope;
         command.query = command.query.with_cursor_page(page_size, cursor);
-        let (records, synchronized_item_count) = with_service(&state, move |service| {
-            let synchronized_item_count = synchronization_scope
-                .map(
-                    |(
-                        tenant_id,
-                        organization_id,
-                        owner_user_id,
-                        agent_id,
-                        session_id,
-                        subject,
-                        provider_session_cwd_resolver,
-                    )| {
-                        crate::provider_session_sync::synchronize_provider_session_transcript(
-                            service,
-                            tenant_id,
-                            organization_id,
-                            owner_user_id,
-                            agent_id,
-                            session_id,
-                            subject,
-                            provider_session_cwd_resolver.as_deref(),
-                        )
-                    },
-                )
-                .transpose()?;
-            let records = service.list_session_items_with_drive_refs(command)?;
-            Ok((records, synchronized_item_count))
+        let records = with_service(&state, move |service| {
+            service.list_session_items_with_drive_refs(command)
         })
         .await?;
-        if let Some(synchronized_item_count) = synchronized_item_count {
-            tracing::info!(
-                target: "sdkwork.agents.provider_session_sync",
-                trace_id = %web_ctx.resolved_trace_id(),
-                operation_id = "agents.sessionItems.synchronize",
-                synchronized_item_count,
-                "provider Session transcript synchronization completed"
-            );
-        }
         Ok(PageData {
             items: records
                 .items
@@ -8398,6 +8782,54 @@ async fn app_session_items_window(
                 records.next_page_token,
                 records.has_more,
             ),
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+async fn app_synchronize_session_items(
+    State(state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    path: Result<Path<(String, String)>, PathRejection>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentSessionItemSynchronizationResultDto>> = async {
+        let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
+        let scope = RequestScope::from_context(context);
+        let owner_scope = scope.owner_scope()?;
+        let tenant_id = scope.tenant_id_u64()?;
+        let organization_id =
+            parse_organization_id(&scope.organization_id).map_err(ApiProblem::from_kernel_error)?;
+        let owner_user_id =
+            owner_scope.ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
+        let cwd_resolver = state.provider_session_cwd_resolver.clone();
+        let outcome = with_service(&state, move |service| {
+            crate::provider_session_sync::synchronize_provider_session_transcript(
+                service,
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                agent_id.clone(),
+                session_id.clone(),
+                scope.subject.clone(),
+                cwd_resolver.as_deref(),
+            )
+        })
+        .await?;
+        tracing::info!(
+            target: "sdkwork.agents.provider_session_sync",
+            trace_id = %web_ctx.resolved_trace_id(),
+            operation_id = "agents.sessionItems.synchronize",
+            synchronization_status = outcome.status_code(),
+            synchronized_item_count = outcome.imported_item_count(),
+            "provider Session transcript synchronization completed"
+        );
+        Ok(ResourceData {
+            item: AgentSessionItemSynchronizationResultDto {
+                status: outcome.status_code(),
+                imported_item_count: outcome.imported_item_count().to_string(),
+            },
         })
     }
     .await;
@@ -12102,6 +12534,20 @@ mod tests {
     use axum::Extension;
     use tower::ServiceExt;
 
+    /// Serializes model configuration tests: applying a configuration now
+    /// materializes into the real CLI-native config files (codex config.toml,
+    /// claude settings.json, ...), which parallel tests would corrupt with
+    /// concurrent writes.
+    static MODEL_CONFIGURATION_TEST_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
+        std::sync::OnceLock::new();
+
+    fn model_configuration_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        MODEL_CONFIGURATION_TEST_LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
     struct AmbiguousProviderSessionProjectCwdResolver;
 
     impl sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver
@@ -12285,6 +12731,7 @@ mod tests {
 
     #[tokio::test]
     async fn model_configuration_dispatches_all_providers_without_exposing_credentials() {
+        let _guard = model_configuration_test_guard();
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -12342,6 +12789,7 @@ mod tests {
 
     #[tokio::test]
     async fn model_configuration_requires_a_credential_only_for_new_profiles() {
+        let _guard = model_configuration_test_guard();
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -12407,8 +12855,165 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
+    async fn get_model_configuration(app: &axum::Router, uri: &str) -> Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("model configuration read request should be built"),
+            )
+            .await
+            .expect("model configuration read request should complete")
+    }
+
+    #[tokio::test]
+    async fn model_configuration_read_back_list_get_status_and_archive() {
+        let _guard = model_configuration_test_guard();
+        // An in-memory profile store isolates the persistence surface for the
+        // read-back lifecycle endpoints.
+        let store = crate::SqliteAgentConfigurationStore::in_memory().expect("in-memory store");
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        )
+        .with_model_configuration_providers(
+            Box::new(sdkwork_agent_kernel::InMemorySecretProvider::new()),
+            Box::new(store),
+        );
+        let app = build_test_router(state);
+
+        let created = post_model_configuration(
+            &app,
+            model_configuration_body("codex", "model.codex.readback", Some("readback-secret")),
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::OK);
+        let created_payload: Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), usize::MAX)
+                .await
+                .expect("created response should be readable"),
+        )
+        .expect("created response should be JSON");
+        let profile_id = created_payload["data"]["item"]["profileId"]
+            .as_str()
+            .expect("profileId should be present")
+            .to_string();
+        let detail_uri = format!("/app/v3/api/ai/model_configurations/codex/{profile_id}");
+        let status_uri = format!("{detail_uri}/status");
+        let archive_uri = format!("{detail_uri}/archive");
+
+        // List returns the applied profile without exposing credentials.
+        let list = get_model_configuration(
+            &app,
+            "/app/v3/api/ai/model_configurations?engineId=codex",
+        )
+        .await;
+        assert_eq!(list.status(), StatusCode::OK);
+        let list_bytes = to_bytes(list.into_body(), usize::MAX)
+            .await
+            .expect("list response should be readable");
+        let list_text = String::from_utf8(list_bytes.to_vec()).expect("list should be UTF-8");
+        assert!(!list_text.contains("readback-secret"), "credentials must not be listed");
+        let list_payload: Value =
+            serde_json::from_str(&list_text).expect("list response should be JSON");
+        let items = list_payload["data"]["items"]
+            .as_array()
+            .expect("items should be an array");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["profileId"], profile_id);
+        assert_eq!(items[0]["engineId"], "codex");
+        assert_eq!(items[0]["providerScope"], "codex");
+        assert_eq!(items[0]["baseUrl"], "https://models.example.test/v1");
+        assert_eq!(items[0]["defaultModelId"], "example-chat");
+        assert_eq!(items[0]["apiKeyConfigured"], true);
+        assert_eq!(items[0]["status"], "active");
+
+        // Detail resolves the stored profile with the same redaction rules.
+        let detail = get_model_configuration(&app, &detail_uri).await;
+        assert_eq!(detail.status(), StatusCode::OK);
+        let detail_payload: Value = serde_json::from_slice(
+            &to_bytes(detail.into_body(), usize::MAX)
+                .await
+                .expect("detail response should be readable"),
+        )
+        .expect("detail response should be JSON");
+        assert_eq!(detail_payload["data"]["item"]["profileId"], profile_id);
+
+        // Status reports the stored expectations plus the provider-native
+        // read-back (the native surface state depends on the host).
+        let status = get_model_configuration(&app, &status_uri).await;
+        assert_eq!(status.status(), StatusCode::OK);
+        let status_payload: Value = serde_json::from_slice(
+            &to_bytes(status.into_body(), usize::MAX)
+                .await
+                .expect("status response should be readable"),
+        )
+        .expect("status response should be JSON");
+        let status_item = &status_payload["data"]["item"];
+        assert_eq!(status_item["profileId"], profile_id);
+        assert_eq!(
+            status_item["expectedBaseUrl"],
+            "https://models.example.test/v1"
+        );
+        assert_eq!(status_item["expectedDefaultModel"], "example-chat");
+        assert_eq!(status_item["credentialConfigured"], true);
+        let derived_state = status_item["derivedState"]
+            .as_str()
+            .expect("derivedState should be present");
+        assert!(
+            ["materialized", "diverged", "not_materialized", "unsupported"]
+                .contains(&derived_state),
+            "unexpected derived state {derived_state}"
+        );
+
+        // Archive marks the profile archived and restores the CLI config.
+        let archive = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&archive_uri)
+                    .body(Body::empty())
+                    .expect("archive request should be built"),
+            )
+            .await
+            .expect("archive request should complete");
+        assert_eq!(archive.status(), StatusCode::OK);
+        let archive_payload: Value = serde_json::from_slice(
+            &to_bytes(archive.into_body(), usize::MAX)
+                .await
+                .expect("archive response should be readable"),
+        )
+        .expect("archive response should be JSON");
+        assert_eq!(archive_payload["data"]["item"]["profileId"], profile_id);
+        assert_eq!(archive_payload["data"]["item"]["status"], "archived");
+
+        // The detail still resolves with the archived status.
+        let detail_after = get_model_configuration(&app, &detail_uri).await;
+        assert_eq!(detail_after.status(), StatusCode::OK);
+        let detail_after_payload: Value = serde_json::from_slice(
+            &to_bytes(detail_after.into_body(), usize::MAX)
+                .await
+                .expect("detail response should be readable"),
+        )
+        .expect("detail response should be JSON");
+        assert_eq!(detail_after_payload["data"]["item"]["status"], "archived");
+
+        // Unknown profiles are 404 on every read surface.
+        let missing = get_model_configuration(
+            &app,
+            "/app/v3/api/ai/model_configurations/codex/profile.model_configuration.missing",
+        )
+        .await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
     #[tokio::test]
     async fn catalog_model_selection_dispatches_every_published_provider_config_spi() {
+        let _guard = model_configuration_test_guard();
         // The OpenCode catalog model id is resolved from OPENCODE_MODEL or the
         // user config; pin it so the dispatch test does not depend on the host
         // machine's opencode configuration state.
@@ -12457,6 +13062,7 @@ mod tests {
 
     #[tokio::test]
     async fn custom_model_selection_reuses_saved_configuration_and_supported_models() {
+        let _guard = model_configuration_test_guard();
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -12500,6 +13106,7 @@ mod tests {
 
     #[tokio::test]
     async fn builtin_platform_model_selection_switches_without_saved_configuration() {
+        let _guard = model_configuration_test_guard();
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -12785,6 +13392,54 @@ mod tests {
             sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(message)
                 if message.contains("active session runtime binding not found")
         ));
+    }
+
+    #[tokio::test]
+    async fn session_facade_archives_created_session_when_runtime_binding_creation_fails() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state.clone());
+        create_app_agent(&app, "agent.facade", "facade-binding-failure").await;
+        let facade = state.session_facade();
+        // The descriptor passes request-level validation, but the agent has no
+        // provider binding, so runtime binding creation fails after the
+        // Session row has already been created.
+        let request = facade_session_request(
+            "session.facade.orphan-prevention",
+            Some("runtime_binding.facade.invalid"),
+        );
+
+        let error = facade
+            .resolve_or_create_session(request)
+            .expect_err("binding creation failure must surface");
+
+        assert!(matches!(
+            error,
+            sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(_)
+        ));
+        // The Session created without its canonical runtime binding must be
+        // retired immediately instead of lingering as a permanently empty
+        // conversation.
+        let stored = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: "agent.facade".to_string(),
+                session_id: "session.facade.orphan-prevention".to_string(),
+                owner_scope: Some(100),
+                requested_by: sdkwork_agent_kernel::PolicySubject::new("user:100", "100001")
+                    .with_role("ai.agents.manage"),
+            })
+            .expect("created Session should remain readable for audit");
+        assert_eq!(
+            stored.status,
+            crate::domain::AgentSessionStatus::Archived,
+            "an orphaned provider-history Session must be archived when its binding cannot be created"
+        );
     }
 
     #[tokio::test]
@@ -13694,8 +14349,8 @@ mod tests {
         let item_window_uri = "/app/v3/api/ai/agents/agent.alpha/sessions/\
             session.item-sync-contract/items?page_size=50&sort=-sequence"
             .replace(char::is_whitespace, "");
-        let synchronization_window_uri = "/app/v3/api/ai/agents/agent.alpha/sessions/\
-            session.item-sync-contract/items/synchronize?page_size=50&sort=-sequence"
+        let synchronization_uri = "/app/v3/api/ai/agents/agent.alpha/sessions/\
+            session.item-sync-contract/items/synchronize"
             .replace(char::is_whitespace, "");
         let read_window = |method: &str, uri: &str| {
             Request::builder()
@@ -13720,25 +14375,36 @@ mod tests {
             "item.item-sync-contract"
         );
 
+        // The synchronization command reports its best-effort outcome and
+        // never returns the item window (API_SPEC §14.1.3); a non-code engine
+        // Session reports a skipped synchronization instead of hiding it.
         let response = app
             .clone()
-            .oneshot(read_window("POST", &synchronization_window_uri))
+            .oneshot(read_window("POST", &synchronization_uri))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         let synchronization_payload: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(synchronization_payload["data"], get_payload["data"]);
+        assert_eq!(
+            synchronization_payload["data"],
+            json!({
+                "item": {
+                    "status": "not-provider-session",
+                    "importedItemCount": "0",
+                }
+            })
+        );
 
         let response = app
             .clone()
             .oneshot(read_window(
                 "POST",
-                &format!("{synchronization_window_uri}&cursor=continuation-token"),
+                &format!("{synchronization_uri}?cursor=continuation-token"),
             ))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::OK);
 
         let response = app
             .oneshot(read_window("GET", &item_window_uri))

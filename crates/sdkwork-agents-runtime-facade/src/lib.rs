@@ -15,7 +15,9 @@ mod turn;
 pub use code_engines::{
     apply_code_engine_model_configuration, apply_code_engine_model_selection,
     bootstrap_code_engine, bootstrappable_engine_keys, canonical_code_engine_keys,
-    code_engine_agent_id, code_engine_binding_id, is_canonical_code_engine,
+    code_engine_agent_id, code_engine_binding_id, code_engine_provider_scope,
+    dematerialize_code_engine_model_configuration, is_canonical_code_engine,
+    plan_code_engine_configuration_upgrade, read_code_engine_model_configuration,
     resolve_code_engine_runtime_identity, CodeEngineBootstrapError,
     CodeEngineInteractionResolution, CodeEngineRuntimeIdentity, CodeEngineSlot,
     CANONICAL_CODE_ENGINE_KEYS,

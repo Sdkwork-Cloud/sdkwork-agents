@@ -4768,6 +4768,490 @@ class AppliedAgentModelConfigurationResponse {
   }
 }
 
+class ModelConfigurationSummaryRecord {
+  final String profileId;
+  final String engineId;
+  final String agentId;
+  final String providerScope;
+  final String configurationVersion;
+  final String status;
+  final String baseUrl;
+  final String defaultModelId;
+  final List<String> supportedModelIds;
+  final bool apiKeyConfigured;
+
+  ModelConfigurationSummaryRecord({
+    required this.profileId,
+    required this.engineId,
+    required this.agentId,
+    required this.providerScope,
+    required this.configurationVersion,
+    required this.status,
+    required this.baseUrl,
+    required this.defaultModelId,
+    required this.supportedModelIds,
+    required this.apiKeyConfigured
+  });
+
+  factory ModelConfigurationSummaryRecord.fromJson(Map<String, dynamic> json) {
+    return ModelConfigurationSummaryRecord(
+      profileId: (() {
+        final value = json['profileId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.profileId is required');
+        }
+        return value;
+      })(),
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.engineId is required');
+        }
+        return value;
+      })(),
+      agentId: (() {
+        final value = json['agentId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.agentId is required');
+        }
+        return value;
+      })(),
+      providerScope: (() {
+        final value = json['providerScope']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.providerScope is required');
+        }
+        return value;
+      })(),
+      configurationVersion: (() {
+        final value = json['configurationVersion']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.configurationVersion is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.status is required');
+        }
+        return value;
+      })(),
+      baseUrl: (() {
+        final value = json['baseUrl']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.baseUrl is required');
+        }
+        return value;
+      })(),
+      defaultModelId: (() {
+        final value = json['defaultModelId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.defaultModelId is required');
+        }
+        return value;
+      })(),
+      supportedModelIds: (() {
+        final list = _sdkworkAsList(json['supportedModelIds']);
+        if (list == null) {
+          throw FormatException('ModelConfigurationSummaryRecord.supportedModelIds is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      apiKeyConfigured: (() {
+        final value = json['apiKeyConfigured'];
+        if (value is! bool) {
+          throw FormatException('ModelConfigurationSummaryRecord.apiKeyConfigured is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'profileId': profileId,
+      'engineId': engineId,
+      'agentId': agentId,
+      'providerScope': providerScope,
+      'configurationVersion': configurationVersion,
+      'status': status,
+      'baseUrl': baseUrl,
+      'defaultModelId': defaultModelId,
+      'supportedModelIds': supportedModelIds.map((item) => item).toList(),
+      'apiKeyConfigured': apiKeyConfigured,
+    };
+  }
+}
+
+class ModelConfigurationSummaryResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ModelConfigurationSummaryResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ModelConfigurationSummaryResponse.fromJson(Map<String, dynamic> json) {
+    return ModelConfigurationSummaryResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ModelConfigurationSummaryResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('ModelConfigurationSummaryResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ModelConfigurationSummaryListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ModelConfigurationSummaryListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ModelConfigurationSummaryListResponse.fromJson(Map<String, dynamic> json) {
+    return ModelConfigurationSummaryListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ModelConfigurationSummaryListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('ModelConfigurationSummaryListResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationSummaryListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ModelConfigurationStatusRecord {
+  final String profileId;
+  final String engineId;
+  final String agentId;
+  final String providerScope;
+  final String status;
+  final String materialization;
+  final String derivedState;
+  final String? expectedBaseUrl;
+  final String? expectedDefaultModel;
+  final String? effectiveBaseUrl;
+  final String? effectiveDefaultModel;
+  final bool credentialConfigured;
+  final List<String> issues;
+
+  ModelConfigurationStatusRecord({
+    required this.profileId,
+    required this.engineId,
+    required this.agentId,
+    required this.providerScope,
+    required this.status,
+    required this.materialization,
+    required this.derivedState,
+    this.expectedBaseUrl,
+    this.expectedDefaultModel,
+    this.effectiveBaseUrl,
+    this.effectiveDefaultModel,
+    required this.credentialConfigured,
+    required this.issues
+  });
+
+  factory ModelConfigurationStatusRecord.fromJson(Map<String, dynamic> json) {
+    return ModelConfigurationStatusRecord(
+      profileId: (() {
+        final value = json['profileId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.profileId is required');
+        }
+        return value;
+      })(),
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.engineId is required');
+        }
+        return value;
+      })(),
+      agentId: (() {
+        final value = json['agentId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.agentId is required');
+        }
+        return value;
+      })(),
+      providerScope: (() {
+        final value = json['providerScope']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.providerScope is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.status is required');
+        }
+        return value;
+      })(),
+      materialization: (() {
+        final value = json['materialization']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.materialization is required');
+        }
+        return value;
+      })(),
+      derivedState: (() {
+        final value = json['derivedState']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusRecord.derivedState is required');
+        }
+        return value;
+      })(),
+      expectedBaseUrl: json['expectedBaseUrl']?.toString(),
+      expectedDefaultModel: json['expectedDefaultModel']?.toString(),
+      effectiveBaseUrl: json['effectiveBaseUrl']?.toString(),
+      effectiveDefaultModel: json['effectiveDefaultModel']?.toString(),
+      credentialConfigured: (() {
+        final value = json['credentialConfigured'];
+        if (value is! bool) {
+          throw FormatException('ModelConfigurationStatusRecord.credentialConfigured is required');
+        }
+        return value;
+      })(),
+      issues: (() {
+        final list = _sdkworkAsList(json['issues']);
+        if (list == null) {
+          throw FormatException('ModelConfigurationStatusRecord.issues is required');
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'profileId': profileId,
+      'engineId': engineId,
+      'agentId': agentId,
+      'providerScope': providerScope,
+      'status': status,
+      'materialization': materialization,
+      'derivedState': derivedState,
+      'expectedBaseUrl': expectedBaseUrl,
+      'expectedDefaultModel': expectedDefaultModel,
+      'effectiveBaseUrl': effectiveBaseUrl,
+      'effectiveDefaultModel': effectiveDefaultModel,
+      'credentialConfigured': credentialConfigured,
+      'issues': issues.map((item) => item).toList(),
+    };
+  }
+}
+
+class ModelConfigurationStatusResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ModelConfigurationStatusResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ModelConfigurationStatusResponse.fromJson(Map<String, dynamic> json) {
+    return ModelConfigurationStatusResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ModelConfigurationStatusResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('ModelConfigurationStatusResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ModelConfigurationStatusResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class MigrateModelConfigurationRequest {
+  final String engineId;
+  final String profileId;
+  final String fromConfigurationVersion;
+  final String toConfigurationVersion;
+
+  MigrateModelConfigurationRequest({
+    required this.engineId,
+    required this.profileId,
+    required this.fromConfigurationVersion,
+    required this.toConfigurationVersion
+  });
+
+  factory MigrateModelConfigurationRequest.fromJson(Map<String, dynamic> json) {
+    return MigrateModelConfigurationRequest(
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('MigrateModelConfigurationRequest.engineId is required');
+        }
+        return value;
+      })(),
+      profileId: (() {
+        final value = json['profileId']?.toString();
+        if (value == null) {
+          throw FormatException('MigrateModelConfigurationRequest.profileId is required');
+        }
+        return value;
+      })(),
+      fromConfigurationVersion: (() {
+        final value = json['fromConfigurationVersion']?.toString();
+        if (value == null) {
+          throw FormatException('MigrateModelConfigurationRequest.fromConfigurationVersion is required');
+        }
+        return value;
+      })(),
+      toConfigurationVersion: (() {
+        final value = json['toConfigurationVersion']?.toString();
+        if (value == null) {
+          throw FormatException('MigrateModelConfigurationRequest.toConfigurationVersion is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'engineId': engineId,
+      'profileId': profileId,
+      'fromConfigurationVersion': fromConfigurationVersion,
+      'toConfigurationVersion': toConfigurationVersion,
+    };
+  }
+}
+
+class MigratedModelConfigurationResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  MigratedModelConfigurationResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory MigratedModelConfigurationResponse.fromJson(Map<String, dynamic> json) {
+    return MigratedModelConfigurationResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('MigratedModelConfigurationResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('MigratedModelConfigurationResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('MigratedModelConfigurationResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
 class ApplyAgentModelSelectionRequest {
   final String? configurationId;
   final String engineId;

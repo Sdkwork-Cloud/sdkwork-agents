@@ -1089,6 +1089,55 @@ class AiApi {
     })();
   }
 
+  /// List applied model configuration profiles
+  Future<ModelConfigurationSummaryListResponse?> agentsModelConfigurationsList([String? engineId]) async {
+    final query = buildQueryString([
+      QueryParameterSpec('engineId', engineId, 'form', true, false, null)
+    ]);
+    final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/model_configurations'), query));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ModelConfigurationSummaryListResponse.fromJson(map);
+    })();
+  }
+
+  /// Get one applied model configuration profile
+  Future<ModelConfigurationSummaryResponse?> agentsModelConfigurationsGet(String engineId, String profileId) async {
+    final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/${serializePathParameter(profileId, const PathParameterSpec('profileId', 'simple', false))}'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ModelConfigurationSummaryResponse.fromJson(map);
+    })();
+  }
+
+  /// Read back the provider-native config state and detect drift
+  Future<ModelConfigurationStatusResponse?> agentsModelConfigurationsStatus(String engineId, String profileId) async {
+    final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/${serializePathParameter(profileId, const PathParameterSpec('profileId', 'simple', false))}/status'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ModelConfigurationStatusResponse.fromJson(map);
+    })();
+  }
+
+  /// Archive a model configuration profile and dematerialize the provider config
+  Future<ModelConfigurationSummaryResponse?> agentsModelConfigurationsArchive(String engineId, String profileId) async {
+    final response = await _client.post(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/${serializePathParameter(profileId, const PathParameterSpec('profileId', 'simple', false))}/archive'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ModelConfigurationSummaryResponse.fromJson(map);
+    })();
+  }
+
+  /// Plan and execute a model configuration profile upgrade
+  Future<MigratedModelConfigurationResponse?> agentsModelConfigurationsMigrate(MigrateModelConfigurationRequest body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/model_configurations/migrate'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : MigratedModelConfigurationResponse.fromJson(map);
+    })();
+  }
+
   /// List MCP marketplace entries from agent composition slots
   Future<McpServerMarketplaceListResponse?> agentsMcpServersList([int? page, int? pageSize, String? q]) async {
     final query = buildQueryString([

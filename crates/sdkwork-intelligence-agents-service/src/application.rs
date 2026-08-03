@@ -6235,8 +6235,10 @@ where
                 AgentSessionItemKind::AssistantOutput | AgentSessionItemKind::Reasoning
             ) && existing.status == command.status
                 && command.status == AgentSessionItemStatus::Completed
-                && parse_rfc3339_datetime(&command.requested_at, "requestedAt")?
-                    > parse_rfc3339_datetime(&existing.updated_at, "existing.updatedAt")?;
+                && is_newer_provider_session_item_snapshot(
+                    &existing.updated_at,
+                    &command.requested_at,
+                );
             if existing.status != AgentSessionItemStatus::Pending
                 && !is_newer_terminal_narrative_snapshot
             {
@@ -7011,7 +7013,9 @@ where
                         "accessModeId is not supported by the active provider binding",
                     )
                 })?;
-            let slot = crate::runtime_facade_bridge::shared_code_engine_host()
+            let host_guard = crate::runtime_facade_bridge::shared_code_engine_host();
+            let engine_slot = host_guard
+                .as_deref()
                 .and_then(|host| host.slot(engine_key))
                 .ok_or_else(|| {
                     KernelError::provider_error(
@@ -7019,7 +7023,7 @@ where
                         format!("shared code engine slot is unavailable for {engine_key}"),
                     )
                 })?;
-            slot.resolve_execution_settings(access_mode_id)?;
+            engine_slot.resolve_execution_settings(access_mode_id)?;
         }
         let history_items =
             self.repository
@@ -9481,6 +9485,22 @@ fn validate_provider_session_item_payload(
         }
     }
     Ok(())
+}
+
+/// Returns true when a terminal narrative snapshot must replace the stored
+/// provider Session history item. Legacy rows can carry a non-RFC3339
+/// updated_at because older transcript synchronizations persisted provider
+/// timestamps verbatim; such rows are replaceable so a newer snapshot repairs
+/// the stored timestamp instead of failing the whole synchronization. A
+/// requested_at that is not RFC3339 is never newer, so unparsable command
+/// timestamps cannot overwrite terminal history.
+fn is_newer_provider_session_item_snapshot(existing_updated_at: &str, requested_at: &str) -> bool {
+    let Ok(existing_updated_at) = parse_rfc3339_datetime(existing_updated_at, "existing.updatedAt")
+    else {
+        return true;
+    };
+    parse_rfc3339_datetime(requested_at, "requestedAt")
+        .is_ok_and(|requested_at| requested_at > existing_updated_at)
 }
 
 fn reject_secret_material(value: &str, field_name: &str) -> KernelResult<()> {

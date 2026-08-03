@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentModelProviderId, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionItemSynchronizationResult, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, MigrateModelConfigurationRequest, ModelConfigurationStatusRecord, ModelConfigurationSummaryRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
 
 
 export interface AiAgentsMcpServersListParams {
@@ -43,6 +43,10 @@ export class AiAgentsModelSelectionsApi {
   }
 }
 
+export interface AiAgentsModelConfigurationsListParams {
+  engineId?: string;
+}
+
 export class AiAgentsModelConfigurationsApi {
   private client: HttpClient;
 
@@ -54,6 +58,34 @@ export class AiAgentsModelConfigurationsApi {
 /** Apply one unified model configuration to an Agent provider */
   async apply(body: ApplyAgentModelConfigurationRequest, requestOptions?: ApiRequestOptions): Promise<AppliedAgentModelConfigurationRecord> {
     return this.client.request<AppliedAgentModelConfigurationRecord>(appApiPath(`/ai/model_configurations/apply`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** List applied model configuration profiles */
+  async list(params?: AiAgentsModelConfigurationsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: ModelConfigurationSummaryRecord[]; pageInfo: PageInfo; }> {
+    const query = buildQueryString([
+      { name: 'engineId', value: params?.engineId, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: ModelConfigurationSummaryRecord[]; pageInfo: PageInfo; }>(appendQueryString(appApiPath(`/ai/model_configurations`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Get one applied model configuration profile */
+  async get(engineId: string, profileId: string, requestOptions?: ApiRequestOptions): Promise<ModelConfigurationSummaryRecord> {
+    return this.client.request<ModelConfigurationSummaryRecord>(appApiPath(`/ai/model_configurations/${serializePathParameter(engineId, { name: 'engineId', style: 'simple', explode: false })}/${serializePathParameter(profileId, { name: 'profileId', style: 'simple', explode: false })}`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+
+/** Read back the provider-native config state and detect drift */
+  async status(engineId: string, profileId: string, requestOptions?: ApiRequestOptions): Promise<ModelConfigurationStatusRecord> {
+    return this.client.request<ModelConfigurationStatusRecord>(appApiPath(`/ai/model_configurations/${serializePathParameter(engineId, { name: 'engineId', style: 'simple', explode: false })}/${serializePathParameter(profileId, { name: 'profileId', style: 'simple', explode: false })}/status`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+
+/** Archive a model configuration profile and dematerialize the provider config */
+  async archive(engineId: string, profileId: string, requestOptions?: ApiRequestOptions): Promise<ModelConfigurationSummaryRecord> {
+    return this.client.request<ModelConfigurationSummaryRecord>(appApiPath(`/ai/model_configurations/${serializePathParameter(engineId, { name: 'engineId', style: 'simple', explode: false })}/${serializePathParameter(profileId, { name: 'profileId', style: 'simple', explode: false })}/archive`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, sdkworkUnwrapKind: 'item' });
+  }
+
+/** Plan and execute a model configuration profile upgrade */
+  async migrate(body: MigrateModelConfigurationRequest, requestOptions?: ApiRequestOptions): Promise<{ profileId: string; engineId: AgentModelProviderId; agentId: string; configurationVersion: string; status: 'draft' | 'active' | 'deprecated' | 'archived'; migrationPlanId: string; }> {
+    return this.client.request<{ profileId: string; engineId: AgentModelProviderId; agentId: string; configurationVersion: string; status: 'draft' | 'active' | 'deprecated' | 'archived'; migrationPlanId: string; }>(appApiPath(`/ai/model_configurations/migrate`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
 }
 
@@ -512,13 +544,6 @@ export interface AiAgentsSessionItemsListParams {
   sort?: 'sequence' | '-sequence';
 }
 
-export interface AiAgentsSessionItemsSynchronizeParams {
-  pageSize?: number;
-  kind?: AgentSessionItemKind;
-  status?: AgentSessionItemStatus;
-  sort?: 'sequence' | '-sequence';
-}
-
 export class AiAgentsSessionItemsApi {
   private client: HttpClient;
 
@@ -539,15 +564,9 @@ export class AiAgentsSessionItemsApi {
     return this.client.request<SdkWorkPageData & { items: AgentSessionItemRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/items`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
   }
 
-/** Synchronize provider history and return one Session Item window */
-  async synchronize(agentId: string, sessionId: string, params?: AiAgentsSessionItemsSynchronizeParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionItemRecord[]; }> {
-    const query = buildQueryString([
-      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
-      { name: 'kind', value: params?.kind, style: 'form', explode: true, allowReserved: false },
-      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
-      { name: 'sort', value: params?.sort, style: 'form', explode: true, allowReserved: false },
-    ]);
-    return this.client.request<SdkWorkPageData & { items: AgentSessionItemRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/items/synchronize`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, sdkworkUnwrapKind: 'page' });
+/** Synchronize provider Session history for one Session */
+  async synchronize(agentId: string, sessionId: string, requestOptions?: ApiRequestOptions): Promise<AgentSessionItemSynchronizationResult> {
+    return this.client.request<AgentSessionItemSynchronizationResult>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/items/synchronize`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'POST' as any, sdkworkUnwrapKind: 'item' });
   }
 
 /** Retrieve one agent session item */

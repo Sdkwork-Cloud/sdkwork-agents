@@ -15,15 +15,17 @@ use sdkwork_agents_runtime_facade::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::application::{
-    CreateSessionCommand, CreateSessionRuntimeBindingCommand, GetProjectCommand, GetSessionCommand,
-    ListSessionItemsCommand, ListSessionRuntimeBindingsCommand,
+    ArchiveSessionCommand, CloseSessionCommand, CreateSessionCommand,
+    CreateSessionRuntimeBindingCommand, GetProjectCommand, GetSessionCommand,
+    ListSessionItemsCommand, ListSessionRuntimeBindingsCommand, ListSessionsCommand,
     ReconcileProviderSessionHistoryItemCommand,
 };
 use crate::domain::{
     AgentSessionEntrySurface, AgentSessionItemKind, AgentSessionItemStatus, AgentSessionKind,
+    AgentSessionStatus,
 };
 use crate::http::{HttpAgentsSessionFacade, HttpService};
-use crate::ports::{PaginationParams, SessionItemListQuery, SessionRuntimeBindingListQuery};
+use crate::ports::{PaginationParams, SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery};
 use crate::project::AgentProjectRecord;
 use crate::runtime_facade_bridge::shared_code_engine_host;
 
@@ -59,6 +61,47 @@ pub(crate) struct ProviderSessionSynchronizationResult {
     pub(crate) issues: Vec<ProviderSessionSynchronizationIssue>,
     pub(crate) skipped_session_count: usize,
     pub(crate) synchronized_session_count: usize,
+}
+
+/// Reports whether one Session Item synchronization window actually imported
+/// provider transcript history, or why it could not. The persisted item
+/// window remains authoritative in every case, so callers never treat a
+/// skipped synchronization as an empty transcript.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderSessionTranscriptSyncOutcome {
+    /// The provider transcript was loaded and reconciled; the count can be
+    /// zero when the provider Session has no importable messages.
+    Imported { imported_item_count: usize },
+    /// The requested Session is not a provider-history Session; no provider
+    /// transcript synchronization applies to it.
+    NotProviderSession,
+    /// The Session has no active current provider-history runtime binding,
+    /// so its provider identity cannot be resolved. This is the signature of
+    /// an orphaned or not-yet-bound provider Session.
+    NoActiveBinding,
+    /// The provider code engine could not load the transcript (unavailable
+    /// engine or transient read failure); the persisted window is returned.
+    EngineUnavailable,
+}
+
+impl ProviderSessionTranscriptSyncOutcome {
+    pub(crate) const fn status_code(self) -> &'static str {
+        match self {
+            Self::Imported { .. } => "imported",
+            Self::NotProviderSession => "not-provider-session",
+            Self::NoActiveBinding => "no-active-binding",
+            Self::EngineUnavailable => "engine-unavailable",
+        }
+    }
+
+    pub(crate) const fn imported_item_count(self) -> usize {
+        match self {
+            Self::Imported { imported_item_count } => imported_item_count,
+            Self::NotProviderSession
+            | Self::NoActiveBinding
+            | Self::EngineUnavailable => 0,
+        }
+    }
 }
 
 impl ProviderSessionSynchronizationResult {
@@ -159,7 +202,16 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
     directory_fingerprint: Option<String>,
 ) -> KernelResult<ProviderSessionSynchronizationResult> {
     let Some(host) = shared_code_engine_host() else {
-        return Ok(ProviderSessionSynchronizationResult::default());
+        // Without a provider code engine host the inventory can never be
+        // discovered; report the skipped synchronization instead of returning
+        // a bare default that is indistinguishable from an empty project.
+        let mut result = ProviderSessionSynchronizationResult::default();
+        result.record_issue(
+            "provider_engine_unavailable",
+            ProviderSessionSynchronizationIssueDisposition::Skipped,
+            1,
+        );
+        return Ok(result);
     };
     let inventory = host
         .discover_provider_sessions(&ProviderSessionInventorySelector {
@@ -183,14 +235,14 @@ pub(crate) fn synchronize_provider_session_transcript(
     provider_session_cwd_resolver: Option<
         &dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver,
     >,
-) -> KernelResult<usize> {
+) -> KernelResult<ProviderSessionTranscriptSyncOutcome> {
     let Some(engine_key) = agent_id.strip_prefix("agent.intelligence.") else {
-        return Ok(0);
+        return Ok(ProviderSessionTranscriptSyncOutcome::NotProviderSession);
     };
     if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) != Some(agent_id.as_str())
         || !session_id.starts_with(&format!("session.provider.{engine_key}."))
     {
-        return Ok(0);
+        return Ok(ProviderSessionTranscriptSyncOutcome::NotProviderSession);
     }
     let session = service.get_session(GetSessionCommand {
         tenant_id,
@@ -202,15 +254,30 @@ pub(crate) fn synchronize_provider_session_transcript(
     })?;
     let exact_cwd = match (provider_session_cwd_resolver, session.project_id.as_deref()) {
         (Some(resolver), Some(project_id)) => {
-            let project = service.get_project(GetProjectCommand {
+            let project = match service.get_project(GetProjectCommand {
                 tenant_id,
                 organization_id,
                 project_id: project_id.to_string(),
                 owner_scope: Some(owner_user_id),
                 requested_by: subject.clone(),
-            })?;
-            resolver
-                .resolve_project_cwd(
+            }) {
+                Ok(project) => Some(project),
+                // A vanished or inaccessible project must not fail the
+                // transcript read; the provider directory hint is best-effort.
+                Err(error) => {
+                    tracing::warn!(
+                        target: "sdkwork.agents.provider_session_sync",
+                        agent_id = %agent_id,
+                        session_id = %session_id,
+                        project_id = %project_id,
+                        error_code = %error,
+                        "provider Session project lookup failed; continuing without a working directory"
+                    );
+                    None
+                }
+            };
+            match project {
+                Some(project) => match resolver.resolve_project_cwd(
                     &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
                         tenant_id: project.tenant_id,
                         organization_id: project.organization_id,
@@ -218,8 +285,25 @@ pub(crate) fn synchronize_provider_session_transcript(
                         project_id: project.project_id,
                         project_name: project.name,
                     },
-                )
-                .map_err(runtime_facade_error)?
+                ) {
+                    Ok(cwd) => cwd,
+                    // The provider directory hint is best-effort: transcripts
+                    // are loaded by provider Session id and a failed mount
+                    // lookup must not fail the read.
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "sdkwork.agents.provider_session_sync",
+                            agent_id = %agent_id,
+                            session_id = %session_id,
+                            project_id = %project_id,
+                            error_code = %error,
+                            "provider Session working directory resolution failed; continuing without it"
+                        );
+                        None
+                    }
+                },
+                None => None,
+            }
         }
         _ => None,
     };
@@ -243,7 +327,10 @@ pub(crate) fn synchronize_provider_session_transcript(
             && sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key)
                 == Some(binding.provider_binding_id.as_str())
     }) else {
-        return Ok(0);
+        // A provider-history Session without its canonical runtime binding
+        // cannot resolve its provider identity; the persisted window (which
+        // can never grow for such a Session) is still authoritative.
+        return Ok(ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
     };
     let Some(provider_session_id) = binding
         .provider_session_id
@@ -251,10 +338,16 @@ pub(crate) fn synchronize_provider_session_transcript(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return Ok(0);
+        return Ok(ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
     };
+    if shared_code_engine_host().is_none() {
+        // Without a provider code engine host the transcript can never be
+        // loaded; report the skipped synchronization instead of pretending
+        // the provider Session has no messages.
+        return Ok(ProviderSessionTranscriptSyncOutcome::EngineUnavailable);
+    }
     let mut seen = HashSet::new();
-    synchronize_provider_session_transcript_worker(
+    let worker_result = synchronize_provider_session_transcript_worker(
         service,
         tenant_id,
         organization_id,
@@ -273,7 +366,21 @@ pub(crate) fn synchronize_provider_session_transcript(
         exact_cwd.as_deref(),
         &mut seen,
         0,
-    )
+    );
+    match worker_result {
+        Ok(imported_item_count) => Ok(ProviderSessionTranscriptSyncOutcome::Imported {
+            imported_item_count,
+        }),
+        // A provider engine read failure must not fail the transcript read:
+        // report the skipped synchronization so the caller still returns the
+        // persisted item window.
+        Err(error)
+            if error.kind() == sdkwork_agent_kernel::KernelErrorKind::ProviderUnavailable =>
+        {
+            Ok(ProviderSessionTranscriptSyncOutcome::EngineUnavailable)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 const MAX_PROVIDER_SUBAGENT_SYNC_DEPTH: usize = 16;
@@ -325,32 +432,51 @@ fn synchronize_provider_session_transcript_worker(
                     "failed to format provider Session synchronization timestamp: {error}"
                 ))
             })?;
-        service.reconcile_provider_session_history_session(CreateSessionCommand {
-            tenant_id,
-            organization_id,
-            agent_id: agent_id.to_string(),
-            owner_user_id,
-            session_id: child_session_id.clone(),
-            project_id: (!project_id.is_empty()).then(|| project_id.to_string()),
-            session_kind: AgentSessionKind::Coding,
-            entry_surface: AgentSessionEntrySurface::Pc,
-            source_module: Some("birdcoder".to_string()),
-            source_context_kind: Some("provider_session".to_string()),
-            source_context_id: Some(project_id.to_string()),
-            parent_session_id: canonical_parent_session_id.map(str::to_string),
-            forked_from_turn_id: None,
-            title: Some(provider_session_title(None, engine_key)),
-            idempotency_key: Some(format!("provider-session:{engine_key}:{stable_key}")),
-            payload_hash: Some(format!("provider-session-v1:{engine_key}:{stable_key}")),
-            requested_by: subject.clone(),
-            requested_at: requested_at.clone(),
-        })?;
-        service.reconcile_provider_session_history_runtime_binding(
+        // Sub-agent Session reconciliation is best-effort: a single sub-agent
+        // whose canonical Session or binding cannot be created must not fail
+        // the parent transcript window (mirrors the item-level Conflict skip
+        // below). The child is deliberately not archived here — a replay may
+        // have hit a pre-existing Session with items — so any Session left
+        // without a binding is reclaimed by the project-level orphan sweep
+        // instead.
+        if let Err(error) = service.reconcile_provider_session_history_session(
+            CreateSessionCommand {
+                tenant_id,
+                organization_id,
+                agent_id: agent_id.to_string(),
+                owner_user_id,
+                session_id: child_session_id.clone(),
+                project_id: (!project_id.is_empty()).then(|| project_id.to_string()),
+                session_kind: AgentSessionKind::Coding,
+                entry_surface: AgentSessionEntrySurface::Pc,
+                source_module: Some("birdcoder".to_string()),
+                source_context_kind: Some("provider_session".to_string()),
+                source_context_id: Some(project_id.to_string()),
+                parent_session_id: canonical_parent_session_id.map(str::to_string),
+                forked_from_turn_id: None,
+                title: Some(provider_session_title(None, engine_key)),
+                idempotency_key: Some(format!("provider-session:{engine_key}:{stable_key}")),
+                payload_hash: Some(format!("provider-session-v1:{engine_key}:{stable_key}")),
+                requested_by: subject.clone(),
+                requested_at: requested_at.clone(),
+            },
+        ) {
+            tracing::warn!(
+                target: "sdkwork.agents.provider_session_sync",
+                agent_id = %agent_id,
+                session_id = %session_id,
+                child_session_id = %child_session_id,
+                error_kind = error.kind().as_str(),
+                "provider Session sub-agent reconciliation failed: {error}"
+            );
+            return Ok(0);
+        }
+        if let Err(error) = service.reconcile_provider_session_history_runtime_binding(
             CreateSessionRuntimeBindingCommand {
                 tenant_id,
                 organization_id,
                 path_agent_id: agent_id.to_string(),
-                session_id: child_session_id,
+                session_id: child_session_id.clone(),
                 runtime_binding_id: Some(child_runtime_binding_id),
                 runtime_location_id: None,
                 host_mode: "server".to_string(),
@@ -367,7 +493,17 @@ fn synchronize_provider_session_transcript_worker(
                 requested_by: subject.clone(),
                 requested_at,
             },
-        )?;
+        ) {
+            tracing::warn!(
+                target: "sdkwork.agents.provider_session_sync",
+                agent_id = %agent_id,
+                session_id = %session_id,
+                child_session_id = %child_session_id,
+                error_kind = error.kind().as_str(),
+                "provider Session sub-agent runtime binding reconciliation failed: {error}"
+            );
+            return Ok(0);
+        }
     }
     let session = service.get_session(GetSessionCommand {
         tenant_id,
@@ -378,7 +514,12 @@ fn synchronize_provider_session_transcript_worker(
         requested_by: subject.clone(),
     })?;
     let Some(host) = shared_code_engine_host() else {
-        return Ok(0);
+        // The top-level synchronization gate reports EngineUnavailable before
+        // the worker runs; keep this defensive branch an error so a recursive
+        // worker can never silently report an empty transcript.
+        return Err(KernelError::ProviderUnavailable {
+            provider_id: engine_key.to_string(),
+        });
     };
     let messages = host
         .load_provider_session_messages_for_directory(engine_key, provider_session_id, exact_cwd)
@@ -396,10 +537,7 @@ fn synchronize_provider_session_transcript_worker(
     let mut synchronized = 0;
     let mut tool_calls = HashMap::<String, (String, Option<String>)>::new();
     for message in messages {
-        let requested_at = message
-            .created_at
-            .clone()
-            .unwrap_or_else(|| session.updated_at.clone());
+        let requested_at = provider_message_requested_at(&message, session.updated_at.as_str());
         for mut item in provider_session_history_items(engine_key, &message) {
             if item.kind == AgentSessionItemKind::UserInput
                 && unmatched_local_user_inputs.front().is_some_and(|content| {
@@ -493,7 +631,7 @@ fn synchronize_provider_session_transcript_worker(
             &child,
         );
         let child_session_id = format!("session.provider.{engine_key}.{child_stable_key}");
-        total += synchronize_provider_session_transcript_worker(
+        match synchronize_provider_session_transcript_worker(
             service,
             tenant_id,
             organization_id,
@@ -512,7 +650,21 @@ fn synchronize_provider_session_transcript_worker(
             exact_cwd,
             seen,
             depth + 1,
-        )?;
+        ) {
+            Ok(imported) => total += imported,
+            // A failing sub-agent must not fail the parent window; its
+            // messages are simply absent from this synchronization pass.
+            Err(error) => {
+                tracing::warn!(
+                    target: "sdkwork.agents.provider_session_sync",
+                    agent_id = %agent_id,
+                    session_id = %session_id,
+                    child_session_id = %child_session_id,
+                    error_kind = error.kind().as_str(),
+                    "provider Session sub-agent transcript synchronization failed: {error}"
+                );
+            }
+        }
     }
     Ok(total)
 }
@@ -898,15 +1050,168 @@ fn synchronize_provider_session_snapshot(
     }
     if directory_resolved {
         reconcile_missing_provider_session_directories(
-            service,
+            service.clone(),
             project,
-            subject,
+            subject.clone(),
             &successful_engine_keys,
             &visible_provider_sessions,
             &mut result,
         )?;
     }
+    reconcile_orphaned_provider_sessions(
+        &service,
+        project,
+        subject,
+        &successful_engine_keys,
+        &mut result,
+    )?;
     Ok(result)
+}
+
+/// Archives provider Session rows that can never be synchronized: Sessions
+/// attributed to a provider transcript but left without a canonical runtime
+/// binding and without items (e.g. created under a retired stable key scheme
+/// or whose binding creation failed). Such Sessions have no recoverable
+/// provider identity, so they would otherwise linger in the active inventory
+/// as permanently empty conversations. Sessions with any binding or with
+/// items are never touched.
+fn reconcile_orphaned_provider_sessions(
+    service: &HttpService,
+    project: &AgentProjectRecord,
+    subject: PolicySubject,
+    successful_engine_keys: &[String],
+    result: &mut ProviderSessionSynchronizationResult,
+) -> KernelResult<()> {
+    let mut archived_count = 0usize;
+    for engine_key in successful_engine_keys {
+        let Some(agent_id) = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) else {
+            continue;
+        };
+        let mut page = 1;
+        loop {
+            let sessions = service.list_sessions(ListSessionsCommand {
+                query: SessionListQuery::for_tenant(project.tenant_id)
+                    .for_organization(project.organization_id)
+                    .for_owner(project.owner_user_id)
+                    .for_project(project.project_id.clone())
+                    .for_agent(agent_id)
+                    .include_archived()
+                    .with_pagination(
+                        PaginationParams::default()
+                            .with_page_size(200)
+                            .with_page(page),
+                    ),
+                requested_by: subject.clone(),
+            })?;
+            let item_count = sessions.items.len();
+            for session in sessions.items {
+                if session.source_module.as_deref() != Some("birdcoder")
+                    || session.source_context_kind.as_deref() != Some("provider_session")
+                    || session.deleted_at.is_some()
+                    || session.status != AgentSessionStatus::Active
+                    || session.item_count != 0
+                {
+                    continue;
+                }
+                let bindings =
+                    service.list_session_runtime_bindings(ListSessionRuntimeBindingsCommand {
+                        query: SessionRuntimeBindingListQuery::for_session(
+                            project.tenant_id,
+                            project.organization_id,
+                            session.session_id.clone(),
+                        )
+                        .current_only()
+                        .with_pagination(PaginationParams::default().with_page_size(1)),
+                        path_agent_id: agent_id.to_string(),
+                        owner_scope: Some(project.owner_user_id),
+                        requested_by: subject.clone(),
+                    })?;
+                if !bindings.items.is_empty() {
+                    continue;
+                }
+                // The orphan sweep is a conservative cleanup; a single
+                // Session that cannot be closed or archived must not fail the
+                // whole project synchronization. Record the issue and keep
+                // sweeping the remaining Sessions.
+                let closed = if session.status == AgentSessionStatus::Active {
+                    match service.close_session(CloseSessionCommand {
+                        tenant_id: project.tenant_id,
+                        organization_id: project.organization_id,
+                        path_agent_id: agent_id.to_string(),
+                        session_id: session.session_id.clone(),
+                        expected_version: Some(session.version),
+                        owner_scope: Some(project.owner_user_id),
+                        requested_by: subject.clone(),
+                        requested_at: project_synchronization_requested_at(),
+                    }) {
+                        Ok(closed) => closed,
+                        Err(error) => {
+                            result.record_issue(
+                                "orphaned_provider_session_close_failed",
+                                ProviderSessionSynchronizationIssueDisposition::Skipped,
+                                1,
+                            );
+                            tracing::warn!(
+                                target: "sdkwork.agents.provider_session_sync",
+                                session_id = %session.session_id,
+                                error_kind = error.kind().as_str(),
+                                "orphaned provider Session close failed: {error}"
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    session.clone()
+                };
+                if let Err(error) = service.archive_session(ArchiveSessionCommand {
+                    tenant_id: project.tenant_id,
+                    organization_id: project.organization_id,
+                    path_agent_id: agent_id.to_string(),
+                    session_id: session.session_id.clone(),
+                    expected_version: Some(closed.version),
+                    owner_scope: Some(project.owner_user_id),
+                    requested_by: subject.clone(),
+                    requested_at: project_synchronization_requested_at(),
+                }) {
+                    result.record_issue(
+                        "orphaned_provider_session_archive_failed",
+                        ProviderSessionSynchronizationIssueDisposition::Skipped,
+                        1,
+                    );
+                    tracing::warn!(
+                        target: "sdkwork.agents.provider_session_sync",
+                        session_id = %session.session_id,
+                        error_kind = error.kind().as_str(),
+                        "orphaned provider Session archive failed: {error}"
+                    );
+                    continue;
+                }
+                tracing::info!(
+                    target: "sdkwork.agents.provider_session_sync",
+                    session_id = %session.session_id,
+                    item_count = session.item_count,
+                    "orphaned provider Session archived (no runtime binding, zero items)"
+                );
+                archived_count += 1;
+            }
+            if item_count < 200 {
+                break;
+            }
+            page += 1;
+        }
+    }
+    result.record_issue(
+        "orphaned_provider_session_archived",
+        ProviderSessionSynchronizationIssueDisposition::Skipped,
+        archived_count,
+    );
+    Ok(())
+}
+
+fn project_synchronization_requested_at() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .expect("RFC3339 formatting of the current instant cannot fail")
 }
 
 fn reconcile_missing_provider_session_directories(
@@ -1343,6 +1648,26 @@ fn normalize_provider_session_timestamp(value: &str) -> Option<String> {
     OffsetDateTime::parse(&candidate, &Rfc3339)
         .ok()
         .map(|_| candidate)
+}
+
+/// Derives the RFC3339 item timestamp for one provider transcript message.
+/// Provider SDKs are not guaranteed to emit RFC3339 timestamps (space
+/// separators, compact offsets, missing offsets), so the value is normalized
+/// the same way as provider Session timestamps before it can be persisted as
+/// Session item created_at/updated_at. When neither the message nor the
+/// Session timestamp is parsable, the current instant is used so an
+/// unparsable provider timestamp can never corrupt the transcript row.
+fn provider_message_requested_at(message: &AgentMessage, session_updated_at: &str) -> String {
+    message
+        .created_at
+        .as_deref()
+        .and_then(normalize_provider_session_timestamp)
+        .or_else(|| normalize_provider_session_timestamp(session_updated_at))
+        .unwrap_or_else(|| {
+            OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .expect("RFC3339 formatting of the current instant cannot fail")
+        })
 }
 
 fn provider_session_title(value: Option<&str>, engine_key: &str) -> String {
@@ -1858,6 +2183,39 @@ mod tests {
             Some("2026-07-27T03:11:00Z")
         );
         assert!(normalize_provider_session_timestamp("not-a-timestamp").is_none());
+    }
+
+    #[test]
+    fn provider_message_requested_at_normalizes_provider_timestamps() {
+        let space_separated = AgentMessage::new("message-1", AgentMessageRole::Agent, Vec::new())
+            .created_at("2026-07-27 03:11:00.123456+00");
+        assert_eq!(
+            provider_message_requested_at(&space_separated, "2026-07-26T00:00:00Z"),
+            "2026-07-27T03:11:00.123456+00:00"
+        );
+        let already_rfc3339 = AgentMessage::new("message-2", AgentMessageRole::Agent, Vec::new())
+            .created_at("2026-07-27T03:11:00Z");
+        assert_eq!(
+            provider_message_requested_at(&already_rfc3339, "2026-07-26T00:00:00Z"),
+            "2026-07-27T03:11:00Z"
+        );
+        let no_message_timestamp =
+            AgentMessage::new("message-3", AgentMessageRole::Agent, Vec::new());
+        assert_eq!(
+            provider_message_requested_at(&no_message_timestamp, "2026-07-26 00:00:00+00"),
+            "2026-07-26T00:00:00+00:00"
+        );
+        let unparsable_message_timestamp =
+            AgentMessage::new("message-4", AgentMessageRole::Agent, Vec::new())
+                .created_at("not-a-timestamp");
+        assert_eq!(
+            provider_message_requested_at(&unparsable_message_timestamp, "2026-07-26T00:00:00Z"),
+            "2026-07-26T00:00:00Z"
+        );
+        let both_unparsable = AgentMessage::new("message-5", AgentMessageRole::Agent, Vec::new())
+            .created_at("not-a-timestamp");
+        let now_fallback = provider_message_requested_at(&both_unparsable, "not-a-timestamp");
+        assert!(OffsetDateTime::parse(&now_fallback, &Rfc3339).is_ok());
     }
 
     #[test]
@@ -3063,6 +3421,112 @@ mod tests {
         assert_eq!(tool_item.version, 1);
     }
 
+    #[test]
+    fn provider_transcript_item_repairs_legacy_non_rfc3339_updated_at() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let engine = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![inventory_item(
+                engine,
+                "provider-session-legacy-timestamp".to_string(),
+                0,
+            )],
+        )
+        .expect("provider inventory sync");
+        let session = state
+            .service
+            .list_sessions(ListSessionsCommand {
+                query: SessionListQuery::for_tenant(project.tenant_id)
+                    .for_organization(project.organization_id)
+                    .for_owner(project.owner_user_id)
+                    .for_project(project.project_id),
+                requested_by: read_subject(),
+            })
+            .expect("provider sessions")
+            .items
+            .into_iter()
+            .next()
+            .expect("provider session");
+        let item_id = stable_provider_session_item_id(
+            "codex",
+            "provider-session-legacy-timestamp",
+            "message-1",
+        );
+        let command = ReconcileProviderSessionHistoryItemCommand {
+            tenant_id: project.tenant_id,
+            organization_id: project.organization_id,
+            session_id: session.session_id.clone(),
+            item_id: item_id.clone(),
+            kind: AgentSessionItemKind::AssistantOutput,
+            content: Some("provider legacy narrative".to_string()),
+            content_type: "text/plain".to_string(),
+            status: AgentSessionItemStatus::Completed,
+            model_id: Some(engine.models[0].model_id.clone()),
+            provider_id: Some(engine.models[0].provider_id.clone()),
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            provider_payload_json: None,
+            parent_item_id: None,
+            requested_by: read_subject(),
+            // Legacy transcript synchronizations persisted provider
+            // timestamps verbatim without RFC3339 normalization.
+            requested_at: "2026-07-26 00:01:00.000+00".to_string(),
+        };
+        let stored = state
+            .service
+            .reconcile_provider_session_history_session_item(command.clone(), "codex")
+            .expect("legacy provider transcript item");
+        assert_eq!(stored.updated_at, "2026-07-26 00:01:00.000+00");
+        // A newer terminal narrative snapshot must repair the legacy
+        // timestamp instead of failing the whole synchronization.
+        let repaired = state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    content: Some("provider narrative final".to_string()),
+                    requested_at: "2026-07-26T00:02:00Z".to_string(),
+                    ..command.clone()
+                },
+                "codex",
+            )
+            .expect("newer provider narrative snapshot repairs legacy timestamp");
+        assert_eq!(repaired.version, 1);
+        assert_eq!(repaired.updated_at, "2026-07-26T00:02:00Z");
+        assert_eq!(
+            repaired.content.as_deref(),
+            Some("provider narrative final")
+        );
+        // Terminal history stays immutable once the timestamp is repaired.
+        let stale_replay = state
+            .service
+            .reconcile_provider_session_history_session_item(
+                ReconcileProviderSessionHistoryItemCommand {
+                    content: Some("stale replay".to_string()),
+                    requested_at: "2026-07-26T00:01:30Z".to_string(),
+                    ..command
+                },
+                "codex",
+            );
+        assert!(stale_replay.is_err());
+    }
+
     fn manage_subject() -> PolicySubject {
         PolicySubject {
             subject_id: "100".to_string(),
@@ -3372,5 +3836,278 @@ mod tests {
         assert!(directory.title.as_deref().unwrap_or_default().len() <= 512);
         assert!(directory.preview.as_deref().unwrap_or_default().len() <= 4096);
         assert!(directory.sort_key.len() <= 512);
+    }
+
+    #[test]
+    fn transcript_sync_reports_skipped_outcomes_instead_of_silent_zero() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let subject = manage_subject();
+        // A live agent Session is not a provider-history Session.
+        let live = create_test_session(
+            &state,
+            "session.340000000000000000",
+            &project.project_id,
+            "coding-workbench",
+        );
+        let outcome = synchronize_provider_session_transcript(
+            &state.service,
+            100_001,
+            0,
+            100,
+            live.agent_id.clone(),
+            live.session_id.clone(),
+            subject.clone(),
+            None,
+        )
+        .expect("live Session outcome");
+        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NotProviderSession);
+        // An agent id that does not match the provider Session pattern is
+        // never synchronized.
+        let mismatched = create_test_session(
+            &state,
+            "session.provider.codex.mismatched-1",
+            &project.project_id,
+            "provider_session",
+        );
+        let outcome = synchronize_provider_session_transcript(
+            &state.service,
+            100_001,
+            0,
+            100,
+            "agent.intelligence.opencode".to_string(),
+            mismatched.session_id.clone(),
+            subject.clone(),
+            None,
+        )
+        .expect("mismatched agent outcome");
+        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NotProviderSession);
+        // A provider Session without a runtime binding cannot resolve its
+        // provider identity; this is the orphan signature.
+        let orphan = create_test_session(
+            &state,
+            "session.provider.codex.orphan-1",
+            &project.project_id,
+            "provider_session",
+        );
+        let outcome = synchronize_provider_session_transcript(
+            &state.service,
+            100_001,
+            0,
+            100,
+            orphan.agent_id.clone(),
+            orphan.session_id.clone(),
+            subject.clone(),
+            None,
+        )
+        .expect("orphan outcome");
+        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
+        // A provider Session whose binding carries no provider Session id is
+        // equally unresolvable.
+        let unbound = create_test_session(
+            &state,
+            "session.provider.codex.unbound-1",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &unbound.session_id,
+            "runtime_binding.provider.unbound-1",
+            "provider-session-history",
+            None,
+        );
+        let outcome = synchronize_provider_session_transcript(
+            &state.service,
+            100_001,
+            0,
+            100,
+            unbound.agent_id.clone(),
+            unbound.session_id.clone(),
+            subject.clone(),
+            None,
+        )
+        .expect("psid-less outcome");
+        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
+        // A provider Session bound to another transport is never synchronized.
+        let stream_bound = create_test_session(
+            &state,
+            "session.provider.codex.stream-bound-1",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &stream_bound.session_id,
+            "runtime_binding.provider.stream-bound-1",
+            "sdk-stream",
+            Some("provider-thread-stream-1"),
+        );
+        let outcome = synchronize_provider_session_transcript(
+            &state.service,
+            100_001,
+            0,
+            100,
+            stream_bound.agent_id.clone(),
+            stream_bound.session_id.clone(),
+            subject.clone(),
+            None,
+        )
+        .expect("stream-bound outcome");
+        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
+    }
+
+    #[derive(Debug)]
+    struct FailingCwdResolver;
+
+    impl sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver for FailingCwdResolver {
+        fn resolve_project_cwd(
+            &self,
+            _selector: &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector,
+        ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<Option<String>> {
+            Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                "test mount resolution failure".to_string(),
+            ))
+        }
+    }
+
+    #[test]
+    fn transcript_sync_degrades_gracefully_when_cwd_resolution_fails() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let bound = create_test_session(
+            &state,
+            "session.provider.codex.cwd-failure-1",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &bound.session_id,
+            "runtime_binding.provider.cwd-failure-1",
+            "provider-session-history",
+            Some("provider-thread-cwd-failure-1"),
+        );
+        let outcome = synchronize_provider_session_transcript(
+            &state.service,
+            100_001,
+            0,
+            100,
+            bound.agent_id.clone(),
+            bound.session_id.clone(),
+            manage_subject(),
+            Some(&FailingCwdResolver),
+        )
+        .expect("a failed working directory resolution must not fail the transcript read");
+        assert!(
+            matches!(
+                outcome,
+                ProviderSessionTranscriptSyncOutcome::Imported {
+                    imported_item_count: 0
+                } | ProviderSessionTranscriptSyncOutcome::EngineUnavailable
+            ),
+            "cwd resolution failure should degrade to a skipped/empty synchronization, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn archives_orphaned_provider_sessions_without_binding_or_items() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        let orphan = create_test_session(
+            &state,
+            "session.provider.codex.orphan-2",
+            &project.project_id,
+            "provider_session",
+        );
+        let bound = create_test_session(
+            &state,
+            "session.provider.codex.bound-2",
+            &project.project_id,
+            "provider_session",
+        );
+        create_test_binding(
+            &state,
+            &bound.session_id,
+            "runtime_binding.provider.bound-2",
+            "provider-session-history",
+            Some("provider-thread-bound-2"),
+        );
+        let live = create_test_session(
+            &state,
+            "session.340000000000000001",
+            &project.project_id,
+            "coding-workbench",
+        );
+
+        let mut result = ProviderSessionSynchronizationResult::default();
+        reconcile_orphaned_provider_sessions(
+            &state.service,
+            &project,
+            manage_subject(),
+            &["codex".to_string()],
+            &mut result,
+        )
+        .expect("orphan reconciliation");
+
+        assert_eq!(result.skipped_session_count, 1);
+        assert!(result.issues.iter().any(|issue| {
+            issue.code == "orphaned_provider_session_archived"
+                && issue.count == 1
+        }));
+        let archived = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: orphan.agent_id.clone(),
+                session_id: orphan.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+            })
+            .expect("archived orphan lookup");
+        assert_eq!(archived.status, crate::domain::AgentSessionStatus::Archived);
+        let still_active = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: bound.agent_id.clone(),
+                session_id: bound.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+            })
+            .expect("bound session lookup");
+        assert_eq!(
+            still_active.status,
+            crate::domain::AgentSessionStatus::Active
+        );
+        let live_active = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: live.agent_id.clone(),
+                session_id: live.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: manage_subject(),
+            })
+            .expect("live session lookup");
+        assert_eq!(
+            live_active.status,
+            crate::domain::AgentSessionStatus::Active
+        );
     }
 }

@@ -28,6 +28,7 @@ tracing.workspace = true
 sdkwork-database-config = { workspace = true, optional = true }
 sdkwork-database-sqlx = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
+rusqlite.workspace = true
 axum = { workspace = true, optional = true, features = ["json"] }
 tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }

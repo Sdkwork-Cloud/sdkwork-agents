@@ -11,6 +11,7 @@ mod id;
 mod in_memory_pagination;
 mod infrastructure;
 mod mcp_marketplace;
+mod model_configuration_store;
 mod persistence;
 mod ports;
 #[cfg(feature = "postgres-sync")]
@@ -139,6 +140,7 @@ pub use infrastructure::{
     InMemoryAgentAuditSink, InMemoryAgentRepository, PolicyMode, ENV_DEPLOYMENT_ENV,
     ENV_DEV_AUTH_BYPASS, IAM_PERMISSION_AGENTS_MANAGE, IAM_PERMISSION_AGENTS_READ,
 };
+pub use model_configuration_store::SqliteAgentConfigurationStore;
 pub use persistence::{
     extract_event_context, AgentAuditAdapter, AgentRepositoryAdapter, SqlAgentAuditSink,
     SqlAgentRepository, SQL_COUNT_AGENT, SQL_COUNT_AGENT_COMPOSITION_SLOTS,
