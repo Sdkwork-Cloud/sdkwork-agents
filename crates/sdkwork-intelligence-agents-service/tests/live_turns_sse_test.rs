@@ -17,16 +17,52 @@ use sdkwork_intelligence_agents_service::{
 /// Live end-to-end proof: one real provider turn through the agents business
 /// service stream sink (the same path the HTTP turns SSE endpoint uses).
 ///
-/// Requires the `@opencode-ai/sdk` package in the kernel workspace node_modules
-/// and a reachable opencode model provider configured through `OPENCODE_CONFIG`
-/// (or `OPENCODE_MODEL`). Run with:
-/// `OPENCODE_CONFIG=/tmp/opencode-test-config.json cargo test -p sdkwork-intelligence-agents-service --test live_turns_sse_test -- --ignored --nocapture`
+/// Run with, for example:
+/// `OPENCODE_MODEL=opencode/deepseek-v4-flash-free cargo test -p sdkwork-intelligence-agents-service --test live_turns_sse_test -- --ignored --nocapture`
 #[test]
-#[ignore = "requires the @opencode-ai/sdk package and a live opencode model provider"]
+#[ignore = "requires live provider SDK packages and reachable model providers"]
 fn live_turns_sse_flow_with_real_opencode_provider() {
     std::env::set_var("SDKWORK_KERNEL_ENVIRONMENT", "development");
-    std::env::set_var("SDKWORK_AGENT_SDK_WORKSPACE_ROOT", kernel_workspace_root());
+    run_live_turns_flow(LiveProviderConfig {
+        label: "opencode",
+        agent_id: "agent.live.opencode",
+        code: "live-opencode",
+        display_name: "Live OpenCode",
+        binding_id: "binding.agent-provider.opencode",
+        provider_id: "provider.model.opencode",
+        model_id: configured_opencode_model_id(),
+    });
+}
 
+/// Same end-to-end proof through the official Claude agent SDK (`query()`),
+/// which also live-exercises the Claude streaming projection over the turns
+/// stream sink for the first time.
+#[test]
+#[ignore = "requires the @anthropic-ai/claude-agent-sdk package and a live Claude model provider"]
+fn live_turns_sse_flow_with_real_claude_code_provider() {
+    std::env::set_var("SDKWORK_KERNEL_ENVIRONMENT", "development");
+    run_live_turns_flow(LiveProviderConfig {
+        label: "claude-code",
+        agent_id: "agent.live.claude",
+        code: "live-claude",
+        display_name: "Live Claude Code",
+        binding_id: "binding.agent-provider.claude-code",
+        provider_id: "provider.model.claude-code",
+        model_id: configured_claude_code_model_id(),
+    });
+}
+
+struct LiveProviderConfig {
+    label: &'static str,
+    agent_id: &'static str,
+    code: &'static str,
+    display_name: &'static str,
+    binding_id: &'static str,
+    provider_id: &'static str,
+    model_id: String,
+}
+
+fn run_live_turns_flow(config: LiveProviderConfig) {
     let repository = InMemoryAgentRepository::new();
     let (audit_sink, _events) = RecordingAuditSink::new();
     let policy_provider = IamGatedPolicyProvider::new("policy.agents.test.iam-gated");
@@ -35,12 +71,12 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
 
     let created = service
         .create_agent(create_agent_cmd(
-            "agent.live.opencode",
+            config.agent_id,
             100_001,
             0,
             100,
-            "live-opencode",
-            "Live OpenCode",
+            config.code,
+            config.display_name,
             "2026-08-01T00:00:00Z",
         ))
         .expect("create should succeed");
@@ -82,10 +118,10 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         .add_provider_binding(AgentProviderBindingCommand {
             tenant_id: 100_001,
             agent_id: created.agent_id.clone(),
-            binding_id: "binding.agent-provider.opencode".to_string(),
-            provider_id: "provider.model.opencode".to_string(),
+            binding_id: config.binding_id.to_string(),
+            provider_id: config.provider_id.to_string(),
             implementation_kind: AgentImplementationKind::ManifestOnly,
-            configuration_profile_id: "profile.live.opencode".to_string(),
+            configuration_profile_id: format!("profile.live.{}", config.label),
             capabilities: vec!["model.chat".to_string()],
             make_default: true,
             requested_by: sample_subject(),
@@ -102,7 +138,7 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         })
         .expect("provider binding should be activated");
 
-    let runtime_binding_id = "runtime_binding.live.opencode".to_string();
+    let runtime_binding_id = format!("runtime_binding.live.{}", config.label);
     let _runtime_binding = service
         .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
             tenant_id: 100_001,
@@ -114,8 +150,8 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
             host_mode: "managed".to_string(),
             transport_kind: "in_process".to_string(),
             provider_binding_id: provider_binding.binding_id,
-            model_id: configured_opencode_model_id(),
-            provider_id: "provider.model.opencode".to_string(),
+            model_id: config.model_id.clone(),
+            provider_id: config.provider_id.to_string(),
             provider_session_id: None,
             provider_session_tree_id: None,
             provider_parent_session_id: None,
@@ -138,7 +174,7 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         content_type: "text/plain".to_string(),
         turn_mode: AgentTurnMode::Interactive,
         runtime_binding_id: Some(runtime_binding_id.clone()),
-        requested_model_id: Some(configured_opencode_model_id()),
+        requested_model_id: Some(config.model_id.clone()),
         access_mode_id: None,
         idempotency_key: "live-sse-idempotency-1".to_string(),
         payload_hash: "sha256:live-sse-payload-1".to_string(),
@@ -152,11 +188,6 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
     let result = service
         .execute_turn_with_stream_sink(turn_command.clone(), Arc::new(sink.clone()))
         .expect("live turn execution should succeed");
-    eprintln!(
-        "live_turns_sse_phase=raw result content={:?} status={:?}",
-        result.assistant_output_item.content.as_deref(),
-        result.turn.status,
-    );
 
     let runtime_binding_after_turn = service
         .get_session_runtime_binding(GetSessionRuntimeBindingCommand {
@@ -175,13 +206,15 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         .expect("live turn must persist the provider session id into the runtime binding");
 
     eprintln!(
-        "live_turns_sse_phase=stream_sink begin={} deltas={} events={}",
+        "live_turns_sse_phase={}_stream_sink begin={} deltas={} events={}",
+        config.label,
         sink.begin_count(),
         sink.deltas().len(),
         sink.events().len(),
     );
     eprintln!(
-        "live_turns_sse_phase=result content={:?} provider_session_id={provider_session_id:?} deltas={} events={}",
+        "live_turns_sse_phase={}_result content={:?} provider_session_id={provider_session_id:?} deltas={} events={}",
+        config.label,
         result
             .assistant_output_item
             .content
@@ -200,7 +233,8 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         .to_string();
     assert!(
         !content.is_empty() && content.to_ascii_uppercase().contains("OK"),
-        "live opencode turn must return the real model reply: {content:?}"
+        "live {} turn must return the real model reply: {content:?}",
+        config.label
     );
     assert!(
         !provider_session_id.is_empty(),
@@ -258,37 +292,20 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
     assert!(
         !resumed_content.is_empty()
             && resumed_content.to_ascii_uppercase().contains("DONE"),
-        "live resumed turn must return the real model reply: {resumed_content:?}"
+        "live resumed {} turn must return the real model reply: {resumed_content:?}",
+        config.label
     );
     assert!(
         resumed_sink.events().len() >= 1,
         "resumed live turn must emit kernel events through the stream sink"
     );
     eprintln!(
-        "live_turns_sse_phase=resume_ok content={resumed_content:?} deltas={} events={}",
+        "live_turns_sse_phase={}_resume_ok content={resumed_content:?} deltas={} events={}",
+        config.label,
         resumed.stream_deltas.len(),
         resumed.stream_events.len(),
     );
-    eprintln!("live_turns_sse_phase=all_ok");
-}
-
-fn kernel_workspace_root() -> String {
-    std::env::var("SDKWORK_KERNEL_WORKSPACE_ROOT")
-        .unwrap_or_else(|_| {
-            let manifest_dir = env!("CARGO_MANIFEST_DIR");
-            let candidates = [
-                std::path::Path::new(manifest_dir)
-                    .ancestors()
-                    .nth(3)
-                    .map(|path| path.join("sdkwork-kernel")),
-            ];
-            candidates
-                .into_iter()
-                .flatten()
-                .find(|path| path.join("node_modules").exists())
-                .map(|path| path.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string())
-        })
+    eprintln!("live_turns_sse_phase={}_all_ok", config.label);
 }
 
 fn configured_opencode_model_id() -> String {
@@ -301,7 +318,32 @@ fn configured_opencode_model_id() -> String {
                     .ok()
                     .and_then(|value| value.get("model")?.as_str().map(str::to_string))
             })
-            .unwrap_or_else(|| "safeapi/gpt-5.6-sol".to_string())
+            // The durable v2 runner resolves models from the server's built-in
+            // catalog; config-file providers are not part of that registry.
+            .unwrap_or_else(|| "opencode/deepseek-v4-flash-free".to_string())
+    })
+}
+
+fn configured_claude_code_model_id() -> String {
+    std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| {
+        let home = std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        std::fs::read_to_string(home.join(".claude").join("settings.json"))
+            .ok()
+            .and_then(|content| {
+                serde_json::from_str::<serde_json::Value>(&content)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("env")?
+                            .get("ANTHROPIC_MODEL")?
+                            .as_str()
+                            .map(str::to_string)
+                    })
+            })
+            .unwrap_or_else(|| "gpt-5.6-sol".to_string())
     })
 }
 
@@ -386,9 +428,9 @@ fn sample_manifest(agent_id: &str) -> AgentManifest {
         schema_version: "1.0.0".to_string(),
         manifest_type: "agent".to_string(),
         agent_id: agent_id.to_string(),
-        name: "live-opencode".to_string(),
-        display_name: "Live OpenCode".to_string(),
-        description: "live opencode e2e".to_string(),
+        name: "live-provider".to_string(),
+        display_name: "Live Provider".to_string(),
+        description: "live provider e2e".to_string(),
         version: "0.1.0".to_string(),
         domain: "intelligence".to_string(),
         required_capabilities: vec!["model.chat".to_string()],
@@ -421,7 +463,7 @@ fn create_agent_cmd(
         owner_user_id,
         code: code.to_string(),
         display_name: display_name.to_string(),
-        description: Some("live opencode e2e".to_string()),
+        description: Some("live provider e2e".to_string()),
         manifest: sample_manifest(agent_id),
         visibility: AgentVisibility::Organization,
         tags: vec!["starter".to_string()],

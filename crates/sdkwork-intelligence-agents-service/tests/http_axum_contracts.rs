@@ -39,9 +39,10 @@ impl TurnExecutor for RichTurnExecutor {
                 "follow-up Turn must resume with the provider identity persisted from the first Turn",
             );
         }
+        let turn_suffix = if input.history.is_empty() { "first" } else { "second" };
         let message_item = |text: &str| {
             json!({
-                "id": "provider-item.message.rich",
+                "id": format!("provider-item.message.rich.{turn_suffix}"),
                 "type": "agent_message",
                 "text": text,
             })
@@ -79,7 +80,7 @@ impl TurnExecutor for RichTurnExecutor {
                     "agent.tool.completed",
                     "item.completed",
                     Some(json!({
-                        "id": "provider-item.tool.rich",
+                        "id": format!("provider-item.tool.rich.{turn_suffix}"),
                         "type": "command_execution",
                         "command": "redacted-test-command",
                     })),
@@ -245,9 +246,6 @@ fn rich_runtime_event(
     .with_redaction(redaction)
     .with_payload_schema("sdkwork.agent.provider_stream_event.v1");
     event.event_version = "1.0.0".to_string();
-    if let Some(item_id) = item_id {
-        event = event.for_step(item_id);
-    }
     event
 }
 

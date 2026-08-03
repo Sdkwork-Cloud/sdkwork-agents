@@ -165,7 +165,11 @@ impl Drop for IsolatedPostgresDatabase {
     fn drop(&mut self) {
         let drop_database = format!("DROP DATABASE IF EXISTS {} WITH (FORCE)", self.database);
         let pool = self.admin.pool();
-        if let Err(error) = pool.run(sqlx::query(&drop_database).execute(pool.pool())) {
+        // The database identifier is a fixed-size Snowflake suffix produced by
+        // this test itself, never user input: assert-safe by construction.
+        if let Err(error) = pool
+            .run(sqlx::query(sqlx::AssertSqlSafe(drop_database.as_str())).execute(pool.pool()))
+        {
             eprintln!(
                 "failed to drop ephemeral workspace test database {}: {error}",
                 self.database
@@ -206,7 +210,7 @@ fn create_isolated_database(
     let create_database = format!("CREATE DATABASE {database} OWNER sdkwork_ai_test");
     admin
         .pool()
-        .run(sqlx::query(&create_database).execute(admin.pool().pool()))
+        .run(sqlx::query(sqlx::AssertSqlSafe(create_database.as_str())).execute(admin.pool().pool()))
         .expect("ephemeral workspace test database should be created");
 
     let isolated_url = workspace_postgres_test_database_url(base_url, &database)
@@ -217,7 +221,7 @@ fn create_isolated_database(
     let create_schema = format!("CREATE SCHEMA {schema} AUTHORIZATION sdkwork_ai_test");
     schema_owner
         .pool()
-        .run(sqlx::query(&create_schema).execute(schema_owner.pool().pool()))
+        .run(sqlx::query(sqlx::AssertSqlSafe(create_schema.as_str())).execute(schema_owner.pool().pool()))
         .expect("same-named workspace test schema should be created");
     drop(schema_owner);
 
@@ -605,7 +609,7 @@ fn create_live_scheduler_context(
     (agent_id, session_id, repository)
 }
 
-fn scalar_count(database_url: &str, sql: &str, task_id: &str) -> i64 {
+fn scalar_count(database_url: &str, sql: &'static str, task_id: &str) -> i64 {
     let adapter =
         connect_test_adapter(database_url).expect("scheduler count adapter should connect");
     adapter

@@ -3271,7 +3271,9 @@ fn validate_model_configuration_identifier(
     }
     if !value
         .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+        .all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | '/')
+        })
     {
         return Err(ApiProblem::validation(format!(
             "{field} contains unsupported characters"
@@ -12383,6 +12385,10 @@ mod tests {
 
     #[tokio::test]
     async fn catalog_model_selection_dispatches_every_published_provider_config_spi() {
+        // The OpenCode catalog model id is resolved from OPENCODE_MODEL or the
+        // user config; pin it so the dispatch test does not depend on the host
+        // machine's opencode configuration state.
+        std::env::set_var("OPENCODE_MODEL", "opencode/deepseek-v4-flash-free");
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -12404,18 +12410,20 @@ mod tests {
                 model_selection_body(&engine.engine_key, &model_id, None),
             )
             .await;
+            let response_status = response.status();
+            let response_bytes = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("selection response should be readable");
             assert_eq!(
-                response.status(),
+                response_status,
                 StatusCode::OK,
-                "engine {}",
-                engine.engine_key
+                "engine {} model {} body {}",
+                engine.engine_key,
+                model_id,
+                String::from_utf8_lossy(&response_bytes)
             );
-            let payload: Value = serde_json::from_slice(
-                &to_bytes(response.into_body(), usize::MAX)
-                    .await
-                    .expect("selection response should be readable"),
-            )
-            .expect("selection response should be JSON");
+            let payload: Value =
+                serde_json::from_slice(&response_bytes).expect("selection response should be JSON");
             let item = &payload["data"]["item"];
             assert_eq!(item["engineId"], engine.engine_key);
             assert_eq!(item["modelId"], model_id);

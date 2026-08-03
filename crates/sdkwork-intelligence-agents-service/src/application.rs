@@ -1032,7 +1032,7 @@ where
         resource_label: &str,
     ) -> KernelResult<()> {
         if record_agent_id != path_agent_id {
-            return Err(KernelError::validation(format!(
+            return Err(KernelError::not_found(format!(
                 "{resource_label} not found"
             )));
         }
