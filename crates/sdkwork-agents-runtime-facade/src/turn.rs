@@ -921,6 +921,13 @@ mod tests {
 
     #[test]
     fn all_canonical_engines_execute_turn() {
+        // The TypeScript/Python runtimes fall back to the local sdk_probe mock
+        // backend when the official SDK package is not installed; that
+        // fallback is fail-closed unless the explicit mock override is
+        // enabled.
+        std::env::set_var("SDKWORK_KERNEL_ENVIRONMENT", "development");
+        std::env::set_var("SDKWORK_KERNEL_ALLOW_MOCK_PROVIDERS", "1");
+
         for engine in canonical_code_engine_keys() {
             let slot = if *engine == "codex" {
                 controlled_codex_slot(Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)))

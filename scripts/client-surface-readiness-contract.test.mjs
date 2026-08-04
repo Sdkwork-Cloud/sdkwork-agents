@@ -134,7 +134,7 @@ assert.match(
 
 const pcAppSource = mustExist(`${pcApp}/App.tsx`);
 assert.match(pcAppSource, /AuthGate/u, "PC App.tsx must wrap the workbench with AuthGate");
-assert.match(pcAppSource, /WorkbenchLayout/u, "PC App.tsx must wire the production workbench");
+assert.match(pcAppSource, /AgentsWorkbench/u, "PC App.tsx must wire the production workbench");
 assert.match(
   mustExist(`${pcApp}/components/WorkbenchLayout.tsx`),
   /AgentWorkspace/u,

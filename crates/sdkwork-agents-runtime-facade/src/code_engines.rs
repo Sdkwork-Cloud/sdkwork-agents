@@ -979,6 +979,37 @@ pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEng
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Redirects every provider config write to a fresh temp home.
+    ///
+    /// All engine config SPIs resolve their config file through
+    /// `provider_user_home()` (`USERPROFILE` on Windows, `HOME` elsewhere), so
+    /// pointing `USERPROFILE` at a temp directory keeps config-SPI tests from
+    /// ever touching real user configuration (and from racing each other on
+    /// the same file).
+    fn isolate_provider_user_home() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let temp_home = std::env::temp_dir().join(format!("sdkwork-test-home-{stamp}"));
+        std::fs::create_dir_all(&temp_home).expect("create temp user home");
+        std::env::set_var("USERPROFILE", &temp_home);
+    }
+
+    /// Serializes config-SPI tests: they redirect `USERPROFILE` (process-wide)
+    /// to temp homes and write overlapping provider config files, so they must
+    /// not run concurrently with each other (or with bootstraps that resolve
+    /// the same paths).
+    static CONFIG_SPI_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn config_spi_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        CONFIG_SPI_TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
 
     #[test]
     fn canonical_code_engines_map_to_binding_ids() {
@@ -1144,6 +1175,8 @@ mod tests {
 
     #[test]
     fn model_configuration_dispatches_to_each_code_engine_config_spi() {
+        let _guard = config_spi_test_guard();
+        isolate_provider_user_home();
         for engine_key in bootstrappable_engine_keys() {
             let agent_id = code_engine_agent_id(engine_key).expect("agent id");
             let request = AgentModelConfigurationRequest::new(
@@ -1165,8 +1198,25 @@ mod tests {
 
     #[test]
     fn model_selection_dispatches_to_each_code_engine_config_spi() {
+        let _guard = config_spi_test_guard();
+        isolate_provider_user_home();
         for engine_key in bootstrappable_engine_keys() {
             let agent_id = code_engine_agent_id(engine_key).expect("agent id");
+            // Selection is fail-closed without a SDKWork-managed provider
+            // entry in the config surface (OpenCode/OpenClaw reject silently
+            // leaving the CLI on the previous model). Establish the
+            // pre-condition exactly like a real apply flow: configure first.
+            let setup = AgentModelConfigurationRequest::new(
+                format!("request.selection.setup.{engine_key}"),
+                agent_id.clone(),
+                format!("profile.selection.{engine_key}"),
+                "openai-compatible",
+                "https://models.example.test/v1",
+                format!("secret-selection-{engine_key}"),
+                "example-chat",
+            );
+            apply_code_engine_model_configuration(engine_key, &setup)
+                .expect("provider Config SPI applies model configuration before selection");
             let request = AgentModelSelectionRequest::new(
                 format!("request.selection.{engine_key}"),
                 agent_id,
