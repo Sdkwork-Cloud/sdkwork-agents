@@ -24,6 +24,7 @@ mod provider_stream_items;
 pub mod response;
 mod runtime_facade_bridge;
 mod session_activity;
+mod session_id_scheme;
 mod session_item_cursor;
 mod task_execution_cursor;
 mod task_scheduler;

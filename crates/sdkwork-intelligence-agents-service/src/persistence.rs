@@ -45,7 +45,10 @@ use crate::task_scheduling::{
     AgentTaskOverlapPolicy, AgentTaskRunAttemptRecord, AgentTaskRunAttemptStatus,
     AgentTaskRunRecord, AgentTaskRunStatus, AgentTaskTriggerKind,
 };
-use crate::validation::{validate_capabilities, validate_standard_id};
+use crate::validation::{
+    validate_capabilities, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_BINDING,
+    ID_PREFIX_PROFILE, ID_PREFIX_PROVIDER, ID_PREFIX_RUN, ID_PREFIX_SESSION, ID_PREFIX_TURN,
+};
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 #[cfg(feature = "postgres-sync")]
 use crate::{pg_execute, pg_query, pg_query_optional};
@@ -1892,7 +1895,7 @@ fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationTyp
 
 fn validate_agent_business_storage_contract(record: &AgentBusinessRecord) -> KernelResult<()> {
     if let Some(provider_id) = record.implementation_provider_id.as_deref() {
-        validate_standard_id(provider_id, "implementationProviderId", Some("provider."))?;
+        validate_standard_id(provider_id, "implementationProviderId", Some(ID_PREFIX_PROVIDER))?;
     }
     Ok(())
 }
@@ -1900,12 +1903,12 @@ fn validate_agent_business_storage_contract(record: &AgentBusinessRecord) -> Ker
 fn validate_provider_binding_storage_contract(
     record: &AgentProviderBindingRecord,
 ) -> KernelResult<()> {
-    validate_standard_id(record.binding_id.as_str(), "bindingId", Some("binding."))?;
-    validate_standard_id(record.provider_id.as_str(), "providerId", Some("provider."))?;
+    validate_standard_id(record.binding_id.as_str(), "bindingId", Some(ID_PREFIX_BINDING))?;
+    validate_standard_id(record.provider_id.as_str(), "providerId", Some(ID_PREFIX_PROVIDER))?;
     validate_standard_id(
         record.configuration_profile_id.as_str(),
         "configurationProfileId",
-        Some("profile."),
+        Some(ID_PREFIX_PROFILE),
     )?;
     validate_capabilities(record.capabilities.as_slice(), "capabilities")
 }
@@ -9053,7 +9056,8 @@ FOR SHARE
             )));
         }
         let id = AgentRepositoryAdapter::next_id(adapter).map_err(transaction_error)?;
-        let run_id = format!("run.{id}");
+        let run_id = format!("{ID_PREFIX_RUN}{id}");
+        validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN)).map_err(transaction_error)?;
         let turn_id = format!(
             "turn.{}",
             AgentRepositoryAdapter::next_id(adapter).map_err(transaction_error)?
@@ -9347,7 +9351,8 @@ FOR UPDATE
                 )));
             }
             let id = AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
-            let run_id = format!("run.{id}");
+            let run_id = format!("{ID_PREFIX_RUN}{id}");
+            validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN)).map_err(transaction_error)?;
             let turn_id = format!(
                 "turn.{}",
                 AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?
@@ -9537,7 +9542,8 @@ WHERE tenant_id = $1 AND organization_id = $2 AND task_id = $3
                         break;
                     }
                     let id = AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
-                    let run_id = format!("run.{id}");
+                    let run_id = format!("{ID_PREFIX_RUN}{id}");
+                    validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN)).map_err(transaction_error)?;
                     let turn_id = format!(
                         "turn.{}",
                         AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?
@@ -9950,7 +9956,8 @@ WHERE tenant_id = $8 AND organization_id = $9 AND run_id = $10 AND status = 0
                 }
                 let attempt_id_value =
                     AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
-                let attempt_id = format!("attempt.{attempt_id_value}");
+                let attempt_id = format!("{ID_PREFIX_ATTEMPT}{attempt_id_value}");
+                validate_standard_id(&attempt_id, "attemptId", Some(ID_PREFIX_ATTEMPT)).map_err(transaction_error)?;
                 sqlx::query(
                     r#"
 INSERT INTO ai_agent_task_run_attempt (
@@ -12358,6 +12365,10 @@ mod tests {
         build_session_uuid, build_task_uuid, extract_event_context, AgentAuditEventRow,
         AgentProjectCompositionSlotRow,
     };
+    use crate::validation::{
+        ID_PREFIX_AGENT, ID_PREFIX_BINDING, ID_PREFIX_INTERACTION, ID_PREFIX_SESSION,
+        ID_PREFIX_SLOT, ID_PREFIX_TASK,
+    };
     #[cfg(feature = "postgres-sync")]
     use crate::session_activity::{
         decode_session_activity_cursor, encode_session_activity_cursor, SessionActivityCursor,
@@ -12425,13 +12436,13 @@ mod tests {
     #[test]
     fn storage_uuids_are_stable_bounded_and_resource_scoped() {
         let tenant_id = 4_096_123_456_789_012_345;
-        let agent_id = format!("agent.pc.{}.123456789abc", "a".repeat(48));
-        let session_id = format!("session.pc.{}", "s".repeat(100));
+        let agent_id = format!("{ID_PREFIX_AGENT}pc.{}.123456789abc", "a".repeat(48));
+        let session_id = format!("{ID_PREFIX_SESSION}pc.{}", "s".repeat(100));
         let item_id = format!("message.pc.{}", "m".repeat(100));
-        let interaction_id = format!("interaction.pc.{}", "i".repeat(100));
-        let task_id = format!("task.pc.{}", "t".repeat(100));
-        let slot_id = format!("slot.pc.{}", "c".repeat(100));
-        let binding_id = format!("binding.pc.{}", "b".repeat(100));
+        let interaction_id = format!("{ID_PREFIX_INTERACTION}pc.{}", "i".repeat(100));
+        let task_id = format!("{ID_PREFIX_TASK}pc.{}", "t".repeat(100));
+        let slot_id = format!("{ID_PREFIX_SLOT}pc.{}", "c".repeat(100));
+        let binding_id = format!("{ID_PREFIX_BINDING}pc.{}", "b".repeat(100));
 
         let uuids = [
             build_agent_business_uuid(tenant_id, &agent_id),
@@ -12474,7 +12485,7 @@ mod tests {
     #[test]
     fn long_create_audit_event_uses_bounded_storage_uuid() {
         let tenant_id = 4_096_123_456_789_012_345_u64;
-        let agent_id = format!("agent.pc.{}.123456789abc", "a".repeat(48));
+        let agent_id = format!("{ID_PREFIX_AGENT}pc.{}.123456789abc", "a".repeat(48));
         let event = KernelEvent::new(
             format!("agent_audit_{agent_id}_1"),
             "agent.business.created",

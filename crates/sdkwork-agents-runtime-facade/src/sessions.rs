@@ -323,7 +323,7 @@ mod tests {
                 runtime_location_id: Some("birdcoder-workspace-001".to_string()),
                 host_mode: "desktop".to_string(),
                 transport_kind: "process".to_string(),
-                provider_binding_id: "binding.agent-provider.codex".to_string(),
+                provider_binding_id: "binding.codex".to_string(),
                 model_id: "model.gpt-5".to_string(),
                 provider_id: "provider.openai".to_string(),
                 provider_session_id: Some("provider-session-001".to_string()),
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(value["parentSessionId"], "session.coding-parent");
         assert_eq!(
             value["runtimeBinding"]["providerBindingId"],
-            "binding.agent-provider.codex"
+            "binding.codex"
         );
         assert_eq!(
             value["runtimeBinding"]["providerSessionTreeId"],

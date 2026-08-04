@@ -445,7 +445,7 @@ async fn create_turn_runtime(
     suffix: &str,
 ) -> String {
     let binding_id = format!("binding.turn.{suffix}");
-    let provider_id = format!("provider.model.{suffix}");
+    let provider_id = format!("provider.{suffix}");
     post_json(
         app,
         &format!("/app/v3/api/ai/agents/{agent_id}/provider_bindings"),
@@ -720,7 +720,7 @@ async fn app_project_session_should_materialize_canonical_code_engine_identity()
         &app,
         &format!("/app/v3/api/ai/projects/{project_id}/sessions"),
         json!({
-            "agentId": "agent.intelligence.codex",
+            "agentId": "agent.codex",
             "sessionKind": "coding",
             "entrySurface": "pc",
             "sourceModule": "sdkwork-birdcoder",
@@ -736,24 +736,24 @@ async fn app_project_session_should_materialize_canonical_code_engine_identity()
     .await;
     assert_eq!(
         created["data"]["item"]["agentId"],
-        "agent.intelligence.codex"
+        "agent.codex"
     );
     assert_eq!(created["data"]["item"]["projectId"], project_id);
 
     let bindings = get_json(
         &app,
-        "/app/v3/api/ai/agents/agent.intelligence.codex/provider_bindings?page=1&page_size=20",
+        "/app/v3/api/ai/agents/agent.codex/provider_bindings?page=1&page_size=20",
         StatusCode::OK,
     )
     .await;
     assert_eq!(bindings["data"]["items"].as_array().map(Vec::len), Some(1));
     assert_eq!(
         bindings["data"]["items"][0]["bindingId"],
-        "binding.agent-provider.codex"
+        "binding.codex"
     );
     assert_eq!(
         bindings["data"]["items"][0]["providerId"],
-        "provider.model.codex"
+        "provider.codex"
     );
 }
 
@@ -2255,7 +2255,7 @@ async fn provider_bindings_should_work_over_http() {
         .body(Body::from(
             json!({
                 "bindingId": "binding.rig.default",
-                "providerId": "provider.model.rig-rust",
+                "providerId": "provider.rig-rust",
                 "implementationKind": "typed-local-provider",
                 "configurationProfileId": "profile.rig.local",
                 "capabilities": ["model.chat", "tool.invoke"],
@@ -2282,7 +2282,7 @@ async fn provider_bindings_should_work_over_http() {
     );
     assert_eq!(
         body_json["data"]["item"]["providerId"],
-        "provider.model.rig-rust"
+        "provider.rig-rust"
     );
     assert_eq!(
         body_json["data"]["item"]["implementationKind"],
@@ -2454,7 +2454,7 @@ async fn provider_bindings_should_apply_pagination_contract() {
             .body(Body::from(
                 json!({
                     "bindingId": binding_id,
-                    "providerId": "provider.model.rig-rust",
+                    "providerId": "provider.rig-rust",
                     "implementationKind": "typed-local-provider",
                     "configurationProfileId": "profile.rig.local",
                     "capabilities": ["model.chat"],
@@ -2771,7 +2771,7 @@ async fn provider_binding_conflicts_should_return_problem_detail() {
 
     let binding_body = json!({
         "bindingId": "binding.rig.default",
-        "providerId": "provider.model.rig-rust",
+        "providerId": "provider.rig-rust",
         "implementationKind": "typed-local-provider",
         "configurationProfileId": "profile.rig.local",
         "capabilities": ["model.chat"],
@@ -2828,7 +2828,7 @@ async fn provider_binding_invalid_standard_ids_should_return_bad_request() {
         .body(Body::from(
             json!({
                 "bindingId": " binding.rig.default ",
-                "providerId": "provider.model.rig-rust",
+                "providerId": "provider.rig-rust",
                 "implementationKind": "typed-local-provider",
                 "configurationProfileId": "profile.rig.local",
                 "capabilities": ["model.chat"],
@@ -2887,7 +2887,7 @@ async fn provider_binding_invalid_capabilities_should_return_bad_request() {
         .body(Body::from(
             json!({
                 "bindingId": "binding.rig.default",
-                "providerId": "provider.model.rig-rust",
+                "providerId": "provider.rig-rust",
                 "implementationKind": "typed-local-provider",
                 "configurationProfileId": "profile.rig.local",
                 "capabilities": ["model.chat", "model.chat"],
@@ -3659,7 +3659,7 @@ async fn backend_audit_events_should_filter_provider_binding_actions() {
         .body(Body::from(
             json!({
                 "bindingId": "binding.rig.audit",
-                "providerId": "provider.model.rig-rust",
+                "providerId": "provider.rig-rust",
                 "implementationKind": "typed-local-provider",
                 "configurationProfileId": "profile.rig.local",
                 "capabilities": ["model.chat"],
@@ -4772,7 +4772,7 @@ async fn app_turn_should_replay_same_idempotency_payload_and_reject_conflicts() 
     let agent_id = "agent.turn.replay.http";
     create_agent(&app, agent_id, "Replay Turn HTTP Agent").await;
 
-    let session_id = "session.turn.replay.http";
+    let session_id = "session.test.replay.http";
     create_app_session(
         &app,
         agent_id,
@@ -4959,7 +4959,7 @@ async fn app_turn_should_return_ordered_session_items() {
     let agent_id = "agent.turn.http";
     create_agent(&app, agent_id, "Turn HTTP Agent").await;
 
-    let session_id = "session.turn.http";
+    let session_id = "session.test.http";
     let session_response = create_app_session(
         &app,
         agent_id,
@@ -5101,8 +5101,8 @@ async fn missing_provider_session_items_returns_uncacheable_problem_details() {
     let request = Request::builder()
         .method("GET")
         .uri(concat!(
-            "/app/v3/api/ai/agents/agent.intelligence.codex/sessions/",
-            "session.provider.codex.3b00d973230618c73d7e78b3faa78287/items",
+            "/app/v3/api/ai/agents/agent.codex/sessions/",
+            "session.codex.3b00d973230618c73d7e78b3faa78287/items",
             "?page_size=50&sort=-sequence"
         ))
         .body(Body::empty())
@@ -5154,7 +5154,7 @@ async fn app_turn_stream_should_deliver_first_delta_before_provider_completion()
     let agent_id = "agent.turn.live-stream.http";
     create_agent(&app, agent_id, "Live Stream Turn HTTP Agent").await;
 
-    let session_id = "session.turn.live-stream.http";
+    let session_id = "session.test.live-stream.http";
     create_app_session(
         &app,
         agent_id,
@@ -5249,7 +5249,7 @@ async fn app_turn_stream_should_return_problem_detail_when_execution_fails_befor
     let agent_id = "agent.turn.failed-stream.http";
     create_agent(&app, agent_id, "Failed Stream Turn HTTP Agent").await;
 
-    let session_id = "session.turn.failed-stream.http";
+    let session_id = "session.test.failed-stream.http";
     create_app_session(
         &app,
         agent_id,
@@ -5316,7 +5316,7 @@ async fn app_turn_stream_should_return_typed_delta_and_completion_events() {
     let agent_id = "agent.turn.stream.http";
     create_agent(&app, agent_id, "Stream Turn HTTP Agent").await;
 
-    let session_id = "session.turn.stream.http";
+    let session_id = "session.test.stream.http";
     create_app_session(
         &app,
         agent_id,
@@ -5427,7 +5427,7 @@ async fn app_turn_kernel_v1_stream_should_preserve_runtime_event_and_delta_order
     let agent_id = "agent.turn.rich.stream.http";
     create_agent(&app, agent_id, "Rich Stream Turn HTTP Agent").await;
 
-    let session_id = "session.turn.rich.stream.http";
+    let session_id = "session.test.rich.stream.http";
     create_app_session(
         &app,
         agent_id,
@@ -5565,7 +5565,7 @@ async fn open_api_turn_should_use_trusted_tenant_scope() {
     let agent_id = "agent.turn.open";
     create_agent(&app, agent_id, "Open Turn Agent").await;
 
-    let session_id = "session.turn.open";
+    let session_id = "session.test.open";
     create_app_session(
         &app,
         agent_id,
@@ -5996,7 +5996,7 @@ async fn app_provider_session_without_live_evidence_is_unknown_not_ready() {
         &app,
         &format!("/app/v3/api/ai/agents/{agent_id}/provider_bindings"),
         json!({
-            "bindingId": "binding.agent-provider.codex",
+            "bindingId": "binding.codex",
             "providerId": "provider.activity.codex",
             "implementationKind": "typed-local-provider",
             "configurationProfileId": "profile.activity.codex",
@@ -6023,7 +6023,7 @@ async fn app_provider_session_without_live_evidence_is_unknown_not_ready() {
             "runtimeBindingId": "runtime_binding.activity.provider",
             "hostMode": "local",
             "transportKind": "provider-session-history",
-            "providerBindingId": "binding.agent-provider.codex",
+            "providerBindingId": "binding.codex",
             "modelId": "model.activity.codex",
             "providerId": "provider.activity.codex",
             "providerSessionId": "provider.activity.missing",

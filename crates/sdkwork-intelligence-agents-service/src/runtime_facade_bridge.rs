@@ -191,11 +191,11 @@ mod tests {
     #[test]
     fn maps_canonical_binding_ids_to_engine_keys() {
         assert_eq!(
-            engine_key_for_binding_id("binding.agent-provider.codex"),
+            engine_key_for_binding_id("binding.codex"),
             Some("codex")
         );
         assert_eq!(
-            engine_key_for_binding_id("binding.agent-provider.opencode"),
+            engine_key_for_binding_id("binding.opencode"),
             Some("opencode")
         );
         assert!(engine_key_for_binding_id("binding.unknown").is_none());
@@ -204,14 +204,14 @@ mod tests {
     #[test]
     fn resolves_engine_from_provider_identity_when_binding_id_is_custom() {
         assert_eq!(
-            engine_key_for_provider_identity(Some("binding.custom"), Some("provider.model.codex")),
+            engine_key_for_provider_identity(Some("binding.custom"), Some("provider.codex")),
             Some("codex")
         );
     }
 
     #[test]
     fn preview_resolves_codex_binding_through_runtime_facade_catalog() {
-        let binding = sample_binding("binding.agent-provider.codex");
+        let binding = sample_binding("binding.codex");
         let (engine_key, model_id) = resolve_engine_and_model(Some(&binding), None)
             .expect("Codex binding must resolve through the runtime facade catalog");
 
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn prompt_optimization_avoids_deterministic_local_contract_mode() {
         let output = execute_prompt_optimization(
-            Some(&sample_binding("binding.agent-provider.codex")),
+            Some(&sample_binding("binding.codex")),
             "  make   this   better  ",
         );
         assert_ne!(output.runtime_mode, "deterministic-local-contract");

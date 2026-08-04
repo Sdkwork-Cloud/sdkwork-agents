@@ -33,9 +33,10 @@ PostgreSQL is the only managed-store engine. The `7.2.0` greenfield baseline
 contains the complete 23-table Session execution and Task scheduling model. It
 is the only database state supported before the first release.
 `baseline-plus-migrations` remains the lifecycle strategy. New installations
-use the complete `7.2.0` baseline. Existing shared development schemas use the
-ordered forward-only migrations in `database/migrations/postgres/` to reach the
-same contract without replaying the baseline or deleting dependency-owned data.
+use the complete baseline; the post-baseline migration set is empty while the
+app is pre-launch (the baseline is folded to the full current contract), so
+shared development schemas converge by resetting the agents state to the
+baseline instead of replaying forward-only migrations.
 
 Lifecycle `init` atomically materializes the consolidated baseline only when the
 completion anchor is absent. Automatic pending-migration execution defaults to

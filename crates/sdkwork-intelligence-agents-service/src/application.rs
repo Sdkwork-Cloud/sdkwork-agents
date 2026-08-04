@@ -41,6 +41,10 @@ use crate::runtime_facade_bridge::{
     RUNTIME_MODE_CONTRACT_FALLBACK,
 };
 use crate::session_activity::SessionActivitySummaryRecord;
+use crate::session_id_scheme::{
+    is_provider_item_id_for, is_provider_runtime_binding_id_for, is_provider_session_id,
+    is_provider_session_id_for,
+};
 use crate::session_item_cursor::{encode_session_item_cursor, SessionItemCursor};
 use crate::task_execution_cursor::{
     encode_task_cursor, encode_task_run_attempt_cursor, encode_task_run_cursor, TaskCursor,
@@ -59,7 +63,11 @@ use crate::turn_runtime::{
 use crate::validation::{
     default_json_array_if_blank, default_json_object_if_blank, default_plain_text_if_blank,
     is_trimmed_blank, parse_optional_rfc3339_datetime, parse_rfc3339_datetime, require_non_blank,
-    validate_capabilities, validate_requested_at, validate_standard_id,
+    validate_capabilities, validate_requested_at, validate_standard_id, ID_PREFIX_AGENT,
+    ID_PREFIX_BINDING, ID_PREFIX_CHECKPOINT, ID_PREFIX_EXECUTION, ID_PREFIX_INTERACTION,
+    ID_PREFIX_ITEM, ID_PREFIX_PROFILE, ID_PREFIX_PROJECT, ID_PREFIX_PROVIDER,
+    ID_PREFIX_RUNTIME_BINDING, ID_PREFIX_SESSION, ID_PREFIX_SLOT, ID_PREFIX_TASK,
+    ID_PREFIX_TURN, ID_PREFIX_WORKSPACE,
 };
 use crate::workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
@@ -829,15 +837,16 @@ where
 }
 
 /// Outcome of claiming a provider Session identity for the canonical
-/// `session.provider.*` Session during inventory synchronization.
+/// `session.{engine}.*` Session during inventory synchronization.
 pub(crate) enum ProviderSessionBindingClaim {
     /// No binding currently claims the provider Session identity.
     Free,
     /// The canonical target Session already owns the binding.
     AlreadyTarget,
-    /// A provider-import Session (`session.native.*` / `session.provider.*`
-    /// from an older scheme or another project) claimed the identity and
-    /// was retired (archived Session + released binding).
+    /// A provider-import Session (canonical `session.{engine}.*`, or a
+    /// legacy `session.native.*` / `session.provider.*` Session from an
+    /// older scheme or another project) claimed the identity and was
+    /// retired (archived Session + released binding).
     Retired,
     /// A user-created Session owns the binding; the provider Session is
     /// already a live Session and must not be imported again.
@@ -905,7 +914,7 @@ where
         requested_at: String,
     ) -> KernelResult<AgentWorkspaceRecord> {
         let workspace = if let Some(workspace_id) = workspace_id {
-            validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
+            validate_standard_id(workspace_id, "workspaceId", Some(ID_PREFIX_WORKSPACE))?;
             self.repository
                 .get_workspace(tenant_id, organization_id, workspace_id)?
                 .ok_or_else(|| KernelError::not_found("workspace not found"))?
@@ -934,7 +943,7 @@ where
         project_id: &str,
         owner_scope: Option<u64>,
     ) -> KernelResult<AgentProjectRecord> {
-        validate_standard_id(project_id, "projectId", Some("project."))?;
+        validate_standard_id(project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
         let project = self
             .repository
             .get_project(tenant_id, organization_id, project_id)?
@@ -966,7 +975,7 @@ where
         task_id: &str,
         owner_scope: Option<u64>,
     ) -> KernelResult<AgentTaskRecord> {
-        validate_standard_id(task_id, "taskId", Some("task."))?;
+        validate_standard_id(task_id, "taskId", Some(ID_PREFIX_TASK))?;
         validate_agent_id(path_agent_id)?;
         let task = self
             .repository
@@ -1079,7 +1088,7 @@ where
         require_non_blank(command.code.as_str(), "code")?;
         require_non_blank(command.display_name.as_str(), "displayName")?;
         if let Some(provider_id) = command.implementation_provider_id.as_deref() {
-            validate_standard_id(provider_id, "implementationProviderId", Some("provider."))?;
+            validate_standard_id(provider_id, "implementationProviderId", Some(ID_PREFIX_PROVIDER))?;
         }
 
         let mut record = AgentBusinessRecord {
@@ -1137,7 +1146,7 @@ where
                 "code-engine runtime identity is not canonical",
             ));
         }
-        validate_standard_id(provider_id, "providerId", Some("provider."))?;
+        validate_standard_id(provider_id, "providerId", Some(ID_PREFIX_PROVIDER))?;
         validate_requested_at(requested_at)?;
 
         let agent = self.repository.get(tenant_id, agent_id)?;
@@ -1215,7 +1224,7 @@ where
                     binding_id: binding_id.to_string(),
                     provider_id: provider_id.to_string(),
                     implementation_kind: AgentImplementationKind::TypedLocalProvider,
-                    configuration_profile_id: format!("profile.provider.{engine_key}"),
+                    configuration_profile_id: format!("{ID_PREFIX_PROFILE}provider.{engine_key}"),
                     capabilities: vec!["model.chat".to_string(), "session.resume".to_string()],
                     active: true,
                     version: 1,
@@ -1267,16 +1276,16 @@ where
             .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
-        validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
+        validate_standard_id(command.binding_id.as_str(), "bindingId", Some(ID_PREFIX_BINDING))?;
         validate_standard_id(
             command.provider_id.as_str(),
             "providerId",
-            Some("provider."),
+            Some(ID_PREFIX_PROVIDER),
         )?;
         validate_standard_id(
             command.configuration_profile_id.as_str(),
             "configurationProfileId",
-            Some("profile."),
+            Some(ID_PREFIX_PROFILE),
         )?;
         validate_capabilities(command.capabilities.as_slice(), "capabilities")?;
 
@@ -1342,7 +1351,7 @@ where
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::not_found("agent not found"))?;
-        validate_standard_id(command.binding_id.as_str(), "bindingId", Some("binding."))?;
+        validate_standard_id(command.binding_id.as_str(), "bindingId", Some(ID_PREFIX_BINDING))?;
 
         let record = self.repository.activate_provider_binding_atomic(
             command.tenant_id,
@@ -1551,7 +1560,7 @@ where
         validate_standard_id(
             command.execution_id.as_str(),
             "executionId",
-            Some("execution."),
+            Some(ID_PREFIX_EXECUTION),
         )?;
         validate_non_empty(command.content.as_str(), "content")?;
         validate_json_payload(command.input_payload_json.as_str(), "inputPayload")?;
@@ -1631,7 +1640,7 @@ where
         validate_standard_id(
             command.execution_id.as_str(),
             "executionId",
-            Some("execution."),
+            Some(ID_PREFIX_EXECUTION),
         )?;
         validate_non_empty(command.prompt.as_str(), "prompt")?;
         validate_json_payload(command.input_payload_json.as_str(), "inputPayload")?;
@@ -1691,7 +1700,7 @@ where
             "composition_slot.create",
         )?;
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(command.slot_id.as_str(), "slotId", Some("slot."))?;
+        validate_standard_id(command.slot_id.as_str(), "slotId", Some(ID_PREFIX_SLOT))?;
         validate_composition_slot_mapping(command.slot_kind, command.target_module)?;
         require_non_blank(command.target_ref.as_str(), "targetRef")?;
         self.repository
@@ -1780,7 +1789,7 @@ where
             "composition_slot.retrieve",
         )?;
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(command.slot_id.as_str(), "slotId", Some("slot."))?;
+        validate_standard_id(command.slot_id.as_str(), "slotId", Some(ID_PREFIX_SLOT))?;
         self.repository
             .get_composition_slot(
                 command.tenant_id,
@@ -1804,7 +1813,7 @@ where
             "composition_slot.update",
         )?;
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(command.slot_id.as_str(), "slotId", Some("slot."))?;
+        validate_standard_id(command.slot_id.as_str(), "slotId", Some(ID_PREFIX_SLOT))?;
         let mut record = self
             .repository
             .get_composition_slot(
@@ -1878,7 +1887,7 @@ where
             "composition_slot.delete",
         )?;
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(command.slot_id.as_str(), "slotId", Some("slot."))?;
+        validate_standard_id(command.slot_id.as_str(), "slotId", Some(ID_PREFIX_SLOT))?;
         let mut record = self
             .repository
             .get_composition_slot(
@@ -1956,7 +1965,7 @@ where
         }
         if let Some(provider_id) = command.implementation_provider_id {
             if let Some(provider_id) = provider_id.as_deref() {
-                validate_standard_id(provider_id, "implementationProviderId", Some("provider."))?;
+                validate_standard_id(provider_id, "implementationProviderId", Some(ID_PREFIX_PROVIDER))?;
             }
             record.implementation_provider_id = provider_id;
         }
@@ -2233,7 +2242,7 @@ where
         let id = self.repository.next_id()?;
         let record = AgentWorkspaceRecord {
             id,
-            workspace_id: format!("workspace.{id}"),
+            workspace_id: format!("{ID_PREFIX_WORKSPACE}{id}"),
             tenant_id: command.tenant_id,
             organization_id: command.organization_id,
             owner_user_id: command.owner_user_id,
@@ -2272,7 +2281,7 @@ where
             format!("agent.business.workspace.{}", command.workspace_id),
             "workspace.retrieve",
         )?;
-        validate_standard_id(&command.workspace_id, "workspaceId", Some("workspace."))?;
+        validate_standard_id(&command.workspace_id, "workspaceId", Some(ID_PREFIX_WORKSPACE))?;
         let record = self
             .repository
             .get_workspace(
@@ -2425,7 +2434,7 @@ where
         workspace_id: &str,
         owner_user_id: u64,
     ) -> KernelResult<AgentWorkspaceRecord> {
-        validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
+        validate_standard_id(workspace_id, "workspaceId", Some(ID_PREFIX_WORKSPACE))?;
         let record = self
             .repository
             .get_workspace(tenant_id, organization_id, workspace_id)?
@@ -2471,11 +2480,11 @@ where
         command: CreateProjectCommand,
     ) -> KernelResult<AgentProjectRecord> {
         let project_id = if is_trimmed_blank(command.project_id.as_str()) {
-            format!("project.{}", self.repository.next_id()?)
+            format!("{ID_PREFIX_PROJECT}{}", self.repository.next_id()?)
         } else {
             command.project_id.clone()
         };
-        validate_standard_id(project_id.as_str(), "projectId", Some("project."))?;
+        validate_standard_id(project_id.as_str(), "projectId", Some(ID_PREFIX_PROJECT))?;
         require_non_blank(command.name.as_str(), "name")?;
         if command.name.len() > 255 {
             return Err(KernelError::validation("name exceeds 255 bytes"));
@@ -2600,11 +2609,11 @@ where
             return Ok(existing);
         }
         let project_id = if is_trimmed_blank(command.project_id.as_str()) {
-            format!("project.{}", self.repository.next_id()?)
+            format!("{ID_PREFIX_PROJECT}{}", self.repository.next_id()?)
         } else {
             command.project_id.clone()
         };
-        validate_standard_id(project_id.as_str(), "projectId", Some("project."))?;
+        validate_standard_id(project_id.as_str(), "projectId", Some(ID_PREFIX_PROJECT))?;
         require_non_blank(command.name.as_str(), "name")?;
         if command.name.len() > 255 {
             return Err(KernelError::validation("name exceeds 255 bytes"));
@@ -2710,7 +2719,7 @@ where
         &self,
         command: UpdateProjectCommand,
     ) -> KernelResult<AgentProjectRecord> {
-        validate_standard_id(&command.project_id, "projectId", Some("project."))?;
+        validate_standard_id(&command.project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
         self.authorize(
             "agent.business.project.update",
             command.requested_by.clone(),
@@ -2808,7 +2817,7 @@ where
         command: ProjectMutationCommand,
         target: AgentProjectStatus,
     ) -> KernelResult<AgentProjectRecord> {
-        validate_standard_id(&command.project_id, "projectId", Some("project."))?;
+        validate_standard_id(&command.project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
         let (request_id, action, audit_action) = match target {
             AgentProjectStatus::Archived => (
                 "agent.business.project.archive",
@@ -2868,7 +2877,7 @@ where
             format!("agent.business.project.{}", command.project_id),
             "project.retrieve",
         )?;
-        validate_standard_id(&command.project_id, "projectId", Some("project."))?;
+        validate_standard_id(&command.project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
         self.repository
             .get_project(
                 command.tenant_id,
@@ -2908,7 +2917,7 @@ where
         &self,
         command: CreateProjectCompositionSlotCommand,
     ) -> KernelResult<AgentProjectCompositionSlotRecord> {
-        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        validate_standard_id(&command.slot_id, "slotId", Some(ID_PREFIX_SLOT))?;
         self.authorize(
             "agent.business.project.composition_slot.create",
             command.requested_by.clone(),
@@ -2983,7 +2992,7 @@ where
         &self,
         command: GetProjectCompositionSlotCommand,
     ) -> KernelResult<AgentProjectCompositionSlotRecord> {
-        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        validate_standard_id(&command.slot_id, "slotId", Some(ID_PREFIX_SLOT))?;
         self.authorize(
             "agent.business.project.composition_slot.retrieve",
             command.requested_by,
@@ -3045,7 +3054,7 @@ where
         &self,
         command: UpdateProjectCompositionSlotCommand,
     ) -> KernelResult<AgentProjectCompositionSlotRecord> {
-        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        validate_standard_id(&command.slot_id, "slotId", Some(ID_PREFIX_SLOT))?;
         self.authorize(
             "agent.business.project.composition_slot.update",
             command.requested_by.clone(),
@@ -3120,7 +3129,7 @@ where
         &self,
         command: DeleteProjectCompositionSlotCommand,
     ) -> KernelResult<AgentProjectCompositionSlotRecord> {
-        validate_standard_id(&command.slot_id, "slotId", Some("slot."))?;
+        validate_standard_id(&command.slot_id, "slotId", Some(ID_PREFIX_SLOT))?;
         self.authorize(
             "agent.business.project.composition_slot.delete",
             command.requested_by.clone(),
@@ -3169,7 +3178,7 @@ where
     fn ensure_session_agent_identity(&self, command: &CreateSessionCommand) -> KernelResult<()> {
         let canonical_engine_key = command
             .agent_id
-            .strip_prefix("agent.intelligence.")
+            .strip_prefix("agent.")
             .filter(|engine_key| {
                 sdkwork_agents_runtime_facade::is_canonical_code_engine(engine_key)
             })
@@ -3252,7 +3261,7 @@ where
     ) -> KernelResult<AgentSessionRecord> {
         let engine_key = command
             .agent_id
-            .strip_prefix("agent.intelligence.")
+            .strip_prefix("agent.")
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
@@ -3261,9 +3270,7 @@ where
             || command.project_id.is_none()
             || command.source_module.as_deref() != Some("birdcoder")
             || command.source_context_kind.as_deref() != Some("provider_session")
-            || !command
-                .session_id
-                .starts_with(&format!("session.provider.{engine_key}."))
+            || !is_provider_session_id_for(&command.session_id, engine_key)
         {
             return Err(KernelError::validation(
                 "provider Session history session reconciliation is not canonical",
@@ -3279,11 +3286,11 @@ where
     ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.agent_id.as_str())?;
         let session_id = if is_trimmed_blank(command.session_id.as_str()) {
-            format!("session.{}", self.repository.next_id()?)
+            format!("{ID_PREFIX_SESSION}{}", self.repository.next_id()?)
         } else {
             command.session_id.clone()
         };
-        validate_standard_id(session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         if authorize {
             self.authorize(
                 "agent.business.session.create",
@@ -3394,7 +3401,7 @@ where
             }
         }
         if let Some(project_id) = command.project_id.as_deref() {
-            validate_standard_id(project_id, "projectId", Some("project."))?;
+            validate_standard_id(project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
             let project = self
                 .repository
                 .get_project(command.tenant_id, command.organization_id, project_id)?
@@ -3484,15 +3491,13 @@ where
     ) -> KernelResult<AgentSessionRecord> {
         let engine_key = command
             .path_agent_id
-            .strip_prefix("agent.intelligence.")
+            .strip_prefix("agent.")
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
-            || !command
-                .session_id
-                .starts_with(&format!("session.provider.{engine_key}."))
+            || !is_provider_session_id_for(&command.session_id, engine_key)
             || command.title.is_none()
             || command.project_id.is_some()
         {
@@ -3510,7 +3515,7 @@ where
         require_provider_session_history: bool,
     ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         if authorize {
             self.authorize(
                 "agent.business.session.update",
@@ -3570,7 +3575,7 @@ where
         if let Some(project_id) = command.project_id {
             audit_action = AgentAuditAction::SessionMoved;
             if let Some(project_id) = project_id.as_deref() {
-                validate_standard_id(project_id, "projectId", Some("project."))?;
+                validate_standard_id(project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
                 let project = self
                     .repository
                     .get_project(command.tenant_id, command.organization_id, project_id)?
@@ -3598,7 +3603,7 @@ where
         command: DeleteSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         self.authorize(
             "agent.business.session.delete",
             command.requested_by.clone(),
@@ -3645,7 +3650,7 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.close",
         )?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
 
         let mut record = self
             .repository
@@ -3687,7 +3692,7 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.archive",
         )?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
 
         let mut record = self
             .repository
@@ -3731,7 +3736,7 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.retrieve",
         )?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         self.repository
             .get_session(
                 command.tenant_id,
@@ -3754,8 +3759,8 @@ where
         &self,
         command: GetProjectSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
-        validate_standard_id(command.project_id.as_str(), "projectId", Some("project."))?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.project_id.as_str(), "projectId", Some(ID_PREFIX_PROJECT))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         self.authorize(
             "agent.business.session.retrieve",
             command.requested_by,
@@ -3808,13 +3813,13 @@ where
             ));
         }
         if let Some(agent_id) = command.query.agent_id.as_deref() {
-            validate_standard_id(agent_id, "agentId", Some("agent."))?;
+            validate_standard_id(agent_id, "agentId", Some(ID_PREFIX_AGENT))?;
         }
         if let Some(project_id) = command.query.project_id.as_deref() {
-            validate_standard_id(project_id, "projectId", Some("project."))?;
+            validate_standard_id(project_id, "projectId", Some(ID_PREFIX_PROJECT))?;
         }
         if let Some(workspace_id) = command.query.workspace_id.as_deref() {
-            validate_standard_id(workspace_id, "workspaceId", Some("workspace."))?;
+            validate_standard_id(workspace_id, "workspaceId", Some(ID_PREFIX_WORKSPACE))?;
         }
         if command
             .query
@@ -3850,7 +3855,7 @@ where
             ));
         }
         for session_id in &command.query.resource_ids {
-            validate_standard_id(session_id, "sessionIds", Some("session."))?;
+            validate_standard_id(session_id, "sessionIds", Some(ID_PREFIX_SESSION))?;
         }
         self.authorize(
             "agent.business.session.user_state.list",
@@ -3878,7 +3883,7 @@ where
         command: GetSessionUserStateCommand,
     ) -> KernelResult<SessionUserStateResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         self.authorize(
             "agent.business.session.user_state.retrieve",
             command.requested_by,
@@ -3911,7 +3916,7 @@ where
         command: UpdateSessionUserStateCommand,
     ) -> KernelResult<SessionUserStateResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         if command.pinned.is_none()
             && command.hidden.is_none()
             && !command.mark_opened
@@ -4034,7 +4039,7 @@ where
         validate_standard_id(
             command.query.session_id.as_str(),
             "sessionId",
-            Some("session."),
+            Some(ID_PREFIX_SESSION),
         )?;
         self.authorize(
             "agent.business.message.feedback.list",
@@ -4069,8 +4074,8 @@ where
         command: UpdateItemFeedbackCommand,
     ) -> KernelResult<ItemFeedbackResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
-        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(command.item_id.as_str(), "itemId", Some(ID_PREFIX_ITEM))?;
         self.authorize(
             "agent.business.item_feedback.update",
             command.requested_by.clone(),
@@ -4205,11 +4210,11 @@ where
     pub fn create_task(&self, command: CreateTaskCommand) -> KernelResult<AgentTaskRecord> {
         validate_agent_id(command.agent_id.as_str())?;
         let task_id = if is_trimmed_blank(command.task_id.as_str()) {
-            format!("task.{}", self.repository.next_id()?)
+            format!("{ID_PREFIX_TASK}{}", self.repository.next_id()?)
         } else {
             command.task_id.clone()
         };
-        validate_standard_id(task_id.as_str(), "taskId", Some("task."))?;
+        validate_standard_id(task_id.as_str(), "taskId", Some(ID_PREFIX_TASK))?;
         self.authorize(
             "agent.business.task.create",
             command.requested_by.clone(),
@@ -4239,7 +4244,7 @@ where
             return Err(KernelError::not_found("agent not found"));
         }
 
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         let session = self
             .repository
             .get_session(
@@ -4345,7 +4350,7 @@ where
             format!("agent.business.task.{}", command.task_id),
             "task.cancel",
         )?;
-        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some(ID_PREFIX_TASK))?;
         validate_agent_id(command.path_agent_id.as_str())?;
 
         let mut record = self
@@ -4388,7 +4393,7 @@ where
             format!("agent.business.task.{}", command.task_id),
             "task.replace",
         )?;
-        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some(ID_PREFIX_TASK))?;
         validate_agent_id(command.path_agent_id.as_str())?;
         parse_rfc3339_datetime(&command.requested_at, "requestedAt")?;
         require_non_blank(&command.prompt, "prompt")?;
@@ -4571,7 +4576,7 @@ where
             format!("agent.business.task.{}", command.task_id),
             "task.execute",
         )?;
-        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some(ID_PREFIX_TASK))?;
         validate_agent_id(command.path_agent_id.as_str())?;
 
         let record = self
@@ -4759,7 +4764,7 @@ where
             format!("agent.business.task.{}", command.task_id),
             "task.retrieve",
         )?;
-        validate_standard_id(command.task_id.as_str(), "taskId", Some("task."))?;
+        validate_standard_id(command.task_id.as_str(), "taskId", Some(ID_PREFIX_TASK))?;
         self.repository
             .get_task(
                 command.tenant_id,
@@ -5105,7 +5110,7 @@ where
     ) -> KernelResult<SessionRuntimeBindingResult> {
         let engine_key = command
             .path_agent_id
-            .strip_prefix("agent.intelligence.")
+            .strip_prefix("agent.")
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
@@ -5119,9 +5124,7 @@ where
                 .provider_session_id
                 .as_deref()
                 .is_none_or(str::is_empty)
-            || !command
-                .session_id
-                .starts_with(&format!("session.provider.{engine_key}."))
+            || !is_provider_session_id_for(&command.session_id, engine_key)
         {
             return Err(KernelError::validation(
                 "provider Session history runtime binding reconciliation is not canonical",
@@ -5134,10 +5137,12 @@ where
     /// Session, retiring stale provider-import bindings that violate the unique
     /// provider Session constraint.
     ///
-    /// Provider-import Sessions from older schemes (`session.native.*`) or
-    /// attributed to other projects are archived and their bindings released.
-    /// User-created Sessions that already own the identity are left untouched
-    /// and reported so the caller skips the redundant import.
+    /// Provider-import Sessions that predate the canonical scheme
+    /// (`session.provider.*` / `session.native.*`, detected by
+    /// `is_legacy_provider_session_id`) or that are attributed to another
+    /// project are archived and their bindings released. User-created
+    /// Sessions that already own the identity are left untouched and
+    /// reported so the caller skips the redundant import.
     pub(crate) fn retire_legacy_provider_session_bindings(
         &self,
         tenant_id: u64,
@@ -5176,11 +5181,13 @@ where
             return Ok(ProviderSessionBindingClaim::Free);
         };
         // A provider Session may be bound to only one SDKWork Session. Retire
-        // only provider-import Sessions (older import schemes or imports
-        // attributed to another project); user-created Sessions that already
-        // own the provider identity must never be archived.
-        let is_provider_import = binding.session_id.starts_with("session.native.")
-            || binding.session_id.starts_with("session.provider.");
+        // only provider-import Sessions (canonical `session.{engine}.*` or
+        // legacy-scheme imports, including imports attributed to another
+        // project); user-created Sessions that already own the provider
+        // identity must never be archived. Legacy-scheme Sessions are the
+        // only place the old `session.provider.*` / `session.native.*`
+        // prefixes are recognized (via `is_legacy_provider_session_id`).
+        let is_provider_import = is_provider_session_id(&binding.session_id);
         if !is_provider_import {
             return Ok(ProviderSessionBindingClaim::AlreadyBoundByUserSession);
         }
@@ -5288,7 +5295,7 @@ where
         if command.model_id.len() > 128 {
             return Err(KernelError::validation("modelId exceeds 128 bytes"));
         }
-        validate_standard_id(&command.provider_id, "providerId", Some("provider."))?;
+        validate_standard_id(&command.provider_id, "providerId", Some(ID_PREFIX_PROVIDER))?;
         let provider_binding = self
             .repository
             .get_provider_binding(
@@ -5304,12 +5311,12 @@ where
         }
         let runtime_binding_id = match command.runtime_binding_id {
             Some(value) => value,
-            None => format!("runtime_binding.{}", self.repository.next_id()?),
+            None => format!("{ID_PREFIX_RUNTIME_BINDING}{}", self.repository.next_id()?),
         };
         validate_standard_id(
             &runtime_binding_id,
             "runtimeBindingId",
-            Some("runtime_binding."),
+            Some(ID_PREFIX_RUNTIME_BINDING),
         )?;
         if self
             .repository
@@ -5400,18 +5407,14 @@ where
         validate_requested_at(&command.requested_at)?;
         let engine_key = command
             .path_agent_id
-            .strip_prefix("agent.intelligence.")
+            .strip_prefix("agent.")
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
-            || !command
-                .session_id
-                .starts_with(&format!("session.provider.{engine_key}."))
-            || !command
-                .runtime_binding_id
-                .starts_with(&format!("runtime_binding.provider.{engine_key}."))
+            || !is_provider_session_id_for(&command.session_id, engine_key)
+            || !is_provider_runtime_binding_id_for(&command.runtime_binding_id, engine_key)
         {
             return Err(KernelError::validation(
                 "provider Session history runtime binding directory reconciliation is not canonical",
@@ -5504,7 +5507,7 @@ where
         validate_standard_id(
             &command.runtime_binding_id,
             "runtimeBindingId",
-            Some("runtime_binding."),
+            Some(ID_PREFIX_RUNTIME_BINDING),
         )?;
         self.authorize(
             "agent.business.session_runtime_binding.retrieve",
@@ -5581,7 +5584,7 @@ where
         let provider_id = command
             .provider_id
             .unwrap_or_else(|| record.provider_id.clone());
-        validate_standard_id(&provider_id, "providerId", Some("provider."))?;
+        validate_standard_id(&provider_id, "providerId", Some(ID_PREFIX_PROVIDER))?;
         let provider_binding = self
             .repository
             .get_provider_binding(
@@ -5816,7 +5819,7 @@ where
             )?;
         }
         if let Some(turn_id) = command.turn_id.as_deref() {
-            validate_standard_id(turn_id, "turnId", Some("turn."))?;
+            validate_standard_id(turn_id, "turnId", Some(ID_PREFIX_TURN))?;
             let turn = self
                 .repository
                 .get_turn(command.tenant_id, command.organization_id, turn_id)?
@@ -5827,9 +5830,9 @@ where
         }
         let checkpoint_id = match command.checkpoint_id {
             Some(value) => value,
-            None => format!("checkpoint.{}", self.repository.next_id()?),
+            None => format!("{ID_PREFIX_CHECKPOINT}{}", self.repository.next_id()?),
         };
-        validate_standard_id(&checkpoint_id, "checkpointId", Some("checkpoint."))?;
+        validate_standard_id(&checkpoint_id, "checkpointId", Some(ID_PREFIX_CHECKPOINT))?;
         if self
             .repository
             .get_session_checkpoint(
@@ -5915,7 +5918,7 @@ where
         &self,
         command: GetSessionCheckpointCommand,
     ) -> KernelResult<SessionCheckpointResult> {
-        validate_standard_id(&command.checkpoint_id, "checkpointId", Some("checkpoint."))?;
+        validate_standard_id(&command.checkpoint_id, "checkpointId", Some(ID_PREFIX_CHECKPOINT))?;
         self.authorize(
             "agent.business.checkpoint.retrieve",
             command.requested_by,
@@ -5973,7 +5976,7 @@ where
                 "agent.business.session.{}.checkpoint.{}",
                 command.session_id, command.checkpoint_id
             ),
-            format!("checkpoint.{action}"),
+            format!("{ID_PREFIX_CHECKPOINT}{action}"),
         )?;
         let mut record = self.get_session_checkpoint(GetSessionCheckpointCommand {
             tenant_id: command.tenant_id,
@@ -6031,7 +6034,7 @@ where
         &self,
         command: CreateSessionItemCommand,
     ) -> KernelResult<AgentSessionItemRecord> {
-        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
+        validate_standard_id(command.item_id.as_str(), "itemId", Some(ID_PREFIX_ITEM))?;
         self.authorize(
             "agent.business.session_item.create",
             command.requested_by.clone(),
@@ -6129,18 +6132,14 @@ where
             .ok_or_else(|| {
                 KernelError::validation("provider Session history engine is not canonical")
             })?;
-        if !command
-            .session_id
-            .starts_with(&format!("session.provider.{engine_key}."))
-            || !command
-                .item_id
-                .starts_with(&format!("item.provider.{engine_key}."))
+        if !is_provider_session_id_for(&command.session_id, engine_key)
+            || !is_provider_item_id_for(&command.item_id, engine_key)
         {
             return Err(KernelError::validation(
                 "provider Session history session item reconciliation is not canonical",
             ));
         }
-        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
+        validate_standard_id(command.item_id.as_str(), "itemId", Some(ID_PREFIX_ITEM))?;
         let session = self
             .repository
             .get_session(
@@ -6346,7 +6345,7 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session_item.retrieve",
         )?;
-        validate_standard_id(command.item_id.as_str(), "itemId", Some("item."))?;
+        validate_standard_id(command.item_id.as_str(), "itemId", Some(ID_PREFIX_ITEM))?;
         let session = self
             .repository
             .get_session(
@@ -6480,8 +6479,8 @@ where
 
     pub fn get_turn(&self, command: GetTurnCommand) -> KernelResult<AgentTurnRecord> {
         validate_agent_id(&command.path_agent_id)?;
-        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
-        validate_standard_id(&command.turn_id, "turnId", Some("turn."))?;
+        validate_standard_id(&command.session_id, "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(&command.turn_id, "turnId", Some(ID_PREFIX_TURN))?;
         self.authorize(
             "agent.business.turn.retrieve",
             command.requested_by,
@@ -6546,7 +6545,7 @@ where
         command: GetTurnByIdempotencyCommand,
     ) -> KernelResult<Option<AgentTurnRecord>> {
         validate_agent_id(&command.path_agent_id)?;
-        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
+        validate_standard_id(&command.session_id, "sessionId", Some(ID_PREFIX_SESSION))?;
         require_non_blank(&command.idempotency_key, "idempotencyKey")?;
         if command.idempotency_key.len() > 256 {
             return Err(KernelError::validation("idempotencyKey exceeds 256 bytes"));
@@ -6900,7 +6899,7 @@ where
         stream_sink: Option<Arc<dyn TurnExecutionStreamSink>>,
     ) -> KernelResult<TurnExecutionResult> {
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         self.authorize(
             "agent.business.turn.create",
             command.requested_by.clone(),
@@ -7040,12 +7039,12 @@ where
 
         let turn_id = match command.turn_id.as_deref() {
             Some(turn_id) => {
-                validate_standard_id(turn_id, "turnId", Some("turn."))?;
+                validate_standard_id(turn_id, "turnId", Some(ID_PREFIX_TURN))?;
                 turn_id.to_string()
             }
-            None => format!("turn.{}", self.repository.next_id()?),
+            None => format!("{ID_PREFIX_TURN}{}", self.repository.next_id()?),
         };
-        let user_input_item_id = format!("item.{}", self.repository.next_id()?);
+        let user_input_item_id = format!("{ID_PREFIX_ITEM}{}", self.repository.next_id()?);
         let mut turn = AgentTurnRecord {
             id: self.repository.next_id()?,
             turn_id: turn_id.clone(),
@@ -7357,7 +7356,7 @@ where
             completion.provider_session_id.as_deref(),
         )? {
             Some(item_id) => item_id,
-            None => format!("item.{}", self.repository.next_id()?),
+            None => format!("{ID_PREFIX_ITEM}{}", self.repository.next_id()?),
         };
         let assistant_output_item = AgentSessionItemRecord {
             id: self.repository.next_id()?,
@@ -7470,6 +7469,12 @@ where
         })
     }
 
+    /// Authorizes a policy resource. Callers pass resources shaped like
+    /// `agent.business.{agent_id}`, `agent.business.session.{session_id}`, or
+    /// `agent.business.tenant.{tenant_id}` — these are authorization policy
+    /// resource names, *not* durable agent ids. The `agent.business.` prefix
+    /// intentionally mirrors the `agent.` id namespace for readability, but
+    /// resources never pass through `validate_agent_id`.
     fn authorize(
         &self,
         request_id: impl Into<String>,
@@ -8046,17 +8051,17 @@ where
     ) -> KernelResult<AgentInteractionRecord> {
         validate_requested_at(&command.requested_at)?;
         parse_optional_rfc3339_datetime(command.retention_until.as_deref(), "retentionUntil")?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some("session."))?;
+        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
         validate_agent_id(command.path_agent_id.as_str())?;
         let interaction_id = if is_trimmed_blank(command.interaction_id.as_str()) {
-            format!("interaction.{}", self.repository.next_id()?)
+            format!("{ID_PREFIX_INTERACTION}{}", self.repository.next_id()?)
         } else {
             command.interaction_id.clone()
         };
         validate_standard_id(
             interaction_id.as_str(),
             "interactionId",
-            Some("interaction."),
+            Some(ID_PREFIX_INTERACTION),
         )?;
         self.authorize(
             "agent.business.interaction.create",
@@ -8139,7 +8144,7 @@ where
             })?;
 
         if let Some(turn_id) = command.turn_id.as_deref() {
-            validate_standard_id(turn_id, "turnId", Some("turn."))?;
+            validate_standard_id(turn_id, "turnId", Some(ID_PREFIX_TURN))?;
             let turn = self
                 .repository
                 .get_turn(command.tenant_id, command.organization_id, turn_id)?
@@ -8211,8 +8216,8 @@ where
             ));
         }
         validate_requested_at(&command.received_at)?;
-        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
-        validate_standard_id(&command.turn_id, "turnId", Some("turn."))?;
+        validate_standard_id(&command.session_id, "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(&command.turn_id, "turnId", Some(ID_PREFIX_TURN))?;
         validate_agent_id(&command.path_agent_id)?;
         if command.event.session_id.as_deref() != Some(command.session_id.as_str()) {
             return Err(KernelError::validation(
@@ -8378,7 +8383,7 @@ where
             })?
         );
         let digest = sha256_hash(digest_input.as_bytes());
-        let interaction_id = format!("interaction.{}", &digest[..32]);
+        let interaction_id = format!("{ID_PREFIX_INTERACTION}{}", &digest[..32]);
         let provider_interaction_id = correlation
             .get("providerInteractionId")
             .and_then(serde_json::Value::as_str)
@@ -8523,7 +8528,7 @@ where
         validate_standard_id(
             &command.interaction_id,
             "interactionId",
-            Some("interaction."),
+            Some(ID_PREFIX_INTERACTION),
         )?;
         require_non_blank(&command.claim_owner, "claimOwner")?;
         if command.claim_owner.len() > 128 {
@@ -8614,7 +8619,7 @@ where
         validate_standard_id(
             command.interaction_id.as_str(),
             "interactionId",
-            Some("interaction."),
+            Some(ID_PREFIX_INTERACTION),
         )?;
         self.authorize(
             "agent.business.interaction.approve",
@@ -8708,7 +8713,7 @@ where
         validate_standard_id(
             command.interaction_id.as_str(),
             "interactionId",
-            Some("interaction."),
+            Some(ID_PREFIX_INTERACTION),
         )?;
         if !command.rejected {
             require_non_blank(command.answer.as_str(), "answer")?;
@@ -8806,7 +8811,7 @@ where
         validate_standard_id(
             command.interaction_id.as_str(),
             "interactionId",
-            Some("interaction."),
+            Some(ID_PREFIX_INTERACTION),
         )?;
         self.authorize(
             "agent.business.interaction.resolve",
@@ -9299,7 +9304,7 @@ fn is_valid_status_transition(from: AgentBusinessStatus, to: AgentBusinessStatus
 }
 
 fn validate_agent_id(value: &str) -> KernelResult<()> {
-    validate_standard_id(value, "agentId", Some("agent."))
+    validate_standard_id(value, "agentId", Some(ID_PREFIX_AGENT))
 }
 
 fn validate_project_drive_access(
@@ -9710,7 +9715,7 @@ mod task_tests {
             format!("{tenant_id}:{organization_id}:{agent_id}:{owner_user_id}:{requested_at}")
                 .as_bytes(),
         );
-        let session_id = format!("session.task.{}", &digest[..20]);
+        let session_id = format!("{ID_PREFIX_SESSION}test.{}", &digest[..20]);
         service
             .create_session(CreateSessionCommand {
                 tenant_id,
@@ -9783,9 +9788,9 @@ mod task_tests {
                 0,
                 100,
                 "codex",
-                "agent.intelligence.codex",
-                "binding.agent-provider.codex",
-                "provider.model.codex",
+                "agent.codex",
+                "binding.codex",
+                "provider.codex",
                 read_subject.clone(),
                 "2026-07-26T15:00:00Z",
             )
@@ -9794,7 +9799,7 @@ mod task_tests {
         let agent = service
             .get_agent(GetAgentCommand {
                 tenant_id: 100_001,
-                agent_id: "agent.intelligence.codex".to_string(),
+                agent_id: "agent.codex".to_string(),
                 requested_by: read_subject.clone(),
             })
             .expect("canonical agent");
@@ -9802,13 +9807,13 @@ mod task_tests {
         let binding = service
             .get_provider_binding(
                 100_001,
-                "agent.intelligence.codex",
-                "binding.agent-provider.codex",
+                "agent.codex",
+                "binding.codex",
                 read_subject,
             )
             .expect("canonical provider binding");
         assert!(binding.active);
-        assert_eq!(binding.provider_id, "provider.model.codex");
+        assert_eq!(binding.provider_id, "provider.codex");
     }
 
     #[test]
@@ -9854,7 +9859,7 @@ mod task_tests {
         command.metadata_json = r#"{"autoExecute":true}"#.to_string();
         let task = service.create_task(command).expect("create task");
 
-        assert!(task.task_id.starts_with("task."));
+        assert!(task.task_id.starts_with(ID_PREFIX_TASK));
         assert_eq!(task.status, AgentTaskStatus::Active);
         assert!(task.completed_at.is_none());
 
@@ -9898,7 +9903,7 @@ mod task_tests {
                 format!("Cursor task {index}").as_str(),
                 &requested_at,
             );
-            command.task_id = format!("task.cursor-{index}");
+            command.task_id = format!("{ID_PREFIX_TASK}cursor-{index}");
             service.create_task(command).expect("create cursor task");
         }
 
@@ -10398,7 +10403,7 @@ mod task_tests {
                 tenant_id: 100_001,
                 agent_id: agent.agent_id.clone(),
                 binding_id: "binding.turn.cancel-race".to_string(),
-                provider_id: "provider.model.cancel-race".to_string(),
+                provider_id: "provider.cancel-race".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.turn.cancel-race".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -10414,7 +10419,7 @@ mod task_tests {
                 agent_id: agent.agent_id.clone(),
                 owner_user_id: 100,
                 project_id: None,
-                session_id: "session.turn.cancel-race".to_string(),
+                session_id: "session.test.cancel-race".to_string(),
                 session_kind: AgentSessionKind::Coding,
                 entry_surface: AgentSessionEntrySurface::Pc,
                 source_module: None,

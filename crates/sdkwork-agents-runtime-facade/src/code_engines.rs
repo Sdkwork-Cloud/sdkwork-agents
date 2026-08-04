@@ -215,18 +215,22 @@ pub fn plan_code_engine_configuration_upgrade(
 
 pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
     match engine_key {
-        "codex" => Some("agent.intelligence.codex"),
-        "claude-code" => Some("agent.intelligence.claude-code"),
-        "gemini" => Some("agent.intelligence.gemini"),
-        "opencode" => Some("agent.intelligence.opencode"),
-        "openclaw" => Some("agent.intelligence.openclaw"),
-        "hermes" => Some("agent.intelligence.hermes"),
+        "codex" => Some("agent.codex"),
+        "claude-code" => Some("agent.claude-code"),
+        "gemini" => Some("agent.gemini"),
+        "opencode" => Some("agent.opencode"),
+        "openclaw" => Some("agent.openclaw"),
+        "hermes" => Some("agent.hermes"),
         _ => None,
     }
 }
 
 /// Provider configuration scope materialized into profile entry keys for an
 /// engine (mirrors the provider `with_model_configuration_scope` values).
+///
+/// Scopes live in the profile-entry key namespace, which uses underscore
+/// separators by design (`claude_code`, `gemini_cli`) — they are config keys,
+/// not durable ids, and intentionally differ from the engine key spelling.
 pub fn code_engine_provider_scope(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" => Some("codex"),
@@ -1132,7 +1136,7 @@ mod tests {
             assert!(!identity.provider_id.is_empty());
         }
         assert!(
-            resolve_code_engine_runtime_identity("agent.intelligence.unknown")
+            resolve_code_engine_runtime_identity("agent.unknown")
                 .expect("unknown identity resolution")
                 .is_none()
         );

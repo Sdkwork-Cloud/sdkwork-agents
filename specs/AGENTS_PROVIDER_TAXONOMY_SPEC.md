@@ -31,12 +31,12 @@ session, turn or persistence model.
 
 | Engine key | Kernel provider crate | Binding id | Integration | Default catalog |
 | --- | --- | --- | --- | --- |
-| `codex` | `sdkwork-agent-provider-codex` | `binding.agent-provider.codex` | official SDK / typed native adapter | yes |
-| `claude-code` | `sdkwork-agent-provider-claude-code` | `binding.agent-provider.claude-code` | official SDK | yes |
-| `gemini` | `sdkwork-agent-provider-gemini-cli` | `binding.agent-provider.gemini-cli` | official CLI/SDK adapter | yes |
-| `opencode` | `sdkwork-agent-provider-opencode` | `binding.agent-provider.opencode` | official SDK and OpenAPI adapter | yes |
-| `openclaw` | `sdkwork-agent-provider-openclaw` | `binding.agent-provider.openclaw` | plugin binding | opt-in |
-| `hermes` | `sdkwork-agent-provider-hermes` | `binding.agent-provider.hermes` | plugin binding | opt-in |
+| `codex` | `sdkwork-agent-provider-codex` | `binding.codex` | official SDK / typed native adapter | yes |
+| `claude-code` | `sdkwork-agent-provider-claude-code` | `binding.claude-code` | official SDK | yes |
+| `gemini` | `sdkwork-agent-provider-gemini-cli` | `binding.gemini-cli` | official CLI/SDK adapter | yes |
+| `opencode` | `sdkwork-agent-provider-opencode` | `binding.opencode` | official SDK and OpenAPI adapter | yes |
+| `openclaw` | `sdkwork-agent-provider-openclaw` | `binding.openclaw` | plugin binding | opt-in |
+| `hermes` | `sdkwork-agent-provider-hermes` | `binding.hermes` | plugin binding | opt-in |
 | `rig` | `sdkwork-agent-provider-rig` | provider manifest binding | Rust crate plugin | manifest-selected |
 
 The app catalog endpoint is `GET /app/v3/api/ai/code_engines`. Catalog entries

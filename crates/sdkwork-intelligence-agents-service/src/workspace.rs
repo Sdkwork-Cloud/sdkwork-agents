@@ -1,5 +1,7 @@
 //! Workspace aggregate for grouping user-owned agent projects.
 
+use crate::validation::ID_PREFIX_WORKSPACE;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentWorkspaceStatus {
     Active,
@@ -82,5 +84,5 @@ impl AgentWorkspaceRecord {
 }
 
 pub fn default_workspace_id(owner_user_id: u64) -> String {
-    format!("workspace.default.{owner_user_id}")
+    format!("{ID_PREFIX_WORKSPACE}default.{owner_user_id}")
 }

@@ -26,8 +26,8 @@ fn live_turns_sse_flow_with_real_opencode_provider() {
         agent_id: "agent.live.opencode",
         code: "live-opencode",
         display_name: "Live OpenCode",
-        binding_id: "binding.agent-provider.opencode",
-        provider_id: "provider.model.opencode",
+        binding_id: "binding.opencode",
+        provider_id: "provider.opencode",
         model_id: configured_opencode_model_id(),
     });
 }
@@ -44,8 +44,8 @@ fn live_turns_sse_flow_with_real_claude_code_provider() {
         agent_id: "agent.live.claude",
         code: "live-claude",
         display_name: "Live Claude Code",
-        binding_id: "binding.agent-provider.claude-code",
-        provider_id: "provider.model.claude-code",
+        binding_id: "binding.claude-code",
+        provider_id: "provider.claude-code",
         model_id: configured_claude_code_model_id(),
     });
 }

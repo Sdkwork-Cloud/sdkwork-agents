@@ -96,6 +96,7 @@ use crate::turn_runtime::{ContractTurnExecutor, TurnExecutionStreamSink, TurnExe
 use crate::validation::{
     is_trimmed_blank, parse_expected_version, parse_optional_rfc3339_datetime,
     parse_organization_id, parse_tenant_id, validate_requested_at, validate_standard_id,
+    ID_PREFIX_MODEL, ID_PREFIX_PROFILE, ID_PREFIX_REQUEST,
 };
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use axum::body::{Body, Bytes};
@@ -3304,7 +3305,7 @@ fn model_configuration_profile_id(
             hash = hash.wrapping_mul(0x100000001b3);
         }
     }
-    format!("profile.model_configuration.{hash:016x}")
+    format!("{ID_PREFIX_PROFILE}model_configuration.{hash:016x}")
 }
 
 // ---------------------------------------------------------------------------
@@ -3586,7 +3587,9 @@ async fn app_archive_model_configuration(
             .map_err(|error| ApiProblem::validation(error.to_string()))?;
         }
 
-        let request_id = format!("request.{}", sdkwork_utils_rust::uuid());
+        let request_id = format!("{ID_PREFIX_REQUEST}{}", sdkwork_utils_rust::uuid());
+        validate_standard_id(&request_id, "requestId", Some(ID_PREFIX_REQUEST))
+            .map_err(ApiProblem::from_kernel_error)?;
         let archived = state
             .model_configuration_runtime
             .configurations
@@ -3646,7 +3649,9 @@ async fn app_migrate_model_configuration(
                 "fromConfigurationVersion does not match the stored profile version",
             ));
         }
-        let request_id = format!("request.{}", sdkwork_utils_rust::uuid());
+        let request_id = format!("{ID_PREFIX_REQUEST}{}", sdkwork_utils_rust::uuid());
+        validate_standard_id(&request_id, "requestId", Some(ID_PREFIX_REQUEST))
+            .map_err(ApiProblem::from_kernel_error)?;
         let plan_request = AgentConfigurationUpgradeRequest::new(
             &request_id,
             &profile.agent_id,
@@ -4811,7 +4816,7 @@ fn validate_agent_management_profile_body(
         64,
     )?;
     if let Some(model) = profile.model.as_deref() {
-        validate_standard_id(model, "managementProfile.model", Some("model."))
+        validate_standard_id(model, "managementProfile.model", Some(ID_PREFIX_MODEL))
             .map_err(ApiProblem::from_kernel_error)?;
     }
     validate_profile_suggested_prompts(profile.suggested_prompts.as_deref().unwrap_or_default())?;
@@ -12630,8 +12635,8 @@ mod tests {
 
     async fn create_app_provider_binding(app: &axum::Router, agent_id: &str) {
         let binding_body = json!({
-            "bindingId": "binding.agent-provider.codex",
-            "providerId": "provider.model.codex",
+            "bindingId": "binding.codex",
+            "providerId": "provider.codex",
             "implementationKind": "process-adapter",
             "configurationProfileId": "profile.codex.default",
             "capabilities": ["agent.runtime.preview", "agent.runtime.prompt_optimization"],
@@ -12745,7 +12750,7 @@ mod tests {
                 &app,
                 model_configuration_body(
                     engine_id,
-                    &format!("model.{engine_id}.custom"),
+                    &format!("{ID_PREFIX_MODEL}{engine_id}.custom"),
                     Some(&api_key),
                 ),
             )
@@ -13144,9 +13149,9 @@ mod tests {
             runtime_location_id: Some("birdcoder-workspace-001".to_string()),
             host_mode: "desktop".to_string(),
             transport_kind: "process".to_string(),
-            provider_binding_id: "binding.agent-provider.codex".to_string(),
+            provider_binding_id: "binding.codex".to_string(),
             model_id: "model.gpt-5".to_string(),
-            provider_id: "provider.model.codex".to_string(),
+            provider_id: "provider.codex".to_string(),
             provider_session_id: Some(format!("provider-{runtime_binding_id}")),
             provider_session_tree_id: Some("provider-tree-001".to_string()),
             provider_parent_session_id: Some("provider-parent-001".to_string()),
@@ -13248,8 +13253,8 @@ mod tests {
 
         let facade = state.session_facade();
         let parent_request = facade_session_request(
-            "session.facade.parent",
-            Some("runtime_binding.facade.parent"),
+            "session.test.facade.parent",
+            Some("runtime_binding.test.facade.parent"),
         );
         facade
             .resolve_or_create_session(parent_request)
@@ -13262,7 +13267,7 @@ mod tests {
                     organization_id: 0,
                     owner_user_id: 100,
                     agent_id: "agent.facade".to_string(),
-                    session_id: "session.facade.parent".to_string(),
+                    session_id: "session.test.facade.parent".to_string(),
                     content: "Create a fork point".to_string(),
                     content_type: "text/plain".to_string(),
                     idempotency_key: "turn.facade.parent".to_string(),
@@ -13277,12 +13282,12 @@ mod tests {
         .expect("parent turn should complete");
 
         let mut child_request =
-            facade_session_request("session.facade.child", Some("runtime_binding.facade.child"));
+            facade_session_request("session.test.facade.child", Some("runtime_binding.test.facade.child"));
         child_request.project_id = Some("project.facade".to_string());
         child_request.source_module = Some("birdcoder".to_string());
         child_request.source_context_kind = Some("coding_project".to_string());
         child_request.source_context_id = Some("workspace-001".to_string());
-        child_request.parent_session_id = Some("session.facade.parent".to_string());
+        child_request.parent_session_id = Some("session.test.facade.parent".to_string());
         child_request.forked_from_turn_id = Some(parent_turn.turn_id.clone());
 
         let created = facade
@@ -13296,7 +13301,7 @@ mod tests {
                 tenant_id: 100_001,
                 organization_id: 0,
                 path_agent_id: "agent.facade".to_string(),
-                session_id: "session.facade.child".to_string(),
+                session_id: "session.test.facade.child".to_string(),
                 owner_scope: Some(100),
                 requested_by: subject.clone(),
             })
@@ -13312,7 +13317,7 @@ mod tests {
         assert_eq!(stored.source_context_id.as_deref(), Some("workspace-001"));
         assert_eq!(
             stored.parent_session_id.as_deref(),
-            Some("session.facade.parent")
+            Some("session.test.facade.parent")
         );
         assert_eq!(
             stored.forked_from_turn_id.as_deref(),
@@ -13325,8 +13330,8 @@ mod tests {
                 tenant_id: 100_001,
                 organization_id: 0,
                 path_agent_id: "agent.facade".to_string(),
-                session_id: "session.facade.child".to_string(),
-                runtime_binding_id: "runtime_binding.facade.child".to_string(),
+                session_id: "session.test.facade.child".to_string(),
+                runtime_binding_id: "runtime_binding.test.facade.child".to_string(),
                 owner_scope: Some(100),
                 requested_by: subject,
             })
@@ -13369,7 +13374,7 @@ mod tests {
         create_app_agent(&app, "agent.facade", "facade-no-binding").await;
         let facade = state.session_facade();
         facade
-            .resolve_or_create_session(facade_session_request("session.facade.unbound", None))
+            .resolve_or_create_session(facade_session_request("session.test.facade.unbound", None))
             .expect("session without a runtime binding should still resolve");
 
         let error = facade
@@ -13378,7 +13383,7 @@ mod tests {
                 organization_id: 0,
                 owner_user_id: 100,
                 agent_id: "agent.facade".to_string(),
-                session_id: "session.facade.unbound".to_string(),
+                session_id: "session.test.facade.unbound".to_string(),
                 content: "This must not fall back to an agent binding".to_string(),
                 content_type: "text/plain".to_string(),
                 idempotency_key: "turn.facade.unbound".to_string(),
@@ -13408,8 +13413,8 @@ mod tests {
         // provider binding, so runtime binding creation fails after the
         // Session row has already been created.
         let request = facade_session_request(
-            "session.facade.orphan-prevention",
-            Some("runtime_binding.facade.invalid"),
+            "session.test.facade.orphan-prevention",
+            Some("runtime_binding.test.facade.invalid"),
         );
 
         let error = facade
@@ -13429,7 +13434,7 @@ mod tests {
                 tenant_id: 100_001,
                 organization_id: 0,
                 path_agent_id: "agent.facade".to_string(),
-                session_id: "session.facade.orphan-prevention".to_string(),
+                session_id: "session.test.facade.orphan-prevention".to_string(),
                 owner_scope: Some(100),
                 requested_by: sdkwork_agent_kernel::PolicySubject::new("user:100", "100001")
                     .with_role("ai.agents.manage"),
@@ -13456,7 +13461,7 @@ mod tests {
 
         let error = state
             .session_facade()
-            .resolve_or_create_session(facade_session_request("session.facade.read-error", None))
+            .resolve_or_create_session(facade_session_request("session.test.facade.read-error", None))
             .expect_err("non-not-found read errors must fail closed");
         assert!(matches!(
             error,

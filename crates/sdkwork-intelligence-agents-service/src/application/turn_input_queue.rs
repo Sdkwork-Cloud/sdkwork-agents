@@ -14,6 +14,7 @@ use crate::ports::{
 };
 use crate::validation::{
     default_plain_text_if_blank, require_non_blank, validate_requested_at, validate_standard_id,
+    ID_PREFIX_AGENT, ID_PREFIX_QUEUE_ENTRY, ID_PREFIX_SESSION,
 };
 use sdkwork_agent_kernel::{KernelError, KernelResult, PolicyProvider, PolicySubject};
 use sdkwork_utils_rust::{sha256_hash, trim};
@@ -310,8 +311,8 @@ where
         command: CreateTurnInputQueueEntryCommand,
     ) -> KernelResult<AgentTurnInputQueueEntry> {
         validate_requested_at(&command.requested_at)?;
-        validate_standard_id(&command.path_agent_id, "agentId", Some("agent."))?;
-        validate_standard_id(&command.session_id, "sessionId", Some("session."))?;
+        validate_standard_id(&command.path_agent_id, "agentId", Some(ID_PREFIX_AGENT))?;
+        validate_standard_id(&command.session_id, "sessionId", Some(ID_PREFIX_SESSION))?;
         self.authorize(
             "agent.business.turn.create",
             command.requested_by,
@@ -345,8 +346,8 @@ where
         let id = self.repository.next_id()?;
         let queue_entry_id = command
             .queue_entry_id
-            .unwrap_or_else(|| format!("queue-entry.{id}"));
-        validate_standard_id(&queue_entry_id, "queueEntryId", Some("queue-entry."))?;
+            .unwrap_or_else(|| format!("{ID_PREFIX_QUEUE_ENTRY}{id}"));
+        validate_standard_id(&queue_entry_id, "queueEntryId", Some(ID_PREFIX_QUEUE_ENTRY))?;
         let idempotency_key = format!("{queue_entry_id}.v0");
         self.repository
             .insert_turn_input_queue_entry(AgentTurnInputQueueEntry {
@@ -439,7 +440,7 @@ where
         validate_standard_id(
             &command.queue_entry_id,
             "queueEntryId",
-            Some("queue-entry."),
+            Some(ID_PREFIX_QUEUE_ENTRY),
         )?;
         let mut entry = self
             .repository

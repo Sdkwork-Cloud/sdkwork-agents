@@ -59,6 +59,11 @@ struct ProviderItemLifecycle {
 ///
 /// Provider-native ids remain correlation fields, while durable Agents item ids
 /// are deterministic hashes over the provider Session and item identity.
+///
+/// Note: event kinds such as `item.started` / `item.completed` are provider
+/// lifecycle event types, not durable ids — they share the `item.` stem with
+/// durable `item.{engine}.{stable}` ids by coincidence and must not be parsed
+/// as ids.
 pub(crate) fn project_terminal_provider_turn_items(
     events: &[KernelEvent],
     session_id: &str,

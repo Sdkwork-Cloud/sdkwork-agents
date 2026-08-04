@@ -297,7 +297,7 @@ test("composition slot enums and canonical module pairs stay aligned", () => {
   }
 });
 
-test("pre-launch PostgreSQL contract has ordered forward development migrations", () => {
+test("pre-launch PostgreSQL contract is consolidated on the folded baseline", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
   const activeMigrations = readdirSync(migrationRoot)
     .filter((fileName) => /\.(?:up|down)\.sql$/u.test(fileName))
@@ -313,11 +313,11 @@ test("pre-launch PostgreSQL contract has ordered forward development migrations"
     "provider_forked_from_session_id",
   ];
 
-  assert.deepEqual(activeMigrations, [
-    "0001_complete_agents_7_0_0_schema.up.sql",
-    "0002_add_provider_session_directory.up.sql",
-    "0003_add_typed_agent_interaction_envelope.up.sql",
-  ]);
+  assert.deepEqual(
+    activeMigrations,
+    [],
+    "pre-launch agents schema must be installed solely from the folded baseline",
+  );
   for (const canonicalName of canonicalLineageColumns) {
     assert.match(baseline, new RegExp(`\\b${canonicalName}\\s+VARCHAR\\(256\\)`, "u"));
   }
@@ -337,20 +337,16 @@ test("pre-launch PostgreSQL contract has ordered forward development migrations"
   );
 });
 
-test("every PostgreSQL up migration declares a governed rollback strategy", () => {
+test("pre-launch PostgreSQL migrations stay empty until the baseline evolves", () => {
   const migrationRoot = path.join(repoRoot, "database/migrations/postgres");
-  const files = readdirSync(migrationRoot);
-  for (const upName of files.filter((fileName) => fileName.endsWith(".up.sql"))) {
-    const downName = upName.replace(/\.up\.sql$/u, ".down.sql");
-    const upSql = readFileSync(path.join(migrationRoot, upName), "utf8");
-    assert.match(upSql, /^-- reversible: (?:true|false)$/mu);
-    assert.match(upSql, /^-- rollback: (?:down-migration|forward-fix|restore-cutover)$/mu);
-    if (/^-- reversible: true$/mu.test(upSql)) {
-      assert.ok(files.includes(downName), `${upName} must have ${downName}`);
-    } else {
-      assert.equal(files.includes(downName), false, `${upName} must use forward recovery`);
-    }
-  }
+  const upMigrations = readdirSync(migrationRoot).filter((fileName) =>
+    fileName.endsWith(".up.sql"),
+  );
+  assert.deepEqual(
+    upMigrations,
+    [],
+    "pre-launch agents schema must not carry post-baseline migrations; fold them into the baseline",
+  );
 });
 
 test("baseline outbox dedupe is tenant and organization scoped", () => {

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use sdkwork_agent_kernel::{
@@ -28,10 +28,39 @@ use crate::http::{HttpAgentsSessionFacade, HttpService};
 use crate::ports::{PaginationParams, SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery};
 use crate::project::AgentProjectRecord;
 use crate::runtime_facade_bridge::shared_code_engine_host;
+use crate::session_id_scheme::{
+    canonical_provider_item_id, canonical_provider_item_id_prefix,
+    canonical_provider_runtime_binding_id, canonical_provider_session_id,
+    is_provider_session_id_for,
+};
 
 const PROVIDER_SESSION_TITLE_MAX_BYTES: usize = 512;
 const PROVIDER_SESSION_RECONCILIATION_MAX_ITEMS: usize = 10_000;
 const PROVIDER_SESSION_RECONCILIATION_TIMEOUT: Duration = Duration::from_secs(15);
+/**
+ * How long a completed provider Session inventory synchronization outcome
+ * stays reusable in the process cache.
+ *
+ * The refresh window covers the most expensive part of a repeat
+ * synchronization: the provider inventory discovery scan. Codex and Claude
+ * Code provider Sessions are JSONL files on disk, and every discovery walks
+ * the provider store (the SDKs expose no index API; Codex's private state
+ * database is deliberately never inspected). A synchronization inside this
+ * window is served from the cached outcome without re-discovering the
+ * provider inventory at all. The window must cover the client-side 60s
+ * deduplication TTL so the background inbox synchronization loop never
+ * re-scans the provider store in steady state; imported Session freshness
+ * therefore lags by at most one client cycle, which the activity feed
+ * already tolerates.
+ *
+ * After the window a cold synchronization always re-discovers, and the
+ * per-Session reconcile converges provider metadata. The two full inventory
+ * sweeps (orphan and missing-directory reconciliation — their outcome is a
+ * pure function of the discovered Session identity set) are skipped whenever
+ * the set is unchanged, so a cold synchronization whose set did not move
+ * costs only the scan.
+ */
+const PROVIDER_SESSION_SYNC_REFRESH_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProviderSessionSynchronizationIssueDisposition {
@@ -154,6 +183,106 @@ impl ProviderSessionSynchronizationResult {
     }
 }
 
+/// The process-local outcome of one completed provider Session inventory
+/// synchronization, keyed by owner-and-project scope. It makes repeat
+/// synchronizations incremental: a synchronization inside the refresh window
+/// returns the stored outcome without re-discovering the provider inventory,
+/// and a cold synchronization whose discovered Session identity set is
+/// unchanged skips the two full inventory sweeps (the fingerprint recorded
+/// here is compared inside `synchronize_provider_session_snapshot`).
+#[derive(Debug, Clone)]
+struct CompletedProviderSessionSync {
+    fingerprint: String,
+    result: ProviderSessionSynchronizationResult,
+    completed_at: Instant,
+}
+
+static COMPLETED_PROVIDER_SESSION_SYNCS: OnceLock<Mutex<HashMap<String, CompletedProviderSessionSync>>> =
+    OnceLock::new();
+
+fn completed_provider_session_syncs() -> &'static Mutex<HashMap<String, CompletedProviderSessionSync>> {
+    COMPLETED_PROVIDER_SESSION_SYNCS.get_or_init(Default::default)
+}
+
+fn provider_session_sync_cache_key(project: &AgentProjectRecord) -> String {
+    format!(
+        "{}/{}/{}:{}",
+        project.tenant_id, project.organization_id, project.owner_user_id, project.project_id
+    )
+}
+
+fn read_completed_provider_session_sync(
+    cache_key: &str,
+) -> Option<CompletedProviderSessionSync> {
+    completed_provider_session_syncs()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(cache_key)
+        .cloned()
+}
+
+/// Maximum number of completed provider Session synchronization outcomes kept
+/// in the process cache. The cache is a pure performance optimization for
+/// repeat refreshes, so evicting an arbitrary entry on overflow only costs
+/// one cold synchronization for that scope.
+const PROVIDER_SESSION_SYNC_MAX_CACHED_PROJECTS: usize = 1_024;
+
+fn record_completed_provider_session_sync(
+    cache_key: &str,
+    completed: CompletedProviderSessionSync,
+) {
+    let mut cache = completed_provider_session_syncs()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cache.len() >= PROVIDER_SESSION_SYNC_MAX_CACHED_PROJECTS
+        && !cache.contains_key(cache_key)
+    {
+        if let Some(evicted_key) = cache.keys().next().cloned() {
+            cache.remove(&evicted_key);
+        }
+    }
+    cache.insert(cache_key.to_string(), completed);
+}
+
+#[cfg(test)]
+pub(crate) fn reset_provider_session_sync_cache_for_testing() {
+    completed_provider_session_syncs()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+}
+
+/// Fingerprints the discovered provider Session identity set
+/// (engine, binding, provider, provider Session id). The set determines the
+/// outcome of both full inventory sweeps, so an unchanged fingerprint proves
+/// their results cannot have changed either.
+fn provider_session_inventory_fingerprint(items: &[ProviderSessionInventoryItem]) -> String {
+    let mut identities = items
+        .iter()
+        .map(|item| {
+            (
+                item.engine_key.trim().to_string(),
+                item.binding_id.trim().to_string(),
+                item.provider_id.trim().to_string(),
+                item.session.session_id.trim().to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    identities.sort();
+    let mut manifest = String::from("sdkwork.provider-session-inventory.v1\n");
+    for (engine_key, binding_id, provider_id, session_id) in identities {
+        manifest.push_str(&engine_key);
+        manifest.push('\0');
+        manifest.push_str(&binding_id);
+        manifest.push('\0');
+        manifest.push_str(&provider_id);
+        manifest.push('\0');
+        manifest.push_str(&session_id);
+        manifest.push('\n');
+    }
+    format!("sha256:{}", sdkwork_utils_rust::sha256_hash(manifest.as_bytes()))
+}
+
 pub(crate) fn synchronize_project_provider_sessions(
     service: Arc<HttpService>,
     project: &AgentProjectRecord,
@@ -201,6 +330,24 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
     unique_basename: Option<String>,
     directory_fingerprint: Option<String>,
 ) -> KernelResult<ProviderSessionSynchronizationResult> {
+    let cache_key = provider_session_sync_cache_key(project);
+    // Refresh fast path: a completed synchronization inside the refresh
+    // window is returned without re-discovering the provider inventory. The
+    // discovery scan is the dominant cost of a synchronization (the provider
+    // store is JSONL files on disk), and the client already deduplicates
+    // refreshes with a 60-second TTL, so a 60-second backend window keeps
+    // the steady-state background load off the provider store while bounding
+    // imported Session freshness to at most one client cycle.
+    if let Some(cached) = read_completed_provider_session_sync(&cache_key) {
+        if cached.completed_at.elapsed() < PROVIDER_SESSION_SYNC_REFRESH_TTL {
+            tracing::debug!(
+                target: "sdkwork.agents.provider_session_sync",
+                project_id = %project.project_id,
+                "provider Session inventory synchronization served from the refresh cache"
+            );
+            return Ok(cached.result);
+        }
+    }
     let Some(host) = shared_code_engine_host() else {
         // Without a provider code engine host the inventory can never be
         // discovered; report the skipped synchronization instead of returning
@@ -213,6 +360,7 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
         );
         return Ok(result);
     };
+    let discovery_started_at = Instant::now();
     let inventory = host
         .discover_provider_sessions(&ProviderSessionInventorySelector {
             directory_fingerprint,
@@ -220,8 +368,29 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
             unique_basename,
         })
         .map_err(runtime_facade_error)?;
+    let discovery_elapsed_ms = discovery_started_at.elapsed().as_millis() as u64;
 
-    synchronize_provider_session_snapshot(service, project, subject, inventory)
+    // The fingerprint is recorded with the completed outcome so a later cold
+    // synchronization can prove the identity set did not move and skip the
+    // two full inventory sweeps inside `synchronize_provider_session_snapshot`.
+    let fingerprint = provider_session_inventory_fingerprint(&inventory.items);
+    let result = synchronize_provider_session_snapshot(service, project, subject, inventory)?;
+    record_completed_provider_session_sync(
+        &cache_key,
+        CompletedProviderSessionSync {
+            fingerprint,
+            result: result.clone(),
+            completed_at: Instant::now(),
+        },
+    );
+    tracing::info!(
+        target: "sdkwork.agents.provider_session_sync",
+        project_id = %project.project_id,
+        discovery_elapsed_ms,
+        synchronized_session_count = result.synchronized_session_count,
+        "provider Session inventory discovered and synchronized"
+    );
+    Ok(result)
 }
 
 pub(crate) fn synchronize_provider_session_transcript(
@@ -236,11 +405,11 @@ pub(crate) fn synchronize_provider_session_transcript(
         &dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver,
     >,
 ) -> KernelResult<ProviderSessionTranscriptSyncOutcome> {
-    let Some(engine_key) = agent_id.strip_prefix("agent.intelligence.") else {
+    let Some(engine_key) = agent_id.strip_prefix("agent.") else {
         return Ok(ProviderSessionTranscriptSyncOutcome::NotProviderSession);
     };
     if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) != Some(agent_id.as_str())
-        || !session_id.starts_with(&format!("session.provider.{engine_key}."))
+        || !is_provider_session_id_for(&session_id, engine_key)
     {
         return Ok(ProviderSessionTranscriptSyncOutcome::NotProviderSession);
     }
@@ -422,9 +591,8 @@ fn synchronize_provider_session_transcript_worker(
             provider_id,
             provider_session_id,
         );
-        let child_session_id = format!("session.provider.{engine_key}.{stable_key}");
-        let child_runtime_binding_id =
-            format!("runtime_binding.provider.{engine_key}.{stable_key}");
+        let child_session_id = canonical_provider_session_id(engine_key, &stable_key);
+        let child_runtime_binding_id = canonical_provider_runtime_binding_id(engine_key, &stable_key);
         let requested_at = OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .map_err(|error| {
@@ -630,7 +798,7 @@ fn synchronize_provider_session_transcript_worker(
             provider_id,
             &child,
         );
-        let child_session_id = format!("session.provider.{engine_key}.{child_stable_key}");
+        let child_session_id = canonical_provider_session_id(engine_key, &child_stable_key);
         match synchronize_provider_session_transcript_worker(
             service,
             tenant_id,
@@ -680,7 +848,7 @@ fn local_user_inputs_for_provider_reconciliation(
     subject: &PolicySubject,
 ) -> KernelResult<VecDeque<String>> {
     let mut contents = VecDeque::new();
-    let provider_item_prefix = format!("item.provider.{engine_key}.");
+    let provider_item_prefix = canonical_provider_item_id_prefix(engine_key);
     let mut offset = 0usize;
     loop {
         let pagination = PaginationParams {
@@ -1031,6 +1199,7 @@ fn synchronize_provider_session_snapshot(
         items,
         successful_engine_keys,
         issues,
+        unattributed_provider_sessions,
     } = snapshot;
     let visible_provider_sessions = items
         .iter()
@@ -1043,12 +1212,33 @@ fn synchronize_provider_session_snapshot(
             )
         })
         .collect::<HashSet<_>>();
+    // Computed before `items` moves into the per-Session reconciliation; it
+    // must match the fingerprint recorded by the synchronization entry point.
+    let inventory_fingerprint = provider_session_inventory_fingerprint(&items);
     let mut result =
         synchronize_provider_session_inventory(service.clone(), project, subject.clone(), items)?;
     for _issue in issues {
         result.record_failed("provider_inventory_unavailable");
     }
-    if directory_resolved {
+    if unattributed_provider_sessions {
+        // Provider Sessions exist in the runtime inventory but none could be
+        // attributed to this project directory. Report it as a skipped issue
+        // instead of silently returning an empty project, so consumers can
+        // distinguish "no provider Sessions" from "inventory unattributed".
+        result.record_skipped("provider_inventory_unattributed");
+    }
+    // The two full inventory sweeps are a pure function of the discovered
+    // Session identity set; an unchanged fingerprint proves their outcome
+    // cannot have changed since the last completed synchronization, so they
+    // are skipped. Per-Session provider metadata reconciliation still runs so
+    // provider renames and directory fields converge even when the set is
+    // stable. Tests that call this function directly have no cached entry and
+    // therefore always run the full path.
+    let inventory_fingerprint_unchanged = read_completed_provider_session_sync(
+        &provider_session_sync_cache_key(project),
+    )
+    .is_some_and(|cached| cached.fingerprint == inventory_fingerprint);
+    if directory_resolved && !inventory_fingerprint_unchanged {
         reconcile_missing_provider_session_directories(
             service.clone(),
             project,
@@ -1058,13 +1248,15 @@ fn synchronize_provider_session_snapshot(
             &mut result,
         )?;
     }
-    reconcile_orphaned_provider_sessions(
-        &service,
-        project,
-        subject,
-        &successful_engine_keys,
-        &mut result,
-    )?;
+    if !inventory_fingerprint_unchanged {
+        reconcile_orphaned_provider_sessions(
+            &service,
+            project,
+            subject,
+            &successful_engine_keys,
+            &mut result,
+        )?;
+    }
     Ok(result)
 }
 
@@ -1429,11 +1621,8 @@ fn synchronize_provider_session_inventory_with_timeout(
             &provider_id,
             &provider_session_id,
         );
-        let session_id = format!("session.provider.{}.{}", item.engine_key, stable_key);
-        let runtime_binding_id = format!(
-            "runtime_binding.provider.{}.{}",
-            item.engine_key, stable_key
-        );
+        let session_id = canonical_provider_session_id(&item.engine_key, &stable_key);
+        let runtime_binding_id = canonical_provider_runtime_binding_id(&item.engine_key, &stable_key);
         // Sub-agent sessions persist the canonical parent session edge so the
         // canonical session tree mirrors the provider sub-agent topology. The
         // parent must already be synchronized; otherwise the edge is deferred
@@ -1454,7 +1643,7 @@ fn synchronize_provider_session_inventory_with_timeout(
                     &provider_id,
                     parent_provider_session_id,
                 );
-                format!("session.provider.{}.{}", item.engine_key, parent_stable_key)
+                canonical_provider_session_id(&item.engine_key, &parent_stable_key)
             });
         if let Some(parent_session_id) = parent_session_id.as_deref() {
             match service.get_session(GetSessionCommand {
@@ -1740,7 +1929,7 @@ pub(crate) fn stable_provider_session_item_id(
         )
         .as_bytes(),
     );
-    format!("item.provider.{engine_key}.{}", &digest[..32])
+    canonical_provider_item_id(engine_key, &digest[..32])
 }
 
 pub(crate) fn runtime_facade_error(error: RuntimeFacadeError) -> KernelError {
@@ -1867,8 +2056,8 @@ mod tests {
             0,
             42,
             "codex",
-            "binding.agent-provider.codex",
-            "provider.model.codex",
+            "binding.codex",
+            "provider.codex",
             "provider-1",
         );
         assert_eq!(
@@ -1878,8 +2067,8 @@ mod tests {
                 0,
                 42,
                 "codex",
-                "binding.agent-provider.codex",
-                "provider.model.codex",
+                "binding.codex",
+                "provider.codex",
                 "provider-1",
             )
         );
@@ -1890,8 +2079,8 @@ mod tests {
                 0,
                 42,
                 "opencode",
-                "binding.agent-provider.opencode",
-                "provider.model.opencode",
+                "binding.opencode",
+                "provider.opencode",
                 "provider-1",
             )
         );
@@ -1902,8 +2091,8 @@ mod tests {
                 0,
                 43,
                 "codex",
-                "binding.agent-provider.codex",
-                "provider.model.codex",
+                "binding.codex",
+                "provider.codex",
                 "provider-1",
             )
         );
@@ -2390,6 +2579,7 @@ mod tests {
                 items: Vec::new(),
                 successful_engine_keys: vec!["codex".to_string()],
                 issues: Vec::new(),
+                unattributed_provider_sessions: false,
             },
         )
         .expect("reconcile empty successful snapshot");
@@ -2442,6 +2632,7 @@ mod tests {
                         reason: "fixture provider failure".to_string(),
                     },
                 ],
+                unattributed_provider_sessions: false,
             },
         )
         .expect("record failed provider snapshot");
@@ -2496,6 +2687,7 @@ mod tests {
                         reason: "fixture provider failure".to_string(),
                     },
                 ],
+                unattributed_provider_sessions: false,
             },
         )
         .expect("reconcile mixed provider snapshot");
@@ -2541,6 +2733,7 @@ mod tests {
                 items: Vec::new(),
                 successful_engine_keys: vec!["codex".to_string()],
                 issues: Vec::new(),
+                unattributed_provider_sessions: false,
             },
         )
         .expect("ignore unresolved provider directory");
@@ -3550,7 +3743,7 @@ mod tests {
             .create_session(CreateSessionCommand {
                 tenant_id: 100_001,
                 organization_id: 0,
-                agent_id: "agent.intelligence.codex".to_string(),
+                agent_id: "agent.codex".to_string(),
                 owner_user_id: 100,
                 project_id: Some(project_id.to_string()),
                 session_id: session_id.to_string(),
@@ -3582,15 +3775,15 @@ mod tests {
             .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
                 tenant_id: 100_001,
                 organization_id: 0,
-                path_agent_id: "agent.intelligence.codex".to_string(),
+                path_agent_id: "agent.codex".to_string(),
                 session_id: session_id.to_string(),
                 runtime_binding_id: Some(runtime_binding_id.to_string()),
                 runtime_location_id: None,
                 host_mode: "server".to_string(),
                 transport_kind: transport_kind.to_string(),
-                provider_binding_id: "binding.agent-provider.codex".to_string(),
+                provider_binding_id: "binding.codex".to_string(),
                 model_id: "codex-1".to_string(),
-                provider_id: "provider.model.codex".to_string(),
+                provider_id: "provider.codex".to_string(),
                 provider_session_id: provider_session_id.map(str::to_string),
                 provider_session_tree_id: provider_session_id.map(str::to_string),
                 provider_parent_session_id: None,
@@ -3631,9 +3824,9 @@ mod tests {
                 0,
                 100,
                 "codex",
-                "binding.agent-provider.codex",
+                "binding.codex",
                 "provider-thread-legacy-1",
-                "session.provider.codex.target1",
+                "session.codex.target1",
                 &project.project_id,
                 manage_subject(),
                 "2026-07-26T00:00:00Z",
@@ -3648,7 +3841,7 @@ mod tests {
             .get_session_runtime_binding(GetSessionRuntimeBindingCommand {
                 tenant_id: 100_001,
                 organization_id: 0,
-                path_agent_id: "agent.intelligence.codex".to_string(),
+                path_agent_id: "agent.codex".to_string(),
                 session_id: legacy.session_id.clone(),
                 runtime_binding_id: "runtime_binding.native.legacy1".to_string(),
                 owner_scope: Some(100),
@@ -3665,7 +3858,7 @@ mod tests {
             .get_session(GetSessionCommand {
                 tenant_id: 100_001,
                 organization_id: 0,
-                path_agent_id: "agent.intelligence.codex".to_string(),
+                path_agent_id: "agent.codex".to_string(),
                 session_id: legacy.session_id.clone(),
                 owner_scope: Some(100),
                 requested_by: manage_subject(),
@@ -3682,6 +3875,9 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
+        // A Session imported under the legacy `session.provider.*` scheme is
+        // retired when the canonical `session.codex.*` import claims the same
+        // provider thread identity.
         let stale = create_test_session(
             &state,
             "session.provider.codex.stale-scheme-1",
@@ -3702,9 +3898,9 @@ mod tests {
                 0,
                 100,
                 "codex",
-                "binding.agent-provider.codex",
+                "binding.codex",
                 "provider-thread-stale-1",
-                "session.provider.codex.canonical-1",
+                "session.codex.canonical-1",
                 &project.project_id,
                 manage_subject(),
                 "2026-07-26T00:00:00Z",
@@ -3744,9 +3940,9 @@ mod tests {
                 0,
                 100,
                 "codex",
-                "binding.agent-provider.codex",
+                "binding.codex",
                 "provider-thread-user-1",
-                "session.provider.codex.canonical-2",
+                "session.codex.canonical-2",
                 &project.project_id,
                 manage_subject(),
                 "2026-07-26T00:00:00Z",
@@ -3761,7 +3957,7 @@ mod tests {
             .get_session(GetSessionCommand {
                 tenant_id: 100_001,
                 organization_id: 0,
-                path_agent_id: "agent.intelligence.codex".to_string(),
+                path_agent_id: "agent.codex".to_string(),
                 session_id: user_session.session_id.clone(),
                 owner_scope: Some(100),
                 requested_by: manage_subject(),
@@ -3783,14 +3979,14 @@ mod tests {
         let project = test_project(&state);
         let canonical = create_test_session(
             &state,
-            "session.provider.codex.canonical-3",
+            "session.codex.canonical-3",
             &project.project_id,
             "provider_session",
         );
         create_test_binding(
             &state,
             &canonical.session_id,
-            "runtime_binding.provider.canonical-3",
+            "runtime_binding.codex.canonical-3",
             "provider-session-history",
             Some("provider-thread-target-1"),
         );
@@ -3801,7 +3997,7 @@ mod tests {
                 0,
                 100,
                 "codex",
-                "binding.agent-provider.codex",
+                "binding.codex",
                 "provider-thread-target-1",
                 &canonical.session_id,
                 &project.project_id,
@@ -3870,7 +4066,7 @@ mod tests {
         // never synchronized.
         let mismatched = create_test_session(
             &state,
-            "session.provider.codex.mismatched-1",
+            "session.codex.mismatched-1",
             &project.project_id,
             "provider_session",
         );
@@ -3879,7 +4075,7 @@ mod tests {
             100_001,
             0,
             100,
-            "agent.intelligence.opencode".to_string(),
+            "agent.opencode".to_string(),
             mismatched.session_id.clone(),
             subject.clone(),
             None,
@@ -3890,7 +4086,7 @@ mod tests {
         // provider identity; this is the orphan signature.
         let orphan = create_test_session(
             &state,
-            "session.provider.codex.orphan-1",
+            "session.codex.orphan-1",
             &project.project_id,
             "provider_session",
         );
@@ -3910,14 +4106,14 @@ mod tests {
         // equally unresolvable.
         let unbound = create_test_session(
             &state,
-            "session.provider.codex.unbound-1",
+            "session.codex.unbound-1",
             &project.project_id,
             "provider_session",
         );
         create_test_binding(
             &state,
             &unbound.session_id,
-            "runtime_binding.provider.unbound-1",
+            "runtime_binding.codex.unbound-1",
             "provider-session-history",
             None,
         );
@@ -3936,14 +4132,14 @@ mod tests {
         // A provider Session bound to another transport is never synchronized.
         let stream_bound = create_test_session(
             &state,
-            "session.provider.codex.stream-bound-1",
+            "session.codex.stream-bound-1",
             &project.project_id,
             "provider_session",
         );
         create_test_binding(
             &state,
             &stream_bound.session_id,
-            "runtime_binding.provider.stream-bound-1",
+            "runtime_binding.codex.stream-bound-1",
             "sdk-stream",
             Some("provider-thread-stream-1"),
         );
@@ -3985,14 +4181,14 @@ mod tests {
         let project = test_project(&state);
         let bound = create_test_session(
             &state,
-            "session.provider.codex.cwd-failure-1",
+            "session.codex.cwd-failure-1",
             &project.project_id,
             "provider_session",
         );
         create_test_binding(
             &state,
             &bound.session_id,
-            "runtime_binding.provider.cwd-failure-1",
+            "runtime_binding.codex.cwd-failure-1",
             "provider-session-history",
             Some("provider-thread-cwd-failure-1"),
         );
@@ -4028,20 +4224,20 @@ mod tests {
         let project = test_project(&state);
         let orphan = create_test_session(
             &state,
-            "session.provider.codex.orphan-2",
+            "session.codex.orphan-2",
             &project.project_id,
             "provider_session",
         );
         let bound = create_test_session(
             &state,
-            "session.provider.codex.bound-2",
+            "session.codex.bound-2",
             &project.project_id,
             "provider_session",
         );
         create_test_binding(
             &state,
             &bound.session_id,
-            "runtime_binding.provider.bound-2",
+            "runtime_binding.codex.bound-2",
             "provider-session-history",
             Some("provider-thread-bound-2"),
         );
@@ -4109,5 +4305,218 @@ mod tests {
             live_active.status,
             crate::domain::AgentSessionStatus::Active
         );
+    }
+
+    #[test]
+    fn provider_session_inventory_fingerprint_is_stable_and_order_independent() {
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let codex = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        let item_a = inventory_item(codex, "provider-thread-a".to_string(), 1);
+        let item_b = inventory_item(codex, "provider-thread-b".to_string(), 2);
+        assert_eq!(
+            provider_session_inventory_fingerprint(&[item_a.clone(), item_b.clone()]),
+            provider_session_inventory_fingerprint(&[item_b.clone(), item_a.clone()]),
+            "the fingerprint must be independent of discovery order",
+        );
+        assert_ne!(
+            provider_session_inventory_fingerprint(&[item_a.clone()]),
+            provider_session_inventory_fingerprint(&[
+                item_a,
+                inventory_item(codex, "provider-thread-c".to_string(), 3),
+            ]),
+            "a changed Session identity set must change the fingerprint",
+        );
+    }
+
+    #[test]
+    fn unchanged_inventory_fingerprint_skips_the_full_inventory_sweeps() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        reset_provider_session_sync_cache_for_testing();
+        let catalog = shared_code_engine_host()
+            .expect("code engine host")
+            .catalog();
+        let codex = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "codex")
+            .expect("codex engine");
+        synchronize_provider_session_inventory(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            vec![inventory_item(codex, "codex-sweep-live".to_string(), 1)],
+        )
+        .expect("seed provider session");
+        // An orphaned provider-history Session without bindings or items that
+        // only the full orphan sweep can archive.
+        let orphan = create_test_session(
+            &state,
+            "session.codex.sweep-orphan",
+            &project.project_id,
+            "provider_session",
+        );
+        let items = vec![inventory_item(codex, "codex-sweep-live".to_string(), 1)];
+        let reconcile = |state: &AgentHttpState,
+                         project: &AgentProjectRecord,
+                         items: Vec<ProviderSessionInventoryItem>| {
+            synchronize_provider_session_snapshot(
+                state.service.clone(),
+                project,
+                manage_subject(),
+                ProviderSessionInventorySnapshot {
+                    directory_resolved: true,
+                    items,
+                    successful_engine_keys: vec!["codex".to_string()],
+                    issues: Vec::new(),
+                    unattributed_provider_sessions: false,
+                },
+            )
+        };
+        // The completed entry carries the same fingerprint as the incoming
+        // inventory, so both full sweeps must be skipped and the orphan must
+        // survive this reconciliation untouched.
+        record_completed_provider_session_sync(
+            &provider_session_sync_cache_key(&project),
+            CompletedProviderSessionSync {
+                fingerprint: provider_session_inventory_fingerprint(&items),
+                result: ProviderSessionSynchronizationResult::default(),
+                completed_at: Instant::now(),
+            },
+        );
+        let result = reconcile(&state, &project, items.clone()).expect("incremental reconcile");
+        assert_eq!(result.skipped_session_count, 0);
+        assert_eq!(result.failed_session_count, 0);
+        let orphan_still_active = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: orphan.agent_id.clone(),
+                session_id: orphan.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: read_subject(),
+            })
+            .expect("orphan session lookup");
+        assert_eq!(
+            orphan_still_active.status,
+            crate::domain::AgentSessionStatus::Active
+        );
+
+        // Without a matching completed entry the full path runs again and the
+        // orphan sweep archives the unbound provider Session (the successful
+        // archive itself is accounted as a skipped issue, mirroring the
+        // dedicated orphan sweep test).
+        reset_provider_session_sync_cache_for_testing();
+        let result = reconcile(&state, &project, items).expect("full reconcile");
+        assert_eq!(result.skipped_session_count, 1);
+        assert_eq!(result.failed_session_count, 0);
+        assert!(result.issues.iter().any(|issue| {
+            issue.code == "orphaned_provider_session_archived" && issue.count == 1
+        }));
+        let orphan_archived = state
+            .service
+            .get_session(GetSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: orphan.agent_id.clone(),
+                session_id: orphan.session_id.clone(),
+                owner_scope: Some(100),
+                requested_by: read_subject(),
+            })
+            .expect("orphan session lookup");
+        assert_eq!(
+            orphan_archived.status,
+            crate::domain::AgentSessionStatus::Archived
+        );
+    }
+
+    #[test]
+    fn completed_sync_within_refresh_window_skips_provider_discovery() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        reset_provider_session_sync_cache_for_testing();
+        // The cached outcome is deliberately non-default so a fresh discovery
+        // or reconcile could never produce it: the fast path must be served
+        // from the cache without touching the provider inventory at all.
+        let mut expected = ProviderSessionSynchronizationResult::default();
+        expected.record_issue(
+            "provider_inventory_unavailable",
+            ProviderSessionSynchronizationIssueDisposition::Failed,
+            1,
+        );
+        expected.record_skipped("subagent_without_parent");
+        expected.synchronized_session_count = 7;
+        record_completed_provider_session_sync(
+            &provider_session_sync_cache_key(&project),
+            CompletedProviderSessionSync {
+                fingerprint: String::new(),
+                result: expected.clone(),
+                completed_at: Instant::now(),
+            },
+        );
+        let result = synchronize_project_provider_sessions_with_selector(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            None,
+            None,
+            None,
+        )
+        .expect("cached synchronization");
+        assert_eq!(result, expected);
+        reset_provider_session_sync_cache_for_testing();
+    }
+
+    #[test]
+    fn unattributed_inventory_is_reported_as_skipped_issue() {
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            IamGatedPolicyProvider::default(),
+        );
+        let project = test_project(&state);
+        reset_provider_session_sync_cache_for_testing();
+        let result = synchronize_provider_session_snapshot(
+            state.service.clone(),
+            &project,
+            read_subject(),
+            ProviderSessionInventorySnapshot {
+                directory_resolved: false,
+                items: Vec::new(),
+                successful_engine_keys: vec!["codex".to_string()],
+                issues: Vec::new(),
+                unattributed_provider_sessions: true,
+            },
+        )
+        .expect("reconcile unattributed snapshot");
+
+        assert_eq!(result.synchronized_session_count, 0);
+        assert_eq!(result.skipped_session_count, 1);
+        assert_eq!(result.failed_session_count, 0);
+        let unattributed = result
+            .issues
+            .iter()
+            .find(|issue| issue.code == "provider_inventory_unattributed")
+            .expect("unattributed issue");
+        assert_eq!(
+            unattributed.disposition,
+            ProviderSessionSynchronizationIssueDisposition::Skipped
+        );
+        assert_eq!(unattributed.count, 1);
     }
 }

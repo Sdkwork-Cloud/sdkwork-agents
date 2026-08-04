@@ -1,25 +1,28 @@
 # Database Contract State
 
-Status: active pre-launch baseline with shared-development reconciliation
+Status: active pre-launch baseline consolidation
 
-Updated: 2026-08-01
+Updated: 2026-08-04
 
 ## Current Contract
 
 - Contract version: `7.2.0`
 - Managed engine: PostgreSQL
 - Physical authority: `database/ddl/baseline/postgres/0001_agents_baseline.sql`
-- Lifecycle strategy: `baseline-plus-migrations`
-- Development migrations: `0001_complete_agents_7_0_0_schema`, `0002_add_provider_session_directory`, `0003_add_typed_agent_interaction_envelope`
+- Lifecycle strategy: `baseline-plus-migrations` (empty post-baseline migration set)
+- Development migrations: none (pre-launch consolidation on the baseline)
 - Active tables: 23
 
-The full current schema is installed from one baseline on an empty database.
-Existing shared development schemas are reconciled through ordered forward
-migrations. `0001` adds the canonical Turn input queue and Task Run/Attempt
-tables, `0002` adds provider Session directory metadata, and `0003` adds the
-bounded typed Interaction request envelope and expanded Interaction categories.
-None deletes dependency-owned data. There is no dual-write path, derived read
-store, legacy Session table, or runtime compatibility branch.
+The full current schema is installed from one baseline on an empty schema and
+tracked in `ops_database_installation_state`. The pre-launch forward
+development migrations (`0001`..`0007`) were removed when the baseline was
+folded to the complete `7.3.0` schema; no pending or applied migration rows
+are expected for the `agents` module in shared development schemas. There is
+no dual-write path, derived read store, legacy Session table, or runtime
+compatibility branch.
+
+After first production release, add ordered expand/contract migrations without
+rewriting the released baseline.
 
 ## Operational Checks
 

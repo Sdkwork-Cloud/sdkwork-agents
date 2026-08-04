@@ -1,10 +1,11 @@
+Agent v3 OpenAPI SDK boundaries materialized.
 {
   "schemaVersion": 1,
   "app": "agents",
-  "mode": "apply",
+  "mode": "dry-run",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-08-04T00:34:18.140Z",
+  "startedAt": "2026-08-04T00:34:03.106Z",
   "families": [
     {
       "key": "open",
@@ -119,9 +120,9 @@
         "typescript": "1677eeb29700a5fdebb7ac687ceabf4cde1e0af18a7c21c6b3b887d251632528",
         "flutter": "797e225549a3e80e8c0ef431b634256e3dcc3f22d421f426ef70bc9f0ac0496e"
       },
-      "hasChanges": false,
+      "hasChanges": true,
       "riskLevel": "high",
-      "generated": true,
+      "generated": false,
       "languages": [
         {
           "language": "typescript",
@@ -130,9 +131,9 @@
           "packageName": "@sdkwork/agents-app-sdk",
           "version": "0.1.0",
           "fingerprint": "1677eeb29700a5fdebb7ac687ceabf4cde1e0af18a7c21c6b3b887d251632528",
-          "hasChanges": false,
+          "hasChanges": true,
           "riskLevel": "high",
-          "generated": true
+          "generated": false
         },
         {
           "language": "flutter",
@@ -141,9 +142,9 @@
           "packageName": "sdkwork_agents_app_sdk",
           "version": "0.1.0",
           "fingerprint": "797e225549a3e80e8c0ef431b634256e3dcc3f22d421f426ef70bc9f0ac0496e",
-          "hasChanges": false,
+          "hasChanges": true,
           "riskLevel": "medium",
-          "generated": true
+          "generated": false
         }
       ]
     },
@@ -195,5 +196,5 @@
       ]
     }
   ],
-  "finishedAt": "2026-08-04T00:34:20.366Z"
+  "finishedAt": "2026-08-04T00:34:04.822Z"
 }

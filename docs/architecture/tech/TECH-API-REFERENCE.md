@@ -166,14 +166,21 @@ Session directly with
 `client.ai.agents.projectSessions.retrieve(projectId, sessionId)` instead of
 scanning every Project Session page.
 
-Normal Project and Session refresh is read-only. Only an explicit folder
-import or re-import invokes
-`client.ai.agents.projectSessions.synchronize(projectId)`. The command derives the
-working directory from the trusted server-side runtime binding and returns
-`synchronizedSessionCount`, `skippedSessionCount`, `failedSessionCount`, and
-bounded aggregate `issues`. A nonzero skipped or failed count is a completed
-partial result that the client must surface; it is not transport success for
-every provider record.
+Normal Project and Session activity refresh reads the cursor snapshot.
+The Workspace Session Inbox additionally issues bounded, deduplicated
+`client.ai.agents.projectSessions.synchronize(projectId)` passes so
+provider-owned Sessions converge without blocking the activity read, and the
+backend serves repeat synchronizations from a 60-second process-local refresh
+cache aligned with the client-side deduplication TTL, so the background loop
+never re-scans the provider session store in steady state. A manual project
+refresh treats the import as best-effort and continues with the persisted
+inventory when the import fails or exceeds its budget. An explicit folder
+import or re-import requires the synchronization outcome. The command derives
+the working directory from the trusted server-side runtime binding and
+returns `synchronizedSessionCount`, `skippedSessionCount`,
+`failedSessionCount`, and bounded aggregate `issues`. A nonzero skipped or
+failed count is a completed partial result that the client must surface; it
+is not transport success for every provider record.
 
 ## 6. Contract Rules
 

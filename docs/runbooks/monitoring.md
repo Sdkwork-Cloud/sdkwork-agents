@@ -112,9 +112,14 @@ and counts, never provider payloads, local paths, Session content, or client
 device paths. A `50001` response indicates that the command failed before a
 typed partial result could be returned. Correlate its `traceId` across runtime
 binding resolution, provider collector execution, server-derived working
-directory validation, persistence, and gateway spans. Keep ordinary
-Project/Session inventory reads independent so operators can distinguish an
-import failure from a list availability incident.
+directory validation, persistence, and gateway spans. The
+`provider Session inventory discovered and synchronized` trace carries
+`discovery_elapsed_ms` — the provider store scan duration, which is the
+dominant cost of a cold synchronization and the reason repeat synchronizations
+are served from the 60-second process-local refresh cache (a
+`synchronization served from the refresh cache` debug record confirms the fast
+path). Keep ordinary Project/Session inventory reads independent so operators
+can distinguish an import failure from a list availability incident.
 
 Audit events are business evidence and are not replaced by application logs.
 

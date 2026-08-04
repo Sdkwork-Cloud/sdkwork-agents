@@ -868,7 +868,7 @@ mod tests {
             history: Vec::new(),
             user_content: "Hello".to_string(),
             model_id: None,
-            provider_id: Some("provider.model.rig".to_string()),
+            provider_id: Some("provider.rig".to_string()),
             provider_session_id: None,
             binding_id: None,
             access_mode_id: None,
@@ -886,7 +886,7 @@ mod tests {
     impl ModelProvider for FakeKernelModelProvider {
         fn provider_manifest(&self) -> sdkwork_agent_kernel::ProviderManifest {
             sdkwork_agent_kernel::ProviderManifest::new(
-                "provider.model.fake",
+                "provider.fake",
                 "model",
                 "sdkwork-fake-model",
                 "0.1.0",
@@ -907,7 +907,7 @@ mod tests {
             );
             Ok(ModelResponse::text(
                 request.model_request_id,
-                "provider.model.fake",
+                "provider.fake",
                 "kernel reply",
             )
             .with_usage(sdkwork_agent_kernel::ModelUsage::new(3, 5)))
@@ -918,7 +918,7 @@ mod tests {
                 self.cancellation_model_request_id
                     .as_deref()
                     .unwrap_or(model_request_id),
-                "provider.model.fake",
+                "provider.fake",
             ))
         }
     }
@@ -935,7 +935,7 @@ mod tests {
             history: Vec::new(),
             user_content: "Hello".to_string(),
             model_id: Some("model.fake".to_string()),
-            provider_id: Some("provider.model.fake".to_string()),
+            provider_id: Some("provider.fake".to_string()),
             provider_session_id: Some("provider-session.fake".to_string()),
             binding_id: None,
             access_mode_id: None,
@@ -943,7 +943,7 @@ mod tests {
         });
         assert_eq!(output.content, "kernel reply");
         assert_eq!(output.runtime_mode, "managed-agent-kernel-model-v1");
-        assert_eq!(output.provider_id.as_deref(), Some("provider.model.fake"));
+        assert_eq!(output.provider_id.as_deref(), Some("provider.fake"));
         assert_eq!(
             output.provider_session_id.as_deref(),
             Some("provider-session.fake")

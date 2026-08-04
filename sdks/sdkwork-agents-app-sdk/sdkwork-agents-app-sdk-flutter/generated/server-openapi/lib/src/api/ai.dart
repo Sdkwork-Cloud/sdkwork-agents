@@ -518,18 +518,12 @@ class AiApi {
     })();
   }
 
-  /// Synchronize provider history and return one Session Item window
-  Future<AgentSessionItemListResponse?> agentsSessionItemsSynchronize(String agentId, String sessionId, [int? pageSize, String? kind, String? status, String? sort]) async {
-    final query = buildQueryString([
-      QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
-      QueryParameterSpec('kind', kind, 'form', true, false, null),
-      QueryParameterSpec('status', status, 'form', true, false, null),
-      QueryParameterSpec('sort', sort, 'form', true, false, null)
-    ]);
-    final response = await _client.post(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/items/synchronize'), query));
+  /// Synchronize provider Session history for one Session
+  Future<AgentSessionItemSynchronizeResponse?> agentsSessionItemsSynchronize(String agentId, String sessionId) async {
+    final response = await _client.post(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/items/synchronize'));
     return (() {
       final map = sdkworkResponseAsMap(response);
-      return map == null ? null : AgentSessionItemListResponse.fromJson(map);
+      return map == null ? null : AgentSessionItemSynchronizeResponse.fromJson(map);
     })();
   }
 

@@ -8517,6 +8517,88 @@ class AgentSessionItemListResponse {
   }
 }
 
+class AgentSessionItemSynchronizeResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentSessionItemSynchronizeResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentSessionItemSynchronizeResponse.fromJson(Map<String, dynamic> json) {
+    return AgentSessionItemSynchronizeResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentSessionItemSynchronizeResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentSessionItemSynchronizeResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentSessionItemSynchronizeResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class AgentSessionItemSynchronizationResult {
+  final String status;
+  final String importedItemCount;
+
+  AgentSessionItemSynchronizationResult({
+    required this.status,
+    required this.importedItemCount
+  });
+
+  factory AgentSessionItemSynchronizationResult.fromJson(Map<String, dynamic> json) {
+    return AgentSessionItemSynchronizationResult(
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('AgentSessionItemSynchronizationResult.status is required');
+        }
+        return value;
+      })(),
+      importedItemCount: (() {
+        final value = json['importedItemCount']?.toString();
+        if (value == null) {
+          throw FormatException('AgentSessionItemSynchronizationResult.importedItemCount is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'status': status,
+      'importedItemCount': importedItemCount,
+    };
+  }
+}
+
 class AgentTurnInputQueueDriveRef {
   final String resourceRole;
   final String driveSpaceId;

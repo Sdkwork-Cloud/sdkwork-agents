@@ -60,6 +60,11 @@ pub struct ProviderSessionInventorySnapshot {
     pub items: Vec<ProviderSessionInventoryItem>,
     pub successful_engine_keys: Vec<String>,
     pub issues: Vec<ProviderSessionInventoryIssue>,
+    /// True when provider Sessions exist in the runtime inventory but none
+    /// could be attributed to the requested project directory (the selector
+    /// resolved no exact cwd and no unique basename match). Consumers must
+    /// surface this instead of silently reporting an empty project.
+    pub unattributed_provider_sessions: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -255,11 +260,13 @@ fn discover_provider_sessions_with(
     let selected_cwd = resolve_selected_cwd(&candidates, selector)?;
     successful_engine_keys.sort();
     issues.sort_by(|left, right| left.engine_key.cmp(&right.engine_key));
+    let unattributed_provider_sessions = selected_cwd.is_none() && !candidates.is_empty();
     Ok(ProviderSessionInventorySnapshot {
         directory_resolved: selected_cwd.is_some(),
         items: select_top_level_provider_sessions(candidates, selected_cwd.as_deref()),
         successful_engine_keys,
         issues,
+        unattributed_provider_sessions,
     })
 }
 
@@ -441,9 +448,9 @@ mod tests {
         let session = AgentSession::new(session_id).with_cwd(cwd);
         ProviderSessionInventoryItem {
             engine_key: engine.to_string(),
-            agent_id: format!("agent.intelligence.{engine}"),
-            binding_id: format!("binding.agent-provider.{engine}"),
-            provider_id: format!("provider.model.{engine}"),
+            agent_id: format!("agent.{engine}"),
+            binding_id: format!("binding.{engine}"),
+            provider_id: format!("provider.{engine}"),
             default_model_id: "model.default".to_string(),
             directory: ProviderSessionDirectoryEntry::from_session(&session),
             session,

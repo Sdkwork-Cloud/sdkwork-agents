@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "fbffb795b5da7d1318f1a576b53fa0bb3b8fc3e8bce770d23640da3f0ad08973"
+      "sha256": "5f2d0530d934d76d6762bfd9f7da27d494f821646a9b5ea19ab8c82566e508ff"
     },
     {
       "path": "src/api/base.ts",
@@ -329,6 +329,14 @@
     {
       "path": "src/types/agent-session-item-status.ts",
       "sha256": "8cfc3d754468699b14f7cfc1d81bb260e10d70aa1897a679990a9821ed91b02b"
+    },
+    {
+      "path": "src/types/agent-session-item-synchronization-result.ts",
+      "sha256": "db2609ab9c2d3112a0801b1b743e1626617000e13e0dde0a664522bacc274691"
+    },
+    {
+      "path": "src/types/agent-session-item-synchronize-response.ts",
+      "sha256": "9c9d97382acbb3c57a9b4c02b5d8354e4db425488c68b329551779c27b396940"
     },
     {
       "path": "src/types/agent-session-kind.ts",
@@ -672,7 +680,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "710a8fa20dd4203c5b79fedd6f175930535a6ba057f21c4546eb9b230901cc6a"
+      "sha256": "5a3ca36418fa3acbc622a4f574493b9b94353405391d08acc564623d3711ba55"
     },
     {
       "path": "src/types/int64-string.ts",

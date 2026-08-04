@@ -41,7 +41,10 @@ use crate::task_scheduling::{
     AgentTaskRunAttemptRecord, AgentTaskRunAttemptStatus, AgentTaskRunRecord, AgentTaskRunStatus,
     AgentTaskStatus, AgentTaskTriggerKind,
 };
-use crate::validation::parse_rfc3339_datetime;
+use crate::validation::{
+    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_ITEM,
+    ID_PREFIX_RUN, ID_PREFIX_TURN,
+};
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest,
@@ -4169,7 +4172,8 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
             return Err(KernelError::conflict("idempotency key payload mismatch"));
         }
         let id = self.id_generator.next_id()?;
-        let run_id = format!("run.{id}");
+        let run_id = format!("{ID_PREFIX_RUN}{id}");
+        validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN))?;
         let run = AgentTaskRunRecord {
             id,
             run_id: run_id.clone(),
@@ -4193,7 +4197,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 idempotency_key,
                 &task.prompt,
             )?,
-            turn_id: Some(format!("turn.{}", self.id_generator.next_id()?)),
+            turn_id: Some(format!("{ID_PREFIX_TURN}{}", self.id_generator.next_id()?)),
             attempt_count: 0,
             max_attempts: task.max_attempts,
             available_at: requested_at.to_string(),
@@ -4254,7 +4258,8 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
             return Err(KernelError::conflict("idempotency key payload mismatch"));
         }
         let id = self.id_generator.next_id()?;
-        let run_id = format!("run.{id}");
+        let run_id = format!("{ID_PREFIX_RUN}{id}");
+        validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN))?;
         let run = AgentTaskRunRecord {
             id,
             run_id: run_id.clone(),
@@ -4278,7 +4283,7 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                 idempotency_key,
                 &task.prompt,
             )?,
-            turn_id: Some(format!("turn.{}", self.id_generator.next_id()?)),
+            turn_id: Some(format!("{ID_PREFIX_TURN}{}", self.id_generator.next_id()?)),
             attempt_count: 0,
             max_attempts: task.max_attempts,
             available_at: requested_at.to_string(),
@@ -4383,8 +4388,9 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
                     continue;
                 }
                 let id = self.id_generator.next_id()?;
-                let run_id = format!("run.{id}");
-                let turn_id = format!("turn.{}", self.id_generator.next_id()?);
+                let run_id = format!("{ID_PREFIX_RUN}{id}");
+                validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN))?;
+                let turn_id = format!("{ID_PREFIX_TURN}{}", self.id_generator.next_id()?);
                 let run = AgentTaskRunRecord {
                     id,
                     run_id: run_id.clone(),
@@ -4540,7 +4546,8 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
             let raw_token = sdkwork_utils_rust::random_string(48);
             let token_hash = sha256_hash(raw_token.as_bytes());
             let attempt_id_value = self.id_generator.next_id()?;
-            let attempt_id = format!("attempt.{attempt_id_value}");
+            let attempt_id = format!("{ID_PREFIX_ATTEMPT}{attempt_id_value}");
+            validate_standard_id(&attempt_id, "attemptId", Some(ID_PREFIX_ATTEMPT))?;
             let run = runs
                 .get_mut(&key)
                 .ok_or_else(|| KernelError::not_found("task Run not found"))?;
@@ -5773,6 +5780,7 @@ fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::validation::ID_PREFIX_ITEM;
     use crate::domain::{
         AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
         AgentProviderBindingRecord, AgentVisibility,
@@ -5948,7 +5956,7 @@ mod tests {
             tenant_id: 100_001,
             agent_id: "agent.alpha".to_string(),
             binding_id: "binding.rig.default".to_string(),
-            provider_id: "provider.model.rig-rust".to_string(),
+            provider_id: "provider.rig-rust".to_string(),
             implementation_kind: AgentImplementationKind::TypedLocalProvider,
             configuration_profile_id: "profile.rig.local".to_string(),
             capabilities: vec!["model.chat".to_string()],
@@ -5962,7 +5970,7 @@ mod tests {
             .expect("initial binding insert should succeed");
 
         let mut stale = record.clone();
-        stale.provider_id = "provider.model.rig-alt".to_string();
+        stale.provider_id = "provider.rig-alt".to_string();
         let error = repository
             .update_provider_binding(stale)
             .expect_err("stale binding version should fail");
@@ -5982,7 +5990,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.default".to_string(),
-                provider_id: "provider.model.rig-rust".to_string(),
+                provider_id: "provider.rig-rust".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.local".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -5999,7 +6007,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.alt".to_string(),
-                provider_id: "provider.model.rig-alt".to_string(),
+                provider_id: "provider.rig-alt".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.alt".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6025,7 +6033,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.default".to_string(),
-                provider_id: "provider.model.rig-rust".to_string(),
+                provider_id: "provider.rig-rust".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.local".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6041,7 +6049,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.alt".to_string(),
-                provider_id: "provider.model.rig-alt".to_string(),
+                provider_id: "provider.rig-alt".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.alt".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6058,7 +6066,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.alt".to_string(),
-                provider_id: "provider.model.rig-alt".to_string(),
+                provider_id: "provider.rig-alt".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.alt".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6084,7 +6092,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.beta".to_string(),
-                provider_id: "provider.model.rig-rust".to_string(),
+                provider_id: "provider.rig-rust".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.beta".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6098,7 +6106,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.default".to_string(),
-                provider_id: "provider.model.rig-rust".to_string(),
+                provider_id: "provider.rig-rust".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.default".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6112,7 +6120,7 @@ mod tests {
                 tenant_id: 100_001,
                 agent_id: "agent.alpha".to_string(),
                 binding_id: "binding.rig.alpha".to_string(),
-                provider_id: "provider.model.rig-rust".to_string(),
+                provider_id: "provider.rig-rust".to_string(),
                 implementation_kind: AgentImplementationKind::TypedLocalProvider,
                 configuration_profile_id: "profile.rig.alpha".to_string(),
                 capabilities: vec!["model.chat".to_string()],
@@ -6479,7 +6487,7 @@ mod tests {
     fn cursor_session_item(id: u64, sequence: u64) -> AgentSessionItemRecord {
         AgentSessionItemRecord {
             id,
-            item_id: format!("item.cursor.{id}"),
+            item_id: format!("{ID_PREFIX_ITEM}cursor.{id}"),
             tenant_id: 10,
             organization_id: 20,
             session_id: "session.cursor".to_string(),
@@ -6615,7 +6623,7 @@ mod tests {
             client_request_id: None,
             idempotency_key: format!("idempotency.{turn_id}"),
             payload_hash: format!("sha256:{turn_id}"),
-            request_item_id: format!("item.request.{id}"),
+            request_item_id: format!("{ID_PREFIX_ITEM}request.{id}"),
             response_item_id: None,
             turn_mode: crate::agent_turn::AgentTurnMode::Interactive,
             status,

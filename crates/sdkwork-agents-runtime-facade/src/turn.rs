@@ -107,6 +107,11 @@ pub struct CodeEngineTurnCancellation {
 }
 
 /// Derives the stable provider request identity for one canonical SDKWork Turn.
+///
+/// The `agents-turn-` prefix is a model-request protocol field: it is
+/// correlated with the model provider (cancellation matching, message
+/// association) and is not a durable id, so it intentionally stays outside
+/// the dot-separated durable id scheme.
 pub fn code_engine_model_request_id(turn_id: &str) -> String {
     format!("agents-turn-{turn_id}")
 }
@@ -588,7 +593,7 @@ mod tests {
     impl ModelProvider for NeverInvokeFallback {
         fn provider_manifest(&self) -> ProviderManifest {
             ProviderManifest::new(
-                "provider.model.codex.test-fallback",
+                "provider.codex.test-fallback",
                 "model",
                 "Codex test fallback",
                 "0.1.0",
@@ -603,7 +608,7 @@ mod tests {
         fn list_models(&self) -> Vec<ModelDescriptor> {
             vec![ModelDescriptor::new(
                 "gpt-test",
-                "provider.model.codex.test-fallback",
+                "provider.codex.test-fallback",
                 "Codex test model",
                 "codex",
             )]
@@ -712,7 +717,7 @@ mod tests {
             runtime,
             Arc::new(NeverInvokeFallback),
             SDK_CAPABILITY_MODEL_CHAT,
-            "provider.model.codex",
+            "provider.codex",
         );
         CodeEngineSlot::Codex(integration)
     }
@@ -1115,7 +1120,7 @@ mod tests {
 
     #[test]
     fn provider_session_diagnostic_overrides_input_session() {
-        let response = ModelResponse::text("request-1", "provider.model.codex", "done")
+        let response = ModelResponse::text("request-1", "provider.codex", "done")
             .with_diagnostic("sdk_runtime_session_id=session-provider");
         let input = CodeEngineTurnInput {
             provider_session_id: Some("session-input".to_string()),
@@ -1130,7 +1135,7 @@ mod tests {
 
     #[test]
     fn provider_session_resolution_falls_back_to_input_session() {
-        let response = ModelResponse::text("request-1", "provider.model.codex", "done")
+        let response = ModelResponse::text("request-1", "provider.codex", "done")
             .with_diagnostic("sdk_runtime_mode=sdk_live");
         let input = CodeEngineTurnInput {
             provider_session_id: Some("session-input".to_string()),
@@ -1146,7 +1151,7 @@ mod tests {
     #[test]
     fn turn_output_preserves_kernel_tool_calls() {
         let response =
-            ModelResponse::text("request-1", "provider.model.codex", "done").with_tool_call(
+            ModelResponse::text("request-1", "provider.codex", "done").with_tool_call(
                 ToolCall::new("call-1", "codex.shell", r#"{"command":"cargo test"}"#),
             );
         let output = build_turn_output(response, &CodeEngineTurnInput::default());

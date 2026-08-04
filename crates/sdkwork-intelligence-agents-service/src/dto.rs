@@ -3757,7 +3757,7 @@ mod tests {
             tenant_id: "100001".to_string(),
             agent_id: "agent.alpha".to_string(),
             binding_id: "binding.rig.default".to_string(),
-            provider_id: "provider.model.rig-rust".to_string(),
+            provider_id: "provider.rig-rust".to_string(),
             implementation_kind: "typed-local-provider".to_string(),
             configuration_profile_id: "profile.rig.local".to_string(),
             capabilities: vec!["model.chat".to_string()],

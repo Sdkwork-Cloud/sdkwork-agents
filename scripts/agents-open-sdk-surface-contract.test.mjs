@@ -49,10 +49,10 @@ const serviceHttp = fs.readFileSync(
   'utf8',
 );
 
-assert.equal(countAgentOpenApiOperations(openOpenApi), 55);
+assert.equal(countAgentOpenApiOperations(openOpenApi), 56);
 assert.equal(openSdkGeneratorManifest.sdk?.sdkType, 'custom');
 assert.equal(openSdkGeneratorManifest.sdk?.name, 'sdkwork-agents-sdk');
-assert.equal((openSdkAi.match(/async \w+\(/g) ?? []).length, 55);
+assert.equal((openSdkAi.match(/async \w+\(/g) ?? []).length, 56);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/agents\/\{agentId\}\/restore:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/code_engines:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/mcp_servers:/);
@@ -104,7 +104,7 @@ assert.doesNotMatch(
 );
 
 const openApiContracts = [
-  ['app', 'agents-app-api.openapi.yaml', 102],
+  ['app', 'agents-app-api.openapi.yaml', 108],
   ['backend', 'agents-backend-api.openapi.yaml', 58],
   ['open', 'agents-open-api.openapi.yaml', 56],
 ];

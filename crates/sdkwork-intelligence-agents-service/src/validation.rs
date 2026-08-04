@@ -4,6 +4,30 @@ use std::collections::HashSet;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
+/// Canonical durable id prefixes enforced by `validate_standard_id`. Keeping
+/// them in one place prevents the id namespaces from drifting apart: every
+/// id kind is generated and validated against the same literal.
+pub(crate) const ID_PREFIX_AGENT: &str = "agent.";
+pub(crate) const ID_PREFIX_ATTEMPT: &str = "attempt.";
+pub(crate) const ID_PREFIX_BINDING: &str = "binding.";
+pub(crate) const ID_PREFIX_CHECKPOINT: &str = "checkpoint.";
+pub(crate) const ID_PREFIX_EXECUTION: &str = "execution.";
+pub(crate) const ID_PREFIX_INTERACTION: &str = "interaction.";
+pub(crate) const ID_PREFIX_ITEM: &str = "item.";
+pub(crate) const ID_PREFIX_MODEL: &str = "model.";
+pub(crate) const ID_PREFIX_PROFILE: &str = "profile.";
+pub(crate) const ID_PREFIX_PROJECT: &str = "project.";
+pub(crate) const ID_PREFIX_PROVIDER: &str = "provider.";
+pub(crate) const ID_PREFIX_QUEUE_ENTRY: &str = "queue-entry.";
+pub(crate) const ID_PREFIX_REQUEST: &str = "request.";
+pub(crate) const ID_PREFIX_RUN: &str = "run.";
+pub(crate) const ID_PREFIX_RUNTIME_BINDING: &str = "runtime_binding.";
+pub(crate) const ID_PREFIX_SESSION: &str = "session.";
+pub(crate) const ID_PREFIX_SLOT: &str = "slot.";
+pub(crate) const ID_PREFIX_TASK: &str = "task.";
+pub(crate) const ID_PREFIX_TURN: &str = "turn.";
+pub(crate) const ID_PREFIX_WORKSPACE: &str = "workspace.";
+
 pub(crate) fn require_non_blank(value: &str, field_name: &str) -> KernelResult<()> {
     if is_blank(Some(value)) {
         return Err(KernelError::validation(format!("{field_name} is required")));
@@ -286,7 +310,7 @@ mod tests {
 
     #[test]
     fn validate_standard_id_rejects_non_standard_values() {
-        let error = validate_standard_id("Provider.Model", "providerId", Some("provider."))
+        let error = validate_standard_id("Provider.Model", "providerId", Some(ID_PREFIX_PROVIDER))
             .expect_err("uppercase standard id should fail");
         match error {
             KernelError::Validation { message } => {
@@ -296,7 +320,7 @@ mod tests {
             _ => panic!("expected validation error"),
         }
 
-        let error = validate_standard_id("provider.", "providerId", Some("provider."))
+        let error = validate_standard_id("provider.", "providerId", Some(ID_PREFIX_PROVIDER))
             .expect_err("prefix-only standard id should fail");
         match error {
             KernelError::Validation { message } => {
@@ -306,7 +330,7 @@ mod tests {
             _ => panic!("expected validation error"),
         }
 
-        let error = validate_standard_id("provider..rig", "providerId", Some("provider."))
+        let error = validate_standard_id("provider..rig", "providerId", Some(ID_PREFIX_PROVIDER))
             .expect_err("empty standard id segment should fail");
         match error {
             KernelError::Validation { message } => {
@@ -316,7 +340,7 @@ mod tests {
             _ => panic!("expected validation error"),
         }
 
-        let error = validate_standard_id("model.rig", "providerId", Some("provider."))
+        let error = validate_standard_id("model.rig", "providerId", Some(ID_PREFIX_PROVIDER))
             .expect_err("missing standard prefix should fail");
         match error {
             KernelError::Validation { message } => {

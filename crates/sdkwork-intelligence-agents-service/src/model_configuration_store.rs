@@ -3,9 +3,10 @@
 //! The model configuration runtime persists applied profiles through the
 //! kernel [`AgentConfigurationStore`] SPI. The production store keeps
 //! profiles in a local SQLite database (the single-source baseline DDL under
-//! `database/ddl/baseline/sqlite/`), so applied model configurations survive
-//! process restarts. The store is synchronous (matching the kernel SPI) and
-//! holds one connection guarded by the trait's `&mut self` access.
+//! `sql/0001_agent_model_configuration_baseline.sql`), so applied model
+//! configurations survive process restarts. The store is synchronous
+//! (matching the kernel SPI) and holds one connection guarded by the trait's
+//! `&mut self` access.
 //!
 //! Profiles are serialized in the kernel's `agent_configuration_profile`
 //! manifest shape and parsed back through [`AgentConfigurationProfile::from_json`],
@@ -22,9 +23,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 
 /// Authoritative local DDL (single source of truth with
-/// `database/ddl/baseline/sqlite/0001_agent_model_configuration_baseline.sql`).
+/// `sql/0001_agent_model_configuration_baseline.sql`).
 const AGENT_MODEL_CONFIGURATION_SCHEMA_SQL: &str = include_str!(
-    "../../../database/ddl/baseline/sqlite/0001_agent_model_configuration_baseline.sql"
+    "../sql/0001_agent_model_configuration_baseline.sql"
 );
 
 /// SQLite-backed [`AgentConfigurationStore`] for the model configuration
@@ -449,11 +450,11 @@ mod tests {
     #[test]
     fn save_and_load_round_trip_preserves_profile() {
         let mut store = SqliteAgentConfigurationStore::in_memory().expect("store");
-        let profile = sample_profile("agent.code-engine.codex", "profile.test");
+        let profile = sample_profile("agent.codex", "profile.test");
         store.save_profile(profile.clone()).expect("save");
 
         let loaded = store
-            .load_profile("agent.code-engine.codex", "profile.test")
+            .load_profile("agent.codex", "profile.test")
             .expect("load");
         assert_eq!(loaded, profile);
         assert_eq!(loaded.status, AgentConfigurationProfileStatus::Active);
@@ -471,19 +472,19 @@ mod tests {
     #[test]
     fn update_overwrites_and_bumps_version() {
         let mut store = SqliteAgentConfigurationStore::in_memory().expect("store");
-        let profile = sample_profile("agent.code-engine.codex", "profile.test");
+        let profile = sample_profile("agent.codex", "profile.test");
         store.save_profile(profile.clone()).expect("first save");
 
         let updated = AgentConfigurationProfile::new(
             "profile.test",
-            "agent.code-engine.codex",
+            "agent.codex",
             "0.3.0",
-            AgentConfiguration::new("agent.code-engine.codex", "profile.test")
+            AgentConfiguration::new("agent.codex", "profile.test")
                 .set("codex.model.base_url", AgentConfigValue::string("https://relay.new/v1")),
         );
         store.save_profile(updated.clone()).expect("second save");
         let loaded = store
-            .load_profile("agent.code-engine.codex", "profile.test")
+            .load_profile("agent.codex", "profile.test")
             .expect("load");
         assert_eq!(loaded.configuration_version, "0.3.0");
         assert_eq!(
@@ -496,28 +497,28 @@ mod tests {
     fn list_and_find_scope_by_agent() {
         let mut store = SqliteAgentConfigurationStore::in_memory().expect("store");
         store
-            .save_profile(sample_profile("agent.code-engine.codex", "profile.a"))
+            .save_profile(sample_profile("agent.codex", "profile.a"))
             .expect("save a");
         store
-            .save_profile(sample_profile("agent.code-engine.codex", "profile.b"))
+            .save_profile(sample_profile("agent.codex", "profile.b"))
             .expect("save b");
         store
-            .save_profile(sample_profile("agent.code-engine.rig", "profile.c"))
+            .save_profile(sample_profile("agent.rig-general", "profile.c"))
             .expect("save c");
 
-        let profiles = store.list_profiles("agent.code-engine.codex").expect("list");
+        let profiles = store.list_profiles("agent.codex").expect("list");
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].profile_id, "profile.a");
         assert_eq!(profiles[1].profile_id, "profile.b");
         assert!(
             store
-                .find_profile("agent.code-engine.rig", "profile.c")
+                .find_profile("agent.rig-general", "profile.c")
                 .expect("find")
                 .is_some()
         );
         assert!(
             store
-                .find_profile("agent.code-engine.rig", "profile.missing")
+                .find_profile("agent.rig-general", "profile.missing")
                 .expect("find")
                 .is_none()
         );
@@ -527,7 +528,7 @@ mod tests {
     fn archive_changes_status_and_notifies() {
         let mut store = SqliteAgentConfigurationStore::in_memory().expect("store");
         store
-            .save_profile(sample_profile("agent.code-engine.codex", "profile.test"))
+            .save_profile(sample_profile("agent.codex", "profile.test"))
             .expect("save");
         let notified = Arc::new(std::sync::Mutex::new(Vec::new()));
         {
@@ -542,7 +543,7 @@ mod tests {
 
         let record = store
             .archive_profile(
-                &AgentProfileArchiveRequest::new("request-1", "agent.code-engine.codex", "profile.test"),
+                &AgentProfileArchiveRequest::new("request-1", "agent.codex", "profile.test"),
             )
             .expect("archive");
         assert_eq!(
@@ -550,7 +551,7 @@ mod tests {
             AgentConfigurationProfileStatus::Archived
         );
         let loaded = store
-            .load_profile("agent.code-engine.codex", "profile.test")
+            .load_profile("agent.codex", "profile.test")
             .expect("load");
         assert_eq!(loaded.status, AgentConfigurationProfileStatus::Archived);
         assert_eq!(
@@ -565,14 +566,14 @@ mod tests {
     #[test]
     fn optimistic_save_conflicts_on_stale_version() {
         let mut store = SqliteAgentConfigurationStore::in_memory().expect("store");
-        let profile = sample_profile("agent.code-engine.codex", "profile.test");
+        let profile = sample_profile("agent.codex", "profile.test");
         store.save_profile(profile.clone()).expect("save");
 
         let stale = AgentConfigurationProfile::new(
             "profile.test",
-            "agent.code-engine.codex",
+            "agent.codex",
             "0.1.0",
-            AgentConfiguration::new("agent.code-engine.codex", "profile.test"),
+            AgentConfiguration::new("agent.codex", "profile.test"),
         );
         let result = store.save_profile_if_version(stale, "0.1.0");
         assert!(result.is_err(), "stale version must conflict");
