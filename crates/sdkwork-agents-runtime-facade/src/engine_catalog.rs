@@ -187,9 +187,8 @@ mod tests {
 
     #[test]
     fn projects_model_descriptor_to_catalog_entry() {
-        let descriptor =
-            ModelDescriptor::new("codex-1", "provider.codex", "Codex 1", "codex")
-                .with_response_format(ModelResponseFormat::Text);
+        let descriptor = ModelDescriptor::new("codex-1", "provider.codex", "Codex 1", "codex")
+            .with_response_format(ModelResponseFormat::Text);
 
         let entry = model_descriptor_to_catalog_entry("codex", "binding.codex", &descriptor, true);
         assert_eq!(entry.engine_key, "codex");

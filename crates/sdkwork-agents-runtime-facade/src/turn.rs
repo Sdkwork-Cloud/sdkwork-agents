@@ -1157,10 +1157,9 @@ mod tests {
 
     #[test]
     fn turn_output_preserves_kernel_tool_calls() {
-        let response =
-            ModelResponse::text("request-1", "provider.codex", "done").with_tool_call(
-                ToolCall::new("call-1", "codex.shell", r#"{"command":"cargo test"}"#),
-            );
+        let response = ModelResponse::text("request-1", "provider.codex", "done").with_tool_call(
+            ToolCall::new("call-1", "codex.shell", r#"{"command":"cargo test"}"#),
+        );
         let output = build_turn_output(response, &CodeEngineTurnInput::default());
 
         assert_eq!(output.tool_calls.len(), 1);

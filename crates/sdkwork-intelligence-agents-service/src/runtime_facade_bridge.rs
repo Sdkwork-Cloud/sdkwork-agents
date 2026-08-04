@@ -190,10 +190,7 @@ mod tests {
 
     #[test]
     fn maps_canonical_binding_ids_to_engine_keys() {
-        assert_eq!(
-            engine_key_for_binding_id("binding.codex"),
-            Some("codex")
-        );
+        assert_eq!(engine_key_for_binding_id("binding.codex"), Some("codex"));
         assert_eq!(
             engine_key_for_binding_id("binding.opencode"),
             Some("opencode")

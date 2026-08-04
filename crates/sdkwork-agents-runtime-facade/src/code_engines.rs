@@ -141,10 +141,18 @@ pub fn read_code_engine_model_configuration(
         "claude-code" => {
             ClaudeCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
         }
-        "gemini" => GeminiCliConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
-        "opencode" => OpenCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
-        "openclaw" => OpenClawConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
-        "hermes" => HermesConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        "gemini" => {
+            GeminiCliConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
+        }
+        "opencode" => {
+            OpenCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
+        }
+        "openclaw" => {
+            OpenClawConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
+        }
+        "hermes" => {
+            HermesConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
+        }
         _ => unreachable!("validated code engine"),
     };
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
@@ -669,8 +677,7 @@ fn adapt_sdk_provider_session(
         SessionKind::Main
     };
     session.parent_session_id = record.parent_provider_session_id;
-    session.forked_from_id =
-        sdk_metadata_string(&record.metadata, "codex.forked_from_id");
+    session.forked_from_id = sdk_metadata_string(&record.metadata, "codex.forked_from_id");
     session.agent_nickname = sdk_metadata_string(&record.metadata, "codex.agent_nickname");
     session.agent_role = sdk_metadata_string(&record.metadata, "codex.agent_role");
     session.title = record.title;
@@ -774,7 +781,10 @@ fn sdk_metadata_pairs(metadata: BTreeMap<String, serde_json::Value>) -> Vec<(Str
 
 /// Extracts a single string metadata value from a provider session record,
 /// returning `None` when the key is absent or not a string.
-fn sdk_metadata_string(metadata: &BTreeMap<String, serde_json::Value>, key: &str) -> Option<String> {
+fn sdk_metadata_string(
+    metadata: &BTreeMap<String, serde_json::Value>,
+    key: &str,
+) -> Option<String> {
     metadata
         .get(key)
         .and_then(serde_json::Value::as_str)
@@ -1166,11 +1176,9 @@ mod tests {
             );
             assert!(!identity.provider_id.is_empty());
         }
-        assert!(
-            resolve_code_engine_runtime_identity("agent.unknown")
-                .expect("unknown identity resolution")
-                .is_none()
-        );
+        assert!(resolve_code_engine_runtime_identity("agent.unknown")
+            .expect("unknown identity resolution")
+            .is_none());
     }
 
     #[test]

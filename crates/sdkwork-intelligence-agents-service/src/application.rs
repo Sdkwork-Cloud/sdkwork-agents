@@ -66,8 +66,8 @@ use crate::validation::{
     validate_capabilities, validate_requested_at, validate_standard_id, ID_PREFIX_AGENT,
     ID_PREFIX_BINDING, ID_PREFIX_CHECKPOINT, ID_PREFIX_EXECUTION, ID_PREFIX_INTERACTION,
     ID_PREFIX_ITEM, ID_PREFIX_PROFILE, ID_PREFIX_PROJECT, ID_PREFIX_PROVIDER,
-    ID_PREFIX_RUNTIME_BINDING, ID_PREFIX_SESSION, ID_PREFIX_SLOT, ID_PREFIX_TASK,
-    ID_PREFIX_TURN, ID_PREFIX_WORKSPACE,
+    ID_PREFIX_RUNTIME_BINDING, ID_PREFIX_SESSION, ID_PREFIX_SLOT, ID_PREFIX_TASK, ID_PREFIX_TURN,
+    ID_PREFIX_WORKSPACE,
 };
 use crate::workspace::{default_workspace_id, AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
@@ -1088,7 +1088,11 @@ where
         require_non_blank(command.code.as_str(), "code")?;
         require_non_blank(command.display_name.as_str(), "displayName")?;
         if let Some(provider_id) = command.implementation_provider_id.as_deref() {
-            validate_standard_id(provider_id, "implementationProviderId", Some(ID_PREFIX_PROVIDER))?;
+            validate_standard_id(
+                provider_id,
+                "implementationProviderId",
+                Some(ID_PREFIX_PROVIDER),
+            )?;
         }
 
         let mut record = AgentBusinessRecord {
@@ -1276,7 +1280,11 @@ where
             .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::not_found("agent not found"))?;
 
-        validate_standard_id(command.binding_id.as_str(), "bindingId", Some(ID_PREFIX_BINDING))?;
+        validate_standard_id(
+            command.binding_id.as_str(),
+            "bindingId",
+            Some(ID_PREFIX_BINDING),
+        )?;
         validate_standard_id(
             command.provider_id.as_str(),
             "providerId",
@@ -1351,7 +1359,11 @@ where
         self.repository
             .get(command.tenant_id, command.agent_id.as_str())?
             .ok_or_else(|| KernelError::not_found("agent not found"))?;
-        validate_standard_id(command.binding_id.as_str(), "bindingId", Some(ID_PREFIX_BINDING))?;
+        validate_standard_id(
+            command.binding_id.as_str(),
+            "bindingId",
+            Some(ID_PREFIX_BINDING),
+        )?;
 
         let record = self.repository.activate_provider_binding_atomic(
             command.tenant_id,
@@ -1965,7 +1977,11 @@ where
         }
         if let Some(provider_id) = command.implementation_provider_id {
             if let Some(provider_id) = provider_id.as_deref() {
-                validate_standard_id(provider_id, "implementationProviderId", Some(ID_PREFIX_PROVIDER))?;
+                validate_standard_id(
+                    provider_id,
+                    "implementationProviderId",
+                    Some(ID_PREFIX_PROVIDER),
+                )?;
             }
             record.implementation_provider_id = provider_id;
         }
@@ -2281,7 +2297,11 @@ where
             format!("agent.business.workspace.{}", command.workspace_id),
             "workspace.retrieve",
         )?;
-        validate_standard_id(&command.workspace_id, "workspaceId", Some(ID_PREFIX_WORKSPACE))?;
+        validate_standard_id(
+            &command.workspace_id,
+            "workspaceId",
+            Some(ID_PREFIX_WORKSPACE),
+        )?;
         let record = self
             .repository
             .get_workspace(
@@ -3259,12 +3279,9 @@ where
         &self,
         command: CreateSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
-        let engine_key = command
-            .agent_id
-            .strip_prefix("agent.")
-            .ok_or_else(|| {
-                KernelError::validation("provider Session history agent is not canonical")
-            })?;
+        let engine_key = command.agent_id.strip_prefix("agent.").ok_or_else(|| {
+            KernelError::validation("provider Session history agent is not canonical")
+        })?;
         if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
             != Some(command.agent_id.as_str())
             || command.project_id.is_none()
@@ -3515,7 +3532,11 @@ where
         require_provider_session_history: bool,
     ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         if authorize {
             self.authorize(
                 "agent.business.session.update",
@@ -3603,7 +3624,11 @@ where
         command: DeleteSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         self.authorize(
             "agent.business.session.delete",
             command.requested_by.clone(),
@@ -3650,7 +3675,11 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.close",
         )?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
 
         let mut record = self
             .repository
@@ -3692,7 +3721,11 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.archive",
         )?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
 
         let mut record = self
             .repository
@@ -3736,7 +3769,11 @@ where
             format!("agent.business.session.{}", command.session_id),
             "session.retrieve",
         )?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         self.repository
             .get_session(
                 command.tenant_id,
@@ -3759,8 +3796,16 @@ where
         &self,
         command: GetProjectSessionCommand,
     ) -> KernelResult<AgentSessionRecord> {
-        validate_standard_id(command.project_id.as_str(), "projectId", Some(ID_PREFIX_PROJECT))?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.project_id.as_str(),
+            "projectId",
+            Some(ID_PREFIX_PROJECT),
+        )?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         self.authorize(
             "agent.business.session.retrieve",
             command.requested_by,
@@ -3883,7 +3928,11 @@ where
         command: GetSessionUserStateCommand,
     ) -> KernelResult<SessionUserStateResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         self.authorize(
             "agent.business.session.user_state.retrieve",
             command.requested_by,
@@ -3916,7 +3965,11 @@ where
         command: UpdateSessionUserStateCommand,
     ) -> KernelResult<SessionUserStateResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         if command.pinned.is_none()
             && command.hidden.is_none()
             && !command.mark_opened
@@ -4074,7 +4127,11 @@ where
         command: UpdateItemFeedbackCommand,
     ) -> KernelResult<ItemFeedbackResult> {
         validate_agent_id(command.path_agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         validate_standard_id(command.item_id.as_str(), "itemId", Some(ID_PREFIX_ITEM))?;
         self.authorize(
             "agent.business.item_feedback.update",
@@ -4244,7 +4301,11 @@ where
             return Err(KernelError::not_found("agent not found"));
         }
 
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         let session = self
             .repository
             .get_session(
@@ -5918,7 +5979,11 @@ where
         &self,
         command: GetSessionCheckpointCommand,
     ) -> KernelResult<SessionCheckpointResult> {
-        validate_standard_id(&command.checkpoint_id, "checkpointId", Some(ID_PREFIX_CHECKPOINT))?;
+        validate_standard_id(
+            &command.checkpoint_id,
+            "checkpointId",
+            Some(ID_PREFIX_CHECKPOINT),
+        )?;
         self.authorize(
             "agent.business.checkpoint.retrieve",
             command.requested_by,
@@ -6899,7 +6964,11 @@ where
         stream_sink: Option<Arc<dyn TurnExecutionStreamSink>>,
     ) -> KernelResult<TurnExecutionResult> {
         validate_agent_id(command.agent_id.as_str())?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         self.authorize(
             "agent.business.turn.create",
             command.requested_by.clone(),
@@ -8051,7 +8120,11 @@ where
     ) -> KernelResult<AgentInteractionRecord> {
         validate_requested_at(&command.requested_at)?;
         parse_optional_rfc3339_datetime(command.retention_until.as_deref(), "retentionUntil")?;
-        validate_standard_id(command.session_id.as_str(), "sessionId", Some(ID_PREFIX_SESSION))?;
+        validate_standard_id(
+            command.session_id.as_str(),
+            "sessionId",
+            Some(ID_PREFIX_SESSION),
+        )?;
         validate_agent_id(command.path_agent_id.as_str())?;
         let interaction_id = if is_trimmed_blank(command.interaction_id.as_str()) {
             format!("{ID_PREFIX_INTERACTION}{}", self.repository.next_id()?)
@@ -9805,12 +9878,7 @@ mod task_tests {
             .expect("canonical agent");
         assert_eq!(agent.status, AgentBusinessStatus::Active);
         let binding = service
-            .get_provider_binding(
-                100_001,
-                "agent.codex",
-                "binding.codex",
-                read_subject,
-            )
+            .get_provider_binding(100_001, "agent.codex", "binding.codex", read_subject)
             .expect("canonical provider binding");
         assert!(binding.active);
         assert_eq!(binding.provider_id, "provider.codex");

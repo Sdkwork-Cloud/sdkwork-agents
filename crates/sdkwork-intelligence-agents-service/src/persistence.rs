@@ -1895,7 +1895,11 @@ fn parse_implementation_type(input: &str) -> KernelResult<AgentImplementationTyp
 
 fn validate_agent_business_storage_contract(record: &AgentBusinessRecord) -> KernelResult<()> {
     if let Some(provider_id) = record.implementation_provider_id.as_deref() {
-        validate_standard_id(provider_id, "implementationProviderId", Some(ID_PREFIX_PROVIDER))?;
+        validate_standard_id(
+            provider_id,
+            "implementationProviderId",
+            Some(ID_PREFIX_PROVIDER),
+        )?;
     }
     Ok(())
 }
@@ -1903,8 +1907,16 @@ fn validate_agent_business_storage_contract(record: &AgentBusinessRecord) -> Ker
 fn validate_provider_binding_storage_contract(
     record: &AgentProviderBindingRecord,
 ) -> KernelResult<()> {
-    validate_standard_id(record.binding_id.as_str(), "bindingId", Some(ID_PREFIX_BINDING))?;
-    validate_standard_id(record.provider_id.as_str(), "providerId", Some(ID_PREFIX_PROVIDER))?;
+    validate_standard_id(
+        record.binding_id.as_str(),
+        "bindingId",
+        Some(ID_PREFIX_BINDING),
+    )?;
+    validate_standard_id(
+        record.provider_id.as_str(),
+        "providerId",
+        Some(ID_PREFIX_PROVIDER),
+    )?;
     validate_standard_id(
         record.configuration_profile_id.as_str(),
         "configurationProfileId",
@@ -9352,7 +9364,8 @@ FOR UPDATE
             }
             let id = AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
             let run_id = format!("{ID_PREFIX_RUN}{id}");
-            validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN)).map_err(transaction_error)?;
+            validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN))
+                .map_err(transaction_error)?;
             let turn_id = format!(
                 "turn.{}",
                 AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?
@@ -9543,7 +9556,8 @@ WHERE tenant_id = $1 AND organization_id = $2 AND task_id = $3
                     }
                     let id = AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
                     let run_id = format!("{ID_PREFIX_RUN}{id}");
-                    validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN)).map_err(transaction_error)?;
+                    validate_standard_id(&run_id, "runId", Some(ID_PREFIX_RUN))
+                        .map_err(transaction_error)?;
                     let turn_id = format!(
                         "turn.{}",
                         AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?
@@ -9957,7 +9971,8 @@ WHERE tenant_id = $8 AND organization_id = $9 AND run_id = $10 AND status = 0
                 let attempt_id_value =
                     AgentRepositoryAdapter::next_id(self).map_err(transaction_error)?;
                 let attempt_id = format!("{ID_PREFIX_ATTEMPT}{attempt_id_value}");
-                validate_standard_id(&attempt_id, "attemptId", Some(ID_PREFIX_ATTEMPT)).map_err(transaction_error)?;
+                validate_standard_id(&attempt_id, "attemptId", Some(ID_PREFIX_ATTEMPT))
+                    .map_err(transaction_error)?;
                 sqlx::query(
                     r#"
 INSERT INTO ai_agent_task_run_attempt (
@@ -12365,13 +12380,13 @@ mod tests {
         build_session_uuid, build_task_uuid, extract_event_context, AgentAuditEventRow,
         AgentProjectCompositionSlotRow,
     };
-    use crate::validation::{
-        ID_PREFIX_AGENT, ID_PREFIX_BINDING, ID_PREFIX_INTERACTION, ID_PREFIX_SESSION,
-        ID_PREFIX_SLOT, ID_PREFIX_TASK,
-    };
     #[cfg(feature = "postgres-sync")]
     use crate::session_activity::{
         decode_session_activity_cursor, encode_session_activity_cursor, SessionActivityCursor,
+    };
+    use crate::validation::{
+        ID_PREFIX_AGENT, ID_PREFIX_BINDING, ID_PREFIX_INTERACTION, ID_PREFIX_SESSION,
+        ID_PREFIX_SLOT, ID_PREFIX_TASK,
     };
     use crate::{
         AgentCompositionSlotKind, AgentCompositionTargetModule, AgentProjectCompositionSlotRecord,

@@ -940,8 +940,8 @@ mod tests {
             vec![AgentSessionItemKind::Reasoning]
         );
         assert_eq!(facts[0].provider_payload_json.is_some(), true);
-        let terminal = terminal_provider_assistant_item_id(&events, None)
-            .expect("terminal assistant id");
+        let terminal =
+            terminal_provider_assistant_item_id(&events, None).expect("terminal assistant id");
         assert!(terminal.is_some());
     }
 

@@ -42,8 +42,8 @@ use crate::task_scheduling::{
     AgentTaskStatus, AgentTaskTriggerKind,
 };
 use crate::validation::{
-    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_ITEM,
-    ID_PREFIX_RUN, ID_PREFIX_TURN,
+    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_ITEM, ID_PREFIX_RUN,
+    ID_PREFIX_TURN,
 };
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
@@ -5780,12 +5780,12 @@ fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::ID_PREFIX_ITEM;
     use crate::domain::{
         AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
         AgentProviderBindingRecord, AgentVisibility,
     };
     use crate::ports::{PaginationParams, ProviderBindingListQuery, MAX_PAGE_SIZE};
+    use crate::validation::ID_PREFIX_ITEM;
     use sdkwork_agent_kernel::AgentManifest;
     use sdkwork_agent_kernel::KernelErrorKind;
 

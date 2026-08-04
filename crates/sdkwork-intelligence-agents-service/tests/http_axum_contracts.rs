@@ -734,10 +734,7 @@ async fn app_project_session_should_materialize_canonical_code_engine_identity()
         StatusCode::CREATED,
     )
     .await;
-    assert_eq!(
-        created["data"]["item"]["agentId"],
-        "agent.codex"
-    );
+    assert_eq!(created["data"]["item"]["agentId"], "agent.codex");
     assert_eq!(created["data"]["item"]["projectId"], project_id);
 
     let bindings = get_json(
@@ -747,14 +744,8 @@ async fn app_project_session_should_materialize_canonical_code_engine_identity()
     )
     .await;
     assert_eq!(bindings["data"]["items"].as_array().map(Vec::len), Some(1));
-    assert_eq!(
-        bindings["data"]["items"][0]["bindingId"],
-        "binding.codex"
-    );
-    assert_eq!(
-        bindings["data"]["items"][0]["providerId"],
-        "provider.codex"
-    );
+    assert_eq!(bindings["data"]["items"][0]["bindingId"], "binding.codex");
+    assert_eq!(bindings["data"]["items"][0]["providerId"], "provider.codex");
 }
 
 #[tokio::test]
@@ -2280,10 +2271,7 @@ async fn provider_bindings_should_work_over_http() {
         body_json["data"]["item"]["bindingId"],
         "binding.rig.default"
     );
-    assert_eq!(
-        body_json["data"]["item"]["providerId"],
-        "provider.rig-rust"
-    );
+    assert_eq!(body_json["data"]["item"]["providerId"], "provider.rig-rust");
     assert_eq!(
         body_json["data"]["item"]["implementationKind"],
         "typed-local-provider"

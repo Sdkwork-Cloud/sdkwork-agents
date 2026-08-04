@@ -12,9 +12,9 @@ use crate::agent_turn_input_queue::{
 use crate::application::{
     AgentCompositionSlotCreateCommand, AgentCompositionSlotDeleteCommand,
     AgentCompositionSlotGetCommand, AgentCompositionSlotListCommand,
-    AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService, ArchiveSessionCommand,
-    CancelTurnCommand, ClaimNextTurnInputQueueEntryCommand, ClearTurnInputQueueEntriesCommand,
-    CloseSessionCommand, CreateProjectCommand,
+    AgentCompositionSlotUpdateCommand, AgentItemDriveRefInput, AgentsService,
+    ArchiveSessionCommand, CancelTurnCommand, ClaimNextTurnInputQueueEntryCommand,
+    ClearTurnInputQueueEntriesCommand, CloseSessionCommand, CreateProjectCommand,
     CreateProjectCompositionSlotCommand, CreateSessionCommand, CreateTurnCommand,
     CreateTurnInputQueueEntryCommand, CreateWorkspaceCommand, DeleteProjectCompositionSlotCommand,
     DeleteSessionCommand, EnsureDefaultWorkspaceCommand, FailTurnInputQueueEntryCommand,
@@ -110,11 +110,10 @@ use axum::{Json, Router};
 #[cfg(test)]
 use sdkwork_agent_kernel::ProviderManifest;
 use sdkwork_agent_kernel::{
-    AgentConfigValue, AgentConfigurationProfile, AgentConfigurationUpgradeRequest,
-    AgentManifest, AgentModelConfigurationFieldMapping, InMemorySecretProvider, KernelError,
-    KernelErrorKind, KernelResult, PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject,
-    ProviderHealth, SecretAccessRequest, SecretCreateRequest, SecretProvider, SecretRotateRequest,
-    SecretType,
+    AgentConfigValue, AgentConfigurationProfile, AgentConfigurationUpgradeRequest, AgentManifest,
+    AgentModelConfigurationFieldMapping, InMemorySecretProvider, KernelError, KernelErrorKind,
+    KernelResult, PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject, ProviderHealth,
+    SecretAccessRequest, SecretCreateRequest, SecretProvider, SecretRotateRequest, SecretType,
 };
 use sdkwork_agents_runtime_facade::CodeEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
@@ -3335,7 +3334,9 @@ struct ModelConfigurationSummaryView {
 impl ModelConfigurationSummaryView {
     fn from_profile(profile: &AgentConfigurationProfile, engine_id: &str) -> ApiResult<Self> {
         let provider_scope = sdkwork_agents_runtime_facade::code_engine_provider_scope(engine_id)
-            .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+            .ok_or_else(|| {
+            ApiProblem::validation("engineId is not a supported Agent provider")
+        })?;
         let mapping = AgentModelConfigurationFieldMapping::namespaced(provider_scope);
         let config = &profile.configuration;
         Ok(Self {
@@ -3360,10 +3361,7 @@ fn config_string(config: &sdkwork_agent_kernel::AgentConfiguration, key: &str) -
     }
 }
 
-fn config_string_list(
-    config: &sdkwork_agent_kernel::AgentConfiguration,
-    key: &str,
-) -> Vec<String> {
+fn config_string_list(config: &sdkwork_agent_kernel::AgentConfiguration, key: &str) -> Vec<String> {
     match config.value(key) {
         Some(AgentConfigValue::StringList(values)) => values.clone(),
         _ => Vec::new(),
@@ -3403,7 +3401,9 @@ async fn app_list_model_configurations(
                 .list_profiles(agent_id)
                 .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?;
             for profile in profiles {
-                items.push(ModelConfigurationSummaryView::from_profile(&profile, &engine_id)?);
+                items.push(ModelConfigurationSummaryView::from_profile(
+                    &profile, &engine_id,
+                )?);
             }
         }
         let total_items = items.len();
@@ -3430,11 +3430,7 @@ async fn app_get_model_configuration(
 ) -> Response {
     let result: ApiResult<ResourceData<ModelConfigurationSummaryView>> = async {
         let _scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(
-            &state,
-            &path.engine_id,
-            &path.profile_id,
-        )?;
+        let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
         Ok(ResourceData {
             item: ModelConfigurationSummaryView::from_profile(&profile, &path.engine_id)?,
         })
@@ -3480,11 +3476,7 @@ async fn app_get_model_configuration_status(
 ) -> Response {
     let result: ApiResult<ResourceData<ModelConfigurationStatusView>> = async {
         let _scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(
-            &state,
-            &path.engine_id,
-            &path.profile_id,
-        )?;
+        let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
         let provider_scope = sdkwork_agents_runtime_facade::code_engine_provider_scope(
             &path.engine_id,
         )
@@ -3515,13 +3507,13 @@ async fn app_get_model_configuration_status(
                     .effective_base_url
                     .as_deref()
                     .is_some_and(|effective| Some(effective) == expected_base_url.as_deref());
-                let model_matches = match (&read_back.effective_default_model, &expected_default_model)
-                {
-                    (Some(effective), Some(expected)) => effective == expected,
-                    // Per-turn model providers cannot be verified on read-back.
-                    (None, _) => true,
-                    (Some(_), None) => false,
-                };
+                let model_matches =
+                    match (&read_back.effective_default_model, &expected_default_model) {
+                        (Some(effective), Some(expected)) => effective == expected,
+                        // Per-turn model providers cannot be verified on read-back.
+                        (None, _) => true,
+                        (Some(_), None) => false,
+                    };
                 if base_url_matches && model_matches {
                     "materialized"
                 } else {
@@ -3560,11 +3552,7 @@ async fn app_archive_model_configuration(
 ) -> Response {
     let result: ApiResult<ResourceData<ModelConfigurationSummaryView>> = async {
         let scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(
-            &state,
-            &path.engine_id,
-            &path.profile_id,
-        )?;
+        let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
 
         // Only revert the CLI-native config when it actually carries the
         // SDKWork-managed materialization; never touch a user-owned surface.
@@ -3639,11 +3627,7 @@ async fn app_migrate_model_configuration(
     let result: ApiResult<ResourceData<MigratedModelConfigurationResponse>> = async {
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
         let _scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(
-            &state,
-            &body.engine_id,
-            &body.profile_id,
-        )?;
+        let profile = load_model_configuration_profile(&state, &body.engine_id, &body.profile_id)?;
         if profile.configuration_version != body.from_configuration_version {
             return Err(ApiProblem::validation(
                 "fromConfigurationVersion does not match the stored profile version",
@@ -12911,17 +12895,18 @@ mod tests {
         let archive_uri = format!("{detail_uri}/archive");
 
         // List returns the applied profile without exposing credentials.
-        let list = get_model_configuration(
-            &app,
-            "/app/v3/api/ai/model_configurations?engineId=codex",
-        )
-        .await;
+        let list =
+            get_model_configuration(&app, "/app/v3/api/ai/model_configurations?engineId=codex")
+                .await;
         assert_eq!(list.status(), StatusCode::OK);
         let list_bytes = to_bytes(list.into_body(), usize::MAX)
             .await
             .expect("list response should be readable");
         let list_text = String::from_utf8(list_bytes.to_vec()).expect("list should be UTF-8");
-        assert!(!list_text.contains("readback-secret"), "credentials must not be listed");
+        assert!(
+            !list_text.contains("readback-secret"),
+            "credentials must not be listed"
+        );
         let list_payload: Value =
             serde_json::from_str(&list_text).expect("list response should be JSON");
         let items = list_payload["data"]["items"]
@@ -12969,8 +12954,13 @@ mod tests {
             .as_str()
             .expect("derivedState should be present");
         assert!(
-            ["materialized", "diverged", "not_materialized", "unsupported"]
-                .contains(&derived_state),
+            [
+                "materialized",
+                "diverged",
+                "not_materialized",
+                "unsupported"
+            ]
+            .contains(&derived_state),
             "unexpected derived state {derived_state}"
         );
 
@@ -13281,8 +13271,10 @@ mod tests {
         .expect("parent turn worker should complete")
         .expect("parent turn should complete");
 
-        let mut child_request =
-            facade_session_request("session.test.facade.child", Some("runtime_binding.test.facade.child"));
+        let mut child_request = facade_session_request(
+            "session.test.facade.child",
+            Some("runtime_binding.test.facade.child"),
+        );
         child_request.project_id = Some("project.facade".to_string());
         child_request.source_module = Some("birdcoder".to_string());
         child_request.source_context_kind = Some("coding_project".to_string());
@@ -13461,7 +13453,10 @@ mod tests {
 
         let error = state
             .session_facade()
-            .resolve_or_create_session(facade_session_request("session.test.facade.read-error", None))
+            .resolve_or_create_session(facade_session_request(
+                "session.test.facade.read-error",
+                None,
+            ))
             .expect_err("non-not-found read errors must fail closed");
         assert!(matches!(
             error,

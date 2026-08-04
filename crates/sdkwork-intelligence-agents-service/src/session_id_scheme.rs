@@ -139,8 +139,14 @@ mod tests {
     #[test]
     fn provider_history_gates_accept_only_canonical_ids() {
         assert!(is_provider_session_id_for("session.codex.abc", "codex"));
-        assert!(!is_provider_session_id_for("session.provider.codex.abc", "codex"));
-        assert!(!is_provider_session_id_for("session.native.codex.abc", "codex"));
+        assert!(!is_provider_session_id_for(
+            "session.provider.codex.abc",
+            "codex"
+        ));
+        assert!(!is_provider_session_id_for(
+            "session.native.codex.abc",
+            "codex"
+        ));
         assert!(!is_provider_session_id_for("session.codex.abc", "gemini"));
         assert!(!is_provider_session_id_for("session.gemini.abc", "codex"));
         assert!(!is_provider_session_id_for("session.12345", "codex"));

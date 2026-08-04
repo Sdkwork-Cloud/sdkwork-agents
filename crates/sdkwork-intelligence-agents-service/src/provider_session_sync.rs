@@ -25,7 +25,9 @@ use crate::domain::{
     AgentSessionStatus,
 };
 use crate::http::{HttpAgentsSessionFacade, HttpService};
-use crate::ports::{PaginationParams, SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery};
+use crate::ports::{
+    PaginationParams, SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery,
+};
 use crate::project::AgentProjectRecord;
 use crate::runtime_facade_bridge::shared_code_engine_host;
 use crate::session_id_scheme::{
@@ -125,10 +127,10 @@ impl ProviderSessionTranscriptSyncOutcome {
 
     pub(crate) const fn imported_item_count(self) -> usize {
         match self {
-            Self::Imported { imported_item_count } => imported_item_count,
-            Self::NotProviderSession
-            | Self::NoActiveBinding
-            | Self::EngineUnavailable => 0,
+            Self::Imported {
+                imported_item_count,
+            } => imported_item_count,
+            Self::NotProviderSession | Self::NoActiveBinding | Self::EngineUnavailable => 0,
         }
     }
 }
@@ -197,10 +199,12 @@ struct CompletedProviderSessionSync {
     completed_at: Instant,
 }
 
-static COMPLETED_PROVIDER_SESSION_SYNCS: OnceLock<Mutex<HashMap<String, CompletedProviderSessionSync>>> =
-    OnceLock::new();
+static COMPLETED_PROVIDER_SESSION_SYNCS: OnceLock<
+    Mutex<HashMap<String, CompletedProviderSessionSync>>,
+> = OnceLock::new();
 
-fn completed_provider_session_syncs() -> &'static Mutex<HashMap<String, CompletedProviderSessionSync>> {
+fn completed_provider_session_syncs(
+) -> &'static Mutex<HashMap<String, CompletedProviderSessionSync>> {
     COMPLETED_PROVIDER_SESSION_SYNCS.get_or_init(Default::default)
 }
 
@@ -211,9 +215,7 @@ fn provider_session_sync_cache_key(project: &AgentProjectRecord) -> String {
     )
 }
 
-fn read_completed_provider_session_sync(
-    cache_key: &str,
-) -> Option<CompletedProviderSessionSync> {
+fn read_completed_provider_session_sync(cache_key: &str) -> Option<CompletedProviderSessionSync> {
     completed_provider_session_syncs()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -234,9 +236,7 @@ fn record_completed_provider_session_sync(
     let mut cache = completed_provider_session_syncs()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if cache.len() >= PROVIDER_SESSION_SYNC_MAX_CACHED_PROJECTS
-        && !cache.contains_key(cache_key)
-    {
+    if cache.len() >= PROVIDER_SESSION_SYNC_MAX_CACHED_PROJECTS && !cache.contains_key(cache_key) {
         if let Some(evicted_key) = cache.keys().next().cloned() {
             cache.remove(&evicted_key);
         }
@@ -280,7 +280,10 @@ fn provider_session_inventory_fingerprint(items: &[ProviderSessionInventoryItem]
         manifest.push_str(&session_id);
         manifest.push('\n');
     }
-    format!("sha256:{}", sdkwork_utils_rust::sha256_hash(manifest.as_bytes()))
+    format!(
+        "sha256:{}",
+        sdkwork_utils_rust::sha256_hash(manifest.as_bytes())
+    )
 }
 
 pub(crate) fn synchronize_project_provider_sessions(
@@ -592,7 +595,8 @@ fn synchronize_provider_session_transcript_worker(
             provider_session_id,
         );
         let child_session_id = canonical_provider_session_id(engine_key, &stable_key);
-        let child_runtime_binding_id = canonical_provider_runtime_binding_id(engine_key, &stable_key);
+        let child_runtime_binding_id =
+            canonical_provider_runtime_binding_id(engine_key, &stable_key);
         let requested_at = OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .map_err(|error| {
@@ -607,8 +611,8 @@ fn synchronize_provider_session_transcript_worker(
         // have hit a pre-existing Session with items — so any Session left
         // without a binding is reclaimed by the project-level orphan sweep
         // instead.
-        if let Err(error) = service.reconcile_provider_session_history_session(
-            CreateSessionCommand {
+        if let Err(error) =
+            service.reconcile_provider_session_history_session(CreateSessionCommand {
                 tenant_id,
                 organization_id,
                 agent_id: agent_id.to_string(),
@@ -627,8 +631,8 @@ fn synchronize_provider_session_transcript_worker(
                 payload_hash: Some(format!("provider-session-v1:{engine_key}:{stable_key}")),
                 requested_by: subject.clone(),
                 requested_at: requested_at.clone(),
-            },
-        ) {
+            })
+        {
             tracing::warn!(
                 target: "sdkwork.agents.provider_session_sync",
                 agent_id = %agent_id,
@@ -1055,12 +1059,7 @@ fn provider_session_item_kind(
     // matches the live turn projection.
     if matches!(
         content_type,
-        Some(
-            "reasoning"
-                | "reasoning_summary"
-                | "reasoning_content"
-                | "thinking"
-        )
+        Some("reasoning" | "reasoning_summary" | "reasoning_content" | "thinking")
     ) {
         return Some(AgentSessionItemKind::Reasoning);
     }
@@ -1234,10 +1233,9 @@ fn synchronize_provider_session_snapshot(
     // provider renames and directory fields converge even when the set is
     // stable. Tests that call this function directly have no cached entry and
     // therefore always run the full path.
-    let inventory_fingerprint_unchanged = read_completed_provider_session_sync(
-        &provider_session_sync_cache_key(project),
-    )
-    .is_some_and(|cached| cached.fingerprint == inventory_fingerprint);
+    let inventory_fingerprint_unchanged =
+        read_completed_provider_session_sync(&provider_session_sync_cache_key(project))
+            .is_some_and(|cached| cached.fingerprint == inventory_fingerprint);
     if directory_resolved && !inventory_fingerprint_unchanged {
         reconcile_missing_provider_session_directories(
             service.clone(),
@@ -1622,7 +1620,8 @@ fn synchronize_provider_session_inventory_with_timeout(
             &provider_session_id,
         );
         let session_id = canonical_provider_session_id(&item.engine_key, &stable_key);
-        let runtime_binding_id = canonical_provider_runtime_binding_id(&item.engine_key, &stable_key);
+        let runtime_binding_id =
+            canonical_provider_runtime_binding_id(&item.engine_key, &stable_key);
         // Sub-agent sessions persist the canonical parent session edge so the
         // canonical session tree mirrors the provider sub-agent topology. The
         // parent must already be synchronized; otherwise the edge is deferred
@@ -1996,7 +1995,11 @@ mod tests {
             "thinking",
         ] {
             assert_eq!(
-                kind(AgentMessageRole::Agent, AgentPartKind::Text, Some(content_type)),
+                kind(
+                    AgentMessageRole::Agent,
+                    AgentPartKind::Text,
+                    Some(content_type)
+                ),
                 AgentSessionItemKind::Reasoning,
                 "content type {content_type}"
             );
@@ -4061,7 +4064,10 @@ mod tests {
             None,
         )
         .expect("live Session outcome");
-        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NotProviderSession);
+        assert_eq!(
+            outcome,
+            ProviderSessionTranscriptSyncOutcome::NotProviderSession
+        );
         // An agent id that does not match the provider Session pattern is
         // never synchronized.
         let mismatched = create_test_session(
@@ -4081,7 +4087,10 @@ mod tests {
             None,
         )
         .expect("mismatched agent outcome");
-        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NotProviderSession);
+        assert_eq!(
+            outcome,
+            ProviderSessionTranscriptSyncOutcome::NotProviderSession
+        );
         // A provider Session without a runtime binding cannot resolve its
         // provider identity; this is the orphan signature.
         let orphan = create_test_session(
@@ -4101,7 +4110,10 @@ mod tests {
             None,
         )
         .expect("orphan outcome");
-        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
+        assert_eq!(
+            outcome,
+            ProviderSessionTranscriptSyncOutcome::NoActiveBinding
+        );
         // A provider Session whose binding carries no provider Session id is
         // equally unresolvable.
         let unbound = create_test_session(
@@ -4128,7 +4140,10 @@ mod tests {
             None,
         )
         .expect("psid-less outcome");
-        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
+        assert_eq!(
+            outcome,
+            ProviderSessionTranscriptSyncOutcome::NoActiveBinding
+        );
         // A provider Session bound to another transport is never synchronized.
         let stream_bound = create_test_session(
             &state,
@@ -4154,7 +4169,10 @@ mod tests {
             None,
         )
         .expect("stream-bound outcome");
-        assert_eq!(outcome, ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
+        assert_eq!(
+            outcome,
+            ProviderSessionTranscriptSyncOutcome::NoActiveBinding
+        );
     }
 
     #[derive(Debug)]
@@ -4165,9 +4183,11 @@ mod tests {
             &self,
             _selector: &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector,
         ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<Option<String>> {
-            Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
-                "test mount resolution failure".to_string(),
-            ))
+            Err(
+                sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+                    "test mount resolution failure".to_string(),
+                ),
+            )
         }
     }
 
@@ -4260,8 +4280,7 @@ mod tests {
 
         assert_eq!(result.skipped_session_count, 1);
         assert!(result.issues.iter().any(|issue| {
-            issue.code == "orphaned_provider_session_archived"
-                && issue.count == 1
+            issue.code == "orphaned_provider_session_archived" && issue.count == 1
         }));
         let archived = state
             .service

@@ -905,12 +905,10 @@ mod tests {
                 request.provider_session_id.as_deref(),
                 Some("provider-session.fake")
             );
-            Ok(ModelResponse::text(
-                request.model_request_id,
-                "provider.fake",
-                "kernel reply",
+            Ok(
+                ModelResponse::text(request.model_request_id, "provider.fake", "kernel reply")
+                    .with_usage(sdkwork_agent_kernel::ModelUsage::new(3, 5)),
             )
-            .with_usage(sdkwork_agent_kernel::ModelUsage::new(3, 5)))
         }
 
         fn cancel(&self, model_request_id: &str) -> KernelResult<ModelResponse> {

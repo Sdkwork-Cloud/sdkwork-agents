@@ -14,19 +14,18 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use sdkwork_agent_kernel::{
-    AgentConfigurationChange, AgentConfigurationProfile, AgentConfigurationStore,
-    AgentConfigurationStoreRecord, AgentConfigurationSubscriber, AgentConfigValue,
-    AgentProfileArchiveRequest, AgentSecretBindingKind, AgentConfigurationUpgradePlan,
-    ConfigurationSubscription, KernelError, KernelResult,
+    AgentConfigValue, AgentConfigurationChange, AgentConfigurationProfile, AgentConfigurationStore,
+    AgentConfigurationStoreRecord, AgentConfigurationSubscriber, AgentConfigurationUpgradePlan,
+    AgentProfileArchiveRequest, AgentSecretBindingKind, ConfigurationSubscription, KernelError,
+    KernelResult,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 
 /// Authoritative local DDL (single source of truth with
 /// `sql/0001_agent_model_configuration_baseline.sql`).
-const AGENT_MODEL_CONFIGURATION_SCHEMA_SQL: &str = include_str!(
-    "../sql/0001_agent_model_configuration_baseline.sql"
-);
+const AGENT_MODEL_CONFIGURATION_SCHEMA_SQL: &str =
+    include_str!("../sql/0001_agent_model_configuration_baseline.sql");
 
 /// SQLite-backed [`AgentConfigurationStore`] for the model configuration
 /// runtime profiles. The connection is guarded by a mutex so the store is
@@ -50,7 +49,10 @@ impl SqliteAgentConfigurationStore {
     /// Opens (creating when absent) a file-backed store at `path`.
     pub fn new(path: impl AsRef<Path>) -> KernelResult<Self> {
         let connection = Connection::open(path).map_err(|error| {
-            store_error("open", format!("SQLite profile store could not be opened: {error}"))
+            store_error(
+                "open",
+                format!("SQLite profile store could not be opened: {error}"),
+            )
         })?;
         Self::with_connection(connection)
     }
@@ -58,7 +60,10 @@ impl SqliteAgentConfigurationStore {
     /// Opens an in-memory store (tests and explicitly ephemeral runtimes).
     pub fn in_memory() -> KernelResult<Self> {
         Self::with_connection(Connection::open_in_memory().map_err(|error| {
-            store_error("open_memory", format!("in-memory profile store could not be opened: {error}"))
+            store_error(
+                "open_memory",
+                format!("in-memory profile store could not be opened: {error}"),
+            )
         })?)
     }
 
@@ -84,7 +89,10 @@ impl SqliteAgentConfigurationStore {
         connection
             .execute_batch(AGENT_MODEL_CONFIGURATION_SCHEMA_SQL)
             .map_err(|error| {
-                store_error("schema", format!("profile store schema could not be applied: {error}"))
+                store_error(
+                    "schema",
+                    format!("profile store schema could not be applied: {error}"),
+                )
             })
     }
 
@@ -158,12 +166,11 @@ impl AgentConfigurationStore for SqliteAgentConfigurationStore {
         agent_id: &str,
         profile_id: &str,
     ) -> KernelResult<AgentConfigurationProfile> {
-        self.find_profile(agent_id, profile_id)?
-            .ok_or_else(|| {
-                KernelError::validation(format!(
-                    "agent configuration profile not found: {agent_id}/{profile_id}"
-                ))
-            })
+        self.find_profile(agent_id, profile_id)?.ok_or_else(|| {
+            KernelError::validation(format!(
+                "agent configuration profile not found: {agent_id}/{profile_id}"
+            ))
+        })
     }
 
     fn list_profiles(&self, agent_id: &str) -> KernelResult<Vec<AgentConfigurationProfile>> {
@@ -191,8 +198,14 @@ impl AgentConfigurationStore for SqliteAgentConfigurationStore {
             .map_err(|error| store_error("list_query", error.to_string()))?;
         let mut profiles = Vec::new();
         for row in rows {
-            let (profile_id, agent_id, configuration_version, status, configuration_json, secret_bindings_json) =
-                row.map_err(|error| store_error("list_row", error.to_string()))?;
+            let (
+                profile_id,
+                agent_id,
+                configuration_version,
+                status,
+                configuration_json,
+                secret_bindings_json,
+            ) = row.map_err(|error| store_error("list_row", error.to_string()))?;
             profiles.push(profile_from_columns(
                 profile_id,
                 agent_id,
@@ -232,7 +245,14 @@ impl AgentConfigurationStore for SqliteAgentConfigurationStore {
             .optional()
             .map_err(|error| store_error("find_query", error.to_string()))?;
         row.map(
-            |(profile_id, agent_id, configuration_version, status, configuration_json, secret_bindings_json)| {
+            |(
+                profile_id,
+                agent_id,
+                configuration_version,
+                status,
+                configuration_json,
+                secret_bindings_json,
+            )| {
                 profile_from_columns(
                     profile_id,
                     agent_id,
@@ -351,14 +371,13 @@ fn profile_from_columns(
     configuration_json: &str,
     secret_bindings_json: &str,
 ) -> KernelResult<AgentConfigurationProfile> {
-    let configuration = serde_json::from_str::<serde_json::Value>(configuration_json).map_err(
-        |error| {
+    let configuration =
+        serde_json::from_str::<serde_json::Value>(configuration_json).map_err(|error| {
             store_error(
                 "parse_configuration",
                 format!("stored configuration is not valid JSON: {error}"),
             )
-        },
-    )?;
+        })?;
     let secret_bindings =
         serde_json::from_str::<serde_json::Value>(secret_bindings_json).map_err(|error| {
             store_error(
@@ -395,12 +414,16 @@ fn value_to_json(value: &AgentConfigValue) -> serde_json::Value {
         AgentConfigValue::Boolean(value) => serde_json::Value::Bool(*value),
         AgentConfigValue::Integer(value) => serde_json::Value::Number((*value).into()),
         AgentConfigValue::SecretRef(value) => serde_json::Value::String(value.clone()),
-        AgentConfigValue::StringList(values) => {
-            serde_json::Value::Array(values.iter().cloned().map(serde_json::Value::String).collect())
+        AgentConfigValue::StringList(values) => serde_json::Value::Array(
+            values
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+        AgentConfigValue::Json(value) => {
+            serde_json::from_str(value).unwrap_or_else(|_| serde_json::Value::String(value.clone()))
         }
-        AgentConfigValue::Json(value) => serde_json::from_str(value).unwrap_or_else(|_| {
-            serde_json::Value::String(value.clone())
-        }),
     }
 }
 
@@ -427,7 +450,10 @@ mod tests {
             agent_id,
             "0.2.0",
             AgentConfiguration::new(agent_id, profile_id)
-                .set("codex.model.base_url", AgentConfigValue::string("https://api.birdcoder.com/v1"))
+                .set(
+                    "codex.model.base_url",
+                    AgentConfigValue::string("https://api.birdcoder.com/v1"),
+                )
                 .set("codex.model.default", AgentConfigValue::string("gpt-5.4"))
                 .set(
                     "codex.model.api_key",
@@ -437,7 +463,10 @@ mod tests {
                     "codex.model.supported",
                     AgentConfigValue::string_list(vec!["gpt-5.4".to_string()]),
                 )
-                .set("codex.model.supports_multimodal", AgentConfigValue::boolean(false)),
+                .set(
+                    "codex.model.supports_multimodal",
+                    AgentConfigValue::boolean(false),
+                ),
         )
         .add_secret_binding(AgentSecretBinding::llm_api_key(
             "codex.model.api_key",
@@ -459,9 +488,7 @@ mod tests {
         assert_eq!(loaded, profile);
         assert_eq!(loaded.status, AgentConfigurationProfileStatus::Active);
         assert_eq!(
-            loaded
-                .configuration
-                .value("codex.model.base_url"),
+            loaded.configuration.value("codex.model.base_url"),
             Some(&AgentConfigValue::String(
                 "https://api.birdcoder.com/v1".to_string()
             ))
@@ -479,8 +506,10 @@ mod tests {
             "profile.test",
             "agent.codex",
             "0.3.0",
-            AgentConfiguration::new("agent.codex", "profile.test")
-                .set("codex.model.base_url", AgentConfigValue::string("https://relay.new/v1")),
+            AgentConfiguration::new("agent.codex", "profile.test").set(
+                "codex.model.base_url",
+                AgentConfigValue::string("https://relay.new/v1"),
+            ),
         );
         store.save_profile(updated.clone()).expect("second save");
         let loaded = store
@@ -489,7 +518,9 @@ mod tests {
         assert_eq!(loaded.configuration_version, "0.3.0");
         assert_eq!(
             loaded.configuration.value("codex.model.base_url"),
-            Some(&AgentConfigValue::String("https://relay.new/v1".to_string()))
+            Some(&AgentConfigValue::String(
+                "https://relay.new/v1".to_string()
+            ))
         );
     }
 
@@ -510,18 +541,14 @@ mod tests {
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].profile_id, "profile.a");
         assert_eq!(profiles[1].profile_id, "profile.b");
-        assert!(
-            store
-                .find_profile("agent.rig-general", "profile.c")
-                .expect("find")
-                .is_some()
-        );
-        assert!(
-            store
-                .find_profile("agent.rig-general", "profile.missing")
-                .expect("find")
-                .is_none()
-        );
+        assert!(store
+            .find_profile("agent.rig-general", "profile.c")
+            .expect("find")
+            .is_some());
+        assert!(store
+            .find_profile("agent.rig-general", "profile.missing")
+            .expect("find")
+            .is_none());
     }
 
     #[test]
@@ -542,9 +569,11 @@ mod tests {
         }
 
         let record = store
-            .archive_profile(
-                &AgentProfileArchiveRequest::new("request-1", "agent.codex", "profile.test"),
-            )
+            .archive_profile(&AgentProfileArchiveRequest::new(
+                "request-1",
+                "agent.codex",
+                "profile.test",
+            ))
             .expect("archive");
         assert_eq!(
             record.profile.status,

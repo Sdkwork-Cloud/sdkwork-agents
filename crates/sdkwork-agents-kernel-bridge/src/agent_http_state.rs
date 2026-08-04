@@ -95,9 +95,8 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     // configurable through `SDKWORK_AGENTS_MODEL_CONFIG_SQLITE_PATH`; when
     // unset it defaults under `SDKWORK_AGENTS_APP_ROOT` and falls back to an
     // in-memory store only when neither is available.
-    let configuration_store = sqlite_model_configuration_store().context(
-        "bootstrap SQLite model configuration profile store",
-    )?;
+    let configuration_store = sqlite_model_configuration_store()
+        .context("bootstrap SQLite model configuration profile store")?;
     Ok(state.with_model_configuration_providers(
         Box::new(InMemorySecretProvider::new()),
         configuration_store,
