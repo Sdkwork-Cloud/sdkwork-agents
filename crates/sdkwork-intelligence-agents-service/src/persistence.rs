@@ -47,7 +47,7 @@ use crate::task_scheduling::{
 };
 use crate::validation::{
     validate_capabilities, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_BINDING,
-    ID_PREFIX_PROFILE, ID_PREFIX_PROVIDER, ID_PREFIX_RUN, ID_PREFIX_SESSION, ID_PREFIX_TURN,
+    ID_PREFIX_PROFILE, ID_PREFIX_PROVIDER, ID_PREFIX_RUN,
 };
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 #[cfg(feature = "postgres-sync")]

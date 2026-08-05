@@ -2016,7 +2016,7 @@ mod tests {
 
     #[test]
     fn classifies_provider_parts_across_all_agent_engine_content_types() {
-        use sdkwork_agent_kernel::{AgentMessageRole, AgentPart, AgentPartKind};
+        use sdkwork_agent_kernel::{AgentMessageRole, AgentPartKind};
 
         let kind = |role, part_kind, content_type| {
             provider_session_item_kind(role, part_kind, content_type).expect("classified kind")

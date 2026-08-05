@@ -221,7 +221,7 @@ fn rich_runtime_event(
     source: KernelEventSource,
     redaction: KernelEventRedaction,
 ) -> KernelEvent {
-    let item_id = item
+    let _item_id = item
         .as_ref()
         .and_then(|item| item.get("id"))
         .and_then(Value::as_str)

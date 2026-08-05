@@ -42,7 +42,7 @@ use crate::task_scheduling::{
     AgentTaskStatus, AgentTaskTriggerKind,
 };
 use crate::validation::{
-    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_ITEM, ID_PREFIX_RUN,
+    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_RUN,
     ID_PREFIX_TURN,
 };
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
