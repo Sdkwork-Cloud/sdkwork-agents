@@ -38,7 +38,7 @@ The OpenAPI authority is complete and locally validated. The current
 `sdkwork-v3` standard profile is limited to `app`, `backend`, and `im`
 prefixes for direct sdkgen, so `/agent/v3/api` transport is derived from the
 strict-profile app SDK source by `materialize-agent-open-sdk-from-app.mjs`.
-The derivation strips app-only operations (`restore`, `codeEngines`,
+The derivation strips app-only operations (`restore`, `agentEngines`,
 `mcpServers`) so the open SDK surface matches the 27-operation open authority.
 
 ## Consume

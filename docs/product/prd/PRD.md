@@ -201,7 +201,9 @@ Release requires API, SDK, database, Rust, security, documentation, deployment
 and supply-chain checks to pass, including `pnpm check:production-security`.
 PostgreSQL is the production persistence authority. Open API credentials are
 isolated from app/backend session tokens. The exact commands are maintained in
-[pre-launch-verification.md](../../runbooks/pre-launch-verification.md).
+[pre-launch-verification.md](../../runbooks/pre-launch-verification.md), and
+the cloud launch gate runs `pnpm deploy:validate:cloud` against the cloud
+production profile before any cloud deployment is accepted.
 
 Hybrid execution release additionally requires REQ-2026-0730 to be accepted,
 its ADR and review to be approved, Kernel PRD-05 and placement control plane to

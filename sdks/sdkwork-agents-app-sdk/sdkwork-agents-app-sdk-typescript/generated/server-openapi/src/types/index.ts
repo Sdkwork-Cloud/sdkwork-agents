@@ -84,11 +84,11 @@ export type { MigratedModelConfigurationResponse } from './migrated-model-config
 export type { ApplyAgentModelSelectionRequest } from './apply-agent-model-selection-request';
 export type { AppliedAgentModelSelectionRecord } from './applied-agent-model-selection-record';
 export type { AppliedAgentModelSelectionResponse } from './applied-agent-model-selection-response';
-export type { CodeEngineCatalogListResponse } from './code-engine-catalog-list-response';
-export type { CodeEngineCatalog } from './code-engine-catalog';
-export type { CodeEngineCatalogEngine } from './code-engine-catalog-engine';
-export type { CodeEngineAccessModeCatalogEntry } from './code-engine-access-mode-catalog-entry';
-export type { CodeEngineModelCatalogEntry } from './code-engine-model-catalog-entry';
+export type { AgentEngineCatalogListResponse } from './agent-engine-catalog-list-response';
+export type { AgentEngineCatalog } from './agent-engine-catalog';
+export type { AgentEngineCatalogEngine } from './agent-engine-catalog-engine';
+export type { AgentEngineAccessModeCatalogEntry } from './agent-engine-access-mode-catalog-entry';
+export type { AgentEngineModelCatalogEntry } from './agent-engine-model-catalog-entry';
 export type { McpServerMarketplaceListResponse } from './mcp-server-marketplace-list-response';
 export type { McpServerMarketplaceRecord } from './mcp-server-marketplace-record';
 export type { AgentSessionKind } from './agent-session-kind';

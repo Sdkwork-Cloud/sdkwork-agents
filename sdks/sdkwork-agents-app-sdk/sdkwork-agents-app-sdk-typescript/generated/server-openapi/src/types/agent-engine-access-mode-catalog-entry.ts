@@ -1,4 +1,4 @@
-export interface CodeEngineAccessModeCatalogEntry {
+export interface AgentEngineAccessModeCatalogEntry {
   modeId: string;
   displayName: string;
   description: string;

@@ -7,14 +7,14 @@
 
 use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
-use crate::runtime_facade_bridge::shared_code_engine_host;
+use crate::runtime_facade_bridge::shared_agent_engine_host;
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse,
     ModelStatus, ModelStreamChunk, ModelStreamSink,
 };
 use sdkwork_agents_runtime_facade::{
-    code_engine_model_request_id, execute_code_engine_turn, execute_code_engine_turn_with_stream,
-    execute_code_engine_turn_with_stream_sink, CodeEngineTurnInput,
+    agent_engine_model_request_id, execute_agent_engine_turn, execute_agent_engine_turn_with_stream,
+    execute_agent_engine_turn_with_stream_sink, AgentEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
 use std::collections::HashMap;
@@ -22,7 +22,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
-/// Runtime mode when managed turn inference succeeds through the code-engine facade.
+/// Runtime mode when managed turn inference succeeds through the agent-engine facade.
 pub const RUNTIME_MODE_FACADE: &str = "agents-runtime-facade";
 /// Runtime mode when inference was attempted but failed (no silent contract fallback).
 pub const RUNTIME_MODE_INFERENCE_ERROR: &str = "managed-agent-inference-error";
@@ -66,7 +66,7 @@ pub struct TurnExecutionInput {
     /// from the canonical SDKWork Session id.
     pub provider_session_id: Option<String>,
     pub access_mode_id: Option<String>,
-    /// Active provider binding id (used to resolve canonical code-engine keys).
+    /// Active provider binding id (used to resolve canonical agent-engine keys).
     pub binding_id: Option<String>,
     /// When true, an active binding exposes `model.chat` and the gateway may
     /// replace this completer with a kernel-backed implementation.
@@ -107,7 +107,7 @@ pub struct TurnCancellationOutput {
 }
 
 pub fn turn_model_request_id(turn_id: &str) -> String {
-    code_engine_model_request_id(turn_id)
+    agent_engine_model_request_id(turn_id)
 }
 
 /// Provider-neutral observer for one Turn's live output.
@@ -332,7 +332,7 @@ where
 }
 
 /// Production chat completer: routes active provider bindings through the
-/// agents runtime facade (canonical code engines). Never silently echoes user
+/// agents runtime facade (canonical agent engines). Never silently echoes user
 /// input when `model.chat` is configured.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RuntimeFacadeTurnExecutor;
@@ -369,13 +369,13 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
             .ok_or_else(|| KernelError::validation("active provider binding id is required"))?;
         let engine_key = engine_key_for_binding_id(binding_id).ok_or_else(|| {
             KernelError::validation(
-                "active provider binding is not mapped to a canonical code engine",
+                "active provider binding is not mapped to a canonical agent engine",
             )
         })?;
-        let host = shared_code_engine_host().ok_or_else(|| {
+        let host = shared_agent_engine_host().ok_or_else(|| {
             KernelError::provider_error(
                 "turn_cancellation_unavailable",
-                "shared code engine host is unavailable",
+                "shared agent engine host is unavailable",
             )
         })?;
         let cancellation = host
@@ -446,19 +446,19 @@ fn execute_runtime_facade_turn(
         .filter(|value| !is_blank(Some(*value)))
         .unwrap_or("");
     let Some(engine_key) = engine_key_for_binding_id(binding_id) else {
-        return inference_error("active provider binding is not mapped to a canonical code engine");
+        return inference_error("active provider binding is not mapped to a canonical agent engine");
     };
 
-    let Some(host) = shared_code_engine_host() else {
-        return inference_error("shared code engine host is unavailable");
+    let Some(host) = shared_agent_engine_host() else {
+        return inference_error("shared agent engine host is unavailable");
     };
     let Some(slot) = host.slot(engine_key) else {
-        return inference_error(format!("code engine bootstrap failed for {engine_key}"));
+        return inference_error(format!("agent engine bootstrap failed for {engine_key}"));
     };
 
     let model_id = resolve_turn_model_id(input, slot);
     let prompt = build_managed_chat_prompt(input);
-    let turn_input = CodeEngineTurnInput {
+    let turn_input = AgentEngineTurnInput {
         engine_key: engine_key.to_string(),
         model_id: model_id.clone(),
         model_request_id: Some(input.model_request_id.clone()),
@@ -474,12 +474,12 @@ fn execute_runtime_facade_turn(
     let turn_result = if prefer_stream {
         if let Some(sink) = sink {
             let mut facade_sink = RuntimeFacadeModelStreamSink { sink };
-            execute_code_engine_turn_with_stream_sink(slot, &turn_input, &mut facade_sink)
+            execute_agent_engine_turn_with_stream_sink(slot, &turn_input, &mut facade_sink)
         } else {
-            execute_code_engine_turn_with_stream(slot, &turn_input)
+            execute_agent_engine_turn_with_stream(slot, &turn_input)
         }
     } else {
-        execute_code_engine_turn(slot, &turn_input)
+        execute_agent_engine_turn(slot, &turn_input)
     };
 
     match turn_result {
@@ -487,7 +487,7 @@ fn execute_runtime_facade_turn(
             let content = output.assistant_content.trim().to_string();
             let cancelled = output.finish_reason.as_deref() == Some("cancelled");
             if content.is_empty() && !cancelled {
-                return inference_error("code engine returned empty assistant content");
+                return inference_error("agent engine returned empty assistant content");
             }
             TurnExecutionOutput {
                 model_request_id: Some(output.model_request_id),
@@ -503,13 +503,13 @@ fn execute_runtime_facade_turn(
                 stream_events: output.stream_events,
             }
         }
-        Err(error) => inference_error(format!("code engine turn failed: {error}")),
+        Err(error) => inference_error(format!("agent engine turn failed: {error}")),
     }
 }
 
 fn resolve_turn_model_id(
     input: &TurnExecutionInput,
-    slot: &sdkwork_agents_runtime_facade::CodeEngineSlot,
+    slot: &sdkwork_agents_runtime_facade::AgentEngineSlot,
 ) -> String {
     if let Some(model_id) = input
         .model_id
@@ -753,7 +753,7 @@ pub fn execute_agent_turn(input: &TurnExecutionInput) -> TurnExecutionOutput {
             )
         } else if input.provider_has_model_chat {
             format!(
-                "Hello! I'm {}. I received your message:\n\n> {}\n\nLive model inference requires a canonical code-engine provider binding.",
+                "Hello! I'm {}. I received your message:\n\n> {}\n\nLive model inference requires a canonical agent-engine provider binding.",
                 input.agent_display_name, input.user_content
             )
         } else {
@@ -875,7 +875,7 @@ mod tests {
             provider_has_model_chat: true,
         });
         assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
-        assert!(output.content.contains("canonical code-engine"));
+        assert!(output.content.contains("canonical agent-engine"));
     }
 
     #[derive(Default)]

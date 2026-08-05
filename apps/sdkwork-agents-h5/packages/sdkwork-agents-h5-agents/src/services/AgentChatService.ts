@@ -89,8 +89,8 @@ export class AgentChatService {
     return sessionId;
   }
 
-  async listSessions(agentId: string, page = 1, pageSize = 10): Promise<string[]> {
-    const response = await this.getClient().ai.agents.sessions.list(agentId, { page, pageSize });
+  async listSessions(agentId: string, pageSize = 10): Promise<string[]> {
+    const response = await this.getClient().ai.agents.sessions.list(agentId, { pageSize });
     return (response.items as AgentSessionRecord[])
       .map(toSessionId)
       .filter((sessionId) => sessionId.length > 0);
@@ -99,7 +99,6 @@ export class AgentChatService {
   /** Reuse the latest active session when present; otherwise create one. */
   async resolveOrCreateSession(agentId: string, title?: string): Promise<string> {
     const response = await this.getClient().ai.agents.sessions.list(agentId, {
-      page: 1,
       pageSize: 10,
     });
     const sessions = response.items as AgentSessionRecord[];

@@ -43,7 +43,7 @@ pub fn agents_is_production_like_environment() -> bool {
         .any(|id| agents_deployment_environment_name() == *id)
 }
 
-/// When false, preview/prompt-optimization must not silently echo input without a code engine.
+/// When false, preview/prompt-optimization must not silently echo input without an agent engine.
 pub fn agents_allow_contract_runtime_fallback() -> bool {
     !agents_is_production_like_environment()
 }

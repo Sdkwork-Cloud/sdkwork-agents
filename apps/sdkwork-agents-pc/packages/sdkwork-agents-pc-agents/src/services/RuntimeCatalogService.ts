@@ -3,8 +3,8 @@ import { createElement } from "react";
 
 import {
   getAgentsAppSdkClientWithSession,
-  type CodeEngineCatalogEngine,
-  type CodeEngineModelCatalogEntry,
+  type AgentEngineCatalogEngine,
+  type AgentEngineModelCatalogEntry,
   type McpServerMarketplaceRecord,
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
@@ -42,7 +42,7 @@ function mapMcpRecord(record: McpServerMarketplaceRecord): ToolItem {
   };
 }
 
-function mapCodeEngineRecord(record: CodeEngineCatalogEngine): ToolItem {
+function mapAgentEngineRecord(record: AgentEngineCatalogEngine): ToolItem {
   return {
     id: record.engineKey,
     name: engineKeyToVendorLabel(record.engineKey),
@@ -53,7 +53,7 @@ function mapCodeEngineRecord(record: CodeEngineCatalogEngine): ToolItem {
   };
 }
 
-function mapModelRecord(record: CodeEngineModelCatalogEntry): ModelCatalogItem {
+function mapModelRecord(record: AgentEngineModelCatalogEntry): ModelCatalogItem {
   return {
     id: record.modelId,
     label: record.label,
@@ -65,11 +65,11 @@ function mapModelRecord(record: CodeEngineModelCatalogEntry): ModelCatalogItem {
   };
 }
 
-/** Load model catalog from agents code-engine runtime (`GET /app/v3/api/ai/code_engines`). */
+/** Load model catalog from agents agent-engine runtime (`GET /app/v3/api/ai/agent_engines`). */
 export async function loadRuntimeModelCatalog(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
 ): Promise<ModelCatalogItem[]> {
-  const catalog = await client.ai.agents.codeEngines.list();
+  const catalog = await client.ai.agents.agentEngines.list();
   if (!catalog.engines.length) {
     return [];
   }
@@ -95,12 +95,12 @@ export async function loadMcpCatalogPage(
   return { items, page: pageInfo.page, hasMore: pageInfo.hasMore };
 }
 
-/** Official code-engine tools (small catalog; not paginated at HTTP layer). */
-export async function loadCodeEngineToolItems(
+/** Official agent-engine tools (small catalog; not paginated at HTTP layer). */
+export async function loadAgentEngineToolItems(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
 ): Promise<ToolItem[]> {
-  const codeEngines = await client.ai.agents.codeEngines.list();
-  return codeEngines.engines.map(mapCodeEngineRecord);
+  const agentEngines = await client.ai.agents.agentEngines.list();
+  return agentEngines.engines.map(mapAgentEngineRecord);
 }
 
 export function engineKeyToVendorLabel(engineKey: string): string {

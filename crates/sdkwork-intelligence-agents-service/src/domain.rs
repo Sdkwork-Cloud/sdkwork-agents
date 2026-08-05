@@ -1714,12 +1714,12 @@ pub struct AgentItemDriveRefRecord {
 }
 
 // ============================================================================
-// Agent Live Interaction Management — code-engine pause/resume lifecycle
+// Agent Live Interaction Management — agent-engine pause/resume lifecycle
 // ============================================================================
 
-/// Lifecycle status of a live interaction during a code-engine turn.
+/// Lifecycle status of a live interaction during a agent-engine turn.
 ///
-/// Code engines (codex, claude-code, opencode, gemini) may pause execution
+/// Agent engines (codex, claude-code, opencode, gemini) may pause execution
 /// to request user input. This enum tracks the interaction from creation
 /// through resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1785,7 +1785,7 @@ impl AgentInteractionStatus {
     }
 }
 
-/// Kind of live interaction requested by a code engine.
+/// Kind of live interaction requested by a agent engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentInteractionKind {
     /// Permission approval request (e.g. file write, command execution).
@@ -1838,9 +1838,9 @@ impl AgentInteractionKind {
     }
 }
 
-/// A live interaction record representing a code-engine pause point.
+/// A live interaction record representing a agent-engine pause point.
 ///
-/// When a code engine (codex, claude-code, opencode) pauses execution to
+/// When a agent engine (codex, claude-code, opencode) pauses execution to
 /// request user input, an interaction record is created. The record tracks
 /// the prompt, optional selectable options, and the user's resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -260,7 +260,7 @@ export class AiAgentsCheckpointsApi {
 }
 
 export interface AiAgentsInteractionsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   kind?: AgentInteractionKind;
   status?: AgentInteractionStatus;
@@ -277,7 +277,7 @@ export class AiAgentsInteractionsApi {
 /** List durable interactions for one agent session */
   async list(agentId: string, sessionId: string, params?: AiAgentsInteractionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentInteractionRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'kind', value: params?.kind, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
@@ -317,7 +317,7 @@ export class AiAgentsInteractionsApi {
 }
 
 export interface AiAgentsTurnsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
 }
 
@@ -337,7 +337,7 @@ export class AiAgentsTurnsApi {
 /** List durable turns for one agent session */
   async list(agentId: string, sessionId: string, params?: AiAgentsTurnsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentTurnRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.request<SdkWorkPageData & { items: AgentTurnRecord[]; }>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turns`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
@@ -398,7 +398,7 @@ export class AiAgentsSessionItemsApi {
 }
 
 export interface AiAgentsSessionsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
 }
 
@@ -413,7 +413,7 @@ export class AiAgentsSessionsApi {
 /** List agent sessions for one managed agent */
   async list(agentId: string, params?: AiAgentsSessionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.request<SdkWorkPageData & { items: AgentSessionRecord[]; }>(appendQueryString(backendApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
@@ -474,7 +474,7 @@ export class AiAgentsProviderBindingsApi {
 }
 
 export interface AiAgentsAuditEventsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   action?: AuditAction;
   from_?: string;
@@ -492,7 +492,7 @@ export class AiAgentsAuditEventsApi {
 /** List managed agent audit events */
   async list(agentId: string, params?: AiAgentsAuditEventsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentAuditEvent[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'action', value: params?.action, style: 'form', explode: true, allowReserved: false },
       { name: 'from', value: params?.from_, style: 'form', explode: true, allowReserved: false },

@@ -36,7 +36,7 @@ by alternative APIs or persistence:
 
 | Tier | Runtime policy | Product behavior |
 | --- | --- | --- |
-| T1 code engines | bootstrapped and exposed in the default catalog | selectable |
+| T1 agent engines | bootstrapped and exposed in the default catalog | selectable |
 | T2 autonomous engines | registered on demand after conformance | opt-in |
 | T3 frameworks | selected by an approved implementation binding | fail closed when absent |
 | T4 orchestration frameworks | require an approved provider manifest | unavailable until registered |

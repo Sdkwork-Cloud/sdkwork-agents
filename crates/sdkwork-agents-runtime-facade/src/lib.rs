@@ -1,10 +1,10 @@
-//! Application-owned facade for bootstrapping and executing kernel code-engine providers.
+//! Application-owned facade for bootstrapping and executing kernel agent-engine providers.
 //!
 //! Product repositories (BirdCoder, IM PC) must depend on this crate instead of
 //! importing `sdkwork-agent-provider-*` or `sdkwork-agent-kernel` types directly.
 
-mod code_engines;
-mod engine_catalog;
+mod agent_engines;
+mod agent_engine_catalog;
 mod error;
 mod live_interaction;
 mod provider_sessions;
@@ -12,21 +12,21 @@ mod runtime_host;
 mod sessions;
 mod turn;
 
-pub use code_engines::{
-    apply_code_engine_model_configuration, apply_code_engine_model_selection,
-    bootstrap_code_engine, bootstrappable_engine_keys, canonical_code_engine_keys,
-    code_engine_agent_id, code_engine_binding_id, code_engine_provider_scope,
-    dematerialize_code_engine_model_configuration, is_canonical_code_engine,
-    plan_code_engine_configuration_upgrade, read_code_engine_model_configuration,
-    resolve_code_engine_runtime_identity, CodeEngineBootstrapError,
-    CodeEngineInteractionResolution, CodeEngineRuntimeIdentity, CodeEngineSlot,
-    CANONICAL_CODE_ENGINE_KEYS,
+pub use agent_engines::{
+    apply_agent_engine_model_configuration, apply_agent_engine_model_selection,
+    bootstrap_agent_engine, bootstrappable_engine_keys, canonical_agent_engine_keys,
+    agent_engine_agent_id, agent_engine_binding_id, agent_engine_provider_scope,
+    dematerialize_agent_engine_model_configuration, is_canonical_agent_engine,
+    plan_agent_engine_configuration_upgrade, read_agent_engine_model_configuration,
+    resolve_agent_engine_runtime_identity, AgentEngineBootstrapError,
+    AgentEngineInteractionResolution, AgentEngineRuntimeIdentity, AgentEngineSlot,
+    CANONICAL_AGENT_ENGINE_KEYS,
 };
-pub use engine_catalog::{
-    bootstrap_bootstrappable_code_engine_catalog, bootstrap_canonical_code_engine_catalog,
-    build_code_engine_catalog, list_slot_catalog_entries, model_descriptor_to_catalog_entry,
-    CodeEngineAccessModeCatalogEntry, CodeEngineCatalog, CodeEngineCatalogEngine,
-    CodeEngineModelCatalogEntry,
+pub use agent_engine_catalog::{
+    bootstrap_bootstrappable_agent_engine_catalog, bootstrap_canonical_agent_engine_catalog,
+    build_agent_engine_catalog, list_slot_catalog_entries, model_descriptor_to_catalog_entry,
+    AgentEngineAccessModeCatalogEntry, AgentEngineCatalog, AgentEngineCatalogEngine,
+    AgentEngineModelCatalogEntry,
 };
 pub use error::{RuntimeFacadeError, RuntimeFacadeResult};
 pub use live_interaction::{
@@ -37,7 +37,7 @@ pub use provider_sessions::{
     ProviderSessionInventorySelector, ProviderSessionInventorySnapshot,
     ProviderSessionProjectCwdResolver, ProviderSessionProjectCwdSelector,
 };
-pub use runtime_host::AgentsCodeEngineHost;
+pub use runtime_host::AgentsAgentEngineHost;
 pub use sdkwork_agent_kernel::{
     AgentConfigurationProfile, AgentConfigurationStore, AgentModelConfigurationApplication,
     AgentModelConfigurationRequest, AgentModelSelectionRequest, InMemoryAgentConfigurationStore,
@@ -46,8 +46,8 @@ pub use sdkwork_agent_kernel::{
 };
 pub use sessions::*;
 pub use turn::{
-    cancel_code_engine_turn, code_engine_model_request_id, execute_code_engine_turn,
-    execute_code_engine_turn_with_stream, execute_code_engine_turn_with_stream_sink,
-    CodeEngineTurnCancellation, CodeEngineTurnInput, CodeEngineTurnOutput,
-    CodeEngineTurnStreamCompletion, MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES,
+    cancel_agent_engine_turn, agent_engine_model_request_id, execute_agent_engine_turn,
+    execute_agent_engine_turn_with_stream, execute_agent_engine_turn_with_stream_sink,
+    AgentEngineTurnCancellation, AgentEngineTurnInput, AgentEngineTurnOutput,
+    AgentEngineTurnStreamCompletion, MAX_AGENT_ENGINE_MODEL_REQUEST_ID_BYTES,
 };

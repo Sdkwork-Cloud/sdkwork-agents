@@ -78,7 +78,10 @@ use crate::response::{
     created_json, finish_api_json, finish_created_api_json, no_content, success_json, ApiProblem,
     ApiResult, PageData, PageInfo, PageMode, ResourceData,
 };
-use crate::runtime_facade_bridge::{engine_key_for_provider_identity, shared_code_engine_host};
+use crate::list_cursors::{
+    decode_audit_event_list_cursor, decode_created_at_cursor, decode_session_list_cursor,
+};
+use crate::runtime_facade_bridge::{engine_key_for_provider_identity, shared_agent_engine_host};
 use crate::session_activity::{
     decode_session_activity_cursor, SessionActivitySummaryRecord,
     SessionProviderActivityObservation,
@@ -115,7 +118,7 @@ use sdkwork_agent_kernel::{
     KernelResult, PolicyDecision, PolicyProvider, PolicyRequest, PolicySubject, ProviderHealth,
     SecretAccessRequest, SecretCreateRequest, SecretProvider, SecretRotateRequest, SecretType,
 };
-use sdkwork_agents_runtime_facade::CodeEngineCatalog;
+use sdkwork_agents_runtime_facade::AgentEngineCatalog;
 use sdkwork_code_kernel::CodeTaskIntent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -2500,8 +2503,8 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             get(list_task_run_attempts),
         )
         .route(
-            "/app/v3/api/ai/code_engines",
-            get(app_list_code_engines),
+            "/app/v3/api/ai/agent_engines",
+            get(app_list_agent_engines),
         )
         .route(
             "/app/v3/api/ai/model_configurations/apply",
@@ -3011,7 +3014,7 @@ fn apply_agent_model_configuration(
 ) -> ApiResult<AppliedAgentModelConfigurationResponse> {
     validate_model_configuration_identifier("configurationId", &body.configuration_id, 160)?;
     let engine_id = body.engine_id.trim();
-    let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_id)
+    let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
         .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
 
     let supported_provider_ids =
@@ -3119,7 +3122,7 @@ fn apply_agent_model_configuration(
         kernel_request = kernel_request.with_tool_call_rounds(value);
     }
 
-    let application = match sdkwork_agents_runtime_facade::apply_code_engine_model_configuration(
+    let application = match sdkwork_agents_runtime_facade::apply_agent_engine_model_configuration(
         engine_id,
         &kernel_request,
     ) {
@@ -3196,7 +3199,7 @@ async fn app_apply_model_selection(
         // Built-in model selection without a saved configuration switches the
         // model directly on the provider-default credential binding. Platform
         // catalog models are validated by the client model selector and are not
-        // part of the code-engine catalog, so no catalog membership check is
+        // part of the agent-engine catalog, so no catalog membership check is
         // applied here; malformed identifiers are rejected below.
         let item = apply_agent_model_selection(state, scope, web_ctx.request_id.0.as_str(), body)?;
         Ok(ResourceData { item })
@@ -3212,7 +3215,7 @@ fn apply_agent_model_selection(
     body: ApplyAgentModelSelectionRequest,
 ) -> ApiResult<AppliedAgentModelSelectionResponse> {
     let engine_id = body.engine_id.trim();
-    let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_id)
+    let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
         .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
     validate_model_configuration_identifier("modelId", &body.model_id, 256)?;
     let configuration_id = body
@@ -3258,7 +3261,7 @@ fn apply_agent_model_selection(
             .with_current_profile(profile)
             .with_supported_model_enforcement();
     }
-    let application = sdkwork_agents_runtime_facade::apply_code_engine_model_selection(
+    let application = sdkwork_agents_runtime_facade::apply_agent_engine_model_selection(
         engine_id,
         &kernel_request,
     )
@@ -3333,7 +3336,7 @@ struct ModelConfigurationSummaryView {
 
 impl ModelConfigurationSummaryView {
     fn from_profile(profile: &AgentConfigurationProfile, engine_id: &str) -> ApiResult<Self> {
-        let provider_scope = sdkwork_agents_runtime_facade::code_engine_provider_scope(engine_id)
+        let provider_scope = sdkwork_agents_runtime_facade::agent_engine_provider_scope(engine_id)
             .ok_or_else(|| {
             ApiProblem::validation("engineId is not a supported Agent provider")
         })?;
@@ -3391,7 +3394,7 @@ async fn app_list_model_configurations(
             .lock()
             .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?;
         for engine_id in engine_ids {
-            let Some(agent_id) = sdkwork_agents_runtime_facade::code_engine_agent_id(&engine_id)
+            let Some(agent_id) = sdkwork_agents_runtime_facade::agent_engine_agent_id(&engine_id)
             else {
                 return Err(ApiProblem::validation(
                     "engineId is not a supported Agent provider",
@@ -3477,7 +3480,7 @@ async fn app_get_model_configuration_status(
     let result: ApiResult<ResourceData<ModelConfigurationStatusView>> = async {
         let _scope = RequestScope::from_context(context);
         let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
-        let provider_scope = sdkwork_agents_runtime_facade::code_engine_provider_scope(
+        let provider_scope = sdkwork_agents_runtime_facade::agent_engine_provider_scope(
             &path.engine_id,
         )
         .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
@@ -3485,7 +3488,7 @@ async fn app_get_model_configuration_status(
         let expected_base_url = config_string(&profile.configuration, &mapping.base_url_key);
         let expected_default_model =
             config_string(&profile.configuration, &mapping.default_model_key);
-        let read_back = sdkwork_agents_runtime_facade::read_code_engine_model_configuration(
+        let read_back = sdkwork_agents_runtime_facade::read_agent_engine_model_configuration(
             &path.engine_id,
             &profile.agent_id,
             &path.profile_id,
@@ -3556,7 +3559,7 @@ async fn app_archive_model_configuration(
 
         // Only revert the CLI-native config when it actually carries the
         // SDKWork-managed materialization; never touch a user-owned surface.
-        let read_back = sdkwork_agents_runtime_facade::read_code_engine_model_configuration(
+        let read_back = sdkwork_agents_runtime_facade::read_agent_engine_model_configuration(
             &path.engine_id,
             &profile.agent_id,
             &path.profile_id,
@@ -3567,7 +3570,7 @@ async fn app_archive_model_configuration(
             || read_back.materialization
                 == sdkwork_agent_kernel::ProviderModelMaterializationState::Diverged
         {
-            sdkwork_agents_runtime_facade::dematerialize_code_engine_model_configuration(
+            sdkwork_agents_runtime_facade::dematerialize_agent_engine_model_configuration(
                 &path.engine_id,
                 &profile.agent_id,
                 &path.profile_id,
@@ -3644,7 +3647,7 @@ async fn app_migrate_model_configuration(
             &body.to_configuration_version,
         )
         .with_current_profile(profile.clone());
-        let plan = sdkwork_agents_runtime_facade::plan_code_engine_configuration_upgrade(
+        let plan = sdkwork_agents_runtime_facade::plan_agent_engine_configuration_upgrade(
             &body.engine_id,
             &plan_request,
         )
@@ -3679,7 +3682,7 @@ fn load_model_configuration_profile(
     engine_id: &str,
     profile_id: &str,
 ) -> ApiResult<AgentConfigurationProfile> {
-    let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_id)
+    let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
         .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
     let profile = state
         .model_configuration_runtime
@@ -4051,6 +4054,13 @@ struct AppListQueryParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AppTurnsQueryParams {
+    cursor: Option<String>,
+    page_size: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct TenantAgentPathParams {
     #[serde(rename = "agentId")]
     pub(crate) agent_id: String,
@@ -4076,7 +4086,7 @@ struct TenantAgentSlotPathParams {
 pub(crate) struct ListSessionsQueryParams {
     pub(crate) status: Option<String>,
     pub(crate) include_archived: Option<bool>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -4085,18 +4095,47 @@ pub(crate) struct ListSessionsQueryParams {
 struct ListProjectSessionsQueryParams {
     status: Option<String>,
     include_archived: Option<bool>,
-    page: Option<usize>,
+    cursor: Option<String>,
     page_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectSessionSynchronizationResultDto {
+    /// `completed` (result served from the refresh cache), `accepted`
+    /// (synchronization enqueued on a background worker), or `pending`
+    /// (a synchronization is already running for this project).
+    status: String,
     failed_session_count: String,
     issues: Vec<ProjectSessionSynchronizationIssueDto>,
     project_id: String,
     skipped_session_count: String,
     synchronized_session_count: String,
+}
+
+impl ProjectSessionSynchronizationResultDto {
+    fn from_result(
+        result: &crate::provider_session_sync::ProviderSessionSynchronizationResult,
+        project_id: String,
+        status: &str,
+    ) -> Self {
+        Self {
+            status: status.to_string(),
+            failed_session_count: result.failed_session_count.to_string(),
+            issues: result
+                .issues
+                .iter()
+                .map(|issue| ProjectSessionSynchronizationIssueDto {
+                    code: issue.code.to_string(),
+                    count: issue.count.to_string(),
+                    disposition: issue.disposition.as_str().to_string(),
+                })
+                .collect(),
+            project_id,
+            skipped_session_count: result.skipped_session_count.to_string(),
+            synchronized_session_count: result.synchronized_session_count.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4113,7 +4152,7 @@ pub(crate) struct AppListSessionsQueryParams {
     pub(crate) project_id: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) include_archived: Option<bool>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -4201,7 +4240,7 @@ pub(crate) struct AppListItemsQueryParams {
 pub(crate) struct AppListInteractionsQueryParams {
     pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -4210,7 +4249,7 @@ pub(crate) struct AppListInteractionsQueryParams {
 pub(crate) struct ListInteractionsQueryParams {
     pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -4239,7 +4278,7 @@ struct AgentCompositionSlotRecordResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuditEventsQueryParams {
-    page: Option<usize>,
+    cursor: Option<String>,
     page_size: Option<usize>,
     action: Option<String>,
     from: Option<String>,
@@ -5238,15 +5277,17 @@ async fn backend_list_agent_audit_events(
         let scope = RequestScope::from_context(context);
         let tenant_id = scope.tenant_id_u64()?;
         let subject = scope.subject.clone();
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_audit_event_list_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         validate_audit_action_filter(query.action.as_deref())?;
         validate_audit_range(query.from.as_deref(), query.to.as_deref())?;
         let audit_query = AuditEventListQuery::for_agent(tenant_id, path.agent_id.clone())
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            );
+            .with_cursor_page(page_size, cursor);
         let audit_query = if let Some(action) = query.action.clone() {
             audit_query.with_action(action)
         } else {
@@ -5269,8 +5310,6 @@ async fn backend_list_agent_audit_events(
             })
         })
         .await?;
-        let total_items = result.total_count.unwrap_or(0) as usize;
-        let total_pages = total_pages(total_items, page_size);
         let items: Vec<AgentAuditEventResponse> = result
             .items
             .into_iter()
@@ -5285,15 +5324,11 @@ async fn backend_list_agent_audit_events(
 
         Ok(PageData {
             items,
-            page_info: PageInfo {
-                mode: PageMode::Offset,
-                page: Some(page as i32),
-                page_size: Some(page_size as i32),
-                total_items: Some(total_items.to_string()),
-                total_pages: Some(total_pages as i32),
-                next_cursor: None,
-                has_more: Some(result.has_more),
-            },
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                result.next_page_token,
+                result.has_more,
+            ),
         })
     }
     .await;
@@ -5543,16 +5578,16 @@ async fn app_list_composition_slots(
     finish_api_json(&web_ctx, result)
 }
 
-async fn app_list_code_engines(
+async fn app_list_agent_engines(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
 ) -> Response {
-    let result: ApiResult<ResourceData<CodeEngineCatalog>> = async {
+    let result: ApiResult<ResourceData<AgentEngineCatalog>> = async {
         let scope = RequestScope::from_context(context);
         let subject = scope.subject().clone();
         let catalog =
-            with_service(&state, |service| service.list_code_engine_catalog(subject)).await?;
+            with_service(&state, |service| service.list_agent_engine_catalog(subject)).await?;
         Ok(ResourceData { item: catalog })
     }
     .await;
@@ -7066,7 +7101,7 @@ fn enrich_provider_session_activity(
         summary.provider_identity.provider_id.as_deref(),
     )
     .and_then(|engine_key| {
-        shared_code_engine_host().map(|host| {
+        shared_agent_engine_host().map(|host| {
             host.get_provider_session_activity(engine_key, provider_session_id)
                 .map(|snapshot| {
                     SessionProviderActivityObservation::from_provider_snapshot(
@@ -7101,7 +7136,13 @@ async fn app_list_sessions(
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_session_list_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListSessionsRequestDto {
             tenant_id: scope.tenant_id,
             owner_user_id: Some(scope.owner_user_id),
@@ -7117,11 +7158,7 @@ async fn app_list_sessions(
                     .map_err(ApiProblem::from_kernel_error)?,
             )
             .for_agent(agent_id)
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            );
+            .with_cursor_page(page_size, cursor);
         if let Some(project_id) = query.project_id {
             command.query = command.query.for_project(project_id);
         }
@@ -7132,10 +7169,9 @@ async fn app_list_sessions(
                 .iter()
                 .map(AgentSessionRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -7160,7 +7196,13 @@ async fn app_list_project_sessions(
         let owner_user_id = scope
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_session_list_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListSessionsRequestDto {
             tenant_id: scope.tenant_id,
             owner_user_id: Some(owner_user_id.to_string()),
@@ -7173,11 +7215,7 @@ async fn app_list_project_sessions(
             .query
             .for_organization(organization_id)
             .for_project(project_id.clone())
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            );
+            .with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| service.list_sessions(command)).await?;
         Ok(PageData {
             items: records
@@ -7185,10 +7223,9 @@ async fn app_list_project_sessions(
                 .iter()
                 .map(AgentSessionRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -7203,8 +7240,15 @@ async fn app_synchronize_project_sessions(
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     project_id: Result<Path<String>, PathRejection>,
 ) -> Response {
+    use crate::provider_session_sync::{
+        clear_provider_session_sync_in_flight, mark_provider_session_sync_in_flight,
+        provider_session_sync_cache_key, read_completed_provider_session_sync,
+        synchronize_project_provider_sessions, synchronize_project_provider_sessions_at_cwd,
+        ProviderSessionSynchronizationResult, PROVIDER_SESSION_SYNC_REFRESH_TTL,
+    };
+
     let trace_id = web_ctx.resolved_trace_id();
-    let result: ApiResult<ResourceData<ProjectSessionSynchronizationResultDto>> = async {
+    let result: Result<Response, ApiProblem> = async {
         let Path(project_id) = project_id.map_err(ApiProblem::from_path_rejection)?;
         let scope = RequestScope::from_context(context);
         let tenant_id = scope.tenant_id_u64()?;
@@ -7214,81 +7258,147 @@ async fn app_synchronize_project_sessions(
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
         let subject = scope.subject;
+        let subject_for_project = subject.clone();
         let provider_session_cwd_resolver = state.provider_session_cwd_resolver.clone();
-        let synchronization = with_owned_service(&state, move |service| {
-            let project = service.get_project(GetProjectCommand {
+        // Project validation and cwd resolution stay in the request (fast);
+        // the provider discovery scan and the inventory sweeps run on a
+        // background worker so a cold synchronization never occupies an HTTP
+        // request for up to the 15-second reconciliation timeout.
+        let project = with_owned_service(&state, move |service| {
+            service.get_project(GetProjectCommand {
                 tenant_id,
                 organization_id,
                 project_id: project_id.clone(),
                 owner_scope: Some(owner_user_id),
-                requested_by: subject.clone(),
-            })?;
-            let exact_cwd = provider_session_cwd_resolver
-                .as_ref()
-                .map(|resolver| {
-                    resolver.resolve_project_cwd(
-                        &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
-                            tenant_id: project.tenant_id,
-                            organization_id: project.organization_id,
-                            owner_user_id: project.owner_user_id,
-                            project_id: project.project_id.clone(),
-                            project_name: project.name.clone(),
-                        },
-                    )
-                })
-                .transpose()
-                .map_err(crate::provider_session_sync::runtime_facade_error)?
-                .flatten();
-            let synchronization_result = if exact_cwd.is_some() {
-                crate::provider_session_sync::synchronize_project_provider_sessions_at_cwd(
-                    Arc::clone(&service),
-                    &project,
-                    subject,
-                    exact_cwd,
-                )?
-            } else {
-                crate::provider_session_sync::synchronize_project_provider_sessions(
-                    Arc::clone(&service),
-                    &project,
-                    subject,
-                )?
-            };
-            Ok(ProjectSessionSynchronizationResultDto {
-                failed_session_count: synchronization_result.failed_session_count.to_string(),
-                issues: synchronization_result
-                    .issues
-                    .into_iter()
-                    .map(|issue| ProjectSessionSynchronizationIssueDto {
-                        code: issue.code.to_string(),
-                        count: issue.count.to_string(),
-                        disposition: issue.disposition.as_str().to_string(),
-                    })
-                    .collect(),
-                project_id: project.project_id,
-                skipped_session_count: synchronization_result.skipped_session_count.to_string(),
-                synchronized_session_count: synchronization_result
-                    .synchronized_session_count
-                    .to_string(),
+                requested_by: subject_for_project,
             })
         })
         .await?;
+        let exact_cwd = provider_session_cwd_resolver
+            .as_ref()
+            .map(|resolver| {
+                resolver.resolve_project_cwd(
+                    &sdkwork_agents_runtime_facade::ProviderSessionProjectCwdSelector {
+                        tenant_id: project.tenant_id,
+                        organization_id: project.organization_id,
+                        owner_user_id: project.owner_user_id,
+                        project_id: project.project_id.clone(),
+                        project_name: project.name.clone(),
+                    },
+                )
+            })
+            .transpose()
+            .map_err(crate::provider_session_sync::runtime_facade_error)
+            .map_err(ApiProblem::from_kernel_error)?
+            .flatten();
+        let cache_key = provider_session_sync_cache_key(&project);
+        let project_id_dto = project.project_id.clone();
+        // Fast path: a completed synchronization inside the refresh window is
+        // returned immediately with the cached outcome.
+        if let Some(cached) = read_completed_provider_session_sync(&cache_key) {
+            if cached.completed_at.elapsed() < PROVIDER_SESSION_SYNC_REFRESH_TTL {
+                tracing::debug!(
+                    target: "sdkwork.agents.provider_session_sync",
+                    project_id = %project.project_id,
+                    "provider Session synchronization served from the refresh cache"
+                );
+                let item = ProjectSessionSynchronizationResultDto::from_result(
+                    &cached.result,
+                    project_id_dto,
+                    "completed",
+                );
+                return Ok(crate::response::success_response(
+                    &web_ctx,
+                    StatusCode::OK,
+                    ResourceData { item },
+                )?);
+            }
+        }
+        // In-flight dedupe: a burst of concurrent requests for the same
+        // project must never duplicate the discovery scan or the sweeps.
+        if !mark_provider_session_sync_in_flight(&cache_key) {
+            tracing::debug!(
+                target: "sdkwork.agents.provider_session_sync",
+                project_id = %project.project_id,
+                "provider Session synchronization already in flight"
+            );
+            let item = ProjectSessionSynchronizationResultDto::from_result(
+                &ProviderSessionSynchronizationResult::default(),
+                project_id_dto,
+                "pending",
+            );
+            return Ok(crate::response::success_response(
+                &web_ctx,
+                StatusCode::ACCEPTED,
+                ResourceData { item },
+            )?);
+        }
+        // Enqueue the synchronization on a bounded background worker. The
+        // worker permit keeps the total in-process synchronization concurrency
+        // inside SERVICE_WORKER_LIMIT; the 15-second reconciliation timeout
+        // bounds each run.
+        let service = Arc::clone(&state.service);
+        let project_for_worker = project.clone();
+        let subject_for_worker = subject.clone();
+        let cache_key_for_worker = cache_key.clone();
+        let permit = SERVICE_WORKER_LIMIT
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                clear_provider_session_sync_in_flight(&cache_key);
+                crate::infrastructure::AgentMetricsRegistry::global()
+                    .record_service_worker_rejection();
+                ApiProblem::too_many_requests("agents service concurrency limit reached", Some(1))
+            })?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let outcome = if exact_cwd.is_some() {
+                synchronize_project_provider_sessions_at_cwd(
+                    service,
+                    &project_for_worker,
+                    subject_for_worker,
+                    exact_cwd,
+                )
+            } else {
+                synchronize_project_provider_sessions(service, &project_for_worker, subject_for_worker)
+            };
+            match outcome {
+                Ok(result) => tracing::info!(
+                    target: "sdkwork.agents.provider_session_sync",
+                    project_id = %project_for_worker.project_id,
+                    synchronized_session_count = result.synchronized_session_count,
+                    failed_session_count = result.failed_session_count,
+                    "provider Session inventory synchronization completed in background"
+                ),
+                Err(error) => tracing::error!(
+                    target: "sdkwork.agents.provider_session_sync",
+                    project_id = %project_for_worker.project_id,
+                    error_kind = error.kind().as_str(),
+                    "background provider Session synchronization failed: {error}"
+                ),
+            }
+            clear_provider_session_sync_in_flight(&cache_key_for_worker);
+        });
+        let item = ProjectSessionSynchronizationResultDto::from_result(
+            &ProviderSessionSynchronizationResult::default(),
+            project_id_dto,
+            "accepted",
+        );
         tracing::info!(
             target: "sdkwork.agents.provider_session_sync",
             trace_id = %trace_id,
             operation_id = "agents.projectSessions.synchronize",
-            project_id = %synchronization.project_id,
-            failed_session_count = %synchronization.failed_session_count,
-            issue_count = synchronization.issues.len(),
-            skipped_session_count = %synchronization.skipped_session_count,
-            synchronized_session_count = %synchronization.synchronized_session_count,
-            "provider session inventory synchronization completed"
+            project_id = %project.project_id,
+            "provider Session inventory synchronization accepted for background execution"
         );
-        Ok(ResourceData {
-            item: synchronization,
-        })
+        Ok(crate::response::success_response(
+            &web_ctx,
+            StatusCode::ACCEPTED,
+            ResourceData { item },
+        )?)
     }
     .await;
-    finish_api_json(&web_ctx, result)
+    crate::response::finish_api_response(&web_ctx, result)
 }
 
 async fn app_get_project_session(
@@ -7342,7 +7452,13 @@ async fn app_list_workspace_sessions(
         let owner_user_id = scope
             .owner_scope()?
             .ok_or_else(|| ApiProblem::validation("owner user id is required"))?;
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_session_list_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListSessionsRequestDto {
             tenant_id: scope.tenant_id,
             owner_user_id: Some(owner_user_id.to_string()),
@@ -7355,11 +7471,7 @@ async fn app_list_workspace_sessions(
             .query
             .for_organization(organization_id)
             .for_workspace(workspace_id.clone())
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            );
+            .with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| {
             service.get_workspace(GetWorkspaceCommand {
                 tenant_id,
@@ -7377,10 +7489,9 @@ async fn app_list_workspace_sessions(
                 .iter()
                 .map(AgentSessionRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -8446,7 +8557,13 @@ async fn app_list_interactions(
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
         let owner_scope = scope.owner_scope()?;
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(|value| decode_created_at_cursor(value, "interaction"))
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListInteractionsRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -8457,11 +8574,7 @@ async fn app_list_interactions(
         .map_err(ApiProblem::from_kernel_error)?;
         command.path_agent_id = agent_id;
         command.owner_scope = owner_scope;
-        command.query = command.query.with_pagination(
-            PaginationParams::default()
-                .with_page_size(page_size)
-                .with_page(page),
-        );
+        command.query = command.query.with_cursor_page(page_size, cursor);
         let records =
             with_service(&state, move |service| service.list_interactions(command)).await?;
         Ok(PageData {
@@ -8471,10 +8584,9 @@ async fn app_list_interactions(
                 .map(AgentInteractionRecordDto::from_record)
                 .collect::<KernelResult<Vec<_>>>()
                 .map_err(ApiProblem::from_kernel_error)?,
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -8830,13 +8942,19 @@ async fn app_list_turns(
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
+    query: Result<Query<AppTurnsQueryParams>, QueryRejection>,
 ) -> Response {
     let result: ApiResult<PageData<AgentTurnRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(|value| decode_created_at_cursor(value, "turn"))
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let command = ListTurnsCommand {
             query: TurnListQuery::for_session(
                 parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
@@ -8844,11 +8962,7 @@ async fn app_list_turns(
                     .map_err(ApiProblem::from_kernel_error)?,
                 session_id,
             )
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            ),
+            .with_cursor_page(page_size, cursor),
             path_agent_id: agent_id,
             owner_scope: scope.owner_scope()?,
             requested_by: scope.subject,
@@ -8860,10 +8974,9 @@ async fn app_list_turns(
                 .iter()
                 .map(AgentTurnRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -10102,7 +10215,13 @@ async fn backend_list_sessions(
         let Path(agent_id) = agent_id.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_session_list_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListSessionsRequestDto {
             tenant_id: scope.tenant_id,
             owner_user_id: None,
@@ -10118,11 +10237,7 @@ async fn backend_list_sessions(
                     .map_err(ApiProblem::from_kernel_error)?,
             )
             .for_agent(agent_id)
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            );
+            .with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| service.list_sessions(command)).await?;
         Ok(PageData {
             items: records
@@ -10130,10 +10245,9 @@ async fn backend_list_sessions(
                 .iter()
                 .map(AgentSessionRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -10328,14 +10442,20 @@ async fn backend_list_turns(
     State(state): State<AgentHttpState>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
     path: Result<Path<(String, String)>, PathRejection>,
-    query: Result<Query<AppListQueryParams>, QueryRejection>,
+    query: Result<Query<AppTurnsQueryParams>, QueryRejection>,
     Extension(context): Extension<AgentRequestContext>,
 ) -> Response {
     let result: ApiResult<PageData<AgentTurnRecordDto>> = async {
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(|value| decode_created_at_cursor(value, "turn"))
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let command = ListTurnsCommand {
             query: TurnListQuery::for_session(
                 parse_tenant_id(&scope.tenant_id).map_err(ApiProblem::from_kernel_error)?,
@@ -10343,11 +10463,7 @@ async fn backend_list_turns(
                     .map_err(ApiProblem::from_kernel_error)?,
                 session_id,
             )
-            .with_pagination(
-                PaginationParams::default()
-                    .with_page_size(page_size)
-                    .with_page(page),
-            ),
+            .with_cursor_page(page_size, cursor),
             path_agent_id: agent_id,
             owner_scope: None,
             requested_by: scope.subject,
@@ -10359,10 +10475,9 @@ async fn backend_list_turns(
                 .iter()
                 .map(AgentTurnRecordDto::from_record)
                 .collect(),
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -11007,7 +11122,13 @@ async fn backend_list_interactions(
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(|value| decode_created_at_cursor(value, "interaction"))
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListInteractionsRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -11017,11 +11138,7 @@ async fn backend_list_interactions(
         .into_command(session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
         command.path_agent_id = agent_id;
-        command.query = command.query.with_pagination(
-            PaginationParams::default()
-                .with_page_size(page_size)
-                .with_page(page),
-        );
+        command.query = command.query.with_cursor_page(page_size, cursor);
         let records =
             with_service(&state, move |service| service.list_interactions(command)).await?;
         Ok(PageData {
@@ -11031,10 +11148,9 @@ async fn backend_list_interactions(
                 .map(AgentInteractionRecordDto::from_record)
                 .collect::<KernelResult<Vec<_>>>()
                 .map_err(ApiProblem::from_kernel_error)?,
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -12757,7 +12873,7 @@ mod tests {
                     .as_array()
                     .expect("provider ids should be an array")
                     .len(),
-                6
+                sdkwork_agents_runtime_facade::bootstrappable_engine_keys().len()
             );
         }
     }
@@ -13019,7 +13135,7 @@ mod tests {
             test_policy_provider(),
         );
         let app = build_test_router(state);
-        let catalog = crate::code_engine_catalog::list_code_engine_catalog();
+        let catalog = crate::agent_engine_catalog::list_agent_engine_catalog();
         assert!(!catalog.engines.is_empty(), "app catalog must not be empty");
 
         for engine in catalog.engines {
@@ -13109,7 +13225,7 @@ mod tests {
         );
         let app = build_test_router(state);
         // Platform catalog models (for example the built-in official channels)
-        // are not part of the code-engine catalog. Switching one directly must
+        // are not part of the agent-engine catalog. Switching one directly must
         // succeed without a saved configuration and without an API key.
         let response =
             post_model_selection(&app, model_selection_body("codex", "gpt-5.4", None)).await;
@@ -13776,7 +13892,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_project_and_code_engine_lists_allow_read_only_subjects() {
+    async fn app_project_and_agent_engine_lists_allow_read_only_subjects() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -13789,7 +13905,7 @@ mod tests {
         let app = build_test_router_with_context(state, read_context);
 
         for uri in [
-            "/app/v3/api/ai/code_engines",
+            "/app/v3/api/ai/agent_engines",
             "/app/v3/api/ai/projects?page=1&page_size=20",
         ] {
             let request = Request::builder()
@@ -13940,7 +14056,7 @@ mod tests {
 
         let empty_list = Request::builder()
             .method("GET")
-            .uri("/app/v3/api/ai/projects/project.sessions/sessions?page=1&page_size=20")
+            .uri("/app/v3/api/ai/projects/project.sessions/sessions?page_size=20")
             .body(Body::empty())
             .unwrap();
         let response = app.clone().oneshot(empty_list).await.unwrap();
@@ -14052,7 +14168,7 @@ mod tests {
         let list = Request::builder()
             .method("GET")
             .uri(
-                "/app/v3/api/ai/projects/project.sessions/sessions?page=1&page_size=20&status=active&include_archived=false",
+                "/app/v3/api/ai/projects/project.sessions/sessions?page_size=20&status=active&include_archived=false",
             )
             .body(Body::empty())
             .unwrap();
@@ -14079,13 +14195,13 @@ mod tests {
 
         for (uri, expected_session_count) in [
             (
-                "/app/v3/api/ai/agents/agent.alpha/sessions?page=1&page_size=20&include_archived=false"
+                "/app/v3/api/ai/agents/agent.alpha/sessions?page_size=20&include_archived=false"
                     .to_string(),
                 2,
             ),
             (
                 format!(
-                    "/app/v3/api/ai/workspaces/{workspace_id}/sessions?page=1&page_size=20&include_archived=false"
+                    "/app/v3/api/ai/workspaces/{workspace_id}/sessions?page_size=20&include_archived=false"
                 ),
                 2,
             ),
@@ -14113,6 +14229,97 @@ mod tests {
             .unwrap();
         let response = app.oneshot(invalid_query).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn project_session_synchronize_enqueues_background_run_and_serves_cache_hits() {
+        use crate::provider_session_sync::read_completed_provider_session_sync;
+
+        crate::provider_session_sync::reset_provider_session_sync_cache_for_testing();
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        );
+        let app = build_test_router(state.clone());
+        create_app_agent(&app, "agent.sync-async", "sync-async").await;
+
+        let create_project = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "projectId": "project.sync-async",
+                    "name": "Sync async project",
+                    "defaultAgentId": "agent.sync-async"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(create_project).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Cold request: the run is enqueued on a background worker instead of
+        // occupying the HTTP request → 202 accepted.
+        let synchronize = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects/project.sync-async/sessions/synchronize")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(synchronize).await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["data"]["item"]["status"], "accepted");
+        assert_eq!(payload["data"]["item"]["projectId"], "project.sync-async");
+
+        // Seed the completed outcome deterministically (the background worker
+        // is best-effort; the no-engine-host run records the skipped outcome
+        // synchronously here), then verify the refresh-cache fast path.
+        let subject = PolicySubject {
+            subject_id: "100".to_string(),
+            tenant_id: "100001".to_string(),
+            roles: vec!["ai.agents.manage".to_string()],
+        };
+        let service = Arc::clone(&state.service);
+        let project = service
+            .get_project(GetProjectCommand {
+                tenant_id: 100001,
+                organization_id: 0,
+                project_id: "project.sync-async".to_string(),
+                owner_scope: Some(100),
+                requested_by: subject.clone(),
+            })
+            .expect("project must exist");
+        crate::provider_session_sync::synchronize_project_provider_sessions(
+            Arc::clone(&service),
+            &project,
+            subject,
+        )
+        .expect("no-engine-host synchronization must settle with a skipped issue");
+        let cache_key = format!("100001/0/100:project.sync-async");
+        assert!(
+            read_completed_provider_session_sync(&cache_key).is_some(),
+            "the completed outcome must be recorded"
+        );
+        let response = Request::builder()
+            .method("POST")
+            .uri("/app/v3/api/ai/projects/project.sync-async/sessions/synchronize")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(response).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["data"]["item"]["status"], "completed");
+        assert_eq!(payload["data"]["item"]["projectId"], "project.sync-async");
+        assert!(
+            payload["data"]["item"]["issues"]
+                .as_array()
+                .is_some_and(|issues| !issues.is_empty()),
+            "the no-engine-host run must record a bounded aggregate issue"
+        );
     }
 
     #[tokio::test]
@@ -14376,7 +14583,7 @@ mod tests {
         );
 
         // The synchronization command reports its best-effort outcome and
-        // never returns the item window (API_SPEC §14.1.3); a non-code engine
+        // never returns the item window (API_SPEC §14.1.3); a non-agent engine
         // Session reports a skipped synchronization instead of hiding it.
         let response = app
             .clone()

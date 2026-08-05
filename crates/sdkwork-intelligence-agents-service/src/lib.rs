@@ -2,7 +2,7 @@ mod agent_turn;
 mod agent_turn_input_queue;
 mod api;
 mod application;
-mod code_engine_catalog;
+mod agent_engine_catalog;
 mod domain;
 mod dto;
 #[cfg(feature = "http-axum")]
@@ -10,6 +10,7 @@ mod http;
 mod id;
 mod in_memory_pagination;
 mod infrastructure;
+mod list_cursors;
 mod mcp_marketplace;
 mod model_configuration_store;
 mod persistence;

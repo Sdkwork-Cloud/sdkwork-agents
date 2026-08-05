@@ -21,54 +21,74 @@ use sdkwork_agent_provider_core::{
 };
 use sdkwork_agent_provider_gemini_cli::{GeminiCliConfigurationProvider, GeminiCliSdkIntegration};
 use sdkwork_agent_provider_hermes::{HermesConfigurationProvider, HermesSdkIntegration};
+use sdkwork_agent_provider_mimo_code::{
+    MiMoCodeConfigurationProvider, MiMoCodeSdkIntegration,
+};
 use sdkwork_agent_provider_openclaw::{OpenClawConfigurationProvider, OpenClawSdkIntegration};
 use sdkwork_agent_provider_opencode::{OpenCodeConfigurationProvider, OpenCodeSdkIntegration};
+use sdkwork_agent_provider_rig::{RigConfigurationProvider, RigSdkIntegration};
 use sdkwork_agent_provider_spi::{
     SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord, SdkRuntimeSessionRecord,
     SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
-    HERMES_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
+    HERMES_BINDING_ID, MIMO_CODE_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
+    RIG_BINDING_ID,
 };
 
-/// Canonical T1 code-engine keys bootstrapped by default in production hosts.
-pub const CANONICAL_CODE_ENGINE_KEYS: [&str; 4] = ["codex", "claude-code", "gemini", "opencode"];
+/// Canonical T1 agent-engine keys bootstrapped by default in production hosts.
+pub const CANONICAL_AGENT_ENGINE_KEYS: [&str; 4] = ["codex", "claude-code", "gemini", "opencode"];
 
-/// T2 autonomous agent engines (bootstrap on demand; included in full catalog).
-pub const EXTENDED_AUTONOMOUS_ENGINE_KEYS: [&str; 2] = ["openclaw", "hermes"];
+/// T2 autonomous agent engines plus additional kernel-wrapped providers
+/// (bootstrap on demand; included in full catalog).
+pub const EXTENDED_AUTONOMOUS_ENGINE_KEYS: [&str; 4] =
+    ["openclaw", "hermes", "mimo-code", "rig"];
 
 const MAX_PROVIDER_SESSION_COLLECTION_ITEMS: usize = 10_000;
 
-pub fn canonical_code_engine_keys() -> &'static [&'static str] {
-    &CANONICAL_CODE_ENGINE_KEYS
+pub fn canonical_agent_engine_keys() -> &'static [&'static str] {
+    &CANONICAL_AGENT_ENGINE_KEYS
 }
 
-pub fn bootstrappable_engine_keys() -> [&'static str; 6] {
+pub fn bootstrappable_engine_keys() -> [&'static str; 8] {
     [
-        CANONICAL_CODE_ENGINE_KEYS[0],
-        CANONICAL_CODE_ENGINE_KEYS[1],
-        CANONICAL_CODE_ENGINE_KEYS[2],
-        CANONICAL_CODE_ENGINE_KEYS[3],
+        CANONICAL_AGENT_ENGINE_KEYS[0],
+        CANONICAL_AGENT_ENGINE_KEYS[1],
+        CANONICAL_AGENT_ENGINE_KEYS[2],
+        CANONICAL_AGENT_ENGINE_KEYS[3],
         EXTENDED_AUTONOMOUS_ENGINE_KEYS[0],
         EXTENDED_AUTONOMOUS_ENGINE_KEYS[1],
+        EXTENDED_AUTONOMOUS_ENGINE_KEYS[2],
+        EXTENDED_AUTONOMOUS_ENGINE_KEYS[3],
     ]
 }
 
 pub fn engine_catalog_tier(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" | "claude-code" | "gemini" | "opencode" => Some("t1-code"),
-        "openclaw" | "hermes" => Some("t2-autonomous"),
+        "openclaw" | "hermes" | "mimo-code" | "rig" => Some("t2-agent"),
         _ => None,
     }
 }
 
-pub fn is_canonical_code_engine(engine_key: &str) -> bool {
-    CANONICAL_CODE_ENGINE_KEYS.contains(&engine_key)
+/// User-facing engine kind surfaced in the settings catalog so clients can
+/// distinguish code agents from work agents and simple runtimes.
+pub fn engine_catalog_kind(engine_key: &str) -> Option<&'static str> {
+    match engine_key {
+        "codex" | "claude-code" | "gemini" | "opencode" | "mimo-code" => Some("code"),
+        "openclaw" | "hermes" => Some("work"),
+        "rig" => Some("simple"),
+        _ => None,
+    }
 }
 
-pub fn apply_code_engine_model_configuration(
+pub fn is_canonical_agent_engine(engine_key: &str) -> bool {
+    CANONICAL_AGENT_ENGINE_KEYS.contains(&engine_key)
+}
+
+pub fn apply_agent_engine_model_configuration(
     engine_key: &str,
     request: &AgentModelConfigurationRequest,
 ) -> crate::RuntimeFacadeResult<AgentModelConfigurationApplication> {
-    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
@@ -86,16 +106,18 @@ pub fn apply_code_engine_model_configuration(
         "opencode" => OpenCodeConfigurationProvider::new().apply_model_configuration(request),
         "openclaw" => OpenClawConfigurationProvider::new().apply_model_configuration(request),
         "hermes" => HermesConfigurationProvider::new().apply_model_configuration(request),
-        _ => unreachable!("validated code engine"),
+        "mimo-code" => MiMoCodeConfigurationProvider::new().apply_model_configuration(request),
+        "rig" => RigConfigurationProvider::new().apply_model_configuration(request),
+        _ => unreachable!("validated agent engine"),
     };
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
 }
 
-pub fn apply_code_engine_model_selection(
+pub fn apply_agent_engine_model_selection(
     engine_key: &str,
     request: &AgentModelSelectionRequest,
 ) -> crate::RuntimeFacadeResult<AgentModelConfigurationApplication> {
-    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
@@ -113,7 +135,9 @@ pub fn apply_code_engine_model_selection(
         "opencode" => OpenCodeConfigurationProvider::new().apply_model_selection(request),
         "openclaw" => OpenClawConfigurationProvider::new().apply_model_selection(request),
         "hermes" => HermesConfigurationProvider::new().apply_model_selection(request),
-        _ => unreachable!("validated code engine"),
+        "mimo-code" => MiMoCodeConfigurationProvider::new().apply_model_selection(request),
+        "rig" => RigConfigurationProvider::new().apply_model_selection(request),
+        _ => unreachable!("validated agent engine"),
     };
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
 }
@@ -121,12 +145,12 @@ pub fn apply_code_engine_model_selection(
 /// Reads the currently effective model configuration back from the engine's
 /// provider native config surface, so callers can detect drift and stale CLI
 /// state relative to the stored profile.
-pub fn read_code_engine_model_configuration(
+pub fn read_agent_engine_model_configuration(
     engine_key: &str,
     agent_id: &str,
     profile_id: &str,
 ) -> crate::RuntimeFacadeResult<ProviderModelConfigurationStatus> {
-    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
@@ -153,19 +177,23 @@ pub fn read_code_engine_model_configuration(
         "hermes" => {
             HermesConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
         }
-        _ => unreachable!("validated code engine"),
+        "mimo-code" => {
+            MiMoCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
+        }
+        "rig" => RigConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        _ => unreachable!("validated agent engine"),
     };
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
 }
 
 /// Reverts the engine's materialized provider configuration (restoring the
 /// pre-apply backup) when a profile is archived or removed.
-pub fn dematerialize_code_engine_model_configuration(
+pub fn dematerialize_agent_engine_model_configuration(
     engine_key: &str,
     agent_id: &str,
     profile_id: &str,
 ) -> crate::RuntimeFacadeResult<()> {
-    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
@@ -188,18 +216,22 @@ pub fn dematerialize_code_engine_model_configuration(
             .dematerialize_model_configuration(agent_id, profile_id),
         "hermes" => HermesConfigurationProvider::new()
             .dematerialize_model_configuration(agent_id, profile_id),
-        _ => unreachable!("validated code engine"),
+        "mimo-code" => MiMoCodeConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        "rig" => RigConfigurationProvider::new()
+            .dematerialize_model_configuration(agent_id, profile_id),
+        _ => unreachable!("validated agent engine"),
     };
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
 }
 
 /// Plans a configuration profile upgrade for the engine's provider. Providers
 /// without a migration plan report the capability as missing.
-pub fn plan_code_engine_configuration_upgrade(
+pub fn plan_agent_engine_configuration_upgrade(
     engine_key: &str,
     request: &AgentConfigurationUpgradeRequest,
 ) -> crate::RuntimeFacadeResult<AgentConfigurationUpgradePlan> {
-    let expected_agent_id = code_engine_agent_id(engine_key).ok_or_else(|| {
+    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
@@ -216,12 +248,14 @@ pub fn plan_code_engine_configuration_upgrade(
         "opencode" => OpenCodeConfigurationProvider::new().plan_configuration_upgrade(request),
         "openclaw" => OpenClawConfigurationProvider::new().plan_configuration_upgrade(request),
         "hermes" => HermesConfigurationProvider::new().plan_configuration_upgrade(request),
-        _ => unreachable!("validated code engine"),
+        "mimo-code" => MiMoCodeConfigurationProvider::new().plan_configuration_upgrade(request),
+        "rig" => RigConfigurationProvider::new().plan_configuration_upgrade(request),
+        _ => unreachable!("validated agent engine"),
     };
     result.map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string()))
 }
 
-pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
+pub fn agent_engine_agent_id(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" => Some("agent.codex"),
         "claude-code" => Some("agent.claude-code"),
@@ -229,6 +263,8 @@ pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
         "opencode" => Some("agent.opencode"),
         "openclaw" => Some("agent.openclaw"),
         "hermes" => Some("agent.hermes"),
+        "mimo-code" => Some("agent.mimo-code"),
+        "rig" => Some("agent.rig-general"),
         _ => None,
     }
 }
@@ -239,7 +275,7 @@ pub fn code_engine_agent_id(engine_key: &str) -> Option<&'static str> {
 /// Scopes live in the profile-entry key namespace, which uses underscore
 /// separators by design (`claude_code`, `gemini_cli`) — they are config keys,
 /// not durable ids, and intentionally differ from the engine key spelling.
-pub fn code_engine_provider_scope(engine_key: &str) -> Option<&'static str> {
+pub fn agent_engine_provider_scope(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" => Some("codex"),
         "claude-code" => Some("claude_code"),
@@ -247,11 +283,13 @@ pub fn code_engine_provider_scope(engine_key: &str) -> Option<&'static str> {
         "opencode" => Some("opencode"),
         "openclaw" => Some("openclaw"),
         "hermes" => Some("hermes"),
+        "mimo-code" => Some("mimo_code"),
+        "rig" => Some("rig"),
         _ => None,
     }
 }
 
-pub fn code_engine_binding_id(engine_key: &str) -> Option<&'static str> {
+pub fn agent_engine_binding_id(engine_key: &str) -> Option<&'static str> {
     match engine_key {
         "codex" => Some(CODEX_BINDING_ID),
         "claude-code" => Some(CLAUDE_CODE_BINDING_ID),
@@ -259,12 +297,14 @@ pub fn code_engine_binding_id(engine_key: &str) -> Option<&'static str> {
         "opencode" => Some(OPENCODE_BINDING_ID),
         "openclaw" => Some(OPENCLAW_BINDING_ID),
         "hermes" => Some(HERMES_BINDING_ID),
+        "mimo-code" => Some(MIMO_CODE_BINDING_ID),
+        "rig" => Some(RIG_BINDING_ID),
         _ => None,
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CodeEngineRuntimeIdentity {
+pub struct AgentEngineRuntimeIdentity {
     pub engine_key: String,
     pub agent_id: String,
     pub binding_id: String,
@@ -272,7 +312,7 @@ pub struct CodeEngineRuntimeIdentity {
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct CodeEngineInteractionResolution {
+pub struct AgentEngineInteractionResolution {
     pub model_request_id: String,
     pub session_id: String,
     pub turn_id: String,
@@ -282,27 +322,27 @@ pub struct CodeEngineInteractionResolution {
     pub resolution: serde_json::Value,
 }
 
-pub fn resolve_code_engine_runtime_identity(
+pub fn resolve_agent_engine_runtime_identity(
     agent_id: &str,
-) -> Result<Option<CodeEngineRuntimeIdentity>, CodeEngineBootstrapError> {
+) -> Result<Option<AgentEngineRuntimeIdentity>, AgentEngineBootstrapError> {
     let Some(engine_key) = bootstrappable_engine_keys()
         .into_iter()
-        .find(|engine_key| code_engine_agent_id(engine_key) == Some(agent_id))
+        .find(|engine_key| agent_engine_agent_id(engine_key) == Some(agent_id))
     else {
         return Ok(None);
     };
-    let slot = bootstrap_code_engine(engine_key)?;
+    let slot = bootstrap_agent_engine(engine_key)?;
     let provider_id = slot
         .list_model_descriptors()
         .into_iter()
         .next()
         .map(|descriptor| descriptor.provider_id)
         .ok_or_else(|| {
-            CodeEngineBootstrapError::Bootstrap(format!(
-                "code engine {engine_key} did not publish a model provider"
+            AgentEngineBootstrapError::Bootstrap(format!(
+                "agent engine {engine_key} did not publish a model provider"
             ))
         })?;
-    Ok(Some(CodeEngineRuntimeIdentity {
+    Ok(Some(AgentEngineRuntimeIdentity {
         engine_key: engine_key.to_string(),
         agent_id: agent_id.to_string(),
         binding_id: slot.binding_id().to_string(),
@@ -311,35 +351,37 @@ pub fn resolve_code_engine_runtime_identity(
 }
 
 #[derive(Debug)]
-pub enum CodeEngineBootstrapError {
+pub enum AgentEngineBootstrapError {
     UnsupportedEngine(String),
     Bootstrap(String),
 }
 
-impl std::fmt::Display for CodeEngineBootstrapError {
+impl std::fmt::Display for AgentEngineBootstrapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnsupportedEngine(engine) => {
-                write!(f, "unsupported code engine for bootstrap: {engine}")
+                write!(f, "unsupported agent engine for bootstrap: {engine}")
             }
-            Self::Bootstrap(message) => write!(f, "code engine bootstrap failed: {message}"),
+            Self::Bootstrap(message) => write!(f, "agent engine bootstrap failed: {message}"),
         }
     }
 }
 
-impl std::error::Error for CodeEngineBootstrapError {}
+impl std::error::Error for AgentEngineBootstrapError {}
 
-/// Bootstrapped kernel provider slot for one canonical code engine.
-pub enum CodeEngineSlot {
+/// Bootstrapped kernel provider slot for one canonical agent engine.
+pub enum AgentEngineSlot {
     Codex(CodexSdkIntegration),
     ClaudeCode(ClaudeCodeSdkIntegration),
     Gemini(GeminiCliSdkIntegration),
     OpenCode(OpenCodeSdkIntegration),
     OpenClaw(OpenClawSdkIntegration),
     Hermes(HermesSdkIntegration),
+    MiMoCode(MiMoCodeSdkIntegration),
+    Rig(RigSdkIntegration),
 }
 
-impl CodeEngineSlot {
+impl AgentEngineSlot {
     pub fn engine_key(&self) -> &'static str {
         match self {
             Self::Codex(_) => "codex",
@@ -348,6 +390,8 @@ impl CodeEngineSlot {
             Self::OpenCode(_) => "opencode",
             Self::OpenClaw(_) => "openclaw",
             Self::Hermes(_) => "hermes",
+            Self::MiMoCode(_) => "mimo-code",
+            Self::Rig(_) => "rig",
         }
     }
 
@@ -359,6 +403,8 @@ impl CodeEngineSlot {
             Self::OpenCode(integration) => integration.binding_id(),
             Self::OpenClaw(integration) => integration.binding_id(),
             Self::Hermes(integration) => integration.binding_id(),
+            Self::MiMoCode(integration) => integration.binding_id(),
+            Self::Rig(integration) => integration.binding_id(),
         }
     }
 
@@ -374,7 +420,7 @@ impl CodeEngineSlot {
     }
 
     pub fn execution_settings_spec(&self) -> KernelResult<AgentExecutionSettingsSpec> {
-        let agent_id = code_engine_agent_id(self.engine_key()).ok_or_else(|| {
+        let agent_id = agent_engine_agent_id(self.engine_key()).ok_or_else(|| {
             sdkwork_agent_kernel::KernelError::CapabilityMissing {
                 capability_id: format!("agent.configure.execution.{}", self.engine_key()),
             }
@@ -390,7 +436,10 @@ impl CodeEngineSlot {
             Self::OpenCode(_) => {
                 OpenCodeConfigurationProvider::new().execution_settings_spec(agent_id)
             }
-            Self::OpenClaw(_) | Self::Hermes(_) => {
+            Self::OpenClaw(_)
+            | Self::Hermes(_)
+            | Self::MiMoCode(_)
+            | Self::Rig(_) => {
                 Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
                     capability_id: format!("agent.configure.execution.{}", self.engine_key()),
                 })
@@ -402,7 +451,7 @@ impl CodeEngineSlot {
         &self,
         access_mode_id: &str,
     ) -> KernelResult<AgentExecutionSettingsResolution> {
-        let agent_id = code_engine_agent_id(self.engine_key()).ok_or_else(|| {
+        let agent_id = agent_engine_agent_id(self.engine_key()).ok_or_else(|| {
             sdkwork_agent_kernel::KernelError::CapabilityMissing {
                 capability_id: format!("agent.configure.execution.{}", self.engine_key()),
             }
@@ -421,7 +470,10 @@ impl CodeEngineSlot {
             Self::OpenCode(_) => {
                 OpenCodeConfigurationProvider::new().resolve_execution_settings(&request)
             }
-            Self::OpenClaw(_) | Self::Hermes(_) => {
+            Self::OpenClaw(_)
+            | Self::Hermes(_)
+            | Self::MiMoCode(_)
+            | Self::Rig(_) => {
                 Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
                     capability_id: format!("agent.configure.execution.{}", self.engine_key()),
                 })
@@ -455,7 +507,7 @@ impl CodeEngineSlot {
 
     pub fn resolve_interaction(
         &self,
-        resolution: &CodeEngineInteractionResolution,
+        resolution: &AgentEngineInteractionResolution,
     ) -> crate::RuntimeFacadeResult<serde_json::Value> {
         let runtime_resolution = SdkRuntimeInteractionResolution {
             model_request_id: resolution.model_request_id.clone(),
@@ -471,7 +523,7 @@ impl CodeEngineSlot {
                 .resolve_interaction(&runtime_resolution)
                 .map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string())),
             _ => Err(crate::RuntimeFacadeError::InvalidInput(format!(
-                "code engine {} does not support typed interaction resolution",
+                "agent engine {} does not support typed interaction resolution",
                 self.engine_key()
             ))),
         }
@@ -494,7 +546,7 @@ impl CodeEngineSlot {
             Self::OpenCode(integration) => {
                 integration.get_provider_session_activity(provider_session_id)
             }
-            Self::OpenClaw(_) | Self::Hermes(_) => {
+            Self::OpenClaw(_) | Self::Hermes(_) | Self::MiMoCode(_) | Self::Rig(_) => {
                 Ok(SessionActivitySnapshot::unsupported(provider_session_id))
             }
         }
@@ -535,6 +587,12 @@ impl CodeEngineSlot {
                         )
                     })?,
             ),
+            Self::MiMoCode(integration) => integration
+                .lifecycle
+                .list_sessions(&SessionListQuery::default()),
+            Self::Rig(integration) => integration
+                .lifecycle
+                .list_sessions(&SessionListQuery::default()),
         }
     }
 
@@ -585,6 +643,12 @@ impl CodeEngineSlot {
                         )
                     })?,
             ),
+            Self::MiMoCode(integration) => integration
+                .lifecycle
+                .get_conversation_history(provider_session_id),
+            Self::Rig(integration) => integration
+                .lifecycle
+                .get_conversation_history(provider_session_id),
         }
     }
 
@@ -604,7 +668,9 @@ impl CodeEngineSlot {
             | Self::Gemini(_)
             | Self::OpenCode(_)
             | Self::OpenClaw(_)
-            | Self::Hermes(_) => Ok(Vec::new()),
+            | Self::Hermes(_)
+            | Self::MiMoCode(_)
+            | Self::Rig(_) => Ok(Vec::new()),
         }
     }
 
@@ -613,7 +679,7 @@ impl CodeEngineSlot {
     pub(crate) fn supports_streaming_completion(&self) -> bool {
         matches!(
             self,
-            Self::Codex(_) | Self::ClaudeCode(_) | Self::OpenCode(_)
+            Self::Codex(_) | Self::ClaudeCode(_) | Self::OpenCode(_) | Self::MiMoCode(_) | Self::Rig(_)
         )
     }
 
@@ -636,6 +702,12 @@ impl CodeEngineSlot {
             Self::OpenCode(integration) => {
                 integration.model.stream_into_with_completion(request, sink)
             }
+            Self::MiMoCode(integration) => {
+                integration.model.stream_into_with_completion(request, sink)
+            }
+            Self::Rig(integration) => {
+                integration.model.stream_into_with_completion(request, sink)
+            }
             _ => Err(sdkwork_agent_kernel::KernelError::CapabilityMissing {
                 capability_id: "model.streaming.initial_session_completion".to_string(),
             }),
@@ -650,6 +722,8 @@ impl CodeEngineSlot {
             Self::OpenCode(integration) => &integration.model,
             Self::OpenClaw(integration) => &integration.model,
             Self::Hermes(integration) => &integration.model,
+            Self::MiMoCode(integration) => &integration.model,
+            Self::Rig(integration) => &integration.model,
         }
     }
 }
@@ -959,27 +1033,33 @@ fn ensure_provider_collection_size(
     ))
 }
 
-pub fn bootstrap_code_engine(engine_key: &str) -> Result<CodeEngineSlot, CodeEngineBootstrapError> {
+pub fn bootstrap_agent_engine(engine_key: &str) -> Result<AgentEngineSlot, AgentEngineBootstrapError> {
     match engine_key {
         "codex" => CodexSdkIntegration::bootstrap()
-            .map(CodeEngineSlot::Codex)
-            .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
+            .map(AgentEngineSlot::Codex)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
         "claude-code" => ClaudeCodeSdkIntegration::bootstrap()
-            .map(CodeEngineSlot::ClaudeCode)
-            .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
+            .map(AgentEngineSlot::ClaudeCode)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
         "gemini" => GeminiCliSdkIntegration::bootstrap()
-            .map(CodeEngineSlot::Gemini)
-            .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
+            .map(AgentEngineSlot::Gemini)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
         "opencode" => OpenCodeSdkIntegration::bootstrap()
-            .map(CodeEngineSlot::OpenCode)
-            .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
+            .map(AgentEngineSlot::OpenCode)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
         "openclaw" => OpenClawSdkIntegration::bootstrap()
-            .map(CodeEngineSlot::OpenClaw)
-            .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
+            .map(AgentEngineSlot::OpenClaw)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
         "hermes" => HermesSdkIntegration::bootstrap()
-            .map(CodeEngineSlot::Hermes)
-            .map_err(|error| CodeEngineBootstrapError::Bootstrap(error.to_string())),
-        other => Err(CodeEngineBootstrapError::UnsupportedEngine(
+            .map(AgentEngineSlot::Hermes)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
+        "mimo-code" => MiMoCodeSdkIntegration::bootstrap()
+            .map(AgentEngineSlot::MiMoCode)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
+        "rig" => RigSdkIntegration::bootstrap()
+            .map(AgentEngineSlot::Rig)
+            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
+        other => Err(AgentEngineBootstrapError::UnsupportedEngine(
             other.to_string(),
         )),
     }
@@ -1022,10 +1102,10 @@ mod tests {
     }
 
     #[test]
-    fn canonical_code_engines_map_to_binding_ids() {
-        for engine in canonical_code_engine_keys() {
-            assert!(code_engine_agent_id(engine).is_some());
-            assert!(code_engine_binding_id(engine).is_some());
+    fn canonical_agent_engines_map_to_binding_ids() {
+        for engine in canonical_agent_engine_keys() {
+            assert!(agent_engine_agent_id(engine).is_some());
+            assert!(agent_engine_binding_id(engine).is_some());
         }
     }
 
@@ -1138,9 +1218,9 @@ mod tests {
     }
 
     #[test]
-    fn all_canonical_code_engines_bootstrap() {
-        for engine in canonical_code_engine_keys() {
-            let slot = bootstrap_code_engine(engine).unwrap_or_else(|error| {
+    fn all_canonical_agent_engines_bootstrap() {
+        for engine in canonical_agent_engine_keys() {
+            let slot = bootstrap_agent_engine(engine).unwrap_or_else(|error| {
                 panic!("bootstrap failed for {engine}: {error}");
             });
             assert_eq!(slot.engine_key(), *engine);
@@ -1150,10 +1230,10 @@ mod tests {
 
     #[test]
     fn session_sdk_engines_enable_verified_first_turn_streaming() {
-        let codex = bootstrap_code_engine("codex").expect("codex bootstrap");
-        let claude = bootstrap_code_engine("claude-code").expect("claude bootstrap");
-        let opencode = bootstrap_code_engine("opencode").expect("opencode bootstrap");
-        let gemini = bootstrap_code_engine("gemini").expect("gemini bootstrap");
+        let codex = bootstrap_agent_engine("codex").expect("codex bootstrap");
+        let claude = bootstrap_agent_engine("claude-code").expect("claude bootstrap");
+        let opencode = bootstrap_agent_engine("opencode").expect("opencode bootstrap");
+        let gemini = bootstrap_agent_engine("gemini").expect("gemini bootstrap");
 
         assert!(codex.supports_streaming_completion());
         assert!(claude.supports_streaming_completion());
@@ -1164,29 +1244,29 @@ mod tests {
     #[test]
     fn runtime_identity_resolves_every_bootstrappable_agent_id() {
         for engine_key in bootstrappable_engine_keys() {
-            let agent_id = code_engine_agent_id(engine_key).expect("agent id");
-            let identity = resolve_code_engine_runtime_identity(agent_id)
+            let agent_id = agent_engine_agent_id(engine_key).expect("agent id");
+            let identity = resolve_agent_engine_runtime_identity(agent_id)
                 .expect("identity resolution")
                 .expect("known identity");
             assert_eq!(identity.engine_key, engine_key);
             assert_eq!(identity.agent_id, agent_id);
             assert_eq!(
                 identity.binding_id,
-                code_engine_binding_id(engine_key).unwrap()
+                agent_engine_binding_id(engine_key).unwrap()
             );
             assert!(!identity.provider_id.is_empty());
         }
-        assert!(resolve_code_engine_runtime_identity("agent.unknown")
+        assert!(resolve_agent_engine_runtime_identity("agent.unknown")
             .expect("unknown identity resolution")
             .is_none());
     }
 
     #[test]
-    fn model_configuration_dispatches_to_each_code_engine_config_spi() {
+    fn model_configuration_dispatches_to_each_agent_engine_config_spi() {
         let _guard = config_spi_test_guard();
         isolate_provider_user_home();
         for engine_key in bootstrappable_engine_keys() {
-            let agent_id = code_engine_agent_id(engine_key).expect("agent id");
+            let agent_id = agent_engine_agent_id(engine_key).expect("agent id");
             let request = AgentModelConfigurationRequest::new(
                 format!("request.model.{engine_key}"),
                 agent_id,
@@ -1196,7 +1276,7 @@ mod tests {
                 format!("secret-model-{engine_key}"),
                 "example-chat",
             );
-            let application = apply_code_engine_model_configuration(engine_key, &request)
+            let application = apply_agent_engine_model_configuration(engine_key, &request)
                 .expect("provider Config SPI applies model configuration");
             assert_eq!(application.profile.agent_id, agent_id);
             assert_eq!(application.profile.profile_id, request.profile_id);
@@ -1205,11 +1285,11 @@ mod tests {
     }
 
     #[test]
-    fn model_selection_dispatches_to_each_code_engine_config_spi() {
+    fn model_selection_dispatches_to_each_agent_engine_config_spi() {
         let _guard = config_spi_test_guard();
         isolate_provider_user_home();
         for engine_key in bootstrappable_engine_keys() {
-            let agent_id = code_engine_agent_id(engine_key).expect("agent id");
+            let agent_id = agent_engine_agent_id(engine_key).expect("agent id");
             // Selection is fail-closed without a SDKWork-managed provider
             // entry in the config surface (OpenCode/OpenClaw reject silently
             // leaving the CLI on the previous model). Establish the
@@ -1223,7 +1303,7 @@ mod tests {
                 format!("secret-selection-{engine_key}"),
                 "example-chat",
             );
-            apply_code_engine_model_configuration(engine_key, &setup)
+            apply_agent_engine_model_configuration(engine_key, &setup)
                 .expect("provider Config SPI applies model configuration before selection");
             let request = AgentModelSelectionRequest::new(
                 format!("request.selection.{engine_key}"),
@@ -1231,7 +1311,7 @@ mod tests {
                 format!("profile.selection.{engine_key}"),
                 "catalog-model",
             );
-            let application = apply_code_engine_model_selection(engine_key, &request)
+            let application = apply_agent_engine_model_selection(engine_key, &request)
                 .expect("provider Config SPI applies model selection");
             assert_eq!(application.profile.agent_id, agent_id);
             assert_eq!(application.profile.profile_id, request.profile_id);

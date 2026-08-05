@@ -187,7 +187,8 @@ pub use sql::{
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION, SQL_SELECT_AGENT_TASK,
     SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
     SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
-    SQL_SELECT_TURN_INPUT_QUEUE_ENTRY, SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
+    SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT, SQL_SELECT_TURN_INPUT_QUEUE_ENTRY,
+    SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
     SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
@@ -3917,50 +3918,6 @@ pub const AGENTS_DATABASE_SERVICE: &str = "AGENTS";
 pub const TASK_SCHEDULER_METRICS_COUNT_CAP: i64 = 100_000;
 
 #[cfg(feature = "postgres-sync")]
-pub const SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT: &str = r#"
-SELECT
-    (SELECT COUNT(*)::bigint FROM (
-        SELECT 1 FROM ai_agent_task
-         WHERE status = 0 AND next_fire_at <= $1::timestamptz
-         LIMIT $2
-    ) bounded_due_tasks) AS due_tasks,
-    COALESCE((SELECT GREATEST(
-        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(next_fire_at))))::bigint,
-        0
-    ) FROM ai_agent_task
-      WHERE status = 0 AND next_fire_at <= $1::timestamptz), 0) AS materialization_lag_seconds,
-    (SELECT COUNT(*)::bigint FROM (
-        SELECT 1 FROM ai_agent_task_run
-         WHERE status = 0 AND available_at <= $1::timestamptz
-         LIMIT $2
-    ) bounded_eligible_runs) AS eligible_runs,
-    COALESCE((SELECT GREATEST(
-        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(available_at))))::bigint,
-        0
-    ) FROM ai_agent_task_run
-      WHERE status = 0 AND available_at <= $1::timestamptz), 0) AS eligible_run_oldest_age_seconds,
-    (SELECT COUNT(*)::bigint FROM (
-        SELECT 1 FROM ai_agent_task_run
-         WHERE status IN (1, 2) AND lease_expires_at >= $1::timestamptz
-         LIMIT $2
-    ) bounded_active_leases) AS active_leases,
-    (SELECT COUNT(*)::bigint FROM (
-        SELECT 1 FROM ai_agent_task_run WHERE status = 6 LIMIT $2
-    ) bounded_reconciling_runs) AS reconciling_runs,
-    COALESCE((SELECT GREATEST(
-        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(updated_at))))::bigint,
-        0
-    ) FROM ai_agent_task_run WHERE status = 6), 0) AS reconciliation_oldest_age_seconds,
-    (SELECT COUNT(*)::bigint FROM (
-        SELECT 1 FROM ai_agent_outbox_event WHERE status IN (0, 1, 3) LIMIT $2
-    ) bounded_pending_outbox_events) AS pending_outbox_events,
-    COALESCE((SELECT GREATEST(
-        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(created_at))))::bigint,
-        0
-    ) FROM ai_agent_outbox_event WHERE status IN (0, 1, 3)), 0) AS outbox_oldest_age_seconds
-"#;
-
-#[cfg(feature = "postgres-sync")]
 const SQL_SELECT_TASK_RUN_BY_ID: &str = r#"
 SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
        r.agent_id, r.owner_user_id, r.trigger_kind, r.schedule_generation,
@@ -6281,8 +6238,21 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .and_then(AgentSessionStatus::from_code)
             .map(|s| s.as_db_code());
         let include_archived = query.include_archived;
-        let page_size = usize_to_i64(query.pagination.page_size, "pagination.page_size")?;
-        let offset = usize_to_i64(query.pagination.offset, "pagination.offset")?;
+        let store_limit = usize_to_i64(
+            query.pagination
+                .page_size
+                .saturating_add(1),
+            "pagination.page_size",
+        )?;
+        let cursor_updated_at = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.updated_at.as_str());
+        let cursor_session_internal_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.session_internal_id, "cursor.session_internal_id"))
+            .transpose()?;
 
         self.with_pool(|pool| {
             let rows = pg_query!(
@@ -6296,8 +6266,9 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 owner_user_id,
                 status_code,
                 include_archived,
-                page_size,
-                offset
+                cursor_updated_at,
+                cursor_session_internal_id,
+                store_limit
             )?;
             rows.into_iter().map(pg_row_to_agent_session_row).collect()
         })
@@ -7551,10 +7522,21 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentTurnStatus::from_code)
             .map(AgentTurnStatus::as_db_code);
-        let page_size = i64::try_from(query.pagination.page_size)
-            .map_err(|_| KernelError::validation("page_size overflow"))?;
-        let offset = i64::try_from(query.pagination.offset)
-            .map_err(|_| KernelError::validation("pagination offset overflow"))?;
+        let store_limit = i64::try_from(
+            query.pagination
+                .page_size
+                .saturating_add(1),
+        )
+        .map_err(|_| KernelError::validation("page_size overflow"))?;
+        let cursor_created_at = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.created_at.as_str());
+        let cursor_turn_internal_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.internal_id, "cursor.internal_id"))
+            .transpose()?;
         self.with_pool(|pool| {
             pg_query!(
                 pool,
@@ -7563,8 +7545,9 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 organization_id,
                 query.session_id,
                 status_code,
-                page_size,
-                offset
+                cursor_created_at,
+                cursor_turn_internal_id,
+                store_limit
             )?
             .into_iter()
             .map(pg_row_to_agent_turn_row)
@@ -8746,8 +8729,19 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentInteractionKind::from_code)
             .map(|kind| kind.as_db_code());
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let store_limit = query
+            .pagination
+            .page_size
+            .saturating_add(1) as i64;
+        let cursor_created_at = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.created_at.as_str());
+        let cursor_interaction_internal_id = query
+            .cursor
+            .as_ref()
+            .map(|cursor| u64_to_i64(cursor.internal_id, "cursor.internal_id"))
+            .transpose()?;
 
         self.with_pool(|pool| {
             let rows = pg_query!(
@@ -8758,8 +8752,9 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 query.session_id,
                 status_code,
                 kind_code,
-                page_size,
-                offset
+                cursor_created_at,
+                cursor_interaction_internal_id,
+                store_limit
             )?;
             rows.into_iter()
                 .map(pg_row_to_agent_interaction_row)
@@ -11002,8 +10997,18 @@ impl AgentAuditAdapter for SyncPostgresAdapter {
         query: &AuditEventListQuery,
     ) -> KernelResult<Vec<AgentAuditEventRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let page_size = query.pagination.page_size as i64;
-        let offset = query.pagination.offset as i64;
+        let store_limit = query
+            .pagination
+            .page_size
+            .saturating_add(1) as i64;
+        let cursor_created_at = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.created_at.as_str());
+        let cursor_event_ref = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.event_ref.as_str());
         self.with_pool(|pool| {
             let rows = pg_query!(
                 pool,
@@ -11013,8 +11018,9 @@ impl AgentAuditAdapter for SyncPostgresAdapter {
                 query.action,
                 query.from,
                 query.to,
-                page_size,
-                offset
+                cursor_created_at,
+                cursor_event_ref,
+                store_limit
             )?;
             rows.iter().map(AgentAuditEventRow::from_pg_row).collect()
         })
@@ -11081,19 +11087,37 @@ where
         &self,
         query: &AuditEventListQuery,
     ) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
-        use crate::ports::offset_paginated_result;
-        let total_count = self.adapter.count_audit_rows(query)?;
-        let items = self
-            .adapter
-            .list_audit_rows(query)?
-            .into_iter()
-            .map(AgentAuditEventRow::into_kernel_event)
-            .collect::<KernelResult<Vec<_>>>()?;
-        Ok(offset_paginated_result(
-            items,
-            &query.pagination,
-            total_count,
-        ))
+        use crate::list_cursors::{encode_audit_event_list_cursor, AuditEventListCursor};
+        use crate::ports::PaginatedResult;
+        let scope_fingerprint = query.scope_fingerprint();
+        if query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested audit scope",
+            ));
+        }
+        let page_size = query.pagination.page_size;
+        let rows = self.adapter.list_audit_rows(query)?;
+        let has_more = rows.len() > page_size;
+        let mut items = Vec::with_capacity(rows.len().min(page_size));
+        for row in rows.iter().take(page_size) {
+            items.push(AgentAuditEventRow::into_kernel_event(row.clone())?);
+        }
+        let next_page_token = if has_more {
+            let boundary = &rows[page_size - 1];
+            encode_audit_event_list_cursor(&AuditEventListCursor {
+                created_at: boundary.created_at.clone(),
+                event_ref: boundary.uuid.clone(),
+                scope_fingerprint,
+            })?
+            .into()
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
     }
 }
 

@@ -15,13 +15,13 @@ test('platform integration contract: kernel bridge uses web-framework served rou
   assert.match(source, /app::build_app/);
 });
 
-test('platform integration contract: production bootstrap wires runtime facade chat completer', () => {
+test('platform integration contract: production bootstrap wires runtime facade turn executor', () => {
   const source = fs.readFileSync(
     path.join(repoRoot, 'crates/sdkwork-agents-kernel-bridge/src/agent_http_state.rs'),
     'utf8',
   );
-  assert.match(source, /RuntimeFacadeChatCompleter/);
-  assert.match(source, /production_postgres_agent_http_state[\s\S]*with_chat_completer/);
+  assert.match(source, /RuntimeFacadeTurnExecutor/);
+  assert.match(source, /production_postgres_agent_http_state[\s\S]*with_turn_executor/);
 });
 
 test('platform integration contract: utils used in contract crate', () => {

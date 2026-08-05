@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, Check, Wrench } from 'lucide-react';
 import { cn } from '@sdkwork/agents-pc-commons';
-import { loadCodeEngineToolItems, loadMcpCatalogPage } from '../services/RuntimeCatalogService';
+import { loadAgentEngineToolItems, loadMcpCatalogPage } from '../services/RuntimeCatalogService';
 
 export interface ToolItem {
   id: string;
@@ -63,7 +63,7 @@ export const SelectToolsModal: React.FC<SelectToolsModalProps> = ({
     setError(null);
     try {
       if (tab === 'official') {
-        const items = await loadCodeEngineToolItems();
+        const items = await loadAgentEngineToolItems();
         setTools(items);
         setPage(1);
         setHasMore(false);

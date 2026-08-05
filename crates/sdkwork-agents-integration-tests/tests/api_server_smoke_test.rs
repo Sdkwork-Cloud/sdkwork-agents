@@ -57,11 +57,13 @@ impl GatewayTestEnvironment {
             .expect("SDKWORK_DATABASE_TEST_POSTGRES_URL must be set for ignored IAM gateway tests");
         environment.set("SDKWORK_DATABASE_URL", iam_database_url);
         environment.set("SDKWORK_DATABASE_ENGINE", "postgres");
-        environment.set("SDKWORK_DATABASE_AUTO_MIGRATE", "false");
+        // The IAM and Agents manifests default autoMigrate=false; the live
+        // gateway bootstrap must migrate its own baseline so the "initialized
+        // IAM PostgreSQL schema" the ignored tests require actually exists.
+        environment.set("SDKWORK_DATABASE_AUTO_MIGRATE", "true");
         environment.set("SDKWORK_DATABASE_MAX_CONNECTIONS", "1");
         environment.set("SDKWORK_DATABASE_MIN_CONNECTIONS", "0");
         environment.set("SDKWORK_DATABASE_ACQUIRE_TIMEOUT", "60");
-        environment.remove("SDKWORK_DATABASE_URL");
 
         environment
     }

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use crate::code_engines::{
-    bootstrap_code_engine, bootstrappable_engine_keys, CodeEngineBootstrapError,
-    CodeEngineInteractionResolution, CodeEngineSlot,
+use crate::agent_engines::{
+    bootstrap_agent_engine, bootstrappable_engine_keys, AgentEngineBootstrapError,
+    AgentEngineInteractionResolution, AgentEngineSlot,
 };
-use crate::engine_catalog::{build_code_engine_catalog, CodeEngineCatalog};
+use crate::agent_engine_catalog::{build_agent_engine_catalog, AgentEngineCatalog};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
 use crate::provider_sessions::{
@@ -13,30 +13,30 @@ use crate::provider_sessions::{
     ProviderSessionInventorySnapshot,
 };
 use crate::turn::{
-    cancel_code_engine_turn, execute_code_engine_turn, CodeEngineTurnCancellation,
-    CodeEngineTurnInput, CodeEngineTurnOutput,
+    cancel_agent_engine_turn, execute_agent_engine_turn, AgentEngineTurnCancellation,
+    AgentEngineTurnInput, AgentEngineTurnOutput,
 };
 
-/// Agents-owned runtime host for canonical code-engine provider slots.
-pub struct AgentsCodeEngineHost {
-    slots: HashMap<String, CodeEngineSlot>,
-    unavailable: HashMap<String, CodeEngineBootstrapError>,
+/// Agents-owned runtime host for canonical agent-engine provider slots.
+pub struct AgentsAgentEngineHost {
+    slots: HashMap<String, AgentEngineSlot>,
+    unavailable: HashMap<String, AgentEngineBootstrapError>,
     engine_order: Vec<String>,
     live: LiveInteractionRegistry,
 }
 
-impl AgentsCodeEngineHost {
-    pub fn bootstrap() -> Result<Self, CodeEngineBootstrapError> {
+impl AgentsAgentEngineHost {
+    pub fn bootstrap() -> Result<Self, AgentEngineBootstrapError> {
         Self::bootstrap_with_live(LiveInteractionRegistry::new())
     }
 
     pub fn bootstrap_with_live(
         live: LiveInteractionRegistry,
-    ) -> Result<Self, CodeEngineBootstrapError> {
+    ) -> Result<Self, AgentEngineBootstrapError> {
         let mut slots = HashMap::new();
         let mut engine_order = Vec::new();
         for engine_key in bootstrappable_engine_keys() {
-            let slot = bootstrap_code_engine(engine_key)?;
+            let slot = bootstrap_agent_engine(engine_key)?;
             slots.insert(engine_key.to_string(), slot);
             engine_order.push(engine_key.to_string());
         }
@@ -65,7 +65,7 @@ impl AgentsCodeEngineHost {
                 continue;
             }
             engine_order.push((*engine_key).to_string());
-            match bootstrap_code_engine(engine_key) {
+            match bootstrap_agent_engine(engine_key) {
                 Ok(slot) => {
                     slots.insert((*engine_key).to_string(), slot);
                 }
@@ -83,7 +83,7 @@ impl AgentsCodeEngineHost {
         }
     }
 
-    pub fn slot(&self, engine_key: &str) -> Option<&CodeEngineSlot> {
+    pub fn slot(&self, engine_key: &str) -> Option<&AgentEngineSlot> {
         self.slots.get(engine_key)
     }
 
@@ -94,7 +94,7 @@ impl AgentsCodeEngineHost {
             .map(String::as_str)
     }
 
-    pub fn unavailable_engine(&self, engine_key: &str) -> Option<&CodeEngineBootstrapError> {
+    pub fn unavailable_engine(&self, engine_key: &str) -> Option<&AgentEngineBootstrapError> {
         self.unavailable.get(engine_key)
     }
 
@@ -113,13 +113,13 @@ impl AgentsCodeEngineHost {
         &mut self.live
     }
 
-    pub fn catalog(&self) -> CodeEngineCatalog {
-        let slots: Vec<&CodeEngineSlot> = self
+    pub fn catalog(&self) -> AgentEngineCatalog {
+        let slots: Vec<&AgentEngineSlot> = self
             .engine_order
             .iter()
             .filter_map(|engine_key| self.slots.get(engine_key))
             .collect();
-        build_code_engine_catalog(&slots)
+        build_agent_engine_catalog(&slots)
     }
 
     pub fn discover_provider_sessions(
@@ -180,27 +180,27 @@ impl AgentsCodeEngineHost {
 
     pub fn execute_turn(
         &self,
-        input: &CodeEngineTurnInput,
-    ) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+        input: &AgentEngineTurnInput,
+    ) -> RuntimeFacadeResult<AgentEngineTurnOutput> {
         self.validate_engine_key(input.engine_key.as_str())?;
         let slot = self
             .slots
             .get(input.engine_key.as_str())
             .expect("validated engine slot must exist");
-        execute_code_engine_turn(slot, input)
+        execute_agent_engine_turn(slot, input)
     }
 
     pub fn cancel_turn(
         &self,
         engine_key: &str,
         model_request_id: &str,
-    ) -> RuntimeFacadeResult<CodeEngineTurnCancellation> {
+    ) -> RuntimeFacadeResult<AgentEngineTurnCancellation> {
         self.validate_engine_key(engine_key)?;
         let slot = self
             .slots
             .get(engine_key)
             .expect("validated engine slot must exist");
-        cancel_code_engine_turn(slot, model_request_id)
+        cancel_agent_engine_turn(slot, model_request_id)
     }
 
     pub fn submit_approval_decision(
@@ -224,7 +224,7 @@ impl AgentsCodeEngineHost {
     pub fn resolve_interaction(
         &self,
         engine_key: &str,
-        resolution: &CodeEngineInteractionResolution,
+        resolution: &AgentEngineInteractionResolution,
     ) -> RuntimeFacadeResult<serde_json::Value> {
         self.validate_engine_key(engine_key)?;
         self.slots
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn host_bootstraps_all_available_engines() {
-        let host = AgentsCodeEngineHost::bootstrap().expect("host bootstrap");
+        let host = AgentsAgentEngineHost::bootstrap().expect("host bootstrap");
         let expected = bootstrappable_engine_keys();
         assert_eq!(host.slots.len(), expected.len());
         assert_eq!(host.engine_keys().collect::<Vec<_>>(), expected);
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn validate_engine_key_returns_typed_error_for_unknown() {
-        let host = AgentsCodeEngineHost::bootstrap().expect("host bootstrap");
+        let host = AgentsAgentEngineHost::bootstrap().expect("host bootstrap");
         let result = host.validate_engine_key("nonexistent");
         assert!(matches!(
             result,
@@ -282,14 +282,14 @@ mod tests {
 
     #[test]
     fn selected_bootstrap_starts_only_requested_canonical_engines() {
-        let host = AgentsCodeEngineHost::bootstrap_selected(
-            crate::code_engines::canonical_code_engine_keys(),
+        let host = AgentsAgentEngineHost::bootstrap_selected(
+            crate::agent_engines::canonical_agent_engine_keys(),
             LiveInteractionRegistry::new(),
         );
 
         assert_eq!(host.slots.len(), 4);
         assert_eq!(host.catalog().engines.len(), 4);
-        for engine_key in crate::code_engines::canonical_code_engine_keys() {
+        for engine_key in crate::agent_engines::canonical_agent_engine_keys() {
             assert!(host.slot(engine_key).is_some(), "missing slot {engine_key}");
         }
         assert!(host.slot("openclaw").is_none());
@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn selected_bootstrap_retains_failure_without_dropping_working_slot() {
-        let host = AgentsCodeEngineHost::bootstrap_selected(
+        let host = AgentsAgentEngineHost::bootstrap_selected(
             &["missing-provider", "codex"],
             LiveInteractionRegistry::new(),
         );
@@ -311,7 +311,7 @@ mod tests {
         );
         assert!(matches!(
             host.unavailable_engine("missing-provider"),
-            Some(CodeEngineBootstrapError::UnsupportedEngine(engine_key))
+            Some(AgentEngineBootstrapError::UnsupportedEngine(engine_key))
                 if engine_key == "missing-provider"
         ));
         assert!(matches!(
@@ -320,7 +320,7 @@ mod tests {
                 if engine_key == "missing-provider"
         ));
         assert!(matches!(
-            host.execute_turn(&CodeEngineTurnInput {
+            host.execute_turn(&AgentEngineTurnInput {
                 engine_key: "missing-provider".to_string(),
                 prompt: "test unavailable slot".to_string(),
                 ..Default::default()

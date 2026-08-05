@@ -1,7 +1,7 @@
 {
-  "deploymentProfile": "cloud",
-  "environment": "production",
-  "profileId": "cloud.production",
+  "deploymentProfile": "standalone",
+  "environment": "development",
+  "profileId": "standalone.development",
   "runtimeTarget": "mini-program",
   "platform": "MP_WEIXIN"
 }

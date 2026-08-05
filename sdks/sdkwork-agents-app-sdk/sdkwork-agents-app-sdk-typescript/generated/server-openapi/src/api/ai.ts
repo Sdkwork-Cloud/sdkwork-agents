@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentModelProviderId, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionItemSynchronizationResult, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CodeEngineCatalog, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, MigrateModelConfigurationRequest, ModelConfigurationStatusRecord, ModelConfigurationSummaryRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentEngineCatalog, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentModelProviderId, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionItemSynchronizationResult, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, MigrateModelConfigurationRequest, ModelConfigurationStatusRecord, ModelConfigurationSummaryRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
 
 
 export interface AiAgentsMcpServersListParams {
@@ -89,7 +89,7 @@ export class AiAgentsModelConfigurationsApi {
   }
 }
 
-export class AiAgentsCodeEnginesApi {
+export class AiAgentsAgentEnginesApi {
   private client: HttpClient;
 
   constructor(client: HttpClient) {
@@ -97,9 +97,9 @@ export class AiAgentsCodeEnginesApi {
   }
 
 
-/** List canonical code-engine catalog */
-  async list(requestOptions?: ApiRequestOptions): Promise<CodeEngineCatalog> {
-    return this.client.request<CodeEngineCatalog>(appApiPath(`/ai/code_engines`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+/** List canonical agent-engine catalog */
+  async list(requestOptions?: ApiRequestOptions): Promise<AgentEngineCatalog> {
+    return this.client.request<AgentEngineCatalog>(appApiPath(`/ai/agent_engines`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'item' });
   }
 }
 
@@ -363,7 +363,7 @@ export class AiAgentsCheckpointsApi {
 }
 
 export interface AiAgentsInteractionsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   kind?: AgentInteractionKind;
   status?: AgentInteractionStatus;
@@ -380,7 +380,7 @@ export class AiAgentsInteractionsApi {
 /** List durable interactions for one agent session */
   async list(agentId: string, sessionId: string, params?: AiAgentsInteractionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentInteractionRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'kind', value: params?.kind, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
@@ -490,7 +490,7 @@ export class AiAgentsTurnInputQueueEntriesApi {
 }
 
 export interface AiAgentsTurnsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
 }
 
@@ -510,7 +510,7 @@ export class AiAgentsTurnsApi {
 /** List durable turns for one agent session */
   async list(agentId: string, sessionId: string, params?: AiAgentsTurnsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentTurnRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
     ]);
     return this.client.request<SdkWorkPageData & { items: AgentTurnRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/sessions/${serializePathParameter(sessionId, { name: 'sessionId', style: 'simple', explode: false })}/turns`), query), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'page' });
@@ -643,7 +643,7 @@ export class AiAgentsSessionUserStatesApi {
 }
 
 export interface AiAgentsSessionsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   projectId?: string;
   status?: AgentSessionStatus;
@@ -661,7 +661,7 @@ export class AiAgentsSessionsApi {
 /** List agent sessions for one managed agent */
   async list(agentId: string, params?: AiAgentsSessionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'project_id', value: params?.projectId, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
@@ -726,7 +726,7 @@ export class AiAgentsSessionActivitySummariesApi {
 }
 
 export interface AiAgentsProjectSessionsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   status?: AgentSessionStatus;
   includeArchived?: boolean;
@@ -743,7 +743,7 @@ export class AiAgentsProjectSessionsApi {
 /** List agent sessions for one project */
   async list(projectId: string, params?: AiAgentsProjectSessionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'include_archived', value: params?.includeArchived, style: 'form', explode: true, allowReserved: false },
@@ -768,7 +768,7 @@ export class AiAgentsProjectSessionsApi {
 }
 
 export interface AiAgentsWorkspaceSessionsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   status?: AgentSessionStatus;
   includeArchived?: boolean;
@@ -785,7 +785,7 @@ export class AiAgentsWorkspaceSessionsApi {
 /** List agent sessions for one workspace */
   async list(workspaceId: string, params?: AiAgentsWorkspaceSessionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'include_archived', value: params?.includeArchived, style: 'form', explode: true, allowReserved: false },
@@ -1079,7 +1079,7 @@ export class AiAgentsApi {
   public readonly taskRuns: AiAgentsTaskRunsApi;
   public readonly taskRunAttempts: AiAgentsTaskRunAttemptsApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
-  public readonly codeEngines: AiAgentsCodeEnginesApi;
+  public readonly agentEngines: AiAgentsAgentEnginesApi;
   public readonly modelConfigurations: AiAgentsModelConfigurationsApi;
   public readonly modelSelections: AiAgentsModelSelectionsApi;
   public readonly mcpServers: AiAgentsMcpServersApi;
@@ -1108,7 +1108,7 @@ export class AiAgentsApi {
     this.taskRuns = new AiAgentsTaskRunsApi(client);
     this.taskRunAttempts = new AiAgentsTaskRunAttemptsApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
-    this.codeEngines = new AiAgentsCodeEnginesApi(client);
+    this.agentEngines = new AiAgentsAgentEnginesApi(client);
     this.modelConfigurations = new AiAgentsModelConfigurationsApi(client);
     this.modelSelections = new AiAgentsModelSelectionsApi(client);
     this.mcpServers = new AiAgentsMcpServersApi(client);

@@ -26,7 +26,7 @@ use sdkwork_intelligence_agents_service::{
 fn session_activity_snapshot_is_one_bounded_projection_query() {
     let sql = SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS;
     assert!(sql.contains("ORDER BY activity_at DESC, id DESC"));
-    assert!(sql.contains("(activity_at, id) <"));
+    assert!(sql.contains("(s.activity_at, s.id) <"));
     assert!(sql.contains("LIMIT $9"));
     assert!(sql.contains("row_to_json(latest_turn)"));
     assert!(sql.contains("ORDER BY turn_row.id DESC"));
@@ -40,9 +40,9 @@ fn session_activity_snapshot_is_one_bounded_projection_query() {
     assert!(sql.contains("interaction_row.kind ASC"));
     assert!(sql.contains("binding_row.is_current = TRUE"));
     assert!(sql.contains("AND binding_row.status = 0"));
-    assert!(sql.contains("user_state_row.user_id = s.owner_user_id"));
+    assert!(sql.contains("user_state_row.user_id = page.owner_user_id"));
     assert!(sql.contains("user_state_row.resource_type = 0"));
-    assert!(sql.contains("user_state_row.resource_id = s.session_id"));
+    assert!(sql.contains("user_state_row.resource_id = page.session_id"));
     assert!(sql.contains("THEN 'user_state'"));
     assert!(sql.contains("interaction_activity.interaction_id AS latest_interaction_id"));
     assert!(sql.contains("project_scope.workspace_id = $6"));
@@ -397,12 +397,12 @@ fn turn_sql_uses_scoped_idempotency_and_links_items() {
 #[test]
 fn postgres_session_list_has_mandatory_pagination() {
     assert!(
-        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $9"),
+        SQL_LIST_AGENT_SESSIONS.contains("LIMIT $11"),
         "SQL_LIST_AGENT_SESSIONS must have LIMIT parameter for mandatory pagination"
     );
     assert!(
-        SQL_LIST_AGENT_SESSIONS.contains("OFFSET $10"),
-        "SQL_LIST_AGENT_SESSIONS must have OFFSET parameter for page navigation"
+        SQL_LIST_AGENT_SESSIONS.contains("(s.updated_at, s.id) < ($9::timestamptz, $10::bigint)"),
+        "SQL_LIST_AGENT_SESSIONS must keyset-paginate at the store"
     );
     assert!(SQL_LIST_AGENT_SESSIONS.contains("organization_id = $2"));
     assert!(SQL_LIST_AGENT_SESSIONS.contains("project_id = $4"));
@@ -579,8 +579,9 @@ fn postgres_interaction_sql_is_tenant_scoped() {
         );
     }
     assert!(
-        SQL_LIST_AGENT_INTERACTIONS.contains("LIMIT $6 OFFSET $7"),
-        "ai_agent_interaction list SQL must paginate at the store"
+        SQL_LIST_AGENT_INTERACTIONS.contains("(created_at, id) < ($6::timestamptz, $7::bigint)")
+            && SQL_LIST_AGENT_INTERACTIONS.contains("LIMIT $8"),
+        "ai_agent_interaction list SQL must keyset-paginate at the store"
     );
 }
 

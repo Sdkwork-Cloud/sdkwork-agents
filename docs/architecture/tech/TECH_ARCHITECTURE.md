@@ -200,6 +200,17 @@ and never assumes failure from a network timeout.
 - Provider errors are sanitized; credentials, signed URLs and raw dependency
   payloads are not persisted.
 - Input sizes, pagination and metadata are bounded.
+- High-volume Session, Turn, audit and Interaction lists use opaque keyset
+  cursors (`cursor`/`page_size`) with scope-bound fingerprints; offset mode is
+  reserved for stable per-entity detail lists.
+- The Session activity feed orders on the trigger-maintained
+  `ai_agent_session.activity_at` column (indexed keyset), so page selection is
+  an index scan and the per-row lateral enrichment runs only for the page.
+- Provider Session inventory synchronization
+  (`POST .../sessions/synchronize`) runs on a bounded background worker:
+  refresh-cache hits return `200 completed`, cold requests enqueue the run
+  and return `202 accepted`, and in-flight requests deduplicate to
+  `202 pending`.
 - Audit and outbox facts are append-oriented; redaction and retention are
   explicit lifecycle commands.
 - Health, metrics, traces and structured logs expose no secrets or item content.
@@ -210,7 +221,10 @@ Standalone and cloud profiles expose the same OpenAPI behavior. Route assembly
 is host neutral. The selected profile supplies typed source configuration,
 PostgreSQL connection pooling, dependency service endpoints and credential
 providers. Production startup fails closed for missing database, auth or
-required dependency configuration.
+required dependency configuration. The cloud launch gate validates the cloud
+production profile with `pnpm deploy:validate:cloud` before any cloud
+deployment is accepted; `pnpm deploy:validate:standalone` is the equivalent
+standalone gate.
 
 Kernel/provider runtime state is not a replacement for the Agents PostgreSQL
 authority. Optional capability services may be mounted or remote without

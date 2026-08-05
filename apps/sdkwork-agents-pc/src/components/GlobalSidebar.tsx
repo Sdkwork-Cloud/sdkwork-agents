@@ -6,6 +6,7 @@ import {
   Home,
   LayoutGrid,
   MessageSquare,
+  Presentation,
   Sparkles,
 } from 'lucide-react';
 import type { FC } from 'react';
@@ -37,6 +38,7 @@ const SIDEBAR_ITEM_BY_TAB: Record<SidebarTab, Omit<SidebarItem, 'id'>> = {
   creative: { icon: Sparkles, label: '生成' },
   assets: { icon: Folder, label: '资产' },
   canvas: { icon: LayoutGrid, label: '画布' },
+  presentation: { icon: Presentation, label: '演示' },
 };
 
 const SIDEBAR_ITEMS: SidebarItem[] = SIDEBAR_TABS.map((id) => ({

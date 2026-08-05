@@ -16,7 +16,7 @@
   "expectedOpenOperations": 47,
   "strippedAppOnlyPaths": [
     "/restore",
-    "/code_engines",
+    "/agent_engines",
     "/mcp_servers"
   ],
   "managedBy": "sdks/materialize-agent-open-sdk-from-app.mjs"

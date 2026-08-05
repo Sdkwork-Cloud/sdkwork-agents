@@ -7,41 +7,41 @@ use sdkwork_agent_kernel::{
 use sdkwork_agent_provider_spi::SdkRuntimeStreamCompletion;
 use sdkwork_utils_rust::string::is_blank;
 
-use crate::code_engines::CodeEngineSlot;
+use crate::agent_engines::AgentEngineSlot;
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 
 /// Maximum prompt size accepted by the runtime facade (1 MiB).
-pub const MAX_CODE_ENGINE_PROMPT_BYTES: usize = 1_048_576;
+pub const MAX_AGENT_ENGINE_PROMPT_BYTES: usize = 1_048_576;
 /// Maximum stream chunks collected before failing closed.
-pub const MAX_CODE_ENGINE_STREAM_CHUNKS: usize = 8_192;
+pub const MAX_AGENT_ENGINE_STREAM_CHUNKS: usize = 8_192;
 /// Maximum aggregated stream output size (4 MiB).
-pub const MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES: usize = 4_194_304;
+pub const MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES: usize = 4_194_304;
 /// Maximum provider request identity size accepted by the runtime facade.
-pub const MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES: usize = 512;
+pub const MAX_AGENT_ENGINE_MODEL_REQUEST_ID_BYTES: usize = 512;
 
-const WORKING_DIRECTORY_METADATA_KEY: &str = "sdkwork.code_engine.working_directory";
-const APPROVAL_POLICY_METADATA_KEY: &str = "sdkwork.code_engine.approval_policy";
-const SANDBOX_MODE_METADATA_KEY: &str = "sdkwork.code_engine.sandbox_mode";
-const FULL_AUTO_METADATA_KEY: &str = "sdkwork.code_engine.full_auto";
-const SKIP_GIT_REPO_CHECK_METADATA_KEY: &str = "sdkwork.code_engine.skip_git_repo_check";
-const EPHEMERAL_METADATA_KEY: &str = "sdkwork.code_engine.ephemeral";
-const REQUIRE_LIVE_PROVIDER_METADATA_KEY: &str = "sdkwork.code_engine.require_live_provider";
-const MAX_OUTPUT_BYTES_METADATA_KEY: &str = "sdkwork.code_engine.max_output_bytes";
-const TEMPERATURE_METADATA_KEY: &str = "sdkwork.code_engine.temperature";
-const TOP_P_METADATA_KEY: &str = "sdkwork.code_engine.top_p";
-const MAX_TOKENS_METADATA_KEY: &str = "sdkwork.code_engine.max_tokens";
+const WORKING_DIRECTORY_METADATA_KEY: &str = "sdkwork.agent_engine.working_directory";
+const APPROVAL_POLICY_METADATA_KEY: &str = "sdkwork.agent_engine.approval_policy";
+const SANDBOX_MODE_METADATA_KEY: &str = "sdkwork.agent_engine.sandbox_mode";
+const FULL_AUTO_METADATA_KEY: &str = "sdkwork.agent_engine.full_auto";
+const SKIP_GIT_REPO_CHECK_METADATA_KEY: &str = "sdkwork.agent_engine.skip_git_repo_check";
+const EPHEMERAL_METADATA_KEY: &str = "sdkwork.agent_engine.ephemeral";
+const REQUIRE_LIVE_PROVIDER_METADATA_KEY: &str = "sdkwork.agent_engine.require_live_provider";
+const MAX_OUTPUT_BYTES_METADATA_KEY: &str = "sdkwork.agent_engine.max_output_bytes";
+const TEMPERATURE_METADATA_KEY: &str = "sdkwork.agent_engine.temperature";
+const TOP_P_METADATA_KEY: &str = "sdkwork.agent_engine.top_p";
+const MAX_TOKENS_METADATA_KEY: &str = "sdkwork.agent_engine.max_tokens";
 const PROVIDER_SESSION_DIAGNOSTIC_KEYS: [&str; 6] = [
     "sdk_runtime_session_id",
     "sdk_runtime_provider_session_id",
-    "sdkwork.code_engine.provider_session_id",
+    "sdkwork.agent_engine.provider_session_id",
     "sdkwork.provider.session_id",
     "provider_session_id",
     "provider_session_id",
 ];
 
-/// Product-neutral code-engine turn input consumed by the agents runtime facade.
+/// Product-neutral agent-engine turn input consumed by the agents runtime facade.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct CodeEngineTurnInput {
+pub struct AgentEngineTurnInput {
     pub engine_key: String,
     pub model_id: String,
     /// Stable request identity established by the application before execution.
@@ -68,22 +68,22 @@ pub struct CodeEngineTurnInput {
     pub access_mode_id: Option<String>,
 }
 
-/// Provider-neutral terminal metadata for a streamed code-engine turn.
+/// Provider-neutral terminal metadata for a streamed agent-engine turn.
 ///
 /// The facade constructs this value only after the runtime verifies that the
 /// terminal `model_request_id` belongs to the active turn and that the
 /// provider supplied a non-empty provider session id. Product callers therefore
 /// never inspect provider diagnostics or transport frames to resume a turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CodeEngineTurnStreamCompletion {
+pub struct AgentEngineTurnStreamCompletion {
     pub model_request_id: String,
     pub finish_reason: String,
     pub provider_session_id: String,
 }
 
-/// Product-neutral code-engine turn output produced by the agents runtime facade.
+/// Product-neutral agent-engine turn output produced by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CodeEngineTurnOutput {
+pub struct AgentEngineTurnOutput {
     pub model_request_id: String,
     pub finish_reason: Option<String>,
     pub assistant_content: String,
@@ -96,12 +96,12 @@ pub struct CodeEngineTurnOutput {
     pub stream_events: Vec<KernelEvent>,
     /// Verified terminal metadata for a streamed turn. `None` means the turn
     /// used invoke-only execution or the provider cannot prove completion.
-    pub stream_completion: Option<CodeEngineTurnStreamCompletion>,
+    pub stream_completion: Option<AgentEngineTurnStreamCompletion>,
 }
 
-/// Correlated provider acknowledgement for one cancelled code-engine Turn.
+/// Correlated provider acknowledgement for one cancelled agent-engine Turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CodeEngineTurnCancellation {
+pub struct AgentEngineTurnCancellation {
     pub model_request_id: String,
     pub finish_reason: String,
 }
@@ -112,14 +112,14 @@ pub struct CodeEngineTurnCancellation {
 /// correlated with the model provider (cancellation matching, message
 /// association) and is not a durable id, so it intentionally stays outside
 /// the dot-separated durable id scheme.
-pub fn code_engine_model_request_id(turn_id: &str) -> String {
+pub fn agent_engine_model_request_id(turn_id: &str) -> String {
     format!("agents-turn-{turn_id}")
 }
 
-pub fn execute_code_engine_turn(
-    slot: &CodeEngineSlot,
-    input: &CodeEngineTurnInput,
-) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+pub fn execute_agent_engine_turn(
+    slot: &AgentEngineSlot,
+    input: &AgentEngineTurnInput,
+) -> RuntimeFacadeResult<AgentEngineTurnOutput> {
     if slot.engine_key() != input.engine_key {
         return Err(RuntimeFacadeError::EngineMismatch {
             slot_engine: slot.engine_key().to_string(),
@@ -129,9 +129,9 @@ pub fn execute_code_engine_turn(
     if is_blank(Some(input.prompt.as_str())) {
         return Err(RuntimeFacadeError::BlankPrompt);
     }
-    if input.prompt.len() > MAX_CODE_ENGINE_PROMPT_BYTES {
+    if input.prompt.len() > MAX_AGENT_ENGINE_PROMPT_BYTES {
         return Err(RuntimeFacadeError::Kernel(format!(
-            "prompt exceeds maximum size of {MAX_CODE_ENGINE_PROMPT_BYTES} bytes"
+            "prompt exceeds maximum size of {MAX_AGENT_ENGINE_PROMPT_BYTES} bytes"
         )));
     }
 
@@ -147,9 +147,9 @@ pub fn execute_code_engine_turn(
     Ok(build_turn_output(response, input))
 }
 
-fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> CodeEngineTurnOutput {
+fn build_turn_output(response: ModelResponse, input: &AgentEngineTurnInput) -> AgentEngineTurnOutput {
     let assistant_content = response.messages.join("\n");
-    CodeEngineTurnOutput {
+    AgentEngineTurnOutput {
         model_request_id: response.model_request_id.clone(),
         finish_reason: response.finish_reason.clone(),
         assistant_content,
@@ -162,8 +162,8 @@ fn build_turn_output(response: ModelResponse, input: &CodeEngineTurnInput) -> Co
 }
 
 fn build_model_request(
-    slot: &CodeEngineSlot,
-    input: &CodeEngineTurnInput,
+    slot: &AgentEngineSlot,
+    input: &AgentEngineTurnInput,
 ) -> RuntimeFacadeResult<ModelRequest> {
     let resolved_execution_settings = input
         .access_mode_id
@@ -182,10 +182,10 @@ fn build_model_request(
             ));
         }
         Some(model_request_id)
-            if model_request_id.len() > MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES =>
+            if model_request_id.len() > MAX_AGENT_ENGINE_MODEL_REQUEST_ID_BYTES =>
         {
             return Err(RuntimeFacadeError::InvalidInput(format!(
-                "model_request_id exceeds {MAX_CODE_ENGINE_MODEL_REQUEST_ID_BYTES} bytes"
+                "model_request_id exceeds {MAX_AGENT_ENGINE_MODEL_REQUEST_ID_BYTES} bytes"
             )));
         }
         Some(model_request_id) => model_request_id.to_string(),
@@ -270,17 +270,17 @@ fn with_optional_metadata(request: ModelRequest, key: &str, value: Option<&str>)
     }
 }
 
-fn effective_max_output_bytes(input: &CodeEngineTurnInput) -> usize {
+fn effective_max_output_bytes(input: &AgentEngineTurnInput) -> usize {
     input
         .max_output_bytes
-        .unwrap_or(MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES)
-        .min(MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES)
+        .unwrap_or(MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES)
+        .min(MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES)
 }
 
 fn validate_output_size(output_bytes: usize, max_output_bytes: usize) -> RuntimeFacadeResult<()> {
     if output_bytes > max_output_bytes {
         return Err(RuntimeFacadeError::Kernel(format!(
-            "code-engine output exceeds maximum size of {max_output_bytes} bytes"
+            "agent-engine output exceeds maximum size of {max_output_bytes} bytes"
         )));
     }
     Ok(())
@@ -288,7 +288,7 @@ fn validate_output_size(output_bytes: usize, max_output_bytes: usize) -> Runtime
 
 fn resolve_provider_session_id(
     response: &ModelResponse,
-    input: &CodeEngineTurnInput,
+    input: &AgentEngineTurnInput,
 ) -> Option<String> {
     response
         .diagnostics
@@ -305,12 +305,12 @@ fn resolve_provider_session_id(
 }
 
 /// Execute a turn preferring provider stream chunks when supported.
-pub fn execute_code_engine_turn_with_stream(
-    slot: &CodeEngineSlot,
-    input: &CodeEngineTurnInput,
-) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+pub fn execute_agent_engine_turn_with_stream(
+    slot: &AgentEngineSlot,
+    input: &AgentEngineTurnInput,
+) -> RuntimeFacadeResult<AgentEngineTurnOutput> {
     let mut sink = DiscardingModelStreamSink;
-    execute_code_engine_turn_with_stream_sink(slot, input, &mut sink)
+    execute_agent_engine_turn_with_stream_sink(slot, input, &mut sink)
 }
 
 /// Execute a turn and forward each provider-neutral model chunk as it arrives.
@@ -321,11 +321,11 @@ pub fn execute_code_engine_turn_with_stream(
 /// carries a correlated provider session id. Other engines remain invoke-only
 /// until they offer the same proof. Once a chunk is delivered, this function
 /// never invokes the provider again as a fallback.
-pub fn execute_code_engine_turn_with_stream_sink(
-    slot: &CodeEngineSlot,
-    input: &CodeEngineTurnInput,
+pub fn execute_agent_engine_turn_with_stream_sink(
+    slot: &AgentEngineSlot,
+    input: &AgentEngineTurnInput,
     sink: &mut dyn ModelStreamSink,
-) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+) -> RuntimeFacadeResult<AgentEngineTurnOutput> {
     if slot.engine_key() != input.engine_key {
         return Err(RuntimeFacadeError::EngineMismatch {
             slot_engine: slot.engine_key().to_string(),
@@ -335,16 +335,16 @@ pub fn execute_code_engine_turn_with_stream_sink(
     if is_blank(Some(input.prompt.as_str())) {
         return Err(RuntimeFacadeError::BlankPrompt);
     }
-    if input.prompt.len() > MAX_CODE_ENGINE_PROMPT_BYTES {
+    if input.prompt.len() > MAX_AGENT_ENGINE_PROMPT_BYTES {
         return Err(RuntimeFacadeError::Kernel(format!(
-            "prompt exceeds maximum size of {MAX_CODE_ENGINE_PROMPT_BYTES} bytes"
+            "prompt exceeds maximum size of {MAX_AGENT_ENGINE_PROMPT_BYTES} bytes"
         )));
     }
     if slot.supports_streaming_completion() {
         return execute_with_stream_completion(slot, input, sink);
     }
     if input.provider_session_id.is_none() {
-        return execute_code_engine_turn(slot, input);
+        return execute_agent_engine_turn(slot, input);
     }
 
     let model_request = build_model_request(slot, input)?;
@@ -373,20 +373,20 @@ pub fn execute_code_engine_turn_with_stream_sink(
         }
     }
 
-    execute_code_engine_turn(slot, input)
+    execute_agent_engine_turn(slot, input)
 }
 
 fn execute_with_stream_completion(
-    slot: &CodeEngineSlot,
-    input: &CodeEngineTurnInput,
+    slot: &AgentEngineSlot,
+    input: &AgentEngineTurnInput,
     sink: &mut dyn ModelStreamSink,
-) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+) -> RuntimeFacadeResult<AgentEngineTurnOutput> {
     let model_request = build_model_request(slot, input)?;
     let mut collector = ForwardingStreamCollector::new(sink);
     let runtime_completion = slot
         .stream_model_into_with_completion(model_request, &mut collector)
         .map_err(|error| RuntimeFacadeError::Kernel(error.to_string()))?;
-    let completion = code_engine_stream_completion(runtime_completion)?;
+    let completion = agent_engine_stream_completion(runtime_completion)?;
 
     let (stream_deltas, stream_events) = collector.into_parts();
     build_streamed_turn_output(
@@ -398,9 +398,9 @@ fn execute_with_stream_completion(
     )
 }
 
-fn code_engine_stream_completion(
+fn agent_engine_stream_completion(
     runtime_completion: SdkRuntimeStreamCompletion,
-) -> RuntimeFacadeResult<CodeEngineTurnStreamCompletion> {
+) -> RuntimeFacadeResult<AgentEngineTurnStreamCompletion> {
     let provider_session_id = runtime_completion
         .provider_session_id
         .filter(|value| !is_blank(Some(value.as_str())))
@@ -410,7 +410,7 @@ fn code_engine_stream_completion(
             )
         })?;
 
-    Ok(CodeEngineTurnStreamCompletion {
+    Ok(AgentEngineTurnStreamCompletion {
         model_request_id: runtime_completion.model_request_id,
         finish_reason: runtime_completion.finish_reason,
         provider_session_id,
@@ -418,12 +418,12 @@ fn code_engine_stream_completion(
 }
 
 fn build_streamed_turn_output(
-    input: &CodeEngineTurnInput,
+    input: &AgentEngineTurnInput,
     model_request_id: String,
     stream_deltas: Vec<String>,
     stream_events: Vec<KernelEvent>,
-    stream_completion: Option<CodeEngineTurnStreamCompletion>,
-) -> RuntimeFacadeResult<CodeEngineTurnOutput> {
+    stream_completion: Option<AgentEngineTurnStreamCompletion>,
+) -> RuntimeFacadeResult<AgentEngineTurnOutput> {
     let finish_reason = stream_completion
         .as_ref()
         .map(|completion| completion.finish_reason.clone());
@@ -452,7 +452,7 @@ fn build_streamed_turn_output(
             )
         })?;
 
-    Ok(CodeEngineTurnOutput {
+    Ok(AgentEngineTurnOutput {
         model_request_id,
         finish_reason,
         assistant_content,
@@ -464,10 +464,10 @@ fn build_streamed_turn_output(
     })
 }
 
-pub fn cancel_code_engine_turn(
-    slot: &CodeEngineSlot,
+pub fn cancel_agent_engine_turn(
+    slot: &AgentEngineSlot,
     model_request_id: &str,
-) -> RuntimeFacadeResult<CodeEngineTurnCancellation> {
+) -> RuntimeFacadeResult<AgentEngineTurnCancellation> {
     if is_blank(Some(model_request_id)) {
         return Err(RuntimeFacadeError::InvalidInput(
             "model_request_id must not be blank".to_string(),
@@ -485,7 +485,7 @@ pub fn cancel_code_engine_turn(
                 .to_string(),
         ));
     }
-    Ok(CodeEngineTurnCancellation {
+    Ok(AgentEngineTurnCancellation {
         model_request_id: response.model_request_id,
         finish_reason: "cancelled".to_string(),
     })
@@ -522,19 +522,19 @@ impl ModelStreamSink for ForwardingStreamCollector<'_> {
         if chunk.content.is_empty() {
             return Ok(());
         }
-        if self.deltas.len() >= MAX_CODE_ENGINE_STREAM_CHUNKS {
+        if self.deltas.len() >= MAX_AGENT_ENGINE_STREAM_CHUNKS {
             return Err(sdkwork_agent_kernel::KernelError::resource_exhausted(
-                "code-engine stream chunk limit exceeded",
+                "agent-engine stream chunk limit exceeded",
             ));
         }
         self.bytes = self.bytes.checked_add(chunk.content.len()).ok_or_else(|| {
             sdkwork_agent_kernel::KernelError::resource_exhausted(
-                "code-engine stream output byte count overflow",
+                "agent-engine stream output byte count overflow",
             )
         })?;
-        if self.bytes > MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES {
+        if self.bytes > MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES {
             return Err(sdkwork_agent_kernel::KernelError::resource_exhausted(
-                "code-engine stream output exceeds maximum size",
+                "agent-engine stream output exceeds maximum size",
             ));
         }
 
@@ -561,7 +561,7 @@ impl ModelStreamSink for DiscardingModelStreamSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_engines::{bootstrap_code_engine, canonical_code_engine_keys};
+    use crate::agent_engines::{bootstrap_agent_engine, canonical_agent_engine_keys};
     use sdkwork_agent_kernel::{
         KernelEventSeverity, ModelDescriptor, ModelProvider, ProviderHealth, ProviderManifest,
     };
@@ -687,7 +687,7 @@ mod tests {
     fn controlled_codex_slot(
         invoke_count: Arc<AtomicUsize>,
         stream_count: Arc<AtomicUsize>,
-    ) -> CodeEngineSlot {
+    ) -> AgentEngineSlot {
         let mut integration = CodexSdkIntegration::bootstrap().expect("codex bootstrap");
         let negotiation = SdkCapabilityNegotiation {
             agent_id: "agent.facade-test".to_string(),
@@ -719,7 +719,7 @@ mod tests {
             SDK_CAPABILITY_MODEL_CHAT,
             "provider.codex",
         );
-        CodeEngineSlot::Codex(integration)
+        AgentEngineSlot::Codex(integration)
     }
 
     #[test]
@@ -780,7 +780,7 @@ mod tests {
 
     #[test]
     fn verified_runtime_completion_becomes_provider_neutral_turn_completion() {
-        let completion = code_engine_stream_completion(SdkRuntimeStreamCompletion {
+        let completion = agent_engine_stream_completion(SdkRuntimeStreamCompletion {
             model_request_id: "request-1".to_string(),
             finish_reason: "stop".to_string(),
             provider_session_id: Some("thread-1".to_string()),
@@ -794,7 +794,7 @@ mod tests {
 
     #[test]
     fn incomplete_runtime_stream_cannot_create_a_first_turn_session() {
-        let result = code_engine_stream_completion(SdkRuntimeStreamCompletion {
+        let result = agent_engine_stream_completion(SdkRuntimeStreamCompletion {
             model_request_id: "request-1".to_string(),
             finish_reason: "stop".to_string(),
             provider_session_id: None,
@@ -805,12 +805,12 @@ mod tests {
 
     #[test]
     fn streamed_turn_output_uses_verified_completion_and_ordered_deltas() {
-        let input = CodeEngineTurnInput {
+        let input = AgentEngineTurnInput {
             engine_key: "codex".to_string(),
             prompt: "implement this".to_string(),
             ..Default::default()
         };
-        let completion = CodeEngineTurnStreamCompletion {
+        let completion = AgentEngineTurnStreamCompletion {
             model_request_id: "request-1".to_string(),
             finish_reason: "stop".to_string(),
             provider_session_id: "thread-1".to_string(),
@@ -839,9 +839,9 @@ mod tests {
         let slot = controlled_codex_slot(invoke_count.clone(), stream_count.clone());
 
         let mut first_sink = RecordingStreamSink::default();
-        let first = execute_code_engine_turn_with_stream_sink(
+        let first = execute_agent_engine_turn_with_stream_sink(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-test".to_string(),
                 prompt: "first turn".to_string(),
@@ -866,9 +866,9 @@ mod tests {
         );
 
         let mut resumed_sink = RecordingStreamSink::default();
-        let resumed = execute_code_engine_turn_with_stream_sink(
+        let resumed = execute_agent_engine_turn_with_stream_sink(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-test".to_string(),
                 provider_session_id: first.provider_session_id.clone(),
@@ -900,9 +900,9 @@ mod tests {
         let invoke_count = Arc::new(AtomicUsize::new(0));
         let slot = controlled_codex_slot(invoke_count.clone(), Arc::new(AtomicUsize::new(0)));
         let model_id = slot.list_model_ids().into_iter().next().expect("model id");
-        let output = execute_code_engine_turn(
+        let output = execute_agent_engine_turn(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id,
                 prompt: "hello agents facade".to_string(),
@@ -928,16 +928,16 @@ mod tests {
         std::env::set_var("SDKWORK_KERNEL_ENVIRONMENT", "development");
         std::env::set_var("SDKWORK_KERNEL_ALLOW_MOCK_PROVIDERS", "1");
 
-        for engine in canonical_code_engine_keys() {
+        for engine in canonical_agent_engine_keys() {
             let slot = if *engine == "codex" {
                 controlled_codex_slot(Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)))
             } else {
-                bootstrap_code_engine(engine).expect("bootstrap")
+                bootstrap_agent_engine(engine).expect("bootstrap")
             };
             let model_id = slot.list_model_ids().into_iter().next().expect("model id");
-            let output = execute_code_engine_turn(
+            let output = execute_agent_engine_turn(
                 &slot,
-                &CodeEngineTurnInput {
+                &AgentEngineTurnInput {
                     engine_key: (*engine).to_string(),
                     model_id,
                     prompt: format!("ping {engine}"),
@@ -951,10 +951,10 @@ mod tests {
 
     #[test]
     fn blank_prompt_returns_typed_error() {
-        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
-        let result = execute_code_engine_turn(
+        let slot = bootstrap_agent_engine("codex").expect("codex bootstrap");
+        let result = execute_agent_engine_turn(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "model".to_string(),
                 prompt: "   ".to_string(),
@@ -966,10 +966,10 @@ mod tests {
 
     #[test]
     fn engine_mismatch_returns_typed_error() {
-        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
-        let result = execute_code_engine_turn(
+        let slot = bootstrap_agent_engine("codex").expect("codex bootstrap");
+        let result = execute_agent_engine_turn(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "gemini".to_string(),
                 model_id: "model".to_string(),
                 prompt: "hello".to_string(),
@@ -984,10 +984,10 @@ mod tests {
 
     #[test]
     fn build_model_request_preserves_session_identities_execution_context_and_budget() {
-        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let slot = bootstrap_agent_engine("codex").expect("codex bootstrap");
         let request = build_model_request(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 model_request_id: Some("agents-turn-turn-canonical".to_string()),
@@ -1060,10 +1060,10 @@ mod tests {
 
     #[test]
     fn build_model_request_never_substitutes_session_identities() {
-        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let slot = bootstrap_agent_engine("codex").expect("codex bootstrap");
         let canonical_only = build_model_request(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 session_id: Some("session-canonical".to_string()),
                 prompt: "canonical only".to_string(),
@@ -1079,7 +1079,7 @@ mod tests {
 
         let provider_only = build_model_request(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 provider_session_id: Some("provider-session".to_string()),
                 prompt: "provider only".to_string(),
@@ -1096,10 +1096,10 @@ mod tests {
 
     #[test]
     fn access_mode_resolution_overrides_legacy_execution_fields() {
-        let slot = bootstrap_code_engine("codex").expect("codex bootstrap");
+        let slot = bootstrap_agent_engine("codex").expect("codex bootstrap");
         let request = build_model_request(
             &slot,
-            &CodeEngineTurnInput {
+            &AgentEngineTurnInput {
                 engine_key: "codex".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt: "implement the change".to_string(),
@@ -1120,7 +1120,7 @@ mod tests {
             Some("workspace-write")
         );
         assert_eq!(
-            request.metadata_value("sdkwork.code_engine.approvals_reviewer"),
+            request.metadata_value("sdkwork.agent_engine.approvals_reviewer"),
             Some("auto_review")
         );
     }
@@ -1129,7 +1129,7 @@ mod tests {
     fn provider_session_diagnostic_overrides_input_session() {
         let response = ModelResponse::text("request-1", "provider.codex", "done")
             .with_diagnostic("sdk_runtime_session_id=session-provider");
-        let input = CodeEngineTurnInput {
+        let input = AgentEngineTurnInput {
             provider_session_id: Some("session-input".to_string()),
             ..Default::default()
         };
@@ -1144,7 +1144,7 @@ mod tests {
     fn provider_session_resolution_falls_back_to_input_session() {
         let response = ModelResponse::text("request-1", "provider.codex", "done")
             .with_diagnostic("sdk_runtime_mode=sdk_live");
-        let input = CodeEngineTurnInput {
+        let input = AgentEngineTurnInput {
             provider_session_id: Some("session-input".to_string()),
             ..Default::default()
         };
@@ -1160,7 +1160,7 @@ mod tests {
         let response = ModelResponse::text("request-1", "provider.codex", "done").with_tool_call(
             ToolCall::new("call-1", "codex.shell", r#"{"command":"cargo test"}"#),
         );
-        let output = build_turn_output(response, &CodeEngineTurnInput::default());
+        let output = build_turn_output(response, &AgentEngineTurnInput::default());
 
         assert_eq!(output.tool_calls.len(), 1);
         assert_eq!(output.tool_calls[0].tool_call_id, "call-1");
@@ -1170,22 +1170,22 @@ mod tests {
 
     #[test]
     fn output_budget_is_bounded_by_the_facade_limit() {
-        let input = CodeEngineTurnInput {
-            max_output_bytes: Some(MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES + 1),
+        let input = AgentEngineTurnInput {
+            max_output_bytes: Some(MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES + 1),
             ..Default::default()
         };
 
         assert_eq!(
             effective_max_output_bytes(&input),
-            MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES
+            MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES
         );
         assert!(validate_output_size(
-            MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES,
+            MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES,
             effective_max_output_bytes(&input)
         )
         .is_ok());
         assert!(validate_output_size(
-            MAX_CODE_ENGINE_STREAM_OUTPUT_BYTES + 1,
+            MAX_AGENT_ENGINE_STREAM_OUTPUT_BYTES + 1,
             effective_max_output_bytes(&input)
         )
         .is_err());

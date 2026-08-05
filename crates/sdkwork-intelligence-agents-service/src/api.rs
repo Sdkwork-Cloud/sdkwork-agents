@@ -946,9 +946,9 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         method: "GET",
-        path: "/app/v3/api/ai/code_engines",
+        path: "/app/v3/api/ai/agent_engines",
         tag: "ai",
-        operation_id: "agents.codeEngines.list",
+        operation_id: "agents.agentEngines.list",
     },
     ApiOperation {
         method: "POST",
@@ -1394,7 +1394,7 @@ mod tests {
     }
 
     #[test]
-    fn app_project_and_code_engine_lists_require_agents_read_permission() {
+    fn app_project_and_agent_engine_lists_require_agents_read_permission() {
         let app_openapi = include_str!("../specs/openapi/agents-app-api.openapi.yaml");
 
         assert_openapi_permission(
@@ -1406,7 +1406,7 @@ mod tests {
         assert_openapi_permission(
             app_openapi,
             "get",
-            "/app/v3/api/ai/code_engines",
+            "/app/v3/api/ai/agent_engines",
             crate::infrastructure::IAM_PERMISSION_AGENTS_READ,
         );
     }
@@ -1629,11 +1629,11 @@ mod tests {
             if label == "app" {
                 for required in [
                     "CreateAgentSessionRequest:".to_string(),
-                    format!("{prefix}/ai/code_engines:"),
+                    format!("{prefix}/ai/agent_engines:"),
                     format!("{prefix}/ai/mcp_servers:"),
-                    "operationId: agents.codeEngines.list".to_string(),
+                    "operationId: agents.agentEngines.list".to_string(),
                     "operationId: agents.mcpServers.list".to_string(),
-                    "CodeEngineCatalogListResponse:".to_string(),
+                    "AgentEngineCatalogListResponse:".to_string(),
                     "McpServerMarketplaceListResponse:".to_string(),
                     format!("{prefix}/ai/agents/{{agentId}}/sessions/user_states:"),
                     format!("{prefix}/ai/agents/{{agentId}}/sessions/{{sessionId}}/user_state:"),
@@ -1798,7 +1798,7 @@ mod tests {
             "agents.providerBindings.retrieve",
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
-            "agents.codeEngines.health",
+            "agents.agentEngines.health",
             "agents.mcpServers.list",
         ] {
             assert!(
@@ -1814,7 +1814,7 @@ mod tests {
     fn operation_registry_paths_must_not_include_non_ga_scope_routes() {
         let forbidden_path_markers = [
             "/provider_bindings/{bindingId}/deactivate",
-            "/code_engines/{engineKey}/health",
+            "/agent_engines/{engineKey}/health",
         ];
         for operations in [AGENT_OPEN_API_OPERATIONS] {
             for operation in operations {
@@ -1832,7 +1832,7 @@ mod tests {
             "agents.providerBindings.retrieve",
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
-            "agents.codeEngines.health",
+            "agents.agentEngines.health",
         ] {
             assert!(
                 !AGENT_APP_API_OPERATIONS
@@ -1847,8 +1847,8 @@ mod tests {
             "agents.providerBindings.deactivate",
             "agents.providerBindings.delete",
             "agents.sessions.update",
-            "agents.codeEngines.list",
-            "agents.codeEngines.health",
+            "agents.agentEngines.list",
+            "agents.agentEngines.health",
             "agents.mcpServers.list",
         ] {
             assert!(

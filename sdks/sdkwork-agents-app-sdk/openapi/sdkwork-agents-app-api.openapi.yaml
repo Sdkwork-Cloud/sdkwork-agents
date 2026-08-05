@@ -1169,7 +1169,7 @@ paths:
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/WorkspaceIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       - name: status
         in: query
@@ -1207,7 +1207,7 @@ paths:
       x-sdkwork-tenant-scope: organization
       parameters:
       - $ref: '#/components/parameters/ProjectIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       - name: status
         in: query
@@ -1268,10 +1268,15 @@ paths:
       summary: Synchronize provider Session inventory for one project
       description: >-
         Explicitly reconciles the project runtime's provider Session inventory.
-        This command never accepts device paths, directory names, or local
-        filesystem fingerprints from a client. Individual invalid provider
-        records are isolated and reported as bounded aggregate issues, so one
-        malformed record does not discard valid reconciliation work.
+        The reconciliation runs on a bounded background worker: a request
+        inside the 60-second refresh window returns the cached outcome
+        (`status=completed`), a cold request enqueues the run and returns
+        `202` (`status=accepted`), and a request racing an in-flight run
+        returns `202` (`status=pending`). This command never accepts device
+        paths, directory names, or local filesystem fingerprints from a
+        client. Individual invalid provider records are isolated and reported
+        as bounded aggregate issues, so one malformed record does not discard
+        valid reconciliation work.
       operationId: agents.projectSessions.synchronize
       security:
       - AuthToken: []
@@ -1285,7 +1290,13 @@ paths:
       - $ref: '#/components/parameters/ProjectIdPath'
       responses:
         '200':
-          description: Provider Session inventory synchronization result
+          description: Provider Session inventory synchronization result (refresh-cache hit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSessionSynchronizationResponse'
+        '202':
+          description: Synchronization accepted for background execution (accepted or pending)
           content:
             application/json:
               schema:
@@ -1404,11 +1415,11 @@ paths:
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
-      x-sdkwork-pagination-mode: offset
+      x-sdkwork-pagination-mode: cursor
       x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       - name: project_id
         in: query
@@ -1894,12 +1905,12 @@ paths:
       x-sdkwork-resource: agents.turns
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
-      x-sdkwork-pagination-mode: offset
+      x-sdkwork-pagination-mode: cursor
       x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
@@ -2304,7 +2315,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       - name: kind
         in: query
@@ -3484,29 +3495,29 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
-  /app/v3/api/ai/code_engines:
+  /app/v3/api/ai/agent_engines:
     get:
       x-sdkwork-owner: sdkwork-agents
       x-sdkwork-api-authority: sdkwork-agents-app-api
       tags:
       - ai
-      summary: List canonical code-engine catalog
-      operationId: agents.codeEngines.list
+      summary: List canonical agent-engine catalog
+      operationId: agents.agentEngines.list
       security:
       - AuthToken: []
         AccessToken: []
       x-sdkwork-domain: ai
-      x-sdkwork-resource: codeEngines
+      x-sdkwork-resource: agentEngines
       x-sdkwork-permission: ai.agents.read
       x-sdkwork-tenant-scope: tenant
-      x-sdkwork-audit-event: agent.business.code_engine_listed
+      x-sdkwork-audit-event: agent.business.agent_engine_listed
       responses:
         '200':
-          description: Canonical code-engine catalog from agents runtime facade
+          description: Canonical agent-engine catalog from agents runtime facade
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CodeEngineCatalogListResponse'
+                $ref: '#/components/schemas/AgentEngineCatalogListResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/model_configurations/apply:
@@ -3596,7 +3607,7 @@ paths:
         required: false
         schema:
           type: string
-        description: Filter profiles by code engine id (codex, claude-code, gemini, opencode, openclaw, hermes). Defaults to all engines.
+        description: Filter profiles by agent engine id (codex, claude-code, gemini, opencode, openclaw, hermes). Defaults to all agent engines.
       responses:
         '200':
           description: Applied model configuration profiles for the scoped engines
@@ -6436,7 +6447,7 @@ components:
               properties:
                 item:
                   $ref: '#/components/schemas/AppliedAgentModelSelectionRecord'
-    CodeEngineCatalogListResponse:
+    AgentEngineCatalogListResponse:
       description: Code engine catalog response following SdkWorkApiResponse envelope;
         the catalog is returned as a single composite resource under data.item.
       allOf:
@@ -6453,8 +6464,8 @@ components:
               - item
               properties:
                 item:
-                  $ref: '#/components/schemas/CodeEngineCatalog'
-    CodeEngineCatalog:
+                  $ref: '#/components/schemas/AgentEngineCatalog'
+    AgentEngineCatalog:
       type: object
       additionalProperties: false
       required:
@@ -6463,12 +6474,13 @@ components:
         engines:
           type: array
           items:
-            $ref: '#/components/schemas/CodeEngineCatalogEngine'
-    CodeEngineCatalogEngine:
+            $ref: '#/components/schemas/AgentEngineCatalogEngine'
+    AgentEngineCatalogEngine:
       type: object
       additionalProperties: false
       required:
       - engineKey
+      - engineKind
       - tier
       - agentId
       - bindingId
@@ -6478,6 +6490,9 @@ components:
       properties:
         engineKey:
           type: string
+        engineKind:
+          type: string
+          enum: [code, work, simple, unknown]
         tier:
           type: string
         agentId:
@@ -6487,14 +6502,14 @@ components:
         models:
           type: array
           items:
-            $ref: '#/components/schemas/CodeEngineModelCatalogEntry'
+            $ref: '#/components/schemas/AgentEngineModelCatalogEntry'
         defaultAccessModeId:
           type: string
         accessModes:
           type: array
           items:
-            $ref: '#/components/schemas/CodeEngineAccessModeCatalogEntry'
-    CodeEngineAccessModeCatalogEntry:
+            $ref: '#/components/schemas/AgentEngineAccessModeCatalogEntry'
+    AgentEngineAccessModeCatalogEntry:
       type: object
       additionalProperties: false
       required:
@@ -6529,7 +6544,7 @@ components:
           type: boolean
         disabledReason:
           type: string
-    CodeEngineModelCatalogEntry:
+    AgentEngineModelCatalogEntry:
       type: object
       additionalProperties: false
       required:
@@ -7011,12 +7026,20 @@ components:
       type: object
       additionalProperties: false
       required:
+      - status
       - projectId
       - synchronizedSessionCount
       - skippedSessionCount
       - failedSessionCount
       - issues
       properties:
+        status:
+          type: string
+          enum: [completed, accepted, pending]
+          description: >-
+            completed when the result was served from the refresh cache,
+            accepted when a cold synchronization was enqueued on a background
+            worker, pending when a synchronization is already running.
         projectId:
           type: string
           pattern: '^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$'

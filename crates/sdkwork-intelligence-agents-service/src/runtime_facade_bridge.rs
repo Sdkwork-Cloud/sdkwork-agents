@@ -1,13 +1,13 @@
 //! Bridges managed-agent runtime executions to `sdkwork-agents-runtime-facade`.
 //!
 //! Preview responses and prompt optimizations must not use deterministic local
-//! contract stubs when a canonical code-engine binding is active.
+//! contract stubs when a canonical agent-engine binding is active.
 
 use std::sync::Arc;
 
 use sdkwork_agents_runtime_facade::{
-    bootstrap_code_engine, bootstrappable_engine_keys, code_engine_binding_id,
-    execute_code_engine_turn, AgentsCodeEngineHost, CodeEngineTurnInput,
+    bootstrap_agent_engine, bootstrappable_engine_keys, agent_engine_binding_id,
+    execute_agent_engine_turn, AgentsAgentEngineHost, AgentEngineTurnInput,
 };
 use sdkwork_utils_rust::string::is_blank;
 
@@ -32,7 +32,7 @@ pub struct PromptOptimizationOutput {
 pub fn engine_key_for_binding_id(binding_id: &str) -> Option<&'static str> {
     bootstrappable_engine_keys()
         .iter()
-        .find(|&engine_key| code_engine_binding_id(engine_key) == Some(binding_id))
+        .find(|&engine_key| agent_engine_binding_id(engine_key) == Some(binding_id))
         .map(|v| v as _)
 }
 
@@ -46,7 +46,7 @@ pub fn engine_key_for_provider_identity(
             .iter()
             .copied()
             .find(|engine_key| {
-                bootstrap_code_engine(engine_key).ok().is_some_and(|slot| {
+                bootstrap_agent_engine(engine_key).ok().is_some_and(|slot| {
                     slot.list_model_descriptors()
                         .iter()
                         .any(|descriptor| descriptor.provider_id == provider_id)
@@ -62,7 +62,7 @@ fn resolve_engine_and_model(
     let binding = active_binding?;
     let engine_key = engine_key_for_binding_id(binding.binding_id.as_str())?.to_string();
     let model_id = if is_blank(requested_model) {
-        bootstrap_code_engine(engine_key.as_str())
+        bootstrap_agent_engine(engine_key.as_str())
             .ok()?
             .list_model_ids()
             .into_iter()
@@ -80,10 +80,10 @@ pub fn execute_preview_response(
 ) -> PreviewExecutionOutput {
     if let Some((engine_key, model_id)) = resolve_engine_and_model(active_binding, requested_model)
     {
-        if let Ok(slot) = bootstrap_code_engine(engine_key.as_str()) {
-            if let Ok(output) = execute_code_engine_turn(
+        if let Ok(slot) = bootstrap_agent_engine(engine_key.as_str()) {
+            if let Ok(output) = execute_agent_engine_turn(
                 &slot,
-                &CodeEngineTurnInput {
+                &AgentEngineTurnInput {
                     engine_key: engine_key.clone(),
                     model_id: model_id.clone(),
                     prompt: content.to_string(),
@@ -116,10 +116,10 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
     );
 
     if let Some((engine_key, model_id)) = resolve_engine_and_model(active_binding, None) {
-        if let Ok(slot) = bootstrap_code_engine(engine_key.as_str()) {
-            if let Ok(output) = execute_code_engine_turn(
+        if let Ok(slot) = bootstrap_agent_engine(engine_key.as_str()) {
+            if let Ok(output) = execute_agent_engine_turn(
                 &slot,
-                &CodeEngineTurnInput {
+                &AgentEngineTurnInput {
                     engine_key: engine_key.clone(),
                     model_id,
                     prompt: optimization_prompt,
@@ -143,15 +143,15 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
     }
 }
 
-pub fn shared_code_engine_host() -> Option<Arc<AgentsCodeEngineHost>> {
+pub fn shared_agent_engine_host() -> Option<Arc<AgentsAgentEngineHost>> {
     use std::sync::{Arc, Mutex};
     // A failed bootstrap must not be cached: engine availability can recover
     // (e.g. the provider directory becomes readable again) and a permanently
     // cached None would force a process restart to ever synchronize again.
-    static HOST: Mutex<Option<Arc<AgentsCodeEngineHost>>> = Mutex::new(None);
+    static HOST: Mutex<Option<Arc<AgentsAgentEngineHost>>> = Mutex::new(None);
     let mut guard = HOST.lock().expect("provider engine host mutex poisoned");
     if guard.is_none() {
-        let host = AgentsCodeEngineHost::bootstrap_selected(
+        let host = AgentsAgentEngineHost::bootstrap_selected(
             &bootstrappable_engine_keys(),
             sdkwork_agents_runtime_facade::LiveInteractionRegistry::new(),
         );
@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn preview_falls_back_without_code_engine_binding() {
+    fn preview_falls_back_without_agent_engine_binding() {
         let output = execute_preview_response(
             Some(&sample_binding("binding.custom")),
             "hello fallback",

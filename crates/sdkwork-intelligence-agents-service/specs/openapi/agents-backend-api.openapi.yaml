@@ -401,9 +401,10 @@ paths:
       x-sdkwork-permission: agent.business.audit.read
       x-sdkwork-tenant-scope: tenant
       x-sdkwork-audit-event: agent.business.audit_events.listed
+      x-sdkwork-pagination-mode: cursor
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       - $ref: '#/components/parameters/AuditAction'
       - $ref: '#/components/parameters/AuditFrom'
@@ -568,9 +569,10 @@ paths:
       x-sdkwork-resource: agents.sessions
       x-sdkwork-permission: agent.business.session.list
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: cursor
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
@@ -755,10 +757,11 @@ paths:
       x-sdkwork-resource: agents.turns
       x-sdkwork-permission: agent.business.turn.list
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: cursor
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
@@ -880,10 +883,11 @@ paths:
       x-sdkwork-resource: agents.interactions
       x-sdkwork-permission: agent.business.interaction.list
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: cursor
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/PageSize'
       - name: kind
         in: query

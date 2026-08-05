@@ -104,7 +104,7 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
 }
 
 /// Opens the model configuration profile SQLite store for the current
-/// environment: explicit path first, then `<app-root>/var/`, then memory.
+/// environment: explicit path first, then `<app-root>/.runtime/`, then memory.
 fn sqlite_model_configuration_store() -> Result<Box<dyn AgentConfigurationStore>> {
     if let Some(path) = std::env::var_os("SDKWORK_AGENTS_MODEL_CONFIG_SQLITE_PATH") {
         let path = std::path::PathBuf::from(path);
@@ -113,7 +113,7 @@ fn sqlite_model_configuration_store() -> Result<Box<dyn AgentConfigurationStore>
         ));
     }
     if let Some(app_root) = std::env::var_os("SDKWORK_AGENTS_APP_ROOT") {
-        let directory = std::path::PathBuf::from(app_root).join("var");
+        let directory = std::path::PathBuf::from(app_root).join(".runtime");
         std::fs::create_dir_all(&directory).map_err(|error| {
             anyhow::anyhow!("create model configuration store directory: {error}")
         })?;

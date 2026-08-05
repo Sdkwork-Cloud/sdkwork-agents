@@ -158,7 +158,12 @@
       "runner": "ubuntu-24.04",
       "outputGlobs": [
         "dist/release-packages/sdkwork-agents-linux-x64-standalone-server-tar-gz-0.1.0.tar.gz",
-        "dist/release-evidence/linux-x64-standalone-server-tar-gz/*"
+        "dist/release-evidence/linux-x64-standalone-server-tar-gz/*",
+        "target/release/sdkwork-api-agents-standalone-gateway*",
+        "database/**",
+        "etc/topology/*.production.env",
+        "deployments/**",
+        "sdkwork.app.config.json"
       ],
       "artifactPath": "dist/release-packages/sdkwork-agents-linux-x64-standalone-server-tar-gz-0.1.0.tar.gz"
     },

@@ -87,18 +87,18 @@
       "id": "AGA-02",
       "phase": "P2-taxonomy",
       "owner": "agents",
-      "title": "T1 code-engine catalog (codex, claude-code, gemini, opencode)",
+      "title": "T1 agent-engine catalog (codex, claude-code, gemini, opencode)",
       "status": "done",
       "gate": true,
       "evidence": {
         "paths": [
-          "crates/sdkwork-agents-runtime-facade/src/code_engines.rs",
-          "crates/sdkwork-intelligence-agents-service/src/code_engine_catalog.rs"
+          "crates/sdkwork-agents-runtime-facade/src/agent_engines.rs",
+          "crates/sdkwork-intelligence-agents-service/src/agent_engine_catalog.rs"
         ],
         "requiredPatterns": [
           {
             "file": "crates/sdkwork-intelligence-agents-service/src/http.rs",
-            "pattern": "/app/v3/api/ai/code_engines"
+            "pattern": "/app/v3/api/ai/agent_engines"
           }
         ]
       },
@@ -118,7 +118,7 @@
       "notes": "On-demand bootstrap is implemented; the default catalog intentionally exposes only conformance-approved T1 engines.",
       "evidence": {
         "paths": [
-          "crates/sdkwork-agents-runtime-facade/src/code_engines.rs",
+          "crates/sdkwork-agents-runtime-facade/src/agent_engines.rs",
           "specs/AGENTS_PROVIDER_TAXONOMY_SPEC.md"
         ]
       }

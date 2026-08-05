@@ -374,7 +374,7 @@ type SessionIdempotencyKey = (u64, u64, u64, String);
 type SessionRuntimeBindingPrimaryKey = (u64, u64, String, String);
 type SessionCheckpointPrimaryKey = (u64, u64, String, String);
 type ResourceUserStatePrimaryKey = (u64, u64, u64, i16, String);
-type SessionIndexKey = (u64, u64, Reverse<String>, String);
+type SessionIndexKey = (u64, u64, Reverse<String>, Reverse<u64>);
 type SessionActivityIndexKey = (u64, u64, u64, String, u64);
 type SessionItemPrimaryKey = (u64, u64, String, String);
 type ItemFeedbackPrimaryKey = (u64, u64, String, u64);
@@ -841,7 +841,7 @@ fn session_index_key(record: &AgentSessionRecord) -> SessionIndexKey {
         record.tenant_id,
         record.organization_id,
         Reverse(record.updated_at.clone()),
-        record.session_id.clone(),
+        Reverse(record.id),
     )
 }
 
@@ -1903,8 +1903,19 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter(|record| {
                 session_matches_list_query(record, query, workspace_project_ids.as_ref())
             })
+            .filter(|record| {
+                query.cursor.as_ref().is_none_or(|cursor| {
+                    record.updated_at < cursor.updated_at
+                        || (record.updated_at == cursor.updated_at
+                            && record.id < cursor.session_internal_id)
+                })
+            })
             .cloned();
-        Ok(paginate_iterator(iter, &query.pagination))
+        let store_limit = query
+            .pagination
+            .page_size
+            .saturating_add(1);
+        Ok(iter.take(store_limit).collect())
     }
 
     fn count_sessions(&self, query: &SessionListQuery) -> KernelResult<u64> {
@@ -2959,7 +2970,21 @@ impl AgentRepository for InMemoryAgentRepository {
                 .cmp(&left.created_at)
                 .then_with(|| right.id.cmp(&left.id))
         });
-        Ok(paginate_iterator(records.into_iter(), &query.pagination))
+        let store_limit = query
+            .pagination
+            .page_size
+            .saturating_add(1);
+        Ok(records
+            .into_iter()
+            .filter(|turn| {
+                query.cursor.as_ref().is_none_or(|cursor| {
+                    turn.created_at < cursor.created_at
+                        || (turn.created_at == cursor.created_at
+                            && turn.id < cursor.internal_id)
+                })
+            })
+            .take(store_limit)
+            .collect())
     }
 
     fn count_turns(&self, query: &TurnListQuery) -> KernelResult<u64> {
@@ -3997,7 +4022,7 @@ impl AgentRepository for InMemoryAgentRepository {
     ) -> KernelResult<Vec<AgentInteractionRecord>> {
         let interactions = self.interactions.recovering_read();
         let index = self.interaction_index.recovering_read();
-        let iter = index
+        let mut records = index
             .iter()
             .filter(|((tenant_id, organization_id, session_id, _, _), _)| {
                 *tenant_id == query.tenant_id
@@ -4006,8 +4031,29 @@ impl AgentRepository for InMemoryAgentRepository {
             })
             .filter_map(|(_, primary_key)| interactions.get(primary_key))
             .filter(|record| interaction_matches_list_query(record, query))
-            .cloned();
-        Ok(paginate_iterator(iter, &query.pagination))
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            right
+                .created_at
+                .cmp(&left.created_at)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        let store_limit = query
+            .pagination
+            .page_size
+            .saturating_add(1);
+        Ok(records
+            .into_iter()
+            .filter(|record| {
+                query.cursor.as_ref().is_none_or(|cursor| {
+                    record.created_at < cursor.created_at
+                        || (record.created_at == cursor.created_at
+                            && record.id < cursor.internal_id)
+                })
+            })
+            .take(store_limit)
+            .collect())
     }
 
     fn count_interactions(&self, query: &InteractionListQuery) -> KernelResult<u64> {
@@ -5238,7 +5284,7 @@ pub const IAM_PERMISSION_AGENTS_USE: &str = "ai.agents.use";
 const IAM_ADMIN_ROLE_CODES: &[&str] = &["org_admin", "org_operations"];
 
 /// Canonical read-only operation suffixes used by `AgentsService::authorize`.
-/// Resource-qualified actions such as `project.list` and `code_engine.list`
+/// Resource-qualified actions such as `project.list` and `agent_engine.list`
 /// resolve through the same operation suffix as unqualified actions.
 const READ_ONLY_POLICY_OPERATIONS: &[&str] = &["list", "read", "retrieve"];
 
@@ -5497,7 +5543,8 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
         &self,
         query: &AuditEventListQuery,
     ) -> KernelResult<crate::ports::PaginatedResult<KernelEvent>> {
-        use crate::ports::offset_paginated_result;
+        use crate::list_cursors::{encode_audit_event_list_cursor, AuditEventListCursor};
+        use crate::ports::PaginatedResult;
         let from = query
             .from
             .as_deref()
@@ -5508,23 +5555,49 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
             .as_deref()
             .map(|value| parse_rfc3339_datetime(value, "to"))
             .transpose()?;
+        let scope_fingerprint = query.scope_fingerprint();
+        if query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested audit scope",
+            ));
+        }
+        let cursor_ts = query
+            .cursor
+            .as_ref()
+            .map(|cursor| parse_rfc3339_datetime(&cursor.created_at, "cursor.created_at"))
+            .transpose()?;
+        let cursor_ref = query.cursor.as_ref().map(|cursor| cursor.event_ref.as_str());
         let events = self.events.recovering_lock();
         // BTreeMap<Reverse<...>> iterates in descending order (newest first).
         // Iterate the incrementally maintained index directly — no collect/sort.
-        let filtered = events
-            .iter()
-            .filter(|(Reverse((occurred_at, _)), _)| {
-                from.map(|from| *occurred_at >= from).unwrap_or(true)
-                    && to.map(|to| *occurred_at <= to).unwrap_or(true)
-            })
-            .map(|(_, event)| event)
-            .filter(|event| {
-                crate::persistence::extract_event_context(event.payload.as_str(), "agent_id")
-                    .map(|id| id == query.agent_id)
-                    .unwrap_or(false)
-            })
-            .filter(|event| {
-                query
+        let page_size = query.pagination.page_size;
+        let store_limit = page_size.saturating_add(1);
+        let mut items = Vec::with_capacity(store_limit);
+        let mut boundary: Option<(String, String)> = None;
+        for (Reverse((occurred_at, event_id)), event) in events.iter() {
+            if let Some(cursor_ts) = cursor_ts.as_ref() {
+                // Keyset continuation: the index is descending, so skip every
+                // entry at or above the cursor boundary.
+                if *occurred_at > *cursor_ts
+                    || (*occurred_at == *cursor_ts
+                        && cursor_ref.is_some_and(|cursor_ref| event_id.as_str() >= cursor_ref))
+                {
+                    continue;
+                }
+            }
+            if !from.map(|from| *occurred_at >= from).unwrap_or(true)
+                || !to.map(|to| *occurred_at <= to).unwrap_or(true)
+            {
+                continue;
+            }
+            if crate::persistence::extract_event_context(event.payload.as_str(), "agent_id")
+                .map(|id| id == query.agent_id)
+                .unwrap_or(false)
+                && query
                     .action
                     .as_ref()
                     .map(|action| {
@@ -5536,15 +5609,35 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
                             .unwrap_or(false)
                     })
                     .unwrap_or(true)
-            })
-            .cloned();
-        let total_count = count_iterator(filtered.clone());
-        let page = paginate_iterator(filtered, &query.pagination);
-        Ok(offset_paginated_result(
-            page,
-            &query.pagination,
-            total_count,
-        ))
+            {
+                items.push(event.clone());
+                boundary = Some((
+                    occurred_at
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default(),
+                    event_id.clone(),
+                ));
+                if items.len() >= store_limit {
+                    break;
+                }
+            }
+        }
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            let (created_at, event_ref) = boundary.ok_or_else(|| {
+                KernelError::validation("audit page ended without a cursor row")
+            })?;
+            encode_audit_event_list_cursor(&AuditEventListCursor {
+                created_at,
+                event_ref,
+                scope_fingerprint,
+            })?
+            .into()
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
     }
 }
 
@@ -6185,7 +6278,7 @@ mod tests {
     fn iam_gated_provider_allows_resource_qualified_read_actions_with_read_permission() {
         let provider = IamGatedPolicyProvider::default();
         for action in [
-            "code_engine.list",
+            "agent_engine.list",
             "project.list",
             "project.retrieve",
             "session.user_state.list",

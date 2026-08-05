@@ -51,7 +51,7 @@
     "publicExports": ["."],
     "providedPorts": [
       {
-        "name": "agentsCodeEngineRuntimeFacade",
+        "name": "agentsAgentEngineRuntimeFacade",
         "export": "."
       }
     ],
@@ -68,8 +68,8 @@
       }
     ],
     "runtimeEntrypoints": [
-      "bootstrap_code_engine",
-      "AgentsCodeEngineHost"
+      "bootstrap_agent_engine",
+      "AgentsAgentEngineHost"
     ],
     "routeManifest": null,
     "sdkClients": [],

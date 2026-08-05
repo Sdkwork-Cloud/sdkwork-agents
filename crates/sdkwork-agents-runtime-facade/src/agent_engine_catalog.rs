@@ -5,14 +5,15 @@ use sdkwork_agent_kernel::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::code_engines::{
-    bootstrap_code_engine, bootstrappable_engine_keys, canonical_code_engine_keys, CodeEngineSlot,
+use crate::agent_engines::{
+    bootstrap_agent_engine, bootstrappable_engine_keys, canonical_agent_engine_keys,
+    engine_catalog_kind, AgentEngineSlot,
 };
 
 /// Engine model catalog entry exposed by the agents runtime facade.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CodeEngineModelCatalogEntry {
+pub struct AgentEngineModelCatalogEntry {
     pub engine_key: String,
     pub model_id: String,
     pub label: String,
@@ -22,28 +23,29 @@ pub struct CodeEngineModelCatalogEntry {
     pub default_for_engine: bool,
 }
 
-/// Aggregated code-engine catalog for one bootstrapped host.
+/// Aggregated agent-engine catalog for one bootstrapped host.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CodeEngineCatalog {
-    pub engines: Vec<CodeEngineCatalogEngine>,
+pub struct AgentEngineCatalog {
+    pub engines: Vec<AgentEngineCatalogEngine>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CodeEngineCatalogEngine {
+pub struct AgentEngineCatalogEngine {
     pub engine_key: String,
+    pub engine_kind: String,
     pub tier: String,
     pub agent_id: String,
     pub binding_id: String,
-    pub models: Vec<CodeEngineModelCatalogEntry>,
+    pub models: Vec<AgentEngineModelCatalogEntry>,
     pub default_access_mode_id: String,
-    pub access_modes: Vec<CodeEngineAccessModeCatalogEntry>,
+    pub access_modes: Vec<AgentEngineAccessModeCatalogEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CodeEngineAccessModeCatalogEntry {
+pub struct AgentEngineAccessModeCatalogEntry {
     pub mode_id: String,
     pub display_name: String,
     pub description: String,
@@ -58,8 +60,8 @@ pub struct CodeEngineAccessModeCatalogEntry {
 
 fn access_mode_to_catalog_entry(
     access_mode: &AgentExecutionAccessModeDescriptor,
-) -> CodeEngineAccessModeCatalogEntry {
-    CodeEngineAccessModeCatalogEntry {
+) -> AgentEngineAccessModeCatalogEntry {
+    AgentEngineAccessModeCatalogEntry {
         mode_id: access_mode.mode_id.clone(),
         display_name: access_mode.display_name.clone(),
         description: access_mode.description.clone(),
@@ -99,8 +101,8 @@ pub fn model_descriptor_to_catalog_entry(
     binding_id: &str,
     descriptor: &ModelDescriptor,
     default_for_engine: bool,
-) -> CodeEngineModelCatalogEntry {
-    CodeEngineModelCatalogEntry {
+) -> AgentEngineModelCatalogEntry {
+    AgentEngineModelCatalogEntry {
         engine_key: engine_key.to_string(),
         model_id: descriptor.model_id.clone(),
         label: descriptor.display_name.clone(),
@@ -111,7 +113,7 @@ pub fn model_descriptor_to_catalog_entry(
     }
 }
 
-pub fn list_slot_catalog_entries(slot: &CodeEngineSlot) -> Vec<CodeEngineModelCatalogEntry> {
+pub fn list_slot_catalog_entries(slot: &AgentEngineSlot) -> Vec<AgentEngineModelCatalogEntry> {
     slot.list_model_descriptors()
         .iter()
         .enumerate()
@@ -126,17 +128,20 @@ pub fn list_slot_catalog_entries(slot: &CodeEngineSlot) -> Vec<CodeEngineModelCa
         .collect()
 }
 
-pub fn build_code_engine_catalog(slots: &[&CodeEngineSlot]) -> CodeEngineCatalog {
+pub fn build_agent_engine_catalog(slots: &[&AgentEngineSlot]) -> AgentEngineCatalog {
     let engines = slots
         .iter()
         .filter_map(|slot| {
-            let agent_id = super::code_engines::code_engine_agent_id(slot.engine_key())?;
-            let tier = super::code_engines::engine_catalog_tier(slot.engine_key())
+            let agent_id = super::agent_engines::agent_engine_agent_id(slot.engine_key())?;
+            let tier = super::agent_engines::engine_catalog_tier(slot.engine_key())
                 .unwrap_or("unknown")
                 .to_string();
             let execution_settings = slot.execution_settings_spec().ok();
-            Some(CodeEngineCatalogEngine {
+            Some(AgentEngineCatalogEngine {
                 engine_key: slot.engine_key().to_string(),
+                engine_kind: engine_catalog_kind(slot.engine_key())
+                    .unwrap_or("unknown")
+                    .to_string(),
                 tier,
                 agent_id: agent_id.to_string(),
                 binding_id: slot.binding_id().to_string(),
@@ -156,28 +161,37 @@ pub fn build_code_engine_catalog(slots: &[&CodeEngineSlot]) -> CodeEngineCatalog
             })
         })
         .collect();
-    CodeEngineCatalog { engines }
+    AgentEngineCatalog { engines }
 }
 
-pub fn bootstrap_canonical_code_engine_catalog(
-) -> Result<CodeEngineCatalog, crate::code_engines::CodeEngineBootstrapError> {
-    bootstrap_code_engine_catalog(canonical_code_engine_keys())
+pub fn bootstrap_canonical_agent_engine_catalog(
+) -> Result<AgentEngineCatalog, crate::agent_engines::AgentEngineBootstrapError> {
+    bootstrap_agent_engine_catalog(canonical_agent_engine_keys())
 }
 
-pub fn bootstrap_bootstrappable_code_engine_catalog(
-) -> Result<CodeEngineCatalog, crate::code_engines::CodeEngineBootstrapError> {
-    bootstrap_code_engine_catalog(&bootstrappable_engine_keys())
-}
-
-fn bootstrap_code_engine_catalog(
+fn bootstrap_agent_engine_catalog(
     engine_keys: &[&str],
-) -> Result<CodeEngineCatalog, crate::code_engines::CodeEngineBootstrapError> {
+) -> Result<AgentEngineCatalog, crate::agent_engines::AgentEngineBootstrapError> {
     let mut slots = Vec::new();
     for engine_key in engine_keys {
-        let slot = bootstrap_code_engine(engine_key)?;
+        let slot = bootstrap_agent_engine(engine_key)?;
         slots.push(slot);
     }
-    Ok(build_code_engine_catalog(&slots.iter().collect::<Vec<_>>()))
+    Ok(build_agent_engine_catalog(&slots.iter().collect::<Vec<_>>()))
+}
+
+/// Bootstraps every bootstrappable engine, tolerating individual provider
+/// failures exactly like the production host (`bootstrap_selected`): engines
+/// whose provider transport cannot resolve (e.g. an external SDK package is
+/// not installed) are skipped instead of failing the whole catalog.
+pub fn bootstrap_bootstrappable_agent_engine_catalog() -> Result<AgentEngineCatalog, crate::agent_engines::AgentEngineBootstrapError> {
+    let mut slots = Vec::new();
+    for engine_key in bootstrappable_engine_keys() {
+        if let Ok(slot) = bootstrap_agent_engine(engine_key) {
+            slots.push(slot);
+        }
+    }
+    Ok(build_agent_engine_catalog(&slots.iter().collect::<Vec<_>>()))
 }
 
 #[cfg(test)]
@@ -198,15 +212,15 @@ mod tests {
 
     #[test]
     fn canonical_catalog_bootstraps_all_engines() {
-        let catalog = bootstrap_canonical_code_engine_catalog().expect("catalog bootstrap");
-        assert_eq!(catalog.engines.len(), canonical_code_engine_keys().len());
+        let catalog = bootstrap_canonical_agent_engine_catalog().expect("catalog bootstrap");
+        assert_eq!(catalog.engines.len(), canonical_agent_engine_keys().len());
         assert_eq!(
             catalog
                 .engines
                 .iter()
                 .map(|engine| engine.engine_key.as_str())
                 .collect::<Vec<_>>(),
-            canonical_code_engine_keys()
+            canonical_agent_engine_keys()
         );
         for engine in &catalog.engines {
             assert!(!engine.models.is_empty());
@@ -235,7 +249,53 @@ mod tests {
     #[test]
     fn bootstrappable_catalog_includes_opt_in_engines() {
         let catalog =
-            bootstrap_bootstrappable_code_engine_catalog().expect("bootstrappable catalog");
-        assert_eq!(catalog.engines.len(), bootstrappable_engine_keys().len());
+            bootstrap_bootstrappable_agent_engine_catalog().expect("bootstrappable catalog");
+        // Individual provider failures are tolerated (mirroring the
+        // production host): every returned engine must be a known
+        // bootstrappable key, and engines that bootstrap reliably in the
+        // test environment must all be present.
+        for engine in &catalog.engines {
+            assert!(
+                bootstrappable_engine_keys().contains(&engine.engine_key.as_str()),
+                "catalog returned unknown engine {}",
+                engine.engine_key
+            );
+        }
+        for engine_key in ["codex", "claude-code", "gemini", "opencode", "openclaw", "hermes", "rig"] {
+            assert!(
+                catalog
+                    .engines
+                    .iter()
+                    .any(|engine| engine.engine_key == engine_key),
+                "bootstrappable engine {engine_key} missing from catalog"
+            );
+        }
+    }
+
+    #[test]
+    fn bootstrappable_catalog_classifies_every_engine_kind() {
+        let catalog =
+            bootstrap_bootstrappable_agent_engine_catalog().expect("bootstrappable catalog");
+        for engine in &catalog.engines {
+            assert!(
+                matches!(engine.engine_kind.as_str(), "code" | "work" | "simple"),
+                "engine {} has unknown kind {}",
+                engine.engine_key,
+                engine.engine_kind
+            );
+        }
+        let kind = |engine_key: &str| -> &str {
+            catalog
+                .engines
+                .iter()
+                .find(|engine| engine.engine_key == engine_key)
+                .map(|engine| engine.engine_kind.as_str())
+                .unwrap_or("missing")
+        };
+        assert_eq!(kind("codex"), "code");
+        assert_eq!(kind("mimo-code"), "code");
+        assert_eq!(kind("openclaw"), "work");
+        assert_eq!(kind("hermes"), "work");
+        assert_eq!(kind("rig"), "simple");
     }
 }

@@ -1,0 +1,155 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  SDKWORK_GITHUB_WORKFLOW_REF: b0829529b9277a3da32b90c2d36ff34ff09fa832
+
+jobs:
+  postgres-verification:
+    name: PostgreSQL-backed verification
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sdkwork_ai_test
+          POSTGRES_PASSWORD: sdkwork_ai_test
+          POSTGRES_DB: sdkwork_ai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sdkwork_ai_test -d sdkwork_ai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Checkout workflow framework
+        uses: actions/checkout@v5
+        with:
+          repository: Sdkwork-Cloud/sdkwork-github-workflow
+          ref: ${{ env.SDKWORK_GITHUB_WORKFLOW_REF }}
+          path: .sdkwork/github-workflow
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Validate workflow config
+        uses: ./.sdkwork/github-workflow/actions/validate-config
+        with:
+          config-path: sdkwork.workflow.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.90.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - id: dependencies
+        name: Resolve shared SDK dependency plan
+        shell: bash
+        env:
+          SDKWORK_DEP_REF_PLAN_JSON: >-
+            {
+              "SDKWORK_KERNEL_REF": "${{ vars.SDKWORK_KERNEL_REF || 'main' }}",
+              "SDKWORK_WEB_FRAMEWORK_REF": "${{ vars.SDKWORK_WEB_FRAMEWORK_REF || 'main' }}",
+              "SDKWORK_IAM_REF": "${{ vars.SDKWORK_IAM_REF || 'main' }}",
+              "SDKWORK_ID_REF": "${{ vars.SDKWORK_ID_REF || 'main' }}",
+              "SDKWORK_DATABASE_REF": "${{ vars.SDKWORK_DATABASE_REF || 'main' }}",
+              "SDKWORK_UTILS_REF": "${{ vars.SDKWORK_UTILS_REF || 'main' }}",
+              "SDKWORK_PROMPTS_REF": "${{ vars.SDKWORK_PROMPTS_REF || 'main' }}",
+              "SDKWORK_SANDBOX_REF": "${{ vars.SDKWORK_SANDBOX_REF || 'main' }}",
+              "SDKWORK_DRIVE_REF": "${{ vars.SDKWORK_DRIVE_REF || 'main' }}",
+              "SDKWORK_KNOWLEDGEBASE_REF": "${{ vars.SDKWORK_KNOWLEDGEBASE_REF || 'main' }}",
+              "SDKWORK_APP_TOPOLOGY_REF": "${{ vars.SDKWORK_APP_TOPOLOGY_REF || 'main' }}"
+            }
+        run: |
+          set -euo pipefail
+          node .sdkwork/github-workflow/scripts/sdkwork-workflow.mjs dependencies \
+            --config sdkwork.workflow.json \
+            --dependency-refs-json "${SDKWORK_DEP_REF_PLAN_JSON}" \
+            --github-output
+
+      - name: Checkout shared SDK dependencies
+        uses: ./.sdkwork/github-workflow/actions/checkout-dependencies
+        with:
+          dependencies-json: ${{ steps.dependencies.outputs.dependencies }}
+
+      - name: Create canonical PostgreSQL schema
+        shell: bash
+        run: |
+          psql "postgres://sdkwork_ai_test:sdkwork_ai_test@127.0.0.1:5432/sdkwork_ai_test" \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE SCHEMA IF NOT EXISTS sdkwork_ai_test"
+
+      # The Agents PostgreSQL baseline (database/ddl/baseline/postgres) is the
+      # authoritative schema. Running the migration framework against a live
+      # PostgreSQL service is the only way to prove the baseline, indexes, and
+      # constraints are valid: string-assertion tests alone cannot catch SQL
+      # dialect or schema drift. The manifest defaults autoMigrate=false, so
+      # the live tests opt in explicitly.
+      - name: Run PostgreSQL database-host live tests
+        shell: bash
+        env:
+          SDKWORK_DATABASE_URL: postgres://sdkwork_ai_test:sdkwork_ai_test@127.0.0.1:5432/sdkwork_ai_test
+          SDKWORK_DATABASE_ENGINE: postgres
+          SDKWORK_DATABASE_SCHEMA: sdkwork_ai_test
+          SDKWORK_DATABASE_SCHEMA_FALLBACK_PUBLIC: 'false'
+          SDKWORK_DATABASE_AUTO_MIGRATE: 'true'
+          SDKWORK_DATABASE_MAX_CONNECTIONS: '4'
+          SDKWORK_DATABASE_MIN_CONNECTIONS: '1'
+          SDKWORK_DATABASE_ACQUIRE_TIMEOUT: '60'
+        run: |
+          set +e
+          cargo test -p sdkwork-agents-database-host 2>&1 | tee agents-pg-dbhost.log
+          status=${PIPESTATUS[0]}
+          cargo test -p sdkwork-agents-database-host -- --ignored 2>&1 | tee -a agents-pg-dbhost.log
+          status=$((status + ${PIPESTATUS[0]}))
+          if [[ $status -ne 0 ]]; then
+            tail -n 200 agents-pg-dbhost.log
+            summary=$(tail -n 60 agents-pg-dbhost.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=PostgreSQL database-host tests failed::$summary"
+            exit $status
+          fi
+
+      - name: Run PostgreSQL-backed integration tests
+        shell: bash
+        env:
+          SDKWORK_DATABASE_TEST_POSTGRES_URL: postgres://sdkwork_ai_test:sdkwork_ai_test@127.0.0.1:5432/sdkwork_ai_test
+          SDKWORK_DATABASE_URL: postgres://sdkwork_ai_test:sdkwork_ai_test@127.0.0.1:5432/sdkwork_ai_test
+          SDKWORK_DATABASE_ENGINE: postgres
+          SDKWORK_DATABASE_SCHEMA: sdkwork_ai_test
+          SDKWORK_DATABASE_SCHEMA_FALLBACK_PUBLIC: 'false'
+        run: |
+          set +e
+          cargo test -p sdkwork-agents-integration-tests 2>&1 | tee agents-pg-it.log
+          status=${PIPESTATUS[0]}
+          cargo test -p sdkwork-agents-integration-tests -- --ignored 2>&1 | tee -a agents-pg-it.log
+          status=$((status + ${PIPESTATUS[0]}))
+          if [[ $status -ne 0 ]]; then
+            tail -n 200 agents-pg-it.log
+            summary=$(tail -n 60 agents-pg-it.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=PostgreSQL-backed integration tests failed::$summary"
+            exit $status
+          fi

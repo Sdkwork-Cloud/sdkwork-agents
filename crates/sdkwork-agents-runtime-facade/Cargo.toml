@@ -3,7 +3,7 @@ name = "sdkwork-agents-runtime-facade"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Agents application facade for kernel code-engine provider bootstrap and runtime execution"
+description = "Agents application facade for kernel agent-engine provider bootstrap and runtime execution"
 
 [dependencies]
 sdkwork-agent-kernel = { workspace = true }
@@ -18,5 +18,7 @@ sdkwork-agent-provider-gemini-cli = { workspace = true }
 sdkwork-agent-provider-opencode = { workspace = true }
 sdkwork-agent-provider-openclaw = { workspace = true }
 sdkwork-agent-provider-hermes = { workspace = true }
+sdkwork-agent-provider-mimo-code = { workspace = true }
+sdkwork-agent-provider-rig = { workspace = true }
 sdkwork-agent-provider-spi = { workspace = true }
 sdkwork-agent-provider-core = { workspace = true }

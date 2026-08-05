@@ -11,6 +11,11 @@ use crate::domain::{
     AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord,
     AgentVisibility,
 };
+use crate::list_cursors::{
+    audit_list_scope_fingerprint, interaction_list_scope_fingerprint,
+    session_list_scope_fingerprint, turn_list_scope_fingerprint, AuditEventListCursor,
+    CreatedAtListCursor, SessionListCursor,
+};
 use crate::project::{AgentProjectCompositionSlotRecord, AgentProjectRecord, AgentProjectStatus};
 use crate::session_activity::{
     session_activity_scope_fingerprint, SessionActivityCursor, SessionActivitySummaryRecord,
@@ -417,6 +422,7 @@ pub struct AuditEventListQuery {
     pub from: Option<String>,
     pub to: Option<String>,
     pub pagination: PaginationParams,
+    pub cursor: Option<AuditEventListCursor>,
 }
 
 impl AuditEventListQuery {
@@ -428,6 +434,7 @@ impl AuditEventListQuery {
             from: None,
             to: None,
             pagination: PaginationParams::default(),
+            cursor: None,
         }
     }
 
@@ -448,6 +455,28 @@ impl AuditEventListQuery {
 
     pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
         self.pagination = pagination;
+        self
+    }
+
+    pub fn scope_fingerprint(&self) -> String {
+        audit_list_scope_fingerprint(
+            self.tenant_id,
+            &self.agent_id,
+            self.action.as_deref(),
+            self.from.as_deref(),
+            self.to.as_deref(),
+        )
+    }
+
+    /// Switch to keyset mode: fetch `page_size + 1` rows so the caller can
+    /// derive `has_more` and the next opaque cursor.
+    pub fn with_cursor_page(
+        mut self,
+        page_size: usize,
+        cursor: Option<AuditEventListCursor>,
+    ) -> Self {
+        self.pagination = PaginationParams::default().with_page_size(page_size);
+        self.cursor = cursor;
         self
     }
 }
@@ -514,6 +543,30 @@ pub struct SessionListQuery {
     pub status: Option<String>,
     pub include_archived: bool,
     pub pagination: PaginationParams,
+    pub cursor: Option<SessionListCursor>,
+}
+
+impl SessionListQuery {
+    pub fn scope_fingerprint(&self) -> String {
+        session_list_scope_fingerprint(
+            self.tenant_id,
+            self.organization_id,
+            self.agent_id.as_deref(),
+            self.project_id.as_deref(),
+            self.workspace_id.as_deref(),
+            self.owner_user_id,
+            self.status.as_deref(),
+            self.include_archived,
+        )
+    }
+
+    /// Switch to keyset mode: fetch `page_size + 1` rows so the caller can
+    /// derive `has_more` and the next opaque cursor.
+    pub fn with_cursor_page(mut self, page_size: usize, cursor: Option<SessionListCursor>) -> Self {
+        self.pagination = PaginationParams::default().with_page_size(page_size);
+        self.cursor = cursor;
+        self
+    }
 }
 
 /// Owner-scoped cursor query for the canonical Session activity projection.
@@ -711,6 +764,7 @@ impl SessionListQuery {
             status: None,
             include_archived: false,
             pagination: PaginationParams::default(),
+            cursor: None,
         }
     }
 
@@ -946,6 +1000,27 @@ pub struct InteractionListQuery {
     pub kind: Option<String>,
     pub status: Option<String>,
     pub pagination: PaginationParams,
+    pub cursor: Option<CreatedAtListCursor>,
+}
+
+impl InteractionListQuery {
+    pub fn scope_fingerprint(&self) -> String {
+        interaction_list_scope_fingerprint(
+            self.tenant_id,
+            self.organization_id,
+            &self.session_id,
+            self.kind.as_deref(),
+            self.status.as_deref(),
+        )
+    }
+
+    /// Switch to keyset mode: fetch `page_size + 1` rows so the caller can
+    /// derive `has_more` and the next opaque cursor.
+    pub fn with_cursor_page(mut self, page_size: usize, cursor: Option<CreatedAtListCursor>) -> Self {
+        self.pagination = PaginationParams::default().with_page_size(page_size);
+        self.cursor = cursor;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1038,6 +1113,7 @@ impl InteractionListQuery {
             kind: None,
             status: None,
             pagination: PaginationParams::default(),
+            cursor: None,
         }
     }
 
@@ -1064,6 +1140,7 @@ pub struct TurnListQuery {
     pub session_id: String,
     pub status: Option<String>,
     pub pagination: PaginationParams,
+    pub cursor: Option<CreatedAtListCursor>,
 }
 
 impl TurnListQuery {
@@ -1078,6 +1155,7 @@ impl TurnListQuery {
             session_id: session_id.into(),
             status: None,
             pagination: PaginationParams::default(),
+            cursor: None,
         }
     }
 
@@ -1088,6 +1166,23 @@ impl TurnListQuery {
 
     pub fn with_pagination(mut self, pagination: PaginationParams) -> Self {
         self.pagination = pagination;
+        self
+    }
+
+    pub fn scope_fingerprint(&self) -> String {
+        turn_list_scope_fingerprint(
+            self.tenant_id,
+            self.organization_id,
+            &self.session_id,
+            self.status.as_deref(),
+        )
+    }
+
+    /// Switch to keyset mode: fetch `page_size + 1` rows so the caller can
+    /// derive `has_more` and the next opaque cursor.
+    pub fn with_cursor_page(mut self, page_size: usize, cursor: Option<CreatedAtListCursor>) -> Self {
+        self.pagination = PaginationParams::default().with_page_size(page_size);
+        self.cursor = cursor;
         self
     }
 }

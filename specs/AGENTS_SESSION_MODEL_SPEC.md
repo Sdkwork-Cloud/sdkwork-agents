@@ -46,7 +46,7 @@ Every agent-nested Session lifecycle and child-resource operation validates
 that the `{agentId}` path identity matches the persisted Session. Mismatches
 fail as not found so callers cannot enumerate resources across agent paths.
 
-T1 code-engine identities advertised by the default runtime catalog are stable
+T1 agent-engine identities advertised by the default runtime catalog are stable
 Kernel manifest identities. Before validating a new Session reference, Agents
 idempotently materializes the tenant business-agent projection and its provider
 binding. Arbitrary, unavailable and opt-in agent identities still fail closed;

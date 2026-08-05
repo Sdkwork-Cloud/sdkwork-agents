@@ -39,7 +39,7 @@ session, turn or persistence model.
 | `hermes` | `sdkwork-agent-provider-hermes` | `binding.hermes` | plugin binding | opt-in |
 | `rig` | `sdkwork-agent-provider-rig` | provider manifest binding | Rust crate plugin | manifest-selected |
 
-The app catalog endpoint is `GET /app/v3/api/ai/code_engines`. Catalog entries
+The app catalog endpoint is `GET /app/v3/api/ai/agent_engines`. Catalog entries
 are runtime capabilities, not copied provider configuration.
 
 ## 4. Capability Ownership

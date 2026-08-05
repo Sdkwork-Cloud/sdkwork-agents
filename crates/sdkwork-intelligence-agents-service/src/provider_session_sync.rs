@@ -25,11 +25,12 @@ use crate::domain::{
     AgentSessionStatus,
 };
 use crate::http::{HttpAgentsSessionFacade, HttpService};
+use crate::list_cursors::{decode_session_list_cursor, SessionListCursor};
 use crate::ports::{
     PaginationParams, SessionItemListQuery, SessionListQuery, SessionRuntimeBindingListQuery,
 };
 use crate::project::AgentProjectRecord;
-use crate::runtime_facade_bridge::shared_code_engine_host;
+use crate::runtime_facade_bridge::shared_agent_engine_host;
 use crate::session_id_scheme::{
     canonical_provider_item_id, canonical_provider_item_id_prefix,
     canonical_provider_runtime_binding_id, canonical_provider_session_id,
@@ -62,7 +63,7 @@ const PROVIDER_SESSION_RECONCILIATION_TIMEOUT: Duration = Duration::from_secs(15
  * the set is unchanged, so a cold synchronization whose set did not move
  * costs only the scan.
  */
-const PROVIDER_SESSION_SYNC_REFRESH_TTL: Duration = Duration::from_secs(60);
+pub(crate) const PROVIDER_SESSION_SYNC_REFRESH_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProviderSessionSynchronizationIssueDisposition {
@@ -110,7 +111,7 @@ pub(crate) enum ProviderSessionTranscriptSyncOutcome {
     /// so its provider identity cannot be resolved. This is the signature of
     /// an orphaned or not-yet-bound provider Session.
     NoActiveBinding,
-    /// The provider code engine could not load the transcript (unavailable
+    /// The provider agent engine could not load the transcript (unavailable
     /// engine or transient read failure); the persisted window is returned.
     EngineUnavailable,
 }
@@ -193,10 +194,10 @@ impl ProviderSessionSynchronizationResult {
 /// unchanged skips the two full inventory sweeps (the fingerprint recorded
 /// here is compared inside `synchronize_provider_session_snapshot`).
 #[derive(Debug, Clone)]
-struct CompletedProviderSessionSync {
-    fingerprint: String,
-    result: ProviderSessionSynchronizationResult,
-    completed_at: Instant,
+pub(crate) struct CompletedProviderSessionSync {
+    pub(crate) fingerprint: String,
+    pub(crate) result: ProviderSessionSynchronizationResult,
+    pub(crate) completed_at: Instant,
 }
 
 static COMPLETED_PROVIDER_SESSION_SYNCS: OnceLock<
@@ -208,14 +209,14 @@ fn completed_provider_session_syncs(
     COMPLETED_PROVIDER_SESSION_SYNCS.get_or_init(Default::default)
 }
 
-fn provider_session_sync_cache_key(project: &AgentProjectRecord) -> String {
+pub(crate) fn provider_session_sync_cache_key(project: &AgentProjectRecord) -> String {
     format!(
         "{}/{}/{}:{}",
         project.tenant_id, project.organization_id, project.owner_user_id, project.project_id
     )
 }
 
-fn read_completed_provider_session_sync(cache_key: &str) -> Option<CompletedProviderSessionSync> {
+pub(crate) fn read_completed_provider_session_sync(cache_key: &str) -> Option<CompletedProviderSessionSync> {
     completed_provider_session_syncs()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -242,6 +243,32 @@ fn record_completed_provider_session_sync(
         }
     }
     cache.insert(cache_key.to_string(), completed);
+}
+
+static IN_FLIGHT_PROJECT_SYNCS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn in_flight_provider_session_syncs() -> &'static Mutex<HashSet<String>> {
+    IN_FLIGHT_PROJECT_SYNCS.get_or_init(Default::default)
+}
+
+/// Marks one project's synchronization as in-flight. Returns `false` when a
+/// synchronization is already running for the same project scope, so a burst
+/// of concurrent requests never duplicates the discovery scan or the two
+/// full inventory sweeps.
+pub(crate) fn mark_provider_session_sync_in_flight(cache_key: &str) -> bool {
+    in_flight_provider_session_syncs()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(cache_key.to_string())
+}
+
+/// Clears the in-flight marker after a background synchronization settles
+/// (success or failure); the next request then starts a fresh attempt.
+pub(crate) fn clear_provider_session_sync_in_flight(cache_key: &str) {
+    in_flight_provider_session_syncs()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(cache_key);
 }
 
 #[cfg(test)]
@@ -351,15 +378,26 @@ pub(crate) fn synchronize_project_provider_sessions_with_selector(
             return Ok(cached.result);
         }
     }
-    let Some(host) = shared_code_engine_host() else {
-        // Without a provider code engine host the inventory can never be
+    let Some(host) = shared_agent_engine_host() else {
+        // Without a provider agent engine host the inventory can never be
         // discovered; report the skipped synchronization instead of returning
-        // a bare default that is indistinguishable from an empty project.
+        // a bare default that is indistinguishable from an empty project. The
+        // skipped outcome is a completed outcome: recording it keeps the
+        // refresh window effective and stops repeat requests from hammering
+        // the no-host path.
         let mut result = ProviderSessionSynchronizationResult::default();
         result.record_issue(
             "provider_engine_unavailable",
             ProviderSessionSynchronizationIssueDisposition::Skipped,
             1,
+        );
+        record_completed_provider_session_sync(
+            &cache_key,
+            CompletedProviderSessionSync {
+                fingerprint: String::new(),
+                result: result.clone(),
+                completed_at: Instant::now(),
+            },
         );
         return Ok(result);
     };
@@ -411,7 +449,7 @@ pub(crate) fn synchronize_provider_session_transcript(
     let Some(engine_key) = agent_id.strip_prefix("agent.") else {
         return Ok(ProviderSessionTranscriptSyncOutcome::NotProviderSession);
     };
-    if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) != Some(agent_id.as_str())
+    if sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key) != Some(agent_id.as_str())
         || !is_provider_session_id_for(&session_id, engine_key)
     {
         return Ok(ProviderSessionTranscriptSyncOutcome::NotProviderSession);
@@ -496,7 +534,7 @@ pub(crate) fn synchronize_provider_session_transcript(
         binding.is_current
             && binding.status.as_str() == "active"
             && binding.transport_kind == "provider-session-history"
-            && sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key)
+            && sdkwork_agents_runtime_facade::agent_engine_binding_id(engine_key)
                 == Some(binding.provider_binding_id.as_str())
     }) else {
         // A provider-history Session without its canonical runtime binding
@@ -512,8 +550,8 @@ pub(crate) fn synchronize_provider_session_transcript(
     else {
         return Ok(ProviderSessionTranscriptSyncOutcome::NoActiveBinding);
     };
-    if shared_code_engine_host().is_none() {
-        // Without a provider code engine host the transcript can never be
+    if shared_agent_engine_host().is_none() {
+        // Without a provider agent engine host the transcript can never be
         // loaded; report the skipped synchronization instead of pretending
         // the provider Session has no messages.
         return Ok(ProviderSessionTranscriptSyncOutcome::EngineUnavailable);
@@ -685,7 +723,7 @@ fn synchronize_provider_session_transcript_worker(
         owner_scope: Some(owner_user_id),
         requested_by: subject.clone(),
     })?;
-    let Some(host) = shared_code_engine_host() else {
+    let Some(host) = shared_agent_engine_host() else {
         // The top-level synchronization gate reports EngineUnavailable before
         // the worker runs; keep this defensive branch an error so a recursive
         // worker can never silently report an empty transcript.
@@ -1274,10 +1312,10 @@ fn reconcile_orphaned_provider_sessions(
 ) -> KernelResult<()> {
     let mut archived_count = 0usize;
     for engine_key in successful_engine_keys {
-        let Some(agent_id) = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) else {
+        let Some(agent_id) = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key) else {
             continue;
         };
-        let mut page = 1;
+        let mut cursor: Option<SessionListCursor> = None;
         loop {
             let sessions = service.list_sessions(ListSessionsCommand {
                 query: SessionListQuery::for_tenant(project.tenant_id)
@@ -1286,14 +1324,9 @@ fn reconcile_orphaned_provider_sessions(
                     .for_project(project.project_id.clone())
                     .for_agent(agent_id)
                     .include_archived()
-                    .with_pagination(
-                        PaginationParams::default()
-                            .with_page_size(200)
-                            .with_page(page),
-                    ),
+                    .with_cursor_page(200, cursor),
                 requested_by: subject.clone(),
             })?;
-            let item_count = sessions.items.len();
             for session in sessions.items {
                 if session.source_module.as_deref() != Some("birdcoder")
                     || session.source_context_kind.as_deref() != Some("provider_session")
@@ -1384,10 +1417,14 @@ fn reconcile_orphaned_provider_sessions(
                 );
                 archived_count += 1;
             }
-            if item_count < 200 {
+            if !sessions.has_more {
                 break;
             }
-            page += 1;
+            cursor = sessions
+                .next_page_token
+                .as_deref()
+                .map(decode_session_list_cursor)
+                .transpose()?;
         }
     }
     result.record_issue(
@@ -1413,10 +1450,10 @@ fn reconcile_missing_provider_session_directories(
     result: &mut ProviderSessionSynchronizationResult,
 ) -> KernelResult<()> {
     for engine_key in successful_engine_keys {
-        let Some(agent_id) = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) else {
+        let Some(agent_id) = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key) else {
             continue;
         };
-        let mut page = 1;
+        let mut cursor: Option<SessionListCursor> = None;
         loop {
             let sessions = service.list_sessions(crate::application::ListSessionsCommand {
                 query: crate::ports::SessionListQuery::for_tenant(project.tenant_id)
@@ -1425,14 +1462,9 @@ fn reconcile_missing_provider_session_directories(
                     .for_project(project.project_id.clone())
                     .for_agent(agent_id)
                     .include_archived()
-                    .with_pagination(
-                        PaginationParams::default()
-                            .with_page_size(200)
-                            .with_page(page),
-                    ),
+                    .with_cursor_page(200, cursor),
                 requested_by: subject.clone(),
             })?;
-            let item_count = sessions.items.len();
             for session in sessions.items {
                 if session.source_module.as_deref() != Some("birdcoder")
                     || session.source_context_kind.as_deref() != Some("provider_session")
@@ -1503,10 +1535,14 @@ fn reconcile_missing_provider_session_directories(
                 )?;
                 result.synchronized_session_count += 1;
             }
-            if item_count < 200 {
+            if !sessions.has_more {
                 break;
             }
-            page += 1;
+            cursor = sessions
+                .next_page_token
+                .as_deref()
+                .map(decode_session_list_cursor)
+                .transpose()?;
         }
     }
     Ok(())
@@ -1587,7 +1623,7 @@ fn synchronize_provider_session_inventory_with_timeout(
                 continue;
             }
         };
-        if let Err(error) = service.ensure_code_engine_runtime_identity(
+        if let Err(error) = service.ensure_agent_engine_runtime_identity(
             project.tenant_id,
             project.organization_id,
             project.owner_user_id,
@@ -1976,10 +2012,10 @@ mod tests {
     };
     use crate::{AgentProjectDriveAccessMode, AgentProjectVisibility};
     use sdkwork_agent_kernel::{AgentSession, SessionKind};
-    use sdkwork_agents_runtime_facade::CodeEngineCatalogEngine;
+    use sdkwork_agents_runtime_facade::AgentEngineCatalogEngine;
 
     #[test]
-    fn classifies_provider_parts_across_all_code_engine_content_types() {
+    fn classifies_provider_parts_across_all_agent_engine_content_types() {
         use sdkwork_agent_kernel::{AgentMessageRole, AgentPart, AgentPartKind};
 
         let kind = |role, part_kind, content_type| {
@@ -2469,7 +2505,7 @@ mod tests {
     }
 
     fn inventory_item(
-        engine: &CodeEngineCatalogEngine,
+        engine: &AgentEngineCatalogEngine,
         provider_session_id: String,
         ordinal: usize,
     ) -> ProviderSessionInventoryItem {
@@ -2510,7 +2546,7 @@ mod tests {
         project: &AgentProjectRecord,
         engine_key: &str,
     ) -> crate::domain::AgentSessionRuntimeBindingRecord {
-        let agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+        let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
             .unwrap_or_else(|| panic!("missing canonical agent id for {engine_key}"));
         let session = state
             .service
@@ -2557,8 +2593,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let codex = catalog
             .engines
@@ -2605,8 +2641,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let codex = catalog
             .engines
@@ -2655,8 +2691,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = |key: &str| {
             catalog
@@ -2711,8 +2747,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let codex = catalog
             .engines
@@ -2756,8 +2792,8 @@ mod tests {
         );
         let project = test_project(&state);
         let subject = read_subject();
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = |key: &str| {
             catalog
@@ -2802,7 +2838,7 @@ mod tests {
             57,
         );
 
-        let list_page = |page| {
+        let list_first_page = |cursor| {
             state
                 .service
                 .list_sessions(ListSessionsCommand {
@@ -2810,23 +2846,26 @@ mod tests {
                         .for_organization(project.organization_id)
                         .for_owner(project.owner_user_id)
                         .for_project(project.project_id.clone())
-                        .with_pagination(
-                            PaginationParams::default()
-                                .with_page_size(50)
-                                .with_page(page),
-                        ),
+                        .with_cursor_page(50, cursor),
                     requested_by: subject.clone(),
                 })
                 .expect("provider session page")
         };
-        let first_page = list_page(1);
-        let second_page = list_page(2);
+        let first_page = list_first_page(None);
         assert_eq!(first_page.items.len(), 50);
-        assert_eq!(first_page.total_count, Some(57));
         assert!(first_page.has_more);
+        assert_eq!(first_page.total_count, None);
+        let second_page = list_first_page(
+            first_page
+                .next_page_token
+                .as_deref()
+                .map(decode_session_list_cursor)
+                .transpose()
+                .expect("decode provider Session cursor"),
+        );
         assert_eq!(second_page.items.len(), 7);
-        assert_eq!(second_page.total_count, Some(57));
         assert!(!second_page.has_more);
+        assert_eq!(second_page.total_count, None);
 
         let activity_query = SessionActivitySummaryListQuery::for_owner(
             project.tenant_id,
@@ -2916,8 +2955,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let inventory = ["codex", "claude-code", "opencode"]
             .into_iter()
@@ -2970,7 +3009,7 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("concurrent inventory result");
-        assert_eq!(sessions.total_count, Some(3));
+        assert_eq!(sessions.items.len(), 3);
     }
 
     #[test]
@@ -2981,8 +3020,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -3027,7 +3066,7 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("deduplicated provider sessions");
-        assert_eq!(sessions.total_count, Some(2));
+        assert_eq!(sessions.items.len(), 2);
         let root_session = sessions
             .items
             .iter()
@@ -3099,8 +3138,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -3140,8 +3179,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -3182,7 +3221,7 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("renamed provider session");
-        assert_eq!(sessions.total_count, Some(1));
+        assert_eq!(sessions.items.len(), 1);
         assert_eq!(
             sessions.items[0].title.as_deref(),
             Some("Renamed provider title")
@@ -3230,8 +3269,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -3323,8 +3362,8 @@ mod tests {
         let mut project = test_project(&state);
         project.created_at = "2026-07-27 03:10:00+00".to_string();
         project.updated_at = "2026-07-27 03:11:00+00".to_string();
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -3356,7 +3395,7 @@ mod tests {
                 requested_by: read_subject(),
             })
             .expect("synchronized Session list");
-        assert_eq!(sessions.total_count, Some(1));
+        assert_eq!(sessions.items.len(), 1);
         assert_eq!(sessions.items[0].created_at, "2026-07-27T03:11:00+00:00");
     }
 
@@ -3368,8 +3407,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -3625,8 +3664,8 @@ mod tests {
             IamGatedPolicyProvider::default(),
         );
         let project = test_project(&state);
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let engine = catalog
             .engines
@@ -4328,8 +4367,8 @@ mod tests {
 
     #[test]
     fn provider_session_inventory_fingerprint_is_stable_and_order_independent() {
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let codex = catalog
             .engines
@@ -4362,8 +4401,8 @@ mod tests {
         );
         let project = test_project(&state);
         reset_provider_session_sync_cache_for_testing();
-        let catalog = shared_code_engine_host()
-            .expect("code engine host")
+        let catalog = shared_agent_engine_host()
+            .expect("agent engine host")
             .catalog();
         let codex = catalog
             .engines

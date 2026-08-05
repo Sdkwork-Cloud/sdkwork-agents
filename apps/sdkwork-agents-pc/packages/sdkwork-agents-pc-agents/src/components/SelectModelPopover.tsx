@@ -153,7 +153,7 @@ export const SelectModelPopover: React.FC<SelectModelPopoverProps> = ({
             ) : filteredModels.length === 0 ? (
               <div className="text-gray-500 text-[13px] text-center py-10 flex flex-col items-center justify-center">
                 <Cpu size={24} className="mb-2 text-gray-600 opacity-50" />
-                未配置可用的 code-engine 模型
+                未配置可用的 agent-engine 模型
               </div>
             ) : (
               <div className="space-y-2">

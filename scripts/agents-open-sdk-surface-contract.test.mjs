@@ -54,10 +54,10 @@ assert.equal(openSdkGeneratorManifest.sdk?.sdkType, 'custom');
 assert.equal(openSdkGeneratorManifest.sdk?.name, 'sdkwork-agents-sdk');
 assert.equal((openSdkAi.match(/async \w+\(/g) ?? []).length, 56);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/agents\/\{agentId\}\/restore:/);
-assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/code_engines:/);
+assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/agent_engines:/);
 assert.doesNotMatch(openOpenApi, /\/agent\/v3\/api\/ai\/mcp_servers:/);
 
-for (const forbidden of ['/code_engines', '/mcp_servers']) {
+for (const forbidden of ['/agent_engines', '/mcp_servers']) {
   assert.doesNotMatch(
     openSdkAi,
     new RegExp(forbidden.replace('/', '\\/')),
@@ -66,7 +66,7 @@ for (const forbidden of ['/code_engines', '/mcp_servers']) {
 }
 const openSdkAgentsApi = extractClassBlock(openSdkAi, 'AiAgentsApi');
 assert.doesNotMatch(openSdkAgentsApi, /\basync restore\(/);
-assert.doesNotMatch(openSdkAi, /AiAgentsCodeEnginesApi|AiAgentsMcpServersApi/);
+assert.doesNotMatch(openSdkAi, /AiAgentsAgentEnginesApi|AiAgentsMcpServersApi/);
 assert.doesNotMatch(openSdkAi, /AiAgentsProjectsApi|AiAgentsProjectCompositionSlotsApi/);
 assert.doesNotMatch(openSdkAi, /AiAgentsSessionUserStatesApi|AiAgentsItemFeedbackApi/);
 

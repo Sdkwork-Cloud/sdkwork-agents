@@ -492,6 +492,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_session (
     version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
+    activity_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_item_at TIMESTAMPTZ,
     closed_at TIMESTAMPTZ,
     archived_at TIMESTAMPTZ,
@@ -550,6 +551,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_agent_session_create_idempotency
 CREATE INDEX IF NOT EXISTS idx_ai_agent_session_owner_list
     ON ai_agent_session (
         tenant_id, organization_id, owner_user_id, status, updated_at DESC, id DESC
+    ) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_session_owner_activity
+    ON ai_agent_session (
+        tenant_id, organization_id, owner_user_id, activity_at DESC, id DESC
     ) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_agent_session_project_list
     ON ai_agent_session (
@@ -1661,3 +1666,94 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_outbox_event_worker
 CREATE INDEX IF NOT EXISTS idx_ai_agent_outbox_event_retention
     ON ai_agent_outbox_event (tenant_id, organization_id, retention_until, id)
     WHERE retention_until IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Session activity materialization
+-- ---------------------------------------------------------------------------
+-- `ai_agent_session.activity_at` is the materialized recency key for the
+-- session-activity feed (DATABASE_SPEC §20.5 keyset ordering). The column is
+-- maintained by triggers so every child write (Turn, Interaction, runtime
+-- binding, user state) atomically refreshes the owning Session in the same
+-- transaction as the child write; the feed query then orders and keysets on
+-- an indexed column instead of per-row lateral scans.
+
+CREATE OR REPLACE FUNCTION sdkwork_agents_session_activity_self()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+    NEW.activity_at := GREATEST(
+        COALESCE(NEW.activity_at, NEW.updated_at),
+        NEW.updated_at
+    );
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_ai_agent_session_activity_self
+BEFORE INSERT OR UPDATE OF updated_at ON ai_agent_session
+FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_session_activity_self();
+
+CREATE OR REPLACE FUNCTION sdkwork_agents_bump_session_activity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    event_at TIMESTAMPTZ;
+BEGIN
+    event_at := GREATEST(
+        COALESCE(NEW.updated_at, NEW.created_at),
+        NEW.created_at
+    );
+    UPDATE ai_agent_session
+       SET activity_at = event_at
+     WHERE tenant_id = NEW.tenant_id
+       AND organization_id = NEW.organization_id
+       AND session_id = NEW.session_id
+       AND activity_at < event_at;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_ai_agent_turn_bump_session_activity
+AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_turn
+FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity();
+
+CREATE TRIGGER trg_ai_agent_interaction_bump_session_activity
+AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_interaction
+FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity();
+
+CREATE TRIGGER trg_ai_agent_runtime_binding_bump_session_activity
+AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_session_runtime_binding
+FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity();
+
+-- User-state activity is session-scoped only (resource_type = 0); other
+-- resource user states must not touch the Session feed.
+CREATE OR REPLACE FUNCTION sdkwork_agents_bump_session_activity_from_user_state()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    event_at TIMESTAMPTZ;
+BEGIN
+    IF NEW.resource_type <> 0 THEN
+        RETURN NEW;
+    END IF;
+    event_at := GREATEST(
+        COALESCE(NEW.updated_at, NEW.created_at),
+        NEW.created_at
+    );
+    UPDATE ai_agent_session
+       SET activity_at = event_at
+     WHERE tenant_id = NEW.tenant_id
+       AND organization_id = NEW.organization_id
+       AND session_id = NEW.resource_id
+       AND activity_at < event_at;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_ai_agent_user_state_bump_session_activity
+AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_resource_user_state
+FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity_from_user_state();

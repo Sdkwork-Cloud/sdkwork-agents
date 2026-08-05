@@ -54,7 +54,7 @@ pub fn no_content(ctx: &WebRequestContext) -> Result<Response, ApiProblem> {
     ))
 }
 
-fn success_response<T: Serialize>(
+pub(crate) fn success_response<T: Serialize>(
     ctx: &WebRequestContext,
     status: StatusCode,
     data: T,

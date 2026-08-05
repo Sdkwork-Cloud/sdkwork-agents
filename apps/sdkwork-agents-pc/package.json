@@ -37,6 +37,7 @@
     "@sdkwork/agents-pc-creative": "workspace:*",
     "@sdkwork/agents-pc-inspiration": "workspace:*",
     "@sdkwork/agents-pc-membership": "workspace:*",
+    "@sdkwork/agents-pc-presentation": "workspace:*",
     "@sdkwork/membership-service": "workspace:*",
     "@sdkwork/order-service": "workspace:*",
     "@sdkwork/utils": "workspace:*",

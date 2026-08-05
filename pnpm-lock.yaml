@@ -643,6 +643,8 @@ importers:
         specifier: workspace:*
         version: link:../../../../sdkwork-sdk-commons/sdkwork-sdk-common-typescript
 
+  ../sdkwork-order/apps/sdkwork-order-common/packages/sdkwork-order-sdk-ports: {}
+
   ../sdkwork-order/apps/sdkwork-order-common/packages/sdkwork-order-service:
     dependencies:
       '@sdkwork/order-app-sdk':
@@ -1227,6 +1229,9 @@ importers:
       '@sdkwork/agents-pc-membership':
         specifier: workspace:*
         version: link:packages/sdkwork-agents-pc-membership
+      '@sdkwork/agents-pc-presentation':
+        specifier: workspace:*
+        version: link:packages/sdkwork-agents-pc-presentation
       '@sdkwork/auth-pc-react':
         specifier: workspace:*
         version: link:../../../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-auth-pc-react

@@ -126,11 +126,14 @@ test("server release artifact includes immutable runtime and deployment assets",
   const workflow = JSON.parse(
     readFileSync(path.join(repoRoot, "sdkwork.workflow.json"), "utf8"),
   );
+  // Framework profile validation maps `server` to runtimeTarget `server`
+  // only; the server release bundle is the container- and bare-metal-ready
+  // artifact that must carry every immutable runtime and deployment asset.
   const serverTarget = workflow.targets.find(
-    (target) => target.profile === "server" && target.runtimeTarget === "container",
+    (target) => target.profile === "server" && target.runtimeTarget === "server",
   );
 
-  assert.ok(serverTarget, "workflow must declare a container server target");
+  assert.ok(serverTarget, "workflow must declare a server target");
   for (const requiredGlob of [
     "database/**",
     "etc/topology/*.production.env",

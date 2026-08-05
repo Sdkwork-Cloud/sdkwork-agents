@@ -5408,37 +5408,37 @@ class AppliedAgentModelSelectionResponse {
   }
 }
 
-class CodeEngineCatalogListResponse {
+class AgentEngineCatalogListResponse {
   final int code;
   final dynamic data;
   final String traceId;
 
-  CodeEngineCatalogListResponse({
+  AgentEngineCatalogListResponse({
     required this.code,
     required this.data,
     required this.traceId
   });
 
-  factory CodeEngineCatalogListResponse.fromJson(Map<String, dynamic> json) {
-    return CodeEngineCatalogListResponse(
+  factory AgentEngineCatalogListResponse.fromJson(Map<String, dynamic> json) {
+    return AgentEngineCatalogListResponse(
       code: (() {
         final value = json['code'];
         if (value is! int) {
-          throw FormatException('CodeEngineCatalogListResponse.code is required');
+          throw FormatException('AgentEngineCatalogListResponse.code is required');
         }
         return value;
       })(),
       data: (() {
         final map = _sdkworkAsMap(json['data']);
         if (map == null) {
-          throw FormatException('CodeEngineCatalogListResponse.data is required');
+          throw FormatException('AgentEngineCatalogListResponse.data is required');
         }
         return map;
       })(),
       traceId: (() {
         final value = json['traceId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineCatalogListResponse.traceId is required');
+          throw FormatException('AgentEngineCatalogListResponse.traceId is required');
         }
         return value;
       })()
@@ -5454,26 +5454,26 @@ class CodeEngineCatalogListResponse {
   }
 }
 
-class CodeEngineCatalog {
-  final List<CodeEngineCatalogEngine> engines;
+class AgentEngineCatalog {
+  final List<AgentEngineCatalogEngine> engines;
 
-  CodeEngineCatalog({
+  AgentEngineCatalog({
     required this.engines
   });
 
-  factory CodeEngineCatalog.fromJson(Map<String, dynamic> json) {
-    return CodeEngineCatalog(
+  factory AgentEngineCatalog.fromJson(Map<String, dynamic> json) {
+    return AgentEngineCatalog(
       engines: (() {
         final list = _sdkworkAsList(json['engines']);
         if (list == null) {
-          throw FormatException('CodeEngineCatalog.engines is required');
+          throw FormatException('AgentEngineCatalog.engines is required');
         }
         return list
             .map((item) => (() {
         final map = _sdkworkAsMap(item);
-        return map == null ? null : CodeEngineCatalogEngine.fromJson(map);
+        return map == null ? null : AgentEngineCatalogEngine.fromJson(map);
       })())
-            .whereType<CodeEngineCatalogEngine>()
+            .whereType<AgentEngineCatalogEngine>()
             .toList();
       })()
     );
@@ -5486,17 +5486,19 @@ class CodeEngineCatalog {
   }
 }
 
-class CodeEngineCatalogEngine {
+class AgentEngineCatalogEngine {
   final String engineKey;
+  final String engineKind;
   final String tier;
   final String agentId;
   final String bindingId;
-  final List<CodeEngineModelCatalogEntry> models;
+  final List<AgentEngineModelCatalogEntry> models;
   final String defaultAccessModeId;
-  final List<CodeEngineAccessModeCatalogEntry> accessModes;
+  final List<AgentEngineAccessModeCatalogEntry> accessModes;
 
-  CodeEngineCatalogEngine({
+  AgentEngineCatalogEngine({
     required this.engineKey,
+    required this.engineKind,
     required this.tier,
     required this.agentId,
     required this.bindingId,
@@ -5505,67 +5507,74 @@ class CodeEngineCatalogEngine {
     required this.accessModes
   });
 
-  factory CodeEngineCatalogEngine.fromJson(Map<String, dynamic> json) {
-    return CodeEngineCatalogEngine(
+  factory AgentEngineCatalogEngine.fromJson(Map<String, dynamic> json) {
+    return AgentEngineCatalogEngine(
       engineKey: (() {
         final value = json['engineKey']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineCatalogEngine.engineKey is required');
+          throw FormatException('AgentEngineCatalogEngine.engineKey is required');
+        }
+        return value;
+      })(),
+      engineKind: (() {
+        final value = json['engineKind']?.toString();
+        if (value == null) {
+          throw FormatException('AgentEngineCatalogEngine.engineKind is required');
         }
         return value;
       })(),
       tier: (() {
         final value = json['tier']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineCatalogEngine.tier is required');
+          throw FormatException('AgentEngineCatalogEngine.tier is required');
         }
         return value;
       })(),
       agentId: (() {
         final value = json['agentId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineCatalogEngine.agentId is required');
+          throw FormatException('AgentEngineCatalogEngine.agentId is required');
         }
         return value;
       })(),
       bindingId: (() {
         final value = json['bindingId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineCatalogEngine.bindingId is required');
+          throw FormatException('AgentEngineCatalogEngine.bindingId is required');
         }
         return value;
       })(),
       models: (() {
         final list = _sdkworkAsList(json['models']);
         if (list == null) {
-          throw FormatException('CodeEngineCatalogEngine.models is required');
+          throw FormatException('AgentEngineCatalogEngine.models is required');
         }
         return list
             .map((item) => (() {
         final map = _sdkworkAsMap(item);
-        return map == null ? null : CodeEngineModelCatalogEntry.fromJson(map);
+        return map == null ? null : AgentEngineModelCatalogEntry.fromJson(map);
       })())
-            .whereType<CodeEngineModelCatalogEntry>()
+            .whereType<AgentEngineModelCatalogEntry>()
             .toList();
       })(),
       defaultAccessModeId: (() {
         final value = json['defaultAccessModeId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineCatalogEngine.defaultAccessModeId is required');
+          throw FormatException('AgentEngineCatalogEngine.defaultAccessModeId is required');
         }
         return value;
       })(),
       accessModes: (() {
         final list = _sdkworkAsList(json['accessModes']);
         if (list == null) {
-          throw FormatException('CodeEngineCatalogEngine.accessModes is required');
+          throw FormatException('AgentEngineCatalogEngine.accessModes is required');
         }
         return list
             .map((item) => (() {
         final map = _sdkworkAsMap(item);
-        return map == null ? null : CodeEngineAccessModeCatalogEntry.fromJson(map);
+        return map == null ? null : AgentEngineAccessModeCatalogEntry.fromJson(map);
       })())
-            .whereType<CodeEngineAccessModeCatalogEntry>()
+            .whereType<AgentEngineAccessModeCatalogEntry>()
             .toList();
       })()
     );
@@ -5574,6 +5583,7 @@ class CodeEngineCatalogEngine {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'engineKey': engineKey,
+      'engineKind': engineKind,
       'tier': tier,
       'agentId': agentId,
       'bindingId': bindingId,
@@ -5584,7 +5594,7 @@ class CodeEngineCatalogEngine {
   }
 }
 
-class CodeEngineAccessModeCatalogEntry {
+class AgentEngineAccessModeCatalogEntry {
   final String modeId;
   final String displayName;
   final String description;
@@ -5595,7 +5605,7 @@ class CodeEngineAccessModeCatalogEntry {
   final bool enabled;
   final String? disabledReason;
 
-  CodeEngineAccessModeCatalogEntry({
+  AgentEngineAccessModeCatalogEntry({
     required this.modeId,
     required this.displayName,
     required this.description,
@@ -5607,61 +5617,61 @@ class CodeEngineAccessModeCatalogEntry {
     this.disabledReason
   });
 
-  factory CodeEngineAccessModeCatalogEntry.fromJson(Map<String, dynamic> json) {
-    return CodeEngineAccessModeCatalogEntry(
+  factory AgentEngineAccessModeCatalogEntry.fromJson(Map<String, dynamic> json) {
+    return AgentEngineAccessModeCatalogEntry(
       modeId: (() {
         final value = json['modeId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.modeId is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.modeId is required');
         }
         return value;
       })(),
       displayName: (() {
         final value = json['displayName']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.displayName is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.displayName is required');
         }
         return value;
       })(),
       description: (() {
         final value = json['description']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.description is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.description is required');
         }
         return value;
       })(),
       approvalBehavior: (() {
         final value = json['approvalBehavior']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.approvalBehavior is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.approvalBehavior is required');
         }
         return value;
       })(),
       workspaceAccess: (() {
         final value = json['workspaceAccess']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.workspaceAccess is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.workspaceAccess is required');
         }
         return value;
       })(),
       networkAccess: (() {
         final value = json['networkAccess']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.networkAccess is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.networkAccess is required');
         }
         return value;
       })(),
       riskLevel: (() {
         final value = json['riskLevel']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.riskLevel is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.riskLevel is required');
         }
         return value;
       })(),
       enabled: (() {
         final value = json['enabled'];
         if (value is! bool) {
-          throw FormatException('CodeEngineAccessModeCatalogEntry.enabled is required');
+          throw FormatException('AgentEngineAccessModeCatalogEntry.enabled is required');
         }
         return value;
       })(),
@@ -5684,7 +5694,7 @@ class CodeEngineAccessModeCatalogEntry {
   }
 }
 
-class CodeEngineModelCatalogEntry {
+class AgentEngineModelCatalogEntry {
   final String engineKey;
   final String modelId;
   final String label;
@@ -5693,7 +5703,7 @@ class CodeEngineModelCatalogEntry {
   final String bindingId;
   final bool defaultForEngine;
 
-  CodeEngineModelCatalogEntry({
+  AgentEngineModelCatalogEntry({
     required this.engineKey,
     required this.modelId,
     required this.label,
@@ -5703,54 +5713,54 @@ class CodeEngineModelCatalogEntry {
     required this.defaultForEngine
   });
 
-  factory CodeEngineModelCatalogEntry.fromJson(Map<String, dynamic> json) {
-    return CodeEngineModelCatalogEntry(
+  factory AgentEngineModelCatalogEntry.fromJson(Map<String, dynamic> json) {
+    return AgentEngineModelCatalogEntry(
       engineKey: (() {
         final value = json['engineKey']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineModelCatalogEntry.engineKey is required');
+          throw FormatException('AgentEngineModelCatalogEntry.engineKey is required');
         }
         return value;
       })(),
       modelId: (() {
         final value = json['modelId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineModelCatalogEntry.modelId is required');
+          throw FormatException('AgentEngineModelCatalogEntry.modelId is required');
         }
         return value;
       })(),
       label: (() {
         final value = json['label']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineModelCatalogEntry.label is required');
+          throw FormatException('AgentEngineModelCatalogEntry.label is required');
         }
         return value;
       })(),
       description: (() {
         final value = json['description']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineModelCatalogEntry.description is required');
+          throw FormatException('AgentEngineModelCatalogEntry.description is required');
         }
         return value;
       })(),
       providerId: (() {
         final value = json['providerId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineModelCatalogEntry.providerId is required');
+          throw FormatException('AgentEngineModelCatalogEntry.providerId is required');
         }
         return value;
       })(),
       bindingId: (() {
         final value = json['bindingId']?.toString();
         if (value == null) {
-          throw FormatException('CodeEngineModelCatalogEntry.bindingId is required');
+          throw FormatException('AgentEngineModelCatalogEntry.bindingId is required');
         }
         return value;
       })(),
       defaultForEngine: (() {
         final value = json['defaultForEngine'];
         if (value is! bool) {
-          throw FormatException('CodeEngineModelCatalogEntry.defaultForEngine is required');
+          throw FormatException('AgentEngineModelCatalogEntry.defaultForEngine is required');
         }
         return value;
       })()
@@ -7066,6 +7076,7 @@ class ProjectSessionSynchronizationIssue {
 }
 
 class ProjectSessionSynchronizationResult {
+  final String status;
   final String projectId;
   final String synchronizedSessionCount;
   final String skippedSessionCount;
@@ -7073,6 +7084,7 @@ class ProjectSessionSynchronizationResult {
   final List<ProjectSessionSynchronizationIssue> issues;
 
   ProjectSessionSynchronizationResult({
+    required this.status,
     required this.projectId,
     required this.synchronizedSessionCount,
     required this.skippedSessionCount,
@@ -7082,6 +7094,13 @@ class ProjectSessionSynchronizationResult {
 
   factory ProjectSessionSynchronizationResult.fromJson(Map<String, dynamic> json) {
     return ProjectSessionSynchronizationResult(
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('ProjectSessionSynchronizationResult.status is required');
+        }
+        return value;
+      })(),
       projectId: (() {
         final value = json['projectId']?.toString();
         if (value == null) {
@@ -7128,6 +7147,7 @@ class ProjectSessionSynchronizationResult {
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
+      'status': status,
       'projectId': projectId,
       'synchronizedSessionCount': synchronizedSessionCount,
       'skippedSessionCount': skippedSessionCount,

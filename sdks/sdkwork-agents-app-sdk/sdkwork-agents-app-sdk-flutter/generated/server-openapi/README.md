@@ -21,7 +21,7 @@ client.setAuthToken('your-auth-token');
 client.setAccessToken('your-access-token');
 
 // Use the SDK
-final result = await client.ai.agentsCodeEnginesList();
+final result = await client.ai.agentsEnginesList();
 print(result);
 ```
 
@@ -50,8 +50,8 @@ client.setHeader('X-Custom-Header', 'value');
 
 ### ai
 ```dart
-// List canonical code-engine catalog
-final result = await client.ai.agentsCodeEnginesList();
+// List canonical agent-engine catalog
+final result = await client.ai.agentsEnginesList();
 print(result);
 ```
 
@@ -59,7 +59,7 @@ print(result);
 
 ```dart
 try {
-  final result = await client.ai.agentsCodeEnginesList();
+  final result = await client.ai.agentsEnginesList();
   print(result);
 } catch (e) {
   print('Error: $e');

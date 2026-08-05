@@ -23,6 +23,9 @@ use crate::domain::{
     DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
 use crate::dto::AgentManagementProfileDto;
+use crate::list_cursors::{
+    encode_created_at_cursor, encode_session_list_cursor, CreatedAtListCursor, SessionListCursor,
+};
 use crate::ports::{
     offset_paginated_result, AgentAuditSink, AgentRepository, PaginatedResult, PaginationParams,
     ProviderBindingListQuery, SessionItemListQuery, TurnRequestWriteOutcome, MAX_PAGE_SIZE,
@@ -76,7 +79,7 @@ use sdkwork_agent_kernel::{
     PolicyProvider, PolicyRequest, PolicySubject,
 };
 use sdkwork_agents_contract::agents_allow_contract_runtime_fallback;
-use sdkwork_agents_runtime_facade::CodeEngineInteractionResolution;
+use sdkwork_agents_runtime_facade::AgentEngineInteractionResolution;
 use sdkwork_utils_rust::{sha256_hash, trim};
 use time::OffsetDateTime;
 
@@ -193,14 +196,14 @@ fn validate_task_definition_fields(
     validate_optional_bounded(external_ref, "externalRef", MAX_TASK_EXTERNAL_REF_BYTES)
 }
 
-fn code_engine_runtime_manifest(engine_key: &str, agent_id: &str) -> AgentManifest {
+fn agent_engine_runtime_manifest(engine_key: &str, agent_id: &str) -> AgentManifest {
     AgentManifest {
         schema_version: "1.0".to_string(),
         manifest_type: "agent".to_string(),
         agent_id: agent_id.to_string(),
         name: engine_key.to_string(),
         display_name: engine_key.to_string(),
-        description: "Canonical local code-engine runtime identity".to_string(),
+        description: "Canonical local agent-engine runtime identity".to_string(),
         version: "1.0.0".to_string(),
         domain: "coding".to_string(),
         required_capabilities: vec!["model.chat".to_string()],
@@ -1131,7 +1134,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn ensure_code_engine_runtime_identity(
+    pub(crate) fn ensure_agent_engine_runtime_identity(
         &self,
         tenant_id: u64,
         organization_id: u64,
@@ -1143,11 +1146,11 @@ where
         requested_by: PolicySubject,
         requested_at: &str,
     ) -> KernelResult<()> {
-        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key) != Some(agent_id)
-            || sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key) != Some(binding_id)
+        if sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key) != Some(agent_id)
+            || sdkwork_agents_runtime_facade::agent_engine_binding_id(engine_key) != Some(binding_id)
         {
             return Err(KernelError::validation(
-                "code-engine runtime identity is not canonical",
+                "agent-engine runtime identity is not canonical",
             ));
         }
         validate_standard_id(provider_id, "providerId", Some(ID_PREFIX_PROVIDER))?;
@@ -1160,7 +1163,7 @@ where
                     && agent.implementation_provider_id.as_deref() == Some(provider_id) => {}
             Some(_) => {
                 return Err(KernelError::validation(
-                    "canonical code-engine agent identity conflicts with existing agent",
+                    "canonical agent-engine agent identity conflicts with existing agent",
                 ));
             }
             None => {
@@ -1172,15 +1175,15 @@ where
                     owner_user_id,
                     code: engine_key.to_string(),
                     display_name: engine_key.to_string(),
-                    description: Some("Canonical local code-engine runtime identity".to_string()),
-                    manifest: code_engine_runtime_manifest(engine_key, agent_id),
+                    description: Some("Canonical local agent-engine runtime identity".to_string()),
+                    manifest: agent_engine_runtime_manifest(engine_key, agent_id),
                     default_code_task_intent: None,
                     implementation_provider_id: Some(provider_id.to_string()),
                     implementation_kind: Some(AgentImplementationKind::TypedLocalProvider),
                     implementation_type: AgentImplementationType::SdkworkNative,
                     status: AgentBusinessStatus::Active,
                     visibility: AgentVisibility::Private,
-                    tags: vec!["code-engine".to_string(), engine_key.to_string()],
+                    tags: vec!["agent-engine".to_string(), engine_key.to_string()],
                     version: 0,
                     created_at: requested_at.to_string(),
                     updated_at: requested_at.to_string(),
@@ -1203,7 +1206,7 @@ where
                             || concurrent.implementation_provider_id.as_deref() != Some(provider_id)
                         {
                             return Err(KernelError::validation(
-                                "concurrent canonical code-engine agent identity conflicts",
+                                "concurrent canonical agent-engine agent identity conflicts",
                             ));
                         }
                     }
@@ -1218,7 +1221,7 @@ where
         {
             Some(binding) if binding.active && binding.provider_id == provider_id => Ok(()),
             Some(_) => Err(KernelError::validation(
-                "canonical code-engine provider binding conflicts with existing binding",
+                "canonical agent-engine provider binding conflicts with existing binding",
             )),
             None => {
                 let binding = AgentProviderBindingRecord {
@@ -1254,7 +1257,7 @@ where
                             Ok(())
                         } else {
                             Err(KernelError::validation(
-                                "concurrent canonical code-engine provider binding conflicts",
+                                "concurrent canonical agent-engine provider binding conflicts",
                             ))
                         }
                     }
@@ -1516,17 +1519,17 @@ where
         Ok(record)
     }
 
-    pub fn list_code_engine_catalog(
+    pub fn list_agent_engine_catalog(
         &self,
         requested_by: PolicySubject,
-    ) -> KernelResult<sdkwork_agents_runtime_facade::CodeEngineCatalog> {
+    ) -> KernelResult<sdkwork_agents_runtime_facade::AgentEngineCatalog> {
         self.authorize(
-            "agent.business.code_engine.list",
+            "agent.business.agent_engine.list",
             requested_by,
             "agent.business".to_string(),
-            "code_engine.list",
+            "agent_engine.list",
         )?;
-        Ok(crate::code_engine_catalog::list_code_engine_catalog())
+        Ok(crate::agent_engine_catalog::list_agent_engine_catalog())
     }
 
     pub fn list_mcp_marketplace(
@@ -1600,7 +1603,7 @@ where
             && !agents_allow_contract_runtime_fallback()
         {
             return Err(KernelError::validation(
-                "preview response requires an active code-engine provider binding",
+                "preview response requires an active agent-engine provider binding",
             ));
         }
 
@@ -1667,7 +1670,7 @@ where
             && !agents_allow_contract_runtime_fallback()
         {
             return Err(KernelError::validation(
-                "prompt optimization requires an active code-engine provider binding",
+                "prompt optimization requires an active agent-engine provider binding",
             ));
         }
 
@@ -3200,21 +3203,21 @@ where
             .agent_id
             .strip_prefix("agent.")
             .filter(|engine_key| {
-                sdkwork_agents_runtime_facade::is_canonical_code_engine(engine_key)
+                sdkwork_agents_runtime_facade::is_canonical_agent_engine(engine_key)
             })
             .filter(|engine_key| {
-                sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+                sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
                     == Some(command.agent_id.as_str())
             });
         if canonical_engine_key.is_some() {
-            let identity = sdkwork_agents_runtime_facade::resolve_code_engine_runtime_identity(
+            let identity = sdkwork_agents_runtime_facade::resolve_agent_engine_runtime_identity(
                 command.agent_id.as_str(),
             )
             .map_err(|error| {
-                KernelError::provider_error("code_engine_runtime_identity", error.to_string())
+                KernelError::provider_error("agent_engine_runtime_identity", error.to_string())
             })?
             .ok_or_else(|| KernelError::not_found("agent not found"))?;
-            return self.ensure_code_engine_runtime_identity(
+            return self.ensure_agent_engine_runtime_identity(
                 command.tenant_id,
                 command.organization_id,
                 command.owner_user_id,
@@ -3282,7 +3285,7 @@ where
         let engine_key = command.agent_id.strip_prefix("agent.").ok_or_else(|| {
             KernelError::validation("provider Session history agent is not canonical")
         })?;
-        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+        if sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
             != Some(command.agent_id.as_str())
             || command.project_id.is_none()
             || command.source_module.as_deref() != Some("birdcoder")
@@ -3512,7 +3515,7 @@ where
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
-        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+        if sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
             || !is_provider_session_id_for(&command.session_id, engine_key)
             || command.title.is_none()
@@ -3839,13 +3842,36 @@ where
             format!("agent.business.tenant.{}", command.query.tenant_id),
             "session.list",
         )?;
-        let total_count = self.repository.count_sessions(&command.query)?;
-        let items = self.repository.list_sessions(&command.query)?;
-        Ok(offset_paginated_result(
-            items,
-            &command.query.pagination,
-            total_count,
-        ))
+        let scope_fingerprint = command.query.scope_fingerprint();
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested Session scope",
+            ));
+        }
+        let page_size = command.query.pagination.page_size;
+        let mut items = self.repository.list_sessions(&command.query)?;
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|session| {
+                    encode_session_list_cursor(&SessionListCursor {
+                        updated_at: session.updated_at.clone(),
+                        session_internal_id: session.id,
+                        scope_fingerprint,
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
     }
 
     pub fn list_session_activity_summaries(
@@ -5175,9 +5201,9 @@ where
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
-        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+        if sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
-            || sdkwork_agents_runtime_facade::code_engine_binding_id(engine_key)
+            || sdkwork_agents_runtime_facade::agent_engine_binding_id(engine_key)
                 != Some(command.provider_binding_id.as_str())
             || command.host_mode != "server"
             || command.transport_kind != "provider-session-history"
@@ -5472,7 +5498,7 @@ where
             .ok_or_else(|| {
                 KernelError::validation("provider Session history agent is not canonical")
             })?;
-        if sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+        if sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
             != Some(command.path_agent_id.as_str())
             || !is_provider_session_id_for(&command.session_id, engine_key)
             || !is_provider_runtime_binding_id_for(&command.runtime_binding_id, engine_key)
@@ -6193,7 +6219,7 @@ where
         command: ReconcileProviderSessionHistoryItemCommand,
         engine_key: &str,
     ) -> KernelResult<AgentSessionItemRecord> {
-        let expected_agent_id = sdkwork_agents_runtime_facade::code_engine_agent_id(engine_key)
+        let expected_agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_key)
             .ok_or_else(|| {
                 KernelError::validation("provider Session history engine is not canonical")
             })?;
@@ -6596,13 +6622,39 @@ where
         if session.organization_id != command.query.organization_id {
             return Err(KernelError::not_found("session not found"));
         }
-        let total_count = self.repository.count_turns(&command.query)?;
-        let items = self.repository.list_turns(&command.query)?;
-        Ok(offset_paginated_result(
-            items,
-            &command.query.pagination,
-            total_count,
-        ))
+        let scope_fingerprint = command.query.scope_fingerprint();
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested Turn scope",
+            ));
+        }
+        let page_size = command.query.pagination.page_size;
+        let mut items = self.repository.list_turns(&command.query)?;
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|turn| {
+                    encode_created_at_cursor(
+                        "turn",
+                        &CreatedAtListCursor {
+                            created_at: turn.created_at.clone(),
+                            internal_id: turn.id,
+                            scope_fingerprint,
+                        },
+                    )
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
     }
 
     pub fn get_turn_by_idempotency(
@@ -7081,14 +7133,14 @@ where
                         "accessModeId is not supported by the active provider binding",
                     )
                 })?;
-            let host_guard = crate::runtime_facade_bridge::shared_code_engine_host();
+            let host_guard = crate::runtime_facade_bridge::shared_agent_engine_host();
             let engine_slot = host_guard
                 .as_deref()
                 .and_then(|host| host.slot(engine_key))
                 .ok_or_else(|| {
                     KernelError::provider_error(
-                        "code_engine_bootstrap_failed",
-                        format!("shared code engine slot is unavailable for {engine_key}"),
+                        "agent_engine_bootstrap_failed",
+                        format!("shared agent engine slot is unavailable for {engine_key}"),
                     )
                 })?;
             engine_slot.resolve_execution_settings(access_mode_id)?;
@@ -8554,13 +8606,39 @@ where
         if session.organization_id != command.query.organization_id {
             return Err(KernelError::not_found("session not found"));
         }
-        let total_count = self.repository.count_interactions(&command.query)?;
-        let items = self.repository.list_interactions(&command.query)?;
-        Ok(offset_paginated_result(
-            items,
-            &command.query.pagination,
-            total_count,
-        ))
+        let scope_fingerprint = command.query.scope_fingerprint();
+        if command
+            .query
+            .cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.scope_fingerprint != scope_fingerprint)
+        {
+            return Err(KernelError::validation(
+                "cursor does not match the requested Interaction scope",
+            ));
+        }
+        let page_size = command.query.pagination.page_size;
+        let mut items = self.repository.list_interactions(&command.query)?;
+        let has_more = items.len() > page_size;
+        items.truncate(page_size);
+        let next_page_token = if has_more {
+            items
+                .last()
+                .map(|interaction| {
+                    encode_created_at_cursor(
+                        "interaction",
+                        &CreatedAtListCursor {
+                            created_at: interaction.created_at.clone(),
+                            internal_id: interaction.id,
+                            scope_fingerprint,
+                        },
+                    )
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(PaginatedResult::new(items, next_page_token, None))
     }
 
     pub fn get_interaction(
@@ -8976,10 +9054,10 @@ where
                     )
                 })?;
             let host =
-                crate::runtime_facade_bridge::shared_code_engine_host().ok_or_else(|| {
+                crate::runtime_facade_bridge::shared_agent_engine_host().ok_or_else(|| {
                     KernelError::provider_error(
-                        "code_engine_bootstrap_failed",
-                        "shared code engine host is unavailable",
+                        "agent_engine_bootstrap_failed",
+                        "shared agent engine host is unavailable",
                     )
                 })?;
             let turn_id = record.turn_id.as_deref().ok_or_else(|| {
@@ -8991,7 +9069,7 @@ where
                 })?;
             host.resolve_interaction(
                 engine_key,
-                &CodeEngineInteractionResolution {
+                &AgentEngineInteractionResolution {
                     model_request_id: required_json_string(
                         correlation,
                         "modelRequestId",
@@ -9843,7 +9921,7 @@ mod task_tests {
     }
 
     #[test]
-    fn canonical_code_engine_identity_bootstrap_does_not_require_manage_permission() {
+    fn canonical_agent_engine_identity_bootstrap_does_not_require_manage_permission() {
         let service = AgentsService::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -9856,7 +9934,7 @@ mod task_tests {
         };
 
         service
-            .ensure_code_engine_runtime_identity(
+            .ensure_agent_engine_runtime_identity(
                 100_001,
                 0,
                 100,

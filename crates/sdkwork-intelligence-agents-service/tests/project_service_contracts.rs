@@ -216,7 +216,7 @@ fn workspace_lifecycle_is_owner_scoped_versioned_and_protects_default_and_projec
 }
 
 #[test]
-fn read_only_subject_can_list_projects_and_code_engines() {
+fn read_only_subject_can_list_projects_and_agent_engines() {
     let (service, _) = service();
     service
         .create_project(CreateProjectCommand {
@@ -245,8 +245,8 @@ fn read_only_subject_can_list_projects_and_code_engines() {
     assert_eq!(projects.items.len(), 1);
 
     service
-        .list_code_engine_catalog(read_subject())
-        .expect("read-only subject should list the code-engine catalog");
+        .list_agent_engine_catalog(read_subject())
+        .expect("read-only subject should list the agent-engine catalog");
 }
 
 #[test]

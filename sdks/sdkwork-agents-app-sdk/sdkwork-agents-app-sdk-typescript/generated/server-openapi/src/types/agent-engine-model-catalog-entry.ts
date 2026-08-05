@@ -1,4 +1,4 @@
-export interface CodeEngineModelCatalogEntry {
+export interface AgentEngineModelCatalogEntry {
   engineKey: string;
   modelId: string;
   label: string;

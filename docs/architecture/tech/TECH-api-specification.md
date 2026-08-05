@@ -98,7 +98,7 @@ Authority: [agents-app-api.openapi.yaml](../../../crates/sdkwork-intelligence-ag
 | 45 | PATCH | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/user_state` | `agents.sessionUserStates.update` | Update the authenticated user's state for one agent session |
 | 46 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/item_feedback` | `agents.itemFeedback.list` | List item feedback for one agent session |
 | 47 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items` | `agents.sessionItems.list` | List ordered items for one agent session |
-| 48 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/synchronize` | `agents.sessionItems.synchronize` | Synchronize provider history and return one Session Item window |
+| 48 | POST | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/synchronize` | `agents.sessionItems.synchronize` | Synchronize provider Session history for one Session |
 | 49 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}` | `agents.sessionItems.retrieve` | Retrieve one agent session item |
 | 50 | PATCH | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}/feedback` | `agents.itemFeedback.update` | Create, update, or clear feedback for one agent session item |
 | 51 | GET | `/app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns` | `agents.turns.list` | List durable turns for one agent session |
@@ -150,7 +150,7 @@ Authority: [agents-app-api.openapi.yaml](../../../crates/sdkwork-intelligence-ag
 | 97 | GET | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
 | 98 | PATCH | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
 | 99 | DELETE | `/app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
-| 100 | GET | `/app/v3/api/ai/code_engines` | `agents.codeEngines.list` | List canonical code-engine catalog |
+| 100 | GET | `/app/v3/api/ai/agent_engines` | `agents.agentEngines.list` | List canonical agent-engine catalog |
 | 101 | POST | `/app/v3/api/ai/model_configurations/apply` | `agents.modelConfigurations.apply` | Apply one unified model configuration to an Agent provider |
 | 102 | POST | `/app/v3/api/ai/model_selections/apply` | `agents.modelSelections.apply` | Apply a catalog or saved custom model selection to an Agent provider |
 | 103 | GET | `/app/v3/api/ai/model_configurations` | `agents.modelConfigurations.list` | List applied model configuration profiles |

@@ -94,7 +94,7 @@ pub const SQL_INSERT_AUDIT_EVENT: &str =
     "INSERT INTO ai_agent_audit_event (id, uuid, tenant_id, organization_id, aggregate_type, aggregate_id, agent_internal_id, agent_id, action, actor_type, actor_id, request_id, trace_id, payload_json, created_at) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::bigint, (SELECT id FROM ai_agent WHERE tenant_id = $3 AND agent_id = $8)), $8, $9, $10, $11, $12, $13, $14::jsonb, $15::timestamptz)";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID: &str =
-    "SELECT id, uuid, tenant_id, organization_id, aggregate_type, aggregate_id, agent_internal_id, agent_id, action, actor_type, actor_id, request_id, trace_id, payload_json::text AS payload_json, created_at::text AS created_at FROM ai_agent_audit_event WHERE tenant_id = $1 AND agent_id = $2 AND ($3::text IS NULL OR action = $3) AND ($4::text IS NULL OR created_at >= $4::timestamptz) AND ($5::text IS NULL OR created_at <= $5::timestamptz) ORDER BY created_at DESC, id DESC LIMIT $6 OFFSET $7";
+    "SELECT id, uuid, tenant_id, organization_id, aggregate_type, aggregate_id, agent_internal_id, agent_id, action, actor_type, actor_id, request_id, trace_id, payload_json::text AS payload_json, created_at::text AS created_at FROM ai_agent_audit_event WHERE tenant_id = $1 AND agent_id = $2 AND ($3::text IS NULL OR action = $3) AND ($4::text IS NULL OR created_at >= $4::timestamptz) AND ($5::text IS NULL OR created_at <= $5::timestamptz) AND ($6::timestamptz IS NULL OR (created_at, uuid) < ($6::timestamptz, $7::text)) ORDER BY created_at DESC, uuid DESC LIMIT $8";
 pub const SQL_COUNT_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID: &str =
     "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_audit_event WHERE tenant_id = $1 AND agent_id = $2 AND ($3::text IS NULL OR action = $3) AND ($4::text IS NULL OR created_at >= $4::timestamptz) AND ($5::text IS NULL OR created_at <= $5::timestamptz)";
 pub const SQL_INSERT_AGENT_COMPOSITION_SLOT: &str =
@@ -130,117 +130,11 @@ pub const SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY: &str =
     "SELECT id, uuid, tenant_id, organization_id, session_id, agent_id, owner_user_id, project_id, session_kind, entry_surface, source_module, source_context_kind, source_context_id, parent_session_id, forked_from_turn_id, title, title_source, status, item_count, last_item_sequence, total_input_tokens, total_output_tokens, idempotency_key, payload_hash, created_by, updated_by, version, created_at::text AS created_at, updated_at::text AS updated_at, last_item_at::text AS last_item_at, closed_at::text AS closed_at, archived_at::text AS archived_at, archived_by, deleted_at::text AS deleted_at, deleted_by, retention_until::text AS retention_until FROM ai_agent_session WHERE tenant_id = $1 AND organization_id = $2 AND owner_user_id = $3 AND idempotency_key = $4 LIMIT 1";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AGENT_SESSIONS: &str =
-    "SELECT s.id, s.uuid, s.tenant_id, s.organization_id, s.session_id, s.agent_id, s.owner_user_id, s.project_id, s.session_kind, s.entry_surface, s.source_module, s.source_context_kind, s.source_context_id, s.parent_session_id, s.forked_from_turn_id, s.title, s.title_source, s.status, s.item_count, s.last_item_sequence, s.total_input_tokens, s.total_output_tokens, s.idempotency_key, s.payload_hash, s.created_by, s.updated_by, s.version, s.created_at::text AS created_at, s.updated_at::text AS updated_at, s.last_item_at::text AS last_item_at, s.closed_at::text AS closed_at, s.archived_at::text AS archived_at, s.archived_by, s.deleted_at::text AS deleted_at, s.deleted_by, s.retention_until::text AS retention_until FROM ai_agent_session s WHERE s.tenant_id = $1 AND s.deleted_at IS NULL AND ($2::bigint IS NULL OR s.organization_id = $2) AND ($3::text IS NULL OR s.agent_id = $3) AND ($4::text IS NULL OR s.project_id = $4) AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM ai_agent_project p WHERE p.tenant_id = s.tenant_id AND p.organization_id = s.organization_id AND p.project_id = s.project_id AND p.workspace_id = $5 AND p.deleted_at IS NULL)) AND ($6::bigint IS NULL OR s.owner_user_id = $6) AND ($7::smallint IS NULL OR s.status = $7) AND ($8::bool = true OR s.status != 3) ORDER BY s.updated_at DESC, s.id DESC LIMIT $9 OFFSET $10";
+    "SELECT s.id, s.uuid, s.tenant_id, s.organization_id, s.session_id, s.agent_id, s.owner_user_id, s.project_id, s.session_kind, s.entry_surface, s.source_module, s.source_context_kind, s.source_context_id, s.parent_session_id, s.forked_from_turn_id, s.title, s.title_source, s.status, s.item_count, s.last_item_sequence, s.total_input_tokens, s.total_output_tokens, s.idempotency_key, s.payload_hash, s.created_by, s.updated_by, s.version, s.created_at::text AS created_at, s.updated_at::text AS updated_at, s.last_item_at::text AS last_item_at, s.closed_at::text AS closed_at, s.archived_at::text AS archived_at, s.archived_by, s.deleted_at::text AS deleted_at, s.deleted_by, s.retention_until::text AS retention_until FROM ai_agent_session s WHERE s.tenant_id = $1 AND s.deleted_at IS NULL AND ($2::bigint IS NULL OR s.organization_id = $2) AND ($3::text IS NULL OR s.agent_id = $3) AND ($4::text IS NULL OR s.project_id = $4) AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM ai_agent_project p WHERE p.tenant_id = s.tenant_id AND p.organization_id = s.organization_id AND p.project_id = s.project_id AND p.workspace_id = $5 AND p.deleted_at IS NULL)) AND ($6::bigint IS NULL OR s.owner_user_id = $6) AND ($7::smallint IS NULL OR s.status = $7) AND ($8::bool = true OR s.status != 3) AND ($9::timestamptz IS NULL OR (s.updated_at, s.id) < ($9::timestamptz, $10::bigint)) ORDER BY s.updated_at DESC, s.id DESC LIMIT $11";
 #[cfg(feature = "postgres-sync")]
-pub const SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS: &str = r#"WITH activity AS (
-        SELECT s.*,
-               GREATEST(
-                   s.updated_at,
-                   COALESCE(turn_activity.updated_at, s.updated_at),
-                   COALESCE(interaction_activity.updated_at, s.updated_at),
-                   COALESCE(binding_activity.updated_at, s.updated_at),
-                   COALESCE(session_user_state.updated_at, s.updated_at)
-               ) AS activity_at,
-               CASE
-                   WHEN session_user_state.updated_at IS NOT NULL
-                        AND session_user_state.updated_at >= s.updated_at
-                        AND session_user_state.updated_at >= COALESCE(turn_activity.updated_at, s.updated_at)
-                        AND session_user_state.updated_at >= COALESCE(interaction_activity.updated_at, s.updated_at)
-                        AND session_user_state.updated_at >= COALESCE(binding_activity.updated_at, s.updated_at)
-                       THEN 'user_state'
-                   WHEN interaction_activity.updated_at IS NOT NULL
-                        AND interaction_activity.updated_at >= s.updated_at
-                        AND interaction_activity.updated_at >= COALESCE(turn_activity.updated_at, s.updated_at)
-                        AND interaction_activity.updated_at >= COALESCE(binding_activity.updated_at, s.updated_at)
-                        AND interaction_activity.updated_at >= COALESCE(session_user_state.updated_at, s.updated_at)
-                       THEN 'interaction'
-                   WHEN turn_activity.updated_at IS NOT NULL
-                        AND turn_activity.updated_at >= s.updated_at
-                        AND turn_activity.updated_at >= COALESCE(binding_activity.updated_at, s.updated_at)
-                        AND turn_activity.updated_at >= COALESCE(session_user_state.updated_at, s.updated_at)
-                       THEN 'turn'
-                   WHEN binding_activity.updated_at IS NOT NULL
-                        AND binding_activity.updated_at >= s.updated_at
-                        AND binding_activity.updated_at >= COALESCE(session_user_state.updated_at, s.updated_at)
-                       THEN 'runtime_binding'
-                   ELSE 'session'
-               END AS activity_source,
-               row_to_json(latest_turn)::text AS latest_turn_json,
-               row_to_json(pending_interaction)::text AS pending_interaction_json,
-               row_to_json(current_runtime_binding)::text AS current_runtime_binding_json,
-               row_to_json(binding_activity)::text AS latest_runtime_binding_json,
-               row_to_json(session_user_state)::text AS user_state_json,
-               interaction_activity.interaction_id AS latest_interaction_id,
-               interaction_activity.version AS latest_interaction_version
+pub const SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS: &str = r#"WITH page AS (
+        SELECT s.*
         FROM ai_agent_session s
-        LEFT JOIN LATERAL (
-            SELECT turn_row.*
-            FROM ai_agent_turn turn_row
-            WHERE turn_row.tenant_id = s.tenant_id
-              AND turn_row.organization_id = s.organization_id
-              AND turn_row.session_id = s.session_id
-            ORDER BY turn_row.id DESC
-            LIMIT 1
-        ) latest_turn ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT turn_row.updated_at
-            FROM ai_agent_turn turn_row
-            WHERE turn_row.tenant_id = s.tenant_id
-              AND turn_row.organization_id = s.organization_id
-              AND turn_row.session_id = s.session_id
-            ORDER BY turn_row.updated_at DESC, turn_row.id DESC
-            LIMIT 1
-        ) turn_activity ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT interaction_row.interaction_id, interaction_row.updated_at, interaction_row.version
-            FROM ai_agent_interaction interaction_row
-            WHERE interaction_row.tenant_id = s.tenant_id
-              AND interaction_row.organization_id = s.organization_id
-              AND interaction_row.session_id = s.session_id
-            ORDER BY interaction_row.updated_at DESC, interaction_row.id DESC
-            LIMIT 1
-        ) interaction_activity ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT interaction_row.*
-            FROM ai_agent_interaction interaction_row
-            WHERE interaction_row.tenant_id = s.tenant_id
-              AND interaction_row.organization_id = s.organization_id
-              AND interaction_row.session_id = s.session_id
-              AND interaction_row.status = 0
-            ORDER BY interaction_row.kind ASC, interaction_row.updated_at DESC, interaction_row.id DESC
-            LIMIT 1
-        ) pending_interaction ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT binding_row.*
-            FROM ai_agent_session_runtime_binding binding_row
-            WHERE binding_row.tenant_id = s.tenant_id
-              AND binding_row.organization_id = s.organization_id
-              AND binding_row.session_id = s.session_id
-            ORDER BY binding_row.updated_at DESC, binding_row.id DESC
-            LIMIT 1
-        ) binding_activity ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT binding_row.*
-            FROM ai_agent_session_runtime_binding binding_row
-            WHERE binding_row.tenant_id = s.tenant_id
-              AND binding_row.organization_id = s.organization_id
-              AND binding_row.session_id = s.session_id
-              AND binding_row.is_current = TRUE
-              AND binding_row.status = 0
-            ORDER BY binding_row.updated_at DESC, binding_row.id DESC
-            LIMIT 1
-        ) current_runtime_binding ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT user_state_row.*
-            FROM ai_agent_resource_user_state user_state_row
-            WHERE user_state_row.tenant_id = s.tenant_id
-              AND user_state_row.organization_id = s.organization_id
-              AND user_state_row.user_id = s.owner_user_id
-              AND user_state_row.resource_type = 0
-              AND user_state_row.resource_id = s.session_id
-            ORDER BY user_state_row.updated_at DESC, user_state_row.id DESC
-            LIMIT 1
-        ) session_user_state ON TRUE
         WHERE s.tenant_id = $1
           AND s.organization_id = $2
           AND s.owner_user_id = $3
@@ -255,6 +149,113 @@ pub const SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS: &str = r#"WITH activity AS (
                 AND project_scope.workspace_id = $6
                 AND project_scope.deleted_at IS NULL
           ))
+          AND ($7::timestamptz IS NULL
+               OR (s.activity_at, s.id) < ($7::timestamptz, $8::bigint))
+        ORDER BY s.activity_at DESC, s.id DESC
+        LIMIT $9
+    ),
+    activity AS (
+        SELECT page.*,
+               CASE
+                   WHEN session_user_state.updated_at IS NOT NULL
+                        AND session_user_state.updated_at >= page.updated_at
+                        AND session_user_state.updated_at >= COALESCE(turn_activity.updated_at, page.updated_at)
+                        AND session_user_state.updated_at >= COALESCE(interaction_activity.updated_at, page.updated_at)
+                        AND session_user_state.updated_at >= COALESCE(binding_activity.updated_at, page.updated_at)
+                       THEN 'user_state'
+                   WHEN interaction_activity.updated_at IS NOT NULL
+                        AND interaction_activity.updated_at >= page.updated_at
+                        AND interaction_activity.updated_at >= COALESCE(turn_activity.updated_at, page.updated_at)
+                        AND interaction_activity.updated_at >= COALESCE(binding_activity.updated_at, page.updated_at)
+                        AND interaction_activity.updated_at >= COALESCE(session_user_state.updated_at, page.updated_at)
+                       THEN 'interaction'
+                   WHEN turn_activity.updated_at IS NOT NULL
+                        AND turn_activity.updated_at >= page.updated_at
+                        AND turn_activity.updated_at >= COALESCE(binding_activity.updated_at, page.updated_at)
+                        AND turn_activity.updated_at >= COALESCE(session_user_state.updated_at, page.updated_at)
+                       THEN 'turn'
+                   WHEN binding_activity.updated_at IS NOT NULL
+                        AND binding_activity.updated_at >= page.updated_at
+                        AND binding_activity.updated_at >= COALESCE(session_user_state.updated_at, page.updated_at)
+                       THEN 'runtime_binding'
+                   ELSE 'session'
+               END AS activity_source,
+               row_to_json(latest_turn)::text AS latest_turn_json,
+               row_to_json(pending_interaction)::text AS pending_interaction_json,
+               row_to_json(current_runtime_binding)::text AS current_runtime_binding_json,
+               row_to_json(binding_activity)::text AS latest_runtime_binding_json,
+               row_to_json(session_user_state)::text AS user_state_json,
+               interaction_activity.interaction_id AS latest_interaction_id,
+               interaction_activity.version AS latest_interaction_version
+        FROM page
+        LEFT JOIN LATERAL (
+            SELECT turn_row.*
+            FROM ai_agent_turn turn_row
+            WHERE turn_row.tenant_id = page.tenant_id
+              AND turn_row.organization_id = page.organization_id
+              AND turn_row.session_id = page.session_id
+            ORDER BY turn_row.id DESC
+            LIMIT 1
+        ) latest_turn ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT turn_row.updated_at
+            FROM ai_agent_turn turn_row
+            WHERE turn_row.tenant_id = page.tenant_id
+              AND turn_row.organization_id = page.organization_id
+              AND turn_row.session_id = page.session_id
+            ORDER BY turn_row.updated_at DESC, turn_row.id DESC
+            LIMIT 1
+        ) turn_activity ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT interaction_row.interaction_id, interaction_row.updated_at, interaction_row.version
+            FROM ai_agent_interaction interaction_row
+            WHERE interaction_row.tenant_id = page.tenant_id
+              AND interaction_row.organization_id = page.organization_id
+              AND interaction_row.session_id = page.session_id
+            ORDER BY interaction_row.updated_at DESC, interaction_row.id DESC
+            LIMIT 1
+        ) interaction_activity ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT interaction_row.*
+            FROM ai_agent_interaction interaction_row
+            WHERE interaction_row.tenant_id = page.tenant_id
+              AND interaction_row.organization_id = page.organization_id
+              AND interaction_row.session_id = page.session_id
+              AND interaction_row.status = 0
+            ORDER BY interaction_row.kind ASC, interaction_row.updated_at DESC, interaction_row.id DESC
+            LIMIT 1
+        ) pending_interaction ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT binding_row.*
+            FROM ai_agent_session_runtime_binding binding_row
+            WHERE binding_row.tenant_id = page.tenant_id
+              AND binding_row.organization_id = page.organization_id
+              AND binding_row.session_id = page.session_id
+            ORDER BY binding_row.updated_at DESC, binding_row.id DESC
+            LIMIT 1
+        ) binding_activity ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT binding_row.*
+            FROM ai_agent_session_runtime_binding binding_row
+            WHERE binding_row.tenant_id = page.tenant_id
+              AND binding_row.organization_id = page.organization_id
+              AND binding_row.session_id = page.session_id
+              AND binding_row.is_current = TRUE
+              AND binding_row.status = 0
+            ORDER BY binding_row.updated_at DESC, binding_row.id DESC
+            LIMIT 1
+        ) current_runtime_binding ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT user_state_row.*
+            FROM ai_agent_resource_user_state user_state_row
+            WHERE user_state_row.tenant_id = page.tenant_id
+              AND user_state_row.organization_id = page.organization_id
+              AND user_state_row.user_id = page.owner_user_id
+              AND user_state_row.resource_type = 0
+              AND user_state_row.resource_id = page.session_id
+            ORDER BY user_state_row.updated_at DESC, user_state_row.id DESC
+            LIMIT 1
+        ) session_user_state ON TRUE
     )
     SELECT id, uuid, tenant_id, organization_id, session_id, agent_id, owner_user_id,
            project_id, session_kind, entry_surface, source_module, source_context_kind,
@@ -270,10 +271,7 @@ pub const SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS: &str = r#"WITH activity AS (
            latest_runtime_binding_json, user_state_json,
            latest_interaction_id, latest_interaction_version
     FROM activity
-    WHERE $7::timestamptz IS NULL
-       OR (activity_at, id) < ($7::timestamptz, $8::bigint)
-    ORDER BY activity_at DESC, id DESC
-    LIMIT $9"#;
+    ORDER BY activity_at DESC, id DESC"#;
 #[cfg(feature = "postgres-sync")]
 pub const SQL_COUNT_AGENT_SESSIONS: &str =
     "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_session s WHERE s.tenant_id = $1 AND s.deleted_at IS NULL AND ($2::bigint IS NULL OR s.organization_id = $2) AND ($3::text IS NULL OR s.agent_id = $3) AND ($4::text IS NULL OR s.project_id = $4) AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM ai_agent_project p WHERE p.tenant_id = s.tenant_id AND p.organization_id = s.organization_id AND p.project_id = s.project_id AND p.workspace_id = $5 AND p.deleted_at IS NULL)) AND ($6::bigint IS NULL OR s.owner_user_id = $6) AND ($7::smallint IS NULL OR s.status = $7) AND ($8::bool = true OR s.status != 3)";
@@ -370,7 +368,7 @@ pub const SQL_SELECT_AGENT_TURN: &str =
     "SELECT id, uuid, tenant_id, organization_id, turn_id, session_id, agent_id, owner_user_id, runtime_binding_id, client_request_id, idempotency_key, payload_hash, request_item_id, response_item_id, turn_mode, status, requested_model_id, provider_binding_id, model_id, provider_id, input_tokens, output_tokens, cached_tokens, finish_reason, error_code, error_detail, trace_id, attempt_count, max_attempts, next_retry_at::text AS next_retry_at, available_at::text AS available_at, lease_owner, lease_token, lease_expires_at::text AS lease_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, started_at::text AS started_at, completed_at::text AS completed_at, cancel_requested_at::text AS cancel_requested_at, cancelled_at::text AS cancelled_at, retention_until::text AS retention_until FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND turn_id = $3 LIMIT 1";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AGENT_TURNS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, turn_id, session_id, agent_id, owner_user_id, runtime_binding_id, client_request_id, idempotency_key, payload_hash, request_item_id, response_item_id, turn_mode, status, requested_model_id, provider_binding_id, model_id, provider_id, input_tokens, output_tokens, cached_tokens, finish_reason, error_code, error_detail, trace_id, attempt_count, max_attempts, next_retry_at::text AS next_retry_at, available_at::text AS available_at, lease_owner, lease_token, lease_expires_at::text AS lease_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, started_at::text AS started_at, completed_at::text AS completed_at, cancel_requested_at::text AS cancel_requested_at, cancelled_at::text AS cancelled_at, retention_until::text AS retention_until FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND ($4::smallint IS NULL OR status = $4) ORDER BY created_at DESC, id DESC LIMIT $5 OFFSET $6";
+    "SELECT id, uuid, tenant_id, organization_id, turn_id, session_id, agent_id, owner_user_id, runtime_binding_id, client_request_id, idempotency_key, payload_hash, request_item_id, response_item_id, turn_mode, status, requested_model_id, provider_binding_id, model_id, provider_id, input_tokens, output_tokens, cached_tokens, finish_reason, error_code, error_detail, trace_id, attempt_count, max_attempts, next_retry_at::text AS next_retry_at, available_at::text AS available_at, lease_owner, lease_token, lease_expires_at::text AS lease_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, started_at::text AS started_at, completed_at::text AS completed_at, cancel_requested_at::text AS cancel_requested_at, cancelled_at::text AS cancelled_at, retention_until::text AS retention_until FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND ($4::smallint IS NULL OR status = $4) AND ($5::timestamptz IS NULL OR (created_at, id) < ($5::timestamptz, $6::bigint)) ORDER BY created_at DESC, id DESC LIMIT $7";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_COUNT_AGENT_TURNS: &str =
     "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND ($4::smallint IS NULL OR status = $4)";
@@ -443,7 +441,7 @@ pub const SQL_SELECT_AGENT_INTERACTION: &str =
     "SELECT id, uuid, tenant_id, organization_id, session_id, turn_id, runtime_binding_id, interaction_id, provider_interaction_id, kind, status, prompt, options_json::text AS options_json, request_json::text AS request_json, resolution_json::text AS resolution_json, claim_owner, claim_token_hash, claim_expires_at::text AS claim_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, resolved_at::text AS resolved_at, retention_until::text AS retention_until FROM ai_agent_interaction WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND interaction_id = $4 LIMIT 1";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AGENT_INTERACTIONS: &str =
-    "SELECT id, uuid, tenant_id, organization_id, session_id, turn_id, runtime_binding_id, interaction_id, provider_interaction_id, kind, status, prompt, options_json::text AS options_json, request_json::text AS request_json, resolution_json::text AS resolution_json, claim_owner, claim_token_hash, claim_expires_at::text AS claim_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, resolved_at::text AS resolved_at, retention_until::text AS retention_until FROM ai_agent_interaction WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND ($4::smallint IS NULL OR status = $4) AND ($5::smallint IS NULL OR kind = $5) ORDER BY created_at DESC, id DESC LIMIT $6 OFFSET $7";
+    "SELECT id, uuid, tenant_id, organization_id, session_id, turn_id, runtime_binding_id, interaction_id, provider_interaction_id, kind, status, prompt, options_json::text AS options_json, request_json::text AS request_json, resolution_json::text AS resolution_json, claim_owner, claim_token_hash, claim_expires_at::text AS claim_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, resolved_at::text AS resolved_at, retention_until::text AS retention_until FROM ai_agent_interaction WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND ($4::smallint IS NULL OR status = $4) AND ($5::smallint IS NULL OR kind = $5) AND ($6::timestamptz IS NULL OR (created_at, id) < ($6::timestamptz, $7::bigint)) ORDER BY created_at DESC, id DESC LIMIT $8";
 #[cfg(feature = "postgres-sync")]
 pub const SQL_COUNT_AGENT_INTERACTIONS: &str =
     "SELECT COUNT(*)::bigint AS total_count FROM ai_agent_interaction WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND ($4::smallint IS NULL OR status = $4) AND ($5::smallint IS NULL OR kind = $5)";
@@ -461,3 +459,47 @@ pub const SQL_SELECT_AGENT_TASK: &str =
 #[cfg(feature = "postgres-sync")]
 pub const SQL_LIST_AGENT_TASKS: &str =
     "SELECT id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id, session_id, title, prompt, schedule_kind, cron_expression, timezone, scheduled_at::text AS scheduled_at, starts_at::text AS starts_at, ends_at::text AS ends_at, next_fire_at::text AS next_fire_at, misfire_policy, overlap_policy, max_concurrent_runs, max_catch_up_runs, max_attempts, retry_initial_delay_seconds, retry_max_delay_seconds, timeout_seconds, priority, status, generation, external_ref, metadata_json::text AS metadata_json, version, created_at::text AS created_at, updated_at::text AS updated_at, completed_at::text AS completed_at, paused_at::text AS paused_at, cancelled_at::text AS cancelled_at FROM ai_agent_task WHERE tenant_id = $1 AND organization_id = $2 AND ($3::text IS NULL OR agent_id = $3) AND ($4::bigint IS NULL OR owner_user_id = $4) AND ($5::smallint IS NULL OR status = $5) AND ($6::timestamptz IS NULL OR (updated_at, id) < ($6::timestamptz, $7::bigint)) ORDER BY updated_at DESC, id DESC LIMIT $8";
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT: &str = r#"
+SELECT
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task
+         WHERE status = 0 AND next_fire_at <= $1::timestamptz
+         LIMIT $2
+    ) bounded_due_tasks) AS due_tasks,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(next_fire_at))))::bigint,
+        0
+    ) FROM ai_agent_task
+      WHERE status = 0 AND next_fire_at <= $1::timestamptz), 0) AS materialization_lag_seconds,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task_run
+         WHERE status = 0 AND available_at <= $1::timestamptz
+         LIMIT $2
+    ) bounded_eligible_runs) AS eligible_runs,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(available_at))))::bigint,
+        0
+    ) FROM ai_agent_task_run
+      WHERE status = 0 AND available_at <= $1::timestamptz), 0) AS eligible_run_oldest_age_seconds,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task_run
+         WHERE status IN (1, 2) AND lease_expires_at >= $1::timestamptz
+         LIMIT $2
+    ) bounded_active_leases) AS active_leases,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_task_run WHERE status = 6 LIMIT $2
+    ) bounded_reconciling_runs) AS reconciling_runs,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(updated_at))))::bigint,
+        0
+    ) FROM ai_agent_task_run WHERE status = 6), 0) AS reconciliation_oldest_age_seconds,
+    (SELECT COUNT(*)::bigint FROM (
+        SELECT 1 FROM ai_agent_outbox_event WHERE status IN (0, 1, 3) LIMIT $2
+    ) bounded_pending_outbox_events) AS pending_outbox_events,
+    COALESCE((SELECT GREATEST(
+        FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - MIN(created_at))))::bigint,
+        0
+    ) FROM ai_agent_outbox_event WHERE status IN (0, 1, 3)), 0) AS outbox_oldest_age_seconds
+"#;

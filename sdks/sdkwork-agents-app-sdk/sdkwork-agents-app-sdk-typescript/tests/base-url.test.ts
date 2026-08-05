@@ -183,7 +183,7 @@ test('Agents App SDK exposes paginated interaction filters and single-item retri
   }
 
   assert.deepEqual(requestedUrls, [
-    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/interactions?page=1&page_size=20&kind=user_question&status=pending',
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/interactions?page_size=20&kind=user_question&status=pending',
     'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions/session-1/interactions/interaction-1',
   ]);
 });
@@ -271,9 +271,9 @@ test('Agents App SDK exposes distinct agent, project, and workspace session list
   }
 
   assert.deepEqual(requestedUrls, [
-    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions?page=2&page_size=50&project_id=project-filter&status=idle&include_archived=true',
-    'http://127.0.0.1:8095/app/v3/api/ai/projects/project-1/sessions?page=2&page_size=50&status=idle&include_archived=true',
-    'http://127.0.0.1:8095/app/v3/api/ai/workspaces/workspace-1/sessions?page=2&page_size=50&status=idle&include_archived=true',
+    'http://127.0.0.1:8095/app/v3/api/ai/agents/agent-1/sessions?page_size=50&project_id=project-filter&status=idle&include_archived=true',
+    'http://127.0.0.1:8095/app/v3/api/ai/projects/project-1/sessions?page_size=50&status=idle&include_archived=true',
+    'http://127.0.0.1:8095/app/v3/api/ai/workspaces/workspace-1/sessions?page_size=50&status=idle&include_archived=true',
   ]);
 });
 
@@ -330,7 +330,7 @@ test('Agents App SDK delivers named SSE delta frames before completion', async (
   try {
     const client = createAuthenticatedClient(APP_API_BASE_URL);
     const events = await client.ai.agents.turns.stream(
-      'agent.code-engine.codex',
+      'agent.agent-engine.codex',
       'session.stream-contract',
       body,
       { eventProtocol: 'kernel-v1', stream: true },

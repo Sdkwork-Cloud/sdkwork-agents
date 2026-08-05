@@ -666,7 +666,7 @@ async fn app_create_and_retrieve_agent_should_work() {
 }
 
 #[tokio::test]
-async fn app_code_engine_catalog_should_return_engines() {
+async fn app_agent_engine_catalog_should_return_engines() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
@@ -676,7 +676,7 @@ async fn app_code_engine_catalog_should_return_engines() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/app/v3/api/ai/code_engines")
+        .uri("/app/v3/api/ai/agent_engines")
         .body(Body::empty())
         .expect("request should be built");
 
@@ -696,7 +696,7 @@ async fn app_code_engine_catalog_should_return_engines() {
 }
 
 #[tokio::test]
-async fn app_project_session_should_materialize_canonical_code_engine_identity() {
+async fn app_project_session_should_materialize_canonical_agent_engine_identity() {
     let state = AgentHttpState::new(
         InMemoryAgentRepository::new(),
         InMemoryAgentAuditSink::default(),
@@ -710,7 +710,7 @@ async fn app_project_session_should_materialize_canonical_code_engine_identity()
         "/app/v3/api/ai/projects",
         json!({
             "projectId": project_id,
-            "name": "Canonical code engine session"
+            "name": "Canonical agent engine session"
         }),
         StatusCode::CREATED,
     )
@@ -779,7 +779,7 @@ async fn app_session_create_should_replay_by_idempotency_key() {
 
     let listed = get_json(
         &app,
-        &format!("{uri}?page=1&page_size=20&include_archived=false"),
+        &format!("{uri}?page_size=20&include_archived=false"),
         StatusCode::OK,
     )
     .await;
@@ -2045,15 +2045,14 @@ async fn agent_interactions_should_work_over_http() {
     .await;
 
     let list_uri = format!(
-        "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?kind=user_question&status=pending&page=1&page_size=1"
+        "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?kind=user_question&status=pending&page_size=1"
     );
     let list_response = get_json(&app, list_uri.as_str(), StatusCode::OK).await;
     assert_eq!(list_response["data"]["items"].as_array().unwrap().len(), 1);
     assert_eq!(list_response["data"]["items"][0]["kind"], "user_question");
     assert_eq!(list_response["data"]["items"][0]["status"], "pending");
-    assert_eq!(list_response["data"]["pageInfo"]["page"], 1);
     assert_eq!(list_response["data"]["pageInfo"]["pageSize"], 1);
-    assert_eq!(list_response["data"]["pageInfo"]["totalItems"], "1");
+    assert_eq!(list_response["data"]["pageInfo"]["hasMore"], false);
 
     for forbidden_query in [
         "pageSize=1",
@@ -2121,7 +2120,7 @@ async fn agent_interactions_should_work_over_http() {
     let pending_approval_response = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?kind=approval&status=pending&page=1&page_size=20"
+            "/app/v3/api/ai/agents/{agent_id}/sessions/{session_id}/interactions?kind=approval&status=pending&page_size=20"
         ),
         StatusCode::OK,
     )
@@ -2484,10 +2483,8 @@ async fn provider_bindings_should_apply_pagination_contract() {
         body_json["data"]["items"][0]["bindingId"],
         "binding.rig.alpha"
     );
-    assert_eq!(body_json["data"]["pageInfo"]["page"], 1);
     assert_eq!(body_json["data"]["pageInfo"]["pageSize"], 1);
     assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "2");
-    assert_eq!(body_json["data"]["pageInfo"]["totalPages"], 2);
 }
 
 #[tokio::test]
@@ -2939,10 +2936,8 @@ async fn list_should_apply_pagination_contract() {
         body_json["data"]["items"].as_array().map(|v| v.len()),
         Some(1)
     );
-    assert_eq!(body_json["data"]["pageInfo"]["page"], 1);
     assert_eq!(body_json["data"]["pageInfo"]["pageSize"], 1);
     assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "2");
-    assert_eq!(body_json["data"]["pageInfo"]["totalPages"], 2);
 }
 
 #[tokio::test]
@@ -2981,7 +2976,7 @@ async fn list_should_apply_search_query_filter() {
         .expect("items should be array");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["agentId"], "agent.search.beta");
-    assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "1");
+    assert_eq!(body_json["data"]["pageInfo"]["hasMore"], false);
 }
 
 #[tokio::test]
@@ -3551,7 +3546,7 @@ async fn backend_audit_events_should_return_recorded_items() {
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit/audit_events?page=1&page_size=10")
+        .uri("/backend/v3/api/ai/agents/agent.audit/audit_events?page_size=10")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
@@ -3570,7 +3565,7 @@ async fn backend_audit_events_should_return_recorded_items() {
         .as_array()
         .expect("items should be array");
     assert!(!items.is_empty(), "audit list should not be empty");
-    assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "2");
+    assert_eq!(body_json["data"]["pageInfo"]["hasMore"], false);
 }
 
 #[tokio::test]
@@ -3626,7 +3621,7 @@ async fn backend_audit_events_action_filter_should_work() {
         .expect("items should be array");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["eventType"], "agent.business.status_changed");
-    assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "1");
+    assert_eq!(body_json["data"]["pageInfo"]["hasMore"], false);
 }
 
 #[tokio::test]
@@ -3701,7 +3696,7 @@ async fn backend_audit_events_should_filter_provider_binding_actions() {
             "payload should include binding_id: {}",
             items[0]["payload"]
         );
-        assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "1");
+        assert_eq!(body_json["data"]["pageInfo"]["hasMore"], false);
     }
 }
 
@@ -3960,7 +3955,7 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
 
     let list_request = Request::builder()
         .method("GET")
-        .uri("/backend/v3/api/ai/agents/agent.audit.combo/audit_events?action=status_changed&from=2026-06-01T00:15:00Z&to=2026-06-01T00:35:00Z&page=1&page_size=1")
+        .uri("/backend/v3/api/ai/agents/agent.audit.combo/audit_events?action=status_changed&from=2026-06-01T00:15:00Z&to=2026-06-01T00:35:00Z&page_size=1")
         .body(Body::empty())
         .expect("request should be built");
     let list_response = app
@@ -3981,10 +3976,8 @@ async fn backend_audit_events_should_support_combined_filters_with_pagination() 
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["eventType"], "agent.business.status_changed");
     assert_eq!(items[0]["occurredAt"], "2026-06-01T00:30:00Z");
-    assert_eq!(body_json["data"]["pageInfo"]["page"], 1);
     assert_eq!(body_json["data"]["pageInfo"]["pageSize"], 1);
-    assert_eq!(body_json["data"]["pageInfo"]["totalItems"], "2");
-    assert_eq!(body_json["data"]["pageInfo"]["totalPages"], 2);
+    assert_eq!(body_json["data"]["pageInfo"]["hasMore"], true);
 }
 
 #[tokio::test]
@@ -4913,7 +4906,7 @@ async fn app_session_should_support_flat_create_rename_project_move_filter_and_d
     let listed = get_json(
         &app,
         &format!(
-            "/app/v3/api/ai/agents/{agent_id}/sessions?project_id={project_id}&page=1&page_size=20"
+            "/app/v3/api/ai/agents/{agent_id}/sessions?project_id={project_id}&page_size=20"
         ),
         StatusCode::OK,
     )

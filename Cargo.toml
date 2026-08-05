@@ -56,6 +56,8 @@ sdkwork-agent-provider-gemini-cli = { path = "../sdkwork-kernel/agent-providers/
 sdkwork-agent-provider-opencode = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-opencode" }
 sdkwork-agent-provider-openclaw = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-openclaw" }
 sdkwork-agent-provider-hermes = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-hermes" }
+sdkwork-agent-provider-mimo-code = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-mimo-code" }
+sdkwork-agent-provider-rig = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-rig" }
 
 # Platform frameworks
 sdkwork-web-core = { path = "../sdkwork-web-framework/crates/sdkwork-web-core" }

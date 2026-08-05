@@ -42,8 +42,7 @@ test("agents Rust HTTP adapter separates request context, middleware, and test h
 
   assert.doesNotMatch(rootHttp, /pub struct AgentRequestContext\b/);
   assert.doesNotMatch(rootHttp, /pub\(crate\) struct RequestScope\b/);
-  assert.doesNotMatch(rootHttp, /async fn inject_gateway_agent_context\b/);
-  assert.doesNotMatch(rootHttp, /async fn trace_request\b/);
+  assert.doesNotMatch(rootHttp, /async fn reject_client_scope_selectors\b/);
   assert.doesNotMatch(rootHttp, /pub mod testing\s*\{/);
 
   const context = read("crates/sdkwork-intelligence-agents-service/src/http/context.rs");
@@ -52,11 +51,12 @@ test("agents Rust HTTP adapter separates request context, middleware, and test h
 
   assert.match(context, /pub struct AgentRequestContext\b/);
   assert.match(context, /pub\(crate\) struct RequestScope\b/);
-  assert.match(context, /fn required_header_any\b/);
-  assert.match(middleware, /async fn inject_gateway_agent_context\b/);
-  assert.match(middleware, /async fn trace_request\b/);
-  assert.match(middleware, /pub\(crate\) fn with_gateway_trusted_context\b/);
+  assert.match(context, /pub\(crate\) fn owner_scope\b/);
+  assert.match(context, /pub\(crate\) fn tenant_id_u64\b/);
+  assert.match(middleware, /async fn reject_client_scope_selectors\b/);
+  assert.match(middleware, /const CLIENT_SCOPE_QUERY_KEYS\b/);
   assert.match(testing, /pub fn test_web_context\b/);
+  assert.match(testing, /WebRequestContext\b/);
 });
 
 test("agents Postgres persistence keeps SQL constants in a focused module", () => {

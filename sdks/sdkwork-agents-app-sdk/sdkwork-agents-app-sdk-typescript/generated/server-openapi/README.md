@@ -27,7 +27,7 @@ client.setAuthToken('your-auth-token');
 client.setAccessToken('your-access-token');
 
 // Use the SDK
-const result = await client.ai.agents.codeEngines.list();
+const result = await client.ai.agents.agentEngines.list();
 ```
 
 ## Authentication
@@ -61,8 +61,8 @@ const client = new SdkworkAppClient({
 ### ai
 
 ```typescript
-// List canonical code-engine catalog
-const result = await client.ai.agents.codeEngines.list();
+// List canonical agent-engine catalog
+const result = await client.ai.agents.agentEngines.list();
 ```
 
 ## Error Handling
@@ -71,7 +71,7 @@ const result = await client.ai.agents.codeEngines.list();
 import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-app-sdk';
 
 try {
-  const result = await client.ai.agents.codeEngines.list();
+  const result = await client.ai.agents.agentEngines.list();
 } catch (error) {
   if (error instanceof AuthenticationError) {
     console.error('Authentication failed:', error.message);

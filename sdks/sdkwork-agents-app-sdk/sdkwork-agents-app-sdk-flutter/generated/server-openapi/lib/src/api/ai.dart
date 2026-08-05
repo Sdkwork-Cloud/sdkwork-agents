@@ -321,9 +321,9 @@ class AiApi {
   }
 
   /// List agent sessions for one workspace
-  Future<AgentSessionListResponse?> agentsWorkspaceSessionsList(String workspaceId, [int? page, int? pageSize, String? status, bool? includeArchived]) async {
+  Future<AgentSessionListResponse?> agentsWorkspaceSessionsList(String workspaceId, [String? cursor, int? pageSize, String? status, bool? includeArchived]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
       QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null)
@@ -336,9 +336,9 @@ class AiApi {
   }
 
   /// List agent sessions for one project
-  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [int? page, int? pageSize, String? status, bool? includeArchived]) async {
+  Future<AgentSessionListResponse?> agentsProjectSessionsList(String projectId, [String? cursor, int? pageSize, String? status, bool? includeArchived]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
       QueryParameterSpec('include_archived', includeArchived, 'form', true, false, null)
@@ -395,9 +395,9 @@ class AiApi {
   }
 
   /// List agent sessions for one managed agent
-  Future<AgentSessionListResponse?> agentsSessionsList(String agentId, [int? page, int? pageSize, String? projectId, String? status, bool? includeArchived]) async {
+  Future<AgentSessionListResponse?> agentsSessionsList(String agentId, [String? cursor, int? pageSize, String? projectId, String? status, bool? includeArchived]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('project_id', projectId, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null),
@@ -547,9 +547,9 @@ class AiApi {
   }
 
   /// List durable turns for one agent session
-  Future<AgentTurnListResponse?> agentsTurnsList(String agentId, String sessionId, [int? page, int? pageSize]) async {
+  Future<AgentTurnListResponse?> agentsTurnsList(String agentId, String sessionId, [String? cursor, int? pageSize]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null)
     ]);
     final response = await _client.get(ApiPaths.appendQueryString(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/sessions/${serializePathParameter(sessionId, const PathParameterSpec('sessionId', 'simple', false))}/turns'), query));
@@ -680,9 +680,9 @@ class AiApi {
   }
 
   /// List durable interactions for one agent session
-  Future<AgentInteractionListResponse?> agentsInteractionsList(String agentId, String sessionId, [int? page, int? pageSize, String? kind, String? status]) async {
+  Future<AgentInteractionListResponse?> agentsInteractionsList(String agentId, String sessionId, [String? cursor, int? pageSize, String? kind, String? status]) async {
     final query = buildQueryString([
-      QueryParameterSpec('page', page, 'form', true, false, null),
+      QueryParameterSpec('cursor', cursor, 'form', true, false, null),
       QueryParameterSpec('page_size', pageSize, 'form', true, false, null),
       QueryParameterSpec('kind', kind, 'form', true, false, null),
       QueryParameterSpec('status', status, 'form', true, false, null)
@@ -1054,12 +1054,12 @@ class AiApi {
     await _client.delete(ApiPaths.appPath('/ai/agents/${serializePathParameter(agentId, const PathParameterSpec('agentId', 'simple', false))}/composition_slots/${serializePathParameter(slotId, const PathParameterSpec('slotId', 'simple', false))}'));
   }
 
-  /// List canonical code-engine catalog
-  Future<CodeEngineCatalogListResponse?> agentsCodeEnginesList() async {
-    final response = await _client.get(ApiPaths.appPath('/ai/code_engines'));
+  /// List canonical agent-engine catalog
+  Future<AgentEngineCatalogListResponse?> agentsEnginesList() async {
+    final response = await _client.get(ApiPaths.appPath('/ai/agent_engines'));
     return (() {
       final map = sdkworkResponseAsMap(response);
-      return map == null ? null : CodeEngineCatalogListResponse.fromJson(map);
+      return map == null ? null : AgentEngineCatalogListResponse.fromJson(map);
     })();
   }
 

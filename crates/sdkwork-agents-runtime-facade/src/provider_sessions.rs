@@ -6,7 +6,7 @@ use sdkwork_agent_provider_core::{
     provider_session_path_basename,
 };
 
-use crate::code_engines::CodeEngineSlot;
+use crate::agent_engines::AgentEngineSlot;
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 
 /// Prevent a corrupt provider history directory from retaining an unbounded
@@ -176,7 +176,7 @@ fn metadata_bool(session: &AgentSession, key: &str, fallback: bool) -> bool {
 }
 
 pub(crate) fn discover_provider_sessions(
-    slots: &HashMap<String, CodeEngineSlot>,
+    slots: &HashMap<String, AgentEngineSlot>,
     selector: &ProviderSessionInventorySelector,
 ) -> RuntimeFacadeResult<ProviderSessionInventorySnapshot> {
     discover_provider_sessions_with(
@@ -189,11 +189,11 @@ pub(crate) fn discover_provider_sessions(
                 .into_iter()
                 .next()
                 .ok_or_else(|| {
-                    format!("code engine {engine_key} did not publish a model provider")
+                    format!("agent engine {engine_key} did not publish a model provider")
                 })?;
             let agent_id =
-                crate::code_engines::code_engine_agent_id(engine_key).ok_or_else(|| {
-                    format!("code engine {engine_key} did not publish an agent identity")
+                crate::agent_engines::agent_engine_agent_id(engine_key).ok_or_else(|| {
+                    format!("agent engine {engine_key} did not publish an agent identity")
                 })?;
             Ok((
                 agent_id.to_string(),
@@ -205,13 +205,13 @@ pub(crate) fn discover_provider_sessions(
 }
 
 fn discover_provider_sessions_with(
-    slots: &HashMap<String, CodeEngineSlot>,
+    slots: &HashMap<String, AgentEngineSlot>,
     selector: &ProviderSessionInventorySelector,
     mut list_sessions: impl FnMut(
         &str,
-        &CodeEngineSlot,
+        &AgentEngineSlot,
     ) -> sdkwork_agent_kernel::KernelResult<Vec<AgentSession>>,
-    mut resolve_identity: impl FnMut(&str, &CodeEngineSlot) -> Result<(String, String, String), String>,
+    mut resolve_identity: impl FnMut(&str, &AgentEngineSlot) -> Result<(String, String, String), String>,
 ) -> RuntimeFacadeResult<ProviderSessionInventorySnapshot> {
     let mut candidates = Vec::new();
     let mut successful_engine_keys = Vec::new();
@@ -325,7 +325,7 @@ fn select_top_level_provider_sessions(
 }
 
 pub(crate) fn load_provider_session_messages(
-    slots: &HashMap<String, CodeEngineSlot>,
+    slots: &HashMap<String, AgentEngineSlot>,
     engine_key: &str,
     provider_session_id: &str,
 ) -> RuntimeFacadeResult<Vec<AgentMessage>> {
@@ -333,7 +333,7 @@ pub(crate) fn load_provider_session_messages(
 }
 
 pub(crate) fn load_provider_session_messages_for_directory(
-    slots: &HashMap<String, CodeEngineSlot>,
+    slots: &HashMap<String, AgentEngineSlot>,
     engine_key: &str,
     provider_session_id: &str,
     working_directory: Option<&str>,
@@ -356,7 +356,7 @@ pub(crate) fn load_provider_session_messages_for_directory(
 }
 
 pub(crate) fn load_provider_session_children(
-    slots: &HashMap<String, CodeEngineSlot>,
+    slots: &HashMap<String, AgentEngineSlot>,
     engine_key: &str,
     provider_session_id: &str,
     working_directory: Option<&str>,
@@ -442,7 +442,7 @@ fn resolve_selected_cwd(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_engines::bootstrap_code_engine;
+    use crate::agent_engines::bootstrap_agent_engine;
 
     fn item(engine: &str, session_id: &str, cwd: &str) -> ProviderSessionInventoryItem {
         let session = AgentSession::new(session_id).with_cwd(cwd);
@@ -562,7 +562,7 @@ mod tests {
         let mut slots = HashMap::new();
         slots.insert(
             "gemini".to_string(),
-            bootstrap_code_engine("gemini").expect("Gemini bootstrap"),
+            bootstrap_agent_engine("gemini").expect("Gemini bootstrap"),
         );
 
         load_provider_session_messages(&slots, "gemini", "session-does-not-exist")
@@ -574,11 +574,11 @@ mod tests {
         let mut slots = HashMap::new();
         slots.insert(
             "codex".to_string(),
-            bootstrap_code_engine("codex").expect("Codex bootstrap"),
+            bootstrap_agent_engine("codex").expect("Codex bootstrap"),
         );
         slots.insert(
             "gemini".to_string(),
-            bootstrap_code_engine("gemini").expect("Gemini bootstrap"),
+            bootstrap_agent_engine("gemini").expect("Gemini bootstrap"),
         );
 
         let snapshot = discover_provider_sessions_with(
@@ -606,7 +606,7 @@ mod tests {
                     .next()
                     .expect("fixture model descriptor");
                 Ok((
-                    crate::code_engines::code_engine_agent_id(engine_key)
+                    crate::agent_engines::agent_engine_agent_id(engine_key)
                         .expect("fixture agent id")
                         .to_string(),
                     default_model.provider_id,
@@ -629,7 +629,7 @@ mod tests {
         let mut slots = HashMap::new();
         slots.insert(
             "codex".to_string(),
-            bootstrap_code_engine("codex").expect("Codex bootstrap"),
+            bootstrap_agent_engine("codex").expect("Codex bootstrap"),
         );
 
         let snapshot = discover_provider_sessions_with(
@@ -646,7 +646,7 @@ mod tests {
             },
             |engine_key, _| {
                 Err(format!(
-                    "code engine {engine_key} did not publish a model provider"
+                    "agent engine {engine_key} did not publish a model provider"
                 ))
             },
         )
@@ -664,7 +664,7 @@ mod tests {
         let mut slots = HashMap::new();
         slots.insert(
             "codex".to_string(),
-            bootstrap_code_engine("codex").expect("Codex bootstrap"),
+            bootstrap_agent_engine("codex").expect("Codex bootstrap"),
         );
 
         let snapshot = discover_provider_sessions_with(
@@ -682,7 +682,7 @@ mod tests {
                     .next()
                     .expect("fixture model descriptor");
                 Ok((
-                    crate::code_engines::code_engine_agent_id(engine_key)
+                    crate::agent_engines::agent_engine_agent_id(engine_key)
                         .expect("fixture agent id")
                         .to_string(),
                     default_model.provider_id,

@@ -157,8 +157,15 @@ export function AgentsTokenPlanRedeemModal({ isOpen, onClose }: SdkworkSubscript
     setError('');
     try {
       const result = await service.redeem(code.trim());
+      // Each benefit kind reports its own granted quantity: token bank and
+      // cash credit the granted amount, points credit granted points, and a
+      // subscription grants the total quota.
       setGrantAmount(
-        result.benefitKind === 'token_bank_credit' ? result.grantAmount : result.totalQuota,
+        result.benefitKind === 'points_credit'
+          ? result.grantPoints
+          : result.benefitKind === 'subscription'
+            ? result.totalQuota
+            : result.grantAmount,
       );
       setCode('');
     } catch (reason) {
