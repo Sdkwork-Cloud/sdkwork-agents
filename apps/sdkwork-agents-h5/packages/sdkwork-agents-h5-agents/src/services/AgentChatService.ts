@@ -6,7 +6,7 @@ import {
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-h5-core/sdk/agentsAppSdkClient";
 import { sha256Hash, uuid } from "@sdkwork/utils";
-import { toOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-h5-core/sdk/pagination";
+import { MAX_LIST_PAGE_SIZE, toOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-h5-core/sdk/pagination";
 
 export interface ChatMessage {
   id: string;
@@ -119,10 +119,10 @@ export class AgentChatService {
   async listMessagesPage(
     agentId: string,
     sessionId: string,
-    page = 1,
+    cursor?: string,
   ): Promise<ChatMessageListPage> {
     const response = await this.getClient().ai.agents.sessionItems.list(agentId, sessionId, {
-      page,
+      cursor,
       pageSize: SESSION_ITEM_PAGE_SIZE,
     });
     return {
@@ -133,12 +133,15 @@ export class AgentChatService {
 
   /** Load the newest transcript window (last offset page when history spans multiple pages). */
   async loadRecentMessages(agentId: string, sessionId: string): Promise<ChatMessageListPage> {
-    const probe = await this.listMessagesPage(agentId, sessionId, 1);
-    const targetPage = probe.pageInfo.totalPages > 0 ? probe.pageInfo.totalPages : 1;
-    if (targetPage === 1) {
-      return probe;
+    let page = await this.listMessagesPage(agentId, sessionId);
+    for (
+      let guard = 0;
+      guard < MAX_LIST_PAGE_SIZE && page.pageInfo.hasMore && page.pageInfo.nextCursor;
+      guard += 1
+    ) {
+      page = await this.listMessagesPage(agentId, sessionId, page.pageInfo.nextCursor);
     }
-    return this.listMessagesPage(agentId, sessionId, targetPage);
+    return page;
   }
 
   async listMessages(agentId: string, sessionId: string): Promise<ChatMessage[]> {

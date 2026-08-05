@@ -8,7 +8,7 @@ interface CanvasCreativeInputContainerProps {
   nodes: CanvasNode[];
   onClearSelection: () => void;
   triggerNodeGeneration: (id: string, customPrompt?: string, customSettings?: any) => void;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   pan: { x: number; y: number };
   zoom: number;
   saveHistory: () => void;
@@ -144,7 +144,7 @@ export const CanvasCreativeInputContainer: React.FC<CanvasCreativeInputContainer
         <div className="flex items-center justify-between px-4 py-1.5 bg-[#121214]/90 backdrop-blur-md border border-cyan-500/30 rounded-xl text-xs text-cyan-400 font-semibold shadow-lg select-none animate-in fade-in slide-in-from-bottom-1 duration-150">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>{nodeTitles[selectedNode.type] || '📝 正在编辑：画布节点'} (ID: {selectedNode.id})</span>
+            <span>{nodeTitles[selectedNode.type as keyof typeof nodeTitles] || '📝 正在编辑：画布节点'} (ID: {selectedNode.id})</span>
           </div>
           <button 
             onClick={onClearSelection}

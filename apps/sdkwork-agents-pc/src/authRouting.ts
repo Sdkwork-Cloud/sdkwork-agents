@@ -19,7 +19,7 @@ export function isSessionReady(session: SdkworkChatSession | null): boolean {
     && context.authLevel
     && context.deploymentMode
     && context.environment
-    && (context.sessionId || session.sessionId)
+    && (context.sessionId || session?.sessionId)
     && context.tenantId
     && context.userId,
   );

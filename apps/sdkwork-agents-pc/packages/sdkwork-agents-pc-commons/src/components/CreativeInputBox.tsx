@@ -211,7 +211,7 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
       purpose: 'agent-creative-audio',
       resourceId: uploadResourceId,
     }).then((media) => {
-      setUploadedAudioName(media.fileName);
+      setUploadedAudioName(media.fileName ?? null);
       setUploadedAudioResource(media);
     }).catch((error) => {
       console.error('Creative audio Drive upload failed', error);
@@ -239,7 +239,7 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
       resourceId: uploadResourceId,
     }))).then((uploaded) => {
       setUploadedImageResources((previous) => [...previous, ...uploaded]);
-      setUploadedImages((previous) => [...previous, ...uploaded.map((media) => media.url)]);
+      setUploadedImages((previous) => [...previous, ...uploaded.map((media) => media.url ?? '')]);
     }).catch((error) => {
       console.error('Creative image Drive upload failed', error);
       setUploadError('图片上传失败，请检查 Drive 服务后重试');
@@ -340,7 +340,7 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
               purpose: 'agent-creative-image',
               resourceId: uploadResourceId,
             }).then((media) => {
-              setCharacterImage(media.url);
+              setCharacterImage(media.url ?? '');
               setCharacterImageResource(media);
             }).catch((error) => {
               console.error('Character image Drive upload failed', error);
@@ -363,7 +363,7 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
               purpose: 'agent-creative-video',
               resourceId: uploadResourceId,
             }).then((media) => {
-              setUploadedMotionVideo({ name: media.fileName, url: media.url, resource: media });
+              setUploadedMotionVideo({ name: media.fileName ?? '', url: media.url ?? '', resource: media });
               setSelectedTemplate(null);
             }).catch((error) => {
               console.error('Motion video Drive upload failed', error);

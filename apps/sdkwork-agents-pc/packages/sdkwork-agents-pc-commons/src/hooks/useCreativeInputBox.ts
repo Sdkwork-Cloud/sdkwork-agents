@@ -144,7 +144,7 @@ export function useCreativeInputBox(
   const [agentAutoMatch, setAgentAutoMatch] = useState(true);
   const [agentSelectedModels, setAgentSelectedModels] = useState<string[]>(['img_5_lite', 'img_4_7']);
 
-  const getDropdownPlacement = (btnRef: React.RefObject<HTMLDivElement>, dropdownHeight: number) => {
+  const getDropdownPlacement = (btnRef: React.RefObject<HTMLDivElement | null>, dropdownHeight: number) => {
     if (!btnRef.current) return 'top';
     const rect = btnRef.current.getBoundingClientRect();
     if (window.innerHeight - rect.bottom > dropdownHeight + 20) {

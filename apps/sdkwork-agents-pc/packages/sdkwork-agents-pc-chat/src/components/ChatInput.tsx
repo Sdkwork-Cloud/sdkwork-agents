@@ -8,8 +8,8 @@ interface ChatInputProps {
   setInput: (value: string) => void;
   selectedImages: string[];
   isGenerating: boolean;
-  textareaRef: React.RefObject<HTMLTextAreaElement>;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleRemoveImage: (index: number) => void;
   handleSend: () => void;

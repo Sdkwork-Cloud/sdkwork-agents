@@ -2651,13 +2651,13 @@ export function useCanvasLogic() {
         
         setTimeout(() => {
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          importedNodes.forEach(node => {
+          importedNodes.forEach((node: { x: number; y: number; width?: number; height?: number }) => {
             minX = Math.min(minX, node.x);
             minY = Math.min(minY, node.y);
             maxX = Math.max(maxX, node.x + (node.width || 320));
             maxY = Math.max(maxY, node.y + (node.height || 300));
           });
-          importedGroups.forEach(group => {
+          importedGroups.forEach((group: { x: number; y: number; width?: number; height?: number }) => {
             minX = Math.min(minX, group.x);
             minY = Math.min(minY, group.y);
             maxX = Math.max(maxX, group.x + (group.width || 400));

@@ -1,4 +1,4 @@
-export { agentService } from './AgentService';
+export { agentService, parseAgentCatalogSnapshot } from './AgentService';
 export { agentChatService } from './AgentChatService';
 export { agentProjectService } from './AgentProjectService';
 export type {

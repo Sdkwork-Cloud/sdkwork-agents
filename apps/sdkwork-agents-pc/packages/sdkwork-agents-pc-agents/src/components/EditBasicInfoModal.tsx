@@ -51,8 +51,8 @@ export const EditBasicInfoModal: React.FC<EditBasicInfoModalProps> = ({
     setUploadingAvatar(true);
     void onUploadAvatar(file)
       .then((media) => {
-        setTempAvatar(media.uri);
-        setTempAvatarPreview(media.url);
+        setTempAvatar(media.uri ?? '');
+        setTempAvatarPreview(media.url ?? '');
         toast('头像已通过 SDKWork Drive 上传', 'success');
       })
       .catch((error) => {

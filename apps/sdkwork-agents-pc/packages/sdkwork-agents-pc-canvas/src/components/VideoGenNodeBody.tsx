@@ -7,7 +7,7 @@ interface VideoGenNodeBodyProps {
   connectedInputNode?: CanvasNode;
   onUpdate: (id: string, updates: Partial<CanvasNode>) => void;
   triggerGeneration: () => void;
-  videoRef: React.RefObject<HTMLVideoElement>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   isPlaying: boolean;
   handleVideoPlayToggle: (e: React.MouseEvent) => void;
 }

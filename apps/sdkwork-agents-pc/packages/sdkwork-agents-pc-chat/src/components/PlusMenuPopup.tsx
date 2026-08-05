@@ -2,10 +2,10 @@ import React from 'react';
 import { Paperclip, ImageIcon, Globe, Telescope } from 'lucide-react';
 
 interface PlusMenuPopupProps {
-  menuRef: React.RefObject<HTMLDivElement>;
+  menuRef: React.RefObject<HTMLDivElement | null>;
   setShowMenu: (show: boolean) => void;
   setInputMode: (mode: 'image' | 'search' | 'research' | null) => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
 }
 
 export const PlusMenuPopup: React.FC<PlusMenuPopupProps> = ({

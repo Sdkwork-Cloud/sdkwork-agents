@@ -47,7 +47,7 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [oldestLoadedPage, setOldestLoadedPage] = useState(1);
+  const [oldestLoadedCursor, setOldestLoadedCursor] = useState<string | null>(null);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -83,8 +83,8 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
         const historyPage = await agentChatService.loadRecentMessages(agentId, resolvedSessionId);
         if (!cancelled) {
           setMessages(trimMessages(historyPage.items));
-          setOldestLoadedPage(historyPage.pageInfo.page);
-          setHasOlderMessages(historyPage.pageInfo.page > 1);
+          setOldestLoadedCursor(historyPage.pageInfo.nextCursor ?? null);
+          setHasOlderMessages(historyPage.pageInfo.hasMore);
         }
       } catch {
         if (!cancelled) {
@@ -108,21 +108,21 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
   }, [messages, isTyping]);
 
   const loadOlderMessages = async () => {
-    if (!sessionId || loadingOlder || !hasOlderMessages || oldestLoadedPage <= 1) {
+    if (!sessionId || loadingOlder || !hasOlderMessages || oldestLoadedCursor === null) {
       return;
     }
 
     const container = scrollContainerRef.current;
     const previousScrollHeight = container?.scrollHeight ?? 0;
     const previousScrollTop = container?.scrollTop ?? 0;
-    const nextPage = oldestLoadedPage - 1;
+    const nextCursor = oldestLoadedCursor;
 
     setLoadingOlder(true);
     try {
-      const olderPage = await agentChatService.listMessagesPage(agentId, sessionId, nextPage);
+      const olderPage = await agentChatService.listMessagesPage(agentId, sessionId, nextCursor);
       setMessages((prev) => trimMessages([...olderPage.items, ...prev]));
-      setOldestLoadedPage(nextPage);
-      setHasOlderMessages(nextPage > 1);
+      setOldestLoadedCursor(olderPage.pageInfo.nextCursor ?? null);
+      setHasOlderMessages(olderPage.pageInfo.hasMore);
       requestAnimationFrame(() => {
         if (!container) {
           return;

@@ -6,7 +6,7 @@ import { ChatMessageItem } from './ChatMessageItem';
 
 interface MessageListProps {
   messages: ChatMessage[];
-  messagesEndRef: React.RefObject<HTMLDivElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
   onOpenArtifact: (lang: string, code: string, mode?: 'preview' | 'code') => void;
   onFeedback: (messageId: string, rating: 'up' | 'down' | undefined) => Promise<boolean>;
 }

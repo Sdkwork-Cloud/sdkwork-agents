@@ -62,7 +62,7 @@ export function getAgentsPcIamRuntime(): SdkworkIamRuntimeAuthRuntimeLike {
   if (!composition) {
     throw new Error('Agents PC IAM runtime has not been initialized.');
   }
-  return composition.runtime as SdkworkIamRuntimeAuthRuntimeLike;
+  return composition.runtime as unknown as SdkworkIamRuntimeAuthRuntimeLike;
 }
 
 export async function hydrateAgentsPcIamSession(): Promise<void> {

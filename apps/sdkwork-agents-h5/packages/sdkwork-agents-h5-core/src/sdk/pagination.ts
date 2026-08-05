@@ -51,6 +51,7 @@ export interface OffsetPageInfo {
   totalPages: number;
   totalItems: number;
   hasMore: boolean;
+  nextCursor?: string;
 }
 
 export interface CanonicalPageInfo {
@@ -59,6 +60,7 @@ export interface CanonicalPageInfo {
   totalPages?: number;
   totalItems?: number | string;
   hasMore?: boolean;
+  nextCursor?: string | null;
 }
 
 /** Map an already-unwrapped SDKWork `pageInfo` value into the UI page model. */
@@ -69,7 +71,7 @@ export function toOffsetPageInfo(pageInfo: CanonicalPageInfo): OffsetPageInfo {
   const parsedTotalItems = Number(pageInfo.totalItems ?? 0);
   const totalItems = Number.isFinite(parsedTotalItems) ? parsedTotalItems : 0;
   const hasMore = pageInfo.hasMore === true || (totalPages > 0 && page < totalPages);
-  return { page, pageSize, totalPages, totalItems, hasMore };
+  return { page, pageSize, totalPages, totalItems, hasMore, nextCursor: pageInfo.nextCursor ?? undefined };
 }
 
 export interface SyncAllOffsetPagesOptions<TQuery = Record<string, unknown>> {
