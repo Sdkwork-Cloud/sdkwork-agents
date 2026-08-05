@@ -73,9 +73,17 @@ async function toCreativeSession(record: GenerationRecord): Promise<CreativeSess
 
 export class CreativeService {
   static async getSessions(): Promise<CreativeSession[]> {
-    const generationsService = await loadGenerationsService();
-    const page = await generationsService.listRecords({ pageSize: 50 });
-    return Promise.all(page.items.map(toCreativeSession));
+    try {
+      const generationsService = await loadGenerationsService();
+      const page = await generationsService.listRecords({ pageSize: 50 });
+      return Promise.all(page.items.map(toCreativeSession));
+    } catch (error) {
+      // The generations app service may be unavailable in hosted portal
+      // environments (no route registered); the creative page degrades to an
+      // empty session list instead of failing to load.
+      console.error('Failed to load generation sessions.', error);
+      return [];
+    }
   }
 
   static async generateContent(

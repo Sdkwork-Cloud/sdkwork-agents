@@ -4,6 +4,7 @@
 //! importing `sdkwork-agent-provider-*` or `sdkwork-agent-kernel` types directly.
 
 mod agent_engines;
+mod agent_engine_config;
 mod agent_engine_catalog;
 mod error;
 mod live_interaction;
@@ -12,15 +13,17 @@ mod runtime_host;
 mod sessions;
 mod turn;
 
+pub use agent_engine_config::{read_agent_engine_config_file, AgentEngineConfigFile};
+
 pub use agent_engines::{
     apply_agent_engine_model_configuration, apply_agent_engine_model_selection,
-    bootstrap_agent_engine, bootstrappable_engine_keys, canonical_agent_engine_keys,
-    agent_engine_agent_id, agent_engine_binding_id, agent_engine_provider_scope,
-    dematerialize_agent_engine_model_configuration, is_canonical_agent_engine,
-    plan_agent_engine_configuration_upgrade, read_agent_engine_model_configuration,
-    resolve_agent_engine_runtime_identity, AgentEngineBootstrapError,
-    AgentEngineInteractionResolution, AgentEngineRuntimeIdentity, AgentEngineSlot,
-    CANONICAL_AGENT_ENGINE_KEYS,
+    bootstrap_agent_engine, bootstrap_rig_agent_engine, bootstrappable_engine_keys,
+    canonical_agent_engine_keys, agent_engine_agent_id, agent_engine_binding_id,
+    agent_engine_provider_scope, dematerialize_agent_engine_model_configuration,
+    is_canonical_agent_engine, plan_agent_engine_configuration_upgrade,
+    read_agent_engine_model_configuration, resolve_agent_engine_runtime_identity,
+    AgentEngineBootstrapError, AgentEngineInteractionResolution, AgentEngineRuntimeIdentity,
+    AgentEngineSlot, CANONICAL_AGENT_ENGINE_KEYS,
 };
 pub use agent_engine_catalog::{
     bootstrap_bootstrappable_agent_engine_catalog, bootstrap_canonical_agent_engine_catalog,

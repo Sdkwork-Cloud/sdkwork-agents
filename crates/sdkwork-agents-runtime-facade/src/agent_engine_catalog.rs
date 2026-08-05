@@ -41,6 +41,12 @@ pub struct AgentEngineCatalogEngine {
     pub models: Vec<AgentEngineModelCatalogEntry>,
     pub default_access_mode_id: String,
     pub access_modes: Vec<AgentEngineAccessModeCatalogEntry>,
+    /// Whether the engine provider is bootstrapped and usable in this runtime.
+    /// Unavailable engines stay in the catalog so clients always see the full
+    /// platform engine inventory instead of silently losing entries.
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,9 +164,63 @@ pub fn build_agent_engine_catalog(slots: &[&AgentEngineSlot]) -> AgentEngineCata
                             .collect()
                     })
                     .unwrap_or_default(),
+                available: true,
+                unavailable_reason: None,
             })
         })
         .collect();
+    AgentEngineCatalog { engines }
+}
+
+/// Builds the full platform engine inventory: bootstrapped slots plus engines
+/// whose provider failed to bootstrap. Unavailable engines keep their stable
+/// identity metadata (engine key, kind, tier, agent and binding ids) with an
+/// empty model set and an explicit `available: false` reason so settings and
+/// session surfaces can render the complete engine list with runtime state.
+pub fn build_complete_agent_engine_catalog(
+    slots: &[&AgentEngineSlot],
+    unavailable: &std::collections::HashMap<String, crate::agent_engines::AgentEngineBootstrapError>,
+) -> AgentEngineCatalog {
+    let mut engines = build_agent_engine_catalog(slots).engines;
+    let mut order: Vec<&str> = slots.iter().map(|slot| slot.engine_key()).collect();
+    for engine_key in crate::agent_engines::bootstrappable_engine_keys() {
+        if engines.iter().any(|engine| engine.engine_key == engine_key) {
+            continue;
+        }
+        let Some(agent_id) = crate::agent_engines::agent_engine_agent_id(engine_key) else {
+            continue;
+        };
+        engines.push(AgentEngineCatalogEngine {
+            engine_key: engine_key.to_string(),
+            engine_kind: engine_catalog_kind(engine_key).unwrap_or("unknown").to_string(),
+            tier: crate::agent_engines::engine_catalog_tier(engine_key)
+                .unwrap_or("unknown")
+                .to_string(),
+            agent_id: agent_id.to_string(),
+            binding_id: crate::agent_engines::agent_engine_binding_id(engine_key)
+                .unwrap_or("")
+                .to_string(),
+            models: Vec::new(),
+            default_access_mode_id: String::new(),
+            access_modes: Vec::new(),
+            available: false,
+            unavailable_reason: Some(
+                unavailable
+                    .get(engine_key)
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| {
+                        format!("{engine_key} is not bootstrapped in this runtime profile")
+                    }),
+            ),
+        });
+        order.push(engine_key);
+    }
+    engines.sort_by_key(|engine| {
+        order
+            .iter()
+            .position(|key| key == &engine.engine_key.as_str())
+            .unwrap_or(usize::MAX)
+    });
     AgentEngineCatalog { engines }
 }
 
@@ -250,25 +310,36 @@ mod tests {
     fn bootstrappable_catalog_includes_opt_in_engines() {
         let catalog =
             bootstrap_bootstrappable_agent_engine_catalog().expect("bootstrappable catalog");
-        // Individual provider failures are tolerated (mirroring the
-        // production host): every returned engine must be a known
-        // bootstrappable key, and engines that bootstrap reliably in the
-        // test environment must all be present.
-        for engine in &catalog.engines {
-            assert!(
-                bootstrappable_engine_keys().contains(&engine.engine_key.as_str()),
-                "catalog returned unknown engine {}",
-                engine.engine_key
+        // The full inventory always lists every bootstrappable engine, even
+        // when a provider failed to bootstrap: unavailable engines stay in
+        // the catalog with `available: false` so clients never lose entries.
+        assert_eq!(
+            catalog.engines.len(),
+            bootstrappable_engine_keys().len(),
+            "every bootstrappable engine must be listed"
+        );
+        for engine_key in bootstrappable_engine_keys() {
+            let engine = catalog
+                .engines
+                .iter()
+                .find(|engine| engine.engine_key == engine_key)
+                .unwrap_or_else(|| panic!("bootstrappable engine {engine_key} missing from catalog"));
+            assert_eq!(
+                engine.available,
+                !engine.models.is_empty(),
+                "engine {} availability must match its model inventory",
+                engine_key
             );
-        }
-        for engine_key in ["codex", "claude-code", "gemini", "opencode", "openclaw", "hermes", "rig"] {
-            assert!(
-                catalog
-                    .engines
-                    .iter()
-                    .any(|engine| engine.engine_key == engine_key),
-                "bootstrappable engine {engine_key} missing from catalog"
-            );
+            if engine.available {
+                assert!(!engine.tier.is_empty());
+                assert!(!engine.agent_id.is_empty());
+            } else {
+                assert!(
+                    engine.unavailable_reason.is_some(),
+                    "unavailable engine {} must carry a reason",
+                    engine_key
+                );
+            }
         }
     }
 

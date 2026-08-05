@@ -11,10 +11,31 @@ export const AssetsView = () => {
   const [activeFilter, setActiveFilter] = useState<'image' | 'video' | 'audio' | 'document'>('image');
   
   const [groups, setGroups] = useState<{ date: string; items: AssetItem[] }[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    AssetsService.getAssetGroups().then(setGroups);
-  }, []);
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+    AssetsService.getAssetGroups(activeFilter)
+      .then((nextGroups) => {
+        if (cancelled) return;
+        setGroups(nextGroups);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to load asset groups', error);
+        setGroups([]);
+        setLoadError('资产加载失败，请确认资产服务可用后重试');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFilter]);
 
   // Preview states
   const [selectedItem, setSelectedItem] = useState<AssetItem | null>(null);
@@ -48,11 +69,23 @@ export const AssetsView = () => {
       <AssetsHeader activeTab={activeTab} setActiveTab={setActiveTab} />
       <AssetsFilter activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
       
-      <AssetsGrid 
-        groups={groups} 
-        activeFilter={activeFilter} 
-        onItemClick={handleItemClick} 
-      />
+      {loadError && (
+        <div className="mx-6 mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+          {loadError}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-zinc-500">
+          加载中...
+        </div>
+      ) : (
+        <AssetsGrid 
+          groups={groups} 
+          activeFilter={activeFilter} 
+          onItemClick={handleItemClick} 
+        />
+      )}
 
       {/* Floating Help Button */}
       <div className="absolute right-6 bottom-6">

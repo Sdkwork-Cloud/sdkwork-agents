@@ -83,6 +83,8 @@ export type { MigrateModelConfigurationRequest } from './migrate-model-configura
 export type { MigratedModelConfigurationResponse } from './migrated-model-configuration-response';
 export type { ApplyAgentModelSelectionRequest } from './apply-agent-model-selection-request';
 export type { AppliedAgentModelSelectionRecord } from './applied-agent-model-selection-record';
+export type { AgentEngineConfigFileResponse } from './agent-engine-config-file-response';
+export type { AgentEngineConfigFileView } from './agent-engine-config-file-view';
 export type { AppliedAgentModelSelectionResponse } from './applied-agent-model-selection-response';
 export type { AgentEngineCatalogListResponse } from './agent-engine-catalog-list-response';
 export type { AgentEngineCatalog } from './agent-engine-catalog';

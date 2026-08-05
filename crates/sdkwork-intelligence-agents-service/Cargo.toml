@@ -22,6 +22,7 @@ sdkwork-code-kernel.workspace = true
 sdkwork-utils-rust.workspace = true
 sdkwork-database-id.workspace = true
 sdkwork-intelligence-prompts-ai-contract.workspace = true
+cloudrouter-open-sdk.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

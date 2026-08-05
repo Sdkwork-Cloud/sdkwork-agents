@@ -76,15 +76,22 @@ function toCommunityEntries(items: Record<string, unknown>[]): CommunityEntry[] 
 }
 
 async function listCommunityEntries(tag: string, query?: string): Promise<CommunityEntry[]> {
-  const client = await loadCommunityAppSdkClient();
-  const page = await client.community.feed.list({
-    tag,
-    reviewState: 'approved',
-    page: 1,
-    pageSize: 20,
-    ...(query?.trim() ? { q: query.trim() } : {}),
-  });
-  return toCommunityEntries(page.items);
+  try {
+    const client = await loadCommunityAppSdkClient();
+    const page = await client.community.feed.list({
+      tag,
+      reviewState: 'approved',
+      page: 1,
+      pageSize: 20,
+      ...(query?.trim() ? { q: query.trim() } : {}),
+    });
+    return toCommunityEntries(page.items);
+  } catch (error) {
+    // The community app service may be unavailable in hosted portal
+    // environments; inspiration tabs degrade to empty content.
+    console.error(`Failed to load community entries for ${tag}.`, error);
+    return [];
+  }
 }
 
 function toDiscoverItem(entry: CommunityEntry): DiscoverItem | null {
@@ -168,24 +175,36 @@ function toActivity(entry: CommunityEntry): Activity | null {
 }
 
 async function listSkillsPage(query?: string): Promise<SkillRecord[]> {
-  const client = await loadSkillsAppSdkClient();
-  const page = await client.skills.marketplace.list({
-    pageSize: SKILLS_PAGE_SIZE,
-    ...(query?.trim() ? { q: query.trim() } : {}),
-  });
-  return page.items;
+  try {
+    const client = await loadSkillsAppSdkClient();
+    const page = await client.skills.marketplace.list({
+      pageSize: SKILLS_PAGE_SIZE,
+      ...(query?.trim() ? { q: query.trim() } : {}),
+    });
+    return page.items;
+  } catch (error) {
+    // The skills app service may be unavailable in hosted portal
+    // environments; the skills tab degrades to an empty catalog.
+    console.error('Failed to load skills marketplace.', error);
+    return [];
+  }
 }
 
 async function readSkillCategoryLabels(): Promise<Map<string, string>> {
-  const client = await loadSkillsAppSdkClient();
-  const page = await client.skills.skillCategories.list({
-    pageSize: SKILLS_PAGE_SIZE,
-  });
-  const labels = new Map<string, string>();
-  for (const category of page.items) {
-    labels.set(category.code, category.name);
+  try {
+    const client = await loadSkillsAppSdkClient();
+    const page = await client.skills.skillCategories.list({
+      pageSize: SKILLS_PAGE_SIZE,
+    });
+    const labels = new Map<string, string>();
+    for (const category of page.items) {
+      labels.set(category.code, category.name);
+    }
+    return labels;
+  } catch (error) {
+    console.error('Failed to load skill category labels.', error);
+    return new Map();
   }
-  return labels;
 }
 
 function readSkillAuthor(skill: SkillRecord): string {

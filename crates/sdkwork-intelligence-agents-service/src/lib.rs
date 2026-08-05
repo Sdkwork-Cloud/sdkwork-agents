@@ -18,6 +18,7 @@ mod ports;
 #[cfg(feature = "postgres-sync")]
 mod postgres_sync_pool;
 mod project;
+mod cloud_router_executor;
 #[cfg(feature = "http-axum")]
 mod provider_session_sync;
 mod provider_stream_items;
@@ -85,6 +86,9 @@ pub use application::{
 };
 pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
+};
+pub use cloud_router_executor::{
+    CloudRouterFirstTurnExecutor, RUNTIME_MODE_CLOUDROUTER, ENV_CLOUDROUTER_BASE_URL,
 };
 pub use turn_runtime::{
     complete_with_timeout, complete_with_timeout_and_sink, execute_agent_turn, is_capacity_error,

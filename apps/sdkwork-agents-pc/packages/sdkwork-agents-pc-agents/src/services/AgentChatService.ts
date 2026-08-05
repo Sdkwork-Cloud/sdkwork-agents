@@ -10,6 +10,8 @@ import {
 import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 import { sha256Hash, uuid } from "@sdkwork/utils";
 
+import { resolveChatRuntimeModel } from "./RuntimeCatalogService";
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -335,11 +337,16 @@ export class AgentChatService {
         driveNodeId,
       };
     });
+    // Resolve the runtime model id for the turn request. No local provider
+    // binding or API key is required: chat turns route through the cloudrouter
+    // account-pool gateway using the caller's auth token (sessions that
+    // already carry a runtime binding keep the local binding chain).
+    const runtimeModel = await resolveChatRuntimeModel(modelId, this.getClient());
     const contentType = mediaResources[0]?.mimeType ?? "text/plain";
     const payloadHash = `sha256:${sha256Hash(JSON.stringify({
       content: content.trim(),
       contentType,
-      requestedModelId: modelId ?? null,
+      requestedModelId: runtimeModel.id,
       driveRefs,
     }))}`;
     const body = {
@@ -351,7 +358,7 @@ export class AgentChatService {
       idempotencyKey: requestId,
       payloadHash,
       clientRequestId: requestId,
-      ...(modelId ? { requestedModelId: modelId } : {}),
+      requestedModelId: runtimeModel.id,
     };
     const completion = await completeAgentTurn(
       this.getClient(),

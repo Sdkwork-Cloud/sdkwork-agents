@@ -3654,6 +3654,38 @@ paths:
                 $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/model_configurations/{engineId}/config_file:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Read the provider-native configuration file with credentials masked
+      operationId: agents.modelConfigurations.configFile
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: agent_model_configuration
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-permission-scope: authenticated
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.model_configuration.config_file_read
+      parameters:
+      - name: engineId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Provider configuration file content with credential values masked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentEngineConfigFileResponse'
+        default:
+          $ref: '#/components/responses/Problem'
   /app/v3/api/ai/model_configurations/{engineId}/{profileId}/status:
     get:
       x-sdkwork-owner: sdkwork-agents
@@ -6432,6 +6464,43 @@ components:
           type: string
         modelId:
           type: string
+    AgentEngineConfigFileResponse:
+      description: Provider-native configuration file content following the SdkWorkApiResponse envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            allOf:
+            - $ref: '#/components/schemas/SdkWorkResourceData'
+            - type: object
+              required: [item]
+              properties:
+                item:
+                  $ref: '#/components/schemas/AgentEngineConfigFileView'
+    AgentEngineConfigFileView:
+      type: object
+      additionalProperties: false
+      required:
+      - engineId
+      - configFilePath
+      - format
+      - content
+      - exists
+      properties:
+        engineId:
+          type: string
+        configFilePath:
+          type: string
+        format:
+          type: string
+          enum: [toml, json, env, text]
+        content:
+          type: string
+        exists:
+          type: boolean
     AppliedAgentModelSelectionResponse:
       description: Single applied Agent model selection response.
       allOf:
@@ -6448,7 +6517,7 @@ components:
                 item:
                   $ref: '#/components/schemas/AppliedAgentModelSelectionRecord'
     AgentEngineCatalogListResponse:
-      description: Code engine catalog response following SdkWorkApiResponse envelope;
+      description: Agent engine catalog response following SdkWorkApiResponse envelope;
         the catalog is returned as a single composite resource under data.item.
       allOf:
       - $ref: '#/components/schemas/SdkWorkApiResponse'
@@ -6487,6 +6556,7 @@ components:
       - models
       - defaultAccessModeId
       - accessModes
+      - available
       properties:
         engineKey:
           type: string
@@ -6509,6 +6579,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentEngineAccessModeCatalogEntry'
+        available:
+          type: boolean
+        unavailableReason:
+          type: string
     AgentEngineAccessModeCatalogEntry:
       type: object
       additionalProperties: false

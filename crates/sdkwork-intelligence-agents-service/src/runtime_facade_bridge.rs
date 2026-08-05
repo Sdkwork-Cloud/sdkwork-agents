@@ -3,11 +3,16 @@
 //! Preview responses and prompt optimizations must not use deterministic local
 //! contract stubs when a canonical agent-engine binding is active.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use sdkwork_agent_kernel::{
+    AgentConfiguration, FilesystemRequest, FilesystemResult, HostProvider, KernelError,
+    KernelResult, NetworkRequest, NetworkResult, ProcessRequest, ProcessResult, ProviderHealth,
+    ProviderManifest, ProviderSecretValue, SecretRef,
+};
 use sdkwork_agents_runtime_facade::{
     bootstrap_agent_engine, bootstrappable_engine_keys, agent_engine_binding_id,
-    execute_agent_engine_turn, AgentsAgentEngineHost, AgentEngineTurnInput,
+    execute_agent_engine_turn, AgentsAgentEngineHost, AgentEngineTurnInput, LiveInteractionRegistry,
 };
 use sdkwork_utils_rust::string::is_blank;
 
@@ -143,23 +148,120 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
     }
 }
 
+static AGENT_ENGINE_HOST: Mutex<Option<Arc<AgentsAgentEngineHost>>> = Mutex::new(None);
+
 pub fn shared_agent_engine_host() -> Option<Arc<AgentsAgentEngineHost>> {
-    use std::sync::{Arc, Mutex};
     // A failed bootstrap must not be cached: engine availability can recover
     // (e.g. the provider directory becomes readable again) and a permanently
     // cached None would force a process restart to ever synchronize again.
-    static HOST: Mutex<Option<Arc<AgentsAgentEngineHost>>> = Mutex::new(None);
-    let mut guard = HOST.lock().expect("provider engine host mutex poisoned");
+    let mut guard = AGENT_ENGINE_HOST
+        .lock()
+        .expect("provider engine host mutex poisoned");
     if guard.is_none() {
         let host = AgentsAgentEngineHost::bootstrap_selected(
             &bootstrappable_engine_keys(),
-            sdkwork_agents_runtime_facade::LiveInteractionRegistry::new(),
+            LiveInteractionRegistry::new(),
         );
         if host.engine_keys().next().is_some() {
             *guard = Some(Arc::new(host));
         }
     }
     guard.clone()
+}
+
+/// Rebuilds the shared agent-engine host after a rig (simple agent) model
+/// configuration was applied, so the live OpenAI-compatible backend takes
+/// effect without a process restart.
+///
+/// The host is rebuilt with [`AgentsAgentEngineHost::bootstrap_selected_with_rig`]
+/// (per-engine failures are tolerated like the lazy bootstrap path). This is a
+/// low-frequency management operation, so a fresh live-interaction registry is
+/// acceptable; in-flight interactions on the previous host keep their Arc.
+pub fn refresh_rig_agent_engine(
+    configuration: &AgentConfiguration,
+    host: Arc<dyn HostProvider + Send + Sync>,
+) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
+    let rebuilt = AgentsAgentEngineHost::bootstrap_selected_with_rig(
+        &bootstrappable_engine_keys(),
+        Some(configuration),
+        host,
+        LiveInteractionRegistry::new(),
+    );
+    if rebuilt.engine_keys().next().is_none() {
+        return Ok(());
+    }
+    // Swap the shared host from a dedicated thread so the retired host (whose
+    // rig slot may own a tokio runtime) is dropped outside async contexts —
+    // dropping a runtime from within an asynchronous context panics.
+    std::thread::spawn(move || {
+        let mut guard = AGENT_ENGINE_HOST
+            .lock()
+            .expect("provider engine host mutex poisoned");
+        *guard = Some(Arc::new(rebuilt));
+    })
+    .join()
+    .map_err(|_| {
+        sdkwork_agents_runtime_facade::RuntimeFacadeError::InvalidInput(
+            "rig agent engine host refresh worker panicked".to_string(),
+        )
+    })?;
+    Ok(())
+}
+
+/// Kernel host surface backed by the model configuration runtime secret store.
+///
+/// Lets agent engines resolve their configured credential at inference time
+/// through `HostProvider::resolve_secret` (kernel contract: providers resolve
+/// plaintext secrets through the host secret surface; raw keys are never
+/// stored inside kernel profiles).
+#[derive(Clone)]
+pub struct ModelConfigurationRuntimeHostProvider {
+    runtime: Arc<crate::http::AgentModelConfigurationRuntime>,
+}
+
+impl ModelConfigurationRuntimeHostProvider {
+    pub fn new(runtime: Arc<crate::http::AgentModelConfigurationRuntime>) -> Self {
+        Self { runtime }
+    }
+}
+
+impl HostProvider for ModelConfigurationRuntimeHostProvider {
+    fn provider_manifest(&self) -> ProviderManifest {
+        ProviderManifest::new(
+            "provider.host.agents-model-configuration",
+            "host",
+            "Agents Model Configuration Secret Host",
+            "1.0.0",
+            vec!["host.secrets".to_string()],
+        )
+    }
+
+    fn health(&self) -> ProviderHealth {
+        ProviderHealth::available()
+    }
+
+    fn filesystem(&self, _request: FilesystemRequest) -> KernelResult<FilesystemResult> {
+        Err(KernelError::CapabilityMissing {
+            capability_id: "host.filesystem".to_string(),
+        })
+    }
+
+    fn process(&self, _request: ProcessRequest) -> KernelResult<ProcessResult> {
+        Err(KernelError::CapabilityMissing {
+            capability_id: "host.process".to_string(),
+        })
+    }
+
+    fn network(&self, _request: NetworkRequest) -> KernelResult<NetworkResult> {
+        Err(KernelError::CapabilityMissing {
+            capability_id: "host.network".to_string(),
+        })
+    }
+
+    fn resolve_secret(&self, secret_ref: SecretRef) -> KernelResult<ProviderSecretValue> {
+        self.runtime
+            .resolve_secret_value(&secret_ref.secret_ref_id, "agent-engine.rig")
+    }
 }
 
 fn normalize_prompt_text(value: &str) -> String {
@@ -225,6 +327,71 @@ mod tests {
         );
         assert_eq!(output.runtime_mode, RUNTIME_MODE_CONTRACT_FALLBACK);
         assert_eq!(output.content, "hello fallback");
+    }
+
+    #[test]
+    fn host_provider_resolves_applied_secret_from_model_configuration_runtime() {
+        use sdkwork_agent_kernel::{
+            InMemorySecretProvider, SecretCreateRequest, SecretProvider, SecretType,
+        };
+
+        let mut secrets = InMemorySecretProvider::new();
+        let metadata = secrets
+            .create_secret(SecretCreateRequest::new(
+                "test.rig.api_key",
+                SecretType::ApiKey,
+                "sk-test-value",
+            ))
+            .expect("create secret");
+        let runtime = Arc::new(crate::http::AgentModelConfigurationRuntime::with_providers(
+            Box::new(secrets),
+            Box::new(
+                sdkwork_agents_runtime_facade::InMemoryAgentConfigurationStore::new(),
+            ),
+        ));
+        let provider = ModelConfigurationRuntimeHostProvider::new(runtime);
+        let value = provider
+            .resolve_secret(SecretRef::new(metadata.secret_id.clone(), "Rig API key"))
+            .expect("resolve configured secret");
+        assert_eq!(value.expose_value(), "sk-test-value");
+        assert!(
+            provider
+                .resolve_secret(SecretRef::new("missing.rig.api_key", "Missing key"))
+                .is_err(),
+            "unconfigured secrets must fail closed"
+        );
+    }
+
+    #[test]
+    fn refresh_rig_agent_engine_rebuilds_shared_host_with_live_backend() {
+        use sdkwork_agent_kernel::{AgentConfigValue, AgentConfiguration, EnvFileSecretHostProvider};
+
+        let configuration = AgentConfiguration::new("agent.rig-general", "profile.rig.live")
+            .set("llm.rig.provider_id", AgentConfigValue::string("openai"))
+            .set(
+                "llm.rig.api_key",
+                AgentConfigValue::secret_ref("test.rig.api_key"),
+            )
+            .set(
+                "llm.rig.default_model",
+                AgentConfigValue::string("example-chat"),
+            )
+            .set("runtime.rig.backend_mode", AgentConfigValue::string("live"));
+        let host: Arc<dyn HostProvider + Send + Sync> =
+            Arc::new(EnvFileSecretHostProvider::new());
+        refresh_rig_agent_engine(&configuration, host).expect("rig refresh");
+
+        let shared = shared_agent_engine_host().expect("shared agent engine host");
+        let rig = shared.slot("rig").expect("rig slot");
+        let descriptor = rig
+            .list_model_descriptors()
+            .into_iter()
+            .next()
+            .expect("rig model descriptor");
+        assert_eq!(
+            descriptor.metadata_value("sdkwork.backend.fail_closed"),
+            Some("false")
+        );
     }
 
     #[test]

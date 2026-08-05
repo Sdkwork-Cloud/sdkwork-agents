@@ -82,6 +82,23 @@
           "../sdkwork-api-agents-assembly/src/bootstrap/iam.rs#wire_iam_app_router",
           "src/bootstrap.rs#build_router"
         ]
+      },
+      {
+        "workspace": "sdkwork-drive",
+        "sdkFamily": "sdkwork-drive-app-sdk",
+        "apiAuthority": "drive-app-api",
+        "surface": "app-api",
+        "apiPrefix": "/app/v3/api",
+        "runtimeMode": "same-origin-mounted",
+        "cargoDependency": "sdkwork-api-agents-assembly",
+        "embeddedExecutableExport": "sdkwork_api_agents_assembly::assemble_api_router",
+        "profileCoverage": [
+          "standalone"
+        ],
+        "coverageEvidence": [
+          "../sdkwork-api-agents-assembly/src/bootstrap/drive.rs#wire_drive_app_router",
+          "src/bootstrap.rs#build_router"
+        ]
       }
     ],
     "events": [],

@@ -159,9 +159,12 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
     try {
       const assistant = await agentChatService.sendMessage(agentId, sessionId, content.trim());
       setMessages((prev) => trimMessages([...prev, assistant]));
-    } catch {
+    } catch (sendError) {
       setMessages((prev) => prev.filter((message) => message.id !== userMessage.id));
-      toast("发送失败：后端未返回有效回复", "error");
+      const detail = sendError instanceof Error && sendError.message.trim()
+        ? sendError.message
+        : '';
+      toast(detail || "发送失败：后端未返回有效回复", "error");
     } finally {
       setIsTyping(false);
     }

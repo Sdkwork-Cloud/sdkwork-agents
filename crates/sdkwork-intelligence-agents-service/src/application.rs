@@ -7094,41 +7094,60 @@ where
                 command.organization_id,
                 &command.session_id,
             )?,
-        }
-        .ok_or_else(|| KernelError::not_found("active session runtime binding not found"))?;
-        if !session_runtime_binding.is_current
-            || session_runtime_binding.status != AgentSessionRuntimeBindingStatus::Active
-        {
-            return Err(KernelError::validation(
-                "session runtime binding is not active",
-            ));
-        }
-        if let Some(requested_model_id) = command.requested_model_id.as_deref() {
-            if requested_model_id != session_runtime_binding.model_id {
+        };
+        // Cloud-router account-pool routing: turns carrying a user auth token
+        // may execute without any local session runtime binding (no API key /
+        // provider binding needed); the cloudrouter gateway routes the model
+        // request through its account pool. Sessions with a binding keep the
+        // local binding chain (backward compatible).
+        let cloud_router_routed = command.auth_token.is_some()
+            && session_runtime_binding.is_none()
+            && command.runtime_binding_id.is_none();
+        let session_runtime_binding = match session_runtime_binding {
+            Some(binding) => Some(binding),
+            None if cloud_router_routed => None,
+            None => {
+                return Err(KernelError::not_found("active session runtime binding not found"));
+            }
+        };
+        let provider_binding = if let Some(binding) = session_runtime_binding.as_ref() {
+            if !binding.is_current || binding.status != AgentSessionRuntimeBindingStatus::Active {
                 return Err(KernelError::validation(
-                    "requestedModelId does not match the active session runtime binding",
+                    "session runtime binding is not active",
                 ));
             }
-        }
-        let provider_binding = self
-            .repository
-            .get_provider_binding(
-                command.tenant_id,
-                command.agent_id.as_str(),
-                &session_runtime_binding.provider_binding_id,
-            )?
-            .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
-        if !provider_binding.active
-            || provider_binding.provider_id != session_runtime_binding.provider_id
-        {
-            return Err(KernelError::validation(
-                "session runtime binding references an inactive provider binding",
-            ));
-        }
+            if let Some(requested_model_id) = command.requested_model_id.as_deref() {
+                if requested_model_id != binding.model_id {
+                    return Err(KernelError::validation(
+                        "requestedModelId does not match the active session runtime binding",
+                    ));
+                }
+            }
+            let provider_binding = self
+                .repository
+                .get_provider_binding(
+                    command.tenant_id,
+                    command.agent_id.as_str(),
+                    &binding.provider_binding_id,
+                )?
+                .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
+            if !provider_binding.active || provider_binding.provider_id != binding.provider_id {
+                return Err(KernelError::validation(
+                    "session runtime binding references an inactive provider binding",
+                ));
+            }
+            Some(provider_binding)
+        } else {
+            None
+        };
         validate_optional_bounded(&command.access_mode_id, "accessModeId", 64)?;
         if let Some(access_mode_id) = command.access_mode_id.as_deref() {
-            let engine_key =
-                engine_key_for_binding_id(&provider_binding.binding_id).ok_or_else(|| {
+            let engine_key = provider_binding
+                .as_ref()
+                .and_then(|provider_binding| {
+                    engine_key_for_binding_id(&provider_binding.binding_id)
+                })
+                .ok_or_else(|| {
                     KernelError::validation(
                         "accessModeId is not supported by the active provider binding",
                     )
@@ -7174,7 +7193,9 @@ where
             session_id: command.session_id.clone(),
             agent_id: command.agent_id.clone(),
             owner_user_id: session.owner_user_id,
-            runtime_binding_id: Some(session_runtime_binding.runtime_binding_id.clone()),
+            runtime_binding_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.runtime_binding_id.clone()),
             client_request_id: command.client_request_id.clone(),
             idempotency_key: idempotency_key.clone(),
             payload_hash: payload_hash.clone(),
@@ -7183,9 +7204,15 @@ where
             turn_mode: command.turn_mode,
             status: AgentTurnStatus::Requested,
             requested_model_id: command.requested_model_id.clone(),
-            provider_binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
-            model_id: Some(session_runtime_binding.model_id.clone()),
-            provider_id: Some(session_runtime_binding.provider_id.clone()),
+            provider_binding_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.provider_binding_id.clone()),
+            model_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.model_id.clone()),
+            provider_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.provider_id.clone()),
             input_tokens: 0,
             output_tokens: 0,
             cached_tokens: 0,
@@ -7300,9 +7327,13 @@ where
         )
         .and_then(|profile| profile.welcome_message);
         let provider_has_model_chat = provider_binding
-            .capabilities
-            .iter()
-            .any(|capability| capability == "model.chat");
+            .as_ref()
+            .is_some_and(|binding| {
+                binding
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability == "model.chat")
+            });
 
         let execution_input = TurnExecutionInput {
             turn_id: turn_id.clone(),
@@ -7312,12 +7343,22 @@ where
             session: session.clone(),
             history,
             user_content: user_content.clone(),
-            model_id: Some(session_runtime_binding.model_id.clone()),
-            provider_id: Some(session_runtime_binding.provider_id.clone()),
-            provider_session_id: session_runtime_binding.provider_session_id.clone(),
-            binding_id: Some(session_runtime_binding.provider_binding_id.clone()),
+            model_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.model_id.clone())
+                .or_else(|| command.requested_model_id.clone()),
+            provider_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.provider_id.clone()),
+            provider_session_id: session_runtime_binding
+                .as_ref()
+                .and_then(|binding| binding.provider_session_id.clone()),
+            binding_id: session_runtime_binding
+                .as_ref()
+                .map(|binding| binding.provider_binding_id.clone()),
             access_mode_id: command.access_mode_id.clone(),
             provider_has_model_chat,
+            auth_token: command.auth_token.clone(),
         };
         let completion = if let Some(stream_sink) = stream_sink.as_ref() {
             stream_sink.begin_turn(&session.session_id, &turn_id);
@@ -7381,12 +7422,15 @@ where
             ));
         }
 
-        let session_runtime_binding = self.persist_turn_provider_session_identity(
-            &session_runtime_binding,
-            completion.provider_session_id.as_deref(),
-            command.requested_by.clone(),
-            &command.requested_at,
-        )?;
+        let session_runtime_binding = match session_runtime_binding.as_ref() {
+            Some(binding) => Some(self.persist_turn_provider_session_identity(
+                binding,
+                completion.provider_session_id.as_deref(),
+                command.requested_by.clone(),
+                &command.requested_at,
+            )?),
+            None => None,
+        };
 
         if completion.finish_reason.as_deref() == Some("cancelled") {
             let mut current_turn = self
@@ -7423,7 +7467,12 @@ where
         let completion_model_id = completion
             .model_id
             .clone()
-            .unwrap_or_else(|| session_runtime_binding.model_id.clone());
+            .or_else(|| {
+                session_runtime_binding
+                    .as_ref()
+                    .map(|binding| binding.model_id.clone())
+            })
+            .unwrap_or_else(|| command.requested_model_id.clone().unwrap_or_default());
         let mut completed_items = provider_item_facts
             .into_iter()
             .map(|fact| {
@@ -7496,13 +7545,23 @@ where
                 completion
                     .model_id
                     .clone()
-                    .unwrap_or_else(|| session_runtime_binding.model_id.clone()),
+                    .or_else(|| {
+                        session_runtime_binding
+                            .as_ref()
+                            .map(|binding| binding.model_id.clone())
+                    })
+                    .unwrap_or_else(|| command.requested_model_id.clone().unwrap_or_default()),
             ),
             provider_id: Some(
                 completion
                     .provider_id
                     .clone()
-                    .unwrap_or_else(|| session_runtime_binding.provider_id.clone()),
+                    .or_else(|| {
+                        session_runtime_binding
+                            .as_ref()
+                            .map(|binding| binding.provider_id.clone())
+                    })
+                    .unwrap_or_default(),
             ),
             tool_name: None,
             tool_call_id: None,
@@ -10629,6 +10688,7 @@ mod task_tests {
                 requested_by: sample_subject(),
                 requested_at: "2026-08-02T00:00:05Z".to_string(),
                 prefer_stream: false,
+            auth_token: None,
             })
         });
         executor.wait_until_started();

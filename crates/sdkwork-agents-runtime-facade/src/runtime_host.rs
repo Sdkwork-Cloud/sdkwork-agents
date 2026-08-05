@@ -4,7 +4,9 @@ use crate::agent_engines::{
     bootstrap_agent_engine, bootstrappable_engine_keys, AgentEngineBootstrapError,
     AgentEngineInteractionResolution, AgentEngineSlot,
 };
-use crate::agent_engine_catalog::{build_agent_engine_catalog, AgentEngineCatalog};
+use crate::agent_engine_catalog::{
+    build_complete_agent_engine_catalog, AgentEngineCatalog,
+};
 use crate::error::{RuntimeFacadeError, RuntimeFacadeResult};
 use crate::live_interaction::{ApprovalDecision, LiveInteractionRegistry, UserQuestionAnswer};
 use crate::provider_sessions::{
@@ -87,6 +89,53 @@ impl AgentsAgentEngineHost {
         self.slots.get(engine_key)
     }
 
+    /// Like [`Self::bootstrap_selected`], but the Rig (simple agent) engine is
+    /// bootstrapped with a materialized model configuration and a host secret
+    /// surface so a live OpenAI-compatible backend replaces the fail-closed
+    /// default. Used to apply provider configuration at runtime without
+    /// restarting the host; other engines bootstrap exactly as
+    /// [`Self::bootstrap_selected`].
+    pub fn bootstrap_selected_with_rig(
+        engine_keys: &[&str],
+        rig_configuration: Option<&sdkwork_agent_kernel::AgentConfiguration>,
+        rig_host: std::sync::Arc<dyn sdkwork_agent_kernel::HostProvider + Send + Sync>,
+        live: LiveInteractionRegistry,
+    ) -> Self {
+        let mut slots = HashMap::new();
+        let mut unavailable = HashMap::new();
+        let mut engine_order = Vec::new();
+
+        for engine_key in engine_keys {
+            if engine_order
+                .iter()
+                .any(|registered| registered == engine_key)
+            {
+                continue;
+            }
+            engine_order.push((*engine_key).to_string());
+            let bootstrapped = if *engine_key == "rig" {
+                crate::agent_engines::bootstrap_rig_agent_engine(rig_configuration, rig_host.clone())
+            } else {
+                bootstrap_agent_engine(engine_key)
+            };
+            match bootstrapped {
+                Ok(slot) => {
+                    slots.insert((*engine_key).to_string(), slot);
+                }
+                Err(error) => {
+                    unavailable.insert((*engine_key).to_string(), error);
+                }
+            }
+        }
+
+        Self {
+            slots,
+            unavailable,
+            engine_order,
+            live,
+        }
+    }
+
     pub fn engine_keys(&self) -> impl Iterator<Item = &str> {
         self.engine_order
             .iter()
@@ -119,7 +168,7 @@ impl AgentsAgentEngineHost {
             .iter()
             .filter_map(|engine_key| self.slots.get(engine_key))
             .collect();
-        build_agent_engine_catalog(&slots)
+        build_complete_agent_engine_catalog(&slots, &self.unavailable)
     }
 
     pub fn discover_provider_sessions(
@@ -288,12 +337,23 @@ mod tests {
         );
 
         assert_eq!(host.slots.len(), 4);
-        assert_eq!(host.catalog().engines.len(), 4);
+        // The catalog is the full platform inventory: requested engines are
+        // available, engines outside the requested set stay listed as
+        // unavailable instead of disappearing from settings surfaces.
+        let catalog = host.catalog();
+        assert_eq!(catalog.engines.len(), crate::agent_engines::bootstrappable_engine_keys().len());
         for engine_key in crate::agent_engines::canonical_agent_engine_keys() {
             assert!(host.slot(engine_key).is_some(), "missing slot {engine_key}");
         }
         assert!(host.slot("openclaw").is_none());
         assert_eq!(host.unavailable_engine_keys().count(), 0);
+        let openclaw = catalog
+            .engines
+            .iter()
+            .find(|engine| engine.engine_key == "openclaw")
+            .expect("openclaw must stay listed");
+        assert!(!openclaw.available);
+        assert!(openclaw.unavailable_reason.is_some());
     }
 
     #[test]

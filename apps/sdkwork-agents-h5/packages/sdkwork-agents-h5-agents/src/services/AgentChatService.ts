@@ -8,6 +8,8 @@ import {
 import { sha256Hash, uuid } from "@sdkwork/utils";
 import { MAX_LIST_PAGE_SIZE, toOffsetPageInfo, type OffsetPageInfo } from "@sdkwork/agents-h5-core/sdk/pagination";
 
+import { resolveChatRuntimeModel } from "./RuntimeCatalogService";
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -155,11 +157,16 @@ export class AgentChatService {
     modelId?: string,
   ): Promise<ChatMessage> {
     const requestId = uuid();
+    // Resolve the runtime model id for the turn request. No local provider
+    // binding or API key is required: chat turns route through the cloudrouter
+    // account-pool gateway using the caller's auth token (sessions that
+    // already carry a runtime binding keep the local binding chain).
+    const runtimeModel = await resolveChatRuntimeModel(modelId, this.getClient());
     const contentType = "text/plain";
     const payloadHash = `sha256:${sha256Hash(JSON.stringify({
       content: content.trim(),
       contentType,
-      requestedModelId: modelId ?? null,
+      requestedModelId: runtimeModel.id,
     }))}`;
     const body = {
       content: content.trim(),
@@ -169,7 +176,7 @@ export class AgentChatService {
       idempotencyKey: requestId,
       payloadHash,
       clientRequestId: requestId,
-      ...(modelId ? { requestedModelId: modelId } : {}),
+      requestedModelId: runtimeModel.id,
     };
     const completion = await completeAgentTurn(
       this.getClient(),

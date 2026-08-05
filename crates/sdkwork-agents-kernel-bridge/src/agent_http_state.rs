@@ -8,9 +8,9 @@ use sdkwork_agents_contract::{
     agents_use_dev_inline_auth_resolver, ensure_dev_auth_bypass_allowed,
 };
 use sdkwork_intelligence_agents_service::{
-    AgentHttpState, AllowAllPolicyProvider, IamGatedPolicyProvider, InMemoryAgentAuditSink,
-    InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink, SqlAgentRepository,
-    SqliteAgentConfigurationStore, SyncPostgresAdapter,
+    AgentHttpState, AllowAllPolicyProvider, CloudRouterFirstTurnExecutor, IamGatedPolicyProvider,
+    InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink,
+    SqlAgentRepository, SqliteAgentConfigurationStore, SyncPostgresAdapter,
 };
 use std::sync::Arc;
 
@@ -48,7 +48,7 @@ fn dev_agent_http_state() -> Result<AgentHttpState> {
         AllowAllPolicyProvider::try_allow("policy.agents.dev")
             .map_err(anyhow::Error::msg)
             .context("build agents dev-only policy provider")?,
-        Arc::new(RuntimeFacadeTurnExecutor),
+        Arc::new(CloudRouterFirstTurnExecutor::new(RuntimeFacadeTurnExecutor)),
     ))
 }
 
@@ -85,7 +85,10 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
         repository,
         audit_sink,
         IamGatedPolicyProvider::default(),
-        Arc::new(RuntimeFacadeTurnExecutor),
+        // Chat turns carrying a user auth token route through the cloudrouter
+        // account-pool gateway; turns without one (worker/backend flows) keep
+        // the local agent-engine facade execution.
+        Arc::new(CloudRouterFirstTurnExecutor::new(RuntimeFacadeTurnExecutor)),
     );
 
     // Persist applied model configuration profiles in the local SQLite store

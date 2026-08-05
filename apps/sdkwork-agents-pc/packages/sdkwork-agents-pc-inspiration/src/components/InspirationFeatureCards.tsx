@@ -11,7 +11,7 @@ interface FeatureCardProps {
 }
 
 const FEATURE_CARDS: FeatureCardProps[] = [
-  { id: 'octo', title: 'Octo', desc: 'Vibe create, 创作自然流动', tag: 'Beta', icon: '✨', bg: 'bg-gradient-to-br from-orange-400 to-rose-400' },
+  { id: 'octo', title: 'Magic Studio', desc: 'Vibe create, 创作自然流动', tag: 'Beta', icon: '✨', bg: 'bg-gradient-to-br from-orange-400 to-rose-400' },
   { id: 'canvas', title: '无限画布', desc: '自由创作', icon: '🎨', bg: 'bg-gradient-to-br from-blue-400 to-cyan-400' },
   { id: 'agent', title: 'Agent 模式', desc: '52.0视频创作', icon: '🤖', bg: 'bg-gradient-to-br from-emerald-400 to-teal-400' },
   { id: 'image', title: '图片生成', desc: '智能美学提升', tag: 'New', icon: '🖼️', bg: 'bg-gradient-to-br from-blue-500 to-indigo-500' },

@@ -77,7 +77,10 @@ export function HomeAgentConversation({ agent, agentId, onBack }: HomeAgentConve
       console.error('Failed to send agent message.', sendError);
       setMessages((current) => current.filter((message) => message.id !== pending.id));
       setDraft(content);
-      setError('消息发送失败，请重试。');
+      const detail = sendError instanceof Error && sendError.message.trim()
+        ? sendError.message
+        : '';
+      setError(detail || '消息发送失败，请重试。');
     } finally {
       setSending(false);
     }

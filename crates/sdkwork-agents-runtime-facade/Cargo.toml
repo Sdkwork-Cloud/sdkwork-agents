@@ -11,6 +11,7 @@ sdkwork-utils-rust = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 futures = "0.3"
 sdkwork-agent-provider-codex = { workspace = true }
 sdkwork-agent-provider-claude-code = { workspace = true }

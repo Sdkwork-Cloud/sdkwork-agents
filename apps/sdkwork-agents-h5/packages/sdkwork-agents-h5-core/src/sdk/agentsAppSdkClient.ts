@@ -77,23 +77,29 @@ export function useAgentsAppSdkClient(): SdkworkAgentsAppClient {
 
 export type {
   AgentCompositionSlotRecord,
+  AgentImplementationKind,
   AgentItemFeedbackRecord,
   AgentManagementProfile,
   AgentProjectCompositionSlotRecord,
   AgentProjectRecord,
+  AgentProviderBindingRecord,
   AgentRecord,
   AgentResourceUserStateRecord,
   AgentRuntimeExecutionRecord,
   AgentSessionItemRecord,
   AgentSessionRecord,
+  AgentSessionRuntimeBindingRecord,
+  AgentSessionRuntimeBindingStatus,
   AgentEngineCatalog,
   AgentEngineCatalogEngine,
   AgentEngineModelCatalogEntry,
   CreateAgentProviderBindingRequest,
   CreateAgentRequest,
+  CreateAgentSessionRuntimeBindingRequest,
   McpServerMarketplaceRecord,
   PageInfo,
   UpdateAgentRequest,
+  UpdateAgentSessionRuntimeBindingRequest,
 } from "@sdkwork/agents-app-sdk";
 
 export { completeAgentTurn };

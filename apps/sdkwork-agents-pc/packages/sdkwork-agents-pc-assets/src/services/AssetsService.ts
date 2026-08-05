@@ -78,8 +78,8 @@ function formatGroupDate(createdAt: string): string {
 }
 
 export class AssetsService {
-  static async getAssetGroups(): Promise<{ date: string; items: AssetItem[] }[]> {
-    const page = await getDriveAppSdkClientWithSession().drive.assets.list({ pageSize: 200 });
+  static async getAssetGroups(kind?: AssetItem['type']): Promise<{ date: string; items: AssetItem[] }[]> {
+    const page = await getDriveAppSdkClientWithSession().drive.assets.list({ pageSize: 200, kind });
     const mapped = await Promise.all(page.items.map(async (asset) => ({
       asset,
       item: await toAssetItem(asset),

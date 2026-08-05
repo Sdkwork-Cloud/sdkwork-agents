@@ -5362,6 +5362,118 @@ class AppliedAgentModelSelectionRecord {
   }
 }
 
+class AgentEngineConfigFileResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  AgentEngineConfigFileResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory AgentEngineConfigFileResponse.fromJson(Map<String, dynamic> json) {
+    return AgentEngineConfigFileResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('AgentEngineConfigFileResponse.code is required');
+        }
+        return value;
+      })(),
+      data: (() {
+        final map = _sdkworkAsMap(json['data']);
+        if (map == null) {
+          throw FormatException('AgentEngineConfigFileResponse.data is required');
+        }
+        return map;
+      })(),
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentEngineConfigFileResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class AgentEngineConfigFileView {
+  final String engineId;
+  final String configFilePath;
+  final String format;
+  final String content;
+  final bool exists;
+
+  AgentEngineConfigFileView({
+    required this.engineId,
+    required this.configFilePath,
+    required this.format,
+    required this.content,
+    required this.exists
+  });
+
+  factory AgentEngineConfigFileView.fromJson(Map<String, dynamic> json) {
+    return AgentEngineConfigFileView(
+      engineId: (() {
+        final value = json['engineId']?.toString();
+        if (value == null) {
+          throw FormatException('AgentEngineConfigFileView.engineId is required');
+        }
+        return value;
+      })(),
+      configFilePath: (() {
+        final value = json['configFilePath']?.toString();
+        if (value == null) {
+          throw FormatException('AgentEngineConfigFileView.configFilePath is required');
+        }
+        return value;
+      })(),
+      format: (() {
+        final value = json['format']?.toString();
+        if (value == null) {
+          throw FormatException('AgentEngineConfigFileView.format is required');
+        }
+        return value;
+      })(),
+      content: (() {
+        final value = json['content']?.toString();
+        if (value == null) {
+          throw FormatException('AgentEngineConfigFileView.content is required');
+        }
+        return value;
+      })(),
+      exists: (() {
+        final value = json['exists'];
+        if (value is! bool) {
+          throw FormatException('AgentEngineConfigFileView.exists is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'engineId': engineId,
+      'configFilePath': configFilePath,
+      'format': format,
+      'content': content,
+      'exists': exists,
+    };
+  }
+}
+
 class AppliedAgentModelSelectionResponse {
   final int code;
   final dynamic data;
@@ -5495,6 +5607,8 @@ class AgentEngineCatalogEngine {
   final List<AgentEngineModelCatalogEntry> models;
   final String defaultAccessModeId;
   final List<AgentEngineAccessModeCatalogEntry> accessModes;
+  final bool available;
+  final String? unavailableReason;
 
   AgentEngineCatalogEngine({
     required this.engineKey,
@@ -5504,7 +5618,9 @@ class AgentEngineCatalogEngine {
     required this.bindingId,
     required this.models,
     required this.defaultAccessModeId,
-    required this.accessModes
+    required this.accessModes,
+    required this.available,
+    this.unavailableReason
   });
 
   factory AgentEngineCatalogEngine.fromJson(Map<String, dynamic> json) {
@@ -5576,7 +5692,15 @@ class AgentEngineCatalogEngine {
       })())
             .whereType<AgentEngineAccessModeCatalogEntry>()
             .toList();
-      })()
+      })(),
+      available: (() {
+        final value = json['available'];
+        if (value is! bool) {
+          throw FormatException('AgentEngineCatalogEngine.available is required');
+        }
+        return value;
+      })(),
+      unavailableReason: json['unavailableReason']?.toString()
     );
   }
 
@@ -5590,6 +5714,8 @@ class AgentEngineCatalogEngine {
       'models': models.map((item) => item.toJson()).toList(),
       'defaultAccessModeId': defaultAccessModeId,
       'accessModes': accessModes.map((item) => item.toJson()).toList(),
+      'available': available,
+      'unavailableReason': unavailableReason,
     };
   }
 }

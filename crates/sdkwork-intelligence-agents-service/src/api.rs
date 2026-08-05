@@ -975,6 +975,12 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         operation_id: "agents.modelConfigurations.status",
     },
     ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/model_configurations/{engineId}/config_file",
+        tag: "ai",
+        operation_id: "agents.modelConfigurations.configFile",
+    },
+    ApiOperation {
         method: "POST",
         path: "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive",
         tag: "ai",
@@ -1772,7 +1778,7 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 56);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 108);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 109);
         assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 58);
 
         assert_eq!(

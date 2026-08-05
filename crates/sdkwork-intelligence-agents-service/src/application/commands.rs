@@ -925,6 +925,9 @@ pub struct CreateTurnCommand {
     pub requested_at: String,
     /// When true, attempt provider stream chunks for SSE item delta events.
     pub prefer_stream: bool,
+    /// Original user auth token from the authenticated request (transient —
+    /// never persisted). Enables cloudrouter account-pool routing execution.
+    pub auth_token: Option<String>,
 }
 
 /// Result of one completed Turn with its complete authoritative item set.

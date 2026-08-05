@@ -106,7 +106,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::header::{HeaderName, CONTENT_TYPE};
-use axum::http::{HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -1269,7 +1269,7 @@ impl PolicyProvider for DynPolicyProvider {
 pub(crate) type HttpService =
     AgentsService<DynAgentRepository, DynAgentAuditSink, DynPolicyProvider>;
 
-struct AgentModelConfigurationRuntime {
+pub(crate) struct AgentModelConfigurationRuntime {
     secrets: Mutex<Box<dyn SecretProvider>>,
     configurations: Mutex<Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>>,
 }
@@ -1282,7 +1282,7 @@ impl AgentModelConfigurationRuntime {
         )
     }
 
-    fn with_providers(
+    pub(crate) fn with_providers(
         secret_provider: Box<dyn SecretProvider>,
         configuration_store: Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>,
     ) -> Self {
@@ -1290,6 +1290,39 @@ impl AgentModelConfigurationRuntime {
             secrets: Mutex::new(secret_provider),
             configurations: Mutex::new(configuration_store),
         }
+    }
+
+    /// Resolves a stored model-configuration credential by secret reference.
+    ///
+    /// Backs the kernel host secret surface so agent engines (e.g. the Rig
+    /// simple agent) can resolve their configured API key at inference time
+    /// through `HostProvider::resolve_secret`.
+    pub(crate) fn resolve_secret_value(
+        &self,
+        secret_ref_id: &str,
+        requester: &str,
+    ) -> KernelResult<sdkwork_agent_kernel::ProviderSecretValue> {
+        let guard = self.secrets.lock().map_err(|_| {
+            KernelError::provider_error(
+                "secret_store_unavailable",
+                "model configuration secret store is unavailable",
+            )
+        })?;
+        let result = guard
+            .access_secret(SecretAccessRequest::new(secret_ref_id, requester))
+            .map_err(|error| {
+                KernelError::provider_error("secret_resolution_failed", error.to_string())
+            })?;
+        let value = result.value.ok_or_else(|| {
+            KernelError::provider_error(
+                "secret_not_configured",
+                format!("model credential {secret_ref_id} is not configured"),
+            )
+        })?;
+        Ok(sdkwork_agent_kernel::ProviderSecretValue::new(
+            secret_ref_id,
+            value,
+        ))
     }
 }
 
@@ -2095,6 +2128,7 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                 requested_by: subject,
                 requested_at: request.requested_at,
                 prefer_stream: false,
+                auth_token: None,
             })
             .map_err(|error| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
@@ -2521,6 +2555,10 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
         .route(
             "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/status",
             get(app_get_model_configuration_status),
+        )
+        .route(
+            "/app/v3/api/ai/model_configurations/{engineId}/config_file",
+            get(app_get_agent_engine_config_file),
         )
         .route(
             "/app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive",
@@ -3154,6 +3192,26 @@ fn apply_agent_model_configuration(
         ));
     }
 
+    // Apply a freshly materialized rig (simple agent) configuration to the
+    // shared agent-engine host so the live backend takes effect immediately.
+    if engine_id == "rig" {
+        let refresh_result = crate::runtime_facade_bridge::refresh_rig_agent_engine(
+            &application.profile.configuration,
+            std::sync::Arc::new(
+                crate::runtime_facade_bridge::ModelConfigurationRuntimeHostProvider::new(
+                    state.model_configuration_runtime.clone(),
+                ),
+            ),
+        );
+        if let Err(error) = refresh_result {
+            tracing::warn!(
+                engine_id,
+                error = %error,
+                "rig agent engine refresh after model configuration failed"
+            );
+        }
+    }
+
     if let (Some(api_key), Some(secret_ref)) = (supplied_api_key, existing_secret_ref.as_ref()) {
         state
             .model_configuration_runtime
@@ -3540,6 +3598,45 @@ async fn app_get_model_configuration_status(
                 effective_default_model: read_back.effective_default_model,
                 credential_configured: read_back.credential_configured,
                 issues: read_back.issues,
+            },
+        })
+    }
+    .await;
+    finish_api_json(&web_ctx, result)
+}
+
+#[derive(Deserialize)]
+struct AgentEngineConfigFilePath {
+    engine_id: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentEngineConfigFileView {
+    engine_id: String,
+    config_file_path: String,
+    format: String,
+    content: String,
+    exists: bool,
+}
+
+async fn app_get_agent_engine_config_file(
+    State(_state): State<AgentHttpState>,
+    Extension(context): Extension<AgentRequestContext>,
+    Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    Path(path): Path<AgentEngineConfigFilePath>,
+) -> Response {
+    let result: ApiResult<ResourceData<AgentEngineConfigFileView>> = async {
+        let _scope = RequestScope::from_context(context);
+        let file = sdkwork_agents_runtime_facade::read_agent_engine_config_file(&path.engine_id)
+            .map_err(|error| ApiProblem::validation(error.to_string()))?;
+        Ok(ResourceData {
+            item: AgentEngineConfigFileView {
+                engine_id: file.engine_key,
+                config_file_path: file.config_file_path,
+                format: file.format,
+                content: file.content,
+                exists: file.exists,
             },
         })
     }
@@ -8989,6 +9086,7 @@ async fn app_create_turn(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    headers: HeaderMap,
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<AppCreateTurnQueryParams>, QueryRejection>,
     body: Result<Json<AppCreateTurnBody>, JsonRejection>,
@@ -9032,6 +9130,9 @@ async fn app_create_turn(
             requested_by: scope.subject,
             requested_at: body.requested_at,
             prefer_stream: stream_requested,
+            // Transient auth token for cloudrouter account-pool routing; the
+            // bearer value is never persisted on the turn record.
+            auth_token: extract_bearer_auth_token(&headers),
         };
         execute_turn_http_response(
             &state,
@@ -10490,6 +10591,7 @@ async fn backend_create_turn(
     State(state): State<AgentHttpState>,
     Extension(context): Extension<AgentRequestContext>,
     Extension(web_ctx): Extension<sdkwork_web_core::WebRequestContext>,
+    headers: HeaderMap,
     path: Result<Path<(String, String)>, PathRejection>,
     query: Result<Query<BackendCreateTurnQueryParams>, QueryRejection>,
     body: Result<Json<CreateTurnBody>, JsonRejection>,
@@ -10532,6 +10634,9 @@ async fn backend_create_turn(
             requested_by: scope.subject,
             requested_at: body.requested_at,
             prefer_stream: stream_requested,
+            // Transient auth token for cloudrouter account-pool routing; the
+            // bearer value is never persisted on the turn record.
+            auth_token: extract_bearer_auth_token(&headers),
         };
         execute_turn_http_response(
             &state,
@@ -12616,6 +12721,21 @@ fn total_pages(total_items: usize, page_size: usize) -> usize {
     }
 }
 
+/// Extracts the raw `Authorization: Bearer <token>` credential from request
+/// headers for transient cloudrouter account-pool routing. Returns `None` when
+/// the header is absent or does not use the Bearer scheme; the value is never
+/// persisted.
+fn extract_bearer_auth_token(headers: &HeaderMap) -> Option<String> {
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .trim();
+    let token = value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer "))?;
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
 fn offset_page_info(page: usize, page_size: usize, total_count: u64, has_more: bool) -> PageInfo {
     let params = sdkwork_utils_rust::http_api::OffsetListPageParams {
         page: page as i64,
@@ -13138,11 +13258,14 @@ mod tests {
         let catalog = crate::agent_engine_catalog::list_agent_engine_catalog();
         assert!(!catalog.engines.is_empty(), "app catalog must not be empty");
 
-        for engine in catalog.engines {
+        // The complete catalog always lists every bootstrappable engine, but
+        // engines that failed to bootstrap in this runtime profile carry no
+        // published models; only available engines can dispatch a selection.
+        for engine in catalog.engines.iter().filter(|engine| engine.available) {
             let model_id = engine
                 .models
                 .first()
-                .expect("bootstrappable engine should publish a model")
+                .expect("available engine should publish a model")
                 .model_id
                 .clone();
             let response = post_model_selection(

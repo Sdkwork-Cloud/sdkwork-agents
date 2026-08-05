@@ -1,13 +1,16 @@
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 use sdkwork_agent_kernel::{
-    AgentConfigurationProvider, AgentConfigurationUpgradePlan, AgentConfigurationUpgradeRequest,
+    AgentConfigValue, AgentConfiguration, AgentConfigurationProvider,
+    AgentConfigurationUpgradePlan, AgentConfigurationUpgradeRequest,
     AgentExecutionSettingsRequest, AgentExecutionSettingsResolution, AgentExecutionSettingsSpec,
     AgentMessage, AgentMessageRole, AgentModelConfigurationApplication,
-    AgentModelConfigurationRequest, AgentModelSelectionRequest, AgentSession, KernelError,
-    KernelResult, ModelDescriptor, ModelProvider, ModelRequest, ModelResponse, ModelStreamChunk,
-    ModelStreamSink, ProviderModelConfigurationStatus, ProviderSessionActivityProvider,
-    SessionActivitySnapshot, SessionKind, SessionSource, SessionState,
+    AgentModelConfigurationRequest, AgentModelSelectionRequest, AgentSession, EnvFileSecretHostProvider,
+    HostProvider, KernelError, KernelResult, ModelDescriptor, ModelProvider, ModelRequest,
+    ModelResponse, ModelStreamChunk, ModelStreamSink, ProviderModelConfigurationStatus,
+    ProviderSessionActivityProvider, SessionActivitySnapshot, SessionKind, SessionSource,
+    SessionState,
 };
 use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
@@ -26,12 +29,15 @@ use sdkwork_agent_provider_mimo_code::{
 };
 use sdkwork_agent_provider_openclaw::{OpenClawConfigurationProvider, OpenClawSdkIntegration};
 use sdkwork_agent_provider_opencode::{OpenCodeConfigurationProvider, OpenCodeSdkIntegration};
-use sdkwork_agent_provider_rig::{RigConfigurationProvider, RigSdkIntegration};
+use sdkwork_agent_provider_rig::{
+    ids, RigBackendConfig, RigBackendMode, RigConfigurationProvider, RigModelProvider,
+    RigSdkIntegration,
+};
 use sdkwork_agent_provider_spi::{
-    SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord, SdkRuntimeSessionRecord,
-    SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
-    HERMES_BINDING_ID, MIMO_CODE_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
-    RIG_BINDING_ID,
+    SdkRuntimeBackedModelProvider, SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord,
+    SdkRuntimeSessionRecord, SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID,
+    GEMINI_CLI_BINDING_ID, HERMES_BINDING_ID, MIMO_CODE_BINDING_ID, OPENCLAW_BINDING_ID,
+    OPENCODE_BINDING_ID, RIG_BINDING_ID, SDK_CAPABILITY_MODEL_CHAT,
 };
 
 /// Canonical T1 agent-engine keys bootstrapped by default in production hosts.
@@ -1056,12 +1062,76 @@ pub fn bootstrap_agent_engine(engine_key: &str) -> Result<AgentEngineSlot, Agent
         "mimo-code" => MiMoCodeSdkIntegration::bootstrap()
             .map(AgentEngineSlot::MiMoCode)
             .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
-        "rig" => RigSdkIntegration::bootstrap()
-            .map(AgentEngineSlot::Rig)
-            .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
+        "rig" => bootstrap_rig_agent_engine(None, Arc::new(EnvFileSecretHostProvider::new())),
         other => Err(AgentEngineBootstrapError::UnsupportedEngine(
             other.to_string(),
         )),
+    }
+}
+
+/// Bootstraps the Rig (simple agent) engine slot, upgrading its model provider
+/// from the default fail-closed backend when an applied model configuration
+/// enables a live OpenAI-compatible backend.
+///
+/// `configuration` is the materialized rig profile configuration (from
+/// [`apply_agent_engine_model_configuration`]); a `None` (or a configuration
+/// that is not live/not openai-compatible) keeps the current fail-closed
+/// behavior so an unconfigured engine never silently answers as a stub.
+pub fn bootstrap_rig_agent_engine(
+    configuration: Option<&AgentConfiguration>,
+    host: Arc<dyn HostProvider + Send + Sync>,
+) -> Result<AgentEngineSlot, AgentEngineBootstrapError> {
+    let integration = RigSdkIntegration::bootstrap()
+        .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string()))?;
+    let Some(configuration) = configuration else {
+        return Ok(AgentEngineSlot::Rig(integration));
+    };
+    let backend_config = match RigBackendConfig::from_configuration(configuration) {
+        Ok(config) => config,
+        Err(error) => {
+            tracing::debug!(
+                error = %error,
+                "rig backend configuration is not usable; keeping fail-closed backend"
+            );
+            return Ok(AgentEngineSlot::Rig(integration));
+        }
+    };
+    if !matches!(backend_config.mode, RigBackendMode::Live) {
+        return Ok(AgentEngineSlot::Rig(integration));
+    }
+    let default_model_id = configuration
+        .value("llm.rig.default_model")
+        .and_then(|value| match value {
+            AgentConfigValue::String(value) if !value.trim().is_empty() => Some(value.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| ids::DEFAULT_MODEL_ID.to_string());
+    match RigModelProvider::with_rig_core_openai(backend_config, host, default_model_id) {
+        Ok(model) => {
+            let model = SdkRuntimeBackedModelProvider::new(
+                integration.runtime.clone(),
+                Arc::new(model),
+                SDK_CAPABILITY_MODEL_CHAT,
+                ids::MODEL_PROVIDER_ID,
+            );
+            let upgraded = RigSdkIntegration {
+                sdk: integration.sdk,
+                transports: integration.transports,
+                runtime: integration.runtime,
+                lifecycle: integration.lifecycle,
+                model,
+                session_adapter: integration.session_adapter,
+            };
+            tracing::info!("rig agent engine upgraded to live OpenAI-compatible backend");
+            Ok(AgentEngineSlot::Rig(upgraded))
+        }
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "rig live backend upgrade failed; keeping fail-closed backend"
+            );
+            Ok(AgentEngineSlot::Rig(integration))
+        }
     }
 }
 
@@ -1226,6 +1296,54 @@ mod tests {
             assert_eq!(slot.engine_key(), *engine);
             assert!(!slot.list_model_ids().is_empty());
         }
+    }
+
+    #[test]
+    fn rig_engine_stays_fail_closed_without_live_configuration() {
+        let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
+        let slot = bootstrap_rig_agent_engine(None, host).expect("rig bootstrap");
+        assert_eq!(slot.engine_key(), "rig");
+        assert_eq!(slot.model_provider().health().status, "degraded");
+    }
+
+    #[test]
+    fn rig_engine_upgrades_to_live_backend_with_applied_configuration() {
+        let configuration = AgentConfiguration::new("agent.rig-general", "profile.rig.live")
+            .set("llm.rig.provider_id", AgentConfigValue::string("openai"))
+            .set(
+                "llm.rig.api_key",
+                AgentConfigValue::secret_ref("test.rig.api_key"),
+            )
+            .set(
+                "llm.rig.default_model",
+                AgentConfigValue::string("example-chat"),
+            )
+            .set("runtime.rig.backend_mode", AgentConfigValue::string("live"));
+        let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
+        let slot = bootstrap_rig_agent_engine(Some(&configuration), host).expect("rig bootstrap");
+        assert_eq!(slot.engine_key(), "rig");
+        assert_eq!(slot.model_provider().health().status, "available");
+        let descriptor = slot
+            .list_model_descriptors()
+            .into_iter()
+            .next()
+            .expect("rig model descriptor");
+        assert_eq!(
+            descriptor.metadata_value("sdkwork.backend.fail_closed"),
+            Some("false")
+        );
+    }
+
+    #[test]
+    fn rig_engine_keeps_fail_closed_when_configuration_is_not_live() {
+        let configuration = AgentConfiguration::new("agent.rig-general", "profile.rig.failclosed")
+            .set(
+                "runtime.rig.backend_mode",
+                AgentConfigValue::string("fail_closed"),
+            );
+        let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
+        let slot = bootstrap_rig_agent_engine(Some(&configuration), host).expect("rig bootstrap");
+        assert_eq!(slot.model_provider().health().status, "degraded");
     }
 
     #[test]

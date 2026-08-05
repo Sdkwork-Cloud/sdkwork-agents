@@ -30,7 +30,9 @@ export const InspirationView = () => {
 
   useEffect(() => {
     // Initial data load
-    InspirationService.getDiscoverData().then(setDiscoverData);
+    InspirationService.getDiscoverData()
+      .then(setDiscoverData)
+      .catch(() => setDiscoverData(null));
   }, []);
 
   const [searchQuery, setSearchQuery] = useState<string>('');

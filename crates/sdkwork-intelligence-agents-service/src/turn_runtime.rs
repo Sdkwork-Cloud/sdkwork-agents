@@ -71,6 +71,10 @@ pub struct TurnExecutionInput {
     /// When true, an active binding exposes `model.chat` and the gateway may
     /// replace this completer with a kernel-backed implementation.
     pub provider_has_model_chat: bool,
+    /// Original user auth token from the authenticated request (transient —
+    /// never persisted). When present, the turn may be executed through the
+    /// cloudrouter account-pool routing gateway instead of a local engine.
+    pub auth_token: Option<String>,
 }
 
 /// Output from one durable turn execution.
@@ -850,6 +854,7 @@ mod tests {
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: false,
+            auth_token: None,
         });
         assert!(output.content.contains("Hello"));
         assert!(output.content.contains("Welcome"));
@@ -873,6 +878,7 @@ mod tests {
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: true,
+            auth_token: None,
         });
         assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
         assert!(output.content.contains("canonical agent-engine"));
@@ -938,6 +944,7 @@ mod tests {
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: true,
+            auth_token: None,
         });
         assert_eq!(output.content, "kernel reply");
         assert_eq!(output.runtime_mode, "managed-agent-kernel-model-v1");

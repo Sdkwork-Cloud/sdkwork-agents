@@ -13,6 +13,7 @@ import {
   resolveAppSdkAuthToken,
   type SdkworkChatSession,
 } from "../session/session";
+import { resolveAgentsAppSdkBaseUrl } from "./agentsAppSdkClient";
 import { readRuntimeEnv } from "./runtimeEnv";
 
 export type SdkworkSkillsAppClient = GeneratedSkillsAppClient;
@@ -41,9 +42,14 @@ function normalizeGeneratedSdkBaseUrl(baseUrl: string): string {
 }
 
 export function resolveSkillsAppSdkBaseUrl(): string | null {
-  const fromEnv = readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_SKILLS_APP_API_BASE_URL");
+  const fromEnv = readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_SKILLS_APP_API_BASE_URL")
+    ?? readRuntimeEnv("VITE_SDKWORK_AGENTS_PLATFORM_API_GATEWAY_HTTP_URL");
   if (fromEnv) return fromEnv;
-  return null;
+  // Gateway-routed deployments (cloud profiles and local dev ingress) serve
+  // every app API under the same origin as the Agents API. Reuse the Agents
+  // base URL fallback chain (public HTTP URL -> window origin) so the
+  // skills SDK works without its own explicit VITE_ override.
+  return resolveAgentsAppSdkBaseUrl();
 }
 
 export function isSkillsAppSdkConfigured(): boolean {

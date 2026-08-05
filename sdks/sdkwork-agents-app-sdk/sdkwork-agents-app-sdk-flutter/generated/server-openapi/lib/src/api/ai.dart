@@ -1104,6 +1104,15 @@ class AiApi {
     })();
   }
 
+  /// Read the provider-native configuration file with credentials masked
+  Future<AgentEngineConfigFileResponse?> agentsModelConfigurationsConfigFile(String engineId) async {
+    final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/config_file'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : AgentEngineConfigFileResponse.fromJson(map);
+    })();
+  }
+
   /// Read back the provider-native config state and detect drift
   Future<ModelConfigurationStatusResponse?> agentsModelConfigurationsStatus(String engineId, String profileId) async {
     final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/${serializePathParameter(profileId, const PathParameterSpec('profileId', 'simple', false))}/status'));

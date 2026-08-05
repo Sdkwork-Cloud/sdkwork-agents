@@ -10,4 +10,6 @@ export interface AgentEngineCatalogEngine {
   models: AgentEngineModelCatalogEntry[];
   defaultAccessModeId: string;
   accessModes: AgentEngineAccessModeCatalogEntry[];
+  available: boolean;
+  unavailableReason?: string;
 }

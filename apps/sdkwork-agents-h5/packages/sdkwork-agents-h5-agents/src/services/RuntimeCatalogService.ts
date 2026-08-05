@@ -46,8 +46,8 @@ function mapAgentEngineRecord(record: AgentEngineCatalogEngine): ToolItem {
   return {
     id: record.engineKey,
     name: engineKeyToVendorLabel(record.engineKey),
-    description: "Code engine runtime",
-    provider: "Code Engine",
+    description: "Agent engine runtime",
+    provider: "Agent Engine",
     category: "official",
     icon: createElement(Code2, { size: 20, className: "text-emerald-500" }),
   };
@@ -76,6 +76,33 @@ export async function loadRuntimeModelCatalog(
   return catalog.engines.flatMap((engine) =>
     engine.models.map(mapModelRecord),
   );
+}
+
+/**
+ * Resolve the runtime model used for one chat turn from the agent-engine
+ * catalog. Prefers the exact `modelId`; when absent (or not present in the
+ * catalog, e.g. a stale hard-coded default), falls back to the engine default
+ * model (`defaultForEngine`), then to the first catalog entry.
+ *
+ * The resolved entry carries the canonical binding identity (`bindingId`,
+ * `providerId`, `engineKey`) required to bind a session for managed turns.
+ */
+export async function resolveChatRuntimeModel(
+  modelId?: string,
+  client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
+): Promise<ModelCatalogItem> {
+  const catalog = await loadRuntimeModelCatalog(client);
+  if (!catalog.length) {
+    throw new Error("Agent engine runtime catalog is unavailable.");
+  }
+  if (modelId) {
+    const exact = catalog.find((item) => item.id === modelId);
+    if (exact) {
+      return exact;
+    }
+  }
+  const engineDefault = catalog.find((item) => item.defaultForEngine);
+  return engineDefault ?? catalog[0];
 }
 
 /** One MCP marketplace page for interactive pickers (`PAGINATION_SPEC.md` §8). */
@@ -111,6 +138,8 @@ export function engineKeyToVendorLabel(engineKey: string): string {
     opencode: "OpenCode",
     openclaw: "OpenClaw",
     hermes: "Hermes",
+    "mimo-code": "MiMo Code",
+    rig: "Rig",
   };
   return labels[engineKey] ?? engineKey;
 }

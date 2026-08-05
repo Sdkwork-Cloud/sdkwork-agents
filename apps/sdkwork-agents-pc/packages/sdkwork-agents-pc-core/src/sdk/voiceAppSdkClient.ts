@@ -13,6 +13,7 @@ import {
   resolveAppSdkAuthToken,
   type SdkworkChatSession,
 } from "../session/session";
+import { resolveAgentsAppSdkBaseUrl } from "./agentsAppSdkClient";
 import { readRuntimeEnv } from "./runtimeEnv";
 
 export type SdkworkVoiceAppClient = GeneratedVoiceAppClient;
@@ -35,7 +36,11 @@ function normalizeGeneratedSdkBaseUrl(baseUrl: string): string {
 export function resolveVoiceAppSdkBaseUrl(): string | null {
   const fromEnv = readRuntimeEnv("VITE_SDKWORK_AGENTS_PC_VOICE_APP_API_BASE_URL");
   if (fromEnv) return fromEnv;
-  return null;
+  // Gateway-routed deployments (cloud profiles and local dev ingress) serve
+  // every app API under the same origin as the Agents API. Reuse the Agents
+  // base URL fallback chain (public HTTP URL -> window origin) so the
+  // voice SDK works without its own explicit VITE_ override.
+  return resolveAgentsAppSdkBaseUrl();
 }
 
 export function isVoiceAppSdkConfigured(): boolean {

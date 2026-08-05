@@ -57,7 +57,7 @@ sdkwork-agent-provider-opencode = { path = "../sdkwork-kernel/agent-providers/cr
 sdkwork-agent-provider-openclaw = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-openclaw" }
 sdkwork-agent-provider-hermes = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-hermes" }
 sdkwork-agent-provider-mimo-code = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-mimo-code" }
-sdkwork-agent-provider-rig = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-rig" }
+sdkwork-agent-provider-rig = { path = "../sdkwork-kernel/agent-providers/crates/sdkwork-agent-provider-rig", features = ["rig-core-adapter"] }
 
 # Platform frameworks
 sdkwork-web-core = { path = "../sdkwork-web-framework/crates/sdkwork-web-core" }
@@ -68,6 +68,9 @@ sdkwork-iam-web-adapter = { path = "../sdkwork-iam/crates/sdkwork-iam-web-adapte
 sdkwork-iam-database-host = { path = "../sdkwork-iam/crates/sdkwork-iam-database-host" }
 sdkwork-iam-embedded-application-bootstrap = { path = "../sdkwork-iam/crates/sdkwork-iam-embedded-application-bootstrap" }
 sdkwork-routes-iam-app-api = { path = "../sdkwork-iam/crates/sdkwork-routes-iam-app-api" }
+# sdkwork-drive dependency app-api surfaces (assets) mounted same-origin by the standalone gateway
+sdkwork-api-drive-assembly = { path = "../sdkwork-drive/crates/sdkwork-api-drive-assembly" }
+sdkwork-routes-drive-app-api = { path = "../sdkwork-drive/crates/sdkwork-routes-drive-app-api" }
 sdkwork-database-config = { path = "../sdkwork-database/crates/sdkwork-database-config" }
 sdkwork-database-sqlx = { path = "../sdkwork-database/crates/sdkwork-database-sqlx" }
 sdkwork-database-lifecycle = { path = "../sdkwork-database/crates/sdkwork-database-lifecycle" }
@@ -80,6 +83,7 @@ sdkwork-intelligence-prompts-ai-contract = { path = "../sdkwork-prompts/crates/s
 
 # Local intelligence agents service + HTTP routes (application-owned)
 sdkwork-intelligence-agents-service = { path = "crates/sdkwork-intelligence-agents-service", features = ["http-axum", "postgres-sync"] }
+cloudrouter-open-sdk = { path = "../sdkwork-cloudrouter/sdks/cloudrouter-open-sdk/cloudrouter-open-sdk-rust/generated/server-openapi" }
 sdkwork-routes-agents-http-shared = { path = "crates/sdkwork-routes-agents-http-shared" }
 sdkwork-routes-agents-open-api = { path = "crates/sdkwork-routes-agents-open-api" }
 sdkwork-routes-agents-app-api = { path = "crates/sdkwork-routes-agents-app-api" }

@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "eacbc2e2c994ab83b7e4a30b8a4a49bff3fd1fe3dd062b803291d6412ffedc93"
+      "sha256": "1410a30152ff6b98d28c61cfe5c0b59f131296eb1772053e256bc69e5c98ba4a"
     },
     {
       "path": "src/api/base.ts",
@@ -116,15 +116,23 @@
     },
     {
       "path": "src/types/agent-engine-catalog-engine.ts",
-      "sha256": "bc4f306e2af3aa95dc224e51cb667c48e348ef782a7f294132e33b5dda90d27f"
+      "sha256": "0f1640c13fe7b53ec1695c848260daeb0ee2e0dfe67d51a73a010be538ec549b"
     },
     {
       "path": "src/types/agent-engine-catalog-list-response.ts",
-      "sha256": "d65f33c37bd1f3141f3a9cda29206a3f5393984dc2a81a5048dcc71d212d6b75"
+      "sha256": "e3da07f746249c1dc9c75daf8e5458a83558765681c0606d91966dd2c0e97387"
     },
     {
       "path": "src/types/agent-engine-catalog.ts",
       "sha256": "4c95180201761c0fc932d8564b335c33775fc5855424cd813455aa3d5c964601"
+    },
+    {
+      "path": "src/types/agent-engine-config-file-response.ts",
+      "sha256": "22e897f2502aeb20f2481ff6e693a0a5e4bdcb2a725060d663836c654183a523"
+    },
+    {
+      "path": "src/types/agent-engine-config-file-view.ts",
+      "sha256": "2241600c4efc190bd388745827cbbbf4a3bf82e3b5be2a09cb2cd36c0deaeb11"
     },
     {
       "path": "src/types/agent-engine-model-catalog-entry.ts",
@@ -680,7 +688,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "78615354e51866cf0eb9eca2c9d18fe494e113c156896e681f2338bf6a5deb7d"
+      "sha256": "7714cb25230d71a18494b63c63300f7df9705aa52c716702edcf98851e6c9de8"
     },
     {
       "path": "src/types/int64-string.ts",
