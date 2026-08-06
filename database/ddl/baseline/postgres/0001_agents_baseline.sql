@@ -1757,3 +1757,22 @@ $$;
 CREATE TRIGGER trg_ai_agent_user_state_bump_session_activity
 AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_resource_user_state
 FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity_from_user_state();
+
+-- Agent model configuration runtime profiles (server-authoritative
+-- PostgreSQL persistence; DATABASE_SPEC: authoritative-server is PostgreSQL
+-- only). Applied model configurations survive process restarts in the
+-- canonical Agents database.
+CREATE TABLE IF NOT EXISTS ai_agent_model_configuration_profile (
+    profile_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    configuration_version TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    configuration_json TEXT NOT NULL DEFAULT '{}',
+    secret_bindings_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_agent_model_configuration_profile_agent
+    ON ai_agent_model_configuration_profile (agent_id, status);

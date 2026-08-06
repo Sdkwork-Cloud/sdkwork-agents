@@ -10,7 +10,7 @@ use sdkwork_agents_contract::{
 use sdkwork_intelligence_agents_service::{
     AgentHttpState, AllowAllPolicyProvider, CloudRouterFirstTurnExecutor, IamGatedPolicyProvider,
     InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink,
-    SqlAgentRepository, SqliteAgentConfigurationStore, SyncPostgresAdapter,
+    PostgresAgentConfigurationStore, SqlAgentRepository, SyncPostgresAdapter,
 };
 use std::sync::Arc;
 
@@ -77,6 +77,7 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     // generator. Its cloned sequence state is the collision boundary for all
     // Agents modules in this process; other pods receive distinct node leases.
     let audit_adapter = repository_adapter.clone();
+    let configuration_pool = repository_adapter.pool().clone();
 
     let repository = SqlAgentRepository::new(repository_adapter);
     let audit_sink = SqlAgentAuditSink::new_global(audit_adapter);
@@ -91,42 +92,13 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
         Arc::new(CloudRouterFirstTurnExecutor::new(RuntimeFacadeTurnExecutor)),
     );
 
-    // Persist applied model configuration profiles in the local SQLite store
-    // so they survive process restarts (the canonical PostgreSQL database
-    // remains authoritative for agents business records; the model
-    // configuration runtime profile store is a local adapter). The path is
-    // configurable through `SDKWORK_AGENTS_MODEL_CONFIG_SQLITE_PATH`; when
-    // unset it defaults under `SDKWORK_AGENTS_APP_ROOT` and falls back to an
-    // in-memory store only when neither is available.
-    let configuration_store = sqlite_model_configuration_store()
-        .context("bootstrap SQLite model configuration profile store")?;
+    // Persist applied model configuration profiles in the canonical Agents
+    // PostgreSQL database (server-authoritative persistence; SQLite is
+    // client-local only per DATABASE_SPEC).
+    let configuration_store =
+        PostgresAgentConfigurationStore::from_pool(configuration_pool);
     Ok(state.with_model_configuration_providers(
         Box::new(InMemorySecretProvider::new()),
-        configuration_store,
+        Box::new(configuration_store),
     ))
-}
-
-/// Opens the model configuration profile SQLite store for the current
-/// environment: explicit path first, then `<app-root>/.runtime/`, then memory.
-fn sqlite_model_configuration_store() -> Result<Box<dyn AgentConfigurationStore>> {
-    if let Some(path) = std::env::var_os("SDKWORK_AGENTS_MODEL_CONFIG_SQLITE_PATH") {
-        let path = std::path::PathBuf::from(path);
-        return Ok(Box::new(
-            SqliteAgentConfigurationStore::new(&path).map_err(anyhow::Error::msg)?,
-        ));
-    }
-    if let Some(app_root) = std::env::var_os("SDKWORK_AGENTS_APP_ROOT") {
-        let directory = std::path::PathBuf::from(app_root).join(".runtime");
-        std::fs::create_dir_all(&directory).map_err(|error| {
-            anyhow::anyhow!("create model configuration store directory: {error}")
-        })?;
-        return Ok(Box::new(
-            SqliteAgentConfigurationStore::new(directory.join("model-configuration.sqlite3"))
-                .map_err(anyhow::Error::msg)?,
-        ));
-    }
-    tracing::warn!(
-        "no SDKWORK_AGENTS_MODEL_CONFIG_SQLITE_PATH or SDKWORK_AGENTS_APP_ROOT; model configuration profiles stay in memory"
-    );
-    Ok(Box::new(InMemoryAgentConfigurationStore::new()))
 }

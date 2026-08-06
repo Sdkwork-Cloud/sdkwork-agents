@@ -13098,7 +13098,7 @@ mod tests {
         let _guard = model_configuration_test_guard();
         // An in-memory profile store isolates the persistence surface for the
         // read-back lifecycle endpoints.
-        let store = crate::SqliteAgentConfigurationStore::in_memory().expect("in-memory store");
+        let store = sdkwork_agent_kernel::InMemoryAgentConfigurationStore::new();
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),

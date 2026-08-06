@@ -49,40 +49,23 @@ greenfield baseline.
 All business `id` columns are application-allocated signed 64-bit values.
 PostgreSQL sequences and identity columns are not used for business IDs.
 
+## Initialization state
+
+This module is in **initialization state** for greenfield deployments:
+
+1. **Baseline** — `database/ddl/baseline/{engine}/0001_agents_baseline.sql` contains the full DDL snapshot.
+2. **Migrations** — `database/migrations/{engine}/` is reserved for post-GA incremental schema changes only. It is intentionally empty at initialization.
+3. **Drift** — run `pnpm db:drift:check` before release.
+
 ## Commands
 
-```powershell
-pnpm db:validate
-pnpm db:materialize:contract
-pnpm db:plan
-pnpm db:init
-pnpm db:migrate
-pnpm db:seed
-pnpm db:status
-pnpm db:drift:check
-pnpm test:database:postgres-live
+```bash
+pnpm run db:validate
+pnpm run db:materialize:contract
+pnpm run db:plan
+pnpm run db:init
+pnpm run db:migrate
+pnpm run db:seed
+pnpm run db:status
+pnpm run db:drift:check
 ```
-
-The live PostgreSQL suite requires `SDKWORK_DATABASE_URL` and these
-administrative provisioning values:
-
-- `SDKWORK_DATABASE_ADMIN_HOST`
-- `SDKWORK_DATABASE_ADMIN_DATABASE`
-- `SDKWORK_DATABASE_ADMIN_USERNAME`
-- `SDKWORK_DATABASE_ADMIN_PASSWORD`
-
-`SDKWORK_DATABASE_ADMIN_PORT` and `SDKWORK_DATABASE_ADMIN_SSL_MODE` are
-optional. The suite creates and removes an isolated `sdkwork_ai_test_*`
-database and schema, and verifies Task occurrence materialization, concurrent
-Run claiming, Attempt creation, expired-lease recovery, and stale-fence
-rejection. Credentials belong in operator or CI secret storage and must not be
-committed.
-
-Related authorities:
-
-- `../sdkwork-specs/DATABASE_SPEC.md`
-- `../sdkwork-specs/DATABASE_FRAMEWORK_SPEC.md`
-- `../sdkwork-specs/MIGRATION_SPEC.md`
-- `specs/AGENTS_DOMAIN_SPEC.md`
-- `specs/AGENTS_SESSION_MODEL_SPEC.md`
-- `specs/AGENTS_TASK_SCHEDULING_SPEC.md`
