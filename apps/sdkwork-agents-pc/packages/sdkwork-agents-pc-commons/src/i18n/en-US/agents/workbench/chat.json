@@ -53,5 +53,12 @@
   "save": "Save",
   "cancel": "Cancel",
   "close": "Close",
-  "loading": "Loading"
+  "loading": "Loading",
+  "playground": {
+    "modelPicker": {
+      "vendorSection": "Vendors",
+      "noVendors": "No vendors available",
+      "noVendorModels": "No models for this vendor"
+    }
+  }
 }

@@ -182,6 +182,7 @@ fn run_live_turns_flow(config: LiveProviderConfig) {
         requested_by: sample_subject(),
         requested_at: "2026-08-01T00:01:30Z".to_string(),
         prefer_stream: true,
+        auth_token: None,
     };
     let result = service
         .execute_turn_with_stream_sink(turn_command.clone(), Arc::new(sink.clone()))
@@ -272,6 +273,7 @@ fn run_live_turns_flow(config: LiveProviderConfig) {
                 payload_hash: "sha256:live-sse-payload-2".to_string(),
                 client_request_id: Some("request.live.sse.2".to_string()),
                 requested_at: "2026-08-01T00:02:30Z".to_string(),
+                auth_token: None,
                 ..turn_command.clone()
             },
             Arc::new(resumed_sink.clone()),

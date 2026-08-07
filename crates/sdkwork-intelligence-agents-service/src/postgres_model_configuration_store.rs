@@ -14,12 +14,11 @@ use sdkwork_agent_kernel::{
     AgentProfileArchiveRequest, AgentSecretBindingKind, ConfigurationSubscription, KernelError,
     KernelResult,
 };
-use sqlx::Row;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
-use crate::postgres_sync_pool::BlockingPostgresPool;
 use crate::persistence::AGENTS_DATABASE_SERVICE;
+use crate::postgres_sync_pool::BlockingPostgresPool;
 
 /// PostgreSQL-backed [`AgentConfigurationStore`] for the model configuration
 /// runtime profiles. SQL executes on the shared process pool through
@@ -150,9 +149,8 @@ impl AgentConfigurationStore for PostgresAgentConfigurationStore {
     fn list_profiles(&self, agent_id: &str) -> KernelResult<Vec<AgentConfigurationProfile>> {
         let pool = self.pool.clone();
         let agent_id = agent_id.to_owned();
-        let rows: Vec<(String, String, String, String, String, String)> = self
-            .pool
-            .block_on(async move {
+        let rows: Vec<(String, String, String, String, String, String)> =
+            self.pool.block_on(async move {
                 sqlx::query_as::<_, (String, String, String, String, String, String)>(
                     "SELECT profile_id, agent_id, configuration_version, status,
                             configuration_json, secret_bindings_json
@@ -167,7 +165,14 @@ impl AgentConfigurationStore for PostgresAgentConfigurationStore {
             })?;
         rows.into_iter()
             .map(
-                |(profile_id, agent_id, configuration_version, status, configuration_json, secret_bindings_json)| {
+                |(
+                    profile_id,
+                    agent_id,
+                    configuration_version,
+                    status,
+                    configuration_json,
+                    secret_bindings_json,
+                )| {
                     profile_from_columns(
                         profile_id,
                         agent_id,
@@ -189,9 +194,8 @@ impl AgentConfigurationStore for PostgresAgentConfigurationStore {
         let pool = self.pool.clone();
         let agent_id = agent_id.to_owned();
         let profile_id = profile_id.to_owned();
-        let row: Option<(String, String, String, String, String, String)> = self
-            .pool
-            .block_on(async move {
+        let row: Option<(String, String, String, String, String, String)> =
+            self.pool.block_on(async move {
                 sqlx::query_as::<_, (String, String, String, String, String, String)>(
                     "SELECT profile_id, agent_id, configuration_version, status,
                             configuration_json, secret_bindings_json
@@ -205,7 +209,14 @@ impl AgentConfigurationStore for PostgresAgentConfigurationStore {
                 .map_err(|error| store_error("find_query", error.to_string()))
             })?;
         row.map(
-            |(profile_id, agent_id, configuration_version, status, configuration_json, secret_bindings_json)| {
+            |(
+                profile_id,
+                agent_id,
+                configuration_version,
+                status,
+                configuration_json,
+                secret_bindings_json,
+            )| {
                 profile_from_columns(
                     profile_id,
                     agent_id,
@@ -246,8 +257,7 @@ impl AgentConfigurationStore for PostgresAgentConfigurationStore {
     fn subscribe(&mut self, subscriber: AgentConfigurationSubscriber) -> ConfigurationSubscription {
         let subscription_id = format!(
             "subscription.{}",
-            self.next_subscription_id
-                .fetch_add(1, Ordering::Relaxed)
+            self.next_subscription_id.fetch_add(1, Ordering::Relaxed)
         );
         if let Ok(mut subscribers) = self.subscribers.write() {
             subscribers.push((subscription_id.clone(), subscriber));

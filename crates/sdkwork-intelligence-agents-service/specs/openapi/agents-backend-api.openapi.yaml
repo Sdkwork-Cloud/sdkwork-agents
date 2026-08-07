@@ -2060,6 +2060,66 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
+  /backend/v3/api/ai/tools:
+    get:
+      tags:
+      - ai
+      summary: List media tool directory with tenant configuration (admin)
+      operationId: agents.tools.adminList
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: tools
+      x-sdkwork-permission: ai.agents.manage
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.tool_admin_listed
+      responses:
+        '200':
+          description: Media tool directory entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaToolDirectoryEntry'
+        default:
+          $ref: '#/components/responses/Problem'
+  /backend/v3/api/ai/tools/{toolId}/configuration:
+    put:
+      tags:
+      - ai
+      summary: Update one media tool tenant configuration (admin)
+      operationId: agents.tools.updateConfiguration
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: tools
+      x-sdkwork-permission: ai.agents.manage
+      x-sdkwork-tenant-scope: tenant
+      x-sdkwork-audit-event: agent.business.tool_configuration_updated
+      parameters:
+      - name: toolId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaToolConfigurationBody'
+      responses:
+        '200':
+          description: Updated tool directory entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaToolDirectoryEntry'
+        default:
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     AuthToken:
@@ -5557,6 +5617,129 @@ components:
         requestedAt:
           type: string
           format: date-time
+
+    MediaToolDirectoryEntry:
+      type: object
+      required:
+      - toolId
+      - category
+      - name
+      - displayName
+      - enabled
+      properties:
+        toolId:
+          type: string
+        category:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: object
+        outputSchema:
+          type: object
+        sideEffectLevel:
+          type: string
+        policyCategories:
+          type: array
+          items:
+            type: string
+        timeoutMs:
+          type: integer
+          format: int64
+        availability:
+          type: string
+        enabled:
+          type: boolean
+        saveToDriveDefault:
+          type: boolean
+        configured:
+          type: boolean
+    MediaToolInvokeBody:
+      type: object
+      required:
+      - arguments
+      properties:
+        arguments:
+          type: object
+        saveToDrive:
+          type: boolean
+    MediaToolInvokeResponse:
+      type: object
+      required:
+      - toolCallId
+      - status
+      - output
+      properties:
+        toolCallId:
+          type: string
+        status:
+          type: string
+        output:
+          type: object
+        error:
+          type: string
+        driveAsset:
+          $ref: '#/components/schemas/DriveAssetView'
+    DriveAssetView:
+      type: object
+      required:
+      - spaceId
+      - nodeId
+      - driveUri
+      properties:
+        spaceId:
+          type: string
+        nodeId:
+          type: string
+        driveUri:
+          type: string
+    ToolAssetView:
+      type: object
+      required:
+      - toolId
+      - toolCallId
+      - mediaKind
+      - driveSpaceId
+      - driveNodeId
+      - driveUri
+      properties:
+        toolId:
+          type: string
+        toolCallId:
+          type: string
+        mediaKind:
+          type: string
+        driveSpaceId:
+          type: string
+        driveNodeId:
+          type: string
+        driveUri:
+          type: string
+        sourceUrl:
+          type: string
+        createdAt:
+          type: string
+    MediaToolConfigurationBody:
+      type: object
+      required:
+      - enabled
+      properties:
+        enabled:
+          type: boolean
+        saveToDriveDefault:
+          type: boolean
+        defaultArguments:
+          type: object
+        expectedVersion:
+          type: integer
+          format: int64
+
     FieldError:
       type: object
       additionalProperties: false

@@ -14,7 +14,8 @@ use crate::domain::{
     AgentSessionCheckpointRecord, AgentSessionCheckpointStatus, AgentSessionEntrySurface,
     AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionKind,
     AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
-    AgentSessionStatus, AgentSessionTitleSource, AgentTaskRecord, AgentTaskStatus, AgentVisibility,
+    AgentSessionStatus, AgentSessionTitleSource, AgentTaskRecord, AgentTaskStatus,
+    AgentToolAssetRecord, AgentToolConfigurationRecord, AgentVisibility,
 };
 use crate::ports::{
     validate_completed_turn_items, AgentAuditSink, AgentListQuery, AgentRepository,
@@ -165,27 +166,29 @@ pub use sql::{
     SQL_INSERT_AGENT_INTERACTION, SQL_INSERT_AGENT_ITEM_DRIVE_REF, SQL_INSERT_AGENT_PROJECT,
     SQL_INSERT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_INSERT_AGENT_SESSION,
     SQL_INSERT_AGENT_SESSION_CHECKPOINT, SQL_INSERT_AGENT_SESSION_ITEM,
-    SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TURN,
-    SQL_INSERT_AGENT_WORKSPACE, SQL_LIST_AGENT_INTERACTIONS, SQL_LIST_AGENT_ITEM_DRIVE_REFS,
-    SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH, SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
+    SQL_INSERT_AGENT_SESSION_RUNTIME_BINDING, SQL_INSERT_AGENT_TASK, SQL_INSERT_AGENT_TOOL_ASSET,
+    SQL_INSERT_AGENT_TURN, SQL_INSERT_AGENT_WORKSPACE, SQL_LIST_AGENT_INTERACTIONS,
+    SQL_LIST_AGENT_ITEM_DRIVE_REFS, SQL_LIST_AGENT_ITEM_DRIVE_REFS_BATCH,
+    SQL_LIST_AGENT_ITEM_FEEDBACK, SQL_LIST_AGENT_PROJECTS,
     SQL_LIST_AGENT_PROJECT_COMPOSITION_SLOTS, SQL_LIST_AGENT_RESOURCE_USER_STATES,
     SQL_LIST_AGENT_SESSIONS, SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS,
     SQL_LIST_AGENT_SESSION_CHECKPOINTS, SQL_LIST_AGENT_SESSION_ITEMS,
     SQL_LIST_AGENT_SESSION_ITEMS_BY_TURN, SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_ASC,
     SQL_LIST_AGENT_SESSION_ITEMS_CURSOR_DESC, SQL_LIST_AGENT_SESSION_ITEMS_DESC,
     SQL_LIST_AGENT_SESSION_ITEMS_RECENT_CONTEXT, SQL_LIST_AGENT_SESSION_RUNTIME_BINDINGS,
-    SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TURNS, SQL_LIST_AGENT_WORKSPACES,
-    SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID, SQL_LIST_RECONCILABLE_AGENT_TURNS,
-    SQL_LIST_TURN_INPUT_QUEUE_ENTRIES, SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME,
-    SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING, SQL_RECORD_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK, SQL_SELECT_AGENT_PROJECT,
-    SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE, SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME,
-    SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT, SQL_SELECT_AGENT_RESOURCE_USER_STATE,
-    SQL_SELECT_AGENT_SESSION, SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY,
-    SQL_SELECT_AGENT_SESSION_CHECKPOINT, SQL_SELECT_AGENT_SESSION_ITEM,
-    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_LIST_AGENT_TASKS, SQL_LIST_AGENT_TOOL_ASSETS, SQL_LIST_AGENT_TOOL_CONFIGURATIONS,
+    SQL_LIST_AGENT_TURNS, SQL_LIST_AGENT_WORKSPACES, SQL_LIST_AUDIT_EVENTS_BY_TENANT_AND_AGENT_ID,
+    SQL_LIST_RECONCILABLE_AGENT_TURNS, SQL_LIST_TURN_INPUT_QUEUE_ENTRIES,
+    SQL_LOCK_AGENT_PROJECT_WORKSPACE_NAME, SQL_LOCK_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_RECORD_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_INTERACTION, SQL_SELECT_AGENT_ITEM_FEEDBACK,
+    SQL_SELECT_AGENT_PROJECT, SQL_SELECT_AGENT_PROJECT_BY_IMPORT_SOURCE,
+    SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
+    SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION,
+    SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY, SQL_SELECT_AGENT_SESSION_CHECKPOINT,
+    SQL_SELECT_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION, SQL_SELECT_AGENT_TASK,
-    SQL_SELECT_AGENT_TURN, SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
+    SQL_SELECT_AGENT_TOOL_CONFIGURATION, SQL_SELECT_AGENT_TURN,
+    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
     SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
     SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT, SQL_SELECT_TURN_INPUT_QUEUE_ENTRY,
     SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
@@ -193,7 +196,7 @@ pub use sql::{
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
     SQL_UPDATE_AGENT_SESSION_RUNTIME_BINDING, SQL_UPDATE_AGENT_TASK, SQL_UPDATE_AGENT_TURN_STATE,
     SQL_UPDATE_AGENT_WORKSPACE, SQL_UPDATE_TURN_INPUT_QUEUE_ENTRY, SQL_UPSERT_AGENT_ITEM_FEEDBACK,
-    SQL_UPSERT_AGENT_RESOURCE_USER_STATE,
+    SQL_UPSERT_AGENT_RESOURCE_USER_STATE, SQL_UPSERT_AGENT_TOOL_CONFIGURATION,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1288,6 +1291,134 @@ impl AgentItemDriveRefRow {
 }
 
 // ============================================================================
+// AgentToolConfigurationRow - persistence row for ai_agent_tool_configuration
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentToolConfigurationRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub tool_id: String,
+    pub enabled: bool,
+    pub save_to_drive_default: bool,
+    pub default_arguments_json: String,
+    pub version: u64,
+    pub created_by: u64,
+    pub updated_by: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+impl AgentToolConfigurationRow {
+    pub fn from_record(record: &AgentToolConfigurationRecord) -> Self {
+        Self {
+            id: record.id,
+            uuid: format!("uuid-tool-config-{}", record.id),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            tool_id: record.tool_id.clone(),
+            enabled: record.enabled,
+            save_to_drive_default: record.save_to_drive_default,
+            default_arguments_json: record.default_arguments_json.clone(),
+            version: record.version,
+            created_by: record.created_by,
+            updated_by: record.updated_by,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            deleted_at: record.deleted_at.clone(),
+        }
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentToolConfigurationRecord> {
+        Ok(AgentToolConfigurationRecord {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            tool_id: self.tool_id,
+            enabled: self.enabled,
+            save_to_drive_default: self.save_to_drive_default,
+            default_arguments_json: self.default_arguments_json,
+            version: self.version,
+            created_by: self.created_by,
+            updated_by: self.updated_by,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            deleted_at: self.deleted_at,
+        })
+    }
+}
+
+// ============================================================================
+// AgentToolAssetRow - persistence row for ai_agent_tool_asset
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentToolAssetRow {
+    pub id: u64,
+    pub uuid: String,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub tool_id: String,
+    pub tool_call_id: String,
+    pub media_kind: String,
+    pub drive_space_id: String,
+    pub drive_node_id: String,
+    pub drive_uri: String,
+    pub source_url: Option<String>,
+    pub created_by: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+impl AgentToolAssetRow {
+    pub fn from_record(record: &AgentToolAssetRecord) -> Self {
+        Self {
+            id: record.id,
+            uuid: format!("uuid-tool-asset-{}", record.id),
+            tenant_id: record.tenant_id,
+            organization_id: record.organization_id,
+            user_id: record.user_id,
+            tool_id: record.tool_id.clone(),
+            tool_call_id: record.tool_call_id.clone(),
+            media_kind: record.media_kind.clone(),
+            drive_space_id: record.drive_space_id.clone(),
+            drive_node_id: record.drive_node_id.clone(),
+            drive_uri: record.drive_uri.clone(),
+            source_url: record.source_url.clone(),
+            created_by: record.created_by,
+            created_at: record.created_at.clone(),
+            updated_at: record.updated_at.clone(),
+            deleted_at: record.deleted_at.clone(),
+        }
+    }
+
+    pub fn into_record(self) -> KernelResult<AgentToolAssetRecord> {
+        Ok(AgentToolAssetRecord {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            user_id: self.user_id,
+            tool_id: self.tool_id,
+            tool_call_id: self.tool_call_id,
+            media_kind: self.media_kind,
+            drive_space_id: self.drive_space_id,
+            drive_node_id: self.drive_node_id,
+            drive_uri: self.drive_uri,
+            source_url: self.source_url,
+            created_by: self.created_by,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            deleted_at: self.deleted_at,
+        })
+    }
+}
+
+// ============================================================================
 // AgentSessionItemRow - persistence row for ai_agent_session_item
 // ============================================================================
 
@@ -2345,6 +2476,34 @@ pub trait AgentRepositoryAdapter: Send + Sync {
         query: &ResourceUserStateListQuery,
     ) -> KernelResult<u64>;
 
+    // Media tool configuration operations
+    fn upsert_tool_configuration_row(
+        &self,
+        row: AgentToolConfigurationRow,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentToolConfigurationRow>;
+    fn get_tool_configuration_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        tool_id: &str,
+    ) -> KernelResult<Option<AgentToolConfigurationRow>>;
+    fn list_tool_configuration_rows(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+    ) -> KernelResult<Vec<AgentToolConfigurationRow>>;
+
+    // Generated-media asset operations
+    fn insert_tool_asset_row(&self, row: AgentToolAssetRow) -> KernelResult<()>;
+    fn list_tool_asset_rows(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        limit: u64,
+    ) -> KernelResult<Vec<AgentToolAssetRow>>;
+
     // Session-item operations
     fn append_session_item_row(
         &self,
@@ -3267,6 +3426,62 @@ where
 
     fn count_resource_user_states(&self, query: &ResourceUserStateListQuery) -> KernelResult<u64> {
         self.adapter.count_resource_user_state_rows(query)
+    }
+
+    fn upsert_tool_configuration(
+        &self,
+        record: AgentToolConfigurationRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentToolConfigurationRecord> {
+        self.adapter
+            .upsert_tool_configuration_row(
+                AgentToolConfigurationRow::from_record(&record),
+                expected_version,
+            )?
+            .into_record()
+    }
+
+    fn get_tool_configuration(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        tool_id: &str,
+    ) -> KernelResult<Option<AgentToolConfigurationRecord>> {
+        self.adapter
+            .get_tool_configuration_row(tenant_id, organization_id, tool_id)?
+            .map(AgentToolConfigurationRow::into_record)
+            .transpose()
+    }
+
+    fn list_tool_configurations(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+    ) -> KernelResult<Vec<AgentToolConfigurationRecord>> {
+        self.adapter
+            .list_tool_configuration_rows(tenant_id, organization_id)?
+            .into_iter()
+            .map(AgentToolConfigurationRow::into_record)
+            .collect()
+    }
+
+    fn insert_tool_asset(&self, record: AgentToolAssetRecord) -> KernelResult<()> {
+        self.adapter
+            .insert_tool_asset_row(AgentToolAssetRow::from_record(&record))
+    }
+
+    fn list_tool_assets(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        limit: u64,
+    ) -> KernelResult<Vec<AgentToolAssetRecord>> {
+        self.adapter
+            .list_tool_asset_rows(tenant_id, organization_id, user_id, limit)?
+            .into_iter()
+            .map(AgentToolAssetRow::into_record)
+            .collect()
     }
 
     // -----------------------------------------------------------------------
@@ -6239,9 +6454,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .map(|s| s.as_db_code());
         let include_archived = query.include_archived;
         let store_limit = usize_to_i64(
-            query.pagination
-                .page_size
-                .saturating_add(1),
+            query.pagination.page_size.saturating_add(1),
             "pagination.page_size",
         )?;
         let cursor_updated_at = query
@@ -7066,6 +7279,144 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             int64_to_u64(total, "total_count")
         })
     }
+    fn upsert_tool_configuration_row(
+        &self,
+        row: AgentToolConfigurationRow,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentToolConfigurationRow> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let created_by = u64_to_i64(row.created_by, "created_by")?;
+        let updated_by = u64_to_i64(row.updated_by, "updated_by")?;
+        // -1 can never be a persisted version and therefore preserves create-only
+        // semantics when the caller omits expectedVersion.
+        let expected_version = expected_version
+            .map(|value| u64_to_i64(value, "expected_version"))
+            .transpose()?
+            .unwrap_or(-1);
+
+        self.with_pool(|pool| {
+            let persisted = pg_query_optional!(
+                pool,
+                SQL_UPSERT_AGENT_TOOL_CONFIGURATION,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                row.tool_id,
+                row.enabled,
+                row.save_to_drive_default,
+                row.default_arguments_json,
+                created_by,
+                updated_by,
+                row.created_at,
+                row.updated_at,
+                expected_version
+            )?;
+            persisted
+                .map(pg_row_to_agent_tool_configuration_row)
+                .transpose()?
+                .ok_or_else(|| KernelError::conflict("tool configuration version mismatch"))
+        })
+    }
+
+    fn get_tool_configuration_row(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        tool_id: &str,
+    ) -> KernelResult<Option<AgentToolConfigurationRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query_optional!(
+                pool,
+                SQL_SELECT_AGENT_TOOL_CONFIGURATION,
+                tenant_id,
+                organization_id,
+                tool_id
+            )?
+            .map(pg_row_to_agent_tool_configuration_row)
+            .transpose()
+        })
+    }
+
+    fn list_tool_configuration_rows(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+    ) -> KernelResult<Vec<AgentToolConfigurationRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_TOOL_CONFIGURATIONS,
+                tenant_id,
+                organization_id
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_tool_configuration_row)
+            .collect()
+        })
+    }
+
+    fn insert_tool_asset_row(&self, row: AgentToolAssetRow) -> KernelResult<()> {
+        let id = u64_to_i64(row.id, "id")?;
+        let tenant_id = u64_to_i64(row.tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(row.organization_id, "organization_id")?;
+        let user_id = u64_to_i64(row.user_id, "user_id")?;
+        let created_by = u64_to_i64(row.created_by, "created_by")?;
+        self.with_pool(|pool| {
+            pg_execute!(
+                pool,
+                SQL_INSERT_AGENT_TOOL_ASSET,
+                id,
+                row.uuid,
+                tenant_id,
+                organization_id,
+                user_id,
+                row.tool_id,
+                row.tool_call_id,
+                row.media_kind,
+                row.drive_space_id,
+                row.drive_node_id,
+                row.drive_uri,
+                row.source_url,
+                created_by,
+                row.created_at,
+                row.updated_at
+            )?;
+            Ok(())
+        })
+    }
+
+    fn list_tool_asset_rows(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        limit: u64,
+    ) -> KernelResult<Vec<AgentToolAssetRow>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        let user_id = u64_to_i64(user_id, "user_id")?;
+        let limit = limit.min(200) as i64;
+        self.with_pool(|pool| {
+            pg_query!(
+                pool,
+                SQL_LIST_AGENT_TOOL_ASSETS,
+                tenant_id,
+                organization_id,
+                user_id,
+                limit
+            )?
+            .into_iter()
+            .map(pg_row_to_agent_tool_asset_row)
+            .collect()
+        })
+    }
 
     // -----------------------------------------------------------------------
     // Session-item persistence
@@ -7522,12 +7873,8 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentTurnStatus::from_code)
             .map(AgentTurnStatus::as_db_code);
-        let store_limit = i64::try_from(
-            query.pagination
-                .page_size
-                .saturating_add(1),
-        )
-        .map_err(|_| KernelError::validation("page_size overflow"))?;
+        let store_limit = i64::try_from(query.pagination.page_size.saturating_add(1))
+            .map_err(|_| KernelError::validation("page_size overflow"))?;
         let cursor_created_at = query
             .cursor
             .as_ref()
@@ -8729,10 +9076,7 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
             .as_deref()
             .and_then(AgentInteractionKind::from_code)
             .map(|kind| kind.as_db_code());
-        let store_limit = query
-            .pagination
-            .page_size
-            .saturating_add(1) as i64;
+        let store_limit = query.pagination.page_size.saturating_add(1) as i64;
         let cursor_created_at = query
             .cursor
             .as_ref()
@@ -10997,10 +11341,7 @@ impl AgentAuditAdapter for SyncPostgresAdapter {
         query: &AuditEventListQuery,
     ) -> KernelResult<Vec<AgentAuditEventRow>> {
         let tenant_id = u64_to_i64(query.tenant_id, "tenant_id")?;
-        let store_limit = query
-            .pagination
-            .page_size
-            .saturating_add(1) as i64;
+        let store_limit = query.pagination.page_size.saturating_add(1) as i64;
         let cursor_created_at = query
             .cursor
             .as_ref()
@@ -11957,6 +12298,73 @@ fn pg_row_to_agent_resource_user_state_row(row: PgRow) -> KernelResult<AgentReso
         version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
         created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
         updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_tool_configuration_row(row: PgRow) -> KernelResult<AgentToolConfigurationRow> {
+    Ok(AgentToolConfigurationRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        tool_id: row.try_get("tool_id").map_err(map_sqlx_error)?,
+        enabled: row.try_get("enabled").map_err(map_sqlx_error)?,
+        save_to_drive_default: row
+            .try_get("save_to_drive_default")
+            .map_err(map_sqlx_error)?,
+        default_arguments_json: row
+            .try_get("default_arguments_json")
+            .map_err(map_sqlx_error)?,
+        version: int64_to_u64(row.try_get("version").map_err(map_sqlx_error)?, "version")?,
+        created_by: int64_to_u64(
+            row.try_get("created_by").map_err(map_sqlx_error)?,
+            "created_by",
+        )?,
+        updated_by: int64_to_u64(
+            row.try_get("updated_by").map_err(map_sqlx_error)?,
+            "updated_by",
+        )?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
+    })
+}
+
+#[cfg(feature = "postgres-sync")]
+fn pg_row_to_agent_tool_asset_row(row: PgRow) -> KernelResult<AgentToolAssetRow> {
+    Ok(AgentToolAssetRow {
+        id: int64_to_u64(row.try_get("id").map_err(map_sqlx_error)?, "id")?,
+        uuid: row.try_get("uuid").map_err(map_sqlx_error)?,
+        tenant_id: int64_to_u64(
+            row.try_get("tenant_id").map_err(map_sqlx_error)?,
+            "tenant_id",
+        )?,
+        organization_id: int64_to_u64(
+            row.try_get("organization_id").map_err(map_sqlx_error)?,
+            "organization_id",
+        )?,
+        user_id: int64_to_u64(row.try_get("user_id").map_err(map_sqlx_error)?, "user_id")?,
+        tool_id: row.try_get("tool_id").map_err(map_sqlx_error)?,
+        tool_call_id: row.try_get("tool_call_id").map_err(map_sqlx_error)?,
+        media_kind: row.try_get("media_kind").map_err(map_sqlx_error)?,
+        drive_space_id: row.try_get("drive_space_id").map_err(map_sqlx_error)?,
+        drive_node_id: row.try_get("drive_node_id").map_err(map_sqlx_error)?,
+        drive_uri: row.try_get("drive_uri").map_err(map_sqlx_error)?,
+        source_url: row.try_get("source_url").map_err(map_sqlx_error)?,
+        created_by: int64_to_u64(
+            row.try_get("created_by").map_err(map_sqlx_error)?,
+            "created_by",
+        )?,
+        created_at: row.try_get("created_at").map_err(map_sqlx_error)?,
+        updated_at: row.try_get("updated_at").map_err(map_sqlx_error)?,
+        deleted_at: row.try_get("deleted_at").map_err(map_sqlx_error)?,
     })
 }
 

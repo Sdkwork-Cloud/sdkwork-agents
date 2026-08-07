@@ -12,6 +12,7 @@ sdkwork-intelligence-agents-service = { workspace = true, features = ["http-axum
 sdkwork-agents-contract.workspace = true
 sdkwork-agents-database-host.workspace = true
 sdkwork-routes-agents-http-shared.workspace = true
+sdkwork-database-sqlx.workspace = true
 axum.workspace = true
 anyhow.workspace = true
 tokio.workspace = true

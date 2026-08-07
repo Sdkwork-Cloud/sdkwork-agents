@@ -53,5 +53,12 @@
   "save": "保存",
   "cancel": "取消",
   "close": "关闭",
-  "loading": "正在加载"
+  "loading": "正在加载",
+  "playground": {
+    "modelPicker": {
+      "vendorSection": "厂商",
+      "noVendors": "暂无可用的厂商",
+      "noVendorModels": "该厂商暂无可用的模型"
+    }
+  }
 }

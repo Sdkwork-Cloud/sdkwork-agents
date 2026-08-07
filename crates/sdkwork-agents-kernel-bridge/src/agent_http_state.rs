@@ -9,8 +9,9 @@ use sdkwork_agents_contract::{
 };
 use sdkwork_intelligence_agents_service::{
     AgentHttpState, AllowAllPolicyProvider, CloudRouterFirstTurnExecutor, IamGatedPolicyProvider,
-    InMemoryAgentAuditSink, InMemoryAgentRepository, RuntimeFacadeTurnExecutor, SqlAgentAuditSink,
-    PostgresAgentConfigurationStore, SqlAgentRepository, SyncPostgresAdapter,
+    InMemoryAgentAuditSink, InMemoryAgentRepository, MediaToolInvocationService, MediaToolRegistry,
+    PostgresAgentConfigurationStore, RuntimeFacadeTurnExecutor, SqlAgentAuditSink,
+    SqlAgentRepository, SyncPostgresAdapter,
 };
 use std::sync::Arc;
 
@@ -79,7 +80,7 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     let audit_adapter = repository_adapter.clone();
     let configuration_pool = repository_adapter.pool().clone();
 
-    let repository = SqlAgentRepository::new(repository_adapter);
+    let repository = SqlAgentRepository::new(repository_adapter.clone());
     let audit_sink = SqlAgentAuditSink::new_global(audit_adapter);
 
     let state = AgentHttpState::with_turn_executor(
@@ -95,10 +96,32 @@ fn production_postgres_agent_http_state() -> Result<AgentHttpState> {
     // Persist applied model configuration profiles in the canonical Agents
     // PostgreSQL database (server-authoritative persistence; SQLite is
     // client-local only per DATABASE_SPEC).
-    let configuration_store =
-        PostgresAgentConfigurationStore::from_pool(configuration_pool);
-    Ok(state.with_model_configuration_providers(
+    let configuration_store = PostgresAgentConfigurationStore::from_pool(configuration_pool);
+    let mut state = state.with_model_configuration_providers(
         Box::new(InMemorySecretProvider::new()),
         Box::new(configuration_store),
-    ))
+    );
+
+    // Media tool pipeline: registry + tenant configuration + server-side
+    // drive persistence sharing the canonical Agents database.
+    if let sdkwork_database_sqlx::DatabasePool::Postgres(pool, _) =
+        repository_adapter.pool().database_pool().clone()
+    {
+        let drive_saver = sdkwork_intelligence_agents_service::DriveAssetSaver::new(pool);
+        let invocation = MediaToolInvocationService::new(
+            MediaToolRegistry::new(),
+            Some(drive_saver),
+            Box::new(SqlAgentRepository::new(repository_adapter)),
+        );
+        state = state.with_media_tool_invocation(invocation);
+    } else {
+        tracing::warn!("agents media tool drive persistence skipped: database is not PostgreSQL");
+        let invocation = MediaToolInvocationService::new(
+            MediaToolRegistry::new(),
+            None,
+            Box::new(SqlAgentRepository::new(repository_adapter)),
+        );
+        state = state.with_media_tool_invocation(invocation);
+    }
+    Ok(state)
 }

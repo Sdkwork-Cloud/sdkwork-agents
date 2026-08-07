@@ -1691,9 +1691,13 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_ai_agent_session_activity_self
-BEFORE INSERT OR UPDATE OF updated_at ON ai_agent_session
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_agent_session_activity_self') THEN
+        CREATE TRIGGER trg_ai_agent_session_activity_self BEFORE INSERT OR UPDATE OF updated_at ON ai_agent_session
 FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_session_activity_self();
+    END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION sdkwork_agents_bump_session_activity()
 RETURNS TRIGGER
@@ -1716,17 +1720,29 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_ai_agent_turn_bump_session_activity
-AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_turn
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_agent_turn_bump_session_activity') THEN
+        CREATE TRIGGER trg_ai_agent_turn_bump_session_activity AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_turn
 FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity();
+    END IF;
+END $$;
 
-CREATE TRIGGER trg_ai_agent_interaction_bump_session_activity
-AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_interaction
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_agent_interaction_bump_session_activity') THEN
+        CREATE TRIGGER trg_ai_agent_interaction_bump_session_activity AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_interaction
 FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity();
+    END IF;
+END $$;
 
-CREATE TRIGGER trg_ai_agent_runtime_binding_bump_session_activity
-AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_session_runtime_binding
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_agent_runtime_binding_bump_session_activity') THEN
+        CREATE TRIGGER trg_ai_agent_runtime_binding_bump_session_activity AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_session_runtime_binding
 FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity();
+    END IF;
+END $$;
 
 -- User-state activity is session-scoped only (resource_type = 0); other
 -- resource user states must not touch the Session feed.
@@ -1754,9 +1770,13 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_ai_agent_user_state_bump_session_activity
-AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_resource_user_state
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_agent_user_state_bump_session_activity') THEN
+        CREATE TRIGGER trg_ai_agent_user_state_bump_session_activity AFTER INSERT OR UPDATE OF updated_at, created_at ON ai_agent_resource_user_state
 FOR EACH ROW EXECUTE FUNCTION sdkwork_agents_bump_session_activity_from_user_state();
+    END IF;
+END $$;
 
 -- Agent model configuration runtime profiles (server-authoritative
 -- PostgreSQL persistence; DATABASE_SPEC: authoritative-server is PostgreSQL
@@ -1776,3 +1796,60 @@ CREATE TABLE IF NOT EXISTS ai_agent_model_configuration_profile (
 
 CREATE INDEX IF NOT EXISTS idx_ai_agent_model_configuration_profile_agent
     ON ai_agent_model_configuration_profile (agent_id, status);
+
+-- Agent media tool per-tenant configuration (admin-managed: enabled state,
+-- default save-to-drive behaviour, and default arguments merged at invoke).
+CREATE TABLE IF NOT EXISTS ai_agent_tool_configuration (
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid VARCHAR(96) NOT NULL,
+    tenant_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL DEFAULT 0,
+    tool_id VARCHAR(160) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    save_to_drive_default BOOLEAN NOT NULL DEFAULT FALSE,
+    default_arguments_json TEXT NOT NULL DEFAULT '{}',
+    version BIGINT NOT NULL DEFAULT 0,
+    created_by BIGINT NOT NULL DEFAULT 0,
+    updated_by BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT uk_ai_agent_tool_configuration_uuid UNIQUE (uuid),
+    CONSTRAINT uk_ai_agent_tool_configuration_scope UNIQUE (
+        tenant_id, organization_id, tool_id
+    ),
+    CONSTRAINT ck_ai_agent_tool_configuration_version CHECK (version >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_agent_tool_configuration_tenant
+    ON ai_agent_tool_configuration (tenant_id, organization_id, tool_id);
+
+-- Generated media assets persisted to Drive outside a session-item context
+-- (direct tool invocation with saveToDrive). Independent of session items so
+-- front-end-driven generation saves are registered as assets even without a
+-- turn; the drive asset centre (app /assets) remains the storage authority.
+CREATE TABLE IF NOT EXISTS ai_agent_tool_asset (
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid VARCHAR(96) NOT NULL,
+    tenant_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL DEFAULT 0,
+    user_id BIGINT NOT NULL DEFAULT 0,
+    tool_id VARCHAR(160) NOT NULL,
+    tool_call_id VARCHAR(128) NOT NULL,
+    media_kind VARCHAR(64) NOT NULL,
+    drive_space_id VARCHAR(128) NOT NULL,
+    drive_node_id VARCHAR(128) NOT NULL,
+    drive_uri VARCHAR(512) NOT NULL,
+    source_url TEXT,
+    created_by BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT uk_ai_agent_tool_asset_uuid UNIQUE (uuid),
+    CONSTRAINT uk_ai_agent_tool_asset_node UNIQUE (
+        tenant_id, organization_id, drive_space_id, drive_node_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_agent_tool_asset_tenant_user
+    ON ai_agent_tool_asset (tenant_id, organization_id, user_id, created_at DESC);

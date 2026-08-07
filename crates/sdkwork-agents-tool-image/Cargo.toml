@@ -1,0 +1,13 @@
+[package]
+name = "sdkwork-agents-tool-image"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Image media tool sub-crate for SDKWork Agents: generation, edits, and variations via cloudrouter open-api"
+
+[dependencies]
+sdkwork-agent-kernel.workspace = true
+sdkwork-agents-tool-contract.workspace = true
+sdkwork-agents-tool-cloudrouter.workspace = true
+cloudrouter-open-sdk.workspace = true
+serde_json.workspace = true

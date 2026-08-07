@@ -113,7 +113,14 @@ async function ensureChatAgent(model: string): Promise<void> {
     return;
   }
   if (model && current.model !== model) {
-    await port.updateAgent(DEFAULT_CHAT_AGENT_ID, { model });
+    try {
+      await port.updateAgent(DEFAULT_CHAT_AGENT_ID, { model });
+    } catch (error) {
+      // Best-effort: the model is passed per message through sendMessage, so a
+      // denied model sync (e.g. the caller lacks ai.agents.manage) must not
+      // block session loading or chat.
+      console.warn('Failed to sync the default chat agent model', error);
+    }
   }
 }
 

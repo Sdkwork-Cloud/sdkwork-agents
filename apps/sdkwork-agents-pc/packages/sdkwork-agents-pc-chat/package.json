@@ -12,12 +12,18 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./ChatView": {
+      "types": "./src/ChatView.tsx",
+      "import": "./src/ChatView.tsx",
+      "default": "./src/ChatView.tsx"
     }
   },
   "dependencies": {
     "@monaco-editor/react": "catalog:",
     "@sdkwork/agents-pc-commons": "workspace:*",
     "@sdkwork/agents-pc-core": "workspace:*",
+    "@sdkwork/models-pc-picker": "workspace:*",
     "@sdkwork/utils": "workspace:*",
     "lucide-react": "catalog:",
     "motion": "catalog:",

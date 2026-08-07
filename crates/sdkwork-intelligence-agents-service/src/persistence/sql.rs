@@ -503,3 +503,31 @@ SELECT
         0
     ) FROM ai_agent_outbox_event WHERE status IN (0, 1, 3)), 0) AS outbox_oldest_age_seconds
 "#;
+
+// ---------------------------------------------------------------------------
+// Media tool configuration (tenant-scoped admin settings)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_UPSERT_AGENT_TOOL_CONFIGURATION: &str =
+    "INSERT INTO ai_agent_tool_configuration (id, uuid, tenant_id, organization_id, tool_id, enabled, save_to_drive_default, default_arguments_json, version, created_by, updated_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 0, $9, $10, $11::timestamptz, $12::timestamptz) ON CONFLICT (tenant_id, organization_id, tool_id) DO UPDATE SET enabled = EXCLUDED.enabled, save_to_drive_default = EXCLUDED.save_to_drive_default, default_arguments_json = EXCLUDED.default_arguments_json, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at, version = ai_agent_tool_configuration.version + 1 WHERE ai_agent_tool_configuration.version = $13 RETURNING id, uuid, tenant_id, organization_id, tool_id, enabled, save_to_drive_default, default_arguments_json::text AS default_arguments_json, version, created_by, updated_by, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at";
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_AGENT_TOOL_CONFIGURATION: &str =
+    "SELECT id, uuid, tenant_id, organization_id, tool_id, enabled, save_to_drive_default, default_arguments_json::text AS default_arguments_json, version, created_by, updated_by, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM ai_agent_tool_configuration WHERE tenant_id = $1 AND organization_id = $2 AND tool_id = $3 AND deleted_at IS NULL LIMIT 1";
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_LIST_AGENT_TOOL_CONFIGURATIONS: &str =
+    "SELECT id, uuid, tenant_id, organization_id, tool_id, enabled, save_to_drive_default, default_arguments_json::text AS default_arguments_json, version, created_by, updated_by, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM ai_agent_tool_configuration WHERE tenant_id = $1 AND organization_id = $2 AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC";
+
+// ---------------------------------------------------------------------------
+// Generated-media tool assets (saveToDrive registration)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_INSERT_AGENT_TOOL_ASSET: &str =
+    "INSERT INTO ai_agent_tool_asset (id, uuid, tenant_id, organization_id, user_id, tool_id, tool_call_id, media_kind, drive_space_id, drive_node_id, drive_uri, source_url, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::timestamptz, $15::timestamptz) ON CONFLICT (tenant_id, organization_id, drive_space_id, drive_node_id) DO NOTHING";
+
+#[cfg(feature = "postgres-sync")]
+pub const SQL_LIST_AGENT_TOOL_ASSETS: &str =
+    "SELECT id, uuid, tenant_id, organization_id, user_id, tool_id, tool_call_id, media_kind, drive_space_id, drive_node_id, drive_uri, source_url, created_by, created_at::text AS created_at, updated_at::text AS updated_at, deleted_at::text AS deleted_at FROM ai_agent_tool_asset WHERE tenant_id = $1 AND organization_id = $2 AND ($3 = 0 OR user_id = $3) AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $4";

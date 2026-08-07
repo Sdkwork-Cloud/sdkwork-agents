@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   ChatMessage,
   ChatSession,
@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import {
   agentsDriveUploadService,
   type AgentsDriveMediaResource,
+  type AgentsDriveUploadPurpose,
 } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 import { uuid } from "@sdkwork/utils";
 
@@ -24,6 +25,20 @@ import { UserProfileModal } from "./components/UserProfileModal";
 import { ProjectHomeView } from "./components/ProjectHomeView";
 import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
 import { FileLibraryView } from "./components/FileLibraryView";
+import {
+  chatModelPickerGroups,
+  createChatModelPickerFallback,
+  resolveChatDefaultModelId,
+} from "./modelPicker/chatModelPickerCatalog";
+
+const chatModelPickerFallback = createChatModelPickerFallback();
+
+function resolveChatUploadPurpose(file: File): AgentsDriveUploadPurpose {
+  if (file.type.startsWith('image/')) return 'agent-chat-image';
+  if (file.type.startsWith('video/')) return 'agent-chat-video';
+  if (file.type.startsWith('audio/')) return 'agent-chat-voice';
+  return 'agent-chat-attachment';
+}
 
 export const ChatView = () => {
   const { t } = useTranslation("chat");
@@ -73,13 +88,19 @@ export const ChatView = () => {
       // ignore
     }
   }, [input]);
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [selectedMediaResources, setSelectedMediaResources] = useState<AgentsDriveMediaResource[]>([]);
+  // Image previews are derived from the selected media so file attachments
+  // never leak into the image preview strip.
+  const selectedImages = useMemo(
+    () => selectedMediaResources
+      .filter((media) => media.kind === 'image')
+      .flatMap((media) => (media.url ? [media.url] : [])),
+    [selectedMediaResources],
+  );
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
-  const [selectedVendor, setSelectedVendor] = useState("Google");
+  const [selectedModel, setSelectedModel] = useState(resolveChatDefaultModelId);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<
@@ -365,35 +386,42 @@ export const ChatView = () => {
     const files: File[] = [];
     for (let index = 0; index < (event.target.files?.length ?? 0); index += 1) {
       const file = event.target.files?.item(index);
-      if (file?.type.startsWith('image/')) files.push(file);
+      if (file) files.push(file);
     }
     event.target.value = '';
     if (files.length === 0) return;
 
-    void Promise.all(files.map((file) => agentsDriveUploadService.upload({
-      file,
-      purpose: 'agent-chat-image',
-      resourceId: `agents-chat:${currentSessionId}`,
-    })))
-      .then((uploaded) => {
-        setSelectedMediaResources((previous) => [...previous, ...uploaded]);
-        setSelectedImages((previous) => [
-          ...previous,
-          ...uploaded.flatMap((media) => (media.url ? [media.url] : [])),
-        ]);
+    // Upload each file independently so a rejected file (e.g. over the size
+    // limit) never discards the rest of the selection.
+    files.forEach((file) => {
+      void agentsDriveUploadService.upload({
+        file,
+        purpose: resolveChatUploadPurpose(file),
+        resourceId: `agents-chat:${currentSessionId}`,
       })
-      .catch((error) => {
-        console.error('Chat image Drive upload failed', error);
-      });
+        .then((media) => {
+          setSelectedMediaResources((previous) => [...previous, media]);
+        })
+        .catch((error) => {
+          console.error(`Chat file Drive upload failed for ${file.name}`, error);
+          window.alert(`${file.name} 上传失败，请重试`);
+        });
+    });
   };
 
   const handleRemoveImage = (index: number) => {
-    setSelectedImages((prev) => prev.filter((_, i) => i !== index));
-    setSelectedMediaResources((prev) => prev.filter((_, i) => i !== index));
+    // The preview strip only shows image media, so map the preview index back
+    // to the media resource before removing it.
+    setSelectedMediaResources((previous) => {
+      const imageMedias = previous.filter((media) => media.kind === 'image');
+      const target = imageMedias[index];
+      if (!target) return previous;
+      return previous.filter((media) => media.id !== target.id);
+    });
   };
 
   const handleSend = async () => {
-    if ((!input.trim() && selectedImages.length === 0) || isGenerating) return;
+    if ((!input.trim() && selectedMediaResources.length === 0) || isGenerating) return;
 
     setShouldAutoScroll(true);
 
@@ -407,7 +435,6 @@ export const ChatView = () => {
 
     setShouldAutoScroll(true);
     setInput("");
-    setSelectedImages([]);
     setSelectedMediaResources([]);
     setIsGenerating(true);
 
@@ -585,12 +612,12 @@ export const ChatView = () => {
             <ChatHeader
               isSidebarOpen={isSidebarOpen}
               toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-              selectedModel={selectedModel}
-              selectedVendor={selectedVendor}
+              modelGroups={chatModelPickerGroups}
+              selectedModelId={selectedModel}
+              onSelectModel={setSelectedModel}
+              fallbackModel={chatModelPickerFallback}
               isModelSelectorOpen={isModelSelectorOpen}
               setIsModelSelectorOpen={setIsModelSelectorOpen}
-              setSelectedVendor={setSelectedVendor}
-              setSelectedModel={setSelectedModel}
               onOpenSettings={() => setIsSettingsOpen(true)}
             />
 

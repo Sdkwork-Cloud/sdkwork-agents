@@ -513,6 +513,7 @@ fn live_turn_command(
         requested_by: subject(),
         requested_at: "2026-07-20T00:00:04Z".to_string(),
         prefer_stream: false,
+        auth_token: None,
     }
 }
 
@@ -1397,6 +1398,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
             requested_by: subject(),
             requested_at: "2026-07-19T00:02:10Z".to_string(),
             prefer_stream: false,
+            auth_token: None,
         })
         .unwrap();
     assert_eq!(turn.session.item_count, 3);
@@ -1447,6 +1449,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         requested_by: subject(),
         requested_at: "2026-07-19T00:02:11Z".to_string(),
         prefer_stream: false,
+        auth_token: None,
     });
     assert!(invalid_result.is_err());
 
@@ -1470,6 +1473,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         requested_by: subject(),
         requested_at: "2026-07-19T00:02:12Z".to_string(),
         prefer_stream: false,
+        auth_token: None,
     });
     assert!(duplicate_result.is_err());
     let page_after_rejections = service
@@ -1511,6 +1515,7 @@ fn postgres_resource_user_state_round_trip_and_stale_write_rollback() {
         requested_by: subject(),
         requested_at: "2026-07-19T00:02:20Z".to_string(),
         prefer_stream: false,
+        auth_token: None,
     });
     assert!(failed_result.is_err());
     let lifecycle_repository = SqlAgentRepository::new(

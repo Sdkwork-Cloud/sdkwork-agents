@@ -12,7 +12,7 @@ const AgentWorkspace = lazy(async () => {
   knowledgebaseRuntime.initializeAgentsKnowledgebaseRuntime();
   return { default: agentsModule.AgentWorkspace };
 });
-const ChatView = lazy(() => import('@sdkwork/agents-pc-chat').then((module) => ({ default: module.ChatView })));
+const ChatView = lazy(() => import('@sdkwork/agents-pc-chat/ChatView').then((module) => ({ default: module.ChatView })));
 const InspirationView = lazy(() => import('@sdkwork/agents-pc-inspiration').then((module) => ({ default: module.InspirationView })));
 const CreativeView = lazy(() => import('@sdkwork/agents-pc-creative').then((module) => ({ default: module.CreativeView })));
 const AssetsView = lazy(() => import('@sdkwork/agents-pc-assets').then((module) => ({ default: module.AssetsView })));

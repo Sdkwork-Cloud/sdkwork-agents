@@ -1,4 +1,3 @@
-export { ChatView } from './ChatView';
 export { ChatService, configureChatAgentPort } from './services/ChatService';
 export type { ChatAgentConfig, ChatAgentPort, ChatServiceOptions } from './services/ChatService';
 export { ProjectService, configureProjectPort } from './services/ProjectService';

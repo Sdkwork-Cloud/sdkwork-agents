@@ -1,0 +1,216 @@
+//! Cloud Router open-api client adapter for the media tool family.
+//!
+//! Provides a thin, shared wrapper over `cloudrouter_open_sdk::SdkworkAiClient`
+//! with auth-token account-pool routing, a dedicated blocking runtime for
+//! synchronous kernel tool invocation, and stable error mapping.
+
+use std::sync::OnceLock;
+
+use cloudrouter_open_sdk::SdkworkAiClient;
+use sdkwork_agents_tool_contract::MediaToolError;
+
+/// Environment variable for the cloudrouter gateway base URL. Shared with the
+/// chat turn executor so one configuration governs every cloudrouter path.
+pub const ENV_CLOUDROUTER_BASE_URL: &str = "SDKWORK_AGENTS_CLOUDROUTER_BASE_URL";
+
+/// Default cloudrouter gateway base URL (shared platform proxy port).
+pub const DEFAULT_CLOUDROUTER_BASE_URL: &str = "http://127.0.0.1:3900";
+
+/// Cloud Router media client bound to one gateway base URL.
+///
+/// The client is lightweight and cheap to construct per call; authentication
+/// is applied per invocation via [`CloudRouterMediaClient::with_auth_token`]
+/// so caller tokens never leak between requests or sessions.
+#[derive(Debug, Clone)]
+pub struct CloudRouterMediaClient {
+    base_url: String,
+}
+
+impl CloudRouterMediaClient {
+    /// Builds a client for the gateway base URL from the environment
+    /// (`SDKWORK_AGENTS_CLOUDROUTER_BASE_URL`) with the shared default.
+    pub fn from_env() -> Self {
+        Self::with_base_url(cloudrouter_base_url())
+    }
+
+    /// Builds a client for an explicit gateway base URL.
+    pub fn with_base_url(base_url: impl Into<String>) -> Self {
+        Self {
+            base_url: base_url.into(),
+        }
+    }
+
+    /// The resolved gateway base URL.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Creates an `SdkworkAiClient` configured with the caller's auth token
+    /// (account-pool routing; no API key required).
+    pub fn with_auth_token(&self, auth_token: &str) -> Result<SdkworkAiClient, MediaToolError> {
+        let client =
+            SdkworkAiClient::new_with_base_url(self.base_url.clone()).map_err(|error| {
+                MediaToolError::ProviderUnavailable(format!(
+                    "cloudrouter client unavailable: {error}"
+                ))
+            })?;
+        client.set_auth_token(auth_token);
+        Ok(client)
+    }
+
+    /// Requires a non-empty auth token, mapping absence to an actionable error.
+    pub fn require_auth_token<'a>(
+        auth_token: Option<&'a str>,
+        tool_id: &str,
+    ) -> Result<&'a str, MediaToolError> {
+        auth_token
+            .filter(|token| !token.trim().is_empty())
+            .ok_or_else(|| {
+                MediaToolError::AuthRequired(format!(
+                    "tool `{tool_id}` requires the caller auth token for cloudrouter \
+                     account-pool routing; the turn or request carried none"
+                ))
+            })
+    }
+}
+
+/// Runs a cloudrouter SDK async call on a dedicated blocking runtime,
+/// returning the mapped media tool error on failure.
+pub fn run_sync<T>(
+    tool_id: &str,
+    call: impl FnOnce(&tokio::runtime::Runtime) -> Result<T, cloudrouter_open_sdk::SdkworkError>,
+) -> Result<T, MediaToolError> {
+    let runtime = blocking_runtime();
+    call(runtime).map_err(|error| map_cloudrouter_error(tool_id, error))
+}
+
+/// Dedicated multi-thread runtime for blocking kernel tool invocation.
+fn blocking_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .build()
+            .expect("cloud router media tool tokio runtime")
+    })
+}
+
+/// Resolves the gateway base URL from the environment with the shared default.
+pub fn cloudrouter_base_url() -> String {
+    std::env::var(ENV_CLOUDROUTER_BASE_URL)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_CLOUDROUTER_BASE_URL.to_string())
+}
+
+/// Maps a cloudrouter SDK failure to the media tool error taxonomy with
+/// actionable hints for the common gateway failures.
+pub fn map_cloudrouter_error(
+    tool_id: &str,
+    error: cloudrouter_open_sdk::SdkworkError,
+) -> MediaToolError {
+    use cloudrouter_open_sdk::SdkworkError;
+
+    let mut message = format!("tool `{tool_id}` cloudrouter call failed: {error}");
+    match &error {
+        SdkworkError::HttpStatus { status, .. } if *status == 401 => {
+            message.push_str("; 登录 auth token 无效或已过期，请重新登录后重试");
+            MediaToolError::AuthRequired(message)
+        }
+        SdkworkError::HttpStatus { status, body }
+            if *status == 404 && body.contains("model_not_found") =>
+        {
+            message.push_str("; 所选模型在账号池路由中不可用：请在 Cloud Router 中为该供应商配置模型映射规则或供应商支持模型");
+            MediaToolError::ProviderError(message)
+        }
+        SdkworkError::HttpStatus { status, body }
+            if *status == 404 && body.contains("account_group_unavailable") =>
+        {
+            message.push_str("; 当前租户在账号池中未配置默认分组（Default）或分组下无可用账号");
+            MediaToolError::ProviderUnavailable(message)
+        }
+        SdkworkError::HttpStatus { status, .. } if *status == 429 => {
+            message.push_str("; Cloud Router 配额或限流触发，请稍后重试");
+            MediaToolError::RateLimited(message)
+        }
+        SdkworkError::HttpStatus { status, .. } if *status >= 500 => {
+            message.push_str("; Cloud Router 账号池网关暂不可用，请稍后重试");
+            MediaToolError::ProviderUnavailable(message)
+        }
+        _ => MediaToolError::ProviderError(message),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloudrouter_open_sdk::SdkworkError;
+
+    #[test]
+    fn client_base_url_from_env_with_default() {
+        let previous = std::env::var(ENV_CLOUDROUTER_BASE_URL).ok();
+        std::env::remove_var(ENV_CLOUDROUTER_BASE_URL);
+        assert_eq!(cloudrouter_base_url(), DEFAULT_CLOUDROUTER_BASE_URL);
+        std::env::set_var(ENV_CLOUDROUTER_BASE_URL, "http://example.test:4000");
+        assert_eq!(cloudrouter_base_url(), "http://example.test:4000");
+        restore_env(ENV_CLOUDROUTER_BASE_URL, previous);
+    }
+
+    #[test]
+    fn require_auth_token_rejects_empty() {
+        assert!(CloudRouterMediaClient::require_auth_token(None, "audio.speech.create").is_err());
+        assert!(
+            CloudRouterMediaClient::require_auth_token(Some(""), "audio.speech.create").is_err()
+        );
+        assert!(
+            CloudRouterMediaClient::require_auth_token(Some("  "), "audio.speech.create").is_err()
+        );
+        assert_eq!(
+            CloudRouterMediaClient::require_auth_token(Some("token"), "audio.speech.create")
+                .unwrap(),
+            "token"
+        );
+    }
+
+    #[test]
+    fn maps_unauthorized_with_login_hint() {
+        let error = map_cloudrouter_error(
+            "audio.speech.create",
+            SdkworkError::HttpStatus {
+                status: 401,
+                body: r#"{"error":{"code":"invalid_auth_token","message":"invalid"}}"#.to_string(),
+            },
+        );
+        assert_eq!(error.code(), "auth_required");
+        assert!(error.to_string().contains("重新登录"));
+    }
+
+    #[test]
+    fn maps_rate_limit_and_gateway_errors() {
+        let rate = map_cloudrouter_error(
+            "image.generations.create",
+            SdkworkError::HttpStatus {
+                status: 429,
+                body: "rate limited".to_string(),
+            },
+        );
+        assert_eq!(rate.code(), "rate_limited");
+
+        let gateway = map_cloudrouter_error(
+            "video.create",
+            SdkworkError::HttpStatus {
+                status: 503,
+                body: "unavailable".to_string(),
+            },
+        );
+        assert_eq!(gateway.code(), "provider_unavailable");
+    }
+
+    fn restore_env(key: &str, value: Option<String>) {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "sdkwork-agents-tool-music"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Music media tool sub-crate for SDKWork Agents: Suno music generation and task polling via cloudrouter open-api"
+
+[dependencies]
+sdkwork-agent-kernel.workspace = true
+sdkwork-agents-tool-contract.workspace = true
+sdkwork-agents-tool-cloudrouter.workspace = true
+cloudrouter-open-sdk.workspace = true
+serde_json.workspace = true

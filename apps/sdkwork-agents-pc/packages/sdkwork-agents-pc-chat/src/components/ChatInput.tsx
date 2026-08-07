@@ -100,7 +100,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileChange}
-                accept="image/*"
+                accept="image/*,video/*,audio/*,application/*,text/*"
                 multiple
                 className="hidden"
               />

@@ -12,6 +12,15 @@ import {
 
 export type AgentsMediaKind = "image" | "video" | "audio" | "voice" | "document" | "archive" | "other";
 
+/**
+ * Drive node property that marks a chat-uploaded file as a member of the chat
+ * file library. Written with `app_public` visibility so the file library can
+ * list marked files through the Drive `propertyNodes.list` app API.
+ */
+export const CHAT_FILE_LIBRARY_PROPERTY_KEY = "agents.chat_file_library";
+const CHAT_FILE_LIBRARY_PROPERTY_VALUE = "1";
+const CHAT_FILE_LIBRARY_PROPERTY_VISIBILITY = "app_public";
+
 export interface AgentsDriveMediaResource extends MediaResource {
   id: string;
   kind: AgentsMediaKind;
@@ -58,6 +67,8 @@ interface UploadPolicy {
   maxBytes: number;
   profile: DriveUploaderProfile;
   scene: string;
+  /** When true the uploaded node is marked for the chat file library. */
+  libraryMarker?: boolean;
 }
 
 const MEBIBYTE = 1024 * 1024;
@@ -75,6 +86,7 @@ const UPLOAD_POLICIES: Record<AgentsDriveUploadPurpose, UploadPolicy> = {
     maxBytes: 100 * MEBIBYTE,
     profile: "attachment",
     scene: "agent-chat",
+    libraryMarker: true,
   },
   "agent-chat-image": {
     appResourceType: "agent-session-image",
@@ -82,6 +94,7 @@ const UPLOAD_POLICIES: Record<AgentsDriveUploadPurpose, UploadPolicy> = {
     maxBytes: 25 * MEBIBYTE,
     profile: "image",
     scene: "agent-chat",
+    libraryMarker: true,
   },
   "agent-chat-video": {
     appResourceType: "agent-session-video",
@@ -89,6 +102,7 @@ const UPLOAD_POLICIES: Record<AgentsDriveUploadPurpose, UploadPolicy> = {
     maxBytes: 500 * MEBIBYTE,
     profile: "video",
     scene: "agent-chat",
+    libraryMarker: true,
   },
   "agent-chat-voice": {
     appResourceType: "agent-session-voice",
@@ -96,6 +110,7 @@ const UPLOAD_POLICIES: Record<AgentsDriveUploadPurpose, UploadPolicy> = {
     maxBytes: 50 * MEBIBYTE,
     profile: "audio",
     scene: "agent-chat",
+    libraryMarker: true,
   },
   "agent-creative-image": {
     appResourceType: "agent-creative-image",
@@ -166,6 +181,9 @@ export class AgentsDriveUploadService {
     if (!uploadItem.spaceId || !uploadItem.nodeId || result.uploadSession.state !== "completed") {
       throw new Error("Drive upload did not return a completed resource identity.");
     }
+    if (policy.libraryMarker) {
+      await this.markChatFileLibrary(uploadItem.nodeId);
+    }
     const download = await this.getClient().drive.nodes.downloadUrls.retrieve(
       uploadItem.nodeId,
       { requestedTtlSeconds: 900 },
@@ -197,6 +215,19 @@ export class AgentsDriveUploadService {
       { requestedTtlSeconds: 900 },
     );
     return response.downloadUrl;
+  }
+
+  private async markChatFileLibrary(nodeId: string): Promise<void> {
+    try {
+      await this.getClient().drive.nodeProperties.update(nodeId, CHAT_FILE_LIBRARY_PROPERTY_KEY, {
+        value: CHAT_FILE_LIBRARY_PROPERTY_VALUE,
+        visibility: CHAT_FILE_LIBRARY_PROPERTY_VISIBILITY,
+      });
+    } catch (error) {
+      // Marking is best-effort: the upload itself succeeded and the message
+      // must still be sent even if the library marker could not be written.
+      console.warn("Failed to mark chat file for the file library", error);
+    }
   }
 }
 

@@ -11309,6 +11309,7 @@ dependencies = [
  "sdkwork-agent-server",
  "sdkwork-agents-contract",
  "sdkwork-agents-database-host",
+ "sdkwork-database-sqlx",
  "sdkwork-intelligence-agents-service",
  "sdkwork-routes-agents-http-shared",
  "tokio",
@@ -11331,11 +11332,116 @@ dependencies = [
  "sdkwork-agent-provider-opencode",
  "sdkwork-agent-provider-rig",
  "sdkwork-agent-provider-spi",
+ "sdkwork-agents-tool-audio",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "sdkwork-agents-tool-file",
+ "sdkwork-agents-tool-image",
+ "sdkwork-agents-tool-intelligence",
+ "sdkwork-agents-tool-music",
+ "sdkwork-agents-tool-sound-effect",
+ "sdkwork-agents-tool-video",
  "sdkwork-utils-rust",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "tracing",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-audio"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-cloudrouter"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-contract"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-file"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-image"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-intelligence"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-music"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-sound-effect"
+version = "0.1.0"
+dependencies = [
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "sdkwork-agents-tool-video"
+version = "0.1.0"
+dependencies = [
+ "cloudrouter-open-sdk",
+ "sdkwork-agent-kernel",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "serde_json",
 ]
 
 [[package]]
@@ -11831,14 +11937,28 @@ dependencies = [
  "chrono-tz",
  "cloudrouter-open-sdk",
  "cron",
+ "reqwest 0.12.28",
  "sdkwork-agent-kernel",
  "sdkwork-agents-contract",
  "sdkwork-agents-database-host",
  "sdkwork-agents-runtime-facade",
+ "sdkwork-agents-tool-audio",
+ "sdkwork-agents-tool-cloudrouter",
+ "sdkwork-agents-tool-contract",
+ "sdkwork-agents-tool-file",
+ "sdkwork-agents-tool-image",
+ "sdkwork-agents-tool-intelligence",
+ "sdkwork-agents-tool-music",
+ "sdkwork-agents-tool-sound-effect",
+ "sdkwork-agents-tool-video",
  "sdkwork-code-kernel",
  "sdkwork-database-config",
  "sdkwork-database-id",
  "sdkwork-database-sqlx",
+ "sdkwork-drive-object-runtime",
+ "sdkwork-drive-storage-contract",
+ "sdkwork-drive-uploader-service",
+ "sdkwork-drive-workspace-service",
  "sdkwork-intelligence-prompts-ai-contract",
  "sdkwork-utils-rust",
  "sdkwork-web-core",

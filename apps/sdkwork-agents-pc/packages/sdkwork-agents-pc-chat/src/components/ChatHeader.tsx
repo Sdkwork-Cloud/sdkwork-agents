@@ -1,29 +1,34 @@
 import React from 'react';
-import { PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
+import { PanelLeftOpen, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { ModelSelector } from './ModelSelector';
+import { ModelPicker } from '@sdkwork/models-pc-picker/model-picker';
+import type {
+  ModelsPickerGroup,
+  ModelsPickerOption,
+} from '@sdkwork/models-pc-picker/model-picker-types';
+import './modelPickerTheme.css';
 
 interface ChatHeaderProps {
   isSidebarOpen: boolean;
   toggleSidebar: () => void;
-  selectedModel: string;
-  selectedVendor: string;
+  modelGroups: ModelsPickerGroup[];
+  selectedModelId: string;
+  onSelectModel: (modelId: string) => void;
+  fallbackModel: ModelsPickerOption;
   isModelSelectorOpen: boolean;
   setIsModelSelectorOpen: (v: boolean) => void;
-  setSelectedVendor: (v: string) => void;
-  setSelectedModel: (m: string) => void;
   onOpenSettings: () => void;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
   isSidebarOpen,
   toggleSidebar,
-  selectedModel,
-  selectedVendor,
+  modelGroups,
+  selectedModelId,
+  onSelectModel,
+  fallbackModel,
   isModelSelectorOpen,
   setIsModelSelectorOpen,
-  setSelectedVendor,
-  setSelectedModel,
   onOpenSettings
 }) => {
   const { t } = useTranslation('common');
@@ -40,13 +45,17 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             <PanelLeftOpen size={18} />
           </button>
         )}
-        <ModelSelector 
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          selectedVendor={selectedVendor}
-          setSelectedVendor={setSelectedVendor}
-          isOpen={isModelSelectorOpen}
-          setIsOpen={setIsModelSelectorOpen}
+        <ModelPicker
+          bucket="llms"
+          modelGroups={modelGroups}
+          selectedModelId={selectedModelId}
+          onSelectModel={onSelectModel}
+          showModelMenu={isModelSelectorOpen}
+          setShowModelMenu={setIsModelSelectorOpen}
+          fallback={fallbackModel}
+          variant="flat"
+          compact
+          showModelDescription
         />
       </div>
       <div className="flex items-center gap-2 pointer-events-auto mt-2">

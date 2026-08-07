@@ -1,9 +1,14 @@
 mod context;
+mod media_tools;
 mod middleware;
 pub mod testing;
 
 pub use context::AgentRequestContext;
 use context::RequestScope;
+pub(crate) use media_tools::{
+    app_invoke_media_tool, app_list_media_tools, app_list_tool_assets, backend_list_media_tools,
+    backend_update_media_tool_configuration,
+};
 
 use crate::agent_turn_input_queue::{
     AgentTurnInputQueueDriveRef, AgentTurnInputQueueEntry, TurnInputQueueFailureRequest,
@@ -62,6 +67,9 @@ use crate::dto::{
     TaskStateChangeRequestDto, UpdateAgentRequestDto, UpdateAgentStatusRequestDto,
     UpdateSessionRuntimeBindingRequestDto,
 };
+use crate::list_cursors::{
+    decode_audit_event_list_cursor, decode_created_at_cursor, decode_session_list_cursor,
+};
 use crate::mcp_marketplace::McpServerMarketplaceRecord;
 use crate::ports::{
     AgentAuditSink, AgentRepository, AuditEventListQuery, CompositionSlotListQuery,
@@ -77,9 +85,6 @@ use crate::project::{
 use crate::response::{
     created_json, finish_api_json, finish_created_api_json, no_content, success_json, ApiProblem,
     ApiResult, PageData, PageInfo, PageMode, ResourceData,
-};
-use crate::list_cursors::{
-    decode_audit_event_list_cursor, decode_created_at_cursor, decode_session_list_cursor,
 };
 use crate::runtime_facade_bridge::{engine_key_for_provider_identity, shared_agent_engine_host};
 use crate::session_activity::{
@@ -108,7 +113,7 @@ use axum::extract::{Extension, Path, Query, State};
 use axum::http::header::{HeaderName, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 #[cfg(test)]
 use sdkwork_agent_kernel::ProviderManifest;
@@ -698,6 +703,47 @@ impl AgentRepository for DynAgentRepository {
         query: &crate::ports::ResourceUserStateListQuery,
     ) -> KernelResult<u64> {
         self.0.count_resource_user_states(query)
+    }
+
+    fn upsert_tool_configuration(
+        &self,
+        record: crate::domain::AgentToolConfigurationRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<crate::domain::AgentToolConfigurationRecord> {
+        self.0.upsert_tool_configuration(record, expected_version)
+    }
+
+    fn get_tool_configuration(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        tool_id: &str,
+    ) -> KernelResult<Option<crate::domain::AgentToolConfigurationRecord>> {
+        self.0
+            .get_tool_configuration(tenant_id, organization_id, tool_id)
+    }
+
+    fn list_tool_configurations(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+    ) -> KernelResult<Vec<crate::domain::AgentToolConfigurationRecord>> {
+        self.0.list_tool_configurations(tenant_id, organization_id)
+    }
+
+    fn insert_tool_asset(&self, record: crate::domain::AgentToolAssetRecord) -> KernelResult<()> {
+        self.0.insert_tool_asset(record)
+    }
+
+    fn list_tool_assets(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        limit: u64,
+    ) -> KernelResult<Vec<crate::domain::AgentToolAssetRecord>> {
+        self.0
+            .list_tool_assets(tenant_id, organization_id, user_id, limit)
     }
 
     fn append_session_item(
@@ -1332,6 +1378,7 @@ pub struct AgentHttpState {
     model_configuration_runtime: Arc<AgentModelConfigurationRuntime>,
     provider_session_cwd_resolver:
         Option<Arc<dyn sdkwork_agents_runtime_facade::ProviderSessionProjectCwdResolver>>,
+    media_tool_invocation: Option<Arc<crate::tool_invocation::MediaToolInvocationService>>,
 }
 
 #[derive(Clone)]
@@ -1375,6 +1422,7 @@ impl AgentHttpState {
             service: Arc::new(service),
             model_configuration_runtime: Arc::new(AgentModelConfigurationRuntime::new()),
             provider_session_cwd_resolver: None,
+            media_tool_invocation: None,
         }
     }
 
@@ -1394,6 +1442,16 @@ impl AgentHttpState {
         self.model_configuration_runtime = Arc::new(
             AgentModelConfigurationRuntime::with_providers(secret_provider, configuration_store),
         );
+        self
+    }
+
+    /// Attaches the media tool invocation pipeline (registry + tenant
+    /// configuration + optional drive persistence).
+    pub fn with_media_tool_invocation(
+        mut self,
+        invocation: crate::tool_invocation::MediaToolInvocationService,
+    ) -> Self {
+        self.media_tool_invocation = Some(Arc::new(invocation));
         self
     }
 
@@ -2576,6 +2634,18 @@ pub fn build_app_routes() -> Router<AgentHttpState> {
             "/app/v3/api/ai/mcp_servers",
             get(app_list_mcp_servers),
         )
+        .route(
+            "/app/v3/api/ai/tools",
+            get(app_list_media_tools),
+        )
+        .route(
+            "/app/v3/api/ai/tools/{toolId}/invoke",
+            post(app_invoke_media_tool),
+        )
+        .route(
+            "/app/v3/api/ai/assets",
+            get(app_list_tool_assets),
+        )
         .layer(axum::middleware::from_fn(
             middleware::reject_client_scope_selectors,
         ))
@@ -2937,6 +3007,14 @@ pub fn build_backend_routes() -> Router<AgentHttpState> {
         .route(
             "/backend/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/reconcile",
             post(reconcile_task_run),
+        )
+        .route(
+            "/backend/v3/api/ai/tools",
+            get(backend_list_media_tools),
+        )
+        .route(
+            "/backend/v3/api/ai/tools/{toolId}/configuration",
+            put(backend_update_media_tool_configuration),
         )
         .layer(axum::middleware::from_fn(
             middleware::reject_client_scope_selectors,
@@ -3395,9 +3473,7 @@ struct ModelConfigurationSummaryView {
 impl ModelConfigurationSummaryView {
     fn from_profile(profile: &AgentConfigurationProfile, engine_id: &str) -> ApiResult<Self> {
         let provider_scope = sdkwork_agents_runtime_facade::agent_engine_provider_scope(engine_id)
-            .ok_or_else(|| {
-            ApiProblem::validation("engineId is not a supported Agent provider")
-        })?;
+            .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
         let mapping = AgentModelConfigurationFieldMapping::namespaced(provider_scope);
         let config = &profile.configuration;
         Ok(Self {
@@ -3538,10 +3614,11 @@ async fn app_get_model_configuration_status(
     let result: ApiResult<ResourceData<ModelConfigurationStatusView>> = async {
         let _scope = RequestScope::from_context(context);
         let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
-        let provider_scope = sdkwork_agents_runtime_facade::agent_engine_provider_scope(
-            &path.engine_id,
-        )
-        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+        let provider_scope =
+            sdkwork_agents_runtime_facade::agent_engine_provider_scope(&path.engine_id)
+                .ok_or_else(|| {
+                    ApiProblem::validation("engineId is not a supported Agent provider")
+                })?;
         let mapping = AgentModelConfigurationFieldMapping::namespaced(provider_scope);
         let expected_base_url = config_string(&profile.configuration, &mapping.base_url_key);
         let expected_default_model =
@@ -7457,7 +7534,11 @@ async fn app_synchronize_project_sessions(
                     exact_cwd,
                 )
             } else {
-                synchronize_project_provider_sessions(service, &project_for_worker, subject_for_worker)
+                synchronize_project_provider_sessions(
+                    service,
+                    &project_for_worker,
+                    subject_for_worker,
+                )
             };
             match outcome {
                 Ok(result) => tracing::info!(
@@ -12725,13 +12806,15 @@ fn total_pages(total_items: usize, page_size: usize) -> usize {
 /// headers for transient cloudrouter account-pool routing. Returns `None` when
 /// the header is absent or does not use the Bearer scheme; the value is never
 /// persisted.
-fn extract_bearer_auth_token(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn extract_bearer_auth_token(headers: &HeaderMap) -> Option<String> {
     let value = headers
         .get(axum::http::header::AUTHORIZATION)?
         .to_str()
         .ok()?
         .trim();
-    let token = value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer "))?;
+    let token = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))?;
     let token = token.trim();
     (!token.is_empty()).then(|| token.to_string())
 }

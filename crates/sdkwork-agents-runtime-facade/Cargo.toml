@@ -8,6 +8,15 @@ description = "Agents application facade for kernel agent-engine provider bootst
 [dependencies]
 sdkwork-agent-kernel = { workspace = true }
 sdkwork-utils-rust = { workspace = true }
+sdkwork-agents-tool-contract = { workspace = true }
+sdkwork-agents-tool-cloudrouter = { workspace = true }
+sdkwork-agents-tool-audio = { workspace = true }
+sdkwork-agents-tool-video = { workspace = true }
+sdkwork-agents-tool-music = { workspace = true }
+sdkwork-agents-tool-sound-effect = { workspace = true }
+sdkwork-agents-tool-image = { workspace = true }
+sdkwork-agents-tool-file = { workspace = true }
+sdkwork-agents-tool-intelligence = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

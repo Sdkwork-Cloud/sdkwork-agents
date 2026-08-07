@@ -1,9 +1,11 @@
+mod agent_engine_catalog;
 mod agent_turn;
 mod agent_turn_input_queue;
 mod api;
 mod application;
-mod agent_engine_catalog;
+mod cloud_router_executor;
 mod domain;
+mod drive_asset_saver;
 mod dto;
 #[cfg(feature = "http-axum")]
 mod http;
@@ -12,13 +14,13 @@ mod in_memory_pagination;
 mod infrastructure;
 mod list_cursors;
 mod mcp_marketplace;
-mod postgres_model_configuration_store;
+mod media_tool_registry;
 mod persistence;
 mod ports;
+mod postgres_model_configuration_store;
 #[cfg(feature = "postgres-sync")]
 mod postgres_sync_pool;
 mod project;
-mod cloud_router_executor;
 #[cfg(feature = "http-axum")]
 mod provider_session_sync;
 mod provider_stream_items;
@@ -31,6 +33,7 @@ mod session_item_cursor;
 mod task_execution_cursor;
 mod task_scheduler;
 mod task_scheduling;
+mod tool_invocation;
 mod turn_runtime;
 mod validation;
 mod workspace;
@@ -84,11 +87,16 @@ pub use application::{
     UpdateSessionRuntimeBindingCommand, UpdateSessionUserStateCommand,
     UpdateTurnInputQueueEntryCommand, UpdateWorkspaceCommand, WorkspaceMutationCommand,
 };
+pub use cloud_router_executor::{
+    CloudRouterFirstTurnExecutor, ENV_CLOUDROUTER_BASE_URL, RUNTIME_MODE_CLOUDROUTER,
+};
+pub use drive_asset_saver::{DriveAssetRef, DriveAssetSaver, DriveSaveContext, DriveSaveError};
+pub use media_tool_registry::{MediaToolRegistry, SessionMediaAuthTokenStore};
 pub use sdkwork_intelligence_prompts_ai_contract::{
     AgentPromptTemplateKind, AgentPromptTemplateRecord, PromptAiRepository,
 };
-pub use cloud_router_executor::{
-    CloudRouterFirstTurnExecutor, RUNTIME_MODE_CLOUDROUTER, ENV_CLOUDROUTER_BASE_URL,
+pub use tool_invocation::{
+    MediaToolInvocationRequest, MediaToolInvocationService, ToolInvocationOutcome,
 };
 pub use turn_runtime::{
     complete_with_timeout, complete_with_timeout_and_sink, execute_agent_turn, is_capacity_error,
@@ -146,7 +154,6 @@ pub use infrastructure::{
     InMemoryAgentAuditSink, InMemoryAgentRepository, PolicyMode, ENV_DEPLOYMENT_ENV,
     ENV_DEV_AUTH_BYPASS, IAM_PERMISSION_AGENTS_MANAGE, IAM_PERMISSION_AGENTS_READ,
 };
-pub use postgres_model_configuration_store::PostgresAgentConfigurationStore;
 pub use persistence::{
     extract_event_context, AgentAuditAdapter, AgentRepositoryAdapter, SqlAgentAuditSink,
     SqlAgentRepository, SQL_COUNT_AGENT, SQL_COUNT_AGENT_COMPOSITION_SLOTS,
@@ -197,6 +204,7 @@ pub use ports::{
     MAX_TURN_INPUT_CONTENT_BYTES, TURN_CONTEXT_ITEM_LIMIT,
 };
 pub use ports::{SessionCheckpointListQuery, SessionRuntimeBindingListQuery, TurnListQuery};
+pub use postgres_model_configuration_store::PostgresAgentConfigurationStore;
 pub use project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
     AgentProjectStatus, AgentProjectVisibility,

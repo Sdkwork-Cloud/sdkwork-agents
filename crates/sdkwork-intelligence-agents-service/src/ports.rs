@@ -9,7 +9,7 @@ use crate::domain::{
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
     AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord,
     AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord,
-    AgentVisibility,
+    AgentToolAssetRecord, AgentToolConfigurationRecord, AgentVisibility,
 };
 use crate::list_cursors::{
     audit_list_scope_fingerprint, interaction_list_scope_fingerprint,
@@ -1016,7 +1016,11 @@ impl InteractionListQuery {
 
     /// Switch to keyset mode: fetch `page_size + 1` rows so the caller can
     /// derive `has_more` and the next opaque cursor.
-    pub fn with_cursor_page(mut self, page_size: usize, cursor: Option<CreatedAtListCursor>) -> Self {
+    pub fn with_cursor_page(
+        mut self,
+        page_size: usize,
+        cursor: Option<CreatedAtListCursor>,
+    ) -> Self {
         self.pagination = PaginationParams::default().with_page_size(page_size);
         self.cursor = cursor;
         self
@@ -1180,7 +1184,11 @@ impl TurnListQuery {
 
     /// Switch to keyset mode: fetch `page_size + 1` rows so the caller can
     /// derive `has_more` and the next opaque cursor.
-    pub fn with_cursor_page(mut self, page_size: usize, cursor: Option<CreatedAtListCursor>) -> Self {
+    pub fn with_cursor_page(
+        mut self,
+        page_size: usize,
+        cursor: Option<CreatedAtListCursor>,
+    ) -> Self {
         self.pagination = PaginationParams::default().with_page_size(page_size);
         self.cursor = cursor;
         self
@@ -1625,6 +1633,51 @@ pub trait AgentRepository: Send + Sync {
     ) -> KernelResult<Vec<AgentResourceUserStateRecord>>;
 
     fn count_resource_user_states(&self, query: &ResourceUserStateListQuery) -> KernelResult<u64>;
+    // -----------------------------------------------------------------------
+    // Media tool configuration persistence (admin-managed)
+    // -----------------------------------------------------------------------
+
+    /// Upserts one tenant-scoped media tool configuration. A row is created
+    /// on first write; `expected_version` enforces optimistic concurrency for
+    /// updates.
+    fn upsert_tool_configuration(
+        &self,
+        record: AgentToolConfigurationRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentToolConfigurationRecord>;
+
+    /// Reads one tenant-scoped tool configuration, or `None` when the tenant
+    /// has never written one (registry defaults apply).
+    fn get_tool_configuration(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        tool_id: &str,
+    ) -> KernelResult<Option<AgentToolConfigurationRecord>>;
+
+    /// Lists tenant tool configurations for admin surfaces, newest first.
+    fn list_tool_configurations(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+    ) -> KernelResult<Vec<AgentToolConfigurationRecord>>;
+
+    // -----------------------------------------------------------------------
+    // Generated-media asset persistence (saveToDrive registration)
+    // -----------------------------------------------------------------------
+
+    /// Inserts one generated-media asset record (idempotent per
+    /// space+node scope).
+    fn insert_tool_asset(&self, record: AgentToolAssetRecord) -> KernelResult<()>;
+
+    /// Lists generated-media assets for one tenant/user, newest first.
+    fn list_tool_assets(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        limit: u64,
+    ) -> KernelResult<Vec<AgentToolAssetRecord>>;
 
     // -----------------------------------------------------------------------
     // Session-item persistence

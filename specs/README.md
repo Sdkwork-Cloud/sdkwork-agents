@@ -49,6 +49,13 @@ depend on `sdkwork-agents` for their core domain behavior.
 | `sdkwork-llm` | runtime binding / model provider profile | model catalog, provider profile, credential references |
 | `sdkwork-drive` | `slot_kind=drive`, `target_module=drive` | `@sdkwork/drive-app-sdk`; Drive Uploader only |
 
+Chat file library: chat-uploaded files are marked in Drive with the `app_public`
+node property `agents.chat_file_library` (written by the PC core upload service)
+and the library is listed through the Drive app API `propertyNodes.list`
+(`GET /app/v3/api/drive/properties/{propertyKey}/nodes`). Agents rows keep only
+the canonical Drive references; no raw bytes or markers are stored in Agents
+tables.
+
 Search indexing and generated-media workflows remain independent capabilities.
 They integrate through approved public contracts and are not copied into the
 Agents database or SDK authorities.

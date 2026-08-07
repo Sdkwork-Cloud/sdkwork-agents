@@ -11,7 +11,7 @@ use crate::domain::{
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
     AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionItemStatus,
     AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
-    AgentTaskRecord,
+    AgentTaskRecord, AgentToolAssetRecord, AgentToolConfigurationRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 use crate::in_memory_pagination::{count_iterator, paginate_items, paginate_iterator};
@@ -42,8 +42,7 @@ use crate::task_scheduling::{
     AgentTaskStatus, AgentTaskTriggerKind,
 };
 use crate::validation::{
-    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_RUN,
-    ID_PREFIX_TURN,
+    parse_rfc3339_datetime, validate_standard_id, ID_PREFIX_ATTEMPT, ID_PREFIX_RUN, ID_PREFIX_TURN,
 };
 use crate::workspace::{AgentWorkspaceRecord, AgentWorkspaceStatus};
 use sdkwork_agent_kernel::{
@@ -374,6 +373,8 @@ type SessionIdempotencyKey = (u64, u64, u64, String);
 type SessionRuntimeBindingPrimaryKey = (u64, u64, String, String);
 type SessionCheckpointPrimaryKey = (u64, u64, String, String);
 type ResourceUserStatePrimaryKey = (u64, u64, u64, i16, String);
+type ToolConfigurationPrimaryKey = (u64, u64, String);
+type ToolAssetPrimaryKey = (u64, u64, String, String);
 type SessionIndexKey = (u64, u64, Reverse<String>, Reverse<u64>);
 type SessionActivityIndexKey = (u64, u64, u64, String, u64);
 type SessionItemPrimaryKey = (u64, u64, String, String);
@@ -468,6 +469,8 @@ pub struct InMemoryAgentRepository {
     session_checkpoints: RwLock<HashMap<SessionCheckpointPrimaryKey, AgentSessionCheckpointRecord>>,
     resource_user_states:
         RwLock<HashMap<ResourceUserStatePrimaryKey, AgentResourceUserStateRecord>>,
+    tool_configurations: RwLock<HashMap<ToolConfigurationPrimaryKey, AgentToolConfigurationRecord>>,
+    tool_assets: RwLock<HashMap<ToolAssetPrimaryKey, AgentToolAssetRecord>>,
     items: RwLock<HashMap<SessionItemPrimaryKey, AgentSessionItemRecord>>,
     item_feedback: RwLock<HashMap<ItemFeedbackPrimaryKey, AgentItemFeedbackRecord>>,
     item_drive_refs: RwLock<HashMap<ItemDriveRefPrimaryKey, AgentItemDriveRefRecord>>,
@@ -519,6 +522,8 @@ impl InMemoryAgentRepository {
             current_session_runtime_bindings: RwLock::new(HashMap::new()),
             session_checkpoints: RwLock::new(HashMap::new()),
             resource_user_states: RwLock::new(HashMap::new()),
+            tool_configurations: RwLock::new(HashMap::new()),
+            tool_assets: RwLock::new(HashMap::new()),
             items: RwLock::new(HashMap::new()),
             item_feedback: RwLock::new(HashMap::new()),
             item_drive_refs: RwLock::new(HashMap::new()),
@@ -1911,10 +1916,7 @@ impl AgentRepository for InMemoryAgentRepository {
                 })
             })
             .cloned();
-        let store_limit = query
-            .pagination
-            .page_size
-            .saturating_add(1);
+        let store_limit = query.pagination.page_size.saturating_add(1);
         Ok(iter.take(store_limit).collect())
     }
 
@@ -2573,6 +2575,101 @@ impl AgentRepository for InMemoryAgentRepository {
             .filter(|record| resource_user_state_matches_agent(record, query, &sessions))
             .count() as u64)
     }
+    fn upsert_tool_configuration(
+        &self,
+        record: AgentToolConfigurationRecord,
+        expected_version: Option<u64>,
+    ) -> KernelResult<AgentToolConfigurationRecord> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.tool_id.clone(),
+        );
+        let mut configurations = self.tool_configurations.recovering_write();
+        let existing = configurations.get(&key).cloned();
+        if let Some(existing) = &existing {
+            if let Some(expected) = expected_version {
+                if existing.version != expected {
+                    return Err(KernelError::conflict("tool configuration version mismatch"));
+                }
+            }
+            let mut updated = record;
+            updated.id = existing.id;
+            updated.version = existing.version + 1;
+            configurations.insert(key, updated.clone());
+            return Ok(updated);
+        }
+        configurations.insert(key, record.clone());
+        Ok(record)
+    }
+
+    fn get_tool_configuration(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        tool_id: &str,
+    ) -> KernelResult<Option<AgentToolConfigurationRecord>> {
+        Ok(self
+            .tool_configurations
+            .recovering_read()
+            .get(&(tenant_id, organization_id, tool_id.to_string()))
+            .cloned())
+    }
+
+    fn list_tool_configurations(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+    ) -> KernelResult<Vec<AgentToolConfigurationRecord>> {
+        let mut records: Vec<AgentToolConfigurationRecord> = self
+            .tool_configurations
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == tenant_id && record.organization_id == organization_id
+            })
+            .cloned()
+            .collect();
+        records.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        Ok(records)
+    }
+
+    fn insert_tool_asset(&self, record: AgentToolAssetRecord) -> KernelResult<()> {
+        let key = (
+            record.tenant_id,
+            record.organization_id,
+            record.drive_space_id.clone(),
+            record.drive_node_id.clone(),
+        );
+        self.tool_assets
+            .recovering_write()
+            .entry(key)
+            .or_insert(record);
+        Ok(())
+    }
+
+    fn list_tool_assets(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        user_id: u64,
+        limit: u64,
+    ) -> KernelResult<Vec<AgentToolAssetRecord>> {
+        let mut records: Vec<AgentToolAssetRecord> = self
+            .tool_assets
+            .recovering_read()
+            .values()
+            .filter(|record| {
+                record.tenant_id == tenant_id
+                    && record.organization_id == organization_id
+                    && (user_id == 0 || record.user_id == user_id)
+            })
+            .cloned()
+            .collect();
+        records.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        records.truncate(limit as usize);
+        Ok(records)
+    }
 
     fn append_session_item(
         &self,
@@ -2970,17 +3067,13 @@ impl AgentRepository for InMemoryAgentRepository {
                 .cmp(&left.created_at)
                 .then_with(|| right.id.cmp(&left.id))
         });
-        let store_limit = query
-            .pagination
-            .page_size
-            .saturating_add(1);
+        let store_limit = query.pagination.page_size.saturating_add(1);
         Ok(records
             .into_iter()
             .filter(|turn| {
                 query.cursor.as_ref().is_none_or(|cursor| {
                     turn.created_at < cursor.created_at
-                        || (turn.created_at == cursor.created_at
-                            && turn.id < cursor.internal_id)
+                        || (turn.created_at == cursor.created_at && turn.id < cursor.internal_id)
                 })
             })
             .take(store_limit)
@@ -4039,10 +4132,7 @@ impl AgentRepository for InMemoryAgentRepository {
                 .cmp(&left.created_at)
                 .then_with(|| right.id.cmp(&left.id))
         });
-        let store_limit = query
-            .pagination
-            .page_size
-            .saturating_add(1);
+        let store_limit = query.pagination.page_size.saturating_add(1);
         Ok(records
             .into_iter()
             .filter(|record| {
@@ -5570,7 +5660,10 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
             .as_ref()
             .map(|cursor| parse_rfc3339_datetime(&cursor.created_at, "cursor.created_at"))
             .transpose()?;
-        let cursor_ref = query.cursor.as_ref().map(|cursor| cursor.event_ref.as_str());
+        let cursor_ref = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.event_ref.as_str());
         let events = self.events.recovering_lock();
         // BTreeMap<Reverse<...>> iterates in descending order (newest first).
         // Iterate the incrementally maintained index directly — no collect/sort.
@@ -5625,9 +5718,8 @@ impl AgentAuditSink for InMemoryAgentAuditSink {
         let has_more = items.len() > page_size;
         items.truncate(page_size);
         let next_page_token = if has_more {
-            let (created_at, event_ref) = boundary.ok_or_else(|| {
-                KernelError::validation("audit page ended without a cursor row")
-            })?;
+            let (created_at, event_ref) = boundary
+                .ok_or_else(|| KernelError::validation("audit page ended without a cursor row"))?;
             encode_audit_event_list_cursor(&AuditEventListCursor {
                 created_at,
                 event_ref,

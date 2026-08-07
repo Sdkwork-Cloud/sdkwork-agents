@@ -1714,6 +1714,56 @@ pub struct AgentItemDriveRefRecord {
 }
 
 // ============================================================================
+// Agent media tool per-tenant configuration (admin-managed)
+// ============================================================================
+
+/// Per-tenant configuration of one media tool, managed through the backend
+/// admin surface and merged at invocation time.
+///
+/// Defaults mirror the cloudrouter-backed tool family: tools are enabled by
+/// default, generated content is not saved to Drive unless requested or
+/// configured, and `default_arguments` supplies model/voice/quality defaults
+/// that the caller may override per invocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentToolConfigurationRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub tool_id: String,
+    pub enabled: bool,
+    pub save_to_drive_default: bool,
+    pub default_arguments_json: String,
+    pub version: u64,
+    pub created_by: u64,
+    pub updated_by: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+/// A generated-media asset persisted to Drive through a media tool
+/// invocation with `saveToDrive`, registered independently of session items
+/// so front-end-driven saves appear in the unified asset entry surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentToolAssetRecord {
+    pub id: u64,
+    pub tenant_id: u64,
+    pub organization_id: u64,
+    pub user_id: u64,
+    pub tool_id: String,
+    pub tool_call_id: String,
+    pub media_kind: String,
+    pub drive_space_id: String,
+    pub drive_node_id: String,
+    pub drive_uri: String,
+    pub source_url: Option<String>,
+    pub created_by: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+// ============================================================================
 // Agent Live Interaction Management — agent-engine pause/resume lifecycle
 // ============================================================================
 

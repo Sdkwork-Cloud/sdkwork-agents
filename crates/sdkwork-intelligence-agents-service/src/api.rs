@@ -1004,6 +1004,24 @@ pub const AGENT_APP_API_OPERATIONS: &[ApiOperation] = &[
         tag: "ai",
         operation_id: "agents.mcpServers.list",
     },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/tools",
+        tag: "ai",
+        operation_id: "agents.tools.list",
+    },
+    ApiOperation {
+        method: "POST",
+        path: "/app/v3/api/ai/tools/{toolId}/invoke",
+        tag: "ai",
+        operation_id: "agents.tools.invoke",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/app/v3/api/ai/assets",
+        tag: "ai",
+        operation_id: "agents.assets.list",
+    },
 ];
 
 pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
@@ -1354,6 +1372,18 @@ pub const AGENT_BACKEND_API_OPERATIONS: &[ApiOperation] = &[
         path: "/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}",
         tag: "ai",
         operation_id: "agents.compositionSlots.delete",
+    },
+    ApiOperation {
+        method: "GET",
+        path: "/backend/v3/api/ai/tools",
+        tag: "ai",
+        operation_id: "agents.tools.adminList",
+    },
+    ApiOperation {
+        method: "PUT",
+        path: "/backend/v3/api/ai/tools/{toolId}/configuration",
+        tag: "ai",
+        operation_id: "agents.tools.updateConfiguration",
     },
 ];
 
@@ -1778,8 +1808,8 @@ mod tests {
         let backend_openapi = include_str!("../specs/openapi/agents-backend-api.openapi.yaml");
 
         assert_eq!(AGENT_OPEN_API_OPERATIONS.len(), 56);
-        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 109);
-        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 58);
+        assert_eq!(AGENT_APP_API_OPERATIONS.len(), 112);
+        assert_eq!(AGENT_BACKEND_API_OPERATIONS.len(), 60);
 
         assert_eq!(
             AGENT_OPEN_API_OPERATIONS.len(),

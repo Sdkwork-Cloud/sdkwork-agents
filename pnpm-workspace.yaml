@@ -26,6 +26,7 @@ packages:
   - "../sdkwork-appbase/packages/common/foundation/sdkwork-runtime-bootstrap"
   - "../sdkwork-appbase/packages/pc-react/foundation/sdkwork-appbase-pc-react"
   - "../sdkwork-appbase/packages/pc-react/foundation/sdkwork-i18n-pc-react"
+  - "../sdkwork-appbase/sdks/sdkwork-base-data-backend-sdk/sdkwork-base-data-backend-sdk-typescript"
   - "../sdkwork-core/sdkwork-core-pc-react"
   - "../sdkwork-ui/sdkwork-ui-pc-react"
   - "../sdkwork-sdk-commons/sdkwork-sdk-common-typescript"
@@ -61,6 +62,7 @@ packages:
   - "../sdkwork-promotion/apps/sdkwork-promotion-pc/packages/sdkwork-promotion-pc-coupon"
   - "../sdkwork-promotion/sdks/sdkwork-promotion-backend-sdk/sdkwork-promotion-backend-sdk-typescript"
   - "../sdkwork-membership/apps/sdkwork-membership-pc/packages/sdkwork-membership-pc-core"
+  - "../sdkwork-models/apps/sdkwork-models-pc/packages/sdkwork-models-pc-picker"
 catalog:
   react: ^19.2.4
   react-dom: ^19.2.4
