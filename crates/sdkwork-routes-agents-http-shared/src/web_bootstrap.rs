@@ -62,27 +62,7 @@ fn resolve_agents_web_environment_from_process_env() -> WebEnvironment {
 }
 
 fn configured_agents_cors_origins_from_process_env() -> Vec<String> {
-    let mut shared_origins =
-        sdkwork_web_bootstrap::cors_allowed_origins_from_env(&["SDKWORK_CORS_ALLOWED_ORIGINS"]);
-    let mut agents_origins = sdkwork_web_bootstrap::cors_allowed_origins_from_env(&[
-        "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
-    ]);
-    if !shared_origins.is_empty() && !agents_origins.is_empty() {
-        shared_origins.sort();
-        shared_origins.dedup();
-        agents_origins.sort();
-        agents_origins.dedup();
-        if shared_origins != agents_origins {
-            panic!(
-                "SDKWORK_CORS_ALLOWED_ORIGINS and SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS must describe the same origin set"
-            );
-        }
-    }
-    if std::env::var_os("SDKWORK_CORS_ALLOWED_ORIGINS").is_some() {
-        shared_origins
-    } else {
-        agents_origins
-    }
+    sdkwork_web_bootstrap::cors_allowed_origins_from_env(&["SDKWORK_CORS_ALLOWED_ORIGINS"])
 }
 
 fn is_exact_http_origin(origin: &str) -> bool {
@@ -111,7 +91,7 @@ fn ensure_production_cors_configuration(
 
     if security_policy.cors.allowed_origins.is_empty() {
         panic!(
-            "production-like Agents HTTP runtime requires SDKWORK_CORS_ALLOWED_ORIGINS or SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS"
+            "production-like Agents HTTP runtime requires SDKWORK_CORS_ALLOWED_ORIGINS"
         );
     }
 
@@ -283,13 +263,8 @@ mod tests {
     fn production_security_policy_rejects_permissive_cors() {
         let _guard = env_test_lock();
         std::env::set_var("SDKWORK_CORS_ALLOWED_ORIGINS", "https://agents.sdkwork.com");
-        std::env::set_var(
-            "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
-            "https://agents.sdkwork.com",
-        );
         let policy = agents_service_security_policy(&WebEnvironment::Prod);
         std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
-        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
         assert!(!policy.cors.allow_all_origins);
         policy
             .cors
@@ -305,7 +280,6 @@ mod tests {
     #[should_panic(expected = "requires SDKWORK_CORS_ALLOWED_ORIGINS")]
     fn production_security_policy_requires_explicit_origin_allowlist() {
         let _guard = env_test_lock();
-        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
         std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
         let _ = agents_service_security_policy(&WebEnvironment::Prod);
     }
@@ -317,13 +291,8 @@ mod tests {
             "SDKWORK_CORS_ALLOWED_ORIGINS",
             "https://test.agents.sdkwork.com",
         );
-        std::env::set_var(
-            "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
-            "https://test.agents.sdkwork.com",
-        );
         let policy = agents_service_security_policy(&WebEnvironment::Test);
         std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
-        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
         policy
             .cors
             .validate_origin_value("https://test.agents.sdkwork.com")
@@ -397,21 +366,6 @@ mod tests {
         let result = std::panic::catch_unwind(resolve_agents_web_environment_from_process_env);
         std::env::remove_var("SDKWORK_ENVIRONMENT");
         std::env::remove_var("SDKWORK_AGENTS_ENVIRONMENT");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn shared_and_agents_cors_origin_settings_must_agree() {
-        let _guard = env_test_lock();
-        std::env::set_var("SDKWORK_CORS_ALLOWED_ORIGINS", "https://agents.sdkwork.com");
-        std::env::set_var(
-            "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS",
-            "https://different.sdkwork.com",
-        );
-        let result =
-            std::panic::catch_unwind(|| agents_service_security_policy(&WebEnvironment::Prod));
-        std::env::remove_var("SDKWORK_CORS_ALLOWED_ORIGINS");
-        std::env::remove_var("SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS");
         assert!(result.is_err());
     }
 }

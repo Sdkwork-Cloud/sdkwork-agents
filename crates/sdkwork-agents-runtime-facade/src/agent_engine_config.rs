@@ -7,6 +7,7 @@
 //! secrets must never leave the host through the catalog API.
 
 use sdkwork_agent_provider_claude_code::claude_code_settings_path;
+#[cfg(feature = "codex-provider")]
 use sdkwork_agent_provider_codex::codex_config_path;
 use sdkwork_agent_provider_core::read_provider_config;
 use sdkwork_agent_provider_gemini_cli::gemini_env_path;
@@ -57,6 +58,7 @@ impl AgentEngineConfigFile {
 /// return `(None, text)`.
 fn provider_config_location(engine_key: &str) -> (Option<std::path::PathBuf>, &'static str) {
     match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => (codex_config_path(), CONFIG_FORMAT_TOML),
         "claude-code" => (claude_code_settings_path(), CONFIG_FORMAT_JSON),
         "gemini" => (gemini_env_path(), CONFIG_FORMAT_ENV),

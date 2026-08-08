@@ -565,6 +565,7 @@ mod tests {
     use sdkwork_agent_kernel::{
         KernelEventSeverity, ModelDescriptor, ModelProvider, ProviderHealth, ProviderManifest,
     };
+    #[cfg(feature = "codex-provider")]
     use sdkwork_agent_provider_codex::CodexSdkIntegration;
     use sdkwork_agent_provider_spi::{
         NegotiatedCapability, SdkBackendKind, SdkBackendRuntime, SdkCapabilityNegotiation,
@@ -684,6 +685,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "codex-provider")]
     fn controlled_codex_slot(
         invoke_count: Arc<AtomicUsize>,
         stream_count: Arc<AtomicUsize>,
@@ -833,6 +835,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "codex-provider")]
     fn codex_first_turn_completion_binds_provider_session_and_resume_does_not_invoke() {
         let invoke_count = Arc::new(AtomicUsize::new(0));
         let stream_count = Arc::new(AtomicUsize::new(0));

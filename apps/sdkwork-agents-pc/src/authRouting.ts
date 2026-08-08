@@ -26,7 +26,14 @@ export function isSessionReady(session: SdkworkChatSession | null): boolean {
 }
 
 export function buildLoginRedirect(pathname: string, search = '', hash = ''): string {
-  const returnPath = `${normalizePath(pathname)}${search}${hash}`;
+  const normalizedPathname = normalizePath(pathname);
+  // Never re-wrap an auth-route URL: encoding the whole current URL again
+  // nests the `redirect` param one level deeper on every bounce. Return the
+  // plain login path when already on the auth surface.
+  if (isAuthRoute(normalizedPathname)) {
+    return AUTH_LOGIN_PATH;
+  }
+  const returnPath = `${normalizedPathname}${search}${hash}`;
   return `${AUTH_LOGIN_PATH}?redirect=${encodeURIComponent(returnPath)}`;
 }
 

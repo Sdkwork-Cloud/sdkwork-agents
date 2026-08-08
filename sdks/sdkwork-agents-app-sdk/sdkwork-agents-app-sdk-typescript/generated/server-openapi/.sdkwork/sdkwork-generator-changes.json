@@ -9,15 +9,12 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "922b1e5422ec7d4407294abfd5aff6f3973b2f860334a55be1c19f48a388220d",
+  "changeFingerprint": "4c7e7ae3106e2937249f1ed8d0623457d938673cd895f63df05c25d5c9181029",
   "changes": {
-    "createdGeneratedFiles": [
-      "src/types/agent-engine-config-file-response.ts",
-      "src/types/agent-engine-config-file-view.ts"
-    ],
+    "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts",
-      "src/types/index.ts"
+      "package.json",
+      "src/http/client.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -27,14 +24,13 @@
       "bin/sdk-gen.sh",
       "CHANGELOG.md",
       "LICENSE",
-      "package.json",
       "README.md",
       "sdkwork-sdk.json",
+      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
       "src/auth/index.ts",
-      "src/http/client.ts",
       "src/http/index.ts",
       "src/index.ts",
       "src/sdk.ts",
@@ -48,6 +44,8 @@
       "src/types/agent-engine-catalog-engine.ts",
       "src/types/agent-engine-catalog-list-response.ts",
       "src/types/agent-engine-catalog.ts",
+      "src/types/agent-engine-config-file-response.ts",
+      "src/types/agent-engine-config-file-view.ts",
       "src/types/agent-engine-model-catalog-entry.ts",
       "src/types/agent-implementation-kind.ts",
       "src/types/agent-implementation-type.ts",
@@ -186,6 +184,7 @@
       "src/types/fail-agent-turn-input-queue-entry-request.ts",
       "src/types/field-error.ts",
       "src/types/import-agent-project-request.ts",
+      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
       "src/types/legacy-agent-interaction-resolution.ts",
@@ -244,37 +243,42 @@
     "schemaVersion": 1,
     "areas": [
       "api-surface",
-      "models"
+      "runtime",
+      "build-metadata"
     ],
     "details": [
       {
         "area": "api-surface",
         "paths": [
-          "src/api/ai.ts"
+          "src/http/client.ts"
         ]
       },
       {
-        "area": "models",
+        "area": "runtime",
         "paths": [
-          "src/types/agent-engine-config-file-response.ts",
-          "src/types/agent-engine-config-file-view.ts",
-          "src/types/index.ts"
+          "src/http/client.ts"
+        ]
+      },
+      {
+        "area": "build-metadata",
+        "paths": [
+          "package.json"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models. Verification is required."
+    "summary": "Detected impact areas: api-surface, runtime, build-metadata. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: api-surface, runtime, build-metadata. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime, build-metadata.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -292,7 +296,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime, build-metadata.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

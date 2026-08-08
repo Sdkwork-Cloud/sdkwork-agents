@@ -5,6 +5,16 @@ edition.workspace = true
 license.workspace = true
 description = "Agents application facade for kernel agent-engine provider bootstrap and runtime execution"
 
+[features]
+default = []
+# Codex agent provider carries its own embedded SQLite runtime store
+# (codex-state). It is an optional, per-application integration: off by
+# default so server/container builds stay SQLite-free (DATABASE_SPEC:
+# authoritative-server persistence is PostgreSQL only); applications that
+# need the Codex engine enable it explicitly, and client-local surfaces
+# enable it for device-scoped state.
+codex-provider = ["dep:sdkwork-agent-provider-codex"]
+
 [dependencies]
 sdkwork-agent-kernel = { workspace = true }
 sdkwork-utils-rust = { workspace = true }
@@ -22,7 +32,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 futures = "0.3"
-sdkwork-agent-provider-codex = { workspace = true }
+sdkwork-agent-provider-codex = { workspace = true, optional = true }
 sdkwork-agent-provider-claude-code = { workspace = true }
 sdkwork-agent-provider-gemini-cli = { workspace = true }
 sdkwork-agent-provider-opencode = { workspace = true }

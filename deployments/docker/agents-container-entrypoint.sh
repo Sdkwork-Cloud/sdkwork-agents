@@ -41,6 +41,11 @@ if printenv SDKWORK_AGENTS_PROFILE_FILE >/dev/null 2>&1; then
   fail "SDKWORK_AGENTS_PROFILE_FILE is not supported; materialize the selected profile at /app/etc/topology" 64
 fi
 
+# Defensive: SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS is a retired legacy key. All
+# code now reads the canonical SDKWORK_CORS_ALLOWED_ORIGINS, so operators must
+# set the canonical key (via the selected etc/topology profile). Rejecting the
+# legacy key here keeps misconfigured deployments from silently losing their
+# CORS allow-list.
 if printenv SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS >/dev/null 2>&1; then
   fail "SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS is not supported; use the selected profile's SDKWORK_CORS_ALLOWED_ORIGINS" 65
 fi
@@ -102,6 +107,8 @@ while IFS= read -r line || [ -n "$line" ]; do
       profile_cors_allowed_origins=$value
       ;;
     SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS)
+      # Defensive rejection of the retired legacy key (see above); profiles
+      # must declare the canonical SDKWORK_CORS_ALLOWED_ORIGINS.
       fail "selected profile must use SDKWORK_CORS_ALLOWED_ORIGINS, not SDKWORK_AGENTS_CORS_ALLOWED_ORIGINS" 65
       ;;
     *)

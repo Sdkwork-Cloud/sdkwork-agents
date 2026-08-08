@@ -15,6 +15,7 @@ use sdkwork_agent_kernel::{
 use sdkwork_agent_provider_claude_code::{
     ClaudeCodeConfigurationProvider, ClaudeCodeSdkIntegration,
 };
+#[cfg(feature = "codex-provider")]
 use sdkwork_agent_provider_codex::{
     CodexConfigurationProvider, CodexSdkIntegration, CodexSortDirection, ThreadListCwdFilter,
     ThreadListParams, ThreadTurnsListParams, TurnItemsView,
@@ -106,7 +107,14 @@ pub fn apply_agent_engine_model_configuration(
     }
 
     let result = match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => CodexConfigurationProvider::new().apply_model_configuration(request),
+        #[cfg(not(feature = "codex-provider"))]
+        "codex" => {
+            return Err(crate::RuntimeFacadeError::UnsupportedEngine {
+                engine_key: engine_key.to_string(),
+            });
+        }
         "claude-code" => ClaudeCodeConfigurationProvider::new().apply_model_configuration(request),
         "gemini" => GeminiCliConfigurationProvider::new().apply_model_configuration(request),
         "opencode" => OpenCodeConfigurationProvider::new().apply_model_configuration(request),
@@ -135,7 +143,14 @@ pub fn apply_agent_engine_model_selection(
     }
 
     let result = match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => CodexConfigurationProvider::new().apply_model_selection(request),
+        #[cfg(not(feature = "codex-provider"))]
+        "codex" => {
+            return Err(crate::RuntimeFacadeError::UnsupportedEngine {
+                engine_key: engine_key.to_string(),
+            });
+        }
         "claude-code" => ClaudeCodeConfigurationProvider::new().apply_model_selection(request),
         "gemini" => GeminiCliConfigurationProvider::new().apply_model_selection(request),
         "opencode" => OpenCodeConfigurationProvider::new().apply_model_selection(request),
@@ -167,7 +182,14 @@ pub fn read_agent_engine_model_configuration(
         )));
     }
     let result = match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => CodexConfigurationProvider::new().read_model_configuration(agent_id, profile_id),
+        #[cfg(not(feature = "codex-provider"))]
+        "codex" => {
+            return Err(crate::RuntimeFacadeError::UnsupportedEngine {
+                engine_key: engine_key.to_string(),
+            });
+        }
         "claude-code" => {
             ClaudeCodeConfigurationProvider::new().read_model_configuration(agent_id, profile_id)
         }
@@ -210,8 +232,15 @@ pub fn dematerialize_agent_engine_model_configuration(
         )));
     }
     let result = match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => CodexConfigurationProvider::new()
             .dematerialize_model_configuration(agent_id, profile_id),
+        #[cfg(not(feature = "codex-provider"))]
+        "codex" => {
+            return Err(crate::RuntimeFacadeError::UnsupportedEngine {
+                engine_key: engine_key.to_string(),
+            });
+        }
         "claude-code" => ClaudeCodeConfigurationProvider::new()
             .dematerialize_model_configuration(agent_id, profile_id),
         "gemini" => GeminiCliConfigurationProvider::new()
@@ -248,7 +277,14 @@ pub fn plan_agent_engine_configuration_upgrade(
         )));
     }
     let result = match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => CodexConfigurationProvider::new().plan_configuration_upgrade(request),
+        #[cfg(not(feature = "codex-provider"))]
+        "codex" => {
+            return Err(crate::RuntimeFacadeError::UnsupportedEngine {
+                engine_key: engine_key.to_string(),
+            });
+        }
         "claude-code" => ClaudeCodeConfigurationProvider::new().plan_configuration_upgrade(request),
         "gemini" => GeminiCliConfigurationProvider::new().plan_configuration_upgrade(request),
         "opencode" => OpenCodeConfigurationProvider::new().plan_configuration_upgrade(request),
@@ -377,6 +413,7 @@ impl std::error::Error for AgentEngineBootstrapError {}
 
 /// Bootstrapped kernel provider slot for one canonical agent engine.
 pub enum AgentEngineSlot {
+    #[cfg(feature = "codex-provider")]
     Codex(CodexSdkIntegration),
     ClaudeCode(ClaudeCodeSdkIntegration),
     Gemini(GeminiCliSdkIntegration),
@@ -390,6 +427,7 @@ pub enum AgentEngineSlot {
 impl AgentEngineSlot {
     pub fn engine_key(&self) -> &'static str {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(_) => "codex",
             Self::ClaudeCode(_) => "claude-code",
             Self::Gemini(_) => "gemini",
@@ -403,6 +441,7 @@ impl AgentEngineSlot {
 
     pub fn binding_id(&self) -> &str {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => integration.binding_id(),
             Self::ClaudeCode(integration) => integration.binding_id(),
             Self::Gemini(integration) => integration.binding_id(),
@@ -432,6 +471,7 @@ impl AgentEngineSlot {
             }
         })?;
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(_) => CodexConfigurationProvider::new().execution_settings_spec(agent_id),
             Self::ClaudeCode(_) => {
                 ClaudeCodeConfigurationProvider::new().execution_settings_spec(agent_id)
@@ -464,6 +504,7 @@ impl AgentEngineSlot {
         })?;
         let request = AgentExecutionSettingsRequest::new(agent_id).with_access_mode(access_mode_id);
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(_) => {
                 CodexConfigurationProvider::new().resolve_execution_settings(&request)
             }
@@ -525,6 +566,7 @@ impl AgentEngineSlot {
             resolution: resolution.resolution.clone(),
         };
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => integration
                 .resolve_interaction(&runtime_resolution)
                 .map_err(|error| crate::RuntimeFacadeError::Kernel(error.to_string())),
@@ -540,6 +582,7 @@ impl AgentEngineSlot {
         provider_session_id: &str,
     ) -> KernelResult<SessionActivitySnapshot> {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => {
                 integration.get_provider_session_activity(provider_session_id)
             }
@@ -567,6 +610,7 @@ impl AgentEngineSlot {
         working_directory: Option<&str>,
     ) -> KernelResult<Vec<AgentSession>> {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => {
                 collect_codex_provider_sessions(integration, working_directory)
             }
@@ -615,6 +659,7 @@ impl AgentEngineSlot {
         working_directory: Option<&str>,
     ) -> KernelResult<Vec<AgentMessage>> {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => {
                 collect_codex_provider_messages(integration, provider_session_id)
             }
@@ -667,6 +712,7 @@ impl AgentEngineSlot {
         working_directory: Option<&str>,
     ) -> KernelResult<Vec<String>> {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => {
                 collect_codex_provider_children(integration, provider_session_id, working_directory)
             }
@@ -683,10 +729,24 @@ impl AgentEngineSlot {
     /// Whether this engine can establish a new provider session from a verified
     /// runtime stream completion.
     pub(crate) fn supports_streaming_completion(&self) -> bool {
-        matches!(
-            self,
-            Self::Codex(_) | Self::ClaudeCode(_) | Self::OpenCode(_) | Self::MiMoCode(_) | Self::Rig(_)
-        )
+        #[cfg(feature = "codex-provider")]
+        {
+            matches!(
+                self,
+                Self::Codex(_)
+                    | Self::ClaudeCode(_)
+                    | Self::OpenCode(_)
+                    | Self::MiMoCode(_)
+                    | Self::Rig(_)
+            )
+        }
+        #[cfg(not(feature = "codex-provider"))]
+        {
+            matches!(
+                self,
+                Self::ClaudeCode(_) | Self::OpenCode(_) | Self::MiMoCode(_) | Self::Rig(_)
+            )
+        }
     }
 
     /// Streams an initial turn through the runtime-backed completion boundary.
@@ -699,6 +759,7 @@ impl AgentEngineSlot {
         sink: &mut dyn ModelStreamSink,
     ) -> KernelResult<SdkRuntimeStreamCompletion> {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => {
                 integration.model.stream_into_with_completion(request, sink)
             }
@@ -722,6 +783,7 @@ impl AgentEngineSlot {
 
     pub(crate) fn model_provider(&self) -> &dyn ModelProvider {
         match self {
+            #[cfg(feature = "codex-provider")]
             Self::Codex(integration) => &integration.model,
             Self::ClaudeCode(integration) => &integration.model,
             Self::Gemini(integration) => &integration.model,
@@ -872,6 +934,7 @@ fn sdk_metadata_string(
         .filter(|value| !value.trim().is_empty())
 }
 
+#[cfg(feature = "codex-provider")]
 fn collect_codex_provider_sessions(
     integration: &CodexSdkIntegration,
     working_directory: Option<&str>,
@@ -911,6 +974,7 @@ fn collect_codex_provider_sessions(
 /// thread via `thread/list` with `parentThreadId`. The sub-agent topology is
 /// otherwise invisible to the top-level inventory which only lists interactive
 /// root threads.
+#[cfg(feature = "codex-provider")]
 fn collect_codex_provider_children(
     integration: &CodexSdkIntegration,
     provider_session_id: &str,
@@ -950,6 +1014,7 @@ fn collect_codex_provider_children(
         .collect())
 }
 
+#[cfg(feature = "codex-provider")]
 fn collect_codex_provider_messages(
     integration: &CodexSdkIntegration,
     provider_session_id: &str,
@@ -1041,9 +1106,14 @@ fn ensure_provider_collection_size(
 
 pub fn bootstrap_agent_engine(engine_key: &str) -> Result<AgentEngineSlot, AgentEngineBootstrapError> {
     match engine_key {
+        #[cfg(feature = "codex-provider")]
         "codex" => CodexSdkIntegration::bootstrap()
             .map(AgentEngineSlot::Codex)
             .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
+        #[cfg(not(feature = "codex-provider"))]
+        "codex" => Err(AgentEngineBootstrapError::Bootstrap(
+            "codex provider is not enabled in this build (enable the codex-provider feature to integrate it)".to_string(),
+        )),
         "claude-code" => ClaudeCodeSdkIntegration::bootstrap()
             .map(AgentEngineSlot::ClaudeCode)
             .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string())),
@@ -1348,11 +1418,13 @@ mod tests {
 
     #[test]
     fn session_sdk_engines_enable_verified_first_turn_streaming() {
+        #[cfg(feature = "codex-provider")]
         let codex = bootstrap_agent_engine("codex").expect("codex bootstrap");
         let claude = bootstrap_agent_engine("claude-code").expect("claude bootstrap");
         let opencode = bootstrap_agent_engine("opencode").expect("opencode bootstrap");
         let gemini = bootstrap_agent_engine("gemini").expect("gemini bootstrap");
 
+        #[cfg(feature = "codex-provider")]
         assert!(codex.supports_streaming_completion());
         assert!(claude.supports_streaming_completion());
         assert!(opencode.supports_streaming_completion());
