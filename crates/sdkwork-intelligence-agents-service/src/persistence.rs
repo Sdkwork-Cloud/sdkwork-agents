@@ -9835,7 +9835,7 @@ INSERT INTO ai_agent_task_run (
         let pool = self.pool.pool().clone();
         self.pool.run_kernel(async {
             let mut tx = pool.begin().await?;
-            let mut rows = sqlx::query(
+            let rows = sqlx::query(
                 r#"
 SELECT id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id,
        session_id, title, prompt, schedule_kind, cron_expression, timezone,

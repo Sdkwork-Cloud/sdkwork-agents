@@ -9317,6 +9317,23 @@ where
         let request: serde_json::Value = serde_json::from_str(request_json).map_err(|error| {
             KernelError::validation(format!("request must be valid JSON: {error}"))
         })?;
+        record.resolve(
+            new_status,
+            command.resolution_json.clone(),
+            command.requested_at.as_str(),
+        );
+        self.repository.update_interaction(record.clone())?;
+        let audit_action = if new_status == AgentInteractionStatus::Rejected {
+            AgentAuditAction::InteractionRejected
+        } else {
+            AgentAuditAction::InteractionResolved
+        };
+        self.emit_interaction_audit_event(
+            audit_action,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
         if let Some(correlation) = request.get("correlation") {
             let correlation = correlation
                 .as_object()
@@ -9367,23 +9384,6 @@ where
                         "shared agent engine host is unavailable",
                     )
                 })?;
-        record.resolve(
-            new_status,
-            command.resolution_json.clone(),
-            command.requested_at.as_str(),
-        );
-        self.repository.update_interaction(record.clone())?;
-        let audit_action = if new_status == AgentInteractionStatus::Rejected {
-            AgentAuditAction::InteractionRejected
-        } else {
-            AgentAuditAction::InteractionResolved
-        };
-        self.emit_interaction_audit_event(
-            audit_action,
-            &record,
-            command.requested_by,
-            command.requested_at,
-        )?;
         // Deliver the resolution to the provider engine AFTER the interaction
         // is durably resolved (CAS): a concurrent resolution loses the CAS and
         // never reaches the engine, so the engine side effect is only ever

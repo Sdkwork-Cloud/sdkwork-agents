@@ -11898,6 +11898,7 @@ dependencies = [
  "chrono-tz",
  "cloudrouter-open-sdk",
  "cron",
+ "futures-util",
  "reqwest 0.12.28",
  "sdkwork-agent-kernel",
  "sdkwork-agents-contract",

@@ -135,7 +135,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, Semaphore};
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
 const MAX_PAGE_SIZE: usize = 200;
@@ -12594,22 +12593,41 @@ async fn streaming_turn_execution_http_response(
 
     // Heartbeat: long inference silences must not look like a dead stream to
     // intermediate proxies. A comment line every 15 seconds is the standard
-    // SSE keep-alive and is ignored by event parsers.
+    // SSE keep-alive and is ignored by event parsers. The stream ends when
+    // the receiver closes (terminal completion or disconnect) — the
+    // heartbeat must never keep the response open.
     let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let heartbeat_stream =
-        tokio_stream::wrappers::IntervalStream::new(heartbeat).map(|_| {
-            Ok::<Bytes, std::io::Error>(Bytes::from_static(b": keep-alive
+    let first_bytes = match first {
+        TurnHttpStreamSignal::Chunk(chunk) => Ok::<Bytes, std::io::Error>(Bytes::from(chunk)),
+        TurnHttpStreamSignal::Failed(problem) => Err(std::io::Error::other(problem.message)),
+    };
+    let body_stream = tokio_stream::iter([first_bytes]).chain(futures_util::stream::unfold(
+        (receiver, heartbeat),
+        |(mut receiver, mut heartbeat)| async move {
+            tokio::select! {
+                signal = receiver.recv() => {
+                    match signal {
+                        Some(TurnHttpStreamSignal::Chunk(chunk)) => Some((
+                            Ok::<Bytes, std::io::Error>(Bytes::from(chunk)),
+                            (receiver, heartbeat),
+                        )),
+                        Some(TurnHttpStreamSignal::Failed(problem)) => Some((
+                            Err(std::io::Error::other(problem.message)),
+                            (receiver, heartbeat),
+                        )),
+                        None => None,
+                    }
+                }
+                _ = heartbeat.tick() => Some((
+                    Ok::<Bytes, std::io::Error>(Bytes::from_static(b": keep-alive
 
-"))
-        });
-    let body_stream = tokio_stream::iter([first])
-        .chain(ReceiverStream::new(receiver))
-        .map(|signal| match signal {
-            TurnHttpStreamSignal::Chunk(chunk) => Ok::<Bytes, std::io::Error>(Bytes::from(chunk)),
-            TurnHttpStreamSignal::Failed(problem) => Err(std::io::Error::other(problem.message)),
-        })
-        .merge(heartbeat_stream);
+")),
+                    (receiver, heartbeat),
+                )),
+            }
+        },
+    ));
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "text/event-stream")
