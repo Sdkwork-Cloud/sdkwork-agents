@@ -4,7 +4,7 @@
 
 - Version: `6.0.0`
 - Status: active
-- Total operations: 222
+- Total operations: 228
 - Domain model: `AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction`
 
 ## 1. Authorities
@@ -155,10 +155,14 @@ Authority: [agents-app-api.openapi.yaml](../../../crates/sdkwork-intelligence-ag
 | 102 | POST | `/app/v3/api/ai/model_selections/apply` | `agents.modelSelections.apply` | Apply a catalog or saved custom model selection to an Agent provider |
 | 103 | GET | `/app/v3/api/ai/model_configurations` | `agents.modelConfigurations.list` | List applied model configuration profiles |
 | 104 | GET | `/app/v3/api/ai/model_configurations/{engineId}/{profileId}` | `agents.modelConfigurations.get` | Get one applied model configuration profile |
-| 105 | GET | `/app/v3/api/ai/model_configurations/{engineId}/{profileId}/status` | `agents.modelConfigurations.status` | Read back the provider-native config state and detect drift |
-| 106 | POST | `/app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive` | `agents.modelConfigurations.archive` | Archive a model configuration profile and dematerialize the provider config |
-| 107 | POST | `/app/v3/api/ai/model_configurations/migrate` | `agents.modelConfigurations.migrate` | Plan and execute a model configuration profile upgrade |
-| 108 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
+| 105 | GET | `/app/v3/api/ai/model_configurations/{engineId}/config_file` | `agents.modelConfigurations.configFile` | Read the provider-native configuration file with credentials masked |
+| 106 | GET | `/app/v3/api/ai/model_configurations/{engineId}/{profileId}/status` | `agents.modelConfigurations.status` | Read back the provider-native config state and detect drift |
+| 107 | POST | `/app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive` | `agents.modelConfigurations.archive` | Archive a model configuration profile and dematerialize the provider config |
+| 108 | POST | `/app/v3/api/ai/model_configurations/migrate` | `agents.modelConfigurations.migrate` | Plan and execute a model configuration profile upgrade |
+| 109 | GET | `/app/v3/api/ai/mcp_servers` | `agents.mcpServers.list` | List MCP marketplace entries from agent composition slots |
+| 110 | GET | `/app/v3/api/ai/tools` | `agents.tools.list` | List media tool directory with effective tenant configuration |
+| 111 | POST | `/app/v3/api/ai/tools/{toolId}/invoke` | `agents.tools.invoke` | Invoke one media tool (optional saveToDrive persistence) |
+| 112 | GET | `/app/v3/api/ai/assets` | `agents.assets.list` | List generated media assets persisted to Drive |
 
 ### 4.2 Backend API
 
@@ -224,6 +228,8 @@ Authority: [agents-backend-api.openapi.yaml](../../../crates/sdkwork-intelligenc
 | 56 | GET | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.retrieve` | Retrieve one managed agent composition slot |
 | 57 | PATCH | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.update` | Update one managed agent composition slot |
 | 58 | DELETE | `/backend/v3/api/ai/agents/{agentId}/composition_slots/{slotId}` | `agents.compositionSlots.delete` | Delete one managed agent composition slot |
+| 59 | GET | `/backend/v3/api/ai/tools` | `agents.tools.adminList` | List media tool directory with tenant configuration (admin) |
+| 60 | PUT | `/backend/v3/api/ai/tools/{toolId}/configuration` | `agents.tools.updateConfiguration` | Update one media tool tenant configuration (admin) |
 
 ### 4.3 Open API
 

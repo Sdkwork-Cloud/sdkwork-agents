@@ -14,6 +14,11 @@ default = []
 # need the Codex engine enable it explicitly, and client-local surfaces
 # enable it for device-scoped state.
 codex-provider = ["dep:sdkwork-agent-provider-codex"]
+# Unit tests exercise the full engine catalog including Codex; Codex stays
+# out of production server builds (embedded client-local SQLite runtime
+# store), so the tests opt in explicitly (DATABASE_SPEC: authoritative-server
+# persistence is PostgreSQL only).
+test-codex = ["codex-provider"]
 
 [dependencies]
 sdkwork-agent-kernel = { workspace = true }

@@ -168,7 +168,7 @@ jobs:
           status=${PIPESTATUS[0]}
           cargo test -p sdkwork-intelligence-agents-service --features http-axum,codex-test --test http_axum_contracts 2>&1 | tee -a agents-svc-lib.log
           status=$((status + ${PIPESTATUS[0]}))
-          cargo test -p sdkwork-agents-runtime-facade 2>&1 | tee -a agents-svc-lib.log
+          cargo test -p sdkwork-agents-runtime-facade --features test-codex 2>&1 | tee -a agents-svc-lib.log
           status=$((status + ${PIPESTATUS[0]}))
           if [[ $status -ne 0 ]]; then
             tail -n 200 agents-svc-lib.log

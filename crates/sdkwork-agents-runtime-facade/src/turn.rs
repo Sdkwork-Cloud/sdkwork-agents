@@ -898,6 +898,7 @@ mod tests {
         assert_eq!(stream_count.load(Ordering::SeqCst), 2);
     }
 
+    #[cfg(feature = "codex-provider")]
     #[test]
     fn executes_turn_for_canonical_codex_engine() {
         let invoke_count = Arc::new(AtomicUsize::new(0));
@@ -922,6 +923,7 @@ mod tests {
         assert_eq!(invoke_count.load(Ordering::SeqCst), 1);
     }
 
+    #[cfg(feature = "codex-provider")]
     #[test]
     fn all_canonical_engines_execute_turn() {
         // The TypeScript/Python runtimes fall back to the local sdk_probe mock
