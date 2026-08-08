@@ -88,7 +88,7 @@ different lifecycle, concurrency, retention, retry, and audit boundaries.
 
 ## Consequences
 
-- The greenfield PostgreSQL baseline expands to 23 tables, including the
+- The greenfield PostgreSQL baseline expands to 26 tables, including the
   already-authored Turn input queue.
 - The Task public contract changes before first release; generated SDKs and UI
   consumers must migrate together.

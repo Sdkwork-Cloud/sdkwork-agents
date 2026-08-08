@@ -17,6 +17,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "moduleDetection": "force",
+    "strict": true,
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {

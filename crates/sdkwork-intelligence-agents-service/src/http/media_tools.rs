@@ -190,6 +190,12 @@ pub async fn app_list_media_tools(
     finish_api_json(&web_ctx, result)
 }
 
+/// Wall-clock bound for one media tool invocation (cloudrouter call plus
+/// optional drive fetch/upload). The invocation pipeline is synchronous; a
+/// hung cloudrouter or storage provider must never pin the async executor
+/// or leave the HTTP request suspended.
+const MEDIA_TOOL_INVOKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// POST /app/v3/api/ai/tools/{toolId}/invoke — execute one media tool.
 pub async fn app_invoke_media_tool(
     State(state): State<AgentHttpState>,
@@ -200,7 +206,13 @@ pub async fn app_invoke_media_tool(
     body: Result<Json<MediaToolInvokeBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let result: ApiResult<MediaToolInvokeResponse> = async {
-        let invocation = resolve_invocation(&state)?;
+        let invocation = state
+            .media_tool_invocation
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| {
+                ApiProblem::dependency_unavailable("media tool invocation is not configured")
+            })?;
         let Path(path) = path.map_err(ApiProblem::from_path_rejection)?;
         let body = body.map_err(ApiProblem::from_json_rejection)?;
         let scope = RequestScope::from_context(context.clone());
@@ -221,7 +233,20 @@ pub async fn app_invoke_media_tool(
             app_resource_id: format!("tool-call-direct-{user_id}"),
         };
 
-        let outcome = invocation.invoke(&request).map_err(map_tool_error)?;
+        // Run the synchronous pipeline on the blocking pool with a hard
+        // timeout so a hung cloudrouter/storage call cannot block the async
+        // executor; the worker keeps running after the bound and its result
+        // is dropped.
+        let outcome = tokio::time::timeout(
+            MEDIA_TOOL_INVOKE_TIMEOUT,
+            tokio::task::spawn_blocking(move || invocation.invoke(&request)),
+        )
+        .await
+        .map_err(|_| {
+            ApiProblem::gateway_timeout("media tool invocation timed out")
+        })?
+        .map_err(|error| ApiProblem::internal(format!("media tool worker failed: {error}")))?
+        .map_err(map_tool_error)?;
         Ok(to_invoke_response(outcome))
     }
     .await;

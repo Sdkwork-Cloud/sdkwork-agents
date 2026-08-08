@@ -27,13 +27,7 @@ client.setAuthToken('your-auth-token');
 client.setAccessToken('your-access-token');
 
 // Use the SDK
-const params = {
-  include_deleted: true,
-  page: 2,
-  page_size: 3,
-  q: 'q',
-};
-const result = await client.ai.agents.list(params);
+const result = await client.ai.agents.tools.adminList();
 ```
 
 ## Authentication
@@ -67,14 +61,8 @@ const client = new SdkworkBackendClient({
 ### ai
 
 ```typescript
-// List managed agents for backend administration
-const params = {
-  include_deleted: true,
-  page: 2,
-  page_size: 3,
-  q: 'q',
-};
-const result = await client.ai.agents.list(params);
+// List media tool directory with tenant configuration (admin)
+const result = await client.ai.agents.tools.adminList();
 ```
 
 ## Error Handling
@@ -83,13 +71,7 @@ const result = await client.ai.agents.list(params);
 import { SdkworkBackendClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-backend-sdk';
 
 try {
-  const params = {
-    include_deleted: true,
-    page: 2,
-    page_size: 3,
-    q: 'q',
-  };
-  const result = await client.ai.agents.list(params);
+  const result = await client.ai.agents.tools.adminList();
 } catch (error) {
   if (error instanceof AuthenticationError) {
     console.error('Authentication failed:', error.message);

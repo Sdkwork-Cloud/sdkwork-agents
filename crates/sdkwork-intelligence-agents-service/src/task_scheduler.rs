@@ -304,6 +304,14 @@ pub trait TaskSchedulerRepository: Send + Sync {
 
     fn recover_expired_task_run_leases(&self, now: &str, limit: usize) -> KernelResult<u64>;
 
+    /// Recovers Runs whose configured execution budget (`timeout_at`) elapsed
+    /// while the Run was still claimed or running. Unlike lease recovery this
+    /// does not depend on heartbeats stopping: a Run whose provider keeps
+    /// heartbeating past its budget must still be reclaimed. The fenced Run
+    /// goes back to `Pending` (or `DeadLetter` when attempts are exhausted)
+    /// exactly like a lost lease, so a stale worker's completion is fenced.
+    fn recover_timed_out_task_runs(&self, now: &str, limit: usize) -> KernelResult<u64>;
+
     fn scheduler_metrics_snapshot(&self, _now: &str) -> KernelResult<TaskSchedulerMetricsSnapshot> {
         Ok(TaskSchedulerMetricsSnapshot::default())
     }
@@ -570,11 +578,29 @@ pub(crate) fn task_run_payload_hash(
     Ok(sha256_hash(&payload))
 }
 
+/// Grace window for Skip misfire evaluation.
+///
+/// Workers materialize occurrences on a polling cadence (default 1s) and the
+/// schedule timestamps are millisecond-precision. Without a grace window a
+/// `Skip` misfire policy would classify every occurrence that was due between
+/// two consecutive polls as "missed" and silently drop it — in practice the
+/// policy would never fire. An occurrence is only skipped when it is overdue
+/// by more than this window (e.g. the worker was down or the DB unavailable);
+/// within the window it still fires, just late.
+pub const TASK_MISFIRE_GRACE_SECONDS: i64 = 60;
+
 pub(crate) struct TaskMaterializationPlan {
     pub occurrences: Vec<String>,
     pub next_fire_at: Option<String>,
     pub status: AgentTaskStatus,
     pub completed_at: Option<String>,
+}
+
+/// Whether the occurrence is considered missed under a `Skip` policy:
+/// only a delay beyond the grace window counts, so the ordinary polling
+/// latency of a healthy worker never drops a due occurrence.
+fn missed_by_skip_policy(first_at: chrono::DateTime<chrono::Utc>, now_at: chrono::DateTime<chrono::Utc>) -> bool {
+    now_at.signed_duration_since(first_at) > chrono::Duration::seconds(TASK_MISFIRE_GRACE_SECONDS)
 }
 
 pub(crate) fn plan_task_materialization(
@@ -610,8 +636,10 @@ pub(crate) fn plan_task_materialization(
     }
 
     if task.schedule_kind == AgentTaskScheduleKind::OneTime {
-        let should_run =
-            !(task.misfire_policy == AgentTaskMisfirePolicy::Skip && first_at < now_at);
+        // Skip only drops occurrences that are overdue beyond the grace
+        // window; a due occurrence that the poll just missed still runs.
+        let should_run = !(task.misfire_policy == AgentTaskMisfirePolicy::Skip
+            && missed_by_skip_policy(first_at, now_at));
         return Ok(TaskMaterializationPlan {
             occurrences: should_run.then_some(first).into_iter().collect(),
             next_fire_at: None,
@@ -621,7 +649,7 @@ pub(crate) fn plan_task_materialization(
     }
 
     match task.misfire_policy {
-        AgentTaskMisfirePolicy::Skip if first_at < now_at => {
+        AgentTaskMisfirePolicy::Skip if missed_by_skip_policy(first_at, now_at) => {
             let next = task.schedule().next_after(now)?;
             let completed = next.is_none();
             Ok(TaskMaterializationPlan {

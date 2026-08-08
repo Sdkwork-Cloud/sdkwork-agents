@@ -10,6 +10,7 @@ pub struct SchedulerWorkerMetrics {
     materialized_total: AtomicU64,
     claimed_total: AtomicU64,
     recovered_leases_total: AtomicU64,
+    recovered_timeouts_total: AtomicU64,
     retries_total: AtomicU64,
     fencing_rejections_total: AtomicU64,
     reconciliation_examined_total: AtomicU64,
@@ -62,6 +63,10 @@ impl SchedulerWorkerMetrics {
 
     pub(crate) fn add_recovered(&self, count: u64) {
         add(&self.recovered_leases_total, count);
+    }
+
+    pub(crate) fn add_timed_out_recovered(&self, count: u64) {
+        add(&self.recovered_timeouts_total, count);
     }
 
     pub(crate) fn record_snapshot(&self, snapshot: TaskSchedulerMetricsSnapshot) {
@@ -212,6 +217,12 @@ impl SchedulerWorkerMetrics {
             "sdkwork_agents_task_worker_recovered_leases_total",
             "Expired Task Run leases recovered.",
             load(&self.recovered_leases_total),
+        );
+        counter(
+            &mut output,
+            "sdkwork_agents_task_worker_recovered_timeouts_total",
+            "Task Runs recovered after their configured execution timeout.",
+            load(&self.recovered_timeouts_total),
         );
         counter(
             &mut output,

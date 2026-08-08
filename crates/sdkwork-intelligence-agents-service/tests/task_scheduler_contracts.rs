@@ -54,6 +54,28 @@ fn task_operator() -> PolicySubject {
 }
 
 #[test]
+fn skip_misfire_still_fires_within_the_grace_window() {
+    let repository = InMemoryAgentRepository::new();
+    let mut due = task("task.skip-grace", 100_001, 1);
+    due.misfire_policy = AgentTaskMisfirePolicy::Skip;
+    repository.insert_task(due).expect("insert Task");
+
+    // The occurrence was due at 00:00:00 but the worker polls at 00:00:30:
+    // ordinary polling latency must not drop a Skip-policy occurrence.
+    let runs = repository
+        .materialize_due_tasks(&MaterializeDueTasksRequest::bounded(
+            "2026-08-01T00:00:30.000Z",
+            10,
+        ))
+        .expect("materialization");
+    assert_eq!(runs.len(), 1, "grace-window Skip occurrence must still fire");
+    assert_eq!(
+        runs[0].scheduled_for.as_str(),
+        "2026-08-01T00:00:00.000Z"
+    );
+}
+
+#[test]
 fn scheduled_occurrences_are_unique_and_catch_up_is_bounded() {
     let repository = InMemoryAgentRepository::new();
     let mut catch_up = task("task.catch-up", 100_001, 1);
@@ -252,6 +274,130 @@ fn expired_lease_reuses_run_and_turn_and_rejects_stale_worker() {
     assert_eq!(second.run.run_id, original.run_id);
     assert_eq!(second.run.turn_id, original.turn_id);
     assert!(second.lease.fencing_token > first.lease.fencing_token);
+}
+
+#[test]
+fn execution_timeout_reclaims_run_even_while_the_lease_is_alive() {
+    let repository = InMemoryAgentRepository::new();
+    let mut task = task("task.timeout", 100_001, 1);
+    // Shorter than the maximum lease so an expired budget can coexist with a
+    // live lease: claim at 00:00:01 sets timeout_at = 00:02:01 while the
+    // lease runs to 00:05:01.
+    task.timeout_seconds = 120;
+    repository.insert_task(task.clone()).expect("insert Task");
+    let original = repository
+        .create_manual_task_run(&task, "manual.timeout", "2026-08-01T00:00:00.000Z")
+        .expect("create Run");
+    let first = repository
+        .claim_task_runs(&ClaimTaskRunsRequest::bounded(
+            "worker.first",
+            "2026-08-01T00:00:01.000Z",
+            300,
+            1,
+        ))
+        .expect("first claim")
+        .pop()
+        .expect("claim");
+    repository
+        .mark_task_run_running(&first.lease, "2026-08-01T00:00:02.000Z")
+        .expect("mark running");
+
+    // The worker keeps heartbeating after the budget elapsed: at 00:03:00
+    // the lease is extended to 00:08:00, so lease recovery must NOT touch
+    // the Run while timeout recovery must.
+    repository
+        .heartbeat_task_run(
+            &first.lease,
+            "2026-08-01T00:03:00.000Z",
+            300,
+        )
+        .expect("heartbeat keeps the lease alive");
+
+    assert_eq!(
+        repository
+            .recover_expired_task_run_leases("2026-08-01T00:03:30.000Z", 10)
+            .expect("lease recovery"),
+        0,
+        "a live lease must not be reclaimed by lease recovery"
+    );
+    assert_eq!(
+        repository
+            .recover_timed_out_task_runs("2026-08-01T00:03:30.000Z", 10)
+            .expect("timeout recovery"),
+        1,
+        "an expired execution budget must be reclaimed even with a live lease"
+    );
+
+    // The stale worker's completion is fenced after the timeout reclaim.
+    assert!(repository
+        .complete_task_run(
+            &first.lease,
+            original.turn_id.as_deref().expect("Turn id"),
+            "2026-08-01T00:03:31.000Z",
+        )
+        .is_err());
+
+    // The Run is claimable again by another worker.
+    let second = repository
+        .claim_task_runs(&ClaimTaskRunsRequest::bounded(
+            "worker.second",
+            "2026-08-01T00:03:32.000Z",
+            300,
+            1,
+        ))
+        .expect("second claim")
+        .pop()
+        .expect("claim");
+    assert_eq!(second.run.run_id, original.run_id);
+    assert_eq!(second.run.turn_id, original.turn_id);
+    assert!(second.lease.fencing_token > first.lease.fencing_token);
+}
+
+#[test]
+fn execution_timeout_dead_letters_run_when_attempts_are_exhausted() {
+    let repository = InMemoryAgentRepository::new();
+    let mut task = task("task.timeout-dead-letter", 100_001, 1);
+    task.max_attempts = 1;
+    task.timeout_seconds = 120;
+    repository.insert_task(task.clone()).expect("insert Task");
+    let original = repository
+        .create_manual_task_run(&task, "manual.timeout-dl", "2026-08-01T00:00:00.000Z")
+        .expect("create Run");
+    let first = repository
+        .claim_task_runs(&ClaimTaskRunsRequest::bounded(
+            "worker.first",
+            "2026-08-01T00:00:01.000Z",
+            300,
+            1,
+        ))
+        .expect("first claim")
+        .pop()
+        .expect("claim");
+    repository
+        .mark_task_run_running(&first.lease, "2026-08-01T00:00:02.000Z")
+        .expect("mark running");
+    repository
+        .heartbeat_task_run(
+            &first.lease,
+            "2026-08-01T00:03:00.000Z",
+            300,
+        )
+        .expect("heartbeat keeps the lease alive");
+
+    assert_eq!(
+        repository
+            .recover_timed_out_task_runs("2026-08-01T00:03:30.000Z", 10)
+            .expect("timeout recovery"),
+        1
+    );
+
+    let run = repository
+        .get_task_run(first.lease.tenant_id, first.lease.organization_id, &first.run.run_id)
+        .expect("get Run")
+        .expect("Run exists");
+    assert_eq!(run.status, AgentTaskRunStatus::DeadLetter);
+    assert_eq!(run.failure_class.as_deref(), Some("execution_timeout"));
+    assert_eq!(run.error_code.as_deref(), Some("task_run_timed_out"));
 }
 
 #[test]

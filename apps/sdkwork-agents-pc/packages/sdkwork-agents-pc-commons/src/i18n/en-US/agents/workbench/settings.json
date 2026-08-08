@@ -38,7 +38,6 @@
   "billingCycleDesc": "Renews on July 21, 2026 (Monthly)",
   "paymentMethod": "Payment Method",
   "usageStatistics": "Resource Consumption",
-  "simulateUsage": "Simulate API Call",
   "tokenUsage": "Token Usage",
   "messageQuota": "Messages Sent",
   "imageQuota": "Image Generations",
@@ -76,10 +75,9 @@
   "developerSubtitle": "Deliver secondary software integrations rapidly using our client-side Core Service patterns.",
   "availableClasses": "Class Definitions Available",
   "quickDevRef": "Quick developer reference",
-  "apiSimulated": "API call simulated: usage limits updated!",
   "defaultBio": "High-performance Agents workspace lead.",
-  "sandboxLive": "Sandbox Live",
-  "sandboxDesc": "Interactive test container for developers",
   "visaEnding": "Visa ending in",
-  "expires": "Expires"
+  "expires": "Expires",
+  "usageEmptyTitle": "Usage statistics coming soon",
+  "usageEmptyDescription": "Token, message and image quotas are provided by the platform billing service. Real usage will appear here once the membership service is connected."
 }

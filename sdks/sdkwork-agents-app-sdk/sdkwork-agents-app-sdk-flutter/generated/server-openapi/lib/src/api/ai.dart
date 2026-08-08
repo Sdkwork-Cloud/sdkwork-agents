@@ -1154,6 +1154,34 @@ class AiApi {
       return map == null ? null : McpServerMarketplaceListResponse.fromJson(map);
     })();
   }
+
+  /// List media tool directory with effective tenant configuration
+  Future<MediaToolDirectoryResponse?> agentsToolsList() async {
+    final response = await _client.get(ApiPaths.appPath('/ai/tools'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : MediaToolDirectoryResponse.fromJson(map);
+    })();
+  }
+
+  /// Invoke one media tool (optional saveToDrive persistence)
+  Future<MediaToolInvokeApiResponse?> agentsToolsInvoke(String toolId, MediaToolInvokeBody body) async {
+    final payload = body.toJson();
+    final response = await _client.post(ApiPaths.appPath('/ai/tools/${serializePathParameter(toolId, const PathParameterSpec('toolId', 'simple', false))}/invoke'), body: payload, contentType: 'application/json');
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : MediaToolInvokeApiResponse.fromJson(map);
+    })();
+  }
+
+  /// List generated media assets persisted to Drive
+  Future<ToolAssetListResponse?> agentsAssetsList() async {
+    final response = await _client.get(ApiPaths.appPath('/ai/assets'));
+    return (() {
+      final map = sdkworkResponseAsMap(response);
+      return map == null ? null : ToolAssetListResponse.fromJson(map);
+    })();
+  }
 }
 
 class PathParameterSpec {

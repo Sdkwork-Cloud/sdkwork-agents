@@ -1,8 +1,27 @@
 import { backendApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentAuditEvent, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentProviderBindingRecord, AgentRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnRecord, AgentTurnStreamEvent, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, ArchiveAgentSessionRequest, AuditAction, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, ExecuteAgentTaskRequest, Int64String, InvalidateAgentSessionCheckpointRequest, ReconcileAgentTaskRunRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, SdkWorkPageData, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentStatusRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentAuditEvent, AgentCompositionSlotRecord, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentProviderBindingRecord, AgentRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnRecord, AgentTurnStreamEvent, AnswerAgentInteractionRequest, ApproveAgentInteractionRequest, ArchiveAgentSessionRequest, AuditAction, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnRequest, ExecuteAgentTaskRequest, Int64String, InvalidateAgentSessionCheckpointRequest, MediaToolConfigurationBody, MediaToolDirectoryEntry, ReconcileAgentTaskRunRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, SdkWorkPageData, UpdateAgentCompositionSlotRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentStatusRequest } from '../types';
 
+
+export class AiAgentsToolsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List media tool directory with tenant configuration (admin) */
+  async adminList(requestOptions?: ApiRequestOptions): Promise<MediaToolDirectoryEntry[]> {
+    return this.client.request<MediaToolDirectoryEntry[]>(backendApiPath(`/ai/tools`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'GET' as any, sdkworkUnwrapKind: 'data' });
+  }
+
+/** Update one media tool tenant configuration (admin) */
+  async updateConfiguration(toolId: string, body: MediaToolConfigurationBody, requestOptions?: ApiRequestOptions): Promise<MediaToolDirectoryEntry> {
+    return this.client.request<MediaToolDirectoryEntry>(backendApiPath(`/ai/tools/${serializePathParameter(toolId, { name: 'toolId', style: 'simple', explode: false })}/configuration`), { signal: requestOptions?.signal, timeout: requestOptions?.timeout, method: 'PUT' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'data' });
+  }
+}
 
 export class AiAgentsCompositionSlotsApi {
   private client: HttpClient;
@@ -364,7 +383,7 @@ export class AiAgentsTurnsApi {
 }
 
 export interface AiAgentsSessionItemsListParams {
-  page?: number;
+  cursor?: string;
   pageSize?: number;
   kind?: AgentSessionItemKind;
   status?: AgentSessionItemStatus;
@@ -382,7 +401,7 @@ export class AiAgentsSessionItemsApi {
 /** List ordered items for one agent session */
   async list(agentId: string, sessionId: string, params?: AiAgentsSessionItemsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentSessionItemRecord[]; }> {
     const query = buildQueryString([
-      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
       { name: 'kind', value: params?.kind, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
@@ -538,6 +557,7 @@ export class AiAgentsApi {
   public readonly taskRuns: AiAgentsTaskRunsApi;
   public readonly taskRunAttempts: AiAgentsTaskRunAttemptsApi;
   public readonly compositionSlots: AiAgentsCompositionSlotsApi;
+  public readonly tools: AiAgentsToolsApi;
 
   constructor(client: HttpClient) {
     this.client = client;
@@ -554,6 +574,7 @@ export class AiAgentsApi {
     this.taskRuns = new AiAgentsTaskRunsApi(client);
     this.taskRunAttempts = new AiAgentsTaskRunAttemptsApi(client);
     this.compositionSlots = new AiAgentsCompositionSlotsApi(client);
+    this.tools = new AiAgentsToolsApi(client);
   }
 
 

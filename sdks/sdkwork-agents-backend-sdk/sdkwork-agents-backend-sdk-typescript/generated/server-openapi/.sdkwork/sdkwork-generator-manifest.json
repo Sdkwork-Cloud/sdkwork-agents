@@ -44,7 +44,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "af6ae97c4e1fc7c5dff211b63971f4288e4eb0b5b25d8f8e4e4e2bbf52a09a91"
+      "sha256": "da1d17a82138168c630b9b96c1f6b406cec45c604a06e3ae2bc05eadc8e0942e"
     },
     {
       "path": "sdkwork-sdk.json",
@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "3bdb931d9cbad95a260ab498409f18fbf74edca0578a893b24f0fc11e01924ba"
+      "sha256": "b6c53e0cbd6a4900b49d5e2e2be5c0371f7fc1ff93545c7464c53ba584447328"
     },
     {
       "path": "src/api/base.ts",
@@ -455,6 +455,10 @@
       "sha256": "dd6c5940af6c8a1e2b8b02524d3a8e2dc5ea58b4f03093f69aeb79f37c52716e"
     },
     {
+      "path": "src/types/drive-asset-view.ts",
+      "sha256": "741107feaf60b88feedd8e12b723543dc2763411636940dc92d1043df96f37d5"
+    },
+    {
       "path": "src/types/execute-agent-task-request.ts",
       "sha256": "585d75bf88ab2482eee360bb5efae428ce4924a88e42bcb439fad039ce7a2add"
     },
@@ -464,7 +468,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "ed14b871379ace4ea132c08d849c25c5c6e6f63e1fadbf0081b239d50e4c61f2"
+      "sha256": "77683879bbdc90f70bfa36939fe765b4d19add3cb18d7e4d71e0fe010588508a"
     },
     {
       "path": "src/types/int64-string.ts",
@@ -477,6 +481,26 @@
     {
       "path": "src/types/legacy-agent-interaction-resolution.ts",
       "sha256": "3857f021d2687be8fa29a1e6a4c8012d337b36106cf85d57deb7ba4a3212e072"
+    },
+    {
+      "path": "src/types/media-tool-configuration-body.ts",
+      "sha256": "88adde9a2949190487350676d363034a425b56d2d1e8c94e6a1f3227b93fe446"
+    },
+    {
+      "path": "src/types/media-tool-directory-entry.ts",
+      "sha256": "b341eb1e8ee77a0d383ce9e8b1dff466212760135c74ebf1f2b71d74c67a3885"
+    },
+    {
+      "path": "src/types/media-tool-directory-response.ts",
+      "sha256": "a20575e25f9a565390b33489392bb7581751addb4bc229ee5d180b43fd6b9505"
+    },
+    {
+      "path": "src/types/media-tool-invoke-body.ts",
+      "sha256": "4ec0b803504ef6b4f7708f2f6f73fad1c7c7ea727cbb8e4bfc0342f5cb90accd"
+    },
+    {
+      "path": "src/types/media-tool-invoke-response.ts",
+      "sha256": "b381dec5d6ab83aeb11b55d3deed8062f2bc19f91e76ec55700d36e7a6058051"
     },
     {
       "path": "src/types/page-info.ts",
@@ -521,6 +545,14 @@
     {
       "path": "src/types/sdk-work-resource-data.ts",
       "sha256": "1a516bad32e93d6190a6cf44fd406181a0d21f5f5adb8be0d31dd8054914975a"
+    },
+    {
+      "path": "src/types/tool-asset-view.ts",
+      "sha256": "af7e2dfbcf8fec2e20ed5508e21fb32eb19b81e2b2f038e2f26ebb6eafefb875"
+    },
+    {
+      "path": "src/types/tool-directory-entry-api-response.ts",
+      "sha256": "4a4f9fe7935da3e08ba414b66976e69f96c57f76170a62f74d3dbecc60d7e103"
     },
     {
       "path": "src/types/typed-agent-interaction-resolution.ts",

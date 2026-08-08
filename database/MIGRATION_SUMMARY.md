@@ -16,7 +16,7 @@ Updated: 2026-08-04
 The full current schema is installed from one baseline on an empty schema and
 tracked in `ops_database_installation_state`. The pre-launch forward
 development migrations (`0001`..`0007`) were removed when the baseline was
-folded to the complete `7.3.0` schema; no pending or applied migration rows
+folded to the complete `7.2.0` schema; no pending or applied migration rows
 are expected for the `agents` module in shared development schemas. There is
 no dual-write path, derived read store, legacy Session table, or runtime
 compatibility branch.

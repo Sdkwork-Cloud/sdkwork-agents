@@ -3821,6 +3821,90 @@ paths:
                 $ref: '#/components/schemas/McpServerMarketplaceListResponse'
         default:
           $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/tools:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List media tool directory with effective tenant configuration
+      operationId: agents.tools.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: tools
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: tenant
+      responses:
+        '200':
+          description: Media tool directory entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaToolDirectoryResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/tools/{toolId}/invoke:
+    post:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: Invoke one media tool (optional saveToDrive persistence)
+      operationId: agents.tools.invoke
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: tools
+      x-sdkwork-permission: ai.agents.invoke
+      x-sdkwork-tenant-scope: tenant
+      parameters:
+      - name: toolId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaToolInvokeBody'
+      responses:
+        '200':
+          description: Normalized tool result with optional drive asset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaToolInvokeApiResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /app/v3/api/ai/assets:
+    get:
+      x-sdkwork-owner: sdkwork-agents
+      x-sdkwork-api-authority: sdkwork-agents-app-api
+      tags:
+      - ai
+      summary: List generated media assets persisted to Drive
+      operationId: agents.assets.list
+      security:
+      - AuthToken: []
+        AccessToken: []
+      x-sdkwork-domain: ai
+      x-sdkwork-resource: assets
+      x-sdkwork-permission: ai.agents.read
+      x-sdkwork-tenant-scope: tenant
+      responses:
+        '200':
+          description: Generated media asset records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolAssetListResponse'
+        default:
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     AuthToken:
@@ -4034,6 +4118,43 @@ components:
         maxLength: 128
         pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
   schemas:
+    MediaToolDirectoryResponse:
+      description: Media tool directory following SdkWorkApiResponse envelope;
+        the directory is returned as a bare array under data.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/MediaToolDirectoryEntry'
+    MediaToolInvokeApiResponse:
+      description: Media tool invocation result following SdkWorkApiResponse
+        envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            $ref: '#/components/schemas/MediaToolInvokeResponse'
+    ToolAssetListResponse:
+      description: Generated media asset list following SdkWorkApiResponse
+        envelope; the list is returned as a bare array under data.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/ToolAssetView'
     SdkWorkApiResponse:
       type: object
       additionalProperties: false
@@ -9381,6 +9502,129 @@ components:
         requestedAt:
           type: string
           format: date-time
+
+    MediaToolDirectoryEntry:
+      type: object
+      required:
+      - toolId
+      - category
+      - name
+      - displayName
+      - enabled
+      properties:
+        toolId:
+          type: string
+        category:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: object
+        outputSchema:
+          type: object
+        sideEffectLevel:
+          type: string
+        policyCategories:
+          type: array
+          items:
+            type: string
+        timeoutMs:
+          type: integer
+          format: int64
+        availability:
+          type: string
+        enabled:
+          type: boolean
+        saveToDriveDefault:
+          type: boolean
+        configured:
+          type: boolean
+    MediaToolInvokeBody:
+      type: object
+      required:
+      - arguments
+      properties:
+        arguments:
+          type: object
+        saveToDrive:
+          type: boolean
+    MediaToolInvokeResponse:
+      type: object
+      required:
+      - toolCallId
+      - status
+      - output
+      properties:
+        toolCallId:
+          type: string
+        status:
+          type: string
+        output:
+          type: object
+        error:
+          type: string
+        driveAsset:
+          $ref: '#/components/schemas/DriveAssetView'
+    DriveAssetView:
+      type: object
+      required:
+      - spaceId
+      - nodeId
+      - driveUri
+      properties:
+        spaceId:
+          type: string
+        nodeId:
+          type: string
+        driveUri:
+          type: string
+    ToolAssetView:
+      type: object
+      required:
+      - toolId
+      - toolCallId
+      - mediaKind
+      - driveSpaceId
+      - driveNodeId
+      - driveUri
+      properties:
+        toolId:
+          type: string
+        toolCallId:
+          type: string
+        mediaKind:
+          type: string
+        driveSpaceId:
+          type: string
+        driveNodeId:
+          type: string
+        driveUri:
+          type: string
+        sourceUrl:
+          type: string
+        createdAt:
+          type: string
+    MediaToolConfigurationBody:
+      type: object
+      required:
+      - enabled
+      properties:
+        enabled:
+          type: boolean
+        saveToDriveDefault:
+          type: boolean
+        defaultArguments:
+          type: object
+        expectedVersion:
+          type: integer
+          format: int64
+
     FieldError:
       type: object
       additionalProperties: false

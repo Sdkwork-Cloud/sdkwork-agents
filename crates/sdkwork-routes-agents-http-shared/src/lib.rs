@@ -19,9 +19,6 @@ pub use web_bootstrap::{
 
 pub use sdkwork_intelligence_agents_service::{AgentHttpState, AgentRequestContext};
 
-pub fn gateway_mount() -> axum::Router {
-    axum::Router::new()
-}
 
 #[cfg(test)]
 mod route_manifest_contracts {

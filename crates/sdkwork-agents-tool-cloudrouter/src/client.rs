@@ -76,6 +76,11 @@ impl CloudRouterMediaClient {
 
 /// Runs a cloudrouter SDK async call on a dedicated blocking runtime,
 /// returning the mapped media tool error on failure.
+///
+/// The generated SDK transport enforces its own request timeout
+/// (`SdkworkConfig::timeout_ms`, default 30s), so a hung gateway cannot
+/// block the worker indefinitely; the media tool handler additionally
+/// bounds the whole invocation.
 pub fn run_sync<T>(
     tool_id: &str,
     call: impl FnOnce(&tokio::runtime::Runtime) -> Result<T, cloudrouter_open_sdk::SdkworkError>,

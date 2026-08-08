@@ -74,7 +74,12 @@ const LOCAL_STORAGE_KEY = 'sdkwork_agents_canvas_workflow_v1';
 
 export class CanvasService {
   /**
-   * Fetch initial workflow state
+   * Fetch initial workflow state.
+   *
+   * NOTE: the canvas workflow graph is intentionally browser-local today.
+   * Media generation (image/video) already calls the real generations API;
+   * server-side persistence of the workflow graph itself is a product
+   * decision pending a backend resource. No server state is implied.
    */
   static async getInitialWorkflow() {
     try {

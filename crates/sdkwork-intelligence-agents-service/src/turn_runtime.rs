@@ -226,16 +226,25 @@ fn run_with_bounded_timeout(
         }
     };
     let input_owned = input.clone();
+    let worker_completer = Arc::clone(&completer);
     let join_handle = handle.spawn_blocking(move || {
         let _permit = permit;
-        completer.complete_with_stream_preference(&input_owned, prefer_stream)
+        worker_completer.complete_with_stream_preference(&input_owned, prefer_stream)
     });
     // Safe to block_on here: complete_with_timeout runs inside a spawn_blocking
     // worker (see http.rs handler dispatch), not on an async executor thread.
     match handle.block_on(tokio::time::timeout(timeout, join_handle)) {
         Ok(Ok(output)) => output,
         Ok(Err(_join_error)) => inference_error("turn inference task failed"),
-        Err(_elapsed) => inference_error("turn inference timed out"),
+        Err(_elapsed) => {
+            // The detached worker still holds its provider request and its
+            // worker permit until the provider returns. Send a correlated
+            // cancellation so the provider stops instead of leaking a
+            // process; the cancellation itself is bounded so a hung provider
+            // cannot block this worker.
+            cancel_timed_out_turn(handle, &completer, input);
+            inference_error("turn inference timed out")
+        }
     }
 }
 
@@ -258,9 +267,10 @@ fn run_with_bounded_timeout_and_sink(
     };
     let input_owned = input.clone();
     let worker_sink = Arc::clone(&sink);
+    let worker_completer = Arc::clone(&completer);
     let join_handle = handle.spawn_blocking(move || {
         let _permit = permit;
-        completer.complete_with_stream_sink(&input_owned, worker_sink)
+        worker_completer.complete_with_stream_sink(&input_owned, worker_sink)
     });
     match handle.block_on(tokio::time::timeout(timeout, join_handle)) {
         Ok(Ok(output)) => output,
@@ -270,7 +280,61 @@ fn run_with_bounded_timeout_and_sink(
         }
         Err(_elapsed) => {
             sink.close();
+            // See run_with_bounded_timeout: cancel the still-running provider
+            // request so it cannot leak a process or hold the worker slot.
+            cancel_timed_out_turn(handle, &completer, input);
             inference_error("turn inference timed out")
+        }
+    }
+}
+
+/// Bound for the best-effort cancellation issued after a timed-out turn.
+const TURN_CANCEL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Sends a correlated cancellation for a turn whose wall-clock budget
+/// elapsed while the provider was still executing. Runs on a bounded
+/// blocking worker so a hung provider cannot block the current worker;
+/// the cancellation outcome is logged, never surfaced.
+#[cfg(any(feature = "http-axum", feature = "postgres-sync"))]
+fn cancel_timed_out_turn(
+    handle: &tokio::runtime::Handle,
+    completer: &Arc<dyn TurnExecutor>,
+    input: &TurnExecutionInput,
+) {
+    let cancel_input = TurnCancellationInput {
+        turn_id: input.turn_id.clone(),
+        model_request_id: input.model_request_id.clone(),
+        session_id: input.session.session_id.clone(),
+        binding_id: input.binding_id.clone(),
+        provider_has_model_chat: input.provider_has_model_chat,
+    };
+    let completer = Arc::clone(completer);
+    let join_handle = handle.spawn_blocking(move || completer.cancel(&cancel_input));
+    match handle.block_on(tokio::time::timeout(TURN_CANCEL_TIMEOUT, join_handle)) {
+        Ok(Ok(Ok(_output))) => {
+            tracing::warn!(
+                turn_id = %input.turn_id,
+                "timed-out turn cancelled at the provider"
+            );
+        }
+        Ok(Ok(Err(error))) => {
+            tracing::warn!(
+                turn_id = %input.turn_id,
+                error = %error,
+                "timed-out turn cancellation was rejected by the provider"
+            );
+        }
+        Ok(Err(_join_error)) => {
+            tracing::warn!(
+                turn_id = %input.turn_id,
+                "timed-out turn cancellation worker failed"
+            );
+        }
+        Err(_elapsed) => {
+            tracing::warn!(
+                turn_id = %input.turn_id,
+                "timed-out turn cancellation did not complete within the bound"
+            );
         }
     }
 }
@@ -470,6 +534,10 @@ fn execute_runtime_facade_turn(
         turn_id: Some(input.turn_id.clone()),
         provider_session_id: input.provider_session_id.clone(),
         prompt,
+        // Propagate the wall-clock execution budget to the provider so it can
+        // stop itself instead of relying solely on the server-side join
+        // timeout (which cannot terminate a hung provider process).
+        timeout_ms: Some(TURN_EXECUTION_TIMEOUT.as_millis() as u64),
         access_mode_id: input.access_mode_id.clone(),
         require_live_provider: true,
         ..Default::default()
@@ -584,7 +652,7 @@ fn buffered_agent_message_delta(
     Some(current[previous.len()..].to_string())
 }
 
-fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
+pub(crate) fn inference_error(message: impl Into<String>) -> TurnExecutionOutput {
     TurnExecutionOutput {
         model_request_id: None,
         finish_reason: None,
@@ -980,5 +1048,152 @@ mod tests {
             uncorrelated.kind(),
             sdkwork_agent_kernel::KernelErrorKind::ProviderError
         );
+    }
+
+    /// Executor whose `complete` blocks like a hung provider and whose
+    /// `cancel` records the correlated call.
+    struct RecordingCancelExecutor {
+        cancels: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        cancel_block_ms: u64,
+    }
+
+    impl TurnExecutor for RecordingCancelExecutor {
+        fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+            // Simulate a provider that never returns on its own; the
+            // wall-clock timeout must terminate the client wait.
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            inference_error("hung provider must not complete")
+        }
+
+        fn complete_with_stream_preference(
+            &self,
+            input: &TurnExecutionInput,
+            _prefer_stream: bool,
+        ) -> TurnExecutionOutput {
+            self.complete(input)
+        }
+
+        fn complete_with_stream_sink(
+            &self,
+            input: &TurnExecutionInput,
+            _sink: Arc<dyn TurnExecutionStreamSink>,
+        ) -> TurnExecutionOutput {
+            self.complete(input)
+        }
+
+        fn cancel(&self, input: &TurnCancellationInput) -> KernelResult<TurnCancellationOutput> {
+            if self.cancel_block_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(self.cancel_block_ms));
+            }
+            self.cancels.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(TurnCancellationOutput {
+                model_request_id: input.model_request_id.clone(),
+                finish_reason: "cancelled".to_string(),
+            })
+        }
+    }
+
+    fn sample_turn_execution_input() -> TurnExecutionInput {
+        TurnExecutionInput {
+            turn_id: "turn.timeout-test".to_string(),
+            model_request_id: turn_model_request_id("turn.timeout-test"),
+            agent_display_name: "Timeout Test".to_string(),
+            welcome_message: None,
+            session: sample_session(),
+            history: Vec::new(),
+            user_content: "run".to_string(),
+            model_id: None,
+            provider_id: None,
+            provider_session_id: None,
+            binding_id: Some("binding.codex".to_string()),
+            access_mode_id: None,
+            provider_has_model_chat: true,
+            auth_token: None,
+        }
+    }
+
+    #[test]
+    fn timed_out_turn_sends_correlated_cancellation_to_the_provider() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let cancels = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let completer = Arc::new(RecordingCancelExecutor {
+            cancels: Arc::clone(&cancels),
+            cancel_block_ms: 0,
+        });
+        let input = sample_turn_execution_input();
+
+        let output = runtime.block_on(async {
+            let handle = tokio::runtime::Handle::current();
+            handle
+                .spawn_blocking(move || {
+                    complete_with_timeout(completer, &input, false, std::time::Duration::from_millis(150))
+                })
+                .await
+                .expect("timeout worker")
+        });
+
+        // The client wait terminated with a timeout error, not the provider's
+        // (never-returning) completion.
+        assert_eq!(output.runtime_mode, RUNTIME_MODE_INFERENCE_ERROR);
+        assert!(
+            output.content.contains("timed out"),
+            "timed-out turn must report the timeout, got: {:?}",
+            output.content
+        );
+        assert!(
+            output.finish_reason.as_deref().is_none_or(|reason| reason != "cancelled"),
+            "timed-out turn is not a cancellation acknowledgement"
+        );
+
+        // The correlated cancellation was issued to the provider so it stops
+        // instead of leaking a process. Give the bounded cancel worker time to
+        // land before asserting.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while cancels.load(std::sync::atomic::Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(
+            cancels.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "timed-out turn must be cancelled at the provider"
+        );
+    }
+
+    #[test]
+    fn timed_out_turn_cancellation_is_bounded_when_provider_cancel_hangs() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let cancels = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // The provider cancel itself blocks longer than the cancel bound; the
+        // timed-out turn path must still return without waiting for it.
+        let completer = Arc::new(RecordingCancelExecutor {
+            cancels: Arc::clone(&cancels),
+            cancel_block_ms: 20_000,
+        });
+        let input = sample_turn_execution_input();
+
+        let started = std::time::Instant::now();
+        let output = runtime.block_on(async {
+            let handle = tokio::runtime::Handle::current();
+            handle
+                .spawn_blocking(move || {
+                    complete_with_timeout(completer, &input, false, std::time::Duration::from_millis(150))
+                })
+                .await
+                .expect("timeout worker")
+        });
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < std::time::Duration::from_secs(12),
+            "timed-out turn path must not wait for a hung provider cancel (took {elapsed:?})"
+        );
+        assert_eq!(output.runtime_mode, RUNTIME_MODE_INFERENCE_ERROR);
+        assert!(output.content.contains("timed out"));
     }
 }

@@ -153,3 +153,60 @@ jobs:
             echo "::error title=PostgreSQL-backed integration tests failed::$summary"
             exit $status
           fi
+
+      - name: Run agents service unit tests and HTTP contract tests
+        shell: bash
+        env:
+          SDKWORK_DATABASE_TEST_POSTGRES_URL: postgres://sdkwork_ai_test:sdkwork_ai_test@127.0.0.1:5432/sdkwork_ai_test
+          SDKWORK_DATABASE_URL: postgres://sdkwork_ai_test:sdkwork_ai_test@127.0.0.1:5432/sdkwork_ai_test
+          SDKWORK_DATABASE_ENGINE: postgres
+          SDKWORK_DATABASE_SCHEMA: sdkwork_ai_test
+          SDKWORK_DATABASE_SCHEMA_FALLBACK_PUBLIC: 'false'
+        run: |
+          set +e
+          cargo test -p sdkwork-intelligence-agents-service --features http-axum,codex-test --lib 2>&1 | tee agents-svc-lib.log
+          status=${PIPESTATUS[0]}
+          cargo test -p sdkwork-intelligence-agents-service --features http-axum,codex-test --test http_axum_contracts 2>&1 | tee -a agents-svc-lib.log
+          status=$((status + ${PIPESTATUS[0]}))
+          cargo test -p sdkwork-agents-runtime-facade 2>&1 | tee -a agents-svc-lib.log
+          status=$((status + ${PIPESTATUS[0]}))
+          if [[ $status -ne 0 ]]; then
+            tail -n 200 agents-svc-lib.log
+            summary=$(tail -n 60 agents-svc-lib.log | tr '
+' ' ' | sed 's/%/%25/g; s/
+/%0D/g; s/
+/%0A/g')
+            echo "::error title=Agents service unit/contract tests failed::$summary"
+            exit $status
+          fi
+
+      - name: Check kernel bridge and route assembly crates
+        shell: bash
+        run: |
+          cargo check -p sdkwork-agents-kernel-bridge
+          cargo check -p sdkwork-api-agents-assembly
+
+      - name: Checkout SDK generator
+        uses: actions/checkout@v5
+        with:
+          repository: Sdkwork-Cloud/sdkwork-sdk-generator
+          ref: ${{ vars.SDKGENERATOR_REF || 'main' }}
+          path: ../sdkwork-sdk-generator
+          fetch-depth: 1
+
+      - name: Check generated SDK workspace alignment
+        shell: bash
+        env:
+          SDKWORK_SDKGEN_PATH: ${{ github.workspace }}/../sdkwork-sdk-generator/bin/sdkgen.js
+        run: |
+          node sdks/workspace-agent-sdkgen.mjs --mode dry-run
+          node scripts/check-agent-sdk-workspace.mjs
+
+      - name: Run platform contract checks
+        shell: bash
+        run: |
+          pnpm check:pagination
+          pnpm check:agents-im-boundary
+          pnpm db:validate
+          pnpm check:production-security
+          pnpm check:docs

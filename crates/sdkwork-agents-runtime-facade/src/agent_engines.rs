@@ -55,6 +55,17 @@ pub fn canonical_agent_engine_keys() -> &'static [&'static str] {
     &CANONICAL_AGENT_ENGINE_KEYS
 }
 
+/// Whether the Codex provider is compiled into this build.
+///
+/// Codex carries an embedded client-local SQLite runtime store and is an
+/// optional per-application integration; builds without the `codex-provider`
+/// feature reject codex model configuration with `UnsupportedEngine`.
+/// Catalog and lifecycle surfaces should skip or document codex operations
+/// when this returns `false` instead of failing.
+pub fn codex_engine_enabled() -> bool {
+    cfg!(feature = "codex-provider")
+}
+
 pub fn bootstrappable_engine_keys() -> [&'static str; 8] {
     [
         CANONICAL_AGENT_ENGINE_KEYS[0],

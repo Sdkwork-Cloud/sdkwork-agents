@@ -138,6 +138,7 @@ pub const SQL_LIST_AGENT_SESSION_ACTIVITY_HEADS: &str = r#"WITH page AS (
         WHERE s.tenant_id = $1
           AND s.organization_id = $2
           AND s.owner_user_id = $3
+          AND s.deleted_at IS NULL
           AND ($4::text IS NULL OR s.agent_id = $4)
           AND ($5::text IS NULL OR s.project_id = $5)
           AND ($6::text IS NULL OR EXISTS (

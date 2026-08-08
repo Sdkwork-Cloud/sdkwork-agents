@@ -676,7 +676,7 @@ paths:
       - ai
       summary: List ordered items for one agent session
       description: >-
-        P1 interactive offset list. Supports kind and status filters. The default
+        P1 interactive keyset list. Supports kind and status filters. The default
         sort is sequence ascending; use -sequence to fetch the newest items first.
       operationId: agents.sessionItems.list
       security:
@@ -686,10 +686,19 @@ paths:
       x-sdkwork-resource: agents.sessionItems
       x-sdkwork-permission: agent.business.session_item.list
       x-sdkwork-tenant-scope: tenant
+      x-sdkwork-pagination-mode: cursor
+      x-sdkwork-performance-class: P1
       parameters:
       - $ref: '#/components/parameters/AgentIdPath'
       - $ref: '#/components/parameters/SessionIdPath'
-      - $ref: '#/components/parameters/Page'
+      - name: cursor
+        in: query
+        required: false
+        description: Opaque keyset continuation token (base64url JSON), scoped to
+          this session and filter set.
+        schema:
+          type: string
+          maxLength: 1024
       - $ref: '#/components/parameters/PageSize'
       - name: kind
         in: query
@@ -2080,9 +2089,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/MediaToolDirectoryEntry'
+                $ref: '#/components/schemas/MediaToolDirectoryResponse'
         default:
           $ref: '#/components/responses/Problem'
   /backend/v3/api/ai/tools/{toolId}/configuration:
@@ -2117,7 +2124,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MediaToolDirectoryEntry'
+                $ref: '#/components/schemas/ToolDirectoryEntryApiResponse'
         default:
           $ref: '#/components/responses/Problem'
 components:
@@ -2366,6 +2373,30 @@ components:
                 retryable: false
                 traceId: 00000000-0000-0000-0000-000000000000
   schemas:
+    MediaToolDirectoryResponse:
+      description: Media tool directory following SdkWorkApiResponse envelope;
+        the directory is returned as a bare array under data.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/MediaToolDirectoryEntry'
+    ToolDirectoryEntryApiResponse:
+      description: Tool directory entry result following SdkWorkApiResponse
+        envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            $ref: '#/components/schemas/MediaToolDirectoryEntry'
     SdkWorkApiResponse:
       type: object
       additionalProperties: false

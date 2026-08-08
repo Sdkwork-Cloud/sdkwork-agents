@@ -33,14 +33,14 @@ and durable agent execution:
 AgentWorkspace -> AgentProject -> AgentSession -> AgentTurn -> AgentSessionItem -> AgentInteraction
 ```
 
-The managed store uses PostgreSQL and owns exactly 23 tables. It has no
+The managed store uses PostgreSQL and owns exactly 26 tables. It has no
 derived read tables, shadow tables, compatibility tables, dual-write path, or
 second session aggregate. A consumer may render an Agent Session as a dialog,
 but that presentation does not create another persistence vocabulary.
 
-The SQLite baseline is a non-authoritative, four-table development subset for
-the agent control plane. It does not implement projects or the Session
-aggregate and is not a production fallback.
+SQLite is not a supported engine for Agents persistence (DATABASE_SPEC:
+authoritative-server persistence is PostgreSQL only). The database manifest
+declares `engines: [postgres]` and no SQLite baseline exists.
 
 ## 3. Ownership Boundary
 

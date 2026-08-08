@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  X, Check, Shield, Cpu, RefreshCw, Key, LogOut, Code, AlertCircle,
+  X, Check, Shield, Cpu, Key, LogOut, Code, AlertCircle,
   Laptop, Smartphone, CreditCard, ChevronRight, Activity, Copy, Sparkles 
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -41,27 +41,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ onClose, ini
 
   // Load from locale-storage or default
   const [username, setUsername] = useState(() => localStorage.getItem('profile_username') || tCommon('mockUserName'));
-  const [email, setEmail] = useState(() => localStorage.getItem('profile_email') || 'buptrolex@gmail.com');
+  // Email is owned by the IAM identity; the default stays empty until a
+  // profile record exists.
+  const [email, setEmail] = useState(() => localStorage.getItem('profile_email') || '');
   const [bio, setBio] = useState(() => localStorage.getItem('profile_bio') || t('defaultBio'));
   const [avatarIndex, setAvatarIndex] = useState(() => parseInt(localStorage.getItem('profile_avatar_index') || '0', 10));
-
-  // Visual/Functional Quota metrics (reactive state so users can click "Simulate API Call" to preview updates)
-  const [tokenUsage, setTokenUsage] = useState(1284520); // 1.28M / 5M max
-  const [messageUsage, setMessageUsage] = useState(342); // 342 / 1000 max
-  const [imageUsage, setImageUsage] = useState(48); // 48 / 200 max
 
   const [activeTab, setActiveTab] = useState<'profile' | 'billing' | 'usage' | 'security' | 'developer'>(initialTab);
   const [isToastVisible, setIsToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Active devices state
-  const [sessions, setSessions] = useState<ActiveSession[]>([
-    { id: '1', device: 'MacBook Pro 16"', browser: 'Chrome Browser', ip: '198.51.100.41', location: 'Tokyo, Japan', activeNow: true, type: 'desktop' },
-    { id: '2', device: 'iPhone 15 Pro Max', browser: 'Safari Mobile', ip: '198.51.100.82', location: 'Tokyo, Japan', activeNow: false, type: 'mobile' },
-    { id: '3', device: 'iPad Pro M4', browser: 'Safari Mobile', ip: '203.0.113.12', location: 'London, UK', activeNow: false, type: 'mobile' },
-    { id: '4', device: 'Work PC Linux x86', browser: 'Firefox Developer Edition', ip: '192.0.2.14', location: 'San Francisco, USA', activeNow: false, type: 'desktop' }
-  ]);
+  // Active device sessions are owned by the IAM session manager. The list
+  // stays empty until the session API is wired into this surface; no
+  // fabricated devices are rendered.
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -85,16 +79,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ onClose, ini
       setIsSaving(false);
       triggerToast(t('saveProfile') + ' - ' + tCommon('copied').replace('!', ''));
     }, 600);
-  };
-
-  // Simulation handler: makes metrics go up! Fun & interactive closed-loop test
-  const handleSimulateCall = () => {
-    setTokenUsage(prev => Math.min(prev + Math.floor(Math.random() * 45000) + 12000, 5000000));
-    setMessageUsage(prev => Math.min(prev + 1, 1000));
-    if (Math.random() > 0.6) {
-      setImageUsage(prev => Math.min(prev + 1, 200));
-    }
-    triggerToast(t('apiSimulated'));
   };
 
   const handleRevokeSessions = () => {
@@ -194,18 +178,6 @@ await ChatService.streamChat({
               ))}
             </div>
 
-            {/* Simulated Live Action widget */}
-            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#1890ff]/5 via-transparent to-pink-500/5 border border-gray-100 dark:border-zinc-800">
-              <span className="text-[10px] uppercase tracking-wider text-gray-400 font-bold block mb-1">{t('sandboxLive')}</span>
-              <p className="text-[11px] text-gray-500 dark:text-zinc-400 mb-2 leading-relaxed">{t('sandboxDesc')}</p>
-              <button 
-                onClick={handleSimulateCall}
-                className="w-full flex items-center justify-center gap-1.5 py-2 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-800 dark:text-zinc-200 text-[10px] font-bold rounded-xl transition-all shadow-sm"
-              >
-                <RefreshCw size={11} className="animate-spin-slow text-[#1890ff]" />
-                {t('simulateUsage')}
-              </button>
-            </div>
           </div>
 
           {/* Right workspace panels */}
@@ -239,10 +211,6 @@ await ChatService.streamChat({
             {activeTab === 'usage' && (
               <UsageTab 
                 t={t}
-                tokenUsage={tokenUsage}
-                messageUsage={messageUsage}
-                imageUsage={imageUsage}
-                handleSimulateCall={handleSimulateCall}
               />
             )}
 

@@ -82,6 +82,9 @@ use crate::project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
     AgentProjectStatus, AgentProjectVisibility,
 };
+use crate::postgres_model_configuration_store::{
+    ProfileScope, ScopedAgentConfigurationStore, ScopedInMemoryAgentConfigurationStore,
+};
 use crate::response::{
     created_json, finish_api_json, finish_created_api_json, no_content, success_json, ApiProblem,
     ApiResult, PageData, PageInfo, PageMode, ResourceData,
@@ -138,6 +141,11 @@ use tokio_stream::StreamExt;
 const MAX_PAGE_SIZE: usize = 200;
 const DEFAULT_SERVICE_WORKER_LIMIT: usize = 128;
 const TURN_STREAM_CHANNEL_CAPACITY: usize = 128;
+/// Wall-clock bound for the synchronous turn-cancellation service call. The
+/// provider cancel can block when a provider process is hung; the HTTP client
+/// must never wait indefinitely for it (the worker keeps running and its
+/// result is dropped).
+const TURN_CANCEL_SERVICE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 pub const ENV_TURN_RECONCILIATION_INTERVAL_SECONDS: &str =
     "SDKWORK_AGENTS_TURN_RECONCILIATION_INTERVAL_SECONDS";
 pub const ENV_TURN_STALE_AFTER_SECONDS: &str = "SDKWORK_AGENTS_TURN_STALE_AFTER_SECONDS";
@@ -1233,6 +1241,10 @@ impl TaskSchedulerRepository for DynAgentRepository {
         self.0.recover_expired_task_run_leases(now, limit)
     }
 
+    fn recover_timed_out_task_runs(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        self.0.recover_timed_out_task_runs(now, limit)
+    }
+
     fn request_task_run_cancellation(
         &self,
         tenant_id: u64,
@@ -1317,20 +1329,20 @@ pub(crate) type HttpService =
 
 pub(crate) struct AgentModelConfigurationRuntime {
     secrets: Mutex<Box<dyn SecretProvider>>,
-    configurations: Mutex<Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>>,
+    configurations: Mutex<Box<dyn ScopedAgentConfigurationStore>>,
 }
 
 impl AgentModelConfigurationRuntime {
     fn new() -> Self {
         Self::with_providers(
             Box::new(InMemorySecretProvider::new()),
-            Box::new(sdkwork_agents_runtime_facade::InMemoryAgentConfigurationStore::new()),
+            Box::new(ScopedInMemoryAgentConfigurationStore::new()),
         )
     }
 
     pub(crate) fn with_providers(
         secret_provider: Box<dyn SecretProvider>,
-        configuration_store: Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>,
+        configuration_store: Box<dyn ScopedAgentConfigurationStore>,
     ) -> Self {
         Self {
             secrets: Mutex::new(secret_provider),
@@ -1437,7 +1449,7 @@ impl AgentHttpState {
     pub fn with_model_configuration_providers(
         mut self,
         secret_provider: Box<dyn SecretProvider>,
-        configuration_store: Box<dyn sdkwork_agents_runtime_facade::AgentConfigurationStore>,
+        configuration_store: Box<dyn ScopedAgentConfigurationStore>,
     ) -> Self {
         self.model_configuration_runtime = Arc::new(
             AgentModelConfigurationRuntime::with_providers(secret_provider, configuration_store),
@@ -1561,6 +1573,15 @@ impl AgentTaskWorkerHandle {
         limit: usize,
     ) -> KernelResult<u64> {
         self.run(move |service| service.recover_expired_scheduled_task_run_leases(&now, limit))
+            .await
+    }
+
+    pub async fn recover_timed_out_task_runs(
+        &self,
+        now: String,
+        limit: usize,
+    ) -> KernelResult<u64> {
+        self.run(move |service| service.recover_timed_out_scheduled_task_runs(&now, limit))
             .await
     }
 
@@ -3137,12 +3158,13 @@ fn apply_agent_model_configuration(
         normalize_supported_model_provider_ids(body.supported_provider_ids, engine_id)?;
     let profile_id =
         model_configuration_profile_id(&scope, engine_id, body.configuration_id.trim());
+    let profile_scope = profile_scope_from_request(&scope)?;
     let existing_profile = state
         .model_configuration_runtime
         .configurations
         .lock()
         .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-        .find_profile(agent_id, &profile_id)
+        .find_profile_in_scope(agent_id, &profile_id, &profile_scope)
         .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?;
     let existing_secret_ref = existing_profile.as_ref().and_then(|profile| {
         profile
@@ -3258,7 +3280,7 @@ fn apply_agent_model_configuration(
         .configurations
         .lock()
         .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-        .save_profile(application.profile.clone())
+        .save_profile_in_scope(application.profile.clone(), &profile_scope)
     {
         if let Some(secret_ref) = created_secret_ref {
             if let Ok(mut secrets) = state.model_configuration_runtime.secrets.lock() {
@@ -3368,13 +3390,14 @@ fn apply_agent_model_selection(
         .unwrap_or_else(|| {
             model_configuration_profile_id(&scope, engine_id, "model.selection.builtin")
         });
+    let profile_scope = profile_scope_from_request(&scope)?;
     let current_profile = if configuration_id.is_some() {
         let profile = state
             .model_configuration_runtime
             .configurations
             .lock()
             .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-            .find_profile(agent_id, &profile_id)
+            .find_profile_in_scope(agent_id, &profile_id, &profile_scope)
             .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?
             .ok_or_else(|| {
                 ApiProblem::validation(
@@ -3407,7 +3430,7 @@ fn apply_agent_model_selection(
         .configurations
         .lock()
         .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-        .save_profile(application.profile.clone())
+        .save_profile_in_scope(application.profile.clone(), &profile_scope)
         .map_err(|_| ApiProblem::internal("provider model selection could not be stored"))?;
 
     Ok(AppliedAgentModelSelectionResponse {
@@ -3513,7 +3536,8 @@ async fn app_list_model_configurations(
 ) -> Response {
     let result: ApiResult<PageData<ModelConfigurationSummaryView>> = async {
         let query = query.map_err(ApiProblem::from_query_rejection)?;
-        let _scope = RequestScope::from_context(context);
+        let scope = RequestScope::from_context(context);
+        let profile_scope = profile_scope_from_request(&scope)?;
         let engine_ids = match &query.engine_id {
             Some(engine_id) => vec![engine_id.clone()],
             None => sdkwork_agents_runtime_facade::bootstrappable_engine_keys()
@@ -3535,7 +3559,7 @@ async fn app_list_model_configurations(
                 ));
             };
             let profiles = configurations
-                .list_profiles(agent_id)
+                .list_profiles_in_scope(agent_id, &profile_scope)
                 .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?;
             for profile in profiles {
                 items.push(ModelConfigurationSummaryView::from_profile(
@@ -3566,8 +3590,8 @@ async fn app_get_model_configuration(
     Path(path): Path<ModelConfigurationPath>,
 ) -> Response {
     let result: ApiResult<ResourceData<ModelConfigurationSummaryView>> = async {
-        let _scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
+        let scope = RequestScope::from_context(context);
+        let profile = load_model_configuration_profile(&state, &scope, &path.engine_id, &path.profile_id)?;
         Ok(ResourceData {
             item: ModelConfigurationSummaryView::from_profile(&profile, &path.engine_id)?,
         })
@@ -3612,8 +3636,8 @@ async fn app_get_model_configuration_status(
     Path(path): Path<ModelConfigurationPath>,
 ) -> Response {
     let result: ApiResult<ResourceData<ModelConfigurationStatusView>> = async {
-        let _scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
+        let scope = RequestScope::from_context(context);
+        let profile = load_model_configuration_profile(&state, &scope, &path.engine_id, &path.profile_id)?;
         let provider_scope =
             sdkwork_agents_runtime_facade::agent_engine_provider_scope(&path.engine_id)
                 .ok_or_else(|| {
@@ -3729,7 +3753,8 @@ async fn app_archive_model_configuration(
 ) -> Response {
     let result: ApiResult<ResourceData<ModelConfigurationSummaryView>> = async {
         let scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(&state, &path.engine_id, &path.profile_id)?;
+        let profile_scope = profile_scope_from_request(&scope)?;
+        let profile = load_model_configuration_profile(&state, &scope, &path.engine_id, &path.profile_id)?;
 
         // Only revert the CLI-native config when it actually carries the
         // SDKWork-managed materialization; never touch a user-owned surface.
@@ -3760,13 +3785,15 @@ async fn app_archive_model_configuration(
             .configurations
             .lock()
             .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-            .archive_profile(&sdkwork_agent_kernel::AgentProfileArchiveRequest::new(
-                &request_id,
-                &profile.agent_id,
-                &path.profile_id,
-            ))
+            .archive_profile_in_scope(
+                &sdkwork_agent_kernel::AgentProfileArchiveRequest::new(
+                    &request_id,
+                    &profile.agent_id,
+                    &path.profile_id,
+                ),
+                &profile_scope,
+            )
             .map_err(|_| ApiProblem::internal("model configuration could not be archived"))?;
-        let _ = scope;
         Ok(ResourceData {
             item: ModelConfigurationSummaryView::from_profile(&archived.profile, &path.engine_id)?,
         })
@@ -3803,8 +3830,9 @@ async fn app_migrate_model_configuration(
 ) -> Response {
     let result: ApiResult<ResourceData<MigratedModelConfigurationResponse>> = async {
         let Json(body) = body.map_err(ApiProblem::from_json_rejection)?;
-        let _scope = RequestScope::from_context(context);
-        let profile = load_model_configuration_profile(&state, &body.engine_id, &body.profile_id)?;
+        let scope = RequestScope::from_context(context);
+        let profile_scope = profile_scope_from_request(&scope)?;
+        let profile = load_model_configuration_profile(&state, &scope, &body.engine_id, &body.profile_id)?;
         if profile.configuration_version != body.from_configuration_version {
             return Err(ApiProblem::validation(
                 "fromConfigurationVersion does not match the stored profile version",
@@ -3831,7 +3859,7 @@ async fn app_migrate_model_configuration(
             .configurations
             .lock()
             .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-            .migrate_profile(&plan, profile)
+            .migrate_profile_in_scope(&plan, profile, &profile_scope)
             .map_err(|_| ApiProblem::internal("model configuration could not be migrated"))?;
         Ok(ResourceData {
             item: MigratedModelConfigurationResponse {
@@ -3853,20 +3881,34 @@ async fn app_migrate_model_configuration(
 
 fn load_model_configuration_profile(
     state: &AgentHttpState,
+    scope: &RequestScope,
     engine_id: &str,
     profile_id: &str,
 ) -> ApiResult<AgentConfigurationProfile> {
     let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
         .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+    let profile_scope = profile_scope_from_request(scope)?;
     let profile = state
         .model_configuration_runtime
         .configurations
         .lock()
         .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-        .find_profile(agent_id, profile_id)
+        .find_profile_in_scope(agent_id, profile_id, &profile_scope)
         .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?
         .ok_or_else(|| ApiProblem::not_found("model configuration profile not found"))?;
     Ok(profile)
+}
+
+/// Derives the owner scope for model configuration store access from the
+/// trusted request context. Fails closed when the scoped identifiers cannot
+/// be parsed, so no request can ever address another tenant's rows.
+fn profile_scope_from_request(scope: &RequestScope) -> ApiResult<ProfileScope> {
+    ProfileScope::try_parse(
+        &scope.tenant_id,
+        &scope.organization_id,
+        &scope.owner_user_id,
+    )
+    .map_err(ApiProblem::from_kernel_error)
 }
 
 fn normalize_supported_model_provider_ids(
@@ -4395,7 +4437,7 @@ pub(crate) struct ListItemsQueryParams {
     pub(crate) kind: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) sort: Option<String>,
-    pub(crate) page: Option<usize>,
+    pub(crate) cursor: Option<String>,
     pub(crate) page_size: Option<usize>,
 }
 
@@ -7490,6 +7532,9 @@ async fn app_synchronize_project_sessions(
         }
         // In-flight dedupe: a burst of concurrent requests for the same
         // project must never duplicate the discovery scan or the sweeps.
+        // The RAII guard releases the marker on every exit path (including
+        // worker panics), so a project can never wedge into a permanent
+        // `202 pending`.
         if !mark_provider_session_sync_in_flight(&cache_key) {
             tracing::debug!(
                 target: "sdkwork.agents.provider_session_sync",
@@ -7511,10 +7556,11 @@ async fn app_synchronize_project_sessions(
         // worker permit keeps the total in-process synchronization concurrency
         // inside SERVICE_WORKER_LIMIT; the 15-second reconciliation timeout
         // bounds each run.
+        let _sync_guard =
+            crate::provider_session_sync::ProviderSessionSyncGuard::new(cache_key.clone());
         let service = Arc::clone(&state.service);
         let project_for_worker = project.clone();
         let subject_for_worker = subject.clone();
-        let cache_key_for_worker = cache_key.clone();
         let permit = SERVICE_WORKER_LIMIT
             .clone()
             .try_acquire_owned()
@@ -7555,7 +7601,7 @@ async fn app_synchronize_project_sessions(
                     "background provider Session synchronization failed: {error}"
                 ),
             }
-            clear_provider_session_sync_in_flight(&cache_key_for_worker);
+            // In-flight marker released by ProviderSessionSyncGuard on drop.
         });
         let item = ProjectSessionSynchronizationResultDto::from_result(
             &ProviderSessionSynchronizationResult::default(),
@@ -9322,7 +9368,12 @@ async fn app_cancel_turn(
             requested_by: scope.subject,
             requested_at: body.requested_at,
         };
-        let record = with_service(&state, move |service| service.cancel_turn(command)).await?;
+        let record = with_owned_service_timeout(
+            &state,
+            TURN_CANCEL_SERVICE_TIMEOUT,
+            move |service| service.cancel_turn(command),
+        )
+        .await?;
         Ok(ResourceData {
             item: AgentTurnRecordDto::from_record(&record),
         })
@@ -10576,7 +10627,15 @@ async fn backend_list_session_items(
         let Path((agent_id, session_id)) = path.map_err(ApiProblem::from_path_rejection)?;
         let Query(query) = query.map_err(ApiProblem::from_query_rejection)?;
         let scope = RequestScope::from_context(context);
-        let (page, page_size) = normalized_pagination(query.page, query.page_size)?;
+        // High-volume ordered item feed: keyset cursor (opaque, scope-bound),
+        // never deep OFFSET (PAGINATION_SPEC: cursor mode for P1 lists).
+        let page_size = normalized_cursor_page_size(query.page_size)?;
+        let cursor = query
+            .cursor
+            .as_deref()
+            .map(decode_session_item_cursor)
+            .transpose()
+            .map_err(ApiProblem::from_kernel_error)?;
         let mut command = ListSessionItemsRequestDto {
             tenant_id: scope.tenant_id,
             organization_id: scope.organization_id,
@@ -10587,11 +10646,7 @@ async fn backend_list_session_items(
         .into_command(agent_id, session_id, scope.subject)
         .map_err(ApiProblem::from_kernel_error)?;
         command.owner_scope = None;
-        command.query = command.query.with_pagination(
-            PaginationParams::default()
-                .with_page_size(page_size)
-                .with_page(page),
-        );
+        command.query = command.query.with_cursor_page(page_size, cursor);
         let records = with_service(&state, move |service| {
             service.list_session_items_with_drive_refs(command)
         })
@@ -10608,10 +10663,9 @@ async fn backend_list_session_items(
                     .map_err(ApiProblem::from_kernel_error)
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-            page_info: offset_page_info(
-                page,
-                page_size,
-                records.total_count.unwrap_or(0),
+            page_info: sdkwork_utils_rust::http_api::cursor_window_page_info(
+                Some(page_size),
+                records.next_page_token,
                 records.has_more,
             ),
         })
@@ -11595,6 +11649,41 @@ where
     .map_err(|error| ApiProblem::internal(format!("agents service worker failed: {error}")))?
     .map_err(ApiProblem::from_kernel_error)
 }
+
+/// Executes a service action with a hard wall-clock bound.
+///
+/// Used for operations that synchronously call into provider machinery
+/// (e.g. turn cancellation) where a hung provider must never leave the HTTP
+/// request suspended indefinitely. The worker keeps running after the bound
+/// (results are dropped); only the client wait is bounded.
+async fn with_owned_service_timeout<T>(
+    state: &AgentHttpState,
+    timeout: std::time::Duration,
+    action: impl FnOnce(Arc<HttpService>) -> KernelResult<T> + Send + 'static,
+) -> Result<T, ApiProblem>
+where
+    T: Send + 'static,
+{
+    let permit = SERVICE_WORKER_LIMIT
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            crate::infrastructure::AgentMetricsRegistry::global().record_service_worker_rejection();
+            ApiProblem::too_many_requests("agents service concurrency limit reached", Some(1))
+        })?;
+    let service = Arc::clone(&state.service);
+    tokio::time::timeout(
+        timeout,
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            action(service)
+        }),
+    )
+    .await
+    .map_err(|_| ApiProblem::gateway_timeout("agents service operation timed out"))?
+    .map_err(|error| ApiProblem::internal(format!("agents service worker failed: {error}")))?
+    .map_err(ApiProblem::from_kernel_error)
+}
 async fn execute_list(
     state: AgentHttpState,
     query: ListAgentsQueryParams,
@@ -12503,12 +12592,24 @@ async fn streaming_turn_execution_http_response(
         chunk @ TurnHttpStreamSignal::Chunk(_) => chunk,
     };
 
+    // Heartbeat: long inference silences must not look like a dead stream to
+    // intermediate proxies. A comment line every 15 seconds is the standard
+    // SSE keep-alive and is ignored by event parsers.
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let heartbeat_stream =
+        tokio_stream::wrappers::IntervalStream::new(heartbeat).map(|_| {
+            Ok::<Bytes, std::io::Error>(Bytes::from_static(b": keep-alive
+
+"))
+        });
     let body_stream = tokio_stream::iter([first])
         .chain(ReceiverStream::new(receiver))
         .map(|signal| match signal {
             TurnHttpStreamSignal::Chunk(chunk) => Ok::<Bytes, std::io::Error>(Bytes::from(chunk)),
             TurnHttpStreamSignal::Failed(problem) => Err(std::io::Error::other(problem.message)),
-        });
+        })
+        .merge(heartbeat_stream);
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "text/event-stream")
@@ -12971,6 +13072,17 @@ mod tests {
             .with_request_id("req-test-fixed")
     }
 
+    /// Picks an engine whose provider is always compiled into the service
+    /// build. Codex is optional (embedded client-local SQLite runtime store);
+    /// every other engine is available in all builds.
+    fn model_configuration_test_engine() -> &'static str {
+        if sdkwork_agents_runtime_facade::codex_engine_enabled() {
+            "codex"
+        } else {
+            "gemini"
+        }
+    }
+
     fn model_configuration_body(
         engine_id: &str,
         configuration_id: &str,
@@ -13048,6 +13160,12 @@ mod tests {
         let app = build_test_router(state);
 
         for engine_id in sdkwork_agents_runtime_facade::bootstrappable_engine_keys() {
+            if engine_id == "codex" && !sdkwork_agents_runtime_facade::codex_engine_enabled() {
+                // Codex is an optional per-application provider (embedded
+                // client-local SQLite store); builds without the feature
+                // reject codex model configuration by contract.
+                continue;
+            }
             let api_key = format!("secret-value-for-{engine_id}");
             let response = post_model_configuration(
                 &app,
@@ -13104,18 +13222,19 @@ mod tests {
             test_policy_provider(),
         );
         let app = build_test_router(state);
-        let configuration_id = "model.codex.reusable";
+        let engine_id = model_configuration_test_engine();
+        let configuration_id = "model.reusable";
 
         let missing = post_model_configuration(
             &app,
-            model_configuration_body("codex", configuration_id, None),
+            model_configuration_body(engine_id, configuration_id, None),
         )
         .await;
         assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 
         let created = post_model_configuration(
             &app,
-            model_configuration_body("codex", configuration_id, Some("initial-secret")),
+            model_configuration_body(engine_id, configuration_id, Some("initial-secret")),
         )
         .await;
         assert_eq!(created.status(), StatusCode::OK);
@@ -13128,7 +13247,7 @@ mod tests {
 
         let reapplied = post_model_configuration(
             &app,
-            model_configuration_body("codex", configuration_id, None),
+            model_configuration_body(engine_id, configuration_id, None),
         )
         .await;
         assert_eq!(reapplied.status(), StatusCode::OK);
@@ -13142,6 +13261,92 @@ mod tests {
             created_payload["data"]["item"]["profileId"],
             reapplied_payload["data"]["item"]["profileId"]
         );
+    }
+
+    #[tokio::test]
+    async fn model_configuration_is_isolated_across_tenants_on_http_surface() {
+        let _guard = model_configuration_test_guard();
+        let store = ScopedInMemoryAgentConfigurationStore::new();
+        let state = AgentHttpState::new(
+            InMemoryAgentRepository::new(),
+            InMemoryAgentAuditSink::default(),
+            test_policy_provider(),
+        )
+        .with_model_configuration_providers(
+            Box::new(sdkwork_agent_kernel::InMemorySecretProvider::new()),
+            Box::new(store),
+        );
+        let engine_id = model_configuration_test_engine();
+        let tenant_a_app = build_test_router_with_context(state.clone(), test_agent_context());
+        let tenant_b_context = AgentRequestContext::new("200002", "100")
+            .with_organization_id("0")
+            .with_subject_id("100")
+            .with_roles(["ai.agents.manage"])
+            .with_trace_id("trace-test-fixed-b")
+            .with_request_id("req-test-fixed-b");
+        let tenant_b_app = build_test_router_with_context(state, tenant_b_context);
+
+        // Tenant A applies a model configuration.
+        let created = post_model_configuration(
+            &tenant_a_app,
+            model_configuration_body(engine_id, "model.cross-tenant", Some("tenant-a-secret")),
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::OK);
+        let created_payload: Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), usize::MAX)
+                .await
+                .expect("created response should be readable"),
+        )
+        .expect("created response should be JSON");
+        let profile_id = created_payload["data"]["item"]["profileId"]
+            .as_str()
+            .expect("profileId should be present")
+            .to_string();
+
+        // Tenant B cannot list tenant A profiles.
+        let tenant_b_list = get_model_configuration(
+            &tenant_b_app,
+            &format!("/app/v3/api/ai/model_configurations?engineId={engine_id}"),
+        )
+        .await;
+        assert_eq!(tenant_b_list.status(), StatusCode::OK);
+        let list_payload: Value = serde_json::from_slice(
+            &to_bytes(tenant_b_list.into_body(), usize::MAX)
+                .await
+                .expect("list response should be readable"),
+        )
+        .expect("list response should be JSON");
+        assert_eq!(
+            list_payload["data"]["items"].as_array().expect("items").len(),
+            0,
+            "tenant B must not observe tenant A model configurations"
+        );
+
+        // Tenant B cannot read or archive tenant A profiles by id.
+        let detail_uri = format!("/app/v3/api/ai/model_configurations/{engine_id}/{profile_id}");
+        let tenant_b_get = get_model_configuration(&tenant_b_app, &detail_uri).await;
+        assert_eq!(tenant_b_get.status(), StatusCode::NOT_FOUND);
+        let archive_request = Request::builder()
+            .method("POST")
+            .uri(format!("{detail_uri}/archive"))
+            .body(Body::empty())
+            .expect("archive request should be built");
+        let tenant_b_archive = tenant_b_app
+            .clone()
+            .oneshot(archive_request)
+            .await
+            .expect("archive request should complete");
+        assert!(
+            tenant_b_archive.status() == StatusCode::NOT_FOUND
+                || tenant_b_archive.status() == StatusCode::BAD_REQUEST,
+            "tenant B archive must fail, got {}",
+            tenant_b_archive.status()
+        );
+
+        // Tenant A still owns the profile.
+        let tenant_a_get = get_model_configuration(&tenant_a_app, &detail_uri).await;
+        assert_eq!(tenant_a_get.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -13181,7 +13386,7 @@ mod tests {
         let _guard = model_configuration_test_guard();
         // An in-memory profile store isolates the persistence surface for the
         // read-back lifecycle endpoints.
-        let store = sdkwork_agent_kernel::InMemoryAgentConfigurationStore::new();
+        let store = ScopedInMemoryAgentConfigurationStore::new();
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -13193,9 +13398,12 @@ mod tests {
         );
         let app = build_test_router(state);
 
+        // Codex is an optional build-time provider; any always-available
+        // engine exercises the same lifecycle surface.
+        let engine_id = model_configuration_test_engine();
         let created = post_model_configuration(
             &app,
-            model_configuration_body("codex", "model.codex.readback", Some("readback-secret")),
+            model_configuration_body(engine_id, "model.readback", Some("readback-secret")),
         )
         .await;
         assert_eq!(created.status(), StatusCode::OK);
@@ -13209,13 +13417,13 @@ mod tests {
             .as_str()
             .expect("profileId should be present")
             .to_string();
-        let detail_uri = format!("/app/v3/api/ai/model_configurations/codex/{profile_id}");
+        let detail_uri = format!("/app/v3/api/ai/model_configurations/{engine_id}/{profile_id}");
         let status_uri = format!("{detail_uri}/status");
         let archive_uri = format!("{detail_uri}/archive");
 
         // List returns the applied profile without exposing credentials.
         let list =
-            get_model_configuration(&app, "/app/v3/api/ai/model_configurations?engineId=codex")
+            get_model_configuration(&app, &format!("/app/v3/api/ai/model_configurations?engineId={engine_id}"))
                 .await;
         assert_eq!(list.status(), StatusCode::OK);
         let list_bytes = to_bytes(list.into_body(), usize::MAX)
@@ -13233,8 +13441,8 @@ mod tests {
             .expect("items should be an array");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["profileId"], profile_id);
-        assert_eq!(items[0]["engineId"], "codex");
-        assert_eq!(items[0]["providerScope"], "codex");
+        assert_eq!(items[0]["engineId"], engine_id);
+        assert_eq!(items[0]["providerScope"], sdkwork_agents_runtime_facade::agent_engine_provider_scope(engine_id).expect("engine scope"));
         assert_eq!(items[0]["baseUrl"], "https://models.example.test/v1");
         assert_eq!(items[0]["defaultModelId"], "example-chat");
         assert_eq!(items[0]["apiKeyConfigured"], true);

@@ -22,6 +22,7 @@ use crate::domain::{
     SessionAuditPayload, SessionItemAuditPayload, TaskAuditPayload,
     DEFAULT_AGENT_MANAGEMENT_POLICY_CATEGORY,
 };
+use crate::agent_turn::AgentTurnMode;
 use crate::dto::AgentManagementProfileDto;
 use crate::list_cursors::{
     encode_created_at_cursor, encode_session_list_cursor, CreatedAtListCursor, SessionListCursor,
@@ -4737,6 +4738,19 @@ where
         self.repository.recover_expired_task_run_leases(now, limit)
     }
 
+    /// Recovers Runs whose configured execution budget elapsed while they
+    /// were still claimed or running (independent of heartbeat liveness).
+    pub fn recover_timed_out_scheduled_task_runs(
+        &self,
+        now: &str,
+        limit: usize,
+    ) -> KernelResult<u64>
+    where
+        R: TaskSchedulerRepository,
+    {
+        self.repository.recover_timed_out_task_runs(now, limit)
+    }
+
     pub fn scheduled_task_metrics_snapshot(
         &self,
         now: &str,
@@ -7010,6 +7024,163 @@ where
         self.execute_turn_internal(command, Some(stream_sink))
     }
 
+    /// Resumes a non-terminal Turn on the task-scheduler retry path.
+    ///
+    /// A retried Run reuses its persisted Turn (idempotency contract: retries
+    /// never create a second Turn). When the previous attempt left the Turn
+    /// in `Requested`/`Running`/`Failed`/`Cancelled`, this resets it to
+    /// `Requested` with a version bump — fencing any stale worker's late
+    /// writes — and re-executes the same request through the shared committed
+    /// execution path. Completed Turns are replayed instead of resumed.
+    fn resume_task_turn(
+        &self,
+        command: &CreateTurnCommand,
+        agent: AgentBusinessRecord,
+        session: AgentSessionRecord,
+        mut existing_turn: AgentTurnRecord,
+        stream_sink: Option<Arc<dyn TurnExecutionStreamSink>>,
+    ) -> KernelResult<TurnExecutionResult> {
+        let expected_version = existing_turn.version;
+        existing_turn.status = AgentTurnStatus::Requested;
+        existing_turn.finish_reason = None;
+        existing_turn.error_code = None;
+        existing_turn.error_detail = None;
+        existing_turn.updated_at = command.requested_at.clone();
+        existing_turn.version = existing_turn.version.saturating_add(1);
+        let turn = self.repository.update_turn_state(existing_turn, expected_version)?;
+        self.emit_turn_audit_event(
+            AgentAuditAction::TurnRequested,
+            &turn,
+            command.requested_by.clone(),
+            command.requested_at.clone(),
+        )?;
+
+        let user_input_item = self
+            .repository
+            .get_session_item(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                &turn.request_item_id,
+            )?
+            .ok_or_else(|| KernelError::Internal {
+                message: "resumed task Turn is missing its request item".to_string(),
+            })?;
+        let user_item_drive_refs = self.repository.list_item_drive_refs(
+            command.tenant_id,
+            session.organization_id,
+            &user_input_item.item_id,
+        )?;
+
+                let session_runtime_binding = match command.runtime_binding_id.as_deref() {
+            Some(runtime_binding_id) => self.repository.get_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+                runtime_binding_id,
+            )?,
+            None => self.repository.get_current_session_runtime_binding(
+                command.tenant_id,
+                command.organization_id,
+                &command.session_id,
+            )?,
+        };
+        // Cloud-router account-pool routing: turns carrying a user auth token
+        // may execute without any local session runtime binding (no API key /
+        // provider binding needed); the cloudrouter gateway routes the model
+        // request through its account pool. Sessions with a binding keep the
+        // local binding chain (backward compatible).
+        let cloud_router_routed = command.auth_token.is_some()
+            && session_runtime_binding.is_none()
+            && command.runtime_binding_id.is_none();
+        let session_runtime_binding = match session_runtime_binding {
+            Some(binding) => Some(binding),
+            None if cloud_router_routed => None,
+            None => {
+                return Err(KernelError::not_found("active session runtime binding not found"));
+            }
+        };
+        let provider_binding = if let Some(binding) = session_runtime_binding.as_ref() {
+            if !binding.is_current || binding.status != AgentSessionRuntimeBindingStatus::Active {
+                return Err(KernelError::validation(
+                    "session runtime binding is not active",
+                ));
+            }
+            if let Some(requested_model_id) = command.requested_model_id.as_deref() {
+                if requested_model_id != binding.model_id {
+                    return Err(KernelError::validation(
+                        "requestedModelId does not match the active session runtime binding",
+                    ));
+                }
+            }
+            let provider_binding = self
+                .repository
+                .get_provider_binding(
+                    command.tenant_id,
+                    command.agent_id.as_str(),
+                    &binding.provider_binding_id,
+                )?
+                .ok_or_else(|| KernelError::not_found("agent provider binding not found"))?;
+            if !provider_binding.active || provider_binding.provider_id != binding.provider_id {
+                return Err(KernelError::validation(
+                    "session runtime binding references an inactive provider binding",
+                ));
+            }
+            Some(provider_binding)
+        } else {
+            None
+        };
+        validate_optional_bounded(&command.access_mode_id, "accessModeId", 64)?;
+        if let Some(access_mode_id) = command.access_mode_id.as_deref() {
+            let engine_key = provider_binding
+                .as_ref()
+                .and_then(|provider_binding| {
+                    engine_key_for_binding_id(&provider_binding.binding_id)
+                })
+                .ok_or_else(|| {
+                    KernelError::validation(
+                        "accessModeId is not supported by the active provider binding",
+                    )
+                })?;
+            let host_guard = crate::runtime_facade_bridge::shared_agent_engine_host();
+            let engine_slot = host_guard
+                .as_deref()
+                .and_then(|host| host.slot(engine_key))
+                .ok_or_else(|| {
+                    KernelError::provider_error(
+                        "agent_engine_bootstrap_failed",
+                        format!("shared agent engine slot is unavailable for {engine_key}"),
+                    )
+                })?;
+            engine_slot.resolve_execution_settings(access_mode_id)?;
+        }
+        let history_items =
+            self.repository
+                .list_session_items(&SessionItemListQuery::for_recent_turn_context(
+                    command.tenant_id,
+                    command.organization_id,
+                    command.session_id.clone(),
+                    TURN_CONTEXT_ITEM_LIMIT,
+                ))?;
+        let history = history_items
+            .iter()
+            .filter_map(|record| record.content.clone().map(|content| (record.kind, content)))
+            .collect::<Vec<_>>();
+
+        self.execute_committed_turn(
+            command,
+            agent,
+            session,
+            turn,
+            user_input_item,
+            user_item_drive_refs,
+            history,
+            session_runtime_binding,
+            provider_binding,
+            stream_sink,
+        )
+    }
+
     fn execute_turn_internal(
         &self,
         command: CreateTurnCommand,
@@ -7079,7 +7250,39 @@ where
             session.owner_user_id,
             &idempotency_key,
         )? {
-            return self.replay_existing_turn(&command, session, existing_turn);
+            if existing_turn.tenant_id != command.tenant_id
+                || existing_turn.organization_id != command.organization_id
+                || existing_turn.owner_user_id != session.owner_user_id
+                || existing_turn.session_id != command.session_id
+                || existing_turn.agent_id != command.agent_id
+            {
+                return Err(KernelError::conflict(
+                    "idempotency key was already used for a different turn scope",
+                ));
+            }
+            if existing_turn.payload_hash != payload_hash {
+                return Err(KernelError::conflict(
+                    "idempotency key was already used with a different payload",
+                ));
+            }
+            if existing_turn.status == AgentTurnStatus::Completed {
+                return self.replay_existing_turn(&command, session, existing_turn);
+            }
+            if command.turn_mode == AgentTurnMode::Automation {
+                // Task-scheduler retry path: an attempt crashed or failed
+                // with the Turn left in a non-terminal state. The retry must
+                // resume the same Turn (never create a second one); a stale
+                // worker's late writes are fenced by the version CAS below.
+                return self.resume_task_turn(&command, agent, session, existing_turn, stream_sink);
+            }
+            return Err(KernelError::conflict(match existing_turn.status {
+                AgentTurnStatus::Requested | AgentTurnStatus::Running => {
+                    "turn execution is already in progress"
+                }
+                AgentTurnStatus::Failed => "turn execution already failed",
+                AgentTurnStatus::Cancelled => "turn execution was already cancelled",
+                AgentTurnStatus::Completed => unreachable!(),
+            }));
         }
 
         let session_runtime_binding = match command.runtime_binding_id.as_deref() {
@@ -7185,7 +7388,7 @@ where
             None => format!("{ID_PREFIX_TURN}{}", self.repository.next_id()?),
         };
         let user_input_item_id = format!("{ID_PREFIX_ITEM}{}", self.repository.next_id()?);
-        let mut turn = AgentTurnRecord {
+        let turn = AgentTurnRecord {
             id: self.repository.next_id()?,
             turn_id: turn_id.clone(),
             tenant_id: command.tenant_id,
@@ -7319,8 +7522,52 @@ where
             command.requested_by.clone(),
             command.requested_at.clone(),
         )?;
+        return self.execute_committed_turn(
+            &command,
+            agent,
+            session,
+            turn,
+            user_input_item,
+            user_item_drive_refs,
+            history,
+            session_runtime_binding,
+            provider_binding,
+            stream_sink,
+        );
+    }
+    /// Executes a committed Turn request through the provider and persists
+    /// the authoritative outcome.
+    ///
+    /// Shared by fresh Turn creation and by task-scheduler retry recovery:
+    /// the request item and Turn already exist, so execution starts from
+    /// `mark_running` and the outcome is committed atomically.
+    #[allow(clippy::too_many_arguments)]
+    fn execute_committed_turn(
+        &self,
+        command: &CreateTurnCommand,
+        agent: AgentBusinessRecord,
+        session: AgentSessionRecord,
+        turn: AgentTurnRecord,
+        user_input_item: AgentSessionItemRecord,
+        user_item_drive_refs: Vec<AgentItemDriveRefRecord>,
+        history: Vec<(AgentSessionItemKind, String)>,
+        session_runtime_binding: Option<AgentSessionRuntimeBindingRecord>,
+        provider_binding: Option<AgentProviderBindingRecord>,
+        stream_sink: Option<Arc<dyn TurnExecutionStreamSink>>,
+    ) -> KernelResult<TurnExecutionResult> {
+        let mut turn = turn;
+        let turn_id = turn.turn_id.clone();
+        let user_content = user_input_item
+            .content
+            .clone()
+            .unwrap_or_default();
         turn.mark_running(command.requested_at.clone());
-        turn = self.repository.update_turn_state(turn, 0)?;
+        // `update_turn_state` expects the pre-incremented version: the caller
+        // must bump `turn.version` before the call and pass the stored
+        // version. Fresh turns carry version 1 after `insert_turn_request`;
+        // resumed turns carry their reset version.
+        let stored_version = turn.version.saturating_sub(1);
+        turn = self.repository.update_turn_state(turn, stored_version)?;
 
         let welcome_message = AgentManagementProfileDto::from_default_code_task_intent(
             agent.default_code_task_intent.as_ref(),
@@ -7392,8 +7639,8 @@ where
             self.emit_turn_audit_event(
                 AgentAuditAction::TurnFailed,
                 &failed_turn,
-                command.requested_by,
-                command.requested_at,
+                command.requested_by.clone(),
+                command.requested_at.clone(),
             )?;
             return if capacity_exhausted {
                 Err(KernelError::resource_exhausted(completion.content))
@@ -7413,8 +7660,8 @@ where
             self.emit_turn_audit_event(
                 AgentAuditAction::TurnFailed,
                 &failed_turn,
-                command.requested_by,
-                command.requested_at,
+                command.requested_by.clone(),
+                command.requested_at.clone(),
             )?;
             return Err(KernelError::provider_error(
                 "turn_execution_identity_mismatch",
@@ -7427,7 +7674,7 @@ where
                 binding,
                 completion.provider_session_id.as_deref(),
                 command.requested_by.clone(),
-                &command.requested_at,
+                &command.requested_at.clone(),
             )?),
             None => None,
         };
@@ -7452,8 +7699,8 @@ where
                 self.emit_turn_audit_event(
                     AgentAuditAction::TurnCancelled,
                     &cancelled_turn,
-                    command.requested_by,
-                    command.requested_at,
+                    command.requested_by.clone(),
+                    command.requested_at.clone(),
                 )?;
             }
             return Err(KernelError::cancelled("agent Turn was cancelled"));
@@ -7648,6 +7895,7 @@ where
             stream_events: completion.stream_events,
         })
     }
+
 
     /// Authorizes a policy resource. Callers pass resources shaped like
     /// `agent.business.{agent_id}`, `agent.business.session.{session_id}`, or
@@ -8550,9 +8798,9 @@ where
             return Err(KernelError::not_found("session not found"));
         }
 
-        let provider_request_id = correlation
-            .get("providerRequestId")
-            .expect("validated provider request id must exist");
+        let provider_request_id = correlation.get("providerRequestId").ok_or_else(|| {
+            KernelError::validation("request.correlation.providerRequestId is required")
+        })?;
         let provider_request_id_type = required_json_string(
             correlation,
             "providerRequestIdType",
@@ -9119,7 +9367,30 @@ where
                         "shared agent engine host is unavailable",
                     )
                 })?;
-            let turn_id = record.turn_id.as_deref().ok_or_else(|| {
+        record.resolve(
+            new_status,
+            command.resolution_json.clone(),
+            command.requested_at.as_str(),
+        );
+        self.repository.update_interaction(record.clone())?;
+        let audit_action = if new_status == AgentInteractionStatus::Rejected {
+            AgentAuditAction::InteractionRejected
+        } else {
+            AgentAuditAction::InteractionResolved
+        };
+        self.emit_interaction_audit_event(
+            audit_action,
+            &record,
+            command.requested_by,
+            command.requested_at,
+        )?;
+        // Deliver the resolution to the provider engine AFTER the interaction
+        // is durably resolved (CAS): a concurrent resolution loses the CAS and
+        // never reaches the engine, so the engine side effect is only ever
+        // issued once for the winning write. An engine delivery failure is
+        // surfaced to the caller; the durable resolution stands and provider
+        // reconciliation converges the engine state.
+                    let turn_id = record.turn_id.as_deref().ok_or_else(|| {
                 KernelError::validation("provider interaction is missing its canonical Turn")
             })?;
             let resolution: serde_json::Value = serde_json::from_str(&command.resolution_json)
@@ -9161,23 +9432,7 @@ where
                 )
             })?;
         }
-        record.resolve(
-            new_status,
-            command.resolution_json,
-            command.requested_at.as_str(),
-        );
-        self.repository.update_interaction(record.clone())?;
-        let audit_action = if new_status == AgentInteractionStatus::Rejected {
-            AgentAuditAction::InteractionRejected
-        } else {
-            AgentAuditAction::InteractionResolved
-        };
-        self.emit_interaction_audit_event(
-            audit_action,
-            &record,
-            command.requested_by,
-            command.requested_at,
-        )?;
+
         Ok(record)
     }
 
@@ -9743,6 +9998,7 @@ fn reject_secret_material(value: &str, field_name: &str) -> KernelResult<()> {
 mod task_tests {
     use super::*;
     use crate::agent_turn::AgentTurnMode;
+    use crate::turn_runtime::{execute_agent_turn, inference_error, TurnExecutionInput};
     use crate::application::{
         CancelTaskCommand, CreateAgentCommand, CreateTaskCommand, ExecuteTaskCommand,
         GetTaskCommand, ListTasksCommand,
@@ -10736,5 +10992,180 @@ mod task_tests {
         assert_eq!(persisted.finish_reason.as_deref(), Some("cancelled"));
         assert!(persisted.response_item_id.is_none());
         assert_eq!((persisted.input_tokens, persisted.output_tokens), (0, 0));
+    }
+
+
+    /// Executor whose failure behavior can be switched mid-test so the same
+    /// Turn can first fail and then succeed on a retried attempt.
+    #[derive(Default)]
+    struct SwitchableFailureExecutor {
+        fail: std::sync::atomic::AtomicBool,
+    }
+
+    impl TurnExecutor for SwitchableFailureExecutor {
+        fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
+            if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+                inference_error("provider unavailable on the first attempt")
+            } else {
+                execute_agent_turn(input)
+            }
+        }
+    }
+
+    #[test]
+    fn task_retry_resumes_failed_turn_instead_of_terminating_the_run() {
+        let executor = Arc::new(SwitchableFailureExecutor::default());
+        executor
+            .fail
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let service = Arc::new(
+            AgentsService::new(
+                InMemoryAgentRepository::new(),
+                InMemoryAgentAuditSink::default(),
+                test_policy_provider(),
+            )
+            .with_turn_executor(executor.clone()),
+        );
+        let agent = service
+            .create_agent(create_agent_cmd(
+                "agent.turn.retry-resume",
+                100_001,
+                0,
+                100,
+                "turn-retry-resume",
+                "Turn Retry Resume",
+                "2026-08-02T00:00:00Z",
+            ))
+            .expect("create retry agent");
+        service
+            .change_status(ChangeAgentStatusCommand {
+                tenant_id: 100_001,
+                agent_id: agent.agent_id.clone(),
+                expected_version: Some(agent.version),
+                target_status: AgentBusinessStatus::Active,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:01Z".to_string(),
+            })
+            .expect("activate retry agent");
+        let provider_binding = service
+            .add_provider_binding(AgentProviderBindingCommand {
+                tenant_id: 100_001,
+                agent_id: agent.agent_id.clone(),
+                binding_id: "binding.turn.retry-resume".to_string(),
+                provider_id: "provider.retry-resume".to_string(),
+                implementation_kind: AgentImplementationKind::TypedLocalProvider,
+                configuration_profile_id: "profile.turn.retry-resume".to_string(),
+                capabilities: vec!["model.chat".to_string()],
+                make_default: true,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:02Z".to_string(),
+            })
+            .expect("create retry provider binding");
+        let session = service
+            .create_session(CreateSessionCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                agent_id: agent.agent_id.clone(),
+                owner_user_id: 100,
+                project_id: None,
+                session_id: "session.test.retry-resume".to_string(),
+                session_kind: AgentSessionKind::Coding,
+                entry_surface: AgentSessionEntrySurface::Pc,
+                source_module: None,
+                source_context_kind: None,
+                source_context_id: None,
+                parent_session_id: None,
+                forked_from_turn_id: None,
+                title: Some("Retry resume".to_string()),
+                idempotency_key: None,
+                payload_hash: None,
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:03Z".to_string(),
+            })
+            .expect("create retry session");
+        let runtime_binding = service
+            .create_session_runtime_binding(CreateSessionRuntimeBindingCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                runtime_binding_id: Some("runtime_binding.turn.retry-resume".to_string()),
+                runtime_location_id: None,
+                host_mode: "managed".to_string(),
+                transport_kind: "in_process".to_string(),
+                provider_binding_id: provider_binding.binding_id,
+                model_id: "model.retry-resume".to_string(),
+                provider_id: provider_binding.provider_id,
+                provider_session_id: Some("provider-session.retry-resume".to_string()),
+                provider_session_tree_id: None,
+                provider_parent_session_id: None,
+                provider_forked_from_session_id: None,
+                provider_directory: None,
+                owner_scope: Some(100),
+                requested_by: sample_subject(),
+                requested_at: "2026-08-02T00:00:04Z".to_string(),
+            })
+            .expect("create retry runtime binding");
+
+        let turn_id = "turn.retry-resume".to_string();
+        let command = |requested_at: &str| CreateTurnCommand {
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: agent.agent_id.clone(),
+            session_id: session.session_id.clone(),
+            turn_id: Some(turn_id.clone()),
+            content: "retry me".to_string(),
+            content_type: "text/plain".to_string(),
+            turn_mode: AgentTurnMode::Automation,
+            runtime_binding_id: Some(runtime_binding.runtime_binding_id.clone()),
+            requested_model_id: Some("model.retry-resume".to_string()),
+            access_mode_id: None,
+            idempotency_key: "idempotency.turn.retry-resume".to_string(),
+            payload_hash: "sha256:turn-retry-resume".to_string(),
+            client_request_id: Some("request.turn.retry-resume".to_string()),
+            drive_refs: Vec::new(),
+            owner_scope: Some(100),
+            requested_by: sample_subject(),
+            requested_at: requested_at.to_string(),
+            prefer_stream: false,
+            auth_token: None,
+        };
+
+        // First attempt: provider failure marks the Turn Failed.
+        let first = service
+            .execute_turn(command("2026-08-02T00:00:05Z"))
+            .expect_err("first attempt must fail at the provider");
+        assert_eq!(
+            first.code().to_string(),
+            "turn_inference_failed",
+            "first attempt fails with the provider error"
+        );
+        let stored = service
+            .get_turn(GetTurnCommand {
+                tenant_id: 100_001,
+                organization_id: 0,
+                path_agent_id: agent.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                turn_id: turn_id.clone(),
+                owner_scope: Some(100),
+                requested_by: sample_subject(),
+            })
+            .expect("get Turn after failure");
+        assert_eq!(stored.status, AgentTurnStatus::Failed);
+        assert_eq!(stored.turn_id, turn_id);
+
+        // Second attempt (retried Run, same idempotency key): the provider is
+        // healthy again; the retry must resume the SAME Turn instead of
+        // terminating the Run with a conflict.
+        executor
+            .fail
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let resumed = service
+            .execute_turn(command("2026-08-02T00:00:06Z"))
+            .expect("retried attempt must resume the failed Turn");
+        assert_eq!(resumed.turn.turn_id, turn_id, "retry reuses the same Turn");
+        assert_eq!(resumed.turn.status, AgentTurnStatus::Completed);
+        assert!(resumed.turn.response_item_id.is_some());
+        assert_eq!(resumed.turn.error_code.as_deref(), None);
     }
 }

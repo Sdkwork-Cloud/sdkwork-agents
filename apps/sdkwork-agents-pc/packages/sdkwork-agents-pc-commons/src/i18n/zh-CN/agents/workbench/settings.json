@@ -38,7 +38,6 @@
   "billingCycleDesc": "下一次扣费：2026年7月21日 (包月续费)",
   "paymentMethod": "支付方式",
   "usageStatistics": "资源消耗分析",
-  "simulateUsage": "模拟发送测试",
   "tokenUsage": "Token 消耗",
   "messageQuota": "已发消息数量",
   "imageQuota": "已生成图片数量",
@@ -76,10 +75,9 @@
   "developerSubtitle": "基于 SDK 核心方法支持，让您的团队能够在前端完成高效的二次扩展与集成开发。",
   "availableClasses": "支持的底层核心类与类型定义",
   "quickDevRef": "快速开发人员参考手册",
-  "apiSimulated": "API 调用成功模拟：资源限额状态已刷新！",
   "defaultBio": "高性能 Agents 工作空间负责人。",
-  "sandboxLive": "沙盒临时空间",
-  "sandboxDesc": "专供开发人员测试的交互式沙盒",
   "visaEnding": "Visa 卡号尾号为",
-  "expires": "有效期至"
+  "expires": "有效期至",
+  "usageEmptyTitle": "用量统计即将上线",
+  "usageEmptyDescription": "Token、消息与图片额度由平台计费服务提供，接入会员服务后将在此展示真实用量。"
 }

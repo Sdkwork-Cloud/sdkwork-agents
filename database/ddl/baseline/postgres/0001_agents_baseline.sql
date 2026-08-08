@@ -1,5 +1,5 @@
 -- SDKWork Agents PostgreSQL greenfield baseline.
--- Contract: database/contract/schema.yaml (7.0.0)
+-- Contract: database/contract/schema.yaml (7.2.0)
 -- PostgreSQL is the only managed-store authority for this contract.
 -- Sibling modules own memory, knowledge, skills, prompts, MCP, model catalogs,
 -- runtime-location details, and Drive bytes. Agents stores stable references only.
@@ -278,6 +278,11 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_audit_action_created
 CREATE INDEX IF NOT EXISTS idx_ai_agent_audit_retention
     ON ai_agent_audit_event (tenant_id, retention_until, id)
     WHERE retention_until IS NOT NULL;
+-- Keyset coverage for the tenant+agent audit feed: the list query orders on
+-- (created_at DESC, uuid DESC) with row-value predicates; without this index
+-- every page would trigger a scan plus sort.
+CREATE INDEX IF NOT EXISTS idx_ai_agent_audit_agent_created
+    ON ai_agent_audit_event (tenant_id, agent_id, created_at DESC, uuid DESC);
 
 CREATE TABLE IF NOT EXISTS ai_agent_workspace (
     id BIGINT NOT NULL PRIMARY KEY,
@@ -1782,20 +1787,49 @@ END $$;
 -- PostgreSQL persistence; DATABASE_SPEC: authoritative-server is PostgreSQL
 -- only). Applied model configurations survive process restarts in the
 -- canonical Agents database.
+-- Every row is owner scoped (tenant/organization/owner user); HTTP access
+-- always filters on these columns so profiles can never cross tenants.
 CREATE TABLE IF NOT EXISTS ai_agent_model_configuration_profile (
     profile_id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
+    tenant_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL DEFAULT 0,
+    owner_user_id BIGINT NOT NULL DEFAULT 0,
     configuration_version TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft',
     configuration_json TEXT NOT NULL DEFAULT '{}',
     secret_bindings_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    version INTEGER NOT NULL DEFAULT 0
+    version INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT ck_ai_agent_model_configuration_profile_version CHECK (version >= 0),
+    CONSTRAINT ck_ai_agent_model_configuration_profile_status CHECK (
+        status IN ('draft', 'active', 'archived')
+    )
 );
 
-CREATE INDEX IF NOT EXISTS idx_ai_agent_model_configuration_profile_agent
-    ON ai_agent_model_configuration_profile (agent_id, status);
+-- Upgrade compatibility: pre-scope baseline rows created before the scoped
+-- columns were introduced are backfilled to the synthetic tenant 0 so the
+-- baseline stays safe to re-run against an existing development schema.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = current_schema()
+          AND table_name = 'ai_agent_model_configuration_profile'
+    ) THEN
+        ALTER TABLE ai_agent_model_configuration_profile
+            ADD COLUMN IF NOT EXISTS tenant_id BIGINT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS organization_id BIGINT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS owner_user_id BIGINT NOT NULL DEFAULT 0;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_ai_agent_model_configuration_profile_scope
+    ON ai_agent_model_configuration_profile (tenant_id, organization_id, agent_id, status);
+
+DROP INDEX IF EXISTS idx_ai_agent_model_configuration_profile_agent;
 
 -- Agent media tool per-tenant configuration (admin-managed: enabled state,
 -- default save-to-drive behaviour, and default arguments merged at invoke).

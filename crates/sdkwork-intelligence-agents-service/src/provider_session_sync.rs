@@ -271,6 +271,29 @@ pub(crate) fn clear_provider_session_sync_in_flight(cache_key: &str) {
         .remove(cache_key);
 }
 
+/// RAII guard that clears the in-flight marker on drop — including unwinds.
+///
+/// The background synchronization may panic (a worker bug must never wedge a
+/// project into a permanent `202 pending`); holding this guard guarantees the
+/// marker is released on every exit path.
+pub(crate) struct ProviderSessionSyncGuard {
+    cache_key: String,
+}
+
+impl ProviderSessionSyncGuard {
+    pub(crate) fn new(cache_key: impl Into<String>) -> Self {
+        Self {
+            cache_key: cache_key.into(),
+        }
+    }
+}
+
+impl Drop for ProviderSessionSyncGuard {
+    fn drop(&mut self) {
+        clear_provider_session_sync_in_flight(&self.cache_key);
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn reset_provider_session_sync_cache_for_testing() {
     completed_provider_session_syncs()

@@ -12,6 +12,126 @@ List<dynamic>? _sdkworkAsList(dynamic value) {
   return value is List ? value : null;
 }
 
+class MediaToolDirectoryResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  MediaToolDirectoryResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory MediaToolDirectoryResponse.fromJson(Map<String, dynamic> json) {
+    return MediaToolDirectoryResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('MediaToolDirectoryResponse.code is required');
+        }
+        return value;
+      })(),
+      data: json['data'],
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolDirectoryResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class MediaToolInvokeApiResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  MediaToolInvokeApiResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory MediaToolInvokeApiResponse.fromJson(Map<String, dynamic> json) {
+    return MediaToolInvokeApiResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('MediaToolInvokeApiResponse.code is required');
+        }
+        return value;
+      })(),
+      data: json['data'],
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolInvokeApiResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
+class ToolAssetListResponse {
+  final int code;
+  final dynamic data;
+  final String traceId;
+
+  ToolAssetListResponse({
+    required this.code,
+    required this.data,
+    required this.traceId
+  });
+
+  factory ToolAssetListResponse.fromJson(Map<String, dynamic> json) {
+    return ToolAssetListResponse(
+      code: (() {
+        final value = json['code'];
+        if (value is! int) {
+          throw FormatException('ToolAssetListResponse.code is required');
+        }
+        return value;
+      })(),
+      data: json['data'],
+      traceId: (() {
+        final value = json['traceId']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetListResponse.traceId is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'code': code,
+      'data': data,
+      'traceId': traceId,
+    };
+  }
+}
+
 class SdkWorkApiResponse {
   final int code;
   final dynamic data;
@@ -12979,6 +13099,376 @@ class ChangeAgentSessionRuntimeBindingStatusRequest {
       'reason': reason,
       'expectedVersion': expectedVersion,
       'requestedAt': requestedAt,
+    };
+  }
+}
+
+class MediaToolDirectoryEntry {
+  final String toolId;
+  final String category;
+  final String name;
+  final String displayName;
+  final String? version;
+  final String? description;
+  final Map<String, dynamic>? inputSchema;
+  final Map<String, dynamic>? outputSchema;
+  final String? sideEffectLevel;
+  final List<String>? policyCategories;
+  final int? timeoutMs;
+  final String? availability;
+  final bool enabled;
+  final bool? saveToDriveDefault;
+  final bool? configured;
+
+  MediaToolDirectoryEntry({
+    required this.toolId,
+    required this.category,
+    required this.name,
+    required this.displayName,
+    this.version,
+    this.description,
+    this.inputSchema,
+    this.outputSchema,
+    this.sideEffectLevel,
+    this.policyCategories,
+    this.timeoutMs,
+    this.availability,
+    required this.enabled,
+    this.saveToDriveDefault,
+    this.configured
+  });
+
+  factory MediaToolDirectoryEntry.fromJson(Map<String, dynamic> json) {
+    return MediaToolDirectoryEntry(
+      toolId: (() {
+        final value = json['toolId']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolDirectoryEntry.toolId is required');
+        }
+        return value;
+      })(),
+      category: (() {
+        final value = json['category']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolDirectoryEntry.category is required');
+        }
+        return value;
+      })(),
+      name: (() {
+        final value = json['name']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolDirectoryEntry.name is required');
+        }
+        return value;
+      })(),
+      displayName: (() {
+        final value = json['displayName']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolDirectoryEntry.displayName is required');
+        }
+        return value;
+      })(),
+      version: json['version']?.toString(),
+      description: json['description']?.toString(),
+      inputSchema: _sdkworkAsMap(json['inputSchema']),
+      outputSchema: _sdkworkAsMap(json['outputSchema']),
+      sideEffectLevel: json['sideEffectLevel']?.toString(),
+      policyCategories: (() {
+        final list = _sdkworkAsList(json['policyCategories']);
+        if (list == null) {
+          return null;
+        }
+        return list
+            .map((item) => item?.toString())
+            .whereType<String>()
+            .toList();
+      })(),
+      timeoutMs: json['timeoutMs'] is int ? json['timeoutMs'] : null,
+      availability: json['availability']?.toString(),
+      enabled: (() {
+        final value = json['enabled'];
+        if (value is! bool) {
+          throw FormatException('MediaToolDirectoryEntry.enabled is required');
+        }
+        return value;
+      })(),
+      saveToDriveDefault: json['saveToDriveDefault'] is bool ? json['saveToDriveDefault'] : null,
+      configured: json['configured'] is bool ? json['configured'] : null
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'toolId': toolId,
+      'category': category,
+      'name': name,
+      'displayName': displayName,
+      'version': version,
+      'description': description,
+      'inputSchema': inputSchema,
+      'outputSchema': outputSchema,
+      'sideEffectLevel': sideEffectLevel,
+      'policyCategories': policyCategories?.map((item) => item).toList(),
+      'timeoutMs': timeoutMs,
+      'availability': availability,
+      'enabled': enabled,
+      'saveToDriveDefault': saveToDriveDefault,
+      'configured': configured,
+    };
+  }
+}
+
+class MediaToolInvokeBody {
+  final Map<String, dynamic> arguments;
+  final bool? saveToDrive;
+
+  MediaToolInvokeBody({
+    required this.arguments,
+    this.saveToDrive
+  });
+
+  factory MediaToolInvokeBody.fromJson(Map<String, dynamic> json) {
+    return MediaToolInvokeBody(
+      arguments: (() {
+        final map = _sdkworkAsMap(json['arguments']);
+        if (map == null) {
+          throw FormatException('MediaToolInvokeBody.arguments is required');
+        }
+        return map;
+      })(),
+      saveToDrive: json['saveToDrive'] is bool ? json['saveToDrive'] : null
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'arguments': arguments,
+      'saveToDrive': saveToDrive,
+    };
+  }
+}
+
+class MediaToolInvokeResponse {
+  final String toolCallId;
+  final String status;
+  final Map<String, dynamic> output;
+  final String? error;
+  final DriveAssetView? driveAsset;
+
+  MediaToolInvokeResponse({
+    required this.toolCallId,
+    required this.status,
+    required this.output,
+    this.error,
+    this.driveAsset
+  });
+
+  factory MediaToolInvokeResponse.fromJson(Map<String, dynamic> json) {
+    return MediaToolInvokeResponse(
+      toolCallId: (() {
+        final value = json['toolCallId']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolInvokeResponse.toolCallId is required');
+        }
+        return value;
+      })(),
+      status: (() {
+        final value = json['status']?.toString();
+        if (value == null) {
+          throw FormatException('MediaToolInvokeResponse.status is required');
+        }
+        return value;
+      })(),
+      output: (() {
+        final map = _sdkworkAsMap(json['output']);
+        if (map == null) {
+          throw FormatException('MediaToolInvokeResponse.output is required');
+        }
+        return map;
+      })(),
+      error: json['error']?.toString(),
+      driveAsset: (() {
+        final map = _sdkworkAsMap(json['driveAsset']);
+        return map == null ? null : DriveAssetView.fromJson(map);
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'toolCallId': toolCallId,
+      'status': status,
+      'output': output,
+      'error': error,
+      'driveAsset': driveAsset?.toJson(),
+    };
+  }
+}
+
+class DriveAssetView {
+  final String spaceId;
+  final String nodeId;
+  final String driveUri;
+
+  DriveAssetView({
+    required this.spaceId,
+    required this.nodeId,
+    required this.driveUri
+  });
+
+  factory DriveAssetView.fromJson(Map<String, dynamic> json) {
+    return DriveAssetView(
+      spaceId: (() {
+        final value = json['spaceId']?.toString();
+        if (value == null) {
+          throw FormatException('DriveAssetView.spaceId is required');
+        }
+        return value;
+      })(),
+      nodeId: (() {
+        final value = json['nodeId']?.toString();
+        if (value == null) {
+          throw FormatException('DriveAssetView.nodeId is required');
+        }
+        return value;
+      })(),
+      driveUri: (() {
+        final value = json['driveUri']?.toString();
+        if (value == null) {
+          throw FormatException('DriveAssetView.driveUri is required');
+        }
+        return value;
+      })()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'spaceId': spaceId,
+      'nodeId': nodeId,
+      'driveUri': driveUri,
+    };
+  }
+}
+
+class ToolAssetView {
+  final String toolId;
+  final String toolCallId;
+  final String mediaKind;
+  final String driveSpaceId;
+  final String driveNodeId;
+  final String driveUri;
+  final String? sourceUrl;
+  final String? createdAt;
+
+  ToolAssetView({
+    required this.toolId,
+    required this.toolCallId,
+    required this.mediaKind,
+    required this.driveSpaceId,
+    required this.driveNodeId,
+    required this.driveUri,
+    this.sourceUrl,
+    this.createdAt
+  });
+
+  factory ToolAssetView.fromJson(Map<String, dynamic> json) {
+    return ToolAssetView(
+      toolId: (() {
+        final value = json['toolId']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetView.toolId is required');
+        }
+        return value;
+      })(),
+      toolCallId: (() {
+        final value = json['toolCallId']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetView.toolCallId is required');
+        }
+        return value;
+      })(),
+      mediaKind: (() {
+        final value = json['mediaKind']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetView.mediaKind is required');
+        }
+        return value;
+      })(),
+      driveSpaceId: (() {
+        final value = json['driveSpaceId']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetView.driveSpaceId is required');
+        }
+        return value;
+      })(),
+      driveNodeId: (() {
+        final value = json['driveNodeId']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetView.driveNodeId is required');
+        }
+        return value;
+      })(),
+      driveUri: (() {
+        final value = json['driveUri']?.toString();
+        if (value == null) {
+          throw FormatException('ToolAssetView.driveUri is required');
+        }
+        return value;
+      })(),
+      sourceUrl: json['sourceUrl']?.toString(),
+      createdAt: json['createdAt']?.toString()
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'toolId': toolId,
+      'toolCallId': toolCallId,
+      'mediaKind': mediaKind,
+      'driveSpaceId': driveSpaceId,
+      'driveNodeId': driveNodeId,
+      'driveUri': driveUri,
+      'sourceUrl': sourceUrl,
+      'createdAt': createdAt,
+    };
+  }
+}
+
+class MediaToolConfigurationBody {
+  final bool enabled;
+  final bool? saveToDriveDefault;
+  final Map<String, dynamic>? defaultArguments;
+  final int? expectedVersion;
+
+  MediaToolConfigurationBody({
+    required this.enabled,
+    this.saveToDriveDefault,
+    this.defaultArguments,
+    this.expectedVersion
+  });
+
+  factory MediaToolConfigurationBody.fromJson(Map<String, dynamic> json) {
+    return MediaToolConfigurationBody(
+      enabled: (() {
+        final value = json['enabled'];
+        if (value is! bool) {
+          throw FormatException('MediaToolConfigurationBody.enabled is required');
+        }
+        return value;
+      })(),
+      saveToDriveDefault: json['saveToDriveDefault'] is bool ? json['saveToDriveDefault'] : null,
+      defaultArguments: _sdkworkAsMap(json['defaultArguments']),
+      expectedVersion: json['expectedVersion'] is int ? json['expectedVersion'] : null
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'enabled': enabled,
+      'saveToDriveDefault': saveToDriveDefault,
+      'defaultArguments': defaultArguments,
+      'expectedVersion': expectedVersion,
     };
   }
 }

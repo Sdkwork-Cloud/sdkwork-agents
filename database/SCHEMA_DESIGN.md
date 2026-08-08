@@ -8,7 +8,7 @@ Managed engine: PostgreSQL
 
 ## Ownership
 
-All 23 tables are authored and written by `sdkwork-intelligence-agents-service`.
+All 26 tables are authored and written by `sdkwork-intelligence-agents-service`.
 There are no imported tables, derived read stores, shadow copies, compatibility tables,
 or cross-module foreign keys. External capabilities are represented only by
 stable reference columns.
@@ -40,6 +40,9 @@ stable reference columns.
 | `ai_agent_project_member` | Project collaboration ACL |
 | `ai_agent_share_link` | Hashed, revocable, expiring grant |
 | `ai_agent_outbox_event` | Transactional aggregate event facts awaiting an approved relay |
+| `ai_agent_model_configuration_profile` | Owner-scoped applied model configuration persisted for the runtime facade |
+| `ai_agent_tool_configuration` | Admin-managed per-tenant media tool configuration |
+| `ai_agent_tool_asset` | Generated media asset persisted to Drive outside session items |
 
 ## Composition References
 

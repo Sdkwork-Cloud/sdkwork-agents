@@ -2520,6 +2520,9 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned())
     }
 
+    /// InMemory fallback for contract tests: sorts and windows the caller's
+    /// resource-user-state set in memory. Production postgres-sync uses SQL
+    /// LIMIT/OFFSET with indexed tenant scope.
     fn list_resource_user_states(
         &self,
         query: &ResourceUserStateListQuery,
@@ -3044,6 +3047,9 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned())
     }
 
+    /// InMemory fallback for contract tests: filters the session's Turn set
+    /// in memory (bounded per session). Production postgres-sync uses SQL
+    /// keyset pagination (PAGINATION_SPEC: no in-process pagination).
     fn list_turns(&self, query: &TurnListQuery) -> KernelResult<Vec<AgentTurnRecord>> {
         let mut records = self
             .turns
@@ -4109,6 +4115,9 @@ impl AgentRepository for InMemoryAgentRepository {
             .cloned())
     }
 
+    /// InMemory fallback for contract tests: filters the session's
+    /// Interaction set in memory. Production postgres-sync uses SQL keyset
+    /// pagination (PAGINATION_SPEC).
     fn list_interactions(
         &self,
         query: &InteractionListQuery,
@@ -4963,6 +4972,64 @@ impl TaskSchedulerRepository for InMemoryAgentRepository {
         }
         u64::try_from(keys.len())
             .map_err(|_| KernelError::conflict("recovered task Run count overflow"))
+    }
+
+    fn recover_timed_out_task_runs(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        let now_at = parse_datetime(now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let mut runs = self.task_runs.recovering_write();
+        let mut attempts = self.task_run_attempts.recovering_write();
+        let mut keys = runs
+            .iter()
+            .filter(|(_, run)| {
+                matches!(
+                    run.status,
+                    AgentTaskRunStatus::Claimed | AgentTaskRunStatus::Running
+                ) && run
+                    .timeout_at
+                    .as_deref()
+                    .and_then(|value| parse_datetime(value, None))
+                    .is_some_and(|value| value < now_at)
+            })
+            .map(|(key, run)| (run.timeout_at.clone(), run.id, key.clone()))
+            .collect::<Vec<_>>();
+        keys.sort();
+        keys.truncate(limit.clamp(1, 1_000));
+        for (_, _, key) in &keys {
+            let run = runs
+                .get_mut(key)
+                .ok_or_else(|| KernelError::not_found("task Run not found"))?;
+            if let Some(attempt) = attempts.values_mut().find(|attempt| {
+                attempt.tenant_id == run.tenant_id
+                    && attempt.organization_id == run.organization_id
+                    && attempt.run_id == run.run_id
+                    && attempt.attempt_no == run.attempt_count
+            }) {
+                attempt.status = AgentTaskRunAttemptStatus::LeaseExpired;
+                attempt.failure_class = Some("execution_timeout".to_string());
+                attempt.error_code = Some("task_run_timed_out".to_string());
+                attempt.finished_at = Some(now.to_string());
+                attempt.updated_at = now.to_string();
+            }
+            let exhausted = run.attempt_count >= run.max_attempts;
+            run.status = if exhausted {
+                AgentTaskRunStatus::DeadLetter
+            } else {
+                AgentTaskRunStatus::Pending
+            };
+            run.available_at = now.to_string();
+            run.lease_owner = None;
+            run.lease_token_hash = None;
+            run.lease_expires_at = None;
+            run.timeout_at = None;
+            run.failure_class = Some("execution_timeout".to_string());
+            run.error_code = Some("task_run_timed_out".to_string());
+            run.finished_at = exhausted.then(|| now.to_string());
+            run.updated_at = now.to_string();
+            run.version = run.version.saturating_add(1);
+        }
+        u64::try_from(keys.len())
+            .map_err(|_| KernelError::conflict("timed-out task Run count overflow"))
     }
 
     fn request_task_run_cancellation(

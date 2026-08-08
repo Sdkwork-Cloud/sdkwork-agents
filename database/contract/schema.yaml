@@ -150,6 +150,25 @@ tables:
     lifecycle_status: active
     owner: agents-platform
     description: Reliable Agents aggregate event publication.
+  - name: ai_agent_model_configuration_profile
+    profile: agent_model_configuration
+    lifecycle_status: active
+    owner: agents-platform
+    description: Owner-scoped applied model configuration profile persisted for
+      the runtime facade (tenant/organization/owner columns enforced by DDL and
+      the scoped store surface).
+  - name: ai_agent_tool_configuration
+    profile: tenant_entity
+    lifecycle_status: active
+    owner: agents-platform
+    description: Admin-managed per-tenant media tool configuration (enabled,
+      save-to-drive default, default arguments).
+  - name: ai_agent_tool_asset
+    profile: user_entity
+    lifecycle_status: active
+    owner: agents-platform
+    description: Generated media asset persisted to Drive outside a session-item
+      context with the drive node as the storage authority.
 external_references:
   - module: sdkwork-memory
     columns: [target_ref, target_version_ref]

@@ -10,6 +10,8 @@ packages:
   - "apps/*"
   - "apps/*/packages/*"
   - "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript"
+  - "sdks/sdkwork-agents-backend-sdk/sdkwork-agents-backend-sdk-typescript"
+  - "sdks/sdkwork-agents-sdk/sdkwork-agents-sdk-typescript"
   - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-contracts"
   - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-runtime"
   - "../sdkwork-iam/apps/sdkwork-iam-common/packages/sdkwork-iam-sdk-ports"

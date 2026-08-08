@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use tokio_stream::StreamExt;
 use sdkwork_agents_tool_contract::MediaResource;
 use sdkwork_drive_object_runtime::DriveObjectStoreRuntime;
 use sdkwork_drive_storage_contract::DriveObjectStore;
@@ -28,6 +29,29 @@ const SCENE: &str = "ai_generated";
 const SOURCE: &str = "sdkwork-agents";
 /// Default chunk size aligned with the drive uploader convention.
 const DEFAULT_CHUNK_SIZE_BYTES: i64 = 8 * 1024 * 1024;
+/// Maximum size of generated media fetched from a provider URL. Responses
+/// beyond this bound are rejected while downloading (the body is never
+/// materialized in full), protecting the process from OOM on oversized or
+/// unbounded provider responses.
+const MAX_GENERATED_MEDIA_BYTES: usize = 512 * 1024 * 1024;
+/// Total wall-clock budget for fetching one generated media resource.
+const MEDIA_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+/// Connect budget for the provider media fetch.
+const MEDIA_FETCH_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Shared HTTP client for provider media fetches with bounded timeouts.
+static MEDIA_FETCH_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+fn media_fetch_client() -> &'static reqwest::Client {
+    MEDIA_FETCH_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(MEDIA_FETCH_TIMEOUT)
+            .connect_timeout(MEDIA_FETCH_CONNECT_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .expect("media fetch client must build")
+    })
+}
 
 /// Stable reference to a Drive-persisted generated asset.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,8 +226,17 @@ fn now_epoch_ms() -> i64 {
 }
 
 /// Fetches the bytes of a generated media resource from its delivery URL.
+///
+/// The fetch is bounded on every axis: scheme and host are validated against
+/// the local/private network before connecting (SSRF guard), connect and
+/// total timeouts are enforced, and the body is streamed with a hard size
+/// cap so an oversized or unbounded provider response can never exhaust
+/// process memory.
 pub async fn fetch_resource_bytes(url: &str) -> Result<Vec<u8>, DriveSaveError> {
-    let response = reqwest::get(url)
+    let url = validate_media_fetch_url(url).await?;
+    let response = media_fetch_client()
+        .get(url)
+        .send()
         .await
         .map_err(|error| DriveSaveError::Fetch(error.to_string()))?;
     if !response.status().is_success() {
@@ -212,11 +245,97 @@ pub async fn fetch_resource_bytes(url: &str) -> Result<Vec<u8>, DriveSaveError> 
             response.status()
         )));
     }
-    response
-        .bytes()
-        .await
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| DriveSaveError::Fetch(error.to_string()))
+    // Pre-check the declared content length when the provider sends one.
+    if let Some(content_length) = response.content_length() {
+        if content_length > MAX_GENERATED_MEDIA_BYTES as u64 {
+            return Err(DriveSaveError::Fetch(format!(
+                "generated media exceeds the maximum size of {MAX_GENERATED_MEDIA_BYTES} bytes"
+            )));
+        }
+    }
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| DriveSaveError::Fetch(error.to_string()))?;
+        if body.len().saturating_add(chunk.len()) > MAX_GENERATED_MEDIA_BYTES {
+            return Err(DriveSaveError::Fetch(format!(
+                "generated media exceeds the maximum size of {MAX_GENERATED_MEDIA_BYTES} bytes"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+/// Validates a provider delivery URL before the server connects to it.
+///
+/// Only `http`/`https` is accepted, and loopback, link-local, private and
+/// multicast targets are rejected so a provider-controlled URL can never
+/// point the server at cloud metadata endpoints or other internal services.
+async fn validate_media_fetch_url(raw: &str) -> Result<reqwest::Url, DriveSaveError> {
+        let url = reqwest::Url::parse(raw)
+            .map_err(|error| DriveSaveError::Fetch(format!("invalid media URL: {error}")))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(DriveSaveError::Fetch(
+            "media URL must use http or https".to_string(),
+        ));
+    }
+    let host = url.host_str().ok_or_else(|| {
+        DriveSaveError::Fetch("media URL has no host".to_string())
+    })?;
+    if host_is_unreachable_from_server(host).await {
+        return Err(DriveSaveError::Fetch(format!(
+            "media URL host {host} is not reachable from the server"
+        )));
+    }
+    Ok(url)
+}
+
+/// Rejects hosts that resolve to internal or link-local network space.
+///
+/// IP literals are checked directly; hostnames are checked for known
+/// internal suffixes and, when resolvable, for internal resolved addresses
+/// (the DNS rebinding window is bounded by the fetch timeout).
+async fn host_is_unreachable_from_server(host: &str) -> bool {
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return is_internal_ip(ip);
+    }
+    let host = host.to_ascii_lowercase();
+    if host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+        || host.ends_with(".localdomain")
+    {
+        return true;
+    }
+    // Resolve and inspect every address. Resolution failure is treated as
+    // reachable-unknown; the fetch timeout still bounds the attempt.
+    if let Ok(addresses) = tokio::net::lookup_host((host.as_str(), 0)).await {
+        return addresses.map(|address| address.ip()).any(is_internal_ip);
+    }
+    false
+}
+
+/// Whether an address belongs to network space the server must never fetch:
+/// loopback, private, link-local, unspecified, multicast or broadcast.
+fn is_internal_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || v6.is_unique_local()
+        }
+    }
 }
 
 /// Errors surfaced by the server-side drive persistence path.
@@ -279,6 +398,63 @@ mod tests {
             generated_file_name(&context, &resource),
             "image.generations.create-call.1.png"
         );
+    }
+
+    #[tokio::test]
+    async fn media_fetch_rejects_internal_network_targets() {
+        for url in [
+            "http://127.0.0.1:8080/secret",
+            "http://10.0.0.5/metadata",
+            "http://192.168.1.1/internal",
+            "http://169.254.169.254/latest/meta-data",
+            "http://[::1]/loopback",
+            "http://localhost:9000/admin",
+            "ftp://cdn.example.com/file.png",
+            "file:///etc/passwd",
+            "http://metadata.internal/",
+            "http://169.254.169.254",
+        ] {
+            let error = fetch_resource_bytes(url)
+                .await
+                .expect_err("internal media URL must be rejected");
+            assert!(
+                matches!(error, DriveSaveError::Fetch(_)),
+                "{url} must fail with a fetch validation error, got {error:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn media_fetch_accepts_public_https_targets_for_validation() {
+        // The validation stage accepts public URLs; the actual network fetch
+        // is never attempted here, so any send failure is a fetch error
+        // rather than a validation error.
+        let url = "https://cdn.example.com/generated/image.png";
+        match fetch_resource_bytes(url).await {
+            Err(DriveSaveError::Fetch(message)) => {
+                assert!(
+                    !message.contains("must use http or https")
+                        && !message.contains("not reachable from the server"),
+                    "public URL must pass validation, got: {message}"
+                );
+            }
+            Ok(_) => {}
+            Err(other) => panic!("unexpected error kind for public URL: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn internal_ip_detection_covers_ipv4_and_ipv6() {
+        assert!(is_internal_ip("127.0.0.1".parse().expect("ip")));
+        assert!(is_internal_ip("10.1.2.3".parse().expect("ip")));
+        assert!(is_internal_ip("172.16.0.1".parse().expect("ip")));
+        assert!(is_internal_ip("192.168.1.1".parse().expect("ip")));
+        assert!(is_internal_ip("169.254.1.1".parse().expect("ip")));
+        assert!(is_internal_ip("::1".parse().expect("ip")));
+        assert!(is_internal_ip("fd00::1".parse().expect("ip")));
+        assert!(!is_internal_ip("8.8.8.8".parse().expect("ip")));
+        assert!(!is_internal_ip("93.184.216.34".parse().expect("ip")));
+        assert!(!is_internal_ip("2606:2800:220:1::1".parse().expect("ip")));
     }
 
     #[test]

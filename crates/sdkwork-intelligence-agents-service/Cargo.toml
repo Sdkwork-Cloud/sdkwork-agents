@@ -9,6 +9,12 @@ description = "SDKWork intelligence agents domain service (managed agents, marke
 default = ["http-axum", "postgres-sync"]
 postgres-sync = ["dep:sdkwork-database-config", "dep:sdkwork-database-sqlx", "dep:sqlx", "dep:tokio"]
 http-axum = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:sdkwork-web-core"]
+# Unit and contract tests exercise the full engine catalog including Codex.
+# Codex carries an embedded client-local SQLite runtime store and stays out of
+# production server builds; this test-only feature enables its provider so the
+# catalog tests can bootstrap every engine (DATABASE_SPEC: authoritative-server
+# persistence is PostgreSQL only).
+codex-test = ["sdkwork-agents-runtime-facade/codex-provider"]
 
 [lib]
 name = "sdkwork_intelligence_agents_service"

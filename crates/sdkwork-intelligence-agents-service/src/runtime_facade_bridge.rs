@@ -41,22 +41,34 @@ pub fn engine_key_for_binding_id(binding_id: &str) -> Option<&'static str> {
         .map(|v| v as _)
 }
 
+/// Static provider-id -> engine-key map, computed once per process.
+///
+/// Provider ids are engine-owned constants; bootstrapping every engine on
+/// every call (session activity enrichment calls this per row per page) is
+/// wasteful. Engines whose bootstrap fails in this build are simply absent
+/// from the map.
+static PROVIDER_ID_ENGINE_KEYS: std::sync::LazyLock<
+    std::collections::HashMap<String, &'static str>,
+> = std::sync::LazyLock::new(|| {
+    let mut map = std::collections::HashMap::new();
+    for engine_key in bootstrappable_engine_keys() {
+        if let Ok(slot) = bootstrap_agent_engine(engine_key) {
+            for descriptor in slot.list_model_descriptors() {
+                map.entry(descriptor.provider_id.clone())
+                    .or_insert(engine_key);
+            }
+        }
+    }
+    map
+});
+
 pub fn engine_key_for_provider_identity(
     binding_id: Option<&str>,
     provider_id: Option<&str>,
 ) -> Option<&'static str> {
     binding_id.and_then(engine_key_for_binding_id).or_else(|| {
         let provider_id = provider_id?;
-        bootstrappable_engine_keys()
-            .iter()
-            .copied()
-            .find(|engine_key| {
-                bootstrap_agent_engine(engine_key).ok().is_some_and(|slot| {
-                    slot.list_model_descriptors()
-                        .iter()
-                        .any(|descriptor| descriptor.provider_id == provider_id)
-                })
-            })
+        PROVIDER_ID_ENGINE_KEYS.get(provider_id).copied()
     })
 }
 
@@ -346,7 +358,7 @@ mod tests {
         let runtime = Arc::new(crate::http::AgentModelConfigurationRuntime::with_providers(
             Box::new(secrets),
             Box::new(
-                sdkwork_agents_runtime_facade::InMemoryAgentConfigurationStore::new(),
+                crate::postgres_model_configuration_store::ScopedInMemoryAgentConfigurationStore::new(),
             ),
         ));
         let provider = ModelConfigurationRuntimeHostProvider::new(runtime);

@@ -4059,6 +4059,10 @@ where
         self.adapter.recover_expired_task_run_leases(now, limit)
     }
 
+    fn recover_timed_out_task_runs(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        self.adapter.recover_timed_out_task_runs(now, limit)
+    }
+
     fn scheduler_metrics_snapshot(&self, now: &str) -> KernelResult<TaskSchedulerMetricsSnapshot> {
         self.adapter.scheduler_metrics_snapshot(now)
     }
@@ -9831,7 +9835,7 @@ INSERT INTO ai_agent_task_run (
         let pool = self.pool.pool().clone();
         self.pool.run_kernel(async {
             let mut tx = pool.begin().await?;
-            let rows = sqlx::query(
+            let mut rows = sqlx::query(
                 r#"
 SELECT id, uuid, tenant_id, organization_id, agent_id, task_id, owner_user_id,
        session_id, title, prompt, schedule_kind, cron_expression, timezone,
@@ -10083,7 +10087,7 @@ WHERE tenant_id = $5 AND organization_id = $6 AND task_id = $7
         let pool = self.pool.pool().clone();
         self.pool.run_kernel(async {
             let mut tx = pool.begin().await?;
-            let rows = sqlx::query(
+            let mut rows = sqlx::query(
                 r#"
 WITH ranked AS MATERIALIZED (
     SELECT r.id, r.priority, r.available_at, r.scheduled_for,
@@ -10144,7 +10148,6 @@ SELECT r.id, r.tenant_id, r.organization_id, r.run_id, r.task_id, r.session_id,
 FROM ai_agent_task_run r
 JOIN eligible e ON e.id = r.id
 ORDER BY r.priority DESC, r.available_at, r.scheduled_for, r.id
-FOR UPDATE OF r SKIP LOCKED
                 "#,
             )
             .bind(&request.now)
@@ -10234,6 +10237,36 @@ WHERE tenant_id = $1 AND status IN (1, 2)
                 .await?;
                 tenant_active_counts.insert(tenant_id, active_count);
             }
+            // Lock the candidate Run rows AFTER the Task rows, in the same
+            // deterministic order (priority, available_at, scheduled_for, id).
+            // This makes the claim lock order advisory -> task -> run, matching
+            // `transition_task`'s task -> run order, so the two transactions can
+            // never form a deadlock cycle. Rows claimed by a concurrent worker
+            // between candidate selection and this lock are skipped.
+            let mut locked_run_keys = Vec::<(i64, i64, String)>::new();
+            for row in &rows {
+                let tenant_id: i64 = row.try_get("tenant_id")?;
+                let organization_id: i64 = row.try_get("organization_id")?;
+                let run_id: String = row.try_get("run_id")?;
+                let locked = sqlx::query(
+                    "SELECT 1 FROM ai_agent_task_run                      WHERE tenant_id = $1 AND organization_id = $2 AND run_id = $3                      FOR UPDATE SKIP LOCKED",
+                )
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&run_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if locked.is_some() {
+                    locked_run_keys.push((tenant_id, organization_id, run_id));
+                }
+            }
+            rows.retain(|row| {
+                locked_run_keys.contains(&(
+                    row.try_get::<i64, _>("tenant_id").unwrap_or(i64::MAX),
+                    row.try_get::<i64, _>("organization_id").unwrap_or(i64::MAX),
+                    row.try_get::<String, _>("run_id").unwrap_or_default(),
+                ))
+            });
             let mut claimed_per_task = HashMap::<(i64, i64, String), i64>::new();
             let mut claimed_per_tenant = HashMap::<i64, i64>::new();
             let mut claims = Vec::new();
@@ -10879,6 +10912,116 @@ RETURNING version
             }
             let recovered = u64::try_from(rows.len()).map_err(|_| {
                 transaction_error(KernelError::conflict("recovered task Run count overflow"))
+            })?;
+            tx.commit().await?;
+            Ok(recovered)
+        })
+    }
+
+    fn recover_timed_out_task_runs(&self, now: &str, limit: usize) -> KernelResult<u64> {
+        parse_datetime(now, None)
+            .ok_or_else(|| KernelError::validation("now must be an RFC 3339 instant"))?;
+        let limit = i64::try_from(limit.clamp(1, 1_000))
+            .map_err(|_| KernelError::validation("recovery limit overflow"))?;
+        let pool = self.pool.pool().clone();
+        self.pool.run_kernel(async {
+            let mut tx = pool.begin().await?;
+            let rows = sqlx::query(
+                r#"
+SELECT tenant_id, organization_id, run_id, attempt_count, max_attempts
+FROM ai_agent_task_run
+WHERE status IN (1, 2) AND timeout_at IS NOT NULL AND timeout_at < $1::timestamptz
+ORDER BY timeout_at, id
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+                "#,
+            )
+            .bind(now)
+            .bind(limit)
+            .fetch_all(&mut *tx)
+            .await?;
+            for row in &rows {
+                let tenant_id: i64 = row.try_get("tenant_id")?;
+                let organization_id: i64 = row.try_get("organization_id")?;
+                let run_id: String = row.try_get("run_id")?;
+                let attempt_count: i16 = row.try_get("attempt_count")?;
+                let max_attempts: i16 = row.try_get("max_attempts")?;
+                sqlx::query(
+                    r#"
+UPDATE ai_agent_task_run_attempt
+SET status = 4, failure_class = 'execution_timeout',
+    error_code = 'task_run_timed_out', finished_at = $1::timestamptz,
+    updated_at = $1::timestamptz
+WHERE tenant_id = $2 AND organization_id = $3 AND run_id = $4
+  AND attempt_no = $5 AND status IN (0, 1)
+                    "#,
+                )
+                .bind(now)
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&run_id)
+                .bind(attempt_count)
+                .execute(&mut *tx)
+                .await?;
+                let exhausted = attempt_count >= max_attempts;
+                let updated = sqlx::query(
+                    r#"
+UPDATE ai_agent_task_run
+SET status = $1, available_at = $2::timestamptz,
+    lease_owner = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
+    timeout_at = NULL,
+    failure_class = 'execution_timeout', error_code = 'task_run_timed_out',
+    error_detail = NULL, finished_at = $3::timestamptz,
+    updated_at = $2::timestamptz, version = version + 1
+WHERE tenant_id = $4 AND organization_id = $5 AND run_id = $6
+  AND status IN (1, 2)
+RETURNING version
+                    "#,
+                )
+                .bind(if exhausted {
+                    AgentTaskRunStatus::DeadLetter.as_db_code()
+                } else {
+                    AgentTaskRunStatus::Pending.as_db_code()
+                })
+                .bind(now)
+                .bind(exhausted.then_some(now))
+                .bind(tenant_id)
+                .bind(organization_id)
+                .bind(&run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+                if exhausted {
+                    let version =
+                        int64_to_u64(updated.try_get::<i64, _>("version")?, "task_run.version")
+                            .map_err(transaction_error)?;
+                    let tenant_id_value =
+                        int64_to_u64(tenant_id, "tenant_id").map_err(transaction_error)?;
+                    let organization_id_value = int64_to_u64(organization_id, "organization_id")
+                        .map_err(transaction_error)?;
+                    insert_agent_outbox_event(
+                        self,
+                        &mut tx,
+                        tenant_id_value,
+                        organization_id_value,
+                        "agent_task_run",
+                        &run_id,
+                        version,
+                        "agent.task.run.dead_lettered",
+                        &serde_json::json!({
+                            "runId": run_id,
+                            "status": AgentTaskRunStatus::DeadLetter.as_str(),
+                            "failureClass": "execution_timeout",
+                            "errorCode": "task_run_timed_out",
+                            "attemptCount": attempt_count
+                        }),
+                        &format!("agent-task-run-dead-lettered:{run_id}:{version}"),
+                        now,
+                    )
+                    .await?;
+                }
+            }
+            let recovered = u64::try_from(rows.len()).map_err(|_| {
+                transaction_error(KernelError::conflict("timed-out task Run count overflow"))
             })?;
             tx.commit().await?;
             Ok(recovered)

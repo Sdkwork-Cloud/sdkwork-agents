@@ -204,7 +204,10 @@ pub use ports::{
     MAX_TURN_INPUT_CONTENT_BYTES, TURN_CONTEXT_ITEM_LIMIT,
 };
 pub use ports::{SessionCheckpointListQuery, SessionRuntimeBindingListQuery, TurnListQuery};
-pub use postgres_model_configuration_store::PostgresAgentConfigurationStore;
+pub use postgres_model_configuration_store::{
+    PostgresAgentConfigurationStore, ProfileScope, ScopedAgentConfigurationStore,
+    ScopedInMemoryAgentConfigurationStore,
+};
 pub use project::{
     AgentProjectCompositionSlotRecord, AgentProjectDriveAccessMode, AgentProjectRecord,
     AgentProjectStatus, AgentProjectVisibility,

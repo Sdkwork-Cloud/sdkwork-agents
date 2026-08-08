@@ -35,6 +35,11 @@ pub trait TaskWorkerClient: Clone + Send + Sync + 'static {
     async fn recover_expired_task_run_leases(&self, now: String, limit: usize)
         -> KernelResult<u64>;
 
+    /// Recovers Runs whose configured execution budget elapsed while they
+    /// were still claimed or running (independent of heartbeat liveness).
+    async fn recover_timed_out_task_runs(&self, now: String, limit: usize)
+        -> KernelResult<u64>;
+
     async fn scheduler_metrics_snapshot(
         &self,
         _now: String,
@@ -90,6 +95,14 @@ impl TaskWorkerClient for AgentTaskWorkerHandle {
         AgentTaskWorkerHandle::recover_expired_task_run_leases(self, now, limit).await
     }
 
+    async fn recover_timed_out_task_runs(
+        &self,
+        now: String,
+        limit: usize,
+    ) -> KernelResult<u64> {
+        AgentTaskWorkerHandle::recover_timed_out_task_runs(self, now, limit).await
+    }
+
     async fn scheduler_metrics_snapshot(
         &self,
         now: String,
@@ -138,6 +151,9 @@ pub async fn run_scheduler_worker<C>(
     let mut executions = JoinSet::new();
     let mut reconciliations = JoinSet::new();
     control.mark_started();
+    let mut materialize_failures = 0u32;
+    let mut claim_failures = 0u32;
+    let mut recover_failures = 0u32;
 
     loop {
         tokio::select! {
@@ -166,9 +182,16 @@ pub async fn run_scheduler_worker<C>(
                 );
                 let started_at = Instant::now();
                 match client.materialize_due_tasks(request).await {
-                    Ok(runs) => metrics.record_materialization(runs.len(), started_at.elapsed()),
+                    Ok(runs) => {
+                        materialize_failures = 0;
+                        metrics.record_materialization(runs.len(), started_at.elapsed());
+                    }
                     Err(error) => {
                         metrics.record_operation_error();
+                        materialize_failures = materialize_failures.saturating_add(1);
+                        materialize.reset_at(
+                            tokio::time::Instant::now() + poll_backoff(materialize_failures),
+                        );
                         tracing::error!(error = %error, "task occurrence materialization failed");
                     }
                 }
@@ -178,10 +201,30 @@ pub async fn run_scheduler_worker<C>(
                     .recover_expired_task_run_leases(current_time(), config.recovery_batch_size)
                     .await
                 {
-                    Ok(count) => metrics.add_recovered(count),
+                    Ok(count) => {
+                        recover_failures = 0;
+                        metrics.add_recovered(count);
+                    }
                     Err(error) => {
                         metrics.record_operation_error();
+                        recover_failures = recover_failures.saturating_add(1);
+                        recover.reset_at(
+                            tokio::time::Instant::now() + poll_backoff(recover_failures),
+                        );
                         tracing::error!(error = %error, "expired task run lease recovery failed");
+                    }
+                }
+                // Enforce configured execution budgets: a Run that is still
+                // heartbeating past its timeout_at must be reclaimed even
+                // though its lease is alive.
+                match client
+                    .recover_timed_out_task_runs(current_time(), config.recovery_batch_size)
+                    .await
+                {
+                    Ok(count) => metrics.add_timed_out_recovered(count),
+                    Err(error) => {
+                        metrics.record_operation_error();
+                        tracing::error!(error = %error, "timed-out task run recovery failed");
                     }
                 }
             }
@@ -229,6 +272,7 @@ pub async fn run_scheduler_worker<C>(
                 let started_at = Instant::now();
                 match client.claim_task_runs(request).await {
                     Ok(claims) => {
+                        claim_failures = 0;
                         metrics.record_claim(claims.len(), started_at.elapsed());
                         for claim in claims.into_iter().take(capacity) {
                             metrics.execution_started();
@@ -243,6 +287,10 @@ pub async fn run_scheduler_worker<C>(
                     }
                     Err(error) => {
                         metrics.record_operation_error();
+                        claim_failures = claim_failures.saturating_add(1);
+                        claim.reset_at(
+                            tokio::time::Instant::now() + poll_backoff(claim_failures),
+                        );
                         tracing::error!(error = %error, "task run claim failed");
                     }
                 }
@@ -354,4 +402,16 @@ fn reconciliation_window(min_age: std::time::Duration) -> (String, String) {
         format_datetime(updated_before, None),
         format_datetime(occurred_at, None),
     )
+}
+
+/// Exponential backoff for consecutive poll failures (250ms base doubled per
+/// failure, capped at 30s) so a database outage cannot hammer the pool at
+/// the base polling rate.
+fn poll_backoff(consecutive_failures: u32) -> std::time::Duration {
+    const BASE: std::time::Duration = std::time::Duration::from_millis(250);
+    const CAP: std::time::Duration = std::time::Duration::from_secs(30);
+    let multiplier = 1u32
+        .checked_shl(consecutive_failures.min(12))
+        .unwrap_or(4096);
+    BASE.saturating_mul(multiplier).min(CAP)
 }

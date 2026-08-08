@@ -1,4 +1,7 @@
 export * from './common';
+export type { MediaToolDirectoryResponse } from './media-tool-directory-response';
+export type { MediaToolInvokeApiResponse } from './media-tool-invoke-api-response';
+export type { ToolAssetListResponse } from './tool-asset-list-response';
 export type { SdkWorkApiResponse } from './sdk-work-api-response';
 export type { SdkWorkResourceData } from './sdk-work-resource-data';
 export type { SdkWorkPageData } from './sdk-work-page-data';
@@ -190,5 +193,11 @@ export type { AgentSessionRuntimeBindingListResponse } from './agent-session-run
 export type { CreateAgentSessionRuntimeBindingRequest } from './create-agent-session-runtime-binding-request';
 export type { UpdateAgentSessionRuntimeBindingRequest } from './update-agent-session-runtime-binding-request';
 export type { ChangeAgentSessionRuntimeBindingStatusRequest } from './change-agent-session-runtime-binding-status-request';
+export type { MediaToolDirectoryEntry } from './media-tool-directory-entry';
+export type { MediaToolInvokeBody } from './media-tool-invoke-body';
+export type { MediaToolInvokeResponse } from './media-tool-invoke-response';
+export type { DriveAssetView } from './drive-asset-view';
+export type { ToolAssetView } from './tool-asset-view';
+export type { MediaToolConfigurationBody } from './media-tool-configuration-body';
 export type { FieldError } from './field-error';
 export type { ProblemDetail } from './problem-detail';

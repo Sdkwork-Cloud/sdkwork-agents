@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "1410a30152ff6b98d28c61cfe5c0b59f131296eb1772053e256bc69e5c98ba4a"
+      "sha256": "b3e03e29607988fe6c3a164d98412d879e21bbcfbccafc85263ced2e0db9e588"
     },
     {
       "path": "src/api/base.ts",
@@ -667,6 +667,10 @@
       "sha256": "17b63283f2f8941d6cbf5059c38a6d23a6bc59c85b10d0507296e8794ce7c4d9"
     },
     {
+      "path": "src/types/drive-asset-view.ts",
+      "sha256": "741107feaf60b88feedd8e12b723543dc2763411636940dc92d1043df96f37d5"
+    },
+    {
       "path": "src/types/ensure-default-agent-workspace-request.ts",
       "sha256": "5b6722f4a9dfc48088b9532c4f1749cd9ca52b52602e094ee6431eb2db8e8c91"
     },
@@ -688,7 +692,7 @@
     },
     {
       "path": "src/types/index.ts",
-      "sha256": "7714cb25230d71a18494b63c63300f7df9705aa52c716702edcf98851e6c9de8"
+      "sha256": "660152524f83f3069176574053bf9abc7d05e4bf25a303e7e30ca67294c6bcdb"
     },
     {
       "path": "src/types/int64-string.ts",
@@ -709,6 +713,30 @@
     {
       "path": "src/types/mcp-server-marketplace-record.ts",
       "sha256": "7e0e392e764f3971a8f0b2d60615590fad83c57e20d826cddfceca8ad4973f2e"
+    },
+    {
+      "path": "src/types/media-tool-configuration-body.ts",
+      "sha256": "88adde9a2949190487350676d363034a425b56d2d1e8c94e6a1f3227b93fe446"
+    },
+    {
+      "path": "src/types/media-tool-directory-entry.ts",
+      "sha256": "b341eb1e8ee77a0d383ce9e8b1dff466212760135c74ebf1f2b71d74c67a3885"
+    },
+    {
+      "path": "src/types/media-tool-directory-response.ts",
+      "sha256": "a20575e25f9a565390b33489392bb7581751addb4bc229ee5d180b43fd6b9505"
+    },
+    {
+      "path": "src/types/media-tool-invoke-api-response.ts",
+      "sha256": "ce99e894b82b14998adf4160ddf5450137f782aedc0ffdeb3a4f4de661c1c19d"
+    },
+    {
+      "path": "src/types/media-tool-invoke-body.ts",
+      "sha256": "4ec0b803504ef6b4f7708f2f6f73fad1c7c7ea727cbb8e4bfc0342f5cb90accd"
+    },
+    {
+      "path": "src/types/media-tool-invoke-response.ts",
+      "sha256": "b381dec5d6ab83aeb11b55d3deed8062f2bc19f91e76ec55700d36e7a6058051"
     },
     {
       "path": "src/types/migrate-model-configuration-request.ts",
@@ -825,6 +853,14 @@
     {
       "path": "src/types/session-provider-identity.ts",
       "sha256": "87f3c86b89e442617378b4be999f8b084060bfdc74dad030dccfc138b78ad751"
+    },
+    {
+      "path": "src/types/tool-asset-list-response.ts",
+      "sha256": "efea8881296695887125746f001cdc9558d7ddd6d466de68a89924ea816ffdb4"
+    },
+    {
+      "path": "src/types/tool-asset-view.ts",
+      "sha256": "af7e2dfbcf8fec2e20ed5508e21fb32eb19b81e2b2f038e2f26ebb6eafefb875"
     },
     {
       "path": "src/types/typed-agent-interaction-resolution.ts",

@@ -3621,9 +3621,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/MediaToolDirectoryEntry'
+                $ref: '#/components/schemas/MediaToolDirectoryResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/tools/{toolId}/invoke:
@@ -3657,7 +3655,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MediaToolInvokeResponse'
+                $ref: '#/components/schemas/MediaToolInvokeApiResponse'
         default:
           $ref: '#/components/responses/Problem'
   /app/v3/api/ai/assets:
@@ -3679,9 +3677,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ToolAssetView'
+                $ref: '#/components/schemas/ToolAssetListResponse'
         default:
           $ref: '#/components/responses/Problem'
 components:
@@ -3897,6 +3893,43 @@ components:
         maxLength: 128
         pattern: ^binding\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
   schemas:
+    MediaToolDirectoryResponse:
+      description: Media tool directory following SdkWorkApiResponse envelope;
+        the directory is returned as a bare array under data.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/MediaToolDirectoryEntry'
+    MediaToolInvokeApiResponse:
+      description: Media tool invocation result following SdkWorkApiResponse
+        envelope.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            $ref: '#/components/schemas/MediaToolInvokeResponse'
+    ToolAssetListResponse:
+      description: Generated media asset list following SdkWorkApiResponse
+        envelope; the list is returned as a bare array under data.
+      allOf:
+      - $ref: '#/components/schemas/SdkWorkApiResponse'
+      - type: object
+        required:
+        - data
+        properties:
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/ToolAssetView'
     SdkWorkApiResponse:
       type: object
       additionalProperties: false
