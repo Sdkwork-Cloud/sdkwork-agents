@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, ChevronDown, List as ListIcon, LayoutGrid, FileText, Image as ImageIcon, Presentation, RefreshCw } from 'lucide-react';
+import { Search, List as ListIcon, LayoutGrid, FileText, Image as ImageIcon, Presentation, RefreshCw } from 'lucide-react';
 import { cn } from '@sdkwork/agents-pc-commons';
 import {
   chatFileLibraryService,
@@ -69,11 +69,28 @@ export const FileLibraryView = () => {
   }, [loadFiles]);
 
   const handleOpenFile = useCallback(async (file: ChatLibraryFile) => {
+    // Open the tab synchronously inside the user gesture so popup blockers
+    // don't discard it, then navigate once the short-lived download URL is
+    // resolved.
+    const popup = window.open('', '_blank');
     setOpeningId(file.id);
     try {
       const url = await chatFileLibraryService.resolvePreviewUrl(file.id);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        // Popup blocked: fall back to a synthetic anchor click.
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        return;
+      }
+      popup.opener = null;
+      popup.location.href = url;
     } catch (cause) {
+      popup?.close();
       console.error('Failed to resolve file preview url', cause);
     } finally {
       setOpeningId(null);
@@ -146,10 +163,6 @@ export const FileLibraryView = () => {
           >
             <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
             刷新
-          </button>
-          <button className="flex items-center gap-2 bg-white text-black hover:bg-gray-100 rounded-full px-4 py-1.5 text-[14px] font-medium transition-colors">
-            新建
-            <ChevronDown size={16} className="text-zinc-500" />
           </button>
         </div>
       </div>

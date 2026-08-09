@@ -213,6 +213,7 @@ export const ChatView = () => {
     setActiveView('chat');
     setIsArtifactOpen(false);
     setShouldAutoScroll(true);
+    setSelectedMediaResources([]);
   }, [t]);
 
   // Global Keyboard Shortcuts
@@ -359,6 +360,9 @@ export const ChatView = () => {
     setActiveView('chat');
     setIsArtifactOpen(false);
     setShouldAutoScroll(true);
+    // Draft media belongs to the conversation it was selected in; never
+    // carry attachments into another session.
+    setSelectedMediaResources([]);
   };
 
   const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
@@ -367,6 +371,7 @@ export const ChatView = () => {
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (currentSessionId === id) {
       setCurrentSessionId(sessions.find((s) => s.id !== id)?.id || "");
+      setSelectedMediaResources([]);
     }
   };
 
