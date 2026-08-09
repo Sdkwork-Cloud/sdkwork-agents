@@ -19,6 +19,7 @@ sdkwork-agent-server.workspace = true
 sdkwork-agents-kernel-bridge.workspace = true
 sdkwork-agents-database-host.workspace = true
 sdkwork-agents-runtime-facade.workspace = true
+sdkwork-database-sqlx.workspace = true
 sdkwork-intelligence-agents-service.workspace = true
 sdkwork-web-contract.workspace = true
 sdkwork-iam-database-host.workspace = true

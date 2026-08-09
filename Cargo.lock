@@ -11416,6 +11416,7 @@ dependencies = [
  "sdkwork-agents-kernel-bridge",
  "sdkwork-agents-runtime-facade",
  "sdkwork-api-drive-assembly",
+ "sdkwork-database-sqlx",
  "sdkwork-iam-database-host",
  "sdkwork-iam-embedded-application-bootstrap",
  "sdkwork-iam-web-adapter",

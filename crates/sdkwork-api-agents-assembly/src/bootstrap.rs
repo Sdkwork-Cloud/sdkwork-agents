@@ -8,11 +8,16 @@ mod iam;
 use anyhow::Context;
 use axum::Router;
 use sdkwork_agent_server::config::ServerConfig;
+use sdkwork_database_sqlx::DatabasePool;
+use sdkwork_web_bootstrap::{
+    ApiAssemblyContribution, CompositeReadinessCheck, DatabasePoolReadinessCheck, ReadinessCheck,
+};
 use std::sync::Arc;
 
-pub struct ApiAssembly {
-    pub router: Router,
-}
+use crate::readiness::AgentHttpReadinessCheck;
+
+/// Indivisible host-neutral API assembly contribution (web-bootstrap contract).
+pub type ApiAssembly = ApiAssemblyContribution;
 
 pub async fn assemble_api_router() -> anyhow::Result<ApiAssembly> {
     let config = Arc::new(ServerConfig::from_env().map_err(|error| {
@@ -35,5 +40,39 @@ pub async fn assemble_api_router() -> anyhow::Result<ApiAssembly> {
         .layer(sdkwork_agent_server::middleware::cors_layer(
             config.as_ref(),
         ));
-    Ok(ApiAssembly { router })
+    ApiAssemblyContribution::from_manifest(
+        "sdkwork-agents",
+        "SDKWork Agents API",
+        router,
+        sdkwork_routes_agents_http_shared::combined_route_manifest(),
+        vec![sdkwork_routes_agents_http_shared::agent_request_context_injector()],
+        Arc::new(sdkwork_web_bootstrap::AlwaysReady),
+    )
+    .map_err(anyhow::Error::msg)
+}
+
+/// Assemble the Agents contribution against a caller-provided database pool so
+/// the platform cloud gateway can share its process-wide PostgreSQL pool.
+///
+/// Only agents-owned combined routes are mounted; the cloud gateway hosts the
+/// dependency-owned IAM and Drive surfaces as separate contributions.
+pub async fn assemble_api_router_with_pool(pool: DatabasePool) -> Result<ApiAssembly, String> {
+    let state = tokio::task::spawn_blocking(sdkwork_agents_kernel_bridge::build_agent_http_state)
+        .await
+        .map_err(|error| format!("agents state bootstrap worker failed: {error}"))?
+        .map_err(|error| format!("{error:#}"))?;
+    drop(state.spawn_turn_reconciliation_worker());
+    let readiness: Arc<dyn ReadinessCheck> = Arc::new(CompositeReadinessCheck::new(vec![
+        Arc::new(AgentHttpReadinessCheck::new(state.clone())),
+        Arc::new(DatabasePoolReadinessCheck::new(pool)),
+    ]));
+    let router = sdkwork_intelligence_agents_service::build_combined_routes().with_state(state);
+    ApiAssemblyContribution::from_manifest(
+        "sdkwork-agents",
+        "SDKWork Agents API",
+        router,
+        sdkwork_routes_agents_http_shared::combined_route_manifest(),
+        vec![sdkwork_routes_agents_http_shared::agent_request_context_injector()],
+        readiness,
+    )
 }
