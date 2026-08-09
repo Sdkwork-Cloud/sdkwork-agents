@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../types';
 import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
+import { createSdkworkChatRequestContext } from '@sdkwork/agents-pc-core/session';
 
 export interface ChatServiceOptions {
   sessionId: string;
@@ -93,6 +94,34 @@ function requireChatAgentPort(): ChatAgentPort {
   return chatAgentPort;
 }
 
+export type ChatAgentPermissionScopeReader = () => string[];
+
+function readChatAgentPermissionScopeFromSession(): string[] {
+  return createSdkworkChatRequestContext()?.permissionScope ?? [];
+}
+
+let chatAgentPermissionScopeReader: ChatAgentPermissionScopeReader =
+  readChatAgentPermissionScopeFromSession;
+
+/** Overrides where the caller's IAM permission scope is read from. */
+export function configureChatAgentPermissionScopeReader(
+  reader: ChatAgentPermissionScopeReader,
+): void {
+  chatAgentPermissionScopeReader = reader;
+}
+
+/**
+ * Mirrors the backend `IamGatedPolicyProvider` grant rules: updating an agent
+ * record (`agents.update`) requires `ai.agents.manage`, with `ai.*` and `*`
+ * wildcards also granting it. Chat-only callers must not attempt the model
+ * sync PATCH at all, since the API contract rejects it with 403.
+ */
+export function callerScopeGrantsAgentManage(scopes: string[]): boolean {
+  return scopes.some(
+    (scope) => scope === 'ai.agents.manage' || scope === 'ai.*' || scope === '*',
+  );
+}
+
 function defaultAgent(model: string): ChatAgentConfig {
   return {
     id: DEFAULT_CHAT_AGENT_ID,
@@ -113,11 +142,16 @@ async function ensureChatAgent(model: string): Promise<void> {
     return;
   }
   if (model && current.model !== model) {
+    // The model is passed per message through sendMessage, so syncing the
+    // stored default is only worthwhile for callers the backend allows to
+    // update the agent. Without manage scope the PATCH would always 403.
+    if (!callerScopeGrantsAgentManage(chatAgentPermissionScopeReader())) {
+      return;
+    }
     try {
       await port.updateAgent(DEFAULT_CHAT_AGENT_ID, { model });
     } catch (error) {
-      // Best-effort: the model is passed per message through sendMessage, so a
-      // denied model sync (e.g. the caller lacks ai.agents.manage) must not
+      // Best-effort: a failed model sync (e.g. a stale scope claim) must not
       // block session loading or chat.
       console.warn('Failed to sync the default chat agent model', error);
     }

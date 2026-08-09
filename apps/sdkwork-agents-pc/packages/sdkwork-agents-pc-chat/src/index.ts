@@ -1,5 +1,15 @@
-export { ChatService, configureChatAgentPort } from './services/ChatService';
-export type { ChatAgentConfig, ChatAgentPort, ChatServiceOptions } from './services/ChatService';
+export {
+  ChatService,
+  callerScopeGrantsAgentManage,
+  configureChatAgentPermissionScopeReader,
+  configureChatAgentPort,
+} from './services/ChatService';
+export type {
+  ChatAgentConfig,
+  ChatAgentPermissionScopeReader,
+  ChatAgentPort,
+  ChatServiceOptions,
+} from './services/ChatService';
 export { ProjectService, configureProjectPort } from './services/ProjectService';
 export type {
   ChatMemorySpaceOption,

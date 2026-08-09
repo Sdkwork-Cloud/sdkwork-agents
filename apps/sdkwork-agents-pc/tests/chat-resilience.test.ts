@@ -7,6 +7,8 @@ import {
 } from '../packages/sdkwork-agents-pc-chat/src/services/chatFileLibraryService';
 import {
   ChatService,
+  callerScopeGrantsAgentManage,
+  configureChatAgentPermissionScopeReader,
   configureChatAgentPort,
   type ChatAgentPort,
 } from '../packages/sdkwork-agents-pc-chat/src/services/ChatService';
@@ -79,8 +81,9 @@ function createChatAgentPort(overrides: Partial<ChatAgentPort>): ChatAgentPort {
   };
 }
 
-test('loads session history even when the default agent model sync is denied', async () => {
+test('does not attempt the default agent model sync without ai.agents.manage', async () => {
   let updateAttempted = false;
+  configureChatAgentPermissionScopeReader(() => ['ai.agents.read', 'ai.agents.use']);
   configureChatAgentPort(createChatAgentPort({
     updateAgent: async () => {
       updateAttempted = true;
@@ -89,7 +92,7 @@ test('loads session history even when the default agent model sync is denied', a
   }));
 
   const sessions = await ChatService.loadSessions('model-b');
-  assert.equal(updateAttempted, true);
+  assert.equal(updateAttempted, false);
   assert.deepEqual(
     sessions.map((session) => session.id),
     ['session.1'],
@@ -98,6 +101,7 @@ test('loads session history even when the default agent model sync is denied', a
 
 test('keeps syncing the default agent model when the caller is allowed', async () => {
   let updateAttempted = false;
+  configureChatAgentPermissionScopeReader(() => ['ai.agents.manage']);
   configureChatAgentPort(createChatAgentPort({
     updateAgent: async () => {
       updateAttempted = true;
@@ -115,6 +119,36 @@ test('keeps syncing the default agent model when the caller is allowed', async (
 
   await ChatService.loadSessions('model-b');
   assert.equal(updateAttempted, true);
+});
+
+test('syncs the default agent model for ai.* wildcard callers', async () => {
+  let updateAttempted = false;
+  configureChatAgentPermissionScopeReader(() => ['ai.*']);
+  configureChatAgentPort(createChatAgentPort({
+    updateAgent: async () => {
+      updateAttempted = true;
+      return {
+        id: 'agent.chat.default',
+        name: 'SDKWork Agents',
+        description: '',
+        type: 'normal' as const,
+        model: 'model-b',
+        systemPrompt: '',
+        welcomeMessage: '',
+      };
+    },
+  }));
+
+  await ChatService.loadSessions('model-b');
+  assert.equal(updateAttempted, true);
+});
+
+test('callerScopeGrantsAgentManage only admits manage and wildcard scopes', () => {
+  assert.equal(callerScopeGrantsAgentManage([]), false);
+  assert.equal(callerScopeGrantsAgentManage(['ai.agents.read', 'ai.agents.use']), false);
+  assert.equal(callerScopeGrantsAgentManage(['ai.agents.manage']), true);
+  assert.equal(callerScopeGrantsAgentManage(['ai.*']), true);
+  assert.equal(callerScopeGrantsAgentManage(['*']), true);
 });
 
 test('treats a missing chat file library property as an empty library', async () => {
