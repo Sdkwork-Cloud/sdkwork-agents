@@ -198,4 +198,27 @@ export class AgentChatService {
   }
 }
 
-export const agentChatService = new AgentChatService();
+export let agentChatService = createSdkworkAgentChatService();
+
+let activeChatClientGetter: (() => SdkworkAgentsAppClient) | undefined;
+
+/**
+ * Host injection hook for the chat transport (mirrors `configureAgentService`).
+ *
+ * Host apps such as sdkwork-im-h5 construct their own agents app SDK client
+ * (their token manager + gateway root) and inject it here so agent sessions
+ * never fall back to the standalone agents-h5 session storage / base URL.
+ */
+export function configureAgentChatService(
+  getClient?: () => SdkworkAgentsAppClient,
+): AgentChatService {
+  activeChatClientGetter = getClient;
+  agentChatService = createSdkworkAgentChatService(getClient);
+  return agentChatService;
+}
+
+export function createSdkworkAgentChatService(
+  getClient?: () => SdkworkAgentsAppClient,
+): AgentChatService {
+  return new AgentChatService(getClient);
+}

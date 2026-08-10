@@ -1048,6 +1048,7 @@ export const CreateAgentView: React.FC<CreateAgentViewProps> = ({ onBack, initia
               placeholder="发送测试消息..."
               defaultHeight={110}
               resizable={false}
+              showAdvancedActions
             />
           </div>
         </div>

@@ -12,10 +12,19 @@ import type {
 import { syncAgentCompositionSlots } from './CompositionSlotSyncService';
 import { createAgentBusinessId, createAgentExecutionId } from './businessIdentifiers';
 import {
+  loadRuntimeModelCatalog,
+  type ModelCatalogItem,
+} from './RuntimeCatalogService';
+import {
   DEFAULT_LIST_PAGE_SIZE,
   toOffsetPageInfo,
   type OffsetPageInfo,
 } from '@sdkwork/agents-h5-core/sdk/pagination';
+
+export type { ModelCatalogItem } from './RuntimeCatalogService';
+
+/** Agent lifecycle status from the Agents domain (`AgentStatus`). */
+export type AgentLifecycleStatus = 'draft' | 'active' | 'disabled' | 'archived' | 'deleted';
 
 export interface AgentConfig {
   id?: string;
@@ -40,6 +49,13 @@ export interface AgentConfig {
   voiceIds?: string[];
   toolIds?: string[];
   skillIds?: string[];
+  /** Lifecycle status from the persisted AgentRecord; `undefined` for legacy records. */
+  status?: AgentLifecycleStatus;
+  /** Soft-delete timestamp from the persisted AgentRecord; set only when deleted. */
+  deletedAt?: string;
+  updatedAt?: string;
+  /** Optimistic lock version from the persisted AgentRecord (Int64String). */
+  version?: string;
 }
 
 export interface AgentPreviewResponseRequest {
@@ -83,9 +99,13 @@ export interface AgentService {
     pageSize?: number;
     scope?: 'market' | 'mine';
     q?: string;
+    /** Include soft-deleted agents (`deleted` status) for the current scope. */
+    includeDeleted?: boolean;
   }): Promise<AgentListPage>;
   getAgent(id: string): Promise<AgentConfig | null>;
   deleteAgent(id: string): Promise<void>;
+  /** Restore a soft-deleted agent (reverts `deleted` status). */
+  restoreAgent(id: string): Promise<AgentConfig>;
   requestPreviewResponse(request: AgentPreviewResponseRequest): Promise<AgentPreviewResponse>;
   optimizePrompt(request: AgentPromptOptimizeRequest): Promise<AgentPromptOptimizeResult>;
 }
@@ -345,6 +365,20 @@ function definedAgentConfig(config: Partial<AgentConfig>): Partial<AgentConfig> 
   ) as Partial<AgentConfig>;
 }
 
+function normalizeAgentStatus(value: unknown): AgentLifecycleStatus | undefined {
+  const status = asString(value);
+  if (
+    status === 'draft' ||
+    status === 'active' ||
+    status === 'disabled' ||
+    status === 'archived' ||
+    status === 'deleted'
+  ) {
+    return status;
+  }
+  return undefined;
+}
+
 function normalizeAgentFromAgentRecord(record: AgentRecord): AgentConfig {
   const manifest = normalizeManifest(record.manifest);
   const legacyConfig = normalizeAgentManagementProfile(
@@ -376,6 +410,10 @@ function normalizeAgentFromAgentRecord(record: AgentRecord): AgentConfig {
     voiceIds: asStringArray(uiConfig.voiceIds),
     toolIds: asStringArray(uiConfig.toolIds),
     skillIds: asStringArray(uiConfig.skillIds),
+    status: normalizeAgentStatus(record.status),
+    deletedAt: asOptionalString(record.deletedAt),
+    updatedAt: asOptionalString(record.updatedAt),
+    version: asString(record.version),
   };
 }
 
@@ -690,6 +728,7 @@ class SdkworkAgentService implements AgentService {
     pageSize?: number;
     scope?: 'market' | 'mine';
     q?: string;
+    includeDeleted?: boolean;
   } = {}): Promise<AgentListPage> {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? DEFAULT_LIST_PAGE_SIZE;
@@ -699,6 +738,7 @@ class SdkworkAgentService implements AgentService {
       pageSize,
       ...(trimmedQuery ? { q: trimmedQuery } : {}),
       ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.includeDeleted ? { includeDeleted: true } : {}),
     });
     return {
       items: response.items.map(normalizeAgentFromAgentRecord),
@@ -759,6 +799,13 @@ class SdkworkAgentService implements AgentService {
 
   async deleteAgent(id: string): Promise<void> {
     await this.getAgentClient().ai.agents.delete(id);
+  }
+
+  async restoreAgent(id: string): Promise<AgentConfig> {
+    const response = await this.getAgentClient().ai.agents.restore(id, {
+      requestedAt: new Date().toISOString(),
+    });
+    return normalizeAgentFromAgentRecord(response);
   }
 
   async requestPreviewResponse(request: AgentPreviewResponseRequest): Promise<AgentPreviewResponse> {
@@ -853,7 +900,22 @@ export function createSdkworkAgentService(
 
 export let agentService = createSdkworkAgentService();
 
+let activeAgentClientGetter: (() => SdkworkAgentsAppClient) | undefined;
+
 export function configureAgentService(getAgentClient?: () => SdkworkAgentsAppClient): AgentService {
+  activeAgentClientGetter = getAgentClient;
   agentService = createSdkworkAgentService(getAgentClient);
   return agentService;
+}
+
+/**
+ * Load the runtime model catalog through the configured agents client.
+ * Host apps that inject their client via `configureAgentService` share the
+ * same transport; falls back to the agents-h5 default session client.
+ */
+export async function loadMobileModelCatalog(): Promise<ModelCatalogItem[]> {
+  const client = activeAgentClientGetter
+    ? activeAgentClientGetter()
+    : getAgentsAppSdkClientWithSession();
+  return loadRuntimeModelCatalog(client);
 }

@@ -17,6 +17,32 @@ export interface AgentChatViewProps {
   onBack: () => void;
 }
 
+/**
+ * Track the mobile visual viewport height so the composer stays pinned above
+ * the on-screen keyboard. iOS Safari never resizes the layout viewport when
+ * the keyboard opens (`100dvh` stays behind the keyboard); the visual
+ * viewport is the only reliable height source. Falls back to the layout
+ * viewport height when `visualViewport` is unavailable.
+ */
+function useVisualViewportHeight(): number | null {
+  const [height, setHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const visualViewport = typeof window === "undefined" ? null : window.visualViewport;
+    if (!visualViewport) {
+      return undefined;
+    }
+    const update = () => setHeight(visualViewport.height);
+    update();
+    visualViewport.addEventListener("resize", update);
+    visualViewport.addEventListener("scroll", update);
+    return () => {
+      visualViewport.removeEventListener("resize", update);
+      visualViewport.removeEventListener("scroll", update);
+    };
+  }, []);
+  return height;
+}
+
 /** Maximum in-memory chat bubbles for one interactive session view. */
 const MAX_CHAT_MESSAGES = 200;
 
@@ -41,6 +67,7 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
   welcomeMessage: initialWelcomeMessage,
   onBack,
 }) => {
+  const visualViewportHeight = useVisualViewportHeight();
   const [agentName, setAgentName] = useState(initialAgentName ?? "智能体");
   const [welcomeMessage, setWelcomeMessage] = useState(
     initialWelcomeMessage ?? "你好，我是你的智能助手，有什么可以帮你的？",
@@ -193,21 +220,27 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="flex min-h-0 flex-1 flex-col bg-[#1e1e1e] text-gray-200"
+      // Own height (visual viewport tracked when the on-screen keyboard opens,
+      // `h-full` fallback for hosts that bound the page) so the message list
+      // flexes in the middle and the composer stays pinned to the bottom.
+      // Colors follow the host chat theme (`--color-*` tokens with the
+      // standalone dark palette as fallback).
+      className="flex h-full flex-col overflow-hidden bg-[var(--color-bg-color,#1e1e1e)] text-[var(--color-text-main,#e5e7eb)]"
+      style={visualViewportHeight !== null ? { height: visualViewportHeight } : undefined}
     >
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/5 bg-[#202020] px-4">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border-color,rgba(255,255,255,0.1))] bg-[var(--color-glass-bg,#202020)] px-4">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
+            className="rounded-lg p-2 text-[var(--color-text-sub,#9ca3af)] transition-colors hover:bg-[var(--color-hover-bg,rgba(255,255,255,0.05))] hover:text-[var(--color-text-main,#ffffff)]"
           >
             <ChevronLeft size={18} />
           </button>
           <Avatar src={createDefaultAvatar("agent")} size="md" fallback="A" />
           <div>
-            <h2 className="text-sm font-semibold text-white">{agentName}</h2>
-            <p className="text-xs text-gray-500">生产会话 · sessions API</p>
+            <h2 className="text-sm font-semibold text-[var(--color-text-main,#ffffff)]">{agentName}</h2>
+            <p className="text-xs text-[var(--color-text-sub,#6b7280)]">生产会话 · sessions API</p>
           </div>
         </div>
       </div>
@@ -218,11 +251,11 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
         className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
         {bootstrapping ? (
-          <div className="py-8 text-center text-sm text-gray-500">正在创建会话...</div>
+          <div className="py-8 text-center text-sm text-[var(--color-text-sub,#9ca3af)]">正在创建会话...</div>
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
             {hasOlderMessages ? (
-              <div className="py-2 text-center text-xs text-gray-500">
+              <div className="py-2 text-center text-xs text-[var(--color-text-sub,#9ca3af)]">
                 {loadingOlder ? "正在加载更早的消息..." : "向上滚动加载更早的消息"}
               </div>
             ) : null}
@@ -236,12 +269,12 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
                   <div
                     className={`group relative max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       isUser
-                        ? "bg-purple-600/90 text-white"
-                        : "border border-white/5 bg-[#262626] text-gray-100"
+                        ? "bg-[var(--color-chat-me-bg,#7c3aed)] text-white"
+                        : "border border-[var(--color-border-color,rgba(255,255,255,0.1))] bg-[var(--color-chat-other-bg,#262626)] text-[var(--color-text-main,#f3f4f6)]"
                     }`}
                   >
                     <p className="whitespace-pre-wrap">{message.content}</p>
-                    <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-400">
+                    <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-sub,#9ca3af)]">
                       <span>{formatTime(message.createdAt)}</span>
                       {!isUser ? (
                         <button
@@ -258,19 +291,26 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
               );
             })}
             {isTyping ? (
-              <div className="text-sm text-gray-500">智能体正在回复...</div>
+              <div className="text-sm text-[var(--color-text-sub,#9ca3af)]">智能体正在回复...</div>
             ) : null}
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
-      <div className="shrink-0 border-t border-white/5 bg-[#202020] p-3">
+      {/* Composer pinned to the bottom; safe-area aware for gesture bars. */}
+      <div className="shrink-0 border-t border-[var(--color-border-color,rgba(255,255,255,0.1))] bg-[var(--color-glass-bg,#202020)] px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <MessageInput
           onSend={handleSend}
           placeholder="输入消息，使用生产 sessions/messages API..."
           disabled={bootstrapping || !sessionId}
           isTyping={isTyping}
+          resizable={false}
+          maxHeightPx={
+            visualViewportHeight !== null
+              ? Math.round(visualViewportHeight * 0.5)
+              : undefined
+          }
         />
       </div>
     </motion.div>

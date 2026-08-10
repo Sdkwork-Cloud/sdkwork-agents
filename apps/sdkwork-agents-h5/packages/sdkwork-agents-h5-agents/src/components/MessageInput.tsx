@@ -17,6 +17,12 @@ export interface MessageInputProps {
   onStop?: () => void;
   defaultHeight?: number;
   resizable?: boolean;
+  /** Optional pixel cap for the composer height (e.g. the visual viewport
+   *  height on mobile) so it never exceeds the visible area above the
+   *  on-screen keyboard. Falls back to `50vh`. */
+  maxHeightPx?: number;
+  /** Desktop-only extras (screenshot / history) shown when explicitly enabled. */
+  showAdvancedActions?: boolean;
   replyingTo?: {
     id: string;
     senderName: string;
@@ -25,6 +31,13 @@ export interface MessageInputProps {
   onCancelReply?: () => void;
   onHistoryClick?: () => void;
 }
+
+/**
+ * Compact collapsed height for the auto-grow composer: one text line plus the
+ * inline action row (ChatGPT/WeChat-style mobile input). The composer grows
+ * with content up to `maxHeight`.
+ */
+const AUTO_GROW_MIN_HEIGHT = 64;
 
 function resolveFileMessageType(file: File): 'image' | 'file' | 'video' {
   if (file.type.startsWith('image/')) {
@@ -69,6 +82,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onStop,
   defaultHeight = 200,
   resizable = true,
+  maxHeightPx,
+  showAdvancedActions = false,
   replyingTo,
   onCancelReply,
   onHistoryClick,
@@ -168,7 +183,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     editable: !disabled && !isTyping,
     editorProps: {
       attributes: {
-        class: 'w-full h-full bg-transparent outline-none text-[15px] text-gray-200 font-sans leading-relaxed',
+        class: 'w-full h-full bg-transparent outline-none text-[15px] text-[var(--color-text-main,#e5e7eb)] font-sans leading-relaxed',
       },
     },
     onUpdate: ({ editor }: { editor: Editor }) => {
@@ -335,11 +350,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   return (
     <div 
-      className="shrink-0 px-2.5 pb-2.5 pt-3 flex flex-col bg-[#1e1e1e] relative"
+      className="shrink-0 px-2.5 pb-2.5 pt-2.5 flex flex-col bg-transparent relative overflow-hidden"
       style={{ 
+        // Auto-grow (mobile): height follows content from a compact single
+        // line up to the cap; `resizable` keeps the desktop drag mode.
         height: resizable ? `${height}px` : 'auto', 
-        minHeight: resizable ? '120px' : `${defaultHeight}px`,
-        maxHeight: '50vh'
+        minHeight: resizable ? '120px' : `${AUTO_GROW_MIN_HEIGHT}px`,
+        maxHeight: maxHeightPx !== undefined ? `${maxHeightPx}px` : '50vh'
       }}
     >
       {/* Drag Handle */}
@@ -353,66 +370,59 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       )}
 
       {/* AI Style Input Container */}
-      <div className={`bg-[#2b2b2d] rounded-2xl flex flex-col shadow-sm transition-all focus-within:bg-[#2f2f33] h-full relative ${disabled || isTyping ? 'opacity-70' : ''}`}>
+      <div className={`bg-[var(--color-input-bg,#2b2b2d)] rounded-2xl flex flex-col shadow-sm transition-all focus-within:bg-[var(--color-hover-bg,#2f2f33)] min-h-0 flex-1 relative ${disabled || isTyping ? 'opacity-70' : ''}`}>
         
         {/* Reply Preview */}
         {replyingTo && (
-          <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5 rounded-t-2xl shrink-0">
+          <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-hover-bg,rgba(255,255,255,0.05))] border-b border-[var(--color-border-color,rgba(255,255,255,0.1))] rounded-t-2xl shrink-0">
             <div className="flex items-center gap-2 min-w-0">
-              <Reply size={14} className="text-gray-400 shrink-0" />
-              <span className="text-[12px] text-gray-400 font-medium shrink-0">{t('chat.messageInput.replyPrefix', { name: replyingTo.senderName })}</span>
-              <span className="text-[12px] text-gray-500 truncate">{replyingTo.content}</span>
+              <Reply size={14} className="text-[var(--color-text-sub,#9ca3af)] shrink-0" />
+              <span className="text-[12px] text-[var(--color-text-sub,#9ca3af)] font-medium shrink-0">{t('chat.messageInput.replyPrefix', { name: replyingTo.senderName })}</span>
+              <span className="text-[12px] text-[var(--color-text-sub,#6b7280)] truncate">{replyingTo.content}</span>
             </div>
             <button 
               onClick={onCancelReply}
-              className="text-gray-500 hover:text-gray-300 transition-colors shrink-0 ml-2"
+              className="text-[var(--color-text-sub,#6b7280)] hover:text-[var(--color-text-main,#d1d5db)] transition-colors shrink-0 ml-2"
             >
               <X size={14} />
             </button>
           </div>
         )}
 
-        {/* Text Area */}
-        <div 
-          className={cn("flex-1 overflow-y-auto custom-scrollbar px-4 py-3 relative flex flex-col transition-colors", isDragOver ? "bg-[#3a3a3a]" : "")}
-          onKeyDownCapture={handleKeyDown}
-          onPaste={handlePaste}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {isDragOver && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#1e1e1e]/80 backdrop-blur-sm shadow-inner rounded-lg m-2 border-2 border-dashed border-indigo-500/50">
-               <ArrowUp size={32} className="text-indigo-400 mb-2 animate-bounce" />
-               <p className="text-gray-200 font-medium">{t('chat.messageInput.dropToSend')}</p>
-            </div>
-          )}
-          <EditorContent editor={editor} className="h-full" />
-        </div>
-        
-        {/* Bottom Actions */}
-        <div className="flex items-center justify-between px-3 pb-3 pt-1 shrink-0 relative">
-          <div className="flex items-center gap-1">
-            {/* Hidden File Input */}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              multiple 
-              onChange={handleFileChange} 
-              disabled={disabled || isTyping}
-            />
-            
-            <motion.button 
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              title={t('chat.messageInput.actions.sendFile')}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || isTyping}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Paperclip size={18} />
-            </motion.button>
+        {/* Composer row: the text area grows with content; actions inline. */}
+        <div className="flex items-end gap-0.5 px-1.5 py-1.5 min-h-0 flex-1">
+          {/* Text Area: grows with content; caps just under the composer cap
+              (outer padding 20px + row padding 12px) so the actions stay
+              visible and the text scrolls instead of overflowing. */}
+          <div 
+            className={cn("flex-1 min-w-0 min-h-[40px] overflow-y-auto custom-scrollbar px-2.5 py-1.5 relative flex flex-col justify-center transition-colors", isDragOver ? "bg-[var(--color-hover-bg,#3a3a3a)]" : "")}
+            style={{ maxHeight: `calc(${maxHeightPx !== undefined ? `${maxHeightPx}px` : '50vh'} - 32px)` }}
+            onKeyDownCapture={handleKeyDown}
+            onPaste={handlePaste}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {isDragOver && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#1e1e1e]/80 backdrop-blur-sm shadow-inner rounded-lg m-2 border-2 border-dashed border-indigo-500/50">
+                 <ArrowUp size={32} className="text-indigo-400 mb-2 animate-bounce" />
+                 <p className="text-[var(--color-text-main,#e5e7eb)] font-medium">{t('chat.messageInput.dropToSend')}</p>
+              </div>
+            )}
+            <EditorContent editor={editor} />
+          </div>
+
+          {/* Hidden File Input */}
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            multiple 
+            onChange={handleFileChange} 
+            disabled={disabled || isTyping}
+          />
+
+          {showAdvancedActions && (
             <motion.button 
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
@@ -459,76 +469,90 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 }
               }}
               disabled={disabled || isTyping}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-[var(--color-text-sub,#9ca3af)] hover:text-[var(--color-text-main,#e5e7eb)] hover:bg-[var(--color-hover-bg,rgba(255,255,255,0.05))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Scissors size={18} />
             </motion.button>
-            
-            {/* Emoji Button & Picker */}
-            <div className="relative">
-              <motion.button 
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                title={t('chat.messageInput.actions.emoji')}
-                disabled={disabled || isTyping}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${showEmojiPicker ? 'text-[#00b42a] bg-[#00b42a]/10' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              >
-                <Smile size={18} />
-              </motion.button>
-              
-              <AnimatePresence>
-                {showEmojiPicker && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                    className="absolute bottom-full left-0 mb-3 z-50 origin-bottom-left"
-                  >
-                    <EmojiPicker
-                      show={showEmojiPicker}
-                      onClose={() => setShowEmojiPicker(false)}
-                      activeEmojiTab={activeEmojiTab}
-                      setActiveEmojiTab={setActiveEmojiTab}
-                      onEmojiClick={onEmojiClick}
-                      onStickerClick={onStickerClick}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+          )}
 
+          {showAdvancedActions && (
             <motion.button 
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               title={t('chat.messageInput.actions.history')}
               onClick={onHistoryClick}
               disabled={disabled || isTyping}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-[var(--color-text-sub,#9ca3af)] hover:text-[var(--color-text-main,#e5e7eb)] hover:bg-[var(--color-hover-bg,rgba(255,255,255,0.05))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Clock size={18} />
             </motion.button>
+          )}
+
+          <motion.button 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title={t('chat.messageInput.actions.sendFile')}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || isTyping}
+            className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-[var(--color-text-sub,#9ca3af)] hover:text-[var(--color-text-main,#e5e7eb)] hover:bg-[var(--color-hover-bg,rgba(255,255,255,0.05))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Paperclip size={18} />
+          </motion.button>
+
+          {/* Emoji Button & Picker */}
+          <div className="relative shrink-0">
             <motion.button 
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              title={isRecording ? t('chat.messageInput.actions.stopRecording') : t('chat.messageInput.actions.recordVoice')}
-              onClick={toggleVoiceRecording}
+              title={t('chat.messageInput.actions.emoji')}
               disabled={disabled || isTyping}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative ${isRecording ? 'text-[#00b42a] bg-[#00b42a]/10 hover:bg-[#00b42a]/20' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${showEmojiPicker ? 'text-[#00b42a] bg-[#00b42a]/10' : 'text-[var(--color-text-sub,#9ca3af)] hover:text-[var(--color-text-main,#e5e7eb)] hover:bg-[var(--color-hover-bg,rgba(255,255,255,0.05))]'}`}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             >
-              <Mic size={18} className={isRecording ? 'animate-pulse' : ''} />
-              {isRecording && <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#00b42a] text-white text-[11px] px-2 py-0.5 rounded shadow-sm whitespace-nowrap">{voiceDuration}s</div>}
+              <Smile size={18} />
             </motion.button>
+            
+            <AnimatePresence>
+              {showEmojiPicker && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  className="absolute bottom-full left-0 mb-3 z-50 origin-bottom-left"
+                >
+                  <EmojiPicker
+                    show={showEmojiPicker}
+                    onClose={() => setShowEmojiPicker(false)}
+                    activeEmojiTab={activeEmojiTab}
+                    setActiveEmojiTab={setActiveEmojiTab}
+                    onEmojiClick={onEmojiClick}
+                    onStickerClick={onStickerClick}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          
+
+          <motion.button 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title={isRecording ? t('chat.messageInput.actions.stopRecording') : t('chat.messageInput.actions.recordVoice')}
+            onClick={toggleVoiceRecording}
+            disabled={disabled || isTyping}
+            className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative ${isRecording ? 'text-[#00b42a] bg-[#00b42a]/10 hover:bg-[#00b42a]/20' : 'text-[var(--color-text-sub,#9ca3af)] hover:text-[var(--color-text-main,#e5e7eb)] hover:bg-[var(--color-hover-bg,rgba(255,255,255,0.05))]'}`}
+          >
+            <Mic size={18} className={isRecording ? 'animate-pulse' : ''} />
+            {isRecording && <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#00b42a] text-white text-[11px] px-2 py-0.5 rounded shadow-sm whitespace-nowrap">{voiceDuration}s</div>}
+          </motion.button>
+
           {isTyping ? (
             <motion.button 
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               title={t('chat.messageInput.actions.stopGenerating')}
               onClick={onStop}
-              className="w-8 h-8 rounded-full bg-red-500/20 hover:bg-red-500/30 flex items-center justify-center text-red-500 transition-colors shadow-sm"
+              className="w-8 h-8 shrink-0 rounded-full bg-red-500/20 hover:bg-red-500/30 flex items-center justify-center text-red-500 transition-colors shadow-sm"
             >
               <StopCircle size={18} strokeWidth={2.5} />
             </motion.button>
@@ -539,7 +563,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               title={t('chat.messageInput.actions.send')}
               onClick={handleSend}
               disabled={disabled || isEmpty}
-              className="w-8 h-8 rounded-full bg-[#00b42a] hover:bg-[#009a24] disabled:bg-white/10 disabled:text-gray-500 flex items-center justify-center text-white transition-colors shadow-sm"
+              className="w-8 h-8 shrink-0 rounded-full bg-[var(--color-primary-blue,#00b42a)] hover:bg-[var(--color-primary-blue,#009a24)] disabled:bg-[var(--color-hover-bg,rgba(255,255,255,0.1))] disabled:text-[var(--color-text-sub,#6b7280)] flex items-center justify-center text-white transition-colors shadow-sm"
             >
               <ArrowUp size={18} strokeWidth={2.5} />
             </motion.button>

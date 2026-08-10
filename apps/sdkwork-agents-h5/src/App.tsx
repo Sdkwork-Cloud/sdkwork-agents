@@ -3,11 +3,14 @@ import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate, useParam
 
 import {
   AgentChatView,
+  AgentMarketplaceMobileView,
+  AgentMarketplaceSearchView,
   AgentView,
   CreateAgentModal,
   CreateAgentView,
   ToastContainer,
   type Agent,
+  type AgentConfig,
 } from "@sdkwork/agents-h5-agents";
 import { CHAT_ROUTE, CREATE_AGENT_ROUTE } from "@sdkwork/agents-h5-shell";
 
@@ -57,6 +60,23 @@ function AgentsHomePage() {
     navigate(`/${CHAT_ROUTE}/${agent.id}`, { state: { agent } });
   };
 
+  /** Mobile marketplace rows carry `AgentConfig`; map onto the route state shape. */
+  const handleMobileStartChat = (agent: AgentConfig) => {
+    navigate(`/${CHAT_ROUTE}/${agent.id}`, {
+      state: {
+        agent: {
+          id: agent.id ?? "",
+          name: agent.name,
+          desc: agent.description,
+          author: agent.author,
+          users: agent.users,
+          avatar: agent.avatar,
+          welcomeMessage: agent.welcomeMessage,
+        } satisfies Agent,
+      },
+    });
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-[#141414] text-gray-100">
       <ToastContainer />
@@ -91,6 +111,26 @@ function AgentsHomePage() {
             }
           />
           <Route path={`/${CHAT_ROUTE}/:agentId`} element={<AgentChatRoutePage />} />
+          {/* Mobile marketplace surfaces (hosted standalone for verification). */}
+          <Route
+            path="/mobile/market"
+            element={
+              <AgentMarketplaceMobileView
+                onStartChat={handleMobileStartChat}
+                onCreateAgent={navigateToCreate.onCreateAgent}
+                onSearch={() => navigate("/mobile/market/search")}
+              />
+            }
+          />
+          <Route
+            path="/mobile/market/search"
+            element={
+              <AgentMarketplaceSearchView
+                onStartChat={handleMobileStartChat}
+                onBack={() => navigate("/mobile/market")}
+              />
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
