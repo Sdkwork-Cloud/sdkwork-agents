@@ -41,7 +41,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -104,7 +108,11 @@ paths:
                 retryable: false
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}:
     get:
       tags:
@@ -159,7 +167,11 @@ paths:
                 retryable: false
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags:
       - ai
@@ -234,7 +246,11 @@ paths:
                 retryable: true
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags:
       - ai
@@ -299,7 +315,11 @@ paths:
                 retryable: true
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/restore:
     post:
       tags:
@@ -375,7 +395,11 @@ paths:
                 retryable: true
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/provider_bindings:
     get:
       tags:
@@ -401,13 +425,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProviderBindingListResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -437,15 +477,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProviderBindingResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '409':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/provider_bindings/{bindingId}/activate:
     post:
       tags:
@@ -477,13 +537,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProviderBindingResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/preview_responses:
     post:
       tags:
@@ -514,13 +590,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentRuntimeExecutionResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/prompt_optimizations:
     post:
       tags:
@@ -551,13 +643,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentRuntimeExecutionResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/workspaces:
     get:
       tags: [ai]
@@ -586,7 +694,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags: [ai]
       summary: Create a Workspace for the current user
@@ -613,7 +725,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/workspaces/default:
     post:
       tags: [ai]
@@ -640,7 +756,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/workspaces/{workspaceId}:
     get:
       tags: [ai]
@@ -663,7 +783,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags: [ai]
       summary: Update a Workspace owned by the current user
@@ -692,7 +816,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags: [ai]
       summary: Soft-delete an empty, non-default Workspace
@@ -716,7 +844,11 @@ paths:
         '204':
           description: Workspace deleted
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/workspaces/{workspaceId}/archive:
     post:
       tags: [ai]
@@ -746,7 +878,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects:
     get:
       tags: [ai]
@@ -794,7 +930,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags: [ai]
       summary: Create an agent project
@@ -821,7 +961,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/import:
     post:
       tags: [ai]
@@ -849,7 +993,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}:
     get:
       tags: [ai]
@@ -872,7 +1020,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags: [ai]
       summary: Update an agent project
@@ -901,7 +1053,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags: [ai]
       summary: Soft-delete an agent project
@@ -920,7 +1076,11 @@ paths:
         '204':
           description: Project deleted
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}/archive:
     post:
       tags: [ai]
@@ -950,7 +1110,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}/composition_slots:
     get:
       tags: [ai]
@@ -983,7 +1147,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags: [ai]
       summary: Add a composition slot to an agent project
@@ -1012,7 +1180,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}/composition_slots/{slotId}:
     get:
       tags: [ai]
@@ -1036,7 +1208,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags: [ai]
       summary: Update a project composition slot
@@ -1066,7 +1242,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags: [ai]
       summary: Soft-delete a project composition slot
@@ -1091,7 +1271,11 @@ paths:
         '204':
           description: Project composition slot deleted
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/workspaces/{workspaceId}/sessions:
     get:
       tags: [ai]
@@ -1127,7 +1311,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}/sessions:
     get:
       tags: [ai]
@@ -1163,7 +1351,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags: [ai]
       summary: Create an agent session in one project
@@ -1192,7 +1384,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}/sessions/synchronize:
     post:
       tags: [ai]
@@ -1233,7 +1429,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProjectSessionSynchronizationResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/projects/{projectId}/sessions/{sessionId}:
     get:
       tags: [ai]
@@ -1260,7 +1460,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/session_activity_summaries:
     get:
       tags:
@@ -1326,7 +1530,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionActivitySummaryListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions:
     get:
       tags:
@@ -1371,7 +1579,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -1401,7 +1613,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/user_states:
     get:
       tags: [ai]
@@ -1446,7 +1662,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentResourceUserStateListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}:
     get:
       tags:
@@ -1471,7 +1691,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags:
       - ai
@@ -1502,7 +1726,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags:
       - ai
@@ -1523,7 +1751,11 @@ paths:
         '204':
           description: Session deleted
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/close:
     post:
       tags:
@@ -1555,7 +1787,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/user_state:
     get:
       tags: [ai]
@@ -1579,7 +1815,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentResourceUserStateResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags: [ai]
       summary: Update the authenticated user's state for one agent session
@@ -1608,7 +1848,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentResourceUserStateResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/item_feedback:
     get:
       tags:
@@ -1637,7 +1881,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentItemFeedbackListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items:
     get:
       tags:
@@ -1696,7 +1944,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionItemListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/synchronize:
     post:
       tags:
@@ -1729,7 +1981,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionItemSynchronizeResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}:
     get:
       tags:
@@ -1755,7 +2011,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionItemResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/items/{itemId}/feedback:
     patch:
       tags:
@@ -1788,7 +2048,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentItemFeedbackResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns:
     get:
       tags:
@@ -1817,7 +2081,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -1853,7 +2121,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnStreamEvent'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}:
     get:
       tags:
@@ -1879,7 +2151,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turns/{turnId}/cancel:
     post:
       tags:
@@ -1912,7 +2188,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue:
     get:
       tags: [ai]
@@ -1938,7 +2218,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags: [ai]
       summary: Persist one user input in the Session Turn queue
@@ -1964,7 +2248,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/clear:
     post:
       tags: [ai]
@@ -1988,7 +2276,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClearAgentTurnInputQueueEntriesResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/reorder:
     post:
       tags: [ai]
@@ -2018,7 +2310,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReorderAgentTurnInputQueueEntriesResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/claim_next:
     post:
       tags: [ai]
@@ -2048,7 +2344,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClaimNextAgentTurnInputQueueEntryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}:
     patch:
       tags: [ai]
@@ -2079,7 +2379,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags: [ai]
       summary: Delete one non-executing queued Turn input
@@ -2104,7 +2408,11 @@ paths:
         '204':
           description: Queued Turn input deleted
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/fail:
     post:
       tags: [ai]
@@ -2135,7 +2443,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/turn_input_queue/{queueEntryId}/retry:
     post:
       tags: [ai]
@@ -2166,7 +2478,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions:
     get:
       tags:
@@ -2206,7 +2522,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -2237,7 +2557,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}:
     get:
       tags:
@@ -2263,7 +2587,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/claim:
     post:
       tags:
@@ -2295,7 +2623,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionClaimResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/approve:
     post:
       tags:
@@ -2328,7 +2660,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/answer:
     post:
       tags:
@@ -2361,7 +2697,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/interactions/{interactionId}/resolve:
     post:
       tags:
@@ -2394,7 +2734,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints:
     get:
       tags:
@@ -2421,7 +2765,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -2452,7 +2800,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}:
     get:
       tags:
@@ -2478,7 +2830,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/restore:
     post:
       tags:
@@ -2511,7 +2867,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/checkpoints/{checkpointId}/invalidate:
     post:
       tags:
@@ -2544,7 +2904,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings:
     get:
       tags:
@@ -2571,7 +2935,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -2602,7 +2970,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}:
     get:
       tags:
@@ -2628,7 +3000,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags:
       - ai
@@ -2659,7 +3035,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/activate:
     post:
       tags:
@@ -2692,7 +3072,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/sessions/{sessionId}/runtime_bindings/{runtimeBindingId}/deactivate:
     post:
       tags:
@@ -2725,7 +3109,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks:
     get:
       tags:
@@ -2757,7 +3145,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -2787,7 +3179,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}:
     get:
       tags:
@@ -2812,7 +3208,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     put:
       tags:
       - ai
@@ -2843,7 +3243,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/pause:
     post:
       tags:
@@ -2875,7 +3279,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/resume:
     post:
       tags:
@@ -2907,7 +3315,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/cancel:
     post:
       tags:
@@ -2939,7 +3351,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/execute:
     post:
       tags:
@@ -2971,7 +3387,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs:
     get:
       tags:
@@ -3010,7 +3430,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}:
     get:
       tags:
@@ -3036,7 +3460,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/retry:
     post:
       tags:
@@ -3069,7 +3497,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/cancel:
     post:
       tags:
@@ -3102,7 +3534,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/tasks/{taskId}/runs/{runId}/attempts:
     get:
       tags:
@@ -3130,7 +3566,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunAttemptListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/composition_slots:
     get:
       tags:
@@ -3156,13 +3596,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotListResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     post:
       tags:
       - ai
@@ -3192,15 +3648,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '409':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agents/{agentId}/composition_slots/{slotId}:
     get:
       tags:
@@ -3225,13 +3701,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       tags:
       - ai
@@ -3262,13 +3754,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotResponse'
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     delete:
       tags:
       - ai
@@ -3289,13 +3797,29 @@ paths:
         '204':
           description: Deleted managed agent composition slot
         '400':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         '404':
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/agent_engines:
     get:
       tags:
@@ -3318,7 +3842,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentEngineCatalogListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations/apply:
     post:
       tags:
@@ -3348,7 +3876,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppliedAgentModelConfigurationResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_selections/apply:
     post:
       tags:
@@ -3378,7 +3910,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppliedAgentModelSelectionResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations:
     get:
       tags:
@@ -3409,7 +3945,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationSummaryListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations/{engineId}/{profileId}:
     get:
       tags:
@@ -3444,7 +3984,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations/{engineId}/config_file:
     get:
       tags:
@@ -3474,7 +4018,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentEngineConfigFileResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations/{engineId}/{profileId}/status:
     get:
       tags:
@@ -3509,7 +4057,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationStatusResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations/{engineId}/{profileId}/archive:
     post:
       tags:
@@ -3544,7 +4096,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/model_configurations/migrate:
     post:
       tags:
@@ -3574,7 +4130,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/MigratedModelConfigurationResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/mcp_servers:
     get:
       tags:
@@ -3601,7 +4161,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/McpServerMarketplaceListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/tools:
     get:
       tags:
@@ -3623,7 +4187,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/MediaToolDirectoryResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/tools/{toolId}/invoke:
     post:
       tags:
@@ -3657,7 +4225,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/MediaToolInvokeApiResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /app/v3/api/ai/assets:
     get:
       tags:
@@ -3679,7 +4251,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ToolAssetListResponse'
         default:
-          $ref: '#/components/responses/Problem'
+          description: Problem detail response
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
 components:
   securitySchemes:
     AuthToken:
@@ -5989,7 +6565,7 @@ components:
           type: boolean
     AgentModelProviderId:
       type: string
-      enum: [codex, claude-code, gemini, opencode, openclaw, hermes]
+      enum: [codex, claude-code, gemini, opencode, openclaw, hermes, mimo-code, rig]
     ApplyAgentModelConfigurationRequest:
       type: object
       additionalProperties: false
@@ -6008,6 +6584,11 @@ components:
           pattern: '^[A-Za-z0-9._-]+$'
         engineId:
           $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional configuration subject (user-created agent id). Defaults to the canonical engine agent.
         vendorCode:
           type: string
           minLength: 1
@@ -6333,6 +6914,11 @@ components:
           description: Saved custom configuration identity. Omit for catalog models.
         engineId:
           $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional configuration subject (user-created agent id). Defaults to the canonical engine agent.
         modelId:
           type: string
           minLength: 1
@@ -7066,9 +7652,6 @@ components:
         agentId:
           type: string
           pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        sessionId:
-          type: string
-          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         projectId:
           type: string
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
@@ -7674,6 +8257,10 @@ components:
             $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: [string, 'null']
           maxLength: 128
@@ -7766,6 +8353,10 @@ components:
             $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: [string, 'null']
           maxLength: 128
@@ -7813,6 +8404,10 @@ components:
             $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: [string, 'null']
           maxLength: 128
@@ -8186,6 +8781,10 @@ components:
           default: text/plain
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: string
           maxLength: 128

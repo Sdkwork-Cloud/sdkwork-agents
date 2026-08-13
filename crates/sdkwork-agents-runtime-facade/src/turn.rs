@@ -66,6 +66,13 @@ pub struct AgentEngineTurnInput {
     pub top_p: Option<f64>,
     pub max_tokens: Option<i64>,
     pub access_mode_id: Option<String>,
+    /// Transient caller auth token (`Authorization: Bearer`) forwarded to the
+    /// model provider for product-facing routing (cloud-router dual-token).
+    /// Never persisted.
+    pub auth_token: Option<String>,
+    /// Transient caller access token (`Access-Token` header) paired with
+    /// `auth_token` for cloud-router dual-token routing. Never persisted.
+    pub access_token: Option<String>,
 }
 
 /// Provider-neutral terminal metadata for a streamed agent-engine turn.
@@ -206,6 +213,10 @@ fn build_model_request(
     }
     if let Some(timeout_ms) = input.timeout_ms {
         model_request.timeout_ms = Some(timeout_ms);
+    }
+    if input.auth_token.is_some() || input.access_token.is_some() {
+        model_request =
+            model_request.for_caller(input.auth_token.clone(), input.access_token.clone());
     }
     if let Some(working_directory) = input.working_directory.as_ref() {
         let value = working_directory.to_string_lossy();
@@ -1013,6 +1024,8 @@ mod tests {
                 top_p: Some(0.9),
                 max_tokens: Some(4_096),
                 access_mode_id: None,
+                auth_token: Some("caller-auth-token".to_string()),
+                access_token: Some("caller-access-token".to_string()),
             },
         )
         .expect("model request");
@@ -1026,6 +1039,11 @@ mod tests {
             Some("provider-session-existing")
         );
         assert_eq!(request.timeout_ms, Some(90_000));
+        assert_eq!(request.auth_token.as_deref(), Some("caller-auth-token"));
+        assert_eq!(
+            request.access_token.as_deref(),
+            Some("caller-access-token")
+        );
         assert_eq!(
             request.metadata_value(WORKING_DIRECTORY_METADATA_KEY),
             Some("C:/workspace/project")

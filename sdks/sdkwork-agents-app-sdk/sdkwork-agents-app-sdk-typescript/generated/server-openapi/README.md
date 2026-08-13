@@ -5,17 +5,17 @@ Generated SDKWork v3 dual-token transport SDK.
 ## Installation
 
 ```bash
-npm install @sdkwork/agents-app-sdk
+npm install sdkwork-agents-app-sdk-generated-typescript
 # or
-yarn add @sdkwork/agents-app-sdk
+yarn add sdkwork-agents-app-sdk-generated-typescript
 # or
-pnpm add @sdkwork/agents-app-sdk
+pnpm add sdkwork-agents-app-sdk-generated-typescript
 ```
 
 ## Quick Start
 
 ```typescript
-import { SdkworkAppClient } from '@sdkwork/agents-app-sdk';
+import { SdkworkAppClient } from 'sdkwork-agents-app-sdk-generated-typescript';
 
 const client = new SdkworkAppClient({
   baseUrl: 'http://localhost:8080',
@@ -41,7 +41,7 @@ Access-Token: <accessToken>
 ## Configuration (Non-Auth)
 
 ```typescript
-import { SdkworkAppClient } from '@sdkwork/agents-app-sdk';
+import { SdkworkAppClient } from 'sdkwork-agents-app-sdk-generated-typescript';
 
 const client = new SdkworkAppClient({
   baseUrl: 'http://localhost:8080',
@@ -68,7 +68,7 @@ const result = await client.ai.agents.agentEngines.list();
 ## Error Handling
 
 ```typescript
-import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-app-sdk';
+import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from 'sdkwork-agents-app-sdk-generated-typescript';
 
 try {
   const result = await client.ai.agents.agentEngines.list();

@@ -7451,7 +7451,6 @@ class ProjectSessionSynchronizationResponse {
 
 class CreateAgentSessionRequest {
   final String? agentId;
-  final String? sessionId;
   final String? projectId;
   final String sessionKind;
   final String entrySurface;
@@ -7467,7 +7466,6 @@ class CreateAgentSessionRequest {
 
   CreateAgentSessionRequest({
     this.agentId,
-    this.sessionId,
     this.projectId,
     required this.sessionKind,
     required this.entrySurface,
@@ -7485,7 +7483,6 @@ class CreateAgentSessionRequest {
   factory CreateAgentSessionRequest.fromJson(Map<String, dynamic> json) {
     return CreateAgentSessionRequest(
       agentId: json['agentId']?.toString(),
-      sessionId: json['sessionId']?.toString(),
       projectId: json['projectId']?.toString(),
       sessionKind: (() {
         final value = json['sessionKind']?.toString();
@@ -7534,7 +7531,6 @@ class CreateAgentSessionRequest {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'agentId': agentId,
-      'sessionId': sessionId,
       'projectId': projectId,
       'sessionKind': sessionKind,
       'entrySurface': entrySurface,
@@ -8921,6 +8917,7 @@ class AgentTurnInputQueueEntry {
   final List<String> attachmentNames;
   final List<AgentTurnInputQueueDriveRef> driveRefs;
   final String turnMode;
+  final String? systemPrompt;
   final String? runtimeBindingId;
   final String? requestedModelId;
   final String? accessModeId;
@@ -8950,6 +8947,7 @@ class AgentTurnInputQueueEntry {
     required this.attachmentNames,
     required this.driveRefs,
     required this.turnMode,
+    this.systemPrompt,
     this.runtimeBindingId,
     this.requestedModelId,
     this.accessModeId,
@@ -9044,6 +9042,7 @@ class AgentTurnInputQueueEntry {
         }
         return value;
       })(),
+      systemPrompt: json['systemPrompt']?.toString(),
       runtimeBindingId: json['runtimeBindingId']?.toString(),
       requestedModelId: json['requestedModelId']?.toString(),
       accessModeId: json['accessModeId']?.toString(),
@@ -9130,6 +9129,7 @@ class AgentTurnInputQueueEntry {
       'attachmentNames': attachmentNames.map((item) => item).toList(),
       'driveRefs': driveRefs.map((item) => item.toJson()).toList(),
       'turnMode': turnMode,
+      'systemPrompt': systemPrompt,
       'runtimeBindingId': runtimeBindingId,
       'requestedModelId': requestedModelId,
       'accessModeId': accessModeId,
@@ -9160,6 +9160,7 @@ class CreateAgentTurnInputQueueEntryRequest {
   final List<String>? attachmentNames;
   final List<AgentTurnInputQueueDriveRef>? driveRefs;
   final String turnMode;
+  final String? systemPrompt;
   final String? runtimeBindingId;
   final String? requestedModelId;
   final String? accessModeId;
@@ -9173,6 +9174,7 @@ class CreateAgentTurnInputQueueEntryRequest {
     this.attachmentNames,
     this.driveRefs,
     required this.turnMode,
+    this.systemPrompt,
     this.runtimeBindingId,
     this.requestedModelId,
     this.accessModeId,
@@ -9221,6 +9223,7 @@ class CreateAgentTurnInputQueueEntryRequest {
         }
         return value;
       })(),
+      systemPrompt: json['systemPrompt']?.toString(),
       runtimeBindingId: json['runtimeBindingId']?.toString(),
       requestedModelId: json['requestedModelId']?.toString(),
       accessModeId: json['accessModeId']?.toString(),
@@ -9243,6 +9246,7 @@ class CreateAgentTurnInputQueueEntryRequest {
       'attachmentNames': attachmentNames?.map((item) => item).toList(),
       'driveRefs': driveRefs?.map((item) => item.toJson()).toList(),
       'turnMode': turnMode,
+      'systemPrompt': systemPrompt,
       'runtimeBindingId': runtimeBindingId,
       'requestedModelId': requestedModelId,
       'accessModeId': accessModeId,
@@ -9258,6 +9262,7 @@ class UpdateAgentTurnInputQueueEntryRequest {
   final List<String>? attachmentNames;
   final List<AgentTurnInputQueueDriveRef>? driveRefs;
   final String turnMode;
+  final String? systemPrompt;
   final String? runtimeBindingId;
   final String? requestedModelId;
   final String? accessModeId;
@@ -9271,6 +9276,7 @@ class UpdateAgentTurnInputQueueEntryRequest {
     this.attachmentNames,
     this.driveRefs,
     required this.turnMode,
+    this.systemPrompt,
     this.runtimeBindingId,
     this.requestedModelId,
     this.accessModeId,
@@ -9319,6 +9325,7 @@ class UpdateAgentTurnInputQueueEntryRequest {
         }
         return value;
       })(),
+      systemPrompt: json['systemPrompt']?.toString(),
       runtimeBindingId: json['runtimeBindingId']?.toString(),
       requestedModelId: json['requestedModelId']?.toString(),
       accessModeId: json['accessModeId']?.toString(),
@@ -9347,6 +9354,7 @@ class UpdateAgentTurnInputQueueEntryRequest {
       'attachmentNames': attachmentNames?.map((item) => item).toList(),
       'driveRefs': driveRefs?.map((item) => item.toJson()).toList(),
       'turnMode': turnMode,
+      'systemPrompt': systemPrompt,
       'runtimeBindingId': runtimeBindingId,
       'requestedModelId': requestedModelId,
       'accessModeId': accessModeId,
@@ -10240,6 +10248,7 @@ class CreateAgentTurnRequest {
   final String content;
   final String? contentType;
   final String turnMode;
+  final String? systemPrompt;
   final String? runtimeBindingId;
   final String? requestedModelId;
   final String? accessModeId;
@@ -10254,6 +10263,7 @@ class CreateAgentTurnRequest {
     required this.content,
     this.contentType,
     required this.turnMode,
+    this.systemPrompt,
     this.runtimeBindingId,
     this.requestedModelId,
     this.accessModeId,
@@ -10282,6 +10292,7 @@ class CreateAgentTurnRequest {
         }
         return value;
       })(),
+      systemPrompt: json['systemPrompt']?.toString(),
       runtimeBindingId: json['runtimeBindingId']?.toString(),
       requestedModelId: json['requestedModelId']?.toString(),
       accessModeId: json['accessModeId']?.toString(),
@@ -10326,6 +10337,7 @@ class CreateAgentTurnRequest {
       'content': content,
       'contentType': contentType,
       'turnMode': turnMode,
+      'systemPrompt': systemPrompt,
       'runtimeBindingId': runtimeBindingId,
       'requestedModelId': requestedModelId,
       'accessModeId': accessModeId,

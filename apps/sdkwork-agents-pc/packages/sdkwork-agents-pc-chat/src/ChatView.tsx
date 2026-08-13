@@ -21,6 +21,7 @@ import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
 import { ArtifactPanel } from "./components/ArtifactPanel";
 import { SettingsModal } from "./components/SettingsModal";
+import { CustomProviderDialog } from "./components/CustomProviderDialog";
 import { UserProfileModal } from "./components/UserProfileModal";
 import { ProjectHomeView } from "./components/ProjectHomeView";
 import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
@@ -28,8 +29,11 @@ import { FileLibraryView } from "./components/FileLibraryView";
 import {
   chatModelPickerGroups,
   createChatModelPickerFallback,
+  createCustomProviderModelGroup,
   resolveChatDefaultModelId,
 } from "./modelPicker/chatModelPickerCatalog";
+import type { ModelsPickerGroup } from "@sdkwork/models-pc-picker/model-picker-types";
+import type { AppliedCustomProvider } from "./components/CustomProviderDialog";
 
 const chatModelPickerFallback = createChatModelPickerFallback();
 
@@ -41,7 +45,7 @@ function resolveChatUploadPurpose(file: File): AgentsDriveUploadPurpose {
 }
 
 export const ChatView = () => {
-  const { t } = useTranslation("chat");
+  const { t, i18n } = useTranslation("chat");
 
   const [sessions, setSessions] = useState<ChatSession[]>([
     { id: "1", title: t("newChat"), messages: [], updatedAt: Date.now(), version: "" },
@@ -74,6 +78,15 @@ export const ChatView = () => {
         if (!active || remoteSessions.length === 0) return;
         setSessions(remoteSessions);
         setCurrentSessionId(remoteSessions[0].id);
+        // Lazy detail: load the transcript of the initially selected session.
+        void ChatService.loadSessionDetail(remoteSessions[0].id)
+          .then((messages) => {
+            if (!active) return;
+            setSessions((prev) =>
+              prev.map((s) => s.id === remoteSessions[0].id ? { ...s, messages } : s),
+            );
+          })
+          .catch((error) => console.error("Chat transcript load failed", error));
       })
       .catch((error) => console.error("Chat history load failed", error));
     return () => {
@@ -102,6 +115,8 @@ export const ChatView = () => {
 
   const [selectedModel, setSelectedModel] = useState(resolveChatDefaultModelId);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+  const [isCustomProviderOpen, setIsCustomProviderOpen] = useState(false);
+  const [customProviderGroups, setCustomProviderGroups] = useState<ModelsPickerGroup[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<
     "profile" | "billing" | null
@@ -363,6 +378,18 @@ export const ChatView = () => {
     // Draft media belongs to the conversation it was selected in; never
     // carry attachments into another session.
     setSelectedMediaResources([]);
+    // Lazy detail: transcripts are not preloaded with the session list, so
+    // fetch the selected session's messages when they are not loaded yet.
+    const session = sessions.find((s) => s.id === id);
+    if (session && session.messages.length === 0) {
+      void ChatService.loadSessionDetail(id)
+        .then((messages) => {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === id ? { ...s, messages } : s)),
+          );
+        })
+        .catch((error) => console.error("Chat transcript load failed", error));
+    }
   };
 
   const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
@@ -530,8 +557,24 @@ export const ChatView = () => {
           setIsGenerating(false);
           abortControllerRef.current = null;
         },
-        onError: (err) => {
-          if (err !== "AbortError") {
+        onError: (failure) => {
+          if (failure.message !== "AbortError") {
+            // Map the backend problem to localized text per FRONTEND_SPEC:
+            // prefer the explicit `i18nKey`, fall back to the standard
+            // `errors.result.<code>` key, and finally to a clean generic
+            // message (the raw SDK text stays in the console log).
+            const mappedKey =
+              failure.i18nKey
+              ?? (failure.code !== undefined ? `errors.result.${failure.code}` : undefined);
+            const translated =
+              mappedKey && i18n.exists(mappedKey)
+                ? String(i18n.t(mappedKey))
+                : t("sendErrorFallback");
+            const hint =
+              failure.httpStatus !== undefined && failure.httpStatus >= 500
+                ? t("retryHint")
+                : "";
+            const errorText = `${translated}${hint}`.trim();
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id === currentSessionId) {
@@ -541,7 +584,7 @@ export const ChatView = () => {
                       m.id === modelMessageId
                         ? {
                             ...m,
-                            text: m.text + `\n\n**${t("generatingError")}**`,
+                            text: m.text + `\n\n**⚠️ ${errorText}**`,
                           }
                         : m,
                     ),
@@ -617,13 +660,14 @@ export const ChatView = () => {
             <ChatHeader
               isSidebarOpen={isSidebarOpen}
               toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-              modelGroups={chatModelPickerGroups}
+              modelGroups={[...chatModelPickerGroups, ...customProviderGroups]}
               selectedModelId={selectedModel}
               onSelectModel={setSelectedModel}
               fallbackModel={chatModelPickerFallback}
               isModelSelectorOpen={isModelSelectorOpen}
               setIsModelSelectorOpen={setIsModelSelectorOpen}
               onOpenSettings={() => setIsSettingsOpen(true)}
+              onManageCustomProvider={() => setIsCustomProviderOpen(true)}
             />
 
             <div
@@ -687,6 +731,18 @@ export const ChatView = () => {
 
       {isSettingsOpen && (
         <SettingsModal onClose={() => setIsSettingsOpen(false)} />
+      )}
+      {isCustomProviderOpen && (
+        <CustomProviderDialog
+          open={isCustomProviderOpen}
+          onClose={() => setIsCustomProviderOpen(false)}
+          onApplied={(provider: AppliedCustomProvider) => {
+            setCustomProviderGroups([
+              createCustomProviderModelGroup(provider),
+            ]);
+            setSelectedModel(provider.modelId);
+          }}
+        />
       )}
       {activeProjectSettings && (
         <ProjectSettingsModal

@@ -6778,6 +6778,8 @@ where
                         .iter()
                         .any(|capability| capability == "model.chat")
                 }),
+                tenant_id: turn.tenant_id,
+                agent_id: turn.agent_id.clone(),
             })?;
             if cancellation.model_request_id != model_request_id
                 || cancellation.finish_reason != "cancelled"
@@ -6870,6 +6872,26 @@ where
         })
     }
 
+    /// Maps a durable failed Turn back to the failure the original attempt
+    /// reported. Idempotent replays of a failed Turn must surface the same
+    /// outcome (provider/capacity/timeout) instead of a generic 409 conflict;
+    /// the SDK retries 5xx responses with the same idempotency key, so a bare
+    /// conflict would hide the real failure behind "turn execution already
+    /// failed". Replays never re-execute the Turn.
+    fn failed_turn_replay_error(turn: &AgentTurnRecord) -> KernelError {
+        let error_code = turn.error_code.as_deref().unwrap_or("turn_execution_failed");
+        let detail = turn
+            .error_detail
+            .clone()
+            .unwrap_or_else(|| "turn execution already failed".to_string());
+        match error_code {
+            "turn_provider_capacity_exhausted" => KernelError::resource_exhausted(detail),
+            "turn_reconciliation_timeout" => KernelError::timeout(detail),
+            "turn_execution_identity_mismatch" => KernelError::Internal { message: detail },
+            _ => KernelError::provider_error(error_code, detail),
+        }
+    }
+
     fn replay_existing_turn(
         &self,
         command: &CreateTurnCommand,
@@ -6892,14 +6914,16 @@ where
             ));
         }
         if existing_turn.status != AgentTurnStatus::Completed {
-            return Err(KernelError::conflict(match existing_turn.status {
+            return Err(match existing_turn.status {
                 AgentTurnStatus::Requested | AgentTurnStatus::Running => {
-                    "turn execution is already in progress"
+                    KernelError::conflict("turn execution is already in progress")
                 }
-                AgentTurnStatus::Failed => "turn execution already failed",
-                AgentTurnStatus::Cancelled => "turn execution was already cancelled",
+                AgentTurnStatus::Failed => Self::failed_turn_replay_error(&existing_turn),
+                AgentTurnStatus::Cancelled => {
+                    KernelError::conflict("turn execution was already cancelled")
+                }
                 AgentTurnStatus::Completed => unreachable!(),
-            }));
+            });
         }
         let response_item_id =
             existing_turn
@@ -7107,7 +7131,12 @@ where
                 ));
             }
             if let Some(requested_model_id) = command.requested_model_id.as_deref() {
-                if requested_model_id != binding.model_id {
+                // The RIG simple-agent binding (`binding.rig`) resolves the
+                // model from its live configuration (`llm.rig.default_model`);
+                // the client-requested model id is advisory there, so the
+                // strict equality check only applies to other engines.
+                let rig_bound = binding.provider_binding_id == "binding.rig";
+                if !rig_bound && requested_model_id != binding.model_id {
                     return Err(KernelError::validation(
                         "requestedModelId does not match the active session runtime binding",
                     ));
@@ -7275,14 +7304,16 @@ where
                 // worker's late writes are fenced by the version CAS below.
                 return self.resume_task_turn(&command, agent, session, existing_turn, stream_sink);
             }
-            return Err(KernelError::conflict(match existing_turn.status {
+            return Err(match existing_turn.status {
                 AgentTurnStatus::Requested | AgentTurnStatus::Running => {
-                    "turn execution is already in progress"
+                    KernelError::conflict("turn execution is already in progress")
                 }
-                AgentTurnStatus::Failed => "turn execution already failed",
-                AgentTurnStatus::Cancelled => "turn execution was already cancelled",
+                AgentTurnStatus::Failed => Self::failed_turn_replay_error(&existing_turn),
+                AgentTurnStatus::Cancelled => {
+                    KernelError::conflict("turn execution was already cancelled")
+                }
                 AgentTurnStatus::Completed => unreachable!(),
-            }));
+            });
         }
 
         let session_runtime_binding = match command.runtime_binding_id.as_deref() {
@@ -7320,7 +7351,12 @@ where
                 ));
             }
             if let Some(requested_model_id) = command.requested_model_id.as_deref() {
-                if requested_model_id != binding.model_id {
+                // The RIG simple-agent binding (`binding.rig`) resolves the
+                // model from its live configuration (`llm.rig.default_model`);
+                // the client-requested model id is advisory there, so the
+                // strict equality check only applies to other engines.
+                let rig_bound = binding.provider_binding_id == "binding.rig";
+                if !rig_bound && requested_model_id != binding.model_id {
                     return Err(KernelError::validation(
                         "requestedModelId does not match the active session runtime binding",
                     ));
@@ -7605,7 +7641,9 @@ where
                 .map(|binding| binding.provider_binding_id.clone()),
             access_mode_id: command.access_mode_id.clone(),
             provider_has_model_chat,
+            system_prompt: command.system_prompt.clone(),
             auth_token: command.auth_token.clone(),
+            access_token: command.access_token.clone(),
         };
         let completion = if let Some(stream_sink) = stream_sink.as_ref() {
             stream_sink.begin_turn(&session.session_id, &turn_id);
@@ -10944,7 +10982,9 @@ mod task_tests {
                 requested_by: sample_subject(),
                 requested_at: "2026-08-02T00:00:05Z".to_string(),
                 prefer_stream: false,
+            system_prompt: None,
             auth_token: None,
+            access_token: None,
             })
         });
         executor.wait_until_started();
@@ -11128,7 +11168,9 @@ mod task_tests {
             requested_by: sample_subject(),
             requested_at: requested_at.to_string(),
             prefer_stream: false,
+            system_prompt: None,
             auth_token: None,
+            access_token: None,
         };
 
         // First attempt: provider failure marks the Turn Failed.

@@ -66,16 +66,24 @@ function mapModelRecord(record: AgentEngineModelCatalogEntry): ModelCatalogItem 
 }
 
 /** Load model catalog from agents agent-engine runtime (`GET /app/v3/api/ai/agent_engines`). */
+const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000;
+let modelCatalogCache: { catalog: ModelCatalogItem[]; expiresAt: number } | null = null;
+
 export async function loadRuntimeModelCatalog(
   client: SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession(),
 ): Promise<ModelCatalogItem[]> {
-  const catalog = await client.ai.agents.agentEngines.list();
-  if (!catalog.engines.length) {
-    return [];
+  const now = Date.now();
+  if (modelCatalogCache && modelCatalogCache.expiresAt > now) {
+    return modelCatalogCache.catalog;
   }
-  return catalog.engines.flatMap((engine) =>
-    engine.models.map(mapModelRecord),
-  );
+  const catalog = await client.ai.agents.agentEngines.list();
+  const items = catalog.engines.length
+    ? catalog.engines.flatMap((engine) => engine.models.map(mapModelRecord))
+    : [];
+  // The engine catalog is a session-stable directory; cache it so each chat
+  // turn does not re-fetch it (one GET per send otherwise).
+  modelCatalogCache = { catalog: items, expiresAt: now + MODEL_CATALOG_TTL_MS };
+  return items;
 }
 
 /**
@@ -83,6 +91,11 @@ export async function loadRuntimeModelCatalog(
  * catalog. Prefers the exact `modelId`; when absent (or not present in the
  * catalog, e.g. a stale hard-coded default), falls back to the engine default
  * model (`defaultForEngine`), then to the first catalog entry.
+ *
+ * A model id outside the engine catalog (for example a custom LLM provider
+ * model applied via `model_configurations/apply`) is passed through with the
+ * rig engine binding so `requestedModelId` keeps the client's selection
+ * instead of silently replacing it with the engine default.
  *
  * The resolved entry carries the canonical binding identity (`bindingId`,
  * `providerId`, `engineKey`) required to bind a session for managed turns.
@@ -100,6 +113,13 @@ export async function resolveChatRuntimeModel(
     if (exact) {
       return exact;
     }
+    // Custom provider model: keep the client selection, carrying the rig
+    // engine binding so the session still resolves to the rig agent engine.
+    const rigEngine =
+      catalog.find((item) => item.engineKey === "rig") ??
+      catalog.find((item) => item.defaultForEngine) ??
+      catalog[0];
+    return { ...rigEngine, id: modelId, label: modelId };
   }
   const engineDefault = catalog.find((item) => item.defaultForEngine);
   return engineDefault ?? catalog[0];

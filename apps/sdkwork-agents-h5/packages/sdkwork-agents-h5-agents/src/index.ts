@@ -54,5 +54,5 @@ export {
   configureAgentH5Locale,
   detectAgentH5Locale,
   translateAgentMobileText,
-} from "./i18n/mobileAgentTexts";
-export type { AgentH5Locale } from "./i18n/mobileAgentTexts";
+} from "./copy/mobileAgentTexts";
+export type { AgentH5Locale } from "./copy/mobileAgentTexts";

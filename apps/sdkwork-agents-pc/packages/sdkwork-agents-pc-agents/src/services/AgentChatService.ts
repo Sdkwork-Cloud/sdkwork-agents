@@ -1,4 +1,4 @@
-import { completeAgentTurn } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
+import { completeAgentTurn, completeAgentTurnStream } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import {
   getAgentsAppSdkClientWithSession,
   type AgentItemFeedbackRecord,
@@ -8,6 +8,7 @@ import {
   type SdkworkAgentsAppClient,
 } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import type { AgentsDriveMediaResource } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
+import type { CreateAgentTurnRequest } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import { sha256Hash, uuid } from "@sdkwork/utils";
 
 import { resolveChatRuntimeModel } from "./RuntimeCatalogService";
@@ -115,17 +116,15 @@ export class AgentChatService {
     private readonly getClient: () => SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession,
   ) {}
 
-  async createSession(agentId: string, title?: string, sessionId?: string): Promise<string> {
+  async createSession(agentId: string, title?: string): Promise<string> {
     const idempotencyKey = uuid();
     const normalizedTitle = title?.trim() || "Agent session";
     const session = await this.getClient().ai.agents.sessions.create(agentId, {
-      ...(sessionId ? { sessionId } : {}),
       sessionKind: "assistant",
       entrySurface: "pc",
       title: normalizedTitle,
       idempotencyKey,
       payloadHash: `sha256:${sha256Hash(JSON.stringify({
-        sessionId: sessionId ?? null,
         sessionKind: "assistant",
         entrySurface: "pc",
         title: normalizedTitle,
@@ -274,6 +273,12 @@ export class AgentChatService {
     return this.createSession(agentId, title);
   }
 
+  /**
+   * Reuse an existing session with the requested id, otherwise create a new
+   * one. Client-chosen session ids are not accepted by `sessions.create`
+   * (B12 context-selector guard on the app surface), so a new session gets a
+   * server-generated id; the caller keeps the returned id for the next turn.
+   */
   async resolveOrCreateNamedSession(
     agentId: string,
     sessionId: string,
@@ -283,7 +288,7 @@ export class AgentChatService {
     if (sessionIds.includes(sessionId)) {
       return sessionId;
     }
-    return this.createSession(agentId, title, sessionId);
+    return this.createSession(agentId, title);
   }
 
   /** Load one server page for interactive chat history (`PAGINATION_SPEC.md` §8). */
@@ -322,7 +327,54 @@ export class AgentChatService {
     content: string,
     modelId?: string,
     media?: AgentsDriveMediaResource | AgentsDriveMediaResource[],
+    systemPrompt?: string,
   ): Promise<ChatMessage> {
+    const completion = await completeAgentTurn(
+      this.getClient(),
+      agentId,
+      sessionId,
+      await this.buildTurnBody(content, modelId, media, systemPrompt),
+    );
+    const assistantRecord = findAssistantOutput(completion.items);
+    if (!assistantRecord) {
+      throw new Error("Agent turn did not return an assistant_output item.");
+    }
+    return toChatMessage(assistantRecord);
+  }
+
+  /**
+   * Streams one turn through the SSE protocol: `onDelta` receives incremental
+   * text chunks, and the resolved assistant message is returned at the end.
+   */
+  async sendMessageStream(
+    agentId: string,
+    sessionId: string,
+    content: string,
+    modelId: string | undefined,
+    media: AgentsDriveMediaResource | AgentsDriveMediaResource[] | undefined,
+    onDelta: (delta: string) => void,
+    systemPrompt?: string,
+  ): Promise<ChatMessage> {
+    const completion = await completeAgentTurnStream(
+      this.getClient(),
+      agentId,
+      sessionId,
+      await this.buildTurnBody(content, modelId, media, systemPrompt),
+      onDelta,
+    );
+    const assistantRecord = findAssistantOutput(completion.items);
+    if (!assistantRecord) {
+      throw new Error("Agent turn stream did not return an assistant_output item.");
+    }
+    return toChatMessage(assistantRecord);
+  }
+
+  private async buildTurnBody(
+    content: string,
+    modelId?: string,
+    media?: AgentsDriveMediaResource | AgentsDriveMediaResource[],
+    systemPrompt?: string,
+  ): Promise<CreateAgentTurnRequest> {
     const mediaResources = media ? (Array.isArray(media) ? media : [media]) : [];
     const requestId = uuid();
     const driveRefs = mediaResources.map((item) => {
@@ -349,10 +401,11 @@ export class AgentChatService {
       requestedModelId: runtimeModel.id,
       driveRefs,
     }))}`;
-    const body = {
+    return {
       content: content.trim(),
       contentType,
       turnMode: "interactive" as const,
+      ...(systemPrompt ? { systemPrompt: systemPrompt.trim() } : {}),
       ...(driveRefs.length > 0 ? { driveRefs } : {}),
       requestedAt: new Date().toISOString(),
       idempotencyKey: requestId,
@@ -360,17 +413,6 @@ export class AgentChatService {
       clientRequestId: requestId,
       requestedModelId: runtimeModel.id,
     };
-    const completion = await completeAgentTurn(
-      this.getClient(),
-      agentId,
-      sessionId,
-      body,
-    );
-    const assistantRecord = findAssistantOutput(completion.items);
-    if (!assistantRecord) {
-      throw new Error("Agent turn did not return an assistant_output item.");
-    }
-    return toChatMessage(assistantRecord);
   }
 
   private normalizeMessages(items: AgentSessionItemRecord[]): ChatMessage[] {

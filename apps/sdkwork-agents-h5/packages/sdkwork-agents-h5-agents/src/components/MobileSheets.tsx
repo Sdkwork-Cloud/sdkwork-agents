@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@sdkwork/agents-h5-commons';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 
 /**
  * Mobile-first bottom action sheet and confirm dialog shared by the mobile

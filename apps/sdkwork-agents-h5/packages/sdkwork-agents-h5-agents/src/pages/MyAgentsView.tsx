@@ -5,7 +5,7 @@ import { agentService, type AgentConfig, type AgentLifecycleStatus } from '../se
 import { createDefaultAvatar } from '../services/DefaultAvatarService';
 import { toast } from '../components/Toast';
 import { MobileActionSheet, MobileConfirmDialog } from '../components/MobileSheets';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 
 export interface AgentMobileViewProps {
   /** Host-navigated "start a chat with this agent" callback. */

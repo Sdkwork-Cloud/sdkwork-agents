@@ -1,5 +1,5 @@
 import React from 'react';
-import { PanelLeftOpen, Settings } from 'lucide-react';
+import { Cable, PanelLeftOpen, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ModelPicker } from '@sdkwork/models-pc-picker/model-picker';
 import type {
@@ -18,6 +18,7 @@ interface ChatHeaderProps {
   isModelSelectorOpen: boolean;
   setIsModelSelectorOpen: (v: boolean) => void;
   onOpenSettings: () => void;
+  onManageCustomProvider: () => void;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -29,7 +30,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   fallbackModel,
   isModelSelectorOpen,
   setIsModelSelectorOpen,
-  onOpenSettings
+  onOpenSettings,
+  onManageCustomProvider
 }) => {
   const { t } = useTranslation('common');
 
@@ -57,6 +59,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           compact
           showModelDescription
         />
+        <button
+          onClick={onManageCustomProvider}
+          className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md transition-colors hover:bg-gray-200/50 dark:hover:bg-[#2f2f2f]/50"
+          title={t('customProvider')}
+        >
+          <Cable size={16} />
+        </button>
       </div>
       <div className="flex items-center gap-2 pointer-events-auto mt-2">
         <button 

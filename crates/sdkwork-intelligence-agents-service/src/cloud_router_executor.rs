@@ -13,6 +13,7 @@ use cloudrouter_open_sdk::SdkworkAiClient;
 use sdkwork_agent_kernel::KernelError;
 
 use crate::domain::AgentSessionItemKind;
+use crate::runtime_facade_bridge::engine_key_for_binding_id;
 use crate::turn_runtime::{
     TurnExecutionInput, TurnExecutionOutput, TurnExecutor, TurnExecutionStreamSink,
 };
@@ -23,17 +24,14 @@ pub const RUNTIME_MODE_CLOUDROUTER: &str = "cloudrouter-account-pool";
 /// Environment variable for the cloudrouter gateway base URL.
 pub const ENV_CLOUDROUTER_BASE_URL: &str = "SDKWORK_AGENTS_CLOUDROUTER_BASE_URL";
 
-/// Default cloudrouter gateway base URL (shared platform proxy port).
-const DEFAULT_CLOUDROUTER_BASE_URL: &str = "http://127.0.0.1:3900";
-
 /// Fallback model key sent when the turn carries no model id.
 const DEFAULT_MODEL_KEY: &str = "default";
 
 fn cloudrouter_base_url() -> String {
-    std::env::var(ENV_CLOUDROUTER_BASE_URL)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_CLOUDROUTER_BASE_URL.to_string())
+    // Shared resolver: env override -> the gateway's own ingress bind (the
+    // federated topology hosts this surface inside the cloudrouter gateway,
+    // whose port varies per deployment profile) -> the platform proxy default.
+    sdkwork_agents_tool_cloudrouter::cloudrouter_base_url()
 }
 
 fn blocking_runtime() -> &'static tokio::runtime::Runtime {
@@ -47,12 +45,16 @@ fn blocking_runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
-/// Turn executor that routes chat turns through the cloudrouter gateway using
-/// the caller's auth token (account-pool routing, no API key required).
+/// Turn executor that routes non-rig chat turns through the cloudrouter
+/// gateway using the caller's auth token (account-pool routing, no API key
+/// required).
 ///
-/// Falls back to the injected local executor when the turn carries no auth
-/// token (e.g. worker/backend flows), keeping the durable turn pipeline
-/// uniform for every path.
+/// Rig-bound sessions are delegated to the injected local executor: the RIG
+/// agent engine's default model provider routes through the cloud router SDK
+/// itself with the caller's dual tokens. Other engines (or unbound sessions)
+/// carry the auth token and fall back to the injected local executor when the
+/// turn carries none (e.g. worker/backend flows), keeping the durable turn
+/// pipeline uniform for every path.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CloudRouterFirstTurnExecutor<T> {
     fallback: T,
@@ -64,12 +66,32 @@ impl<T> CloudRouterFirstTurnExecutor<T> {
     }
 }
 
+/// Returns `true` when the turn must be routed directly through the
+/// cloudrouter gateway instead of the agent engine host.
+///
+/// Rig-bound sessions execute inside the RIG agent engine, whose default
+/// model provider (`RigCloudRouterExecutor`) already routes every model call
+/// through the cloud router SDK with the caller's dual tokens — intercepting
+/// them here would bypass the engine. Only engines without that capability
+/// (or unbound sessions) keep the direct account-pool shortcut.
+fn should_route_through_cloud_router(input: &TurnExecutionInput) -> bool {
+    let has_auth_token = input
+        .auth_token
+        .as_deref()
+        .is_some_and(|token| !token.trim().is_empty());
+    if !has_auth_token {
+        return false;
+    }
+    let binding_id = input.binding_id.as_deref().unwrap_or("");
+    engine_key_for_binding_id(binding_id) != Some("rig")
+}
+
 impl<T> TurnExecutor for CloudRouterFirstTurnExecutor<T>
 where
     T: TurnExecutor,
 {
     fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
-        if input.auth_token.as_deref().is_some_and(|token| !token.trim().is_empty()) {
+        if should_route_through_cloud_router(input) {
             complete_cloud_router_turn(input)
         } else {
             self.fallback.complete(input)
@@ -88,7 +110,7 @@ where
         input: &TurnExecutionInput,
         prefer_stream: bool,
     ) -> TurnExecutionOutput {
-        if input.auth_token.as_deref().is_some_and(|token| !token.trim().is_empty()) {
+        if should_route_through_cloud_router(input) {
             complete_cloud_router_turn(input)
         } else {
             self.fallback.complete_with_stream_preference(input, prefer_stream)
@@ -100,7 +122,7 @@ where
         input: &TurnExecutionInput,
         sink: Arc<dyn TurnExecutionStreamSink>,
     ) -> TurnExecutionOutput {
-        if input.auth_token.as_deref().is_some_and(|token| !token.trim().is_empty()) {
+        if should_route_through_cloud_router(input) {
             complete_cloud_router_turn(input)
         } else {
             self.fallback.complete_with_stream_sink(input, sink)
@@ -140,6 +162,12 @@ fn execute_cloud_router_turn(
             KernelError::provider_error("cloudrouter_client_unavailable", error.to_string())
         })?;
     client.set_auth_token(auth_token);
+    if let Some(access_token) = input.access_token.as_deref().filter(|t| !t.trim().is_empty()) {
+        // Dual-token access per API_SPEC §819/§824: the gateway resolves the
+        // account route context from the auth token and carries the access
+        // token as the session access context.
+        client.set_access_token(access_token);
+    }
 
     let completion = blocking_runtime()
         .block_on(client.chat().create(&request))
@@ -314,7 +342,7 @@ mod tests {
         }
     }
 
-    fn sample_input(auth_token: Option<&str>) -> TurnExecutionInput {
+    fn sample_input(auth_token: Option<&str>, access_token: Option<&str>) -> TurnExecutionInput {
         TurnExecutionInput {
             turn_id: "turn.test".to_string(),
             model_request_id: "model-request.test".to_string(),
@@ -333,13 +361,15 @@ mod tests {
             access_mode_id: None,
             binding_id: None,
             provider_has_model_chat: true,
+            system_prompt: None,
             auth_token: auth_token.map(str::to_string),
+            access_token: access_token.map(str::to_string),
         }
     }
 
     #[test]
     fn builds_openai_messages_from_turn_history() {
-        let input = sample_input(Some("token"));
+        let input = sample_input(Some("token"), Some("access"));
         let request = build_chat_completion_request(&input);
         assert_eq!(request.model, "rig.default-chat");
         assert_eq!(request.stream, Some(false));
@@ -353,7 +383,7 @@ mod tests {
 
     #[test]
     fn defaults_model_key_when_unset() {
-        let mut input = sample_input(None);
+        let mut input = sample_input(None, None);
         input.model_id = None;
         let request = build_chat_completion_request(&input);
         assert_eq!(request.model, "default");
@@ -372,7 +402,7 @@ mod tests {
         let executor = CloudRouterFirstTurnExecutor::new(fallback);
 
         // No auth token -> fallback path.
-        let output = executor.complete(&sample_input(None));
+        let output = executor.complete(&sample_input(None, None));
         assert!(output.content.contains("fallback"));
         assert_eq!(executor.fallback.0.lock().unwrap().len(), 1);
     }

@@ -72,31 +72,31 @@
       "moduleCatalogRefs": [
         {
           "moduleId": "agents",
-          "manifestRef": "../../../../../specs/iam.module.manifest.json",
+          "manifestRef": "../../../../specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         },
         {
           "moduleId": "knowledge",
-          "manifestRef": "../../../../../../sdkwork-knowledgebase/specs/iam.module.manifest.json",
+          "manifestRef": "../../../../../sdkwork-knowledgebase/specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         },
         {
           "moduleId": "knowledgebase",
-          "manifestRef": "../../../../../../sdkwork-knowledgebase/specs/iam.module.manifest.json",
+          "manifestRef": "../../../../../sdkwork-knowledgebase/specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         },
         {
           "moduleId": "skills",
-          "manifestRef": "../../../../../../sdkwork-skills/specs/iam.module.manifest.json",
+          "manifestRef": "../../../../../sdkwork-skills/specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         },
         {
           "moduleId": "voice",
-          "manifestRef": "../../../../../../sdkwork-voice/specs/iam.module.manifest.json",
+          "manifestRef": "../../../../../sdkwork-voice/specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
         }
@@ -117,7 +117,7 @@
         "allowFrontendHintsWithoutServerDuplication": true
       },
       "applicationModule": {
-        "manifestRef": "../../../../../specs/iam.module.manifest.json"
+        "manifestRef": "../../../../specs/iam.module.manifest.json"
       }
     },
     "dependencyApiExports": [],

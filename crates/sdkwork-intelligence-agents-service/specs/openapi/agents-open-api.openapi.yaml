@@ -3805,9 +3805,6 @@ components:
         forkedFromTurnId:
         - parentSessionId
       properties:
-        sessionId:
-          type: string
-          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         projectId:
           type: string
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$

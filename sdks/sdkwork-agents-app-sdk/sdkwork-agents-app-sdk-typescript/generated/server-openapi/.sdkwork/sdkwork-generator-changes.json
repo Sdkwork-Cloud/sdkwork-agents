@@ -3,28 +3,20 @@
   "generator": "@sdkwork/sdk-generator",
   "sdk": {
     "name": "sdkwork-agents-app-sdk",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "language": "typescript",
     "sdkType": "app",
     "protocol": "http",
-    "packageName": "@sdkwork/agents-app-sdk"
+    "packageName": "sdkwork-agents-app-sdk-generated-typescript"
   },
-  "changeFingerprint": "27b4c75adcae15f6de122a0d352354e2cbe0a46e7b6dc6b96e7ef6209433bd13",
+  "changeFingerprint": "7cb7c42c8e72ea887f9cc4479657a99c339c1d1651afc72eaebec7df2fbd3cdd",
   "changes": {
-    "createdGeneratedFiles": [
-      "src/types/drive-asset-view.ts",
-      "src/types/media-tool-configuration-body.ts",
-      "src/types/media-tool-directory-entry.ts",
-      "src/types/media-tool-directory-response.ts",
-      "src/types/media-tool-invoke-api-response.ts",
-      "src/types/media-tool-invoke-body.ts",
-      "src/types/media-tool-invoke-response.ts",
-      "src/types/tool-asset-list-response.ts",
-      "src/types/tool-asset-view.ts"
-    ],
+    "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
-      "src/api/ai.ts",
-      "src/types/index.ts"
+      "CHANGELOG.md",
+      "package.json",
+      "sdkwork-sdk.json",
+      "src/types/agent-model-provider-id.ts"
     ],
     "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
@@ -32,11 +24,9 @@
       "bin/publish.sh",
       "bin/sdk-gen.bat",
       "bin/sdk-gen.sh",
-      "CHANGELOG.md",
       "LICENSE",
-      "package.json",
       "README.md",
-      "sdkwork-sdk.json",
+      "src/api/ai.ts",
       "src/api/base.ts",
       "src/api/index.ts",
       "src/api/paths.ts",
@@ -82,7 +72,6 @@
       "src/types/agent-item-feedback-response.ts",
       "src/types/agent-list-response.ts",
       "src/types/agent-management-profile.ts",
-      "src/types/agent-model-provider-id.ts",
       "src/types/agent-project-composition-slot-list-response.ts",
       "src/types/agent-project-composition-slot-record.ts",
       "src/types/agent-project-composition-slot-response.ts",
@@ -190,16 +179,24 @@
       "src/types/create-agent-turn-input-queue-entry-request.ts",
       "src/types/create-agent-turn-request.ts",
       "src/types/create-agent-workspace-request.ts",
+      "src/types/drive-asset-view.ts",
       "src/types/ensure-default-agent-workspace-request.ts",
       "src/types/execute-agent-task-request.ts",
       "src/types/fail-agent-turn-input-queue-entry-request.ts",
       "src/types/field-error.ts",
       "src/types/import-agent-project-request.ts",
+      "src/types/index.ts",
       "src/types/int64-string.ts",
       "src/types/invalidate-agent-session-checkpoint-request.ts",
       "src/types/legacy-agent-interaction-resolution.ts",
       "src/types/mcp-server-marketplace-list-response.ts",
       "src/types/mcp-server-marketplace-record.ts",
+      "src/types/media-tool-configuration-body.ts",
+      "src/types/media-tool-directory-entry.ts",
+      "src/types/media-tool-directory-response.ts",
+      "src/types/media-tool-invoke-api-response.ts",
+      "src/types/media-tool-invoke-body.ts",
+      "src/types/media-tool-invoke-response.ts",
       "src/types/migrate-model-configuration-request.ts",
       "src/types/migrated-model-configuration-response.ts",
       "src/types/model-configuration-status-record.ts",
@@ -229,6 +226,8 @@
       "src/types/session-presentation-phase.ts",
       "src/types/session-provider-activity-observation.ts",
       "src/types/session-provider-identity.ts",
+      "src/types/tool-asset-list-response.ts",
+      "src/types/tool-asset-view.ts",
       "src/types/typed-agent-interaction-resolution.ts",
       "src/types/update-agent-composition-slot-request.ts",
       "src/types/update-agent-item-feedback-request.ts",
@@ -252,45 +251,44 @@
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface",
-      "models"
+      "models",
+      "build-metadata",
+      "documentation"
     ],
     "details": [
       {
-        "area": "api-surface",
+        "area": "models",
         "paths": [
-          "src/api/ai.ts"
+          "src/types/agent-model-provider-id.ts"
         ]
       },
       {
-        "area": "models",
+        "area": "build-metadata",
         "paths": [
-          "src/types/drive-asset-view.ts",
-          "src/types/index.ts",
-          "src/types/media-tool-configuration-body.ts",
-          "src/types/media-tool-directory-entry.ts",
-          "src/types/media-tool-directory-response.ts",
-          "src/types/media-tool-invoke-api-response.ts",
-          "src/types/media-tool-invoke-body.ts",
-          "src/types/media-tool-invoke-response.ts",
-          "src/types/tool-asset-list-response.ts",
-          "src/types/tool-asset-view.ts"
+          "package.json",
+          "sdkwork-sdk.json"
+        ]
+      },
+      {
+        "area": "documentation",
+        "paths": [
+          "CHANGELOG.md"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models. Verification is required."
+    "summary": "Detected impact areas: models, build-metadata, documentation. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: models, build-metadata, documentation. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models, build-metadata, documentation.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -308,7 +306,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models, build-metadata, documentation.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [

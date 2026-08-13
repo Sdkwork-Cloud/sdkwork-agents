@@ -29,7 +29,8 @@
     "./modules": "./src/modules/index.ts",
     "./host": "./src/host/index.ts",
     "./session": "./src/session/index.ts",
-    "./composition": "./src/composition/index.ts"
+    "./composition": "./src/composition/index.ts",
+    "./sdk/feedsOpenSdkClient": "./src/sdk/feedsOpenSdkClient.ts"
   },
   "dependencies": {
     "@sdkwork/agents-app-sdk": "workspace:*",
@@ -43,6 +44,7 @@
     "@sdkwork/voice-app-sdk": "workspace:*",
     "@sdkwork/skills-app-sdk": "workspace:*",
     "@sdkwork/sdk-common": "workspace:*",
-    "@sdkwork/utils": "workspace:*"
+    "@sdkwork/utils": "workspace:*",
+    "@sdkwork/feeds-sdk": "workspace:*"
   }
 }

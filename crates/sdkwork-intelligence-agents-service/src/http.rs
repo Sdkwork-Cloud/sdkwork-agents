@@ -89,6 +89,7 @@ use crate::response::{
     created_json, finish_api_json, finish_created_api_json, no_content, success_json, ApiProblem,
     ApiResult, PageData, PageInfo, PageMode, ResourceData,
 };
+use sdkwork_utils_rust::SdkWorkResultCode;
 use crate::runtime_facade_bridge::{engine_key_for_provider_identity, shared_agent_engine_host};
 use crate::session_activity::{
     decode_session_activity_cursor, SessionActivitySummaryRecord,
@@ -1663,6 +1664,81 @@ impl HttpAgentsSessionFacade {
         }
     }
 
+    /// Ensures the RIG simple-agent runtime binding for a session that the
+    /// client did not explicitly bind: creates the agent's RIG provider
+    /// binding on demand, then binds the session to the RIG engine
+    /// (`binding.rig` / `provider.rig-rust`, model `rig.default-chat`).
+    fn ensure_default_rig_runtime_binding(
+        &self,
+        request: EnsureRuntimeBindingRequest<'_>,
+    ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
+        const RIG_BINDING_ID: &str = "binding.rig";
+        const RIG_PROVIDER_ID: &str = "provider.rig-rust";
+        const RIG_MODEL_ID: &str = "rig.default-chat";
+
+        let binding_missing = match self.service.get_provider_binding(
+            request.tenant_id,
+            request.agent_id,
+            RIG_BINDING_ID,
+            request.subject.clone(),
+        ) {
+            Ok(_) => false,
+            Err(error)
+                if error.detail_value("sdkwork.not_found") == Some("true")
+                    && error.message() == "provider binding not found" =>
+            {
+                true
+            }
+            Err(error) => {
+                return Err(sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(
+                    error.to_string(),
+                ));
+            }
+        };
+        if binding_missing {
+            self.service
+                .add_provider_binding(crate::application::AgentProviderBindingCommand {
+                    tenant_id: request.tenant_id,
+                    agent_id: request.agent_id.to_string(),
+                    binding_id: RIG_BINDING_ID.to_string(),
+                    provider_id: RIG_PROVIDER_ID.to_string(),
+                    implementation_kind: crate::domain::AgentImplementationKind::TypedLocalProvider,
+                    configuration_profile_id: "profile.rig.local".to_string(),
+                    capabilities: vec!["model.chat".to_string()],
+                    make_default: true,
+                    requested_by: request.subject.clone(),
+                    requested_at: request.requested_at.to_string(),
+                })
+                .map_err(|error| {
+                    sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
+                })?;
+        }
+        let default_descriptor = sdkwork_agents_runtime_facade::AgentsSessionRuntimeBindingDescriptor {
+            runtime_binding_id: format!("runtime_binding.rig.{}", request.session_id),
+            runtime_location_id: None,
+            host_mode: "local".to_string(),
+            transport_kind: "rig".to_string(),
+            provider_binding_id: RIG_BINDING_ID.to_string(),
+            model_id: RIG_MODEL_ID.to_string(),
+            provider_id: RIG_PROVIDER_ID.to_string(),
+            provider_session_id: None,
+            provider_session_tree_id: None,
+            provider_parent_session_id: None,
+            provider_forked_from_session_id: None,
+            provider_directory: None,
+        };
+        self.ensure_runtime_binding(EnsureRuntimeBindingRequest {
+            tenant_id: request.tenant_id,
+            organization_id: request.organization_id,
+            owner_user_id: request.owner_user_id,
+            agent_id: request.agent_id,
+            session_id: request.session_id,
+            descriptor: Some(&default_descriptor),
+            subject: request.subject,
+            requested_at: request.requested_at,
+        })
+    }
+
     fn ensure_runtime_binding(
         &self,
         request: EnsureRuntimeBindingRequest<'_>,
@@ -1678,7 +1754,20 @@ impl HttpAgentsSessionFacade {
             requested_at,
         } = request;
         let Some(descriptor) = descriptor else {
-            return Ok(());
+            // Default to the RIG simple-agent engine: the default chat agent
+            // binds the kernel `ModelProvider` SPI (`binding.rig` /
+            // `provider.rig-rust`) so turns execute through the RIG (rig-core)
+            // simple agent instead of the cloudrouter account pool.
+            return self.ensure_default_rig_runtime_binding(EnsureRuntimeBindingRequest {
+                tenant_id,
+                organization_id,
+                owner_user_id,
+                agent_id,
+                session_id,
+                descriptor: None,
+                subject,
+                requested_at,
+            });
         };
         let existing = self
             .service
@@ -2206,7 +2295,9 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                 requested_by: subject,
                 requested_at: request.requested_at,
                 prefer_stream: false,
-                auth_token: None,
+                system_prompt: None,
+            auth_token: None,
+            access_token: None,
             })
             .map_err(|error| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
@@ -3068,6 +3159,10 @@ pub fn build_combined_routes() -> Router<AgentHttpState> {
 struct ApplyAgentModelConfigurationRequest {
     configuration_id: String,
     engine_id: String,
+    /// Optional configuration subject. Defaults to the canonical engine
+    /// agent; a user-created agent (e.g. `agent.chat.default`) becomes the
+    /// owner of the custom LLM provider configuration.
+    agent_id: Option<String>,
     vendor_code: String,
     base_url: String,
     api_key: Option<String>,
@@ -3110,6 +3205,8 @@ struct AppliedAgentModelConfigurationResponse {
 struct ApplyAgentModelSelectionRequest {
     configuration_id: Option<String>,
     engine_id: String,
+    /// Optional configuration subject; defaults to the canonical engine agent.
+    agent_id: Option<String>,
     model_id: String,
 }
 
@@ -3150,20 +3247,23 @@ fn apply_agent_model_configuration(
 ) -> ApiResult<AppliedAgentModelConfigurationResponse> {
     validate_model_configuration_identifier("configurationId", &body.configuration_id, 160)?;
     let engine_id = body.engine_id.trim();
-    let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
-        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+    let agent_id = resolve_model_configuration_agent_id(body.agent_id.as_deref(), engine_id)?;
 
     let supported_provider_ids =
         normalize_supported_model_provider_ids(body.supported_provider_ids, engine_id)?;
-    let profile_id =
-        model_configuration_profile_id(&scope, engine_id, body.configuration_id.trim());
+    let profile_id = model_configuration_profile_id(
+        &scope,
+        &agent_id,
+        engine_id,
+        body.configuration_id.trim(),
+    );
     let profile_scope = profile_scope_from_request(&scope)?;
     let existing_profile = state
         .model_configuration_runtime
         .configurations
         .lock()
         .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-        .find_profile_in_scope(agent_id, &profile_id, &profile_scope)
+        .find_profile_in_scope(agent_id.as_str(), &profile_id, &profile_scope)
         .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?;
     let existing_secret_ref = existing_profile.as_ref().and_then(|profile| {
         profile
@@ -3230,14 +3330,14 @@ fn apply_agent_model_configuration(
             .ok()
             .and_then(|secrets| {
                 secrets
-                    .access_secret(SecretAccessRequest::new(&api_key_secret_ref, agent_id))
+                    .access_secret(SecretAccessRequest::new(&api_key_secret_ref, agent_id.clone()))
                     .ok()
                     .and_then(|result| result.value)
             })
     });
     let mut kernel_request = sdkwork_agents_runtime_facade::AgentModelConfigurationRequest::new(
         request_id,
-        agent_id,
+        agent_id.as_str(),
         &profile_id,
         body.vendor_code.trim(),
         body.base_url.trim(),
@@ -3292,9 +3392,12 @@ fn apply_agent_model_configuration(
     }
 
     // Apply a freshly materialized rig (simple agent) configuration to the
-    // shared agent-engine host so the live backend takes effect immediately.
+    // agent-scoped engine host so the live backend takes effect immediately
+    // without affecting other agents' scopes.
     if engine_id == "rig" {
-        let refresh_result = crate::runtime_facade_bridge::refresh_rig_agent_engine(
+        let refresh_result = crate::runtime_facade_bridge::refresh_rig_agent_engine_for(
+            parse_scope_tenant_id(&scope),
+            &agent_id,
             &application.profile.configuration,
             std::sync::Arc::new(
                 crate::runtime_facade_bridge::ModelConfigurationRuntimeHostProvider::new(
@@ -3372,8 +3475,7 @@ fn apply_agent_model_selection(
     body: ApplyAgentModelSelectionRequest,
 ) -> ApiResult<AppliedAgentModelSelectionResponse> {
     let engine_id = body.engine_id.trim();
-    let agent_id = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
-        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+    let agent_id = resolve_model_configuration_agent_id(body.agent_id.as_deref(), engine_id)?;
     validate_model_configuration_identifier("modelId", &body.model_id, 256)?;
     let configuration_id = body
         .configuration_id
@@ -3385,9 +3487,11 @@ fn apply_agent_model_selection(
 
     let profile_id = configuration_id
         .as_deref()
-        .map(|configuration_id| model_configuration_profile_id(&scope, engine_id, configuration_id))
+        .map(|configuration_id| {
+            model_configuration_profile_id(&scope, &agent_id, engine_id, configuration_id)
+        })
         .unwrap_or_else(|| {
-            model_configuration_profile_id(&scope, engine_id, "model.selection.builtin")
+            model_configuration_profile_id(&scope, &agent_id, engine_id, "model.selection.builtin")
         });
     let profile_scope = profile_scope_from_request(&scope)?;
     let current_profile = if configuration_id.is_some() {
@@ -3396,7 +3500,7 @@ fn apply_agent_model_selection(
             .configurations
             .lock()
             .map_err(|_| ApiProblem::internal("model configuration store is unavailable"))?
-            .find_profile_in_scope(agent_id, &profile_id, &profile_scope)
+            .find_profile_in_scope(agent_id.as_str(), &profile_id, &profile_scope)
             .map_err(|_| ApiProblem::internal("model configuration could not be loaded"))?
             .ok_or_else(|| {
                 ApiProblem::validation(
@@ -3410,7 +3514,7 @@ fn apply_agent_model_selection(
 
     let mut kernel_request = sdkwork_agents_runtime_facade::AgentModelSelectionRequest::new(
         request_id,
-        agent_id,
+        agent_id.as_str(),
         &profile_id,
         body.model_id.trim(),
     );
@@ -3432,6 +3536,28 @@ fn apply_agent_model_selection(
         .save_profile_in_scope(application.profile.clone(), &profile_scope)
         .map_err(|_| ApiProblem::internal("provider model selection could not be stored"))?;
 
+    // A rig model selection rewrites the default model inside the profile;
+    // refresh the agent-scoped host so the custom provider picks it up.
+    if engine_id == "rig" {
+        let refresh_result = crate::runtime_facade_bridge::refresh_rig_agent_engine_for(
+            parse_scope_tenant_id(&scope),
+            &agent_id,
+            &application.profile.configuration,
+            std::sync::Arc::new(
+                crate::runtime_facade_bridge::ModelConfigurationRuntimeHostProvider::new(
+                    state.model_configuration_runtime.clone(),
+                ),
+            ),
+        );
+        if let Err(error) = refresh_result {
+            tracing::warn!(
+                engine_id,
+                error = %error,
+                "rig agent engine refresh after model selection failed"
+            );
+        }
+    }
+
     Ok(AppliedAgentModelSelectionResponse {
         configuration_id,
         profile_id: application.profile.profile_id,
@@ -3442,8 +3568,37 @@ fn apply_agent_model_selection(
     })
 }
 
+/// Resolves the configuration subject: the optional client `agentId` or the
+/// canonical engine agent id. The engine id must always name a supported
+/// Agent provider.
+fn resolve_model_configuration_agent_id(
+    agent_id: Option<&str>,
+    engine_id: &str,
+) -> ApiResult<String> {
+    let canonical = sdkwork_agents_runtime_facade::agent_engine_agent_id(engine_id)
+        .ok_or_else(|| ApiProblem::validation("engineId is not a supported Agent provider"))?;
+    match agent_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(agent_id) => {
+            if agent_id.len() > 128 {
+                return Err(ApiProblem::validation(
+                    "agentId exceeds the maximum length",
+                ));
+            }
+            Ok(agent_id.to_string())
+        }
+        None => Ok(canonical.to_string()),
+    }
+}
+
+/// Numeric tenant id from the request scope (string form); a malformed value
+/// falls back to `0` so host scoping degrades to the shared default host.
+fn parse_scope_tenant_id(scope: &RequestScope) -> u64 {
+    scope.tenant_id.parse::<u64>().unwrap_or(0)
+}
+
 fn model_configuration_profile_id(
     scope: &RequestScope,
+    agent_id: &str,
     engine_id: &str,
     configuration_id: &str,
 ) -> String {
@@ -3452,6 +3607,7 @@ fn model_configuration_profile_id(
         scope.tenant_id.as_str(),
         scope.organization_id.as_str(),
         scope.owner_user_id.as_str(),
+        agent_id,
         engine_id,
         configuration_id,
     ] {
@@ -4744,6 +4900,7 @@ struct AppCreateTurnBody {
     content: String,
     content_type: Option<String>,
     turn_mode: String,
+    system_prompt: Option<String>,
     runtime_binding_id: Option<String>,
     requested_model_id: Option<String>,
     access_mode_id: Option<String>,
@@ -4955,6 +5112,7 @@ struct CreateTurnBody {
     content: String,
     content_type: Option<String>,
     turn_mode: String,
+    system_prompt: Option<String>,
     runtime_binding_id: Option<String>,
     requested_model_id: Option<String>,
     idempotency_key: String,
@@ -5219,13 +5377,18 @@ impl ApiProblem {
                 Self::permission(error.safe_message())
             }
             KernelErrorKind::ProviderUnavailable | KernelErrorKind::ProviderError => {
+                // Carry the standard 50301 result code so the problem body
+                // includes `code`/`i18nKey` and keeps the business-safe
+                // message (provider/account-pool reason) in `detail`.
                 Self::dependency_unavailable(error.safe_message())
+                    .with_result_code(SdkWorkResultCode::ServiceUnavailable)
             }
             KernelErrorKind::Timeout => Self::gateway_timeout(error.safe_message()),
             KernelErrorKind::Cancelled => Self::conflict(error.safe_message()),
             KernelErrorKind::RateLimited => Self::too_many_requests(error.safe_message(), None),
             KernelErrorKind::ResourceExhausted => {
                 Self::dependency_unavailable(error.safe_message())
+                    .with_result_code(SdkWorkResultCode::ServiceUnavailable)
             }
             KernelErrorKind::UnsafeContent => Self::unprocessable(error.safe_message()),
             KernelErrorKind::InternalError => Self::internal(error.safe_message()),
@@ -9245,6 +9408,7 @@ async fn app_create_turn(
                 .unwrap_or_else(|| "text/plain".to_string()),
             turn_mode: crate::agent_turn::AgentTurnMode::from_code(&body.turn_mode)
                 .ok_or_else(|| ApiProblem::validation("invalid turnMode"))?,
+            system_prompt: body.system_prompt,
             runtime_binding_id: body.runtime_binding_id,
             requested_model_id: body.requested_model_id,
             access_mode_id: body.access_mode_id,
@@ -9259,6 +9423,7 @@ async fn app_create_turn(
             // Transient auth token for cloudrouter account-pool routing; the
             // bearer value is never persisted on the turn record.
             auth_token: extract_bearer_auth_token(&headers),
+            access_token: extract_access_token(&headers),
         };
         execute_turn_http_response(
             &state,
@@ -10757,6 +10922,7 @@ async fn backend_create_turn(
                 .unwrap_or_else(|| "text/plain".to_string()),
             turn_mode: crate::agent_turn::AgentTurnMode::from_code(&body.turn_mode)
                 .ok_or_else(|| ApiProblem::validation("invalid turnMode"))?,
+            system_prompt: body.system_prompt,
             runtime_binding_id: body.runtime_binding_id,
             requested_model_id: body.requested_model_id,
             access_mode_id: None,
@@ -10771,6 +10937,7 @@ async fn backend_create_turn(
             // Transient auth token for cloudrouter account-pool routing; the
             // bearer value is never persisted on the turn record.
             auth_token: extract_bearer_auth_token(&headers),
+            access_token: extract_access_token(&headers),
         };
         execute_turn_http_response(
             &state,
@@ -12921,6 +13088,19 @@ fn total_pages(total_items: usize, page_size: usize) -> usize {
     }
 }
 
+/// Extracts the `Access-Token` header from the request for dual-token
+/// cloudrouter routing (API_SPEC §819/§824). Returns `None` when the header is
+/// absent; the value is never persisted.
+pub(crate) fn extract_access_token(headers: &HeaderMap) -> Option<String> {
+    let token = headers
+        .get("Access-Token")
+        .or_else(|| headers.get("access-token"))?
+        .to_str()
+        .ok()?
+        .trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
 /// Extracts the raw `Authorization: Bearer <token>` credential from request
 /// headers for transient cloudrouter account-pool routing. Returns `None` when
 /// the header is absent or does not use the Bearer scheme; the value is never
@@ -13672,6 +13852,11 @@ mod tests {
         assert_eq!(payload["data"]["item"]["modelId"], "gpt-5.4");
     }
 
+    fn facade_policy_subject() -> sdkwork_agent_kernel::PolicySubject {
+        sdkwork_agent_kernel::PolicySubject::new("user:100", "100001")
+            .with_role("ai.agents.manage")
+    }
+
     fn facade_actor() -> sdkwork_agents_runtime_facade::AgentsSessionActor {
         sdkwork_agents_runtime_facade::AgentsSessionActor {
             subject_id: "user:100".to_string(),
@@ -13904,7 +14089,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_facade_turn_requires_current_runtime_binding() {
+    async fn session_facade_defaults_to_rig_runtime_binding() {
         let state = AgentHttpState::new(
             InMemoryAgentRepository::new(),
             InMemoryAgentAuditSink::default(),
@@ -13915,28 +14100,35 @@ mod tests {
         let facade = state.session_facade();
         facade
             .resolve_or_create_session(facade_session_request("session.test.facade.unbound", None))
-            .expect("session without a runtime binding should still resolve");
+            .expect("session without an explicit binding should still resolve");
 
-        let error = facade
-            .complete_turn(sdkwork_agents_runtime_facade::CompleteAgentsTurnRequest {
-                tenant_id: 100_001,
-                organization_id: 0,
-                owner_user_id: 100,
-                agent_id: "agent.facade".to_string(),
-                session_id: "session.test.facade.unbound".to_string(),
-                content: "This must not fall back to an agent binding".to_string(),
-                content_type: "text/plain".to_string(),
-                idempotency_key: "turn.facade.unbound".to_string(),
-                client_request_id: "request.facade.unbound".to_string(),
-                actor: facade_actor(),
-                requested_at: "2026-07-22T12:01:00Z".to_string(),
+        // Without a client descriptor the session is bound to the RIG
+        // simple-agent engine by default (`binding.rig`), so the session
+        // carries an active runtime binding after resolution.
+        let bindings = state
+            .service
+            .list_session_runtime_bindings(crate::application::ListSessionRuntimeBindingsCommand {
+                path_agent_id: "agent.facade".to_string(),
+                query: crate::ports::SessionRuntimeBindingListQuery::for_session(
+                    100_001,
+                    0,
+                    "session.test.facade.unbound",
+                ),
+                owner_scope: Some(100),
+                requested_by: facade_policy_subject(),
             })
-            .expect_err("turn without a current runtime binding must fail");
-        assert!(matches!(
-            error,
-            sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(message)
-                if message.contains("active session runtime binding not found")
-        ));
+            .expect("session runtime bindings must list");
+        assert_eq!(bindings.items.len(), 1, "default RIG binding must be created");
+        assert_eq!(
+            bindings.items[0].provider_binding_id, "binding.rig",
+            "default binding must target the RIG simple-agent engine"
+        );
+        assert_eq!(bindings.items[0].model_id, "rig.default-chat");
+        let provider_binding = state
+            .service
+            .get_provider_binding(100_001, "agent.facade", "binding.rig", facade_policy_subject())
+            .expect("RIG provider binding must be bootstrapped");
+        assert!(provider_binding.active);
     }
 
     #[tokio::test]

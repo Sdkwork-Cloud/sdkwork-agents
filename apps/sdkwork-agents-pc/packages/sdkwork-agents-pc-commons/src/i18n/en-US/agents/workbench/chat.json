@@ -60,5 +60,21 @@
       "noVendors": "No vendors available",
       "noVendorModels": "No models for this vendor"
     }
+  },
+  "retryHint": ", please try again later.",
+  "sendErrorFallback": "Failed to generate a response",
+  "customProvider": {
+    "title": "Custom LLM Provider",
+    "vendorCode": "Vendor code",
+    "vendorName": "Vendor name",
+    "baseUrl": "Base URL (OpenAI-compatible)",
+    "apiKey": "API key",
+    "model": "Model",
+    "apply": "Apply",
+    "applying": "Applying…",
+    "applyFailed": "Failed to apply the custom provider:",
+    "requiredFields": "Vendor, base URL, API key and model are required.",
+    "cancel": "Cancel",
+    "close": "Close"
   }
 }

@@ -4,7 +4,7 @@ import { characterService, type Character } from '../services/CharacterService';
 import { CharacterCard } from '../components/CharacterCard';
 import { MobileActionSheet, MobileConfirmDialog } from '../components/MobileSheets';
 import { toast } from '../components/Toast';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 
 export interface MyCharactersViewProps {
   /** Host-navigated back; when omitted the back chevron is hidden. */

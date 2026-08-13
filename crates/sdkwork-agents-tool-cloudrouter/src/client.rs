@@ -13,6 +13,14 @@ use sdkwork_agents_tool_contract::MediaToolError;
 /// chat turn executor so one configuration governs every cloudrouter path.
 pub const ENV_CLOUDROUTER_BASE_URL: &str = "SDKWORK_AGENTS_CLOUDROUTER_BASE_URL";
 
+/// Environment variable carrying the gateway's own public ingress bind
+/// (`SDKWORK_CLOUDROUTER_ROUTER_APPLICATION_PUBLIC_INGRESS_BIND`). In the
+/// federated topology the agents surface runs inside the cloudrouter gateway,
+/// so the client targets the gateway's own ingress port instead of a
+/// hard-coded one (the standalone development profile binds e.g. :3905).
+pub const ENV_CLOUDROUTER_INGRESS_BIND: &str =
+    "SDKWORK_CLOUDROUTER_ROUTER_APPLICATION_PUBLIC_INGRESS_BIND";
+
 /// Default cloudrouter gateway base URL (shared platform proxy port).
 pub const DEFAULT_CLOUDROUTER_BASE_URL: &str = "http://127.0.0.1:3900";
 
@@ -90,7 +98,7 @@ pub fn run_sync<T>(
 }
 
 /// Dedicated multi-thread runtime for blocking kernel tool invocation.
-fn blocking_runtime() -> &'static tokio::runtime::Runtime {
+pub(crate) fn blocking_runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
@@ -102,11 +110,35 @@ fn blocking_runtime() -> &'static tokio::runtime::Runtime {
 }
 
 /// Resolves the gateway base URL from the environment with the shared default.
+///
+/// Resolution order:
+/// 1. `SDKWORK_AGENTS_CLOUDROUTER_BASE_URL` — explicit override for split
+///    (separately deployed) topologies;
+/// 2. the gateway's own public ingress bind
+///    (`SDKWORK_CLOUDROUTER_ROUTER_APPLICATION_PUBLIC_INGRESS_BIND`) mapped to
+///    a loopback URL — the federated topology hosts the agents surface inside
+///    the cloudrouter gateway, so the executor must target the same port the
+///    gateway actually binds (the standalone development profile binds e.g.
+///    `0.0.0.0:3905` instead of the default `:3900`);
+/// 3. the shared platform proxy port default (`http://127.0.0.1:3900`).
 pub fn cloudrouter_base_url() -> String {
-    std::env::var(ENV_CLOUDROUTER_BASE_URL)
+    if let Some(value) = std::env::var(ENV_CLOUDROUTER_BASE_URL)
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_CLOUDROUTER_BASE_URL.to_string())
+    {
+        return value;
+    }
+    if let Some(bind) = std::env::var(ENV_CLOUDROUTER_INGRESS_BIND)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    {
+        if let Some((_, port)) = bind.rsplit_once(':') {
+            if !port.is_empty() && port.chars().all(|ch| ch.is_ascii_digit()) {
+                return format!("http://127.0.0.1:{port}");
+            }
+        }
+    }
+    DEFAULT_CLOUDROUTER_BASE_URL.to_string()
 }
 
 /// Maps a cloudrouter SDK failure to the media tool error taxonomy with
@@ -151,15 +183,44 @@ pub fn map_cloudrouter_error(
 mod tests {
     use super::*;
     use cloudrouter_open_sdk::SdkworkError;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Serializes env-mutating base-url tests: `std::env` is process-global,
+    /// so parallel tests would race on the same variables.
+    fn env_guard() -> &'static Mutex<()> {
+        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+        GUARD.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn client_base_url_from_env_with_default() {
+        let _guard = env_guard().lock().expect("env test lock");
         let previous = std::env::var(ENV_CLOUDROUTER_BASE_URL).ok();
+        let previous_bind = std::env::var(ENV_CLOUDROUTER_INGRESS_BIND).ok();
         std::env::remove_var(ENV_CLOUDROUTER_BASE_URL);
+        std::env::remove_var(ENV_CLOUDROUTER_INGRESS_BIND);
         assert_eq!(cloudrouter_base_url(), DEFAULT_CLOUDROUTER_BASE_URL);
         std::env::set_var(ENV_CLOUDROUTER_BASE_URL, "http://example.test:4000");
         assert_eq!(cloudrouter_base_url(), "http://example.test:4000");
         restore_env(ENV_CLOUDROUTER_BASE_URL, previous);
+        restore_env(ENV_CLOUDROUTER_INGRESS_BIND, previous_bind);
+    }
+
+    #[test]
+    fn client_base_url_falls_back_to_gateway_ingress_bind() {
+        let _guard = env_guard().lock().expect("env test lock");
+        let previous = std::env::var(ENV_CLOUDROUTER_BASE_URL).ok();
+        let previous_bind = std::env::var(ENV_CLOUDROUTER_INGRESS_BIND).ok();
+        std::env::remove_var(ENV_CLOUDROUTER_BASE_URL);
+        std::env::set_var(ENV_CLOUDROUTER_INGRESS_BIND, "0.0.0.0:3905");
+        assert_eq!(cloudrouter_base_url(), "http://127.0.0.1:3905");
+        std::env::set_var(ENV_CLOUDROUTER_INGRESS_BIND, "127.0.0.1:3900");
+        assert_eq!(cloudrouter_base_url(), "http://127.0.0.1:3900");
+        // An explicit override always wins over the ingress bind.
+        std::env::set_var(ENV_CLOUDROUTER_BASE_URL, "http://example.test:4000");
+        assert_eq!(cloudrouter_base_url(), "http://example.test:4000");
+        restore_env(ENV_CLOUDROUTER_BASE_URL, previous);
+        restore_env(ENV_CLOUDROUTER_INGRESS_BIND, previous_bind);
     }
 
     #[test]

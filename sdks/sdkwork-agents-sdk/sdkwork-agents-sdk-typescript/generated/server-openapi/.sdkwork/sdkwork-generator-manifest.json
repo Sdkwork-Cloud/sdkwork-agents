@@ -440,7 +440,7 @@
     },
     {
       "path": "src/types/create-agent-session-request.ts",
-      "sha256": "62d00c3ff68889b76ff4e7afbb9c6ba1be1f4672538d15662b95d2c6793d12aa"
+      "sha256": "90c6851dc1df15907abb85d272b15ecfdfaac6b62045bb7851fce0f79e112993"
     },
     {
       "path": "src/types/create-agent-session-runtime-binding-request.ts",

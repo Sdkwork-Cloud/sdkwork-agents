@@ -3,13 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type {
-  CommunityEntry,
-  SdkworkCommunityAppClient,
-} from '@sdkwork/agents-pc-core/sdk/communityAppSdkClient';
+  FeedItem,
+  SdkworkFeedsClient,
+} from '@sdkwork/agents-pc-core/sdk/feedsOpenSdkClient';
 import {
-  configureCommunityAppSdkClientProvider,
-  resetCommunityAppSdkClient,
-} from '@sdkwork/agents-pc-core/sdk/communityAppSdkClient';
+  configureFeedsOpenSdkClientProvider,
+  resetFeedsOpenSdkClient,
+} from '@sdkwork/agents-pc-core/sdk/feedsOpenSdkClient';
 import {
   configureGenerationsAppSdkClientProvider,
   resetGenerationsAppSdkClient,
@@ -173,79 +173,93 @@ test('Assets maps Drive SDK records without local or provider mock media', async
   }
 });
 
-test('Inspiration maps Community feeds and Skills marketplace SDK pages', async () => {
-  const communityListCalls: Array<{ tag?: string; page?: number; pageSize?: number }> = [];
-  const communityClient = {
-    community: {
-      feed: {
-        list: async (params: { tag?: string; page?: number; pageSize?: number }) => {
-          communityListCalls.push(params);
-          const { tag } = params;
-          const common = {
-            tenantId: '100001',
-            categoryId: 'inspiration',
-            author: { id: 'official', name: '官方团队' },
-            slug: tag,
-            kind: 'resource',
-            reviewState: 'approved',
-            stats: { reactionCount: 12, viewCount: 34 },
-            tags: [tag],
-          };
-          if (tag === 'agents-inspiration-discover') {
+test('Inspiration maps feeds streams and Skills marketplace SDK pages', async () => {
+  const streamListCalls: Array<{ streamKey?: string; pageSize?: number; q?: string }> = [];
+  const feedsClient = {
+    feeds: {
+      streams: {
+        items: {
+          list: async (streamKey: string, params: { pageSize?: number; q?: string } = {}) => {
+            streamListCalls.push({ streamKey, ...params });
+            const common: FeedItem = {
+              id: '',
+              tenantId: '100001',
+              streamId: 'stream-1',
+              streamKey,
+              sourceType: 'community.entry',
+              sourceId: '',
+              title: '',
+              author: { id: 'official', name: '官方团队', avatarUrl: 'https://media.example.test/avatar.jpg' },
+              isPinned: false,
+              status: 'active',
+              publishedAt: '2026-08-01T00:00:00Z',
+              createdAt: '2026-08-01T00:00:00Z',
+              updatedAt: '2026-08-01T00:00:00Z',
+            };
+            if (streamKey === 'agents-inspiration-discover') {
+              return {
+                items: [{
+                  ...common,
+                  id: 'discover-1',
+                  sourceId: 'discover-1',
+                  title: '发现作品',
+                  excerpt: '发现简介',
+                  coverUrl: 'https://media.example.test/discover.jpg',
+                  reactionCount: 12,
+                  payload: {
+                    src: 'https://media.example.test/discover.jpg',
+                    prompt: 'discover prompt',
+                    isBanner: true,
+                  },
+                }],
+                pageInfo: { mode: 'cursor', pageSize: 20, hasMore: false },
+              };
+            }
+            if (streamKey === 'agents-inspiration-short-video') {
+              return {
+                items: [{
+                  ...common,
+                  id: 'video-1',
+                  sourceId: 'video-1',
+                  title: '短片作品',
+                  excerpt: '短片简介',
+                  coverUrl: 'https://media.example.test/video.jpg',
+                  reactionCount: 12,
+                  payload: {
+                    cover: 'https://media.example.test/video.jpg',
+                    videoUrl: 'https://media.example.test/video.mp4',
+                    duration: '00:30',
+                  },
+                }],
+                pageInfo: { mode: 'cursor', pageSize: 20, hasMore: false },
+              };
+            }
             return {
               items: [{
                 ...common,
-                id: 'discover-1',
-                title: '发现作品',
-                isFeatured: true,
-                body: JSON.stringify({
-                  src: 'https://media.example.test/discover.jpg',
-                  prompt: 'discover prompt',
-                  avatar: 'https://media.example.test/avatar.jpg',
-                  isBanner: true,
-                }),
+                id: 'activity-1',
+                sourceId: 'activity-1',
+                title: '创作活动',
+                excerpt: '活动简介',
+                coverUrl: 'https://media.example.test/activity.jpg',
+                reactionCount: 12,
+                payload: {
+                  cover: 'https://media.example.test/activity.jpg',
+                  banner: 'https://media.example.test/activity-banner.jpg',
+                  status: '征集中',
+                  tag: '官方活动',
+                  background: '活动背景',
+                  timeRange: '2026-07-01 - 2026-08-01',
+                  works: [],
+                },
               }],
-              pageInfo: { mode: 'offset', page: 1, pageSize: 20, hasMore: false },
+              pageInfo: { mode: 'cursor', pageSize: 20, hasMore: false },
             };
-          }
-          if (tag === 'agents-inspiration-short-video') {
-            return {
-              items: [{
-                ...common,
-                id: 'video-1',
-                title: '短片作品',
-                excerpt: '短片简介',
-                body: JSON.stringify({
-                  cover: 'https://media.example.test/video.jpg',
-                  videoUrl: 'https://media.example.test/video.mp4',
-                  duration: '00:30',
-                }),
-              }],
-              pageInfo: { mode: 'offset', page: 1, pageSize: 20, hasMore: false },
-            };
-          }
-          return {
-            items: [{
-              ...common,
-              id: 'activity-1',
-              title: '创作活动',
-              excerpt: '活动简介',
-              body: JSON.stringify({
-                cover: 'https://media.example.test/activity.jpg',
-                banner: 'https://media.example.test/activity-banner.jpg',
-                status: '征集中',
-                tag: '官方活动',
-                background: '活动背景',
-                timeRange: '2026-07-01 - 2026-08-01',
-                works: [],
-              }),
-            }],
-            pageInfo: { mode: 'offset', page: 1, pageSize: 20, hasMore: false },
-          };
+          },
         },
       },
     },
-  } as unknown as SdkworkCommunityAppClient;
+  } as unknown as SdkworkFeedsClient;
   const skillsClient = {
     skills: {
       marketplace: {
@@ -270,7 +284,7 @@ test('Inspiration maps Community feeds and Skills marketplace SDK pages', async 
       },
     },
   } as unknown as SdkworkSkillsAppClient;
-  configureCommunityAppSdkClientProvider(() => communityClient);
+  configureFeedsOpenSdkClientProvider(() => feedsClient);
   configureSkillsAppSdkClientProvider(() => skillsClient);
   try {
     const [discover, videos, activities, skills] = await Promise.all([
@@ -284,10 +298,10 @@ test('Inspiration maps Community feeds and Skills marketplace SDK pages', async 
     assert.equal(activities[0].title, '创作活动');
     assert.equal(skills[0].category, '短剧影视');
     assert.equal(skills[0].items[0].author, 'SDKWork');
-    assert.equal(communityListCalls.length, 3);
-    assert.ok(communityListCalls.every((call) => call.page === 1 && call.pageSize === 20));
+    assert.equal(streamListCalls.length, 3);
+    assert.ok(streamListCalls.every((call) => call.pageSize === 20));
   } finally {
-    resetCommunityAppSdkClient();
+    resetFeedsOpenSdkClient();
     resetSkillsAppSdkClient();
   }
 });

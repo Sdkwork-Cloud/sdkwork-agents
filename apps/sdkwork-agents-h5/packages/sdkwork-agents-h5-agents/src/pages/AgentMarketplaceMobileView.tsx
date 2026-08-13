@@ -3,7 +3,7 @@ import { Plus, RefreshCw, Search, Bot } from 'lucide-react';
 import { cn } from '@sdkwork/agents-h5-commons';
 import { agentService, type AgentConfig } from '../services/AgentService';
 import { toast } from '../components/Toast';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 import { MarketAgentCard } from '../components/MarketAgentCard';
 
 export interface AgentMarketplaceMobileViewProps {

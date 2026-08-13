@@ -10,7 +10,9 @@
     "domain": "agents",
     "capability": "agents",
     "surface": "app",
-    "languages": ["typescript"],
+    "languages": [
+      "typescript"
+    ],
     "generated": false,
     "status": "active",
     "manifests": [
@@ -48,12 +50,19 @@
   ],
   "contracts": {
     "layerRole": "frontend-shell",
-    "publicExports": ["src/index.ts", "src/agents/index.ts", "src/workbench/index.ts", "src/workbench/i18n.ts"],
+    "publicExports": [
+      "src/index.ts",
+      "src/agents/index.ts",
+      "src/workbench/index.ts",
+      "src/workbench/i18n.ts"
+    ],
     "configKeys": [
       "src/i18n/runtime.ts#agentsI18nRuntimeConfig",
       "src/workbench/AgentsWorkbench.tsx#AgentsWorkbenchProps.overlayTopInset"
     ],
-    "providedPorts": ["agents.workbench"],
+    "providedPorts": [
+      "agents.workbench"
+    ],
     "requiredPorts": [
       "agents.home",
       "agents.assets.view",
@@ -66,10 +75,14 @@
       "agents.membership.runtime",
       "agents.sdk"
     ],
-    "runtimeEntrypoints": ["src/main.tsx", "package.json#scripts.dev"],
+    "runtimeEntrypoints": [
+      "src/main.tsx",
+      "package.json#scripts.dev"
+    ],
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
       "@sdkwork/community-app-sdk",
+      "@sdkwork/feeds-sdk",
       "@sdkwork/drive-app-sdk",
       "@sdkwork/generations-app-sdk",
       "@sdkwork/iam-app-sdk",
@@ -84,6 +97,7 @@
     "sdkDependencies": [
       "sdkwork-agents-app-sdk",
       "sdkwork-community-app-sdk",
+      "sdkwork-feeds-sdk",
       "sdkwork-drive-app-sdk",
       "sdkwork-generations-app-sdk",
       "sdkwork-iam-app-sdk",

@@ -3,11 +3,11 @@
   "generator": "@sdkwork/sdk-generator",
   "sdk": {
     "name": "sdkwork-agents-app-sdk",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "language": "typescript",
     "sdkType": "app",
     "protocol": "http",
-    "packageName": "@sdkwork/agents-app-sdk"
+    "packageName": "sdkwork-agents-app-sdk-generated-typescript"
   },
   "generatedFiles": [
     {
@@ -32,7 +32,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "fb941a0806986a54fc192f98a98f6d9c282b8d350b2b19a3e71dda404e92d545"
+      "sha256": "302335f8e95321d635aeff72da1e6146414c1f1cf4514b2dd5ddd4f5672eb73b"
     },
     {
       "path": "LICENSE",
@@ -40,15 +40,15 @@
     },
     {
       "path": "package.json",
-      "sha256": "79d189b425df3ce503cac376b52061e83493dccb369d24c77397b60b076de371"
+      "sha256": "2b8473510559036542ea9691530961af4bf44e39807be90ca43e218c3806980a"
     },
     {
       "path": "README.md",
-      "sha256": "136e22d0a6e00130b79be2b4f0c37c9cf4e9e6df4f0ae3e4a4e6ab7e27205cef"
+      "sha256": "787eee53e79f9fea922472f16cf5b993501c124cc04ed72e276a9fe8965cf3c2"
     },
     {
       "path": "sdkwork-sdk.json",
-      "sha256": "e509ebd5e9eeda95e2f15e8efb1ccb08d3a22e2d0fc41c22844b64f2754bbc82"
+      "sha256": "c9e8fd86652c3cecc00ab3548cd03d93aebdc93ba0e58693eaf9c99977834b2a"
     },
     {
       "path": "src/api/ai.ts",
@@ -72,7 +72,7 @@
     },
     {
       "path": "src/http/client.ts",
-      "sha256": "9349831b44a1a7336bdb8963379ad2ee616c48a4ae7c6d2540737780810ee8bc"
+      "sha256": "e4ce1dadab0f2a40925b3f7abf97344748953fc9829207bd8746a8b556d6fc05"
     },
     {
       "path": "src/http/index.ts",
@@ -236,7 +236,7 @@
     },
     {
       "path": "src/types/agent-model-provider-id.ts",
-      "sha256": "8a10a116c22f43eddfa0c613256d2bc3f01aa740563876b4a5770911aabe668a"
+      "sha256": "91e43f36255df4b02d4af4c7dd051414bc89d221b3338dd15008f735870c2d3e"
     },
     {
       "path": "src/types/agent-project-composition-slot-list-response.ts",
@@ -464,7 +464,7 @@
     },
     {
       "path": "src/types/agent-turn-input-queue-entry.ts",
-      "sha256": "1cb363efe624bca90ab0961016cbd224f3ef3b6136d7829a33b6f9ee77d3969b"
+      "sha256": "ef7a94aefaf797c7c6d116d1d3ecc2083deacfecc1f33871c14dfb98d0e27819"
     },
     {
       "path": "src/types/agent-turn-input-queue-reorder-entry.ts",
@@ -552,11 +552,11 @@
     },
     {
       "path": "src/types/apply-agent-model-configuration-request.ts",
-      "sha256": "0cd5332b881f5cc744361df28158a796d3d6ab417d70aff17731dcbdd7adddf5"
+      "sha256": "87cb0e9305c84540c55c001d172a3e882787526ed44f01c16457e43b6063288f"
     },
     {
       "path": "src/types/apply-agent-model-selection-request.ts",
-      "sha256": "7405591f727d2787cd5e19c477723277eddc71e9de00e1ffea7dd79df0c9ad9c"
+      "sha256": "b79ce4a77ac3bc3476b3181f9ee3c0d440bcf2f1a73e8a147c2a821d174b1753"
     },
     {
       "path": "src/types/approve-agent-interaction-request.ts",
@@ -644,7 +644,7 @@
     },
     {
       "path": "src/types/create-agent-session-request.ts",
-      "sha256": "c7545dd20184f2b9b45f166d815e8311c5e8f8b10f52e234923c136707b4ed97"
+      "sha256": "042014c3d4590d9050258dd0fd07a178b92e00c033fbbab45f2a2b5357a5ef16"
     },
     {
       "path": "src/types/create-agent-session-runtime-binding-request.ts",
@@ -656,11 +656,11 @@
     },
     {
       "path": "src/types/create-agent-turn-input-queue-entry-request.ts",
-      "sha256": "77c80c9fc8604d7588eb64e201b33de175e0e7436c45b6d4eb5e4334a2ec7536"
+      "sha256": "45f571711efbee3e462e26bb0f27b0d0f8cb06bdf3f152ac20835a515b5d2adc"
     },
     {
       "path": "src/types/create-agent-turn-request.ts",
-      "sha256": "13fb447362cd8b98e45a93b637e2653b5b6854233a70b135fe9a3342819472bf"
+      "sha256": "724037a61a3106b6d72e542c75cc74f352bfb8799a5140341d39e15be965d9a0"
     },
     {
       "path": "src/types/create-agent-workspace-request.ts",
@@ -896,7 +896,7 @@
     },
     {
       "path": "src/types/update-agent-turn-input-queue-entry-request.ts",
-      "sha256": "6c36959da88baae8cd88b7a9d58e71e594857cef5986237245e83d31d0c2e305"
+      "sha256": "a4e5bc0917dda3069487e80da79a66ee14c5eb52bf573487c0e438132defcf52"
     },
     {
       "path": "src/types/update-agent-workspace-request.ts",

@@ -170,6 +170,14 @@ impl ApiProblem {
         }
     }
 
+    /// Carries a standard SDKWork result code (e.g. `50301`) so the problem
+    /// body includes `code`/`i18nKey` while keeping the business-safe message
+    /// in `detail` instead of the generic dependency-unavailable text.
+    pub fn with_result_code(mut self, result_code: SdkWorkResultCode) -> Self {
+        self.result_code = Some(result_code);
+        self
+    }
+
     pub fn gateway_timeout(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -239,12 +247,21 @@ impl ApiProblem {
     pub fn into_response_for(&self, ctx: &WebRequestContext) -> Response {
         if let Some(result_code) = self.result_code {
             let trace_id = ctx.resolved_trace_id();
-            let problem = SdkWorkProblemDetail::platform_enriched(
+            let mut problem = SdkWorkProblemDetail::platform_enriched(
                 result_code,
                 self.message.clone(),
                 trace_id.clone(),
                 ctx.problem_correlation().routing(),
             );
+            // `platform_enriched` redacts dependency-unavailable details to a
+            // generic text. ApiProblem messages are business-safe (they come
+            // from kernel `safe_message` and the executor's actionable hints),
+            // so keep the real reason in `detail` — otherwise callers can only
+            // see "A required dependency is temporarily unavailable" and
+            // cannot tell account-pool, auth-token, or provider failures apart.
+            if !self.message.trim().is_empty() {
+                problem.detail = Some(self.message.clone());
+            }
             let response = (
                 self.status,
                 [(axum::http::header::CONTENT_TYPE, "application/problem+json")],
@@ -466,6 +483,34 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(503, payload["status"].as_u64().unwrap());
         assert_eq!(50301, payload["code"].as_i64().unwrap());
+    }
+
+    #[tokio::test]
+    async fn api_problem_service_unavailable_with_result_code_keeps_business_detail() {
+        let response = ApiProblem::dependency_unavailable(
+            "cloud router chat completion failed: 当前租户在账号池中无可用账号",
+        )
+        .with_result_code(SdkWorkResultCode::ServiceUnavailable)
+        .into_response_for(&test_context());
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(503, payload["status"].as_u64().unwrap());
+        assert_eq!(50301, payload["code"].as_i64().unwrap());
+        assert_eq!(
+            "errors.result.50301",
+            payload["i18nKey"].as_str().expect("i18nKey")
+        );
+        // The business-safe message survives instead of the generic
+        // "A required dependency is temporarily unavailable" text.
+        assert!(
+            payload["detail"]
+                .as_str()
+                .expect("detail")
+                .contains("账号池中无可用账号"),
+            "detail must carry the business reason"
+        );
     }
 
     #[test]

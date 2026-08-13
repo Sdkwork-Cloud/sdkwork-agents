@@ -46,5 +46,5 @@ export function createClient(config: SdkworkAppConfig): SdkworkAppClient {
   return new SdkworkAppClient(config);
 }
 
-export { completeAgentTurn } from './turns.ts';
-export type { CompleteAgentTurnResult } from './turns.ts';
+export { completeAgentTurn, completeAgentTurnStream } from './turns.ts';
+export type { CompleteAgentTurnResult, CreateAgentTurnRequest, TurnStreamEvent } from './turns.ts';

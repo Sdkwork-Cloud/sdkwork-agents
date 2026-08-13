@@ -119,7 +119,7 @@ export const MarkdownRenderer: React.FC<{ content: string; onOpenArtifact?: (lan
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw as any]}
         components={{
-          code(props) {
+          code: (props: any) => {
             const { children, className, node, ...rest } = props;
             const match = /language-(\w+)/.exec(className || '');
             const isMatch = match;

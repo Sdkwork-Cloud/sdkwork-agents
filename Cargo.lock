@@ -11326,6 +11326,7 @@ version = "0.1.0"
 dependencies = [
  "cloudrouter-open-sdk",
  "sdkwork-agent-kernel",
+ "sdkwork-agent-provider-rig",
  "sdkwork-agents-tool-contract",
  "serde_json",
  "tokio",

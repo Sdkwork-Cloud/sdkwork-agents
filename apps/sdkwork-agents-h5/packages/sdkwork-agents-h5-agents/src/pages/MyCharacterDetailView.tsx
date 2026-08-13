@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, MessageSquare, Settings2, ChevronRight } from 'lucide-react';
 import { characterService, type Character } from '../services/CharacterService';
 import { toast } from '../components/Toast';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 
 export interface MyCharacterDetailViewProps {
   /** Character id resolved from the host route params. */

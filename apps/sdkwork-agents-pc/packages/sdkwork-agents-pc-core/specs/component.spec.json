@@ -57,6 +57,11 @@
         "credentialMode": "authenticated-app-api"
       },
       {
+        "workspace": "sdkwork-feeds-sdk",
+        "surface": "open-api",
+        "credentialMode": "public-open-api"
+      },
+      {
         "workspace": "sdkwork-drive-app-sdk",
         "surface": "app-api",
         "credentialMode": "authenticated-app-api"
@@ -95,6 +100,7 @@
     "sdkClients": [
       "@sdkwork/agents-app-sdk",
       "@sdkwork/community-app-sdk",
+      "@sdkwork/feeds-sdk",
       "@sdkwork/drive-app-sdk",
       "@sdkwork/generations-app-sdk",
       "@sdkwork/memory-app-sdk",
@@ -165,6 +171,11 @@
           "manifestRef": "../../../../../sdkwork-voice/specs/iam.module.manifest.json",
           "inheritPermissions": true,
           "inheritRoles": true
+        },
+        {
+          "moduleId": "feeds",
+          "manifestRef": "../../../../../sdkwork-feeds/specs/iam.module.manifest.json",
+          "inheritPermissions": true
         }
       ],
       "bootstrapAccessTokenScope": {

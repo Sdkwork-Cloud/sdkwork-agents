@@ -7,6 +7,7 @@ description = "Shared sdkwork-cloudrouter open-api client adapter for the SDKWor
 
 [dependencies]
 sdkwork-agent-kernel.workspace = true
+sdkwork-agent-provider-rig.workspace = true
 sdkwork-agents-tool-contract.workspace = true
 cloudrouter-open-sdk.workspace = true
 tokio.workspace = true

@@ -3,7 +3,7 @@ import { ArrowLeft, Mic, ChevronRight } from 'lucide-react';
 import { characterService, type Character } from '../services/CharacterService';
 import { SelectVoiceModal } from '../components/SelectVoiceModal';
 import { toast } from '../components/Toast';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 
 export interface CreateCharacterMobileViewProps {
   /** Character id to edit; when omitted the view creates a new character. */

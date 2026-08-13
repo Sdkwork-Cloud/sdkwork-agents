@@ -2,6 +2,17 @@ import type { ChatMessage } from '../types';
 import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 import { createSdkworkChatRequestContext } from '@sdkwork/agents-pc-core/session';
 
+export interface ChatSendFailure {
+  /** Fallback display message (the SDK error message, already safe). */
+  message: string;
+  /** Backend problem i18n key (e.g. `errors.result.50301`) when available. */
+  i18nKey?: string;
+  /** Backend problem numeric code (e.g. `50301`) for `errors.result.<code>`. */
+  code?: number | string;
+  httpStatus?: number;
+  traceId?: string;
+}
+
 export interface ChatServiceOptions {
   sessionId: string;
   model: string;
@@ -9,11 +20,17 @@ export interface ChatServiceOptions {
   signal?: AbortSignal;
   onMessageUpdate: (text: string) => void;
   onComplete?: (message?: { id: string }) => void;
-  onError?: (error: string) => void;
+  onError?: (failure: ChatSendFailure) => void;
 }
 
 const DEFAULT_CHAT_AGENT_ID = 'agent.chat.default';
 let chatAgentPort: ChatAgentPort | null = null;
+
+// Cached default chat agent record: the agent is session-stable, so loading
+// it on every send (one GET per message) is wasteful. Creation/model-sync
+// update the cache so a changed default is picked up within the session.
+const CHAT_AGENT_CACHE_TTL_MS = 5 * 60 * 1000;
+let chatAgentCache: { agent: { model?: string } | null; expiresAt: number } | null = null;
 
 export interface ChatAgentConfig {
   id: string;
@@ -80,11 +97,27 @@ export interface ChatAgentPort {
     content: string,
     model: string,
     media?: AgentsDriveMediaResource[],
+    systemPrompt?: string,
+  ): Promise<{ id: string; content: string }>;
+  /** Optional SSE streaming variant: deltas are delivered via `onDelta`. */
+  sendMessageStream?(
+    agentId: string,
+    sessionId: string,
+    content: string,
+    model: string,
+    media: AgentsDriveMediaResource[] | undefined,
+    onDelta: (delta: string) => void,
+    systemPrompt?: string,
   ): Promise<{ id: string; content: string }>;
 }
 
 export function configureChatAgentPort(port: ChatAgentPort): void {
   chatAgentPort = port;
+  // A new port implementation may target a different backend, so the cached
+  // agent record and resolved session ids must not leak across reconfigures
+  // (also keeps tests isolated).
+  chatAgentCache = null;
+  resolvedSessionIdByChatId.clear();
 }
 
 function requireChatAgentPort(): ChatAgentPort {
@@ -136,9 +169,17 @@ function defaultAgent(model: string): ChatAgentConfig {
 
 async function ensureChatAgent(model: string): Promise<void> {
   const port = requireChatAgentPort();
-  const current = await port.getAgent(DEFAULT_CHAT_AGENT_ID);
+  const now = Date.now();
+  const cached = chatAgentCache && chatAgentCache.expiresAt > now
+    ? chatAgentCache.agent
+    : undefined;
+  const current = cached ?? await port.getAgent(DEFAULT_CHAT_AGENT_ID);
+  if (cached === undefined) {
+    chatAgentCache = { agent: current, expiresAt: now + CHAT_AGENT_CACHE_TTL_MS };
+  }
   if (!current) {
-    await port.createAgent(defaultAgent(model));
+    const created = await port.createAgent(defaultAgent(model));
+    chatAgentCache = { agent: created as { model?: string } | null, expiresAt: now + CHAT_AGENT_CACHE_TTL_MS };
     return;
   }
   if (model && current.model !== model) {
@@ -150,6 +191,7 @@ async function ensureChatAgent(model: string): Promise<void> {
     }
     try {
       await port.updateAgent(DEFAULT_CHAT_AGENT_ID, { model });
+      chatAgentCache = { agent: { model }, expiresAt: now + CHAT_AGENT_CACHE_TTL_MS };
     } catch (error) {
       // Best-effort: a failed model sync (e.g. a stale scope claim) must not
       // block session loading or chat.
@@ -163,13 +205,42 @@ function canonicalSessionId(sessionId: string): string {
   return sessionId.startsWith('session.') ? sessionId : `session.${normalized}`;
 }
 
+// Maps the canonical local chat id to the server session id resolved for it.
+// `sessions.create` does not accept client-chosen ids (B12 context-selector
+// guard), so the first turn in a local chat must remember the server-generated
+// session id to keep later turns in the same conversation.
+const resolvedSessionIdByChatId = new Map<string, string>();
+
 async function resolveSession(model: string, localSessionId: string): Promise<string> {
   await ensureChatAgent(model);
-  return requireChatAgentPort().resolveOrCreateSession(
+  const canonical = canonicalSessionId(localSessionId);
+  const cached = resolvedSessionIdByChatId.get(canonical);
+  if (cached) {
+    return cached;
+  }
+  const resolved = await requireChatAgentPort().resolveOrCreateSession(
     DEFAULT_CHAT_AGENT_ID,
-    canonicalSessionId(localSessionId),
+    canonical,
     'SDKWork Agents',
   );
+  resolvedSessionIdByChatId.set(canonical, resolved);
+  return resolved;
+}
+
+function toChatSendFailure(error: unknown): ChatSendFailure {
+  if (error instanceof Error) {
+    const problem = (error as { problem?: { i18nKey?: string; code?: number | string } }).problem;
+    const httpStatus = (error as { httpStatus?: number }).httpStatus;
+    const traceId = (error as { traceId?: string }).traceId;
+    return {
+      message: error.message,
+      i18nKey: problem?.i18nKey,
+      code: problem?.code,
+      httpStatus,
+      traceId,
+    };
+  }
+  return { message: 'Agents chat request failed.' };
 }
 
 export class ChatService {
@@ -190,51 +261,57 @@ export class ChatService {
     const userStateBySessionId = new Map(
       userStates.map((state) => [state.sessionId, state]),
     );
-    return Promise.all(
-      sessions.map(async (session) => {
-        const userState = userStateBySessionId.get(session.id);
-        const [messages, feedbackItems] = await Promise.all([
-          port.listMessages(DEFAULT_CHAT_AGENT_ID, session.id),
-          port.listMessageFeedback(DEFAULT_CHAT_AGENT_ID, session.id),
-        ]);
-        const feedbackByMessageId = new Map(
-          feedbackItems.map((feedback) => [feedback.messageId, feedback]),
-        );
-        return {
-          id: session.id,
-          title: session.title,
-          updatedAt: Date.parse(session.updatedAt) || 0,
-          version: session.version,
-          projectId: session.projectId,
-          pinned: userState?.pinned ?? false,
-          userStateVersion: userState?.version,
-          messages: await Promise.all(messages.map(async (message) => {
-            const feedback = feedbackByMessageId.get(message.id);
-            const mediaResources = await Promise.all(
-              (message.mediaResources ?? []).map(async (resource) => {
-                try {
-                  const url = await port.resolveMediaPreviewUrl(resource.uri);
-                  return { ...resource, url };
-                } catch {
-                  return resource;
-                }
-              }),
-            );
-            return {
-              id: message.id,
-              role: message.role === 'assistant' ? 'model' : 'user',
-              text: message.content,
-              images: mediaResources
-                .filter((resource) => resource.kind === 'image' && resource.url)
-                .map((resource) => resource.url as string),
-              mediaResources,
-              feedback: feedback?.rating,
-              feedbackVersion: feedback?.version,
-            };
-          })),
-        };
-      }),
+    // Lazy detail: transcripts and feedback load per selected session
+    // (`loadSessionDetail`) instead of fanning out 2N+2 requests here.
+    return sessions.map((session) => {
+      const userState = userStateBySessionId.get(session.id);
+      return {
+        id: session.id,
+        title: session.title,
+        updatedAt: Date.parse(session.updatedAt) || 0,
+        version: session.version,
+        projectId: session.projectId,
+        pinned: userState?.pinned ?? false,
+        userStateVersion: userState?.version,
+        messages: [],
+      };
+    });
+  }
+
+  /** Loads one session transcript (messages + feedback) on demand. */
+  static async loadSessionDetail(sessionId: string): Promise<ChatMessage[]> {
+    const port = requireChatAgentPort();
+    const [messages, feedbackItems] = await Promise.all([
+      port.listMessages(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId)),
+      port.listMessageFeedback(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId)),
+    ]);
+    const feedbackByMessageId = new Map(
+      feedbackItems.map((feedback) => [feedback.messageId, feedback]),
     );
+    return Promise.all(messages.map(async (message) => {
+      const feedback = feedbackByMessageId.get(message.id);
+      const mediaResources = await Promise.all(
+        (message.mediaResources ?? []).map(async (resource) => {
+          try {
+            const url = await port.resolveMediaPreviewUrl(resource.uri);
+            return { ...resource, url };
+          } catch {
+            return resource;
+          }
+        }),
+      );
+      return {
+        id: message.id,
+        role: message.role === 'assistant' ? 'model' : 'user',
+        text: message.content,
+        images: mediaResources
+          .filter((resource) => resource.kind === 'image' && resource.url)
+          .map((resource) => resource.url as string),
+        mediaResources,
+        feedback: feedback?.rating,
+        feedbackVersion: feedback?.version,
+      };
+    }));
   }
 
   static async setSessionPinned(sessionId: string, pinned: boolean, version?: string) {
@@ -284,40 +361,63 @@ export class ChatService {
 
   static async streamChat(options: ChatServiceOptions): Promise<void> {
     if (options.signal?.aborted) {
-      options.onError?.('AbortError');
+      options.onError?.({ message: 'AbortError' });
       return;
     }
 
     const latest = options.messages.at(-1);
     if (!latest || latest.role !== 'user') {
-      options.onError?.('A user message is required.');
+      options.onError?.({ message: 'A user message is required.' });
       return;
     }
 
     try {
       const sessionId = await resolveSession(options.model, options.sessionId);
       if (options.signal?.aborted) {
-        options.onError?.('AbortError');
+        options.onError?.({ message: 'AbortError' });
         return;
       }
-      const response = await requireChatAgentPort().sendMessage(
-        DEFAULT_CHAT_AGENT_ID,
-        sessionId,
-        latest.text
-          || latest.mediaResources?.map((item) => item.fileName ?? item.id).join(', ')
-          || 'Attachment',
-        options.model,
-        latest.mediaResources,
-      );
+      const port = requireChatAgentPort();
+      const content = latest.text
+        || latest.mediaResources?.map((item) => item.fileName ?? item.id).join(', ')
+        || 'Attachment';
+      const systemPrompt = defaultAgent(options.model).systemPrompt;
+      const response = port.sendMessageStream
+        ? await port.sendMessageStream(
+            DEFAULT_CHAT_AGENT_ID,
+            sessionId,
+            content,
+            options.model,
+            latest.mediaResources,
+            (delta) => options.onMessageUpdate(delta),
+            systemPrompt,
+          )
+        : await port.sendMessage(
+            DEFAULT_CHAT_AGENT_ID,
+            sessionId,
+            content,
+            options.model,
+            latest.mediaResources,
+            systemPrompt,
+          );
       if (options.signal?.aborted) {
-        options.onError?.('AbortError');
+        options.onError?.({ message: 'AbortError' });
         return;
       }
-      options.onMessageUpdate(response.content);
+      if (!port.sendMessageStream) {
+        options.onMessageUpdate(response.content);
+      }
       options.onComplete?.({ id: response.id });
     } catch (error) {
-      console.error('Agents chat request failed', error);
-      options.onError?.('Agents chat request failed.');
+      const failure = toChatSendFailure(error);
+      // Keep the console line compact and parseable: the user-facing message
+      // is rendered in the message list (translated via the problem i18n key
+      // or `errors.result.<code>`), so only correlation info is logged here.
+      console.warn(
+        `[agents-chat] turn failed: ${failure.message}`,
+        { httpStatus: failure.httpStatus, i18nKey: failure.i18nKey, code: failure.code, traceId: failure.traceId },
+      );
+      options.onError?.(failure);
     }
   }
 }

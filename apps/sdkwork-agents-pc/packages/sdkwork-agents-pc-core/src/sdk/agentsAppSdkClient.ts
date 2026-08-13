@@ -1,6 +1,7 @@
 import {
   createClient,
   completeAgentTurn,
+  completeAgentTurnStream,
   type CompleteAgentTurnResult,
   type SdkworkAppClient as GeneratedSdkworkAgentsAppClient,
   type SdkworkAppConfig,
@@ -116,11 +117,12 @@ export type {
   CreateAgentProviderBindingRequest,
   CreateAgentRequest,
   CreateAgentSessionRuntimeBindingRequest,
+  CreateAgentTurnRequest,
   McpServerMarketplaceRecord,
   PageInfo,
   UpdateAgentRequest,
   UpdateAgentSessionRuntimeBindingRequest,
 } from "@sdkwork/agents-app-sdk";
 
-export { completeAgentTurn };
+export { completeAgentTurn, completeAgentTurnStream };
 export type { CompleteAgentTurnResult };

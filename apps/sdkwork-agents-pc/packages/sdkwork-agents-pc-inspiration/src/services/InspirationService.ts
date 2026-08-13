@@ -1,7 +1,7 @@
 import type {
-  CommunityEntry,
-  SdkworkCommunityAppClient,
-} from '@sdkwork/agents-pc-core/sdk/communityAppSdkClient';
+  FeedItem,
+  SdkworkFeedsClient,
+} from '@sdkwork/agents-pc-core/sdk/feedsOpenSdkClient';
 import type {
   SdkworkSkillsAppClient,
   SkillRecord,
@@ -16,17 +16,17 @@ import type {
   SkillCategory,
 } from '../types';
 
-const DISCOVER_TAG = 'agents-inspiration-discover';
-const SHORT_VIDEO_TAG = 'agents-inspiration-short-video';
-const ACTIVITY_TAG = 'agents-inspiration-activity';
+const DISCOVER_STREAM = 'agents-inspiration-discover';
+const SHORT_VIDEO_STREAM = 'agents-inspiration-short-video';
+const ACTIVITY_STREAM = 'agents-inspiration-activity';
 const SKILLS_PAGE_SIZE = 100;
 const DISCOVER_COLUMN_COUNT = 6;
 
-async function loadCommunityAppSdkClient(): Promise<SdkworkCommunityAppClient> {
-  const { getCommunityAppSdkClientWithSession } = await import(
-    '@sdkwork/agents-pc-core/sdk/communityAppSdkClient'
+async function loadFeedsOpenSdkClient(): Promise<SdkworkFeedsClient> {
+  const { getFeedsOpenSdkClient } = await import(
+    '@sdkwork/agents-pc-core/sdk/feedsOpenSdkClient'
   );
-  return getCommunityAppSdkClientWithSession();
+  return getFeedsOpenSdkClient();
 }
 
 async function loadSkillsAppSdkClient(): Promise<SdkworkSkillsAppClient> {
@@ -55,78 +55,63 @@ function readNumber(record: Record<string, unknown>, key: string, fallback = 0):
   return fallback;
 }
 
-function parseBody(entry: CommunityEntry): Record<string, unknown> {
-  if (!entry.body) return {};
-  try {
-    const body = JSON.parse(entry.body) as unknown;
-    return isRecord(body) ? body : {};
-  } catch {
-    return {};
-  }
+/**
+ * Standardized source payload mapped by the feeds source adapter (whitelisted
+ * fields only). Frontends read `payload` instead of parsing raw source bodies.
+ */
+function payloadOf(item: FeedItem): Record<string, unknown> {
+  return isRecord(item.payload) ? item.payload : {};
 }
 
-function toCommunityEntries(items: Record<string, unknown>[]): CommunityEntry[] {
-  return items.filter((item): item is Record<string, unknown> & CommunityEntry => (
-    typeof item.id === 'string'
-    && typeof item.title === 'string'
-    && typeof item.body === 'string'
-    && isRecord(item.author)
-    && isRecord(item.stats)
-  ));
-}
-
-async function listCommunityEntries(tag: string, query?: string): Promise<CommunityEntry[]> {
+async function listStreamItems(streamKey: string, query?: string): Promise<FeedItem[]> {
   try {
-    const client = await loadCommunityAppSdkClient();
-    const page = await client.community.feed.list({
-      tag,
-      reviewState: 'approved',
-      page: 1,
+    const client = await loadFeedsOpenSdkClient();
+    const page = await client.feeds.streams.items.list(streamKey, {
       pageSize: 20,
       ...(query?.trim() ? { q: query.trim() } : {}),
     });
-    return toCommunityEntries(page.items);
+    return page.items as unknown as FeedItem[];
   } catch (error) {
-    // The community app service may be unavailable in hosted portal
+    // The feeds stream service may be unavailable in hosted portal
     // environments; inspiration tabs degrade to empty content.
-    console.error(`Failed to load community entries for ${tag}.`, error);
+    console.error(`Failed to load feed stream ${streamKey}.`, error);
     return [];
   }
 }
 
-function toDiscoverItem(entry: CommunityEntry): DiscoverItem | null {
-  const body = parseBody(entry);
-  const src = readString(body, 'src');
+function toDiscoverItem(item: FeedItem): DiscoverItem | null {
+  const payload = payloadOf(item);
+  const src = readString(payload, 'src') || item.coverUrl || '';
   if (!src) return null;
   return {
-    id: entry.id,
+    id: item.id,
     src,
-    alt: readString(body, 'alt') || entry.title,
-    author: entry.author.name,
-    avatar: entry.author.avatarUrl || readString(body, 'avatar'),
-    likes: entry.stats.reactionCount ?? 0,
-    title: entry.title,
-    prompt: readString(body, 'prompt') || entry.excerpt || entry.title,
-    date: readString(body, 'date') || entry.publishedAt,
-    aspectRatio: readString(body, 'aspectRatio') || undefined,
-    model: readString(body, 'model') || undefined,
-    isBanner: body.isBanner === true || entry.isFeatured === true,
+    alt: readString(payload, 'alt') || item.title,
+    author: item.author?.name || '',
+    avatar: item.author?.avatarUrl || readString(payload, 'avatar'),
+    likes: item.reactionCount ?? 0,
+    title: item.title,
+    prompt: readString(payload, 'prompt') || item.excerpt || item.title,
+    date: readString(payload, 'date') || item.publishedAt,
+    aspectRatio: readString(payload, 'aspectRatio') || undefined,
+    model: readString(payload, 'model') || undefined,
+    isBanner: payload.isBanner === true,
   };
 }
 
-function toShortVideo(entry: CommunityEntry): ShortVideo | null {
-  const body = parseBody(entry);
-  const cover = readString(body, 'cover');
-  const videoUrl = readString(body, 'videoUrl');
+function toShortVideo(item: FeedItem): ShortVideo | null {
+  const payload = payloadOf(item);
+  const cover = readString(payload, 'cover') || item.coverUrl || '';
+  const videoUrl = readString(payload, 'videoUrl');
   if (!cover || !videoUrl) return null;
   return {
-    id: entry.id,
-    title: entry.title,
-    author: entry.author.name,
-    avatar: entry.author.avatarUrl || readString(body, 'avatar'),
-    likes: entry.stats.reactionCount ?? 0,
-    duration: readString(body, 'duration'),
-    desc: entry.excerpt || readString(body, 'desc'),
+    id: item.id,
+    title: item.title,
+    author: item.author?.name || '',
+    avatar: item.author?.avatarUrl || readString(payload, 'avatar'),
+    likes: item.reactionCount ?? 0,
+    duration: readString(payload, 'duration'),
+    desc: item.excerpt || readString(payload, 'desc'),
     cover,
     videoUrl,
   };
@@ -151,25 +136,25 @@ function toActivityWork(value: unknown): ActivityWork | null {
   };
 }
 
-function toActivity(entry: CommunityEntry): Activity | null {
-  const body = parseBody(entry);
-  const cover = readString(body, 'cover');
-  const banner = readString(body, 'banner');
+function toActivity(item: FeedItem): Activity | null {
+  const payload = payloadOf(item);
+  const cover = readString(payload, 'cover') || item.coverUrl || '';
+  const banner = readString(payload, 'banner');
   if (!cover || !banner) return null;
-  const works = Array.isArray(body.works)
-    ? body.works.map(toActivityWork).filter((work): work is ActivityWork => work !== null)
+  const works = Array.isArray(payload.works)
+    ? payload.works.map(toActivityWork).filter((work): work is ActivityWork => work !== null)
     : [];
   return {
-    id: entry.id,
-    title: entry.title,
-    desc: entry.excerpt || readString(body, 'desc'),
-    status: readString(body, 'status'),
-    tag: readString(body, 'tag'),
-    participants: readNumber(body, 'participants', entry.stats.viewCount ?? 0),
+    id: item.id,
+    title: item.title,
+    desc: item.excerpt || readString(payload, 'desc'),
+    status: readString(payload, 'status'),
+    tag: readString(payload, 'tag'),
+    participants: readNumber(payload, 'participants', item.reactionCount ?? 0),
     cover,
     banner,
-    background: readString(body, 'background'),
-    timeRange: readString(body, 'timeRange'),
+    background: readString(payload, 'background'),
+    timeRange: readString(payload, 'timeRange'),
     works,
   };
 }
@@ -217,14 +202,14 @@ export class InspirationService {
    * Fetch discover tab data
    */
   static async getDiscoverData(): Promise<DiscoverData> {
-    const entries = await listCommunityEntries(DISCOVER_TAG);
-    const items = entries.map(toDiscoverItem).filter((item): item is DiscoverItem => item !== null);
-    const banner = items.find(item => item.isBanner) ?? items[0];
+    const items = await listStreamItems(DISCOVER_STREAM);
+    const discovered = items.map(toDiscoverItem).filter((item): item is DiscoverItem => item !== null);
+    const banner = discovered.find(item => item.isBanner) ?? discovered[0];
     if (!banner) {
-      throw new Error('发现页没有可展示的 Community 数据。');
+      throw new Error('发现页没有可展示的灵感数据。');
     }
     const cols = Array.from({ length: DISCOVER_COLUMN_COUNT }, () => [] as DiscoverItem[]);
-    items.filter(item => item.id !== banner.id).forEach((item, index) => {
+    discovered.filter(item => item.id !== banner.id).forEach((item, index) => {
       cols[index % DISCOVER_COLUMN_COUNT].push(item);
     });
     return { banner, cols };
@@ -234,8 +219,8 @@ export class InspirationService {
    * Fetch short videos
    */
   static async getShortVideos(query?: string): Promise<ShortVideo[]> {
-    const entries = await listCommunityEntries(SHORT_VIDEO_TAG, query);
-    return entries.map(toShortVideo).filter((video): video is ShortVideo => video !== null);
+    const items = await listStreamItems(SHORT_VIDEO_STREAM, query);
+    return items.map(toShortVideo).filter((video): video is ShortVideo => video !== null);
   }
 
   /**
@@ -270,7 +255,7 @@ export class InspirationService {
    * Fetch activities
    */
   static async getActivities(query?: string): Promise<Activity[]> {
-    const entries = await listCommunityEntries(ACTIVITY_TAG, query);
-    return entries.map(toActivity).filter((activity): activity is Activity => activity !== null);
+    const items = await listStreamItems(ACTIVITY_STREAM, query);
+    return items.map(toActivity).filter((activity): activity is Activity => activity !== null);
   }
 }

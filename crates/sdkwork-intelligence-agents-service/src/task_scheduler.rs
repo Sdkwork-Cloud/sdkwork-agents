@@ -490,7 +490,9 @@ pub(crate) fn execute_task_run_claim(
         requested_by,
         requested_at: requested_at.clone(),
         prefer_stream: false,
-        auth_token: None,
+        system_prompt: None,
+            auth_token: None,
+            access_token: None,
     });
     match result {
         Ok(result) => scheduler_repository.complete_task_run(

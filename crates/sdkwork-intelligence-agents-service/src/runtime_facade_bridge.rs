@@ -3,6 +3,7 @@
 //! Preview responses and prompt optimizations must not use deterministic local
 //! contract stubs when a canonical agent-engine binding is active.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use sdkwork_agent_kernel::{
@@ -160,36 +161,90 @@ Return only the optimized prompt text with no preamble.\n\n{prompt}"
     }
 }
 
-static AGENT_ENGINE_HOST: Mutex<Option<Arc<AgentsAgentEngineHost>>> = Mutex::new(None);
+static AGENT_ENGINE_HOSTS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AgentsAgentEngineHost>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Host key for the shared default engine host: the product-default
+/// cloudrouter dual-token rig backend used by agents without a per-agent
+/// model configuration.
+const DEFAULT_AGENT_ENGINE_HOST_KEY: &str = "default";
+
+fn agent_engine_host_key(tenant_id: u64, agent_id: &str) -> String {
+    format!("{tenant_id}:{agent_id}")
+}
+
+fn build_default_agent_engine_host() -> Option<Arc<AgentsAgentEngineHost>> {
+    let host = AgentsAgentEngineHost::bootstrap_selected(
+        &bootstrappable_engine_keys(),
+        LiveInteractionRegistry::new(),
+    );
+    if host.engine_keys().next().is_some() {
+        Some(Arc::new(host))
+    } else {
+        None
+    }
+}
 
 pub fn shared_agent_engine_host() -> Option<Arc<AgentsAgentEngineHost>> {
     // A failed bootstrap must not be cached: engine availability can recover
     // (e.g. the provider directory becomes readable again) and a permanently
     // cached None would force a process restart to ever synchronize again.
-    let mut guard = AGENT_ENGINE_HOST
+    let mut guard = AGENT_ENGINE_HOSTS
         .lock()
         .expect("provider engine host mutex poisoned");
-    if guard.is_none() {
-        let host = AgentsAgentEngineHost::bootstrap_selected(
-            &bootstrappable_engine_keys(),
-            LiveInteractionRegistry::new(),
-        );
-        if host.engine_keys().next().is_some() {
-            *guard = Some(Arc::new(host));
-        }
+    if let Some(host) = guard.get(DEFAULT_AGENT_ENGINE_HOST_KEY) {
+        return Some(host.clone());
     }
-    guard.clone()
+    drop(guard);
+    let host = build_default_agent_engine_host()?;
+    let mut guard = AGENT_ENGINE_HOSTS
+        .lock()
+        .expect("provider engine host mutex poisoned");
+    guard
+        .entry(DEFAULT_AGENT_ENGINE_HOST_KEY.to_string())
+        .or_insert_with(|| host.clone());
+    Some(host)
 }
 
-/// Rebuilds the shared agent-engine host after a rig (simple agent) model
-/// configuration was applied, so the live OpenAI-compatible backend takes
-/// effect without a process restart.
+/// Engine host for one `(tenant_id, agent_id)` scope.
+///
+/// A per-agent host installed by [`refresh_rig_agent_engine_for`] is preferred
+/// so a custom LLM provider configuration only affects its own agent scope;
+/// otherwise the shared default host (cloudrouter dual-token rig backend) is
+/// lazily cached under this scope so every scope keeps a stable `Arc` across
+/// turns.
+pub fn agent_engine_host_for(
+    tenant_id: u64,
+    agent_id: &str,
+) -> Option<Arc<AgentsAgentEngineHost>> {
+    let key = agent_engine_host_key(tenant_id, agent_id);
+    let mut guard = AGENT_ENGINE_HOSTS
+        .lock()
+        .expect("provider engine host mutex poisoned");
+    if let Some(host) = guard.get(&key) {
+        return Some(host.clone());
+    }
+    drop(guard);
+    let shared = shared_agent_engine_host()?;
+    let mut guard = AGENT_ENGINE_HOSTS
+        .lock()
+        .expect("provider engine host mutex poisoned");
+    guard.entry(key).or_insert_with(|| shared.clone());
+    Some(shared)
+}
+
+/// Rebuilds the engine host for one `(tenant_id, agent_id)` scope after a rig
+/// (simple agent) model configuration was applied, so the custom provider
+/// backend takes effect without a process restart and without affecting other
+/// agents' scopes.
 ///
 /// The host is rebuilt with [`AgentsAgentEngineHost::bootstrap_selected_with_rig`]
 /// (per-engine failures are tolerated like the lazy bootstrap path). This is a
 /// low-frequency management operation, so a fresh live-interaction registry is
 /// acceptable; in-flight interactions on the previous host keep their Arc.
-pub fn refresh_rig_agent_engine(
+pub fn refresh_rig_agent_engine_for(
+    tenant_id: u64,
+    agent_id: &str,
     configuration: &AgentConfiguration,
     host: Arc<dyn HostProvider + Send + Sync>,
 ) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
@@ -202,14 +257,15 @@ pub fn refresh_rig_agent_engine(
     if rebuilt.engine_keys().next().is_none() {
         return Ok(());
     }
-    // Swap the shared host from a dedicated thread so the retired host (whose
+    let key = agent_engine_host_key(tenant_id, agent_id);
+    // Swap the scoped host from a dedicated thread so the retired host (whose
     // rig slot may own a tokio runtime) is dropped outside async contexts —
     // dropping a runtime from within an asynchronous context panics.
     std::thread::spawn(move || {
-        let mut guard = AGENT_ENGINE_HOST
+        let mut guard = AGENT_ENGINE_HOSTS
             .lock()
             .expect("provider engine host mutex poisoned");
-        *guard = Some(Arc::new(rebuilt));
+        guard.insert(key, Arc::new(rebuilt));
     })
     .join()
     .map_err(|_| {
@@ -218,6 +274,15 @@ pub fn refresh_rig_agent_engine(
         )
     })?;
     Ok(())
+}
+
+/// Backward-compatible refresh replacing the shared default engine host
+/// (used by scopes without a per-agent configuration).
+pub fn refresh_rig_agent_engine(
+    configuration: &AgentConfiguration,
+    host: Arc<dyn HostProvider + Send + Sync>,
+) -> sdkwork_agents_runtime_facade::RuntimeFacadeResult<()> {
+    refresh_rig_agent_engine_for(0, DEFAULT_AGENT_ENGINE_HOST_KEY, configuration, host)
 }
 
 /// Kernel host surface backed by the model configuration runtime secret store.
@@ -404,6 +469,48 @@ mod tests {
             descriptor.metadata_value("sdkwork.backend.fail_closed"),
             Some("false")
         );
+    }
+
+    #[test]
+    fn per_agent_engine_hosts_are_isolated_by_tenant_and_agent_scope() {
+        use sdkwork_agent_kernel::{AgentConfigValue, AgentConfiguration, EnvFileSecretHostProvider};
+
+        // Agent A (tenant 1) gets a custom provider configuration; agent B
+        // (tenant 1, different agent) and tenant 2 keep the shared default.
+        let configuration = AgentConfiguration::new("agent.chat.default", "profile.rig.custom")
+            .set("llm.rig.provider_id", AgentConfigValue::string("openai"))
+            .set(
+                "llm.rig.api_key",
+                AgentConfigValue::secret_ref("test.rig.api_key"),
+            )
+            .set(
+                "llm.rig.default_model",
+                AgentConfigValue::string("custom-chat"),
+            )
+            .set("runtime.rig.backend_mode", AgentConfigValue::string("live"));
+        let host: Arc<dyn HostProvider + Send + Sync> =
+            Arc::new(EnvFileSecretHostProvider::new());
+        refresh_rig_agent_engine_for(1, "agent.chat.default", &configuration, host)
+            .expect("per-agent rig refresh");
+
+        // The configured scope resolves to its own host.
+        let configured = agent_engine_host_for(1, "agent.chat.default")
+            .expect("configured agent host");
+        // A different agent in the same tenant falls back to the shared host
+        // (lazily cached under its own scope key).
+        let other_agent = agent_engine_host_for(1, "agent.other")
+            .expect("other agent host");
+        let other_tenant = agent_engine_host_for(2, "agent.chat.default")
+            .expect("other tenant host");
+        let shared = shared_agent_engine_host().expect("shared agent engine host");
+
+        // Per-agent scopes are distinct instances; the fallback scopes share
+        // the default host instance.
+        assert!(!Arc::ptr_eq(&configured, &shared));
+        assert!(!Arc::ptr_eq(&configured, &other_agent));
+        assert!(!Arc::ptr_eq(&configured, &other_tenant));
+        assert!(Arc::ptr_eq(&other_agent, &shared));
+        assert!(Arc::ptr_eq(&other_tenant, &shared));
     }
 
     #[test]

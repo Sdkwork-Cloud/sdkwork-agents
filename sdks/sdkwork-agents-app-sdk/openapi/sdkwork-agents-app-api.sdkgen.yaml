@@ -7867,9 +7867,6 @@ components:
         agentId:
           type: string
           pattern: ^agent\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
-        sessionId:
-          type: string
-          pattern: ^session\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
         projectId:
           type: string
           pattern: ^project\.[a-z0-9_-]+(\.[a-z0-9_-]+)*$
@@ -8475,6 +8472,10 @@ components:
             $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: [string, 'null']
           maxLength: 128
@@ -8567,6 +8568,10 @@ components:
             $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: [string, 'null']
           maxLength: 128
@@ -8614,6 +8619,10 @@ components:
             $ref: '#/components/schemas/AgentTurnInputQueueDriveRef'
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: [string, 'null']
           maxLength: 128
@@ -8987,6 +8996,10 @@ components:
           default: text/plain
         turnMode:
           $ref: '#/components/schemas/AgentTurnMode'
+        systemPrompt:
+          type: string
+          maxLength: 32000
+          description: Agent system prompt injected ahead of the turn history.
         runtimeBindingId:
           type: string
           maxLength: 128

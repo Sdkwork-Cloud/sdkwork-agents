@@ -925,9 +925,16 @@ pub struct CreateTurnCommand {
     pub requested_at: String,
     /// When true, attempt provider stream chunks for SSE item delta events.
     pub prefer_stream: bool,
+    /// Agent system prompt injected ahead of the turn history (from the
+    /// authenticated client request; never persisted on the turn record).
+    pub system_prompt: Option<String>,
     /// Original user auth token from the authenticated request (transient —
     /// never persisted). Enables cloudrouter account-pool routing execution.
     pub auth_token: Option<String>,
+    /// Original user access token from the authenticated request (transient —
+    /// never persisted). Paired with `auth_token` for dual-token access to
+    /// the cloudrouter gateway (`Authorization: Bearer` + `Access-Token`).
+    pub access_token: Option<String>,
 }
 
 /// Result of one completed Turn with its complete authoritative item set.

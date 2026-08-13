@@ -9,6 +9,8 @@ export interface CreateAgentTurnInputQueueEntryRequest {
   attachmentNames?: string[];
   driveRefs?: AgentTurnInputQueueDriveRef[];
   turnMode: AgentTurnMode;
+  /** Agent system prompt injected ahead of the turn history. */
+  systemPrompt?: string;
   runtimeBindingId?: string | null;
   requestedModelId?: string | null;
   accessModeId?: string | null;

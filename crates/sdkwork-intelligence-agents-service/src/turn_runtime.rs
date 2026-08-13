@@ -6,8 +6,7 @@
 //! contracts stable without a kernel provider registry in-process.
 
 use crate::domain::{AgentSessionItemKind, AgentSessionRecord};
-use crate::runtime_facade_bridge::engine_key_for_binding_id;
-use crate::runtime_facade_bridge::shared_agent_engine_host;
+use crate::runtime_facade_bridge::{agent_engine_host_for, engine_key_for_binding_id};
 use sdkwork_agent_kernel::{
     KernelError, KernelEvent, KernelResult, ModelProvider, ModelRequest, ModelResponse,
     ModelStatus, ModelStreamChunk, ModelStreamSink,
@@ -74,7 +73,11 @@ pub struct TurnExecutionInput {
     /// Original user auth token from the authenticated request (transient —
     /// never persisted). When present, the turn may be executed through the
     /// cloudrouter account-pool routing gateway instead of a local engine.
+    /// Agent system prompt injected ahead of the turn history.
+    pub system_prompt: Option<String>,
     pub auth_token: Option<String>,
+    /// Transient user access token for dual-token cloudrouter routing.
+    pub access_token: Option<String>,
 }
 
 /// Output from one durable turn execution.
@@ -101,6 +104,9 @@ pub struct TurnCancellationInput {
     pub session_id: String,
     pub binding_id: Option<String>,
     pub provider_has_model_chat: bool,
+    /// Scope used to reach the per-agent engine host (never persisted).
+    pub tenant_id: u64,
+    pub agent_id: String,
 }
 
 /// Correlated cancellation acknowledgement returned by the active executor.
@@ -307,6 +313,8 @@ fn cancel_timed_out_turn(
         session_id: input.session.session_id.clone(),
         binding_id: input.binding_id.clone(),
         provider_has_model_chat: input.provider_has_model_chat,
+        tenant_id: input.session.tenant_id,
+        agent_id: input.session.agent_id.clone(),
     };
     let completer = Arc::clone(completer);
     let join_handle = handle.spawn_blocking(move || completer.cancel(&cancel_input));
@@ -440,10 +448,10 @@ impl TurnExecutor for RuntimeFacadeTurnExecutor {
                 "active provider binding is not mapped to a canonical agent engine",
             )
         })?;
-        let host = shared_agent_engine_host().ok_or_else(|| {
+        let host = agent_engine_host_for(input.tenant_id, &input.agent_id).ok_or_else(|| {
             KernelError::provider_error(
                 "turn_cancellation_unavailable",
-                "shared agent engine host is unavailable",
+                "agent engine host is unavailable",
             )
         })?;
         let cancellation = host
@@ -517,8 +525,8 @@ fn execute_runtime_facade_turn(
         return inference_error("active provider binding is not mapped to a canonical agent engine");
     };
 
-    let Some(host) = shared_agent_engine_host() else {
-        return inference_error("shared agent engine host is unavailable");
+    let Some(host) = agent_engine_host_for(input.session.tenant_id, &input.session.agent_id) else {
+        return inference_error("agent engine host is unavailable");
     };
     let Some(slot) = host.slot(engine_key) else {
         return inference_error(format!("agent engine bootstrap failed for {engine_key}"));
@@ -540,6 +548,10 @@ fn execute_runtime_facade_turn(
         timeout_ms: Some(TURN_EXECUTION_TIMEOUT.as_millis() as u64),
         access_mode_id: input.access_mode_id.clone(),
         require_live_provider: true,
+        // Propagate the caller dual tokens so the provider can route the model
+        // call through the cloud router account pool (never persisted).
+        auth_token: input.auth_token.clone(),
+        access_token: input.access_token.clone(),
         ..Default::default()
     };
 
@@ -596,8 +608,14 @@ fn resolve_turn_model_id(
         .unwrap_or_else(|| "default".to_string())
 }
 
+/// Builds the managed-chat prompt for agent-engine turns.
+///
+/// The full transcript is encoded with the same role-prefix convention as
+/// [`build_model_items`] (system prompt, welcome message, history, then the
+/// current user content) so simple-agent providers receive the complete
+/// context instead of only the latest user message.
 fn build_managed_chat_prompt(input: &TurnExecutionInput) -> String {
-    input.user_content.clone()
+    build_model_items(input).join("\n")
 }
 
 fn replay_turn_execution_stream(output: &TurnExecutionOutput, sink: &dyn TurnExecutionStreamSink) {
@@ -686,6 +704,13 @@ fn capacity_error(input: &TurnExecutionInput) -> TurnExecutionOutput {
 
 fn build_model_items(input: &TurnExecutionInput) -> Vec<String> {
     let mut items = Vec::new();
+    if let Some(system_prompt) = input
+        .system_prompt
+        .as_deref()
+        .filter(|value| !is_blank(Some(*value)))
+    {
+        items.push(format!("system: {system_prompt}"));
+    }
     if let Some(welcome) = input
         .welcome_message
         .as_deref()
@@ -714,6 +739,9 @@ fn invoke_kernel_model(
     }
     if let Some(model_id) = model_id.clone() {
         request = request.with_model_id(model_id);
+    }
+    if input.auth_token.is_some() || input.access_token.is_some() {
+        request = request.for_caller(input.auth_token.clone(), input.access_token.clone());
     }
 
     let response = provider.invoke(request)?;
@@ -922,7 +950,9 @@ mod tests {
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: false,
+            system_prompt: None,
             auth_token: None,
+            access_token: None,
         });
         assert!(output.content.contains("Hello"));
         assert!(output.content.contains("Welcome"));
@@ -946,7 +976,9 @@ mod tests {
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: true,
+            system_prompt: None,
             auth_token: None,
+            access_token: None,
         });
         assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
         assert!(output.content.contains("canonical agent-engine"));
@@ -1012,7 +1044,9 @@ mod tests {
             binding_id: None,
             access_mode_id: None,
             provider_has_model_chat: true,
+            system_prompt: None,
             auth_token: None,
+            access_token: None,
         });
         assert_eq!(output.content, "kernel reply");
         assert_eq!(output.runtime_mode, "managed-agent-kernel-model-v1");
@@ -1032,6 +1066,8 @@ mod tests {
             session_id: "session.test".to_string(),
             binding_id: None,
             provider_has_model_chat: true,
+            tenant_id: 1,
+            agent_id: "agent.test".to_string(),
         };
         let correlated = KernelModelTurnExecutor::new(Arc::new(FakeKernelModelProvider::default()))
             .cancel(&input)
@@ -1108,7 +1144,9 @@ mod tests {
             binding_id: Some("binding.codex".to_string()),
             access_mode_id: None,
             provider_has_model_chat: true,
+            system_prompt: None,
             auth_token: None,
+            access_token: None,
         }
     }
 

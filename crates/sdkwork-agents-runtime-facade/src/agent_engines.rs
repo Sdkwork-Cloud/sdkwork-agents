@@ -34,6 +34,7 @@ use sdkwork_agent_provider_rig::{
     ids, RigBackendConfig, RigBackendMode, RigConfigurationProvider, RigModelProvider,
     RigSdkIntegration,
 };
+use sdkwork_agents_tool_cloudrouter::RigCloudRouterExecutor;
 use sdkwork_agent_provider_spi::{
     SdkRuntimeBackedModelProvider, SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord,
     SdkRuntimeSessionRecord, SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID,
@@ -106,15 +107,18 @@ pub fn apply_agent_engine_model_configuration(
     engine_key: &str,
     request: &AgentModelConfigurationRequest,
 ) -> crate::RuntimeFacadeResult<AgentModelConfigurationApplication> {
-    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
+    let _ = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
     })?;
-    if request.agent_id != expected_agent_id {
-        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
-            "model configuration agentId does not match engineId {engine_key}"
-        )));
+    // The engine key selects the provider implementation; the configuration
+    // subject may be any non-blank agent id (a user-created agent such as
+    // `agent.chat.default` or the canonical engine agent).
+    if request.agent_id.trim().is_empty() {
+        return Err(crate::RuntimeFacadeError::InvalidInput(
+            "model configuration agentId must not be blank".to_string(),
+        ));
     }
 
     let result = match engine_key {
@@ -142,15 +146,16 @@ pub fn apply_agent_engine_model_selection(
     engine_key: &str,
     request: &AgentModelSelectionRequest,
 ) -> crate::RuntimeFacadeResult<AgentModelConfigurationApplication> {
-    let expected_agent_id = agent_engine_agent_id(engine_key).ok_or_else(|| {
+    let _ = agent_engine_agent_id(engine_key).ok_or_else(|| {
         crate::RuntimeFacadeError::UnsupportedEngine {
             engine_key: engine_key.to_string(),
         }
     })?;
-    if request.agent_id != expected_agent_id {
-        return Err(crate::RuntimeFacadeError::InvalidInput(format!(
-            "model selection agentId does not match engineId {engine_key}"
-        )));
+    // Same subject rule as model configuration: any non-blank agent id.
+    if request.agent_id.trim().is_empty() {
+        return Err(crate::RuntimeFacadeError::InvalidInput(
+            "model selection agentId must not be blank".to_string(),
+        ));
     }
 
     let result = match engine_key {
@@ -1151,69 +1156,102 @@ pub fn bootstrap_agent_engine(engine_key: &str) -> Result<AgentEngineSlot, Agent
 }
 
 /// Bootstraps the Rig (simple agent) engine slot, upgrading its model provider
-/// from the default fail-closed backend when an applied model configuration
-/// enables a live OpenAI-compatible backend.
+/// from the default fail-closed backend when a live backend is available.
+///
+/// Executor selection:
+/// - no configuration → the default live cloud router backend: every model
+///   call is routed through the `sdkwork-cloudrouter-sdk` account pool with
+///   the caller's dual tokens (no local configuration or API key required);
+/// - `llm.rig.provider_id=cloudrouter` (with an optional `llm.rig.api_key`) →
+///   the cloud router backend in API-key mode for token-less flows;
+/// - any other live configuration (provider_id `openai`, `deepseek`, custom
+///   vendors, …) with an `llm.rig.api_key` secret → the rig-core
+///   OpenAI-compatible adapter: a custom `llm.rig.base_url` endpoint and
+///   `llm.rig.default_model` are honored for personalized provider setups.
 ///
 /// `configuration` is the materialized rig profile configuration (from
-/// [`apply_agent_engine_model_configuration`]); a `None` (or a configuration
-/// that is not live/not openai-compatible) keeps the current fail-closed
-/// behavior so an unconfigured engine never silently answers as a stub.
+/// [`apply_agent_engine_model_configuration`]); an invalid configuration keeps
+/// the fail-closed behavior so a misconfigured engine never silently answers
+/// as a stub.
 pub fn bootstrap_rig_agent_engine(
     configuration: Option<&AgentConfiguration>,
     host: Arc<dyn HostProvider + Send + Sync>,
 ) -> Result<AgentEngineSlot, AgentEngineBootstrapError> {
     let integration = RigSdkIntegration::bootstrap()
         .map_err(|error| AgentEngineBootstrapError::Bootstrap(error.to_string()))?;
-    let Some(configuration) = configuration else {
-        return Ok(AgentEngineSlot::Rig(integration));
-    };
-    let backend_config = match RigBackendConfig::from_configuration(configuration) {
-        Ok(config) => config,
-        Err(error) => {
-            tracing::debug!(
-                error = %error,
-                "rig backend configuration is not usable; keeping fail-closed backend"
-            );
-            return Ok(AgentEngineSlot::Rig(integration));
-        }
+    let backend_config = match configuration {
+        Some(configuration) => match RigBackendConfig::from_configuration(configuration) {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::debug!(
+                    error = %error,
+                    "rig backend configuration is not usable; keeping fail-closed backend"
+                );
+                return Ok(AgentEngineSlot::Rig(integration));
+            }
+        },
+        // Product default: live cloud router account-pool routing with the
+        // caller's dual tokens — no local secret is required.
+        None => RigBackendConfig {
+            mode: RigBackendMode::Live,
+            provider_id: None,
+            api_key_secret_ref: None,
+            base_url: None,
+        },
     };
     if !matches!(backend_config.mode, RigBackendMode::Live) {
         return Ok(AgentEngineSlot::Rig(integration));
     }
-    let default_model_id = configuration
-        .value("llm.rig.default_model")
-        .and_then(|value| match value {
-            AgentConfigValue::String(value) if !value.trim().is_empty() => Some(value.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(|| ids::DEFAULT_MODEL_ID.to_string());
-    match RigModelProvider::with_rig_core_openai(backend_config, host, default_model_id) {
-        Ok(model) => {
-            let model = SdkRuntimeBackedModelProvider::new(
-                integration.runtime.clone(),
-                Arc::new(model),
-                SDK_CAPABILITY_MODEL_CHAT,
-                ids::MODEL_PROVIDER_ID,
-            );
-            let upgraded = RigSdkIntegration {
-                sdk: integration.sdk,
-                transports: integration.transports,
-                runtime: integration.runtime,
-                lifecycle: integration.lifecycle,
-                model,
-                session_adapter: integration.session_adapter,
-            };
-            tracing::info!("rig agent engine upgraded to live OpenAI-compatible backend");
-            Ok(AgentEngineSlot::Rig(upgraded))
+
+    let routes_through_cloud_router = backend_config
+        .provider_id
+        .as_deref()
+        .is_some_and(|provider_id| provider_id == "cloudrouter")
+        || backend_config.api_key_secret_ref.is_none();
+    let model: Arc<dyn ModelProvider + Send + Sync> = if routes_through_cloud_router {
+        // Cloud router account-pool executor: caller dual tokens by default,
+        // gateway API-key mode when the configuration binds `llm.rig.api_key`.
+        Arc::new(RigModelProvider::with_executor(
+            backend_config.clone(),
+            Arc::new(RigCloudRouterExecutor::new(backend_config, host)),
+        ))
+    } else {
+        // Custom OpenAI-compatible provider (rig-core direct): vendor id,
+        // api key secret, optional custom base url and default model.
+        let default_model_id = configuration
+            .and_then(|configuration| configuration.value("llm.rig.default_model"))
+            .and_then(|value| match value {
+                AgentConfigValue::String(value) if !value.trim().is_empty() => Some(value.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| ids::DEFAULT_MODEL_ID.to_string());
+        match RigModelProvider::with_rig_core_openai(backend_config, host, default_model_id) {
+            Ok(model) => Arc::new(model),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "rig live backend upgrade failed; keeping fail-closed backend"
+                );
+                return Ok(AgentEngineSlot::Rig(integration));
+            }
         }
-        Err(error) => {
-            tracing::warn!(
-                error = %error,
-                "rig live backend upgrade failed; keeping fail-closed backend"
-            );
-            Ok(AgentEngineSlot::Rig(integration))
-        }
-    }
+    };
+    let model = SdkRuntimeBackedModelProvider::new(
+        integration.runtime.clone(),
+        model,
+        SDK_CAPABILITY_MODEL_CHAT,
+        ids::MODEL_PROVIDER_ID,
+    );
+    let upgraded = RigSdkIntegration {
+        sdk: integration.sdk,
+        transports: integration.transports,
+        runtime: integration.runtime,
+        lifecycle: integration.lifecycle,
+        model,
+        session_adapter: integration.session_adapter,
+    };
+    tracing::info!("rig agent engine upgraded to live backend");
+    Ok(AgentEngineSlot::Rig(upgraded))
 }
 
 #[cfg(test)]
@@ -1380,11 +1418,26 @@ mod tests {
     }
 
     #[test]
-    fn rig_engine_stays_fail_closed_without_live_configuration() {
+    fn rig_engine_defaults_to_live_cloud_router_backend_without_configuration() {
+        // The product default: no applied configuration still bootstraps a
+        // live cloud router backend (caller dual-token account-pool routing).
         let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
         let slot = bootstrap_rig_agent_engine(None, host).expect("rig bootstrap");
         assert_eq!(slot.engine_key(), "rig");
-        assert_eq!(slot.model_provider().health().status, "degraded");
+        assert_eq!(slot.model_provider().health().status, "available");
+        let descriptor = slot
+            .list_model_descriptors()
+            .into_iter()
+            .next()
+            .expect("rig model descriptor");
+        assert_eq!(
+            descriptor.metadata_value("sdkwork.backend.mode"),
+            Some("live")
+        );
+        assert_eq!(
+            descriptor.metadata_value("sdkwork.backend.fail_closed"),
+            Some("false")
+        );
     }
 
     #[test]
@@ -1425,6 +1478,61 @@ mod tests {
         let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
         let slot = bootstrap_rig_agent_engine(Some(&configuration), host).expect("rig bootstrap");
         assert_eq!(slot.model_provider().health().status, "degraded");
+    }
+
+    #[test]
+    fn rig_engine_uses_custom_openai_compatible_provider_with_base_url() {
+        // A personalized provider setup: custom vendor + api key secret +
+        // custom base url + default model routes through the rig-core direct
+        // adapter, not the cloud router gateway.
+        let configuration = AgentConfiguration::new("agent.rig-general", "profile.rig.custom")
+            .set("llm.rig.provider_id", AgentConfigValue::string("deepseek"))
+            .set(
+                "llm.rig.api_key",
+                AgentConfigValue::secret_ref("test.rig.deepseek"),
+            )
+            .set(
+                "llm.rig.base_url",
+                AgentConfigValue::string("https://api.deepseek.example.com/v1"),
+            )
+            .set(
+                "llm.rig.default_model",
+                AgentConfigValue::string("deepseek-chat"),
+            )
+            .set("runtime.rig.backend_mode", AgentConfigValue::string("live"));
+        let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
+        let slot = bootstrap_rig_agent_engine(Some(&configuration), host).expect("rig bootstrap");
+        assert_eq!(slot.engine_key(), "rig");
+        assert_eq!(slot.model_provider().health().status, "available");
+        let descriptor = slot
+            .list_model_descriptors()
+            .into_iter()
+            .next()
+            .expect("rig model descriptor");
+        assert_eq!(
+            descriptor.metadata_value("sdkwork.backend.fail_closed"),
+            Some("false")
+        );
+    }
+
+    #[test]
+    fn rig_engine_explicit_cloudrouter_provider_uses_gateway_executor() {
+        // provider_id=cloudrouter with an api key routes through the cloud
+        // router gateway in API-key mode (the direct adapter rejects it).
+        let configuration = AgentConfiguration::new("agent.rig-general", "profile.rig.cr")
+            .set(
+                "llm.rig.provider_id",
+                AgentConfigValue::string("cloudrouter"),
+            )
+            .set(
+                "llm.rig.api_key",
+                AgentConfigValue::secret_ref("test.rig.cloudrouter"),
+            )
+            .set("runtime.rig.backend_mode", AgentConfigValue::string("live"));
+        let host = std::sync::Arc::new(EnvFileSecretHostProvider::new());
+        let slot = bootstrap_rig_agent_engine(Some(&configuration), host).expect("rig bootstrap");
+        assert_eq!(slot.engine_key(), "rig");
+        assert_eq!(slot.model_provider().health().status, "available");
     }
 
     #[test]

@@ -5,6 +5,8 @@ export interface CreateAgentTurnRequest {
   content: string;
   contentType?: string;
   turnMode: AgentTurnMode;
+  /** Agent system prompt injected ahead of the turn history. */
+  systemPrompt?: string;
   runtimeBindingId?: string;
   requestedModelId?: string;
   accessModeId?: string;

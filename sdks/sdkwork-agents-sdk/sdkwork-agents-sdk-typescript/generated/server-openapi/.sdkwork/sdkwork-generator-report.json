@@ -12,36 +12,22 @@
   "mode": "apply",
   "hasChanges": true,
   "hasDestructiveChanges": false,
-  "changeFingerprint": "ea4eb116d71d684dc81f58fc312c97fedafd6e6672068842838962ad2ee1d47d",
+  "changeFingerprint": "63d1f4c1473d3dcbcd619c86594123903e239bb82139107af7f6002c57f620cd",
   "changeImpact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface",
-      "runtime",
-      "build-metadata"
+      "models"
     ],
     "details": [
       {
-        "area": "api-surface",
+        "area": "models",
         "paths": [
-          "src/http/client.ts"
-        ]
-      },
-      {
-        "area": "runtime",
-        "paths": [
-          "src/http/client.ts"
-        ]
-      },
-      {
-        "area": "build-metadata",
-        "paths": [
-          "package.json"
+          "src/types/create-agent-session-request.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, runtime, build-metadata. Verification is required."
+    "summary": "Detected impact areas: models. Verification is required."
   },
   "executionDecision": {
     "schemaVersion": 1,
@@ -62,7 +48,7 @@
         "id": "verify-check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime, build-metadata.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-sdk\\sdkwork-agents-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -80,7 +66,7 @@
         "id": "verify-build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime, build-metadata.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-sdk\\sdkwork-agents-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -99,13 +85,13 @@
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, runtime, build-metadata. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime, build-metadata.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-sdk\\sdkwork-agents-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -123,7 +109,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime, build-metadata.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-sdk\\sdkwork-agents-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -162,17 +148,16 @@
   "syncSummary": {
     "dryRun": false,
     "controlPlaneEnabled": true,
-    "writtenFiles": 2,
+    "writtenFiles": 1,
     "skippedScaffoldFiles": 2,
-    "skippedUnchangedGeneratedFiles": 129,
+    "skippedUnchangedGeneratedFiles": 130,
     "deletedGeneratedFiles": 0,
     "changeSummaryPath": ".sdkwork/sdkwork-generator-changes.json",
-    "changeFingerprint": "ea4eb116d71d684dc81f58fc312c97fedafd6e6672068842838962ad2ee1d47d",
+    "changeFingerprint": "63d1f4c1473d3dcbcd619c86594123903e239bb82139107af7f6002c57f620cd",
     "changes": {
       "createdGeneratedFiles": [],
       "updatedGeneratedFiles": [
-        "package.json",
-        "src/http/client.ts"
+        "src/types/create-agent-session-request.ts"
       ],
       "unchangedGeneratedFiles": [
         "bin/publish-core.mjs",
@@ -182,6 +167,7 @@
         "bin/sdk-gen.sh",
         "CHANGELOG.md",
         "LICENSE",
+        "package.json",
         "README.md",
         "sdkwork-sdk.json",
         "src/api/ai.ts",
@@ -189,6 +175,7 @@
         "src/api/index.ts",
         "src/api/paths.ts",
         "src/auth/index.ts",
+        "src/http/client.ts",
         "src/http/index.ts",
         "src/index.ts",
         "src/sdk.ts",
@@ -280,7 +267,6 @@
         "src/types/create-agent-provider-binding-request.ts",
         "src/types/create-agent-request.ts",
         "src/types/create-agent-session-checkpoint-request.ts",
-        "src/types/create-agent-session-request.ts",
         "src/types/create-agent-session-runtime-binding-request.ts",
         "src/types/create-agent-task-request.ts",
         "src/types/create-agent-turn-request.ts",
@@ -316,43 +302,29 @@
     "impact": {
       "schemaVersion": 1,
       "areas": [
-        "api-surface",
-        "runtime",
-        "build-metadata"
+        "models"
       ],
       "details": [
         {
-          "area": "api-surface",
+          "area": "models",
           "paths": [
-            "src/http/client.ts"
-          ]
-        },
-        {
-          "area": "runtime",
-          "paths": [
-            "src/http/client.ts"
-          ]
-        },
-        {
-          "area": "build-metadata",
-          "paths": [
-            "package.json"
+            "src/types/create-agent-session-request.ts"
           ]
         }
       ],
       "requiresVerification": true,
-      "summary": "Detected impact areas: api-surface, runtime, build-metadata. Verification is required."
+      "summary": "Detected impact areas: models. Verification is required."
     },
     "verificationPlan": {
       "shouldRun": true,
       "runPhase": "now",
-      "summary": "Detected impact areas: api-surface, runtime, build-metadata. Verification is required. Run the required verification commands now against the generated SDK output.",
+      "summary": "Detected impact areas: models. Verification is required. Run the required verification commands now against the generated SDK output.",
       "steps": [
         {
           "id": "check",
           "title": "Unified package check",
           "required": true,
-          "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, runtime, build-metadata.",
+          "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
           "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-sdk\\sdkwork-agents-sdk-typescript\\generated\\server-openapi",
           "command": "node",
           "args": [
@@ -370,7 +342,7 @@
           "id": "build",
           "title": "Unified package build",
           "required": true,
-          "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, runtime, build-metadata.",
+          "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
           "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-sdk\\sdkwork-agents-sdk-typescript\\generated\\server-openapi",
           "command": "node",
           "args": [

@@ -20,7 +20,7 @@ import {
 } from '../services/AgentService';
 import { createDefaultAvatar } from '../services/DefaultAvatarService';
 import { toast } from '../components/Toast';
-import { t } from '../i18n/mobileAgentTexts';
+import { t } from '../copy/mobileAgentTexts';
 
 export interface CreateAgentMobileViewProps {
   /** Agent id to edit; when omitted the view creates a new agent. */
