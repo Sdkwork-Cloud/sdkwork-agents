@@ -45,7 +45,7 @@ jobs:
       - name: Checkout workflow framework
         uses: actions/checkout@v5
         with:
-          repository: Sdkwork-Cloud/sdkwork-github-workflow
+          repository: sdkwork-ai/sdkwork-github-workflow
           ref: ${{ env.SDKWORK_GITHUB_WORKFLOW_REF }}
           path: .sdkwork/github-workflow
           fetch-depth: 1
@@ -189,7 +189,7 @@ jobs:
       - name: Checkout SDK generator
         uses: actions/checkout@v5
         with:
-          repository: Sdkwork-Cloud/sdkwork-sdk-generator
+          repository: sdkwork-ai/sdkwork-sdk-generator
           ref: ${{ vars.SDKGENERATOR_REF || 'main' }}
           path: ../sdkwork-sdk-generator
           fetch-depth: 1

@@ -113,12 +113,12 @@ function attestArtifact() {
         buildType: 'https://sdkwork.com/buildtypes/github-workflow/v1',
         externalParameters: { packageId: paths.packageId },
         resolvedDependencies: [{
-          uri: 'git+https://github.com/Sdkwork-Cloud/sdkwork-agents',
+          uri: 'git+https://github.com/sdkwork-ai/sdkwork-agents',
           digest: { gitCommit: sourceCommit },
         }],
       },
       runDetails: {
-        builder: { id: 'https://github.com/Sdkwork-Cloud/sdkwork-github-workflow' },
+        builder: { id: 'https://github.com/sdkwork-ai/sdkwork-github-workflow' },
         metadata: { invocationId: String(process.env.GITHUB_RUN_ID ?? 'local-validation') },
       },
     },
