@@ -15,8 +15,6 @@ path = "src/main.rs"
 
 [dependencies]
 sdkwork-api-agents-assembly.workspace = true
-sdkwork-agents-database-host.workspace = true
-sdkwork-agent-server.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tracing.workspace = true

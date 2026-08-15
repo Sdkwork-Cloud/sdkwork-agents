@@ -11442,8 +11442,6 @@ dependencies = [
  "anyhow",
  "axum 0.8.9",
  "if-addrs",
- "sdkwork-agent-server",
- "sdkwork-agents-database-host",
  "sdkwork-api-agents-assembly",
  "tokio",
  "tracing",
