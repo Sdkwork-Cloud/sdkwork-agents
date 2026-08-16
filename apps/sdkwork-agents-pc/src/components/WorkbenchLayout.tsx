@@ -46,12 +46,15 @@ type WorkbenchLayoutStyle = CSSProperties & {
 };
 
 interface WorkbenchLayoutProps {
+  /** Tabs hidden by the embedding host (e.g. surfaces with no backend yet). */
+  hiddenTabs?: readonly WorkbenchTab[];
   overlayTopInset?: string;
   showSidebarLogo?: boolean;
   viewportMode?: WorkbenchViewportMode;
 }
 
 export const WorkbenchLayout = ({
+  hiddenTabs = [],
   overlayTopInset = '0px',
   showSidebarLogo = true,
   viewportMode = 'fixed',
@@ -86,7 +89,8 @@ export const WorkbenchLayout = ({
   }, [tCommon]);
 
   const avatarBg = AVATAR_COLOR_TEMPLATES[avatarIndex] || AVATAR_COLOR_TEMPLATES[0];
-  const ActiveWorkspace = WORKBENCH_VIEW_BY_TAB[activeTab];
+  const safeActiveTab = hiddenTabs.includes(activeTab) ? DEFAULT_WORKBENCH_TAB : activeTab;
+  const ActiveWorkspace = WORKBENCH_VIEW_BY_TAB[safeActiveTab];
   const workbenchLayoutStyle: WorkbenchLayoutStyle = {
     '--sdkwork-agents-overlay-top-inset': overlayTopInset,
   };
@@ -98,8 +102,9 @@ export const WorkbenchLayout = ({
     >
       <AgentStatusIndicator />
       <GlobalSidebar 
-        activeTab={activeTab} 
+        activeTab={safeActiveTab} 
         avatarBg={avatarBg} 
+        hiddenTabs={hiddenTabs}
         isTokenPlanOpen={isTokenPlanOpen}
         onOpenTokenPlan={() => {
           void import('../bootstrap/tokenPlanRuntime').then(({ initializeAgentsTokenPlanRuntime }) => {

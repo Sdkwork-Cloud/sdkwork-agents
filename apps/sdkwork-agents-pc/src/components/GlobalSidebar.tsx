@@ -18,6 +18,8 @@ export type { WorkbenchTab } from './workbenchTabs';
 interface GlobalSidebarProps {
   activeTab: WorkbenchTab;
   avatarBg: string;
+  /** Tabs hidden by the embedding host (e.g. surfaces with no backend yet). */
+  hiddenTabs?: readonly WorkbenchTab[];
   isTokenPlanOpen: boolean;
   onOpenTokenPlan: () => void;
   setActiveTab: (tab: WorkbenchTab) => void;
@@ -49,12 +51,15 @@ const SIDEBAR_ITEMS: SidebarItem[] = SIDEBAR_TABS.map((id) => ({
 export const GlobalSidebar: FC<GlobalSidebarProps> = ({
   activeTab,
   avatarBg,
+  hiddenTabs = [],
   isTokenPlanOpen,
   onOpenTokenPlan,
   setActiveTab,
   showSidebarLogo,
   username,
-}) => (
+}) => {
+  const visibleItems = SIDEBAR_ITEMS.filter((item) => !hiddenTabs.includes(item.id));
+  return (
   <div className="relative z-50 flex h-full w-[68px] shrink-0 flex-col items-center border-r border-white/5 bg-[#18181A] py-4">
     {showSidebarLogo && (
       <div className="mb-6 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 shadow-sm">
@@ -63,7 +68,7 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({
     )}
 
     <nav aria-label="工作区" className="flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto px-2">
-      {SIDEBAR_ITEMS.map(({ id, icon: Icon, label }) => {
+      {visibleItems.map(({ id, icon: Icon, label }) => {
         const active = activeTab === id;
         return (
           <button
@@ -122,4 +127,5 @@ export const GlobalSidebar: FC<GlobalSidebarProps> = ({
       </button>
     </div>
   </div>
-);
+  );
+};
