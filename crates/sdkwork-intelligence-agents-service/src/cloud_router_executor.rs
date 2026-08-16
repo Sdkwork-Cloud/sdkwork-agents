@@ -161,13 +161,15 @@ fn execute_cloud_router_turn(
         .map_err(|error| {
             KernelError::provider_error("cloudrouter_client_unavailable", error.to_string())
         })?;
-    client.set_auth_token(auth_token);
+    // Dual-token access per API_SPEC §819/§824: the gateway resolves the
+    // account route context from the auth token and carries the access token
+    // as the session access context. `set_access_token` runs first so the
+    // `Authorization` bearer set by `set_auth_token` below is never dropped
+    // by SDK header hygiene, keeping both tokens on the wire.
     if let Some(access_token) = input.access_token.as_deref().filter(|t| !t.trim().is_empty()) {
-        // Dual-token access per API_SPEC §819/§824: the gateway resolves the
-        // account route context from the auth token and carries the access
-        // token as the session access context.
         client.set_access_token(access_token);
     }
+    client.set_auth_token(auth_token);
 
     let completion = blocking_runtime()
         .block_on(client.chat().create(&request))
@@ -210,11 +212,26 @@ fn execute_cloud_router_turn(
     })
 }
 
-/// Maps the durable turn history into OpenAI chat messages: user inputs and
-/// assistant outputs become `user`/`assistant` messages, followed by the
+/// Maps the durable turn history into OpenAI chat messages: the agent system
+/// prompt and welcome message lead as `system` messages (mirroring
+/// `build_model_items` on the agent-engine path so both turn paths honor the
+/// same agent personality), followed by the `user`/`assistant` history and the
 /// current user content.
 fn build_chat_completion_request(input: &TurnExecutionInput) -> OpenAiChatCompletionRequest {
-    let mut messages: Vec<OpenAiChatMessage> = Vec::with_capacity(input.history.len() + 1);
+    let mut messages: Vec<OpenAiChatMessage> = Vec::with_capacity(input.history.len() + 3);
+    for (label, content) in [
+        ("system", input.system_prompt.as_deref()),
+        ("system", input.welcome_message.as_deref()),
+    ] {
+        let Some(content) = content.map(str::trim).filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        messages.push(OpenAiChatMessage {
+            content: Some(content.to_string()),
+            role: label.to_string(),
+            ..Default::default()
+        });
+    }
     for (kind, content) in &input.history {
         let role = match kind {
             AgentSessionItemKind::UserInput => "user",
@@ -260,6 +277,11 @@ fn cloud_router_error(error: cloudrouter_open_sdk::SdkworkError) -> KernelError 
             if *status == 401 && body.contains("invalid_auth_token") =>
         {
             "; 登录 auth token 无效或已过期，请重新登录后重试"
+        }
+        SdkworkError::HttpStatus { status, body }
+            if *status == 401 && body.contains("missing api key credential") =>
+        {
+            "; Cloud Router 未收到调用凭据：请检查 Agents 部署的 cloudrouter base URL 与 SDK 版本（请求必须同时携带 Authorization 与 Access-Token）"
         }
         SdkworkError::HttpStatus { status, body }
             if *status == 401 && body.contains("account_group_unavailable") =>
@@ -378,6 +400,24 @@ mod tests {
         assert_eq!(
             request.messages.last().and_then(|m| m.content.as_deref()),
             Some("latest question")
+        );
+    }
+
+    #[test]
+    fn builds_openai_messages_prepend_system_prompt_and_welcome() {
+        let mut input = sample_input(Some("token"), Some("access"));
+        input.system_prompt = Some("You are a helpful agent".to_string());
+        input.welcome_message = Some("Hi! How can I help?".to_string());
+        let request = build_chat_completion_request(&input);
+        let roles: Vec<&str> = request.messages.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["system", "system", "user", "assistant", "user"]);
+        assert_eq!(
+            request.messages[0].content.as_deref(),
+            Some("You are a helpful agent")
+        );
+        assert_eq!(
+            request.messages[1].content.as_deref(),
+            Some("Hi! How can I help?")
         );
     }
 

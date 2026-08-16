@@ -6,7 +6,6 @@ mod drive;
 mod iam;
 
 use anyhow::Context;
-use axum::Router;
 use sdkwork_agent_server::config::ServerConfig;
 use sdkwork_database_sqlx::DatabasePool;
 use sdkwork_web_bootstrap::{
@@ -34,12 +33,7 @@ pub async fn assemble_api_router() -> anyhow::Result<ApiAssembly> {
     let agents_router = sdkwork_agents_kernel_bridge::build_agents_served_router(config.clone())
         .await
         .context("compose agents served router")?;
-    let router = agents_router
-        .merge(iam_router)
-        .merge(drive_router)
-        .layer(sdkwork_agent_server::middleware::cors_layer(
-            config.as_ref(),
-        ));
+    let router = agents_router.merge(iam_router).merge(drive_router);
     ApiAssemblyContribution::from_manifest(
         "sdkwork-agents",
         "SDKWork Agents API",

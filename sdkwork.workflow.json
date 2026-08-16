@@ -82,6 +82,78 @@
       "repository": "sdkwork-ai/sdkwork-app-topology",
       "refInput": "SDKWORK_APP_TOPOLOGY_REF",
       "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-appbase",
+      "repository": "sdkwork-ai/sdkwork-appbase",
+      "refInput": "SDKWORK_APPBASE_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-community",
+      "repository": "sdkwork-ai/sdkwork-community",
+      "refInput": "SDKWORK_COMMUNITY_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-core",
+      "repository": "sdkwork-ai/sdkwork-core",
+      "refInput": "SDKWORK_CORE_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-generations",
+      "repository": "sdkwork-ai/sdkwork-generations",
+      "refInput": "SDKWORK_GENERATIONS_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-membership",
+      "repository": "sdkwork-ai/sdkwork-membership",
+      "refInput": "SDKWORK_MEMBERSHIP_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-memory",
+      "repository": "sdkwork-ai/sdkwork-memory",
+      "refInput": "SDKWORK_MEMORY_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-order",
+      "repository": "sdkwork-ai/sdkwork-order",
+      "refInput": "SDKWORK_ORDER_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-promotion",
+      "repository": "sdkwork-ai/sdkwork-promotion",
+      "refInput": "SDKWORK_PROMOTION_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-sdk-commons",
+      "repository": "sdkwork-ai/sdkwork-sdk-commons",
+      "refInput": "SDKWORK_SDK_COMMONS_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-skills",
+      "repository": "sdkwork-ai/sdkwork-skills",
+      "refInput": "SDKWORK_SKILLS_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-ui",
+      "repository": "sdkwork-ai/sdkwork-ui",
+      "refInput": "SDKWORK_UI_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
+    },
+    {
+      "id": "sdkwork-voice",
+      "repository": "sdkwork-ai/sdkwork-voice",
+      "refInput": "SDKWORK_VOICE_REF",
+      "tokenSecret": "SDKWORK_RELEASE_TOKEN"
     }
   ],
   "toolchains": {
@@ -154,7 +226,9 @@
       "profile": "server",
       "platform": "linux",
       "architecture": "x64",
-      "formats": ["tar.gz"],
+      "formats": [
+        "tar.gz"
+      ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
         "dist/release-packages/sdkwork-agents-linux-x64-standalone-server-tar-gz-0.1.0.tar.gz",
@@ -176,7 +250,9 @@
       "platform": "container",
       "architecture": "x64",
       "variant": "kubernetes",
-      "formats": ["tar.gz"],
+      "formats": [
+        "tar.gz"
+      ],
       "runner": "ubuntu-24.04",
       "outputGlobs": [
         "dist/release-packages/sdkwork-agents-container-x64-cloud-container-kubernetes-tar-gz-0.1.0.tar.gz",

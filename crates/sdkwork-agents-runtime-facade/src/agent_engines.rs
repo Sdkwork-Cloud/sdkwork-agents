@@ -36,10 +36,10 @@ use sdkwork_agent_provider_rig::{
 };
 use sdkwork_agents_tool_cloudrouter::RigCloudRouterExecutor;
 use sdkwork_agent_provider_spi::{
-    SdkRuntimeBackedModelProvider, SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord,
-    SdkRuntimeSessionRecord, SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID,
-    GEMINI_CLI_BINDING_ID, HERMES_BINDING_ID, MIMO_CODE_BINDING_ID, OPENCLAW_BINDING_ID,
-    OPENCODE_BINDING_ID, RIG_BINDING_ID, SDK_CAPABILITY_MODEL_CHAT,
+    SdkRuntimeInteractionResolution, SdkRuntimeMessageRecord, SdkRuntimeSessionRecord,
+    SdkRuntimeStreamCompletion, CLAUDE_CODE_BINDING_ID, CODEX_BINDING_ID, GEMINI_CLI_BINDING_ID,
+    HERMES_BINDING_ID, MIMO_CODE_BINDING_ID, OPENCLAW_BINDING_ID, OPENCODE_BINDING_ID,
+    RIG_BINDING_ID,
 };
 
 /// Canonical T1 agent-engine keys bootstrapped by default in production hosts.
@@ -1236,20 +1236,10 @@ pub fn bootstrap_rig_agent_engine(
             }
         }
     };
-    let model = SdkRuntimeBackedModelProvider::new(
-        integration.runtime.clone(),
-        model,
-        SDK_CAPABILITY_MODEL_CHAT,
-        ids::MODEL_PROVIDER_ID,
-    );
-    let upgraded = RigSdkIntegration {
-        sdk: integration.sdk,
-        transports: integration.transports,
-        runtime: integration.runtime,
-        lifecycle: integration.lifecycle,
-        model,
-        session_adapter: integration.session_adapter,
-    };
+    // Rebuild the in-process rust runtime around the live model provider so
+    // runtime-routed model calls reach the live backend (cloudrouter account
+    // pool or rig-core adapter) instead of the bootstrap fail-closed stub.
+    let upgraded = integration.with_live_model_provider(model);
     tracing::info!("rig agent engine upgraded to live backend");
     Ok(AgentEngineSlot::Rig(upgraded))
 }

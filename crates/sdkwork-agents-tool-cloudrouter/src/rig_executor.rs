@@ -96,17 +96,19 @@ impl RigCloudRouterExecutor {
     ) -> KernelResult<()> {
         if let Some(auth_token) = request.auth_token.as_deref().filter(|token| !token.trim().is_empty())
         {
-            client.set_auth_token(auth_token);
+            // Dual-token access per API_SPEC §819/§824: the gateway resolves
+            // the account route context from the auth token and carries the
+            // access token as the session access context. `set_access_token`
+            // runs first so the `Authorization` bearer set by `set_auth_token`
+            // below is never dropped by SDK header hygiene.
             if let Some(access_token) = request
                 .access_token
                 .as_deref()
                 .filter(|token| !token.trim().is_empty())
             {
-                // Dual-token access per API_SPEC §819/§824: the gateway
-                // resolves the account route context from the auth token and
-                // carries the access token as the session access context.
                 client.set_access_token(access_token);
             }
+            client.set_auth_token(auth_token);
             return Ok(());
         }
         if let Some(secret_ref) = self
@@ -242,6 +244,11 @@ pub fn map_cloudrouter_kernel_error(error: cloudrouter_open_sdk::SdkworkError) -
             if *status == 401 && body.contains("invalid_auth_token") =>
         {
             "; 登录 auth token 无效或已过期，请重新登录后重试"
+        }
+        SdkworkError::HttpStatus { status, body }
+            if *status == 401 && body.contains("missing api key credential") =>
+        {
+            "; Cloud Router 未收到调用凭据：请检查 Agents 部署的 cloudrouter base URL 与 SDK 版本（请求必须同时携带 Authorization 与 Access-Token）"
         }
         SdkworkError::HttpStatus { status, body }
             if *status == 401 && body.contains("account_group_unavailable") =>

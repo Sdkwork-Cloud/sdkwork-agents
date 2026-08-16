@@ -11443,6 +11443,8 @@ dependencies = [
  "axum 0.8.9",
  "if-addrs",
  "sdkwork-api-agents-assembly",
+ "sdkwork-iam-web-adapter",
+ "sdkwork-web-bootstrap",
  "tokio",
  "tracing",
  "tracing-subscriber",

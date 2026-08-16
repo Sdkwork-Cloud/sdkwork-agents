@@ -24,8 +24,9 @@ pub async fn bootstrap_application_database_from_env() -> anyhow::Result<()> {
 
 /// Open the Agents kernel runtime persistence store from the canonical environment profile.
 pub async fn bootstrap_kernel_database_from_env() -> anyhow::Result<()> {
-    let config = sdkwork_agent_server::config::ServerConfig::from_env()
-        .map_err(|error| anyhow::anyhow!("load kernel server config for sdkwork-agents: {error}"))?;
+    let config = sdkwork_agent_server::config::ServerConfig::from_env().map_err(|error| {
+        anyhow::anyhow!("load kernel server config for sdkwork-agents: {error}")
+    })?;
     sdkwork_agent_server::persistence::PersistenceState::open_from_config(&config)
         .map(|_| ())
         .map_err(|error| anyhow::anyhow!("kernel persistence migrate/bootstrap failed: {error}"))

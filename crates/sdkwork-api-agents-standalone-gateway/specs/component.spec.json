@@ -51,7 +51,8 @@
     "requiredPorts": [
       {
         "name": "agentsApiAssemblyRouter",
-        "export": "sdkwork_api_agents_assembly::assemble_api_router"
+        "export": "sdkwork_api_agents_assembly::assemble_api_router",
+        "provider": "sdkwork-api-agents-assembly"
       }
     ],
     "routeManifest": null,
