@@ -5,12 +5,6 @@ packages:
   - "apps/sdkwork-agents-mini-program/packages/*"
   - "apps/sdkwork-agents-pc"
   - "apps/sdkwork-agents-pc/packages/*"
-  - "apps/sdkwork-agents-h5"
-  - "apps/sdkwork-agents-mini-program"
-  - "apps/sdkwork-agents-pc"
-  - "apps/sdkwork-agents-h5/packages/*"
-  - "apps/sdkwork-agents-mini-program/packages/*"
-  - "apps/sdkwork-agents-pc/packages/*"
   - "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript"
   - "sdks/sdkwork-agents-backend-sdk/sdkwork-agents-backend-sdk-typescript"
   - "sdks/sdkwork-agents-sdk/sdkwork-agents-sdk-typescript"
@@ -42,7 +36,6 @@ packages:
   - "../sdkwork-drive/sdks/sdkwork-drive-app-sdk/sdkwork-drive-app-sdk-typescript"
   - "../sdkwork-memory/sdks/sdkwork-memory-app-sdk/sdkwork-memory-app-sdk-typescript"
   - "../sdkwork-prompts/sdks/sdkwork-prompts-app-sdk/sdkwork-prompts-app-sdk-typescript"
-  - "../sdkwork-prompts/sdks/sdkwork-prompts-app-sdk/generated/server-openapi"
   - "../sdkwork-knowledgebase/sdks/sdkwork-knowledgebase-app-sdk/sdkwork-knowledgebase-app-sdk-typescript"
   - "../sdkwork-skills/sdks/sdkwork-skills-app-sdk/sdkwork-skills-app-sdk-typescript"
   - "../sdkwork-voice/sdks/sdkwork-voice-app-sdk/sdkwork-voice-app-sdk-typescript"
@@ -67,9 +60,9 @@ packages:
   - "../sdkwork-promotion/sdks/sdkwork-promotion-backend-sdk/sdkwork-promotion-backend-sdk-typescript"
   - "../sdkwork-feeds/sdks/sdkwork-feeds-sdk/sdkwork-feeds-sdk-typescript"
   - "../sdkwork-models/apps/sdkwork-models-pc/packages/sdkwork-models-pc-picker"
-
-
   - "../sdkwork-membership/apps/sdkwork-membership-pc/packages/sdkwork-membership-pc-core"
+
+
 
 catalog:
   react: ^19.2.4
