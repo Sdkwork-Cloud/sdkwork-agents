@@ -15,11 +15,20 @@ import { PromptHistoryItem } from './components/CreativeHistoryLog';
 
 import { CreativeService } from './services/CreativeService';
 
-export const CreativeView = () => {
+function createDefaultCreativeSession(): CreativeSession {
+  return { id: 'default', title: '默认创作', messages: [] };
+}
+
+export interface CreativeViewProps {
+  /** Default modality selected in the generation dialog (`image`, `video`, `agent`, …). */
+  defaultCreationMode?: string;
+}
+
+export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProps) => {
   const { t } = useTranslation('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
-  const [sessions, setSessions] = useState<CreativeSession[]>([]);
+  const [sessions, setSessions] = useState<CreativeSession[]>(() => [createDefaultCreativeSession()]);
   const [activeSessionId, setActiveSessionId] = useState('default');
 
   const [historyLogs, setHistoryLogs] = useState<PromptHistoryItem[]>(() => {
@@ -58,7 +67,7 @@ export const CreativeView = () => {
 
   const [inputKey, setInputKey] = useState(0);
   const [currentDefaultValue, setCurrentDefaultValue] = useState('');
-  const [currentInitialMode, setCurrentInitialMode] = useState('agent');
+  const [currentInitialMode, setCurrentInitialMode] = useState(defaultCreationMode);
   const [currentInitialSettings, setCurrentInitialSettings] = useState<any>(undefined);
 
   const onLoadConfig = (item: PromptHistoryItem) => {
@@ -90,10 +99,15 @@ export const CreativeView = () => {
   };
 
   useEffect(() => {
-    CreativeService.getSessions().then(data => {
+    let cancelled = false;
+    void CreativeService.getSessions().then((data) => {
+      if (cancelled || data.length === 0) return;
       setSessions(data);
-      if (data.length > 0) setActiveSessionId(data[0].id);
+      setActiveSessionId(data[0].id);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   
   // Interactive features
@@ -206,9 +220,9 @@ export const CreativeView = () => {
   const handleDeleteSession = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (sessions.length <= 1) {
-      // Reset the default session instead of deleting last one
-      setSessions([{ id: 'default', title: '默认创作', messages: [] }]);
-      setActiveSessionId('default');
+      const resetSession = createDefaultCreativeSession();
+      setSessions([resetSession]);
+      setActiveSessionId(resetSession.id);
       return;
     }
     const filtered = sessions.filter(s => s.id !== id);
@@ -342,6 +356,7 @@ export const CreativeView = () => {
           <CreativeEmptyState 
             activeSessionId={activeSessionId}
             handleSend={handleSend}
+            initialMode={defaultCreationMode}
           />
         ) : (
           /* Message Flow Dialog View */

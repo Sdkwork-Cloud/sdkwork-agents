@@ -698,9 +698,9 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
         </div>
       </div>
       
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mt-2 pt-2 border-t border-transparent relative w-full gap-2">
+      <div className="flex items-end justify-between gap-3 mt-2 pt-2 border-t border-transparent relative w-full min-w-0">
         <div 
-          className="flex items-center gap-1 text-zinc-400 flex-wrap w-full sm:flex-1"
+          className="flex items-center gap-1 text-zinc-400 min-w-0 flex-1 overflow-x-auto flex-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {/* Creation Type Dropdown */}
           <div className="relative shrink-0" ref={creationWrapperRef}>
@@ -717,7 +717,7 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
             </button>
           </div>
           
-          <div className="w-px h-3.5 bg-white/10 mx-1 shrink-0 hidden sm:block"></div>
+          <div className="w-px h-3.5 bg-white/10 mx-1 shrink-0"></div>
           
           {isAgent ? (
             <>
@@ -734,9 +734,9 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
               </button>
             </>
           ) : isVideo ? (
-            <div className="relative flex items-center flex-wrap" ref={videoSettingsRef}>
+            <div className="relative flex items-center flex-nowrap shrink-0" ref={videoSettingsRef}>
               <div 
-                className="flex items-center flex-wrap cursor-pointer group hover:bg-white/5 rounded-md px-1.5 py-1 transition-colors"
+                className="flex items-center flex-nowrap cursor-pointer group hover:bg-white/5 rounded-md px-1.5 py-1 transition-colors"
                 onClick={toggleVideoSettings}
               >
                 <div className="flex items-center gap-1.5 text-[14px] text-zinc-300 group-hover:text-zinc-100 whitespace-nowrap shrink-0">
@@ -878,10 +878,9 @@ export const CreativeInputBox: React.FC<CreativeInputBoxProps> = ({
               </button>
             </>
           )}
-          <div className="w-6 shrink-0 h-1"></div>
         </div>
         
-        <div className="flex items-center gap-1 shrink-0 ml-auto pl-2 relative" ref={modelWrapperRef}>
+        <div className="flex items-center gap-1 shrink-0 self-end pl-2 relative" ref={modelWrapperRef}>
           {isAgent ? (
             <button 
               onClick={toggleModelMenu}

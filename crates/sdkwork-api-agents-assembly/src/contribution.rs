@@ -38,6 +38,11 @@ pub async fn assemble_app_runtime_contribution() -> anyhow::Result<AppRuntimeCon
     })
 }
 
+/// App-api surface route manifest owned by the Agents dependency assembly.
+pub fn app_api_route_manifest() -> sdkwork_web_core::HttpRouteManifest {
+    sdkwork_routes_agents_http_shared::app_route_manifest()
+}
+
 async fn build_agent_http_state() -> anyhow::Result<AgentHttpState> {
     tokio::task::spawn_blocking(sdkwork_agents_kernel_bridge::build_agent_http_state)
         .await

@@ -5,9 +5,14 @@ import { CreativeInputBox } from '@sdkwork/agents-pc-commons';
 interface CreativeEmptyStateProps {
   activeSessionId: string;
   handleSend: (val: string, mode: string) => void;
+  initialMode?: string;
 }
 
-export const CreativeEmptyState: React.FC<CreativeEmptyStateProps> = ({ activeSessionId, handleSend }) => {
+export const CreativeEmptyState: React.FC<CreativeEmptyStateProps> = ({
+  activeSessionId,
+  handleSend,
+  initialMode = 'agent',
+}) => {
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative px-6 max-w-[1056px] mx-auto w-full">
       <div className="text-2xl font-medium mb-10 text-zinc-100 flex items-center gap-2">
@@ -16,7 +21,7 @@ export const CreativeEmptyState: React.FC<CreativeEmptyStateProps> = ({ activeSe
       </div>
       <CreativeInputBox 
         key={activeSessionId} 
-        initialMode="agent" 
+        initialMode={initialMode} 
         onSubmit={(val, mode) => handleSend(val, mode)} 
         className="w-full" 
       />
