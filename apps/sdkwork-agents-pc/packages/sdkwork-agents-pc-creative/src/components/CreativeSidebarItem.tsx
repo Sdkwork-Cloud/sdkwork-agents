@@ -40,17 +40,17 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
       className={cn(
         "w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all text-left group cursor-pointer select-none relative",
         editingSessionId === session.id 
-          ? "text-white" 
+          ? "text-zinc-900 dark:text-white" 
           : activeSessionId === session.id 
-            ? "bg-white/10 text-white" 
-            : "hover:bg-white/5 text-zinc-400 hover:text-zinc-200"
+            ? "bg-zinc-100 text-zinc-900 dark:bg-white/10 dark:text-white" 
+            : "hover:bg-black/5 text-zinc-500 hover:text-zinc-800 dark:hover:bg-white/5 dark:text-zinc-400 dark:hover:text-zinc-200"
       )}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         {!isDefault && session.avatarUrl ? (
           <img 
             src={session.avatarUrl} 
-            className="w-[18px] h-[18px] rounded-full object-cover shrink-0 border border-white/10" 
+            className="w-[18px] h-[18px] rounded-full object-cover shrink-0 border border-black/10 dark:border-white/10" 
             alt="" 
             referrerPolicy="no-referrer"
           />
@@ -68,7 +68,7 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
               if (e.key === 'Enter') onSaveRename(session.id);
               if (e.key === 'Escape') setEditingSessionId(null);
             }}
-            className="bg-[#242426] text-white text-xs px-1.5 py-0.5 rounded border-0 outline-none ring-0 w-full focus:outline-none focus:ring-0"
+            className="bg-zinc-100 text-zinc-900 text-xs px-1.5 py-0.5 rounded border border-zinc-200 outline-none ring-0 w-full focus:outline-none focus:ring-0 dark:bg-[#242426] dark:text-white dark:border-transparent"
             autoFocus
           />
         ) : (
@@ -85,7 +85,7 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
               e.stopPropagation();
               setActiveSessionMenuId(activeSessionMenuId === session.id ? null : session.id);
             }}
-            className="p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+            className="p-1 rounded hover:bg-black/5 text-zinc-500 hover:text-zinc-800 dark:hover:bg-white/10 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
           >
             <MoreHorizontal size={14} />
           </button>
@@ -96,7 +96,7 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
       {activeSessionMenuId === session.id && (
         <>
           <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveSessionMenuId(null); }} />
-          <div className="absolute right-2 top-10 w-36 bg-[#1a1a1c] border border-white/10 rounded-xl py-1.5 shadow-2xl z-50 animate-in fade-in duration-100">
+          <div className="absolute right-2 top-10 w-36 bg-white border border-black/10 rounded-xl py-1.5 shadow-2xl z-50 animate-in fade-in duration-100 dark:bg-[#1a1a1c] dark:border-white/10">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -104,9 +104,9 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
                 setEditingTitle(session.title);
                 setActiveSessionMenuId(null);
               }}
-              className="w-full text-left px-3 py-1.5 hover:bg-white/5 text-zinc-300 hover:text-white text-xs flex items-center gap-2 transition-colors cursor-pointer"
+              className="w-full text-left px-3 py-1.5 hover:bg-black/5 text-zinc-600 hover:text-zinc-900 text-xs flex items-center gap-2 transition-colors cursor-pointer dark:hover:bg-white/5 dark:text-zinc-300 dark:hover:text-white"
             >
-              <Edit3 size={12} className="text-zinc-500" />
+              <Edit3 size={12} className="text-zinc-400 dark:text-zinc-500" />
               重命名 / Rename
             </button>
             <button
@@ -115,9 +115,9 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
                 handleTogglePin(session.id);
                 setActiveSessionMenuId(null);
               }}
-              className="w-full text-left px-3 py-1.5 hover:bg-white/5 text-zinc-300 hover:text-white text-xs flex items-center gap-2 transition-colors cursor-pointer"
+              className="w-full text-left px-3 py-1.5 hover:bg-black/5 text-zinc-600 hover:text-zinc-900 text-xs flex items-center gap-2 transition-colors cursor-pointer dark:hover:bg-white/5 dark:text-zinc-300 dark:hover:text-white"
             >
-              <Pin size={12} className={cn("text-zinc-500", session.isPinned ? "rotate-45 text-cyan-400" : "")} />
+              <Pin size={12} className={cn("text-zinc-400 dark:text-zinc-500", session.isPinned ? "rotate-45 text-cyan-500 dark:text-cyan-400" : "")} />
               {session.isPinned ? '取消置顶' : '置顶会话'}
             </button>
             <button
@@ -126,7 +126,7 @@ export const CreativeSidebarItem: React.FC<CreativeSidebarItemProps> = ({
                 handleDeleteSession(e, session.id);
                 setActiveSessionMenuId(null);
               }}
-              className="w-full text-left px-3 py-1.5 hover:bg-zinc-900 text-rose-400 hover:text-rose-300 text-xs flex items-center gap-2 transition-colors cursor-pointer"
+              className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 hover:text-rose-700 text-xs flex items-center gap-2 transition-colors cursor-pointer dark:hover:bg-zinc-900 dark:text-rose-400 dark:hover:text-rose-300"
             >
               <Trash2 size={12} />
               {isDefault ? '重置会话' : '删除会话'}

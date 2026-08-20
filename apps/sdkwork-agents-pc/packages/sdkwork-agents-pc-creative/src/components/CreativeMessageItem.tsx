@@ -28,11 +28,11 @@ export const CreativeMessageItem: React.FC<CreativeMessageItemProps> = ({
   onDelete
 }) => {
   return (
-    <div className="w-full flex flex-col gap-3 group border-b border-white/[0.03] pb-8 last:border-b-0 last:pb-0 animate-in fade-in duration-300">
+    <div className="w-full flex flex-col gap-3 group border-b border-black/[0.03] pb-8 last:border-b-0 last:pb-0 animate-in fade-in duration-300 dark:border-white/[0.03]">
       
       {/* Prompt Title & Model Info */}
       <div className="flex items-center justify-between gap-4 w-full select-none">
-        <div className="text-[14px] font-medium text-zinc-200 leading-relaxed">
+        <div className="text-[14px] font-medium text-zinc-800 leading-relaxed dark:text-zinc-200">
           {m.text}
         </div>
         <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium shrink-0">
@@ -46,7 +46,7 @@ export const CreativeMessageItem: React.FC<CreativeMessageItemProps> = ({
       {/* Rendering stage styles */}
       {m.stage === 'thinking' || m.stage === 'loading' ? (
         /* Progress thinking / loading card */
-        <div className="w-full aspect-[2.39/1] min-h-[220px] bg-white/[0.01] border border-white/5 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="w-full aspect-[2.39/1] min-h-[220px] bg-zinc-100 border border-black/5 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden dark:bg-white/[0.01] dark:border-white/5">
           {m.stage === 'thinking' ? (
             <div className="flex flex-col items-center gap-2">
               <div className="w-6 h-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin shrink-0" />
@@ -83,21 +83,21 @@ export const CreativeMessageItem: React.FC<CreativeMessageItemProps> = ({
           <div className="flex items-center gap-2 mt-4 select-none relative">
             <button 
               onClick={() => onSend(m.text || '', m.mode || 'agent')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:bg-white/5 transition-colors text-xs font-medium cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-black/10 text-zinc-600 hover:text-zinc-900 hover:bg-black/5 transition-colors text-xs font-medium cursor-pointer dark:border-white/10 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5"
             >
               <RotateCcw size={13} />
               重新生成
             </button>
             <button 
               onClick={onToggleLayout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:bg-white/5 transition-colors text-xs font-medium cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-black/10 text-zinc-600 hover:text-zinc-900 hover:bg-black/5 transition-colors text-xs font-medium cursor-pointer dark:border-white/10 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5"
             >
               <LayoutGrid size={13} />
               切换排版
             </button>
             <button
               onClick={onDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-rose-400 hover:text-rose-300 hover:bg-rose-500/5 transition-colors text-xs font-medium cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-black/10 text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors text-xs font-medium cursor-pointer dark:border-white/10 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/5"
             >
               <Trash2 size={13} />
               删除记录
@@ -112,7 +112,7 @@ export const CreativeMessageItem: React.FC<CreativeMessageItemProps> = ({
                 <button
                   key={idx}
                   onClick={() => onSend(sug, 'agent')}
-                  className="bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 rounded-full px-3 py-1.5 text-[11px] text-zinc-300 hover:text-white transition-colors flex items-center gap-1.5 group cursor-pointer"
+                  className="bg-zinc-100 hover:bg-zinc-200 border border-black/5 rounded-full px-3 py-1.5 text-[11px] text-zinc-600 hover:text-zinc-900 transition-colors flex items-center gap-1.5 group cursor-pointer dark:bg-white/[0.03] dark:hover:bg-white/[0.08] dark:border-white/5 dark:text-zinc-300 dark:hover:text-white"
                 >
                   <Sparkles size={10} className="text-cyan-500 group-hover:text-cyan-400" />
                   {sug}

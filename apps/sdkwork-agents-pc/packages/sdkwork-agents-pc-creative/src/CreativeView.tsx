@@ -304,7 +304,7 @@ export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProp
   };
 
   return (
-    <div className="flex h-full w-full bg-[#141414] text-white overflow-hidden font-sans">
+    <div className="flex h-full w-full bg-[#f5f5f5] text-zinc-900 dark:bg-[#141414] dark:text-white overflow-hidden font-sans">
       <style>{`
         @keyframes scan {
           0% { transform: translateY(-100%); }
@@ -335,19 +335,19 @@ export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProp
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col relative min-w-0 bg-[#121212]">
+      <div className="flex-1 flex flex-col relative min-w-0 bg-[#fafafa] dark:bg-[#121212]">
         {/* Toggle Sidebar Button */}
         {!isSidebarOpen && (
           <button 
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-4 left-4 p-2 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-zinc-200 transition-colors z-50 bg-[#141414] border border-white/5 cursor-pointer"
+            className="absolute top-4 left-4 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors z-50 bg-white/80 dark:bg-[#141414] border border-black/5 dark:border-white/5 cursor-pointer"
           >
             <SidebarOpen size={18} />
           </button>
         )}
 
         {!currentSession ? (
-          <div className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500 bg-[#121212]">
+          <div className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500 dark:text-zinc-500 bg-[#fafafa] dark:bg-[#121212]">
             <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin mb-4" />
             <p className="text-sm">加载中...</p>
           </div>
@@ -367,7 +367,7 @@ export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProp
             {/* Scrollable conversation history */}
             <div 
               ref={scrollContainerRef}
-              className="flex-1 overflow-y-auto px-6 py-6 space-y-8 custom-scrollbar bg-[#0f0f11]"
+              className="flex-1 overflow-y-auto px-6 py-6 space-y-8 custom-scrollbar bg-[#f3f4f6] dark:bg-[#0f0f11]"
             >
               <div className="max-w-[1056px] mx-auto w-full space-y-8">
                 {currentSession.messages.filter(m => m.role === 'assistant').map((m) => (
@@ -415,7 +415,7 @@ export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProp
             </div>
 
             {/* Bottom floating input box */}
-            <div className="p-6 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11] to-transparent w-full">
+            <div className="p-6 bg-gradient-to-t from-[#f3f4f6] via-[#f3f4f6] to-transparent w-full dark:from-[#0f0f11] dark:via-[#0f0f11]">
               <div className="max-w-[1056px] mx-auto relative">
                 <CreativeInputBox 
                   key={activeSessionId + "-bottom-" + inputKey} 
@@ -426,11 +426,11 @@ export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProp
                     handleSend(val, mode, settings);
                     setCurrentDefaultValue('');
                   }} 
-                  className="w-full shadow-2xl" 
+                  className="w-full shadow-lg dark:shadow-2xl" 
                 />
                 
                 {/* Floating footer text */}
-                <div className="text-center mt-3 text-[10px] text-zinc-500 font-medium">
+                <div className="text-center mt-3 text-[10px] text-zinc-400 font-medium dark:text-zinc-500">
                   创作内容由 AI 生成，请注意甄别其真实性与合规性
                 </div>
               </div>
@@ -441,8 +441,8 @@ export const CreativeView = ({ defaultCreationMode = 'agent' }: CreativeViewProp
 
       {/* Global Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-cyan-950 border border-cyan-800 text-cyan-300 px-4 py-2 rounded-lg text-xs font-medium shadow-2xl z-[100] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in duration-300">
-          <Sparkles size={14} className="text-cyan-400" />
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-cyan-50 border border-cyan-200 text-cyan-700 px-4 py-2 rounded-lg text-xs font-medium shadow-lg z-[100] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in duration-300 dark:bg-cyan-950 dark:border-cyan-800 dark:text-cyan-300 dark:shadow-2xl">
+          <Sparkles size={14} className="text-cyan-500 dark:text-cyan-400" />
           {toastMessage}
         </div>
       )}

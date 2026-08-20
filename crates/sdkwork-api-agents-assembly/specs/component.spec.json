@@ -167,6 +167,10 @@
       {
         "name": "driveAppApiContribution",
         "export": "sdkwork_api_drive_assembly::assemble_app_api_contribution"
+      },
+      {
+        "name": "assetsAppApiContribution",
+        "export": "sdkwork_api_assets_assembly::assemble_app_api_contribution"
       }
     ],
     "routeManifest": "assembly-manifest.json",
@@ -199,11 +203,28 @@
         ]
       },
       {
+        "workspace": "sdkwork-assets",
+        "sdkFamily": "sdkwork-assets-app-sdk",
+        "apiAuthority": "sdkwork-assets-app-api",
+        "surface": "app-api",
+        "apiPrefix": "/app/v3/api/assets",
+        "runtimeMode": "same-origin-mounted",
+        "cargoDependency": "sdkwork-api-assets-assembly",
+        "embeddedExecutableExport": "sdkwork_api_assets_assembly::assemble_app_api_contribution",
+        "profileCoverage": [
+          "standalone"
+        ],
+        "coverageEvidence": [
+          "src/bootstrap/assets.rs#wire_assets_app_router",
+          "src/bootstrap.rs#assemble_api_router"
+        ]
+      },
+      {
         "workspace": "sdkwork-drive",
         "sdkFamily": "sdkwork-drive-app-sdk",
-        "apiAuthority": "drive-app-api",
+        "apiAuthority": "sdkwork-drive-app-api",
         "surface": "app-api",
-        "apiPrefix": "/app/v3/api",
+        "apiPrefix": "/app/v3/api/drive",
         "runtimeMode": "same-origin-mounted",
         "cargoDependency": "sdkwork-api-drive-assembly",
         "embeddedExecutableExport": "sdkwork_api_drive_assembly::assemble_app_api_contribution",

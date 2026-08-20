@@ -7,27 +7,27 @@ interface CreativeToolbarProps {
 
 export const CreativeToolbar: React.FC<CreativeToolbarProps> = ({ title }) => {
   return (
-    <div className="h-14 border-b border-white/5 flex items-center px-6 shrink-0 justify-between">
-      <div className="text-[14px] font-medium text-zinc-300 truncate max-w-[300px]">
+    <div className="h-14 border-b border-black/5 flex items-center px-6 shrink-0 justify-between dark:border-white/5">
+      <div className="text-[14px] font-medium text-zinc-700 truncate max-w-[300px] dark:text-zinc-300">
         {title}
       </div>
       
       {/* Filter controls matching screenshot */}
-      <div className="flex items-center gap-4 text-[12px] text-zinc-400 font-medium select-none">
-        <div className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer py-1 px-2 rounded hover:bg-white/5 transition-colors">
+      <div className="flex items-center gap-4 text-[12px] text-zinc-500 font-medium select-none dark:text-zinc-400">
+        <div className="flex items-center gap-1 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer py-1 px-2 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
           <span>时间</span>
-          <ChevronDown size={13} className="text-zinc-500" />
+          <ChevronDown size={13} className="text-zinc-400 dark:text-zinc-500" />
         </div>
-        <div className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer py-1 px-2 rounded hover:bg-white/5 transition-colors">
+        <div className="flex items-center gap-1 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer py-1 px-2 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
           <span>生成模式</span>
-          <ChevronDown size={13} className="text-zinc-500" />
+          <ChevronDown size={13} className="text-zinc-400 dark:text-zinc-500" />
         </div>
-        <div className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer py-1 px-2 rounded hover:bg-white/5 transition-colors">
+        <div className="flex items-center gap-1 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer py-1 px-2 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
           <span>操作类型</span>
-          <ChevronDown size={13} className="text-zinc-500" />
+          <ChevronDown size={13} className="text-zinc-400 dark:text-zinc-500" />
         </div>
-        <div className="w-[1px] h-3.5 bg-white/10" />
-        <div className="flex items-center gap-1.5 hover:text-cyan-300 text-cyan-400 cursor-pointer py-1 px-2 rounded hover:bg-white/5 transition-colors">
+        <div className="w-[1px] h-3.5 bg-black/10 dark:bg-white/10" />
+        <div className="flex items-center gap-1.5 hover:text-cyan-600 text-cyan-500 cursor-pointer py-1 px-2 rounded hover:bg-black/5 dark:hover:text-cyan-300 dark:text-cyan-400 dark:hover:bg-white/5 transition-colors">
           <SquarePen size={12} />
           <span>自资库</span>
         </div>

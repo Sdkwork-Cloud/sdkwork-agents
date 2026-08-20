@@ -23,6 +23,7 @@ members = [
     "crates/sdkwork-agents-tool-image",
     "crates/sdkwork-agents-tool-file",
     "crates/sdkwork-agents-tool-intelligence",
+    "crates/sdkwork-agents-tool-generations",
 ]
 
 [workspace.package]
@@ -76,7 +77,8 @@ sdkwork-iam-web-adapter = { path = "../sdkwork-iam/crates/sdkwork-iam-web-adapte
 sdkwork-iam-database-host = { path = "../sdkwork-iam/crates/sdkwork-iam-database-host" }
 sdkwork-iam-embedded-application-bootstrap = { path = "../sdkwork-iam/crates/sdkwork-iam-embedded-application-bootstrap" }
 sdkwork-routes-iam-app-api = { path = "../sdkwork-iam/crates/sdkwork-routes-iam-app-api" }
-# sdkwork-drive dependency app-api surfaces (assets) mounted same-origin by the standalone gateway
+# sdkwork-assets catalog + sdkwork-drive storage/uploader mounted same-origin by the standalone gateway
+sdkwork-api-assets-assembly = { path = "../sdkwork-assets/crates/sdkwork-api-assets-assembly" }
 sdkwork-api-drive-assembly = { path = "../sdkwork-drive/crates/sdkwork-api-drive-assembly" }
 sdkwork-routes-drive-app-api = { path = "../sdkwork-drive/crates/sdkwork-routes-drive-app-api" }
 sdkwork-drive-uploader-service = { path = "../sdkwork-drive/crates/sdkwork-drive-uploader-service" }
@@ -110,6 +112,9 @@ sdkwork-api-agents-standalone-gateway = { path = "crates/sdkwork-api-agents-stan
 sdkwork-intelligence-agents-worker = { path = "crates/sdkwork-intelligence-agents-worker" }
 sdkwork-agents-integration-tests = { path = "crates/sdkwork-agents-integration-tests" }
 
+# Generations dependency (sdkwork-agents composes generations capabilities)
+sdkwork-api-generations-assembly = { path = "../sdkwork-generations/crates/sdkwork-api-generations-assembly" }
+
 # Media tool family (application-owned, cloudrouter open-api backed)
 sdkwork-agents-tool-contract = { path = "crates/sdkwork-agents-tool-contract" }
 sdkwork-agents-tool-cloudrouter = { path = "crates/sdkwork-agents-tool-cloudrouter" }
@@ -120,6 +125,7 @@ sdkwork-agents-tool-sound-effect = { path = "crates/sdkwork-agents-tool-sound-ef
 sdkwork-agents-tool-image = { path = "crates/sdkwork-agents-tool-image" }
 sdkwork-agents-tool-file = { path = "crates/sdkwork-agents-tool-file" }
 sdkwork-agents-tool-intelligence = { path = "crates/sdkwork-agents-tool-intelligence" }
+sdkwork-agents-tool-generations = { path = "crates/sdkwork-agents-tool-generations" }
 
 [patch.crates-io]
 # Codex app-server-client enables websocket proxy support supplied by these upstream forks.

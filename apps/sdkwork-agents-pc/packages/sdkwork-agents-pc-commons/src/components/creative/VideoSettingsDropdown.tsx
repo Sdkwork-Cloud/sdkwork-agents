@@ -17,7 +17,7 @@ const RatioIcon = ({ ratio, active }: { ratio: string, active: boolean }) => {
     <div className="h-5 flex items-center justify-center mb-1">
       <div 
         style={{ width: `${width}px`, height: `${height}px` }} 
-        className={cn("border-[1.5px] rounded-[3px] transition-colors", active ? "border-white" : "border-zinc-500")}
+        className={cn("border-[1.5px] rounded-[3px] transition-colors", active ? "border-zinc-900 dark:border-white" : "border-zinc-400 dark:border-zinc-500")}
       />
     </div>
   );
@@ -56,26 +56,26 @@ export const VideoSettingsDropdown: React.FC<VideoSettingsDropdownProps> = ({
     <div 
       ref={dropdownRef} 
       className={cn(
-        "absolute left-0 sm:left-[80px] w-[calc(100vw-32px)] sm:w-[420px] max-w-[420px] bg-[#222222] border border-white/10 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-5 max-h-[60vh] overflow-y-auto custom-scrollbar",
+        "absolute left-0 sm:left-[80px] w-[calc(100vw-32px)] sm:w-[420px] max-w-[420px] bg-white border border-black/10 rounded-2xl shadow-xl p-4 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-5 max-h-[60vh] overflow-y-auto custom-scrollbar dark:bg-[#222222] dark:border-white/10 dark:shadow-2xl",
         videoSettingsPlacement === 'top' ? "bottom-full mb-2" : "top-full mt-2"
       )}
     >
-      <div className="flex bg-[#2a2a2a] rounded-xl p-1">
+      <div className="flex bg-zinc-100 rounded-xl p-1 dark:bg-[#2a2a2a]">
         <button 
           onClick={() => setVideoSettingsMode('all_around')}
-          className={cn("flex-1 py-2 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5", videoSettingsMode === 'all_around' ? "bg-white/10 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200")}
+          className={cn("flex-1 py-2 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5", videoSettingsMode === 'all_around' ? "bg-white text-zinc-900 shadow-sm dark:bg-white/10 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200")}
         >
           <PenTool size={14} /> 全能参考
         </button>
         <button 
           onClick={() => setVideoSettingsMode('first_last')}
-          className={cn("flex-1 py-2 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5", videoSettingsMode === 'first_last' ? "bg-white/10 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200")}
+          className={cn("flex-1 py-2 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5", videoSettingsMode === 'first_last' ? "bg-white text-zinc-900 shadow-sm dark:bg-white/10 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200")}
         >
           <LayoutTemplate size={14} /> 首尾帧
         </button>
         <button 
           onClick={() => setVideoSettingsMode('smart_multi')}
-          className={cn("flex-1 py-2 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5", videoSettingsMode === 'smart_multi' ? "bg-white/10 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200")}
+          className={cn("flex-1 py-2 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5", videoSettingsMode === 'smart_multi' ? "bg-white text-zinc-900 shadow-sm dark:bg-white/10 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200")}
         >
           <Scan size={14} /> 智能多帧
         </button>

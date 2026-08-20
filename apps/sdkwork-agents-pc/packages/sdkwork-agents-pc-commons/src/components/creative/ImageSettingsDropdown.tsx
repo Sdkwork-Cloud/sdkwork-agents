@@ -46,7 +46,7 @@ const ImageRatioIcon = ({ ratio, active }: { ratio: string; active: boolean }) =
         style={{ width: `${width}px`, height: `${height}px` }} 
         className={cn(
           "border-[1.5px] rounded-[3px] transition-colors", 
-          active ? "border-white" : "border-zinc-500"
+          active ? "border-zinc-900 dark:border-white" : "border-zinc-400 dark:border-zinc-500"
         )}
       />
     </div>
@@ -181,7 +181,7 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
     <div 
       ref={dropdownRef} 
       className={cn(
-        "absolute left-0 sm:left-[110px] w-[calc(100vw-32px)] sm:w-[410px] max-w-[410px] bg-[#1e1e1e] border border-white/10 rounded-2xl shadow-2xl p-5 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-5 max-h-[60vh] overflow-y-auto custom-scrollbar select-none",
+        "absolute left-0 sm:left-[110px] w-[calc(100vw-32px)] sm:w-[410px] max-w-[410px] bg-white border border-black/10 rounded-2xl shadow-xl p-5 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-5 max-h-[60vh] overflow-y-auto custom-scrollbar select-none dark:bg-[#1e1e1e] dark:border-white/10 dark:shadow-2xl",
         imageSettingsPlacement === 'top' ? "bottom-full mb-2" : "top-full mt-2"
       )}
     >
@@ -212,7 +212,7 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
                   "flex flex-col items-center justify-center p-3 rounded-xl transition-all border text-left cursor-pointer select-none",
                   imageRatio === preset.ratio
                     ? "bg-cyan-500/10 border-cyan-400/40 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.05)]"
-                    : "border-white/5 bg-white/[0.02] text-zinc-400 hover:bg-white/5 hover:text-zinc-200 hover:border-white/10"
+                    : "border-black/5 bg-zinc-50 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 hover:border-black/10 dark:border-white/5 dark:bg-white/[0.02] dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-200 dark:hover:border-white/10"
                 )}
               >
                 <div className="h-5 flex items-center justify-center mb-1.5">
@@ -245,8 +245,8 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
                 className={cn(
                   "flex flex-col items-center justify-center py-2.5 rounded-xl transition-all border text-[11px] font-medium cursor-pointer", 
                   imageRatio === ratio 
-                    ? "bg-white/10 border-white/10 text-white" 
-                    : "border-transparent text-zinc-400 hover:bg-white/5 hover:text-white"
+                    ? "bg-zinc-100 border-zinc-200 text-zinc-900 dark:bg-white/10 dark:border-white/10 dark:text-white" 
+                    : "border-transparent text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
                 )}
               >
                 <ImageRatioIcon ratio={ratio} active={imageRatio === ratio} />
@@ -271,8 +271,8 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
               className={cn(
                 "w-full py-2.5 rounded-xl transition-all text-[13px] font-medium border cursor-pointer", 
                 imageResolution === '1K' 
-                  ? "bg-white/10 border-white/10 text-white" 
-                  : "border-transparent bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                  ? "bg-zinc-100 border-zinc-200 text-zinc-900 dark:bg-white/10 dark:border-white/10 dark:text-white" 
+                  : "border-transparent bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:bg-white/5 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"
               )}
             >
               标清 1K
@@ -285,8 +285,8 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
               className={cn(
                 "w-full py-2.5 rounded-xl transition-all text-[13px] font-medium border cursor-pointer flex items-center justify-center gap-1", 
                 imageResolution === '2K' 
-                  ? "bg-white/10 border-white/10 text-white" 
-                  : "border-transparent bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                  ? "bg-zinc-100 border-zinc-200 text-zinc-900 dark:bg-white/10 dark:border-white/10 dark:text-white" 
+                  : "border-transparent bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:bg-white/5 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"
               )}
             >
               <span>高清 2K</span>
@@ -300,8 +300,8 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
               className={cn(
                 "w-full py-2.5 rounded-xl transition-all text-[13px] font-medium border cursor-pointer flex items-center justify-center gap-1", 
                 imageResolution === '4K' 
-                  ? "bg-white/10 border-white/10 text-white" 
-                  : "border-transparent bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                  ? "bg-zinc-100 border-zinc-200 text-zinc-900 dark:bg-white/10 dark:border-white/10 dark:text-white" 
+                  : "border-transparent bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:bg-white/5 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"
               )}
             >
               <span>超清 4K</span>
@@ -316,13 +316,13 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
         <div className="text-[12px] text-zinc-500 font-medium">尺寸</div>
         <div className="flex items-center gap-3">
           {/* Width Input */}
-          <div className="flex-1 flex items-center bg-[#252525] rounded-xl px-3 py-2 border border-white/5 focus-within:border-cyan-500/50 transition-all">
-            <span className="text-zinc-500 text-xs font-medium mr-2 select-none">W</span>
+          <div className="flex-1 flex items-center bg-zinc-100 rounded-xl px-3 py-2 border border-zinc-200 focus-within:border-cyan-500/50 transition-all dark:bg-[#252525] dark:border-white/5">
+            <span className="text-zinc-400 text-xs font-medium mr-2 select-none dark:text-zinc-500">W</span>
             <input 
               type="text" 
               value={imageWidth || ''}
               onChange={(e) => handleWidthChange(e.target.value)}
-              className="w-full bg-transparent border-none outline-none text-right font-mono text-[13px] text-white"
+              className="w-full bg-transparent border-none outline-none text-right font-mono text-[13px] text-zinc-900 dark:text-white"
             />
           </div>
 
@@ -332,8 +332,8 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
             className={cn(
               "p-2 rounded-lg transition-colors border cursor-pointer",
               imageAspectRatioLocked 
-                ? "bg-white/5 border-white/10 text-cyan-400 hover:text-cyan-300" 
-                : "bg-transparent border-transparent text-zinc-500 hover:text-zinc-300"
+                ? "bg-zinc-100 border-zinc-200 text-cyan-600 hover:text-cyan-700 dark:bg-white/5 dark:border-white/10 dark:text-cyan-400 dark:hover:text-cyan-300" 
+                : "bg-transparent border-transparent text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
             )}
             title={imageAspectRatioLocked ? "解除比例锁定" : "锁定比例"}
           >
@@ -341,13 +341,13 @@ export const ImageSettingsDropdown: React.FC<ImageSettingsDropdownProps> = ({
           </button>
 
           {/* Height Input */}
-          <div className="flex-1 flex items-center bg-[#252525] rounded-xl px-3 py-2 border border-white/5 focus-within:border-cyan-500/50 transition-all">
-            <span className="text-zinc-500 text-xs font-medium mr-2 select-none">H</span>
+          <div className="flex-1 flex items-center bg-zinc-100 rounded-xl px-3 py-2 border border-zinc-200 focus-within:border-cyan-500/50 transition-all dark:bg-[#252525] dark:border-white/5">
+            <span className="text-zinc-400 text-xs font-medium mr-2 select-none dark:text-zinc-500">H</span>
             <input 
               type="text" 
               value={imageHeight || ''}
               onChange={(e) => handleHeightChange(e.target.value)}
-              className="w-full bg-transparent border-none outline-none text-right font-mono text-[13px] text-white"
+              className="w-full bg-transparent border-none outline-none text-right font-mono text-[13px] text-zinc-900 dark:text-white"
             />
           </div>
 

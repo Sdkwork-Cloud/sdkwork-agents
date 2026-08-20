@@ -85,11 +85,28 @@
         ]
       },
       {
+        "workspace": "sdkwork-assets",
+        "sdkFamily": "sdkwork-assets-app-sdk",
+        "apiAuthority": "sdkwork-assets-app-api",
+        "surface": "app-api",
+        "apiPrefix": "/app/v3/api/assets",
+        "runtimeMode": "same-origin-mounted",
+        "cargoDependency": "sdkwork-api-agents-assembly",
+        "embeddedExecutableExport": "sdkwork_api_agents_assembly::assemble_api_router",
+        "profileCoverage": [
+          "standalone"
+        ],
+        "coverageEvidence": [
+          "../sdkwork-api-agents-assembly/src/bootstrap/assets.rs#wire_assets_app_router",
+          "src/bootstrap.rs#build_router"
+        ]
+      },
+      {
         "workspace": "sdkwork-drive",
         "sdkFamily": "sdkwork-drive-app-sdk",
-        "apiAuthority": "drive-app-api",
+        "apiAuthority": "sdkwork-drive-app-api",
         "surface": "app-api",
-        "apiPrefix": "/app/v3/api",
+        "apiPrefix": "/app/v3/api/drive",
         "runtimeMode": "same-origin-mounted",
         "cargoDependency": "sdkwork-api-agents-assembly",
         "embeddedExecutableExport": "sdkwork_api_agents_assembly::assemble_api_router",

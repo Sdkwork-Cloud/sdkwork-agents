@@ -65,12 +65,12 @@ export const AssetsView = () => {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#18181A] text-gray-200">
+    <div className="flex flex-col h-full w-full bg-[#f5f5f7] text-zinc-900 dark:bg-[#18181A] dark:text-gray-200">
       <AssetsHeader activeTab={activeTab} setActiveTab={setActiveTab} />
       <AssetsFilter activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
       
       {loadError && (
-        <div className="mx-6 mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+        <div className="mx-6 mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-700 dark:text-red-300">
           {loadError}
         </div>
       )}

@@ -1,5 +1,6 @@
 export const sdkInventory = [
   "@sdkwork/agents-app-sdk",
+  "@sdkwork/assets-app-sdk",
   "@sdkwork/community-app-sdk",
   "@sdkwork/feeds-sdk",
   "@sdkwork/drive-app-sdk",

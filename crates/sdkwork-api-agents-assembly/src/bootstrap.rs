@@ -2,6 +2,7 @@
 //! Kernel-owned operational routes compose with managed-store business routes via kernel-bridge,
 //! and dependency-owned app-api surfaces (IAM, Drive) mount same-origin.
 
+mod assets;
 mod drive;
 mod iam;
 
@@ -26,6 +27,10 @@ pub async fn assemble_api_router() -> anyhow::Result<ApiAssembly> {
         .await
         .map_err(anyhow::Error::msg)
         .context("compose embedded IAM app router")?;
+    let assets_router = assets::wire_assets_app_router()
+        .await
+        .map_err(anyhow::Error::msg)
+        .context("compose embedded Assets app router")?;
     let drive_router = drive::wire_drive_app_router()
         .await
         .map_err(anyhow::Error::msg)
@@ -33,7 +38,10 @@ pub async fn assemble_api_router() -> anyhow::Result<ApiAssembly> {
     let agents_router = sdkwork_agents_kernel_bridge::build_agents_served_router(config.clone())
         .await
         .context("compose agents served router")?;
-    let router = agents_router.merge(iam_router).merge(drive_router);
+    let router = agents_router
+        .merge(iam_router)
+        .merge(assets_router)
+        .merge(drive_router);
     ApiAssemblyContribution::from_manifest(
         "sdkwork-agents",
         "SDKWork Agents API",

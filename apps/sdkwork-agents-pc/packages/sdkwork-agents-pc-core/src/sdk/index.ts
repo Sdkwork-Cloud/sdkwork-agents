@@ -1,4 +1,5 @@
 export * from "./agentsAppSdkClient";
+export * from "./assetsAppSdkClient";
 export * from "./driveAppSdkClient";
 export * from "./driveUploadService";
 export * from "./memoryAppSdkClient";

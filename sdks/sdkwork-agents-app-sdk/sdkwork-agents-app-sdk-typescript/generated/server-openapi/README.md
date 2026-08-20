@@ -5,17 +5,17 @@ Generated SDKWork v3 dual-token transport SDK.
 ## Installation
 
 ```bash
-npm install sdkwork-agents-app-sdk-generated-typescript
+npm install @sdkwork/agents-app-sdk
 # or
-yarn add sdkwork-agents-app-sdk-generated-typescript
+yarn add @sdkwork/agents-app-sdk
 # or
-pnpm add sdkwork-agents-app-sdk-generated-typescript
+pnpm add @sdkwork/agents-app-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { SdkworkAppClient } from 'sdkwork-agents-app-sdk-generated-typescript';
+import { SdkworkAppClient } from '@sdkwork/agents-app-sdk';
 
 const client = new SdkworkAppClient({
   baseUrl: 'http://localhost:8080',
@@ -41,7 +41,7 @@ Access-Token: <accessToken>
 ## Configuration (Non-Auth)
 
 ```typescript
-import { SdkworkAppClient } from 'sdkwork-agents-app-sdk-generated-typescript';
+import { SdkworkAppClient } from '@sdkwork/agents-app-sdk';
 
 const client = new SdkworkAppClient({
   baseUrl: 'http://localhost:8080',
@@ -68,7 +68,7 @@ const result = await client.ai.agents.agentEngines.list();
 ## Error Handling
 
 ```typescript
-import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from 'sdkwork-agents-app-sdk-generated-typescript';
+import { SdkworkAppClient, NetworkError, TimeoutError, AuthenticationError } from '@sdkwork/agents-app-sdk';
 
 try {
   const result = await client.ai.agents.agentEngines.list();
@@ -91,6 +91,8 @@ This SDK includes cross-platform publish scripts in `bin/`:
 - `bin/publish-core.mjs`
 - `bin/publish.sh`
 - `bin/publish.ps1`
+
+TypeScript check and publish commands use pnpm to materialize workspace dependency versions in a temporary tarball. They reject local-only dependency protocols before npm publication and do not rewrite the source `package.json`.
 
 ### Check
 

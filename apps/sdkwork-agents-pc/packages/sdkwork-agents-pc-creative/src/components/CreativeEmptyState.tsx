@@ -15,7 +15,7 @@ export const CreativeEmptyState: React.FC<CreativeEmptyStateProps> = ({
 }) => {
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative px-6 max-w-[1056px] mx-auto w-full">
-      <div className="text-2xl font-medium mb-10 text-zinc-100 flex items-center gap-2">
+      <div className="text-2xl font-medium mb-10 text-zinc-800 flex items-center gap-2 dark:text-zinc-100">
         <Sparkles className="text-cyan-400 fill-cyan-400/20" size={24} />
         你好，想创作什么？
       </div>

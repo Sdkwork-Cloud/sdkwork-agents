@@ -1,8 +1,8 @@
 import {
-  getDriveAppSdkClientWithSession,
-  type AssetItem as DriveAssetItem,
+  getAssetsAppSdkClientWithSession,
+  type AssetItem as CatalogAssetItem,
   type MediaResource,
-} from '@sdkwork/agents-pc-core/sdk/driveAppSdkClient';
+} from '@sdkwork/agents-pc-core/sdk/assetsAppSdkClient';
 import { agentsDriveUploadService } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 
 import type { AssetItem } from '../components/AssetDetailModal';
@@ -16,7 +16,7 @@ async function resolveResourceUrl(resource: MediaResource | undefined): Promise<
   return agentsDriveUploadService.resolvePreviewUrl(resource.uri);
 }
 
-async function resolveAssetUrl(asset: DriveAssetItem): Promise<string | undefined> {
+async function resolveAssetUrl(asset: CatalogAssetItem): Promise<string | undefined> {
   const snapshotUrl = await resolveResourceUrl(asset.resourceSnapshot);
   if (snapshotUrl) return snapshotUrl;
   if (asset.driveUri) {
@@ -27,7 +27,7 @@ async function resolveAssetUrl(asset: DriveAssetItem): Promise<string | undefine
   );
 }
 
-function toAssetType(asset: DriveAssetItem): AssetItem['type'] | null {
+function toAssetType(asset: CatalogAssetItem): AssetItem['type'] | null {
   if (asset.assetKind === 'image') return 'image';
   if (asset.assetKind === 'video') return 'video';
   if (asset.assetKind === 'audio') return 'audio';
@@ -45,7 +45,7 @@ function toResolution(resource: MediaResource | undefined): string {
   return `${resource.width} × ${resource.height}`;
 }
 
-async function toAssetItem(asset: DriveAssetItem): Promise<AssetItem | null> {
+async function toAssetItem(asset: CatalogAssetItem): Promise<AssetItem | null> {
   const type = toAssetType(asset);
   if (!type) return null;
   const mediaUrl = await resolveAssetUrl(asset);
@@ -79,7 +79,7 @@ function formatGroupDate(createdAt: string): string {
 
 export class AssetsService {
   static async getAssetGroups(kind?: AssetItem['type']): Promise<{ date: string; items: AssetItem[] }[]> {
-    const page = await getDriveAppSdkClientWithSession().drive.assets.list({ pageSize: 200, kind });
+    const page = await getAssetsAppSdkClientWithSession().assets.list({ pageSize: 200, kind });
     const mapped = await Promise.all(page.items.map(async (asset) => ({
       asset,
       item: await toAssetItem(asset),

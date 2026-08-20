@@ -1,8 +1,8 @@
 use axum::Router;
 use sdkwork_routes_drive_app_api::wrap_router_with_iam_web_framework;
 
-/// Wire the embedded Drive App API (`/app/v3/api/assets*` and sibling drive
-/// routes) into the Agents standalone gateway.
+/// Wire the embedded Drive App API (`/app/v3/api/drive*` and uploader routes)
+/// into the Agents standalone gateway.
 ///
 /// The Drive assembly owns its database lifecycle (`SDKWORK_DATABASE_URL`,
 /// shared with the Agents application), auth policy refresh task, download
@@ -23,8 +23,6 @@ pub(super) async fn wire_drive_app_router() -> Result<Router, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn drive_router_wire_contract_is_present() {
         // The embedding entrypoints are public across the workspace boundary:

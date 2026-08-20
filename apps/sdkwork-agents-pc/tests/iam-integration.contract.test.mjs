@@ -55,6 +55,9 @@ test('pc auth appearance uses the public IAM theme surface', () => {
   assert.match(appearance, /theme:/);
   assert.match(styles, /@source "\.\.\/\.\.\/\.\.\/\.\.\/sdkwork-iam\/.*sdkwork-auth-pc-react\/src"/);
   assert.match(styles, /@source "\.\.\/\.\.\/\.\.\/\.\.\/sdkwork-ui\/sdkwork-ui-pc-react\/src"/);
+  assert.match(styles, /@source "\.\.\/packages\/sdkwork-agents-pc-commons\/src"/);
+  assert.match(styles, /@source "\.\.\/packages\/sdkwork-agents-pc-creative\/src"/);
+  assert.match(styles, /sdk-dark/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(appearance, /querySelector|document\./);
 });

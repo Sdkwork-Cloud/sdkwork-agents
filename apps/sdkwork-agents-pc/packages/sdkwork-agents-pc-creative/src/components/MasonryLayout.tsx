@@ -15,7 +15,7 @@ export const MasonryLayout: React.FC<MasonryLayoutProps> = ({ message, onPreview
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 h-[420px]" id="masonry-layout">
       {/* Main Large Item */}
       <div 
-        className="md:col-span-2 relative h-full bg-[#1a1a1c] border border-white/5 rounded-2xl overflow-hidden group/card transition-all hover:scale-[1.005] hover:border-cyan-500/40 cursor-pointer shadow-xl"
+        className="md:col-span-2 relative h-full bg-white border border-black/5 rounded-2xl overflow-hidden group/card transition-all hover:scale-[1.005] hover:border-cyan-500/40 cursor-pointer shadow-xl dark:bg-[#1a1a1c] dark:border-white/5"
         onClick={() => onPreviewImage(message, 0)}
       >
         <img src={imageUrls?.[0]} className="absolute inset-0 w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
@@ -44,7 +44,7 @@ export const MasonryLayout: React.FC<MasonryLayoutProps> = ({ message, onPreview
         {imageUrls?.slice(1, 4).map((url, idx) => (
           <div 
             key={idx} 
-            className="relative h-full bg-[#1a1a1c] border border-white/5 rounded-xl overflow-hidden group/card transition-all hover:scale-[1.01] hover:border-cyan-500/40 cursor-pointer shadow-md"
+            className="relative h-full bg-white border border-black/5 rounded-xl overflow-hidden group/card transition-all hover:scale-[1.01] hover:border-cyan-500/40 cursor-pointer shadow-md dark:bg-[#1a1a1c] dark:border-white/5"
             onClick={() => onPreviewImage(message, idx + 1)}
           >
             <img src={url} className="absolute inset-0 w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />

@@ -51,7 +51,7 @@ export const VoiceSettingsDropdown: React.FC<VoiceSettingsDropdownProps> = ({
     <div 
       ref={dropdownRef} 
       className={cn(
-        "absolute left-0 sm:left-[80px] w-[calc(100vw-32px)] sm:w-[420px] max-w-[420px] bg-[#222222] border border-white/10 rounded-2xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col max-h-[450px]",
+        "absolute left-0 sm:left-[80px] w-[calc(100vw-32px)] sm:w-[420px] max-w-[420px] bg-white border border-black/10 rounded-2xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col max-h-[450px] dark:bg-[#222222] dark:border-white/10 dark:shadow-2xl",
         voiceSettingsPlacement === 'top' ? "bottom-full mb-2" : "top-full mt-2"
       )}
     >

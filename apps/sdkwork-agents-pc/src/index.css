@@ -1,7 +1,18 @@
 @import "tailwindcss";
 @source "../../../../sdkwork-iam/apps/sdkwork-iam-pc/packages/sdkwork-auth-pc-react/src";
 @source "../../../../sdkwork-ui/sdkwork-ui-pc-react/src";
+@source "../packages/sdkwork-agents-pc-agents/src";
+@source "../packages/sdkwork-agents-pc-canvas/src";
+@source "../packages/sdkwork-agents-pc-chat/src";
+@source "../packages/sdkwork-agents-pc-commons/src";
+@source "../packages/sdkwork-agents-pc-core/src";
+@source "../packages/sdkwork-agents-pc-creative/src";
+@source "../packages/sdkwork-agents-pc-inspiration/src";
+@source "../packages/sdkwork-agents-pc-membership/src";
+@source "../packages/sdkwork-agents-pc-presentation/src";
+@source "../src";
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant sdk-dark (&:where([data-sdk-color-mode="dark"], [data-sdk-color-mode="dark"] *));
 
 :root {
   color-scheme: light dark;

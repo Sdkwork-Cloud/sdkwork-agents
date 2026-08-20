@@ -5,7 +5,7 @@ import {
 import type { SdkworkAppConfig } from "@sdkwork/drive-app-sdk";
 import type { Interceptors } from "@sdkwork/sdk-common";
 
-export type { AssetItem, MediaResource } from "@sdkwork/drive-app-sdk";
+export type { MediaResource } from "@sdkwork/assets-app-sdk";
 
 import {
   createSdkworkChatRequestContextInterceptors,

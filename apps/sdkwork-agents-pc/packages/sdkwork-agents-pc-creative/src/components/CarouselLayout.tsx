@@ -16,7 +16,7 @@ export const CarouselLayout: React.FC<CarouselLayoutProps> = ({ message, activeI
 
   return (
     <div className="flex flex-col gap-3" id="carousel-layout">
-      <div className="relative aspect-[16/9] w-full max-h-[380px] bg-[#1a1a1c] border border-white/5 rounded-2xl overflow-hidden shadow-2xl group/card">
+      <div className="relative aspect-[16/9] w-full max-h-[380px] bg-white border border-black/5 rounded-2xl overflow-hidden shadow-xl group/card dark:bg-[#1a1a1c] dark:border-white/5 dark:shadow-2xl">
         <img 
           src={imageUrls?.[activeIdx]} 
           className="absolute inset-0 w-full h-full object-cover" 
@@ -56,7 +56,7 @@ export const CarouselLayout: React.FC<CarouselLayoutProps> = ({ message, activeI
             onClick={() => onSetCarouselIndex(idx)}
             className={cn(
               "relative w-20 h-14 rounded-lg overflow-hidden border transition-all shrink-0 cursor-pointer",
-              activeIdx === idx ? "border-cyan-400 ring-2 ring-cyan-400/20 scale-95" : "border-white/10 opacity-70 hover:opacity-100"
+              activeIdx === idx ? "border-cyan-400 ring-2 ring-cyan-400/20 scale-95" : "border-black/10 opacity-70 hover:opacity-100 dark:border-white/10"
             )}
           >
             <img src={url} className="absolute inset-0 w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />

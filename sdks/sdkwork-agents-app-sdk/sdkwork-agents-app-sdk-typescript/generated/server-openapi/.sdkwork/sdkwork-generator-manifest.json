@@ -3,16 +3,16 @@
   "generator": "@sdkwork/sdk-generator",
   "sdk": {
     "name": "sdkwork-agents-app-sdk",
-    "version": "0.1.2",
+    "version": "0.1.0",
     "language": "typescript",
     "sdkType": "app",
     "protocol": "http",
-    "packageName": "sdkwork-agents-app-sdk-generated-typescript"
+    "packageName": "@sdkwork/agents-app-sdk"
   },
   "generatedFiles": [
     {
       "path": "bin/publish-core.mjs",
-      "sha256": "98ad0918a78bfbe22bf8f12fec709b0bed545b9e01edd40f5e4abf31a23378a5"
+      "sha256": "a47e95119bf3eafcbcb2102f7024c147f967924e4e3f343d1a29effb4b6765df"
     },
     {
       "path": "bin/publish.ps1",
@@ -32,7 +32,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "302335f8e95321d635aeff72da1e6146414c1f1cf4514b2dd5ddd4f5672eb73b"
+      "sha256": "fb941a0806986a54fc192f98a98f6d9c282b8d350b2b19a3e71dda404e92d545"
     },
     {
       "path": "LICENSE",
@@ -40,23 +40,23 @@
     },
     {
       "path": "package.json",
-      "sha256": "2b8473510559036542ea9691530961af4bf44e39807be90ca43e218c3806980a"
+      "sha256": "79d189b425df3ce503cac376b52061e83493dccb369d24c77397b60b076de371"
     },
     {
       "path": "README.md",
-      "sha256": "787eee53e79f9fea922472f16cf5b993501c124cc04ed72e276a9fe8965cf3c2"
+      "sha256": "79e936d5a6d0521efa767a301218286e80283cfd5764713d23c74da115eb614d"
     },
     {
       "path": "sdkwork-sdk.json",
-      "sha256": "c9e8fd86652c3cecc00ab3548cd03d93aebdc93ba0e58693eaf9c99977834b2a"
+      "sha256": "e509ebd5e9eeda95e2f15e8efb1ccb08d3a22e2d0fc41c22844b64f2754bbc82"
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "b3e03e29607988fe6c3a164d98412d879e21bbcfbccafc85263ced2e0db9e588"
+      "sha256": "4a4bdd92729b75f80b4fc138df508f3921d3d38c820e96a29beaa6bae511b40c"
     },
     {
       "path": "src/api/base.ts",
-      "sha256": "02ad25e6bf331ff241ba387c2947ddf1900dd849038e08c2757416a3aa788a04"
+      "sha256": "94d136c54a008dfe7602e373a0b2c79176bbf2fc6e7c899fc23b1f12f750380f"
     },
     {
       "path": "src/api/index.ts",
@@ -72,7 +72,7 @@
     },
     {
       "path": "src/http/client.ts",
-      "sha256": "e4ce1dadab0f2a40925b3f7abf97344748953fc9829207bd8746a8b556d6fc05"
+      "sha256": "868b7785497a93658b628de2d9b520d9d2456406bcf2ef717319beaa6913146d"
     },
     {
       "path": "src/http/index.ts",

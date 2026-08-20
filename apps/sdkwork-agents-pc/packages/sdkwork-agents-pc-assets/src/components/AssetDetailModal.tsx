@@ -71,12 +71,12 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
     || currentItem.imageUrl;
 
   return (
-    <div id="asset-detail-modal-root" className="fixed inset-0 z-50 flex bg-[#0a0a0c] animate-in fade-in duration-200">
+    <div id="asset-detail-modal-root" className="fixed inset-0 z-50 flex bg-zinc-100 dark:bg-[#0a0a0c] animate-in fade-in duration-200">
       {/* Top Close Button on the left side */}
       <button 
         id="close-preview-btn"
         onClick={onClose}
-        className="absolute top-6 left-6 p-2.5 bg-zinc-900/60 hover:bg-zinc-800/80 rounded-lg text-zinc-400 hover:text-white transition-colors z-[60] border border-white/5"
+        className="absolute top-6 left-6 p-2.5 bg-white/90 hover:bg-white dark:bg-zinc-900/60 dark:hover:bg-zinc-800/80 rounded-lg text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors z-[60] border border-black/10 dark:border-white/5"
       >
         <X size={18} />
       </button>
@@ -90,7 +90,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
           {/* Outer adaptive frame */}
           <div 
             id="adaptive-preview-frame"
-            className="relative rounded-2xl overflow-hidden shadow-2xl bg-zinc-950 border border-white/5 flex items-center justify-center transition-all duration-300"
+            className="relative rounded-2xl overflow-hidden shadow-2xl bg-zinc-200 border border-black/5 dark:bg-zinc-950 dark:border-white/5 flex items-center justify-center transition-all duration-300"
             style={imageAspect ? {
               aspectRatio: imageAspect,
               maxWidth: '90%',
@@ -146,7 +146,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
               className={cn(
                 "p-2.5 rounded-lg border transition-all duration-200",
                 hasPrev 
-                  ? "bg-zinc-900/80 hover:bg-zinc-800 border-white/5 text-zinc-300 hover:text-white" 
+                  ? "bg-zinc-100 hover:bg-zinc-200 border-black/10 text-zinc-700 hover:text-zinc-900 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 dark:border-white/5 dark:text-zinc-300 dark:hover:text-white" 
                   : "bg-zinc-950/40 border-transparent text-zinc-600 cursor-not-allowed"
               )}
               title="上一个"
@@ -160,7 +160,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
               className={cn(
                 "p-2.5 rounded-lg border transition-all duration-200",
                 hasNext 
-                  ? "bg-zinc-900/80 hover:bg-zinc-800 border-white/5 text-zinc-300 hover:text-white" 
+                  ? "bg-zinc-100 hover:bg-zinc-200 border-black/10 text-zinc-700 hover:text-zinc-900 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 dark:border-white/5 dark:text-zinc-300 dark:hover:text-white" 
                   : "bg-zinc-950/40 border-transparent text-zinc-600 cursor-not-allowed"
               )}
               title="下一个"
@@ -171,13 +171,13 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
         </div>
 
         {/* Right Side - Premium Details Sidebar */}
-        <div className="w-[380px] shrink-0 flex flex-col h-full bg-[#121214] border-l border-white/5 z-50 select-none">
+        <div className="w-[380px] shrink-0 flex flex-col h-full bg-white border-l border-black/10 dark:bg-[#121214] dark:border-white/5 z-50 select-none">
           {/* Scrollable controls panel */}
           <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
             
             {/* Row 1: Primary Action & Tools */}
             <div className="flex items-center justify-between gap-2.5">
-              <button className="flex-1 h-10 px-4 bg-white/10 hover:bg-white/15 text-zinc-100 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 border border-white/5">
+              <button className="flex-1 h-10 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/15 dark:text-zinc-100 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 border border-black/10 dark:border-white/5">
                 <Download size={15} />
                 下载
               </button>
@@ -188,13 +188,13 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                   "w-10 h-10 rounded-xl border flex items-center justify-center transition-all",
                   isFavorite 
                     ? "bg-amber-500/10 border-amber-500/30 text-amber-400" 
-                    : "bg-white/5 border-white/5 text-zinc-400 hover:text-white hover:bg-white/10"
+                    : "bg-zinc-100 border-black/10 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-200 dark:bg-white/5 dark:border-white/5 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10"
                 )}
               >
                 <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
               </button>
 
-              <button className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-zinc-400 hover:text-white flex items-center justify-center transition-all">
+              <button className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-black/10 text-zinc-500 hover:text-zinc-800 dark:bg-white/5 dark:hover:bg-white/10 dark:border-white/5 dark:text-zinc-400 dark:hover:text-white flex items-center justify-center transition-all">
                 <MoreHorizontal size={16} />
               </button>
             </div>
@@ -227,7 +227,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
             {/* Row 3: Prompts Details Text */}
             <div className="space-y-2.5">
               <h4 className="text-zinc-400 text-xs font-semibold tracking-wider">图片提示词</h4>
-              <div className="p-3.5 bg-zinc-900/50 rounded-xl border border-white/5">
+              <div className="p-3.5 bg-zinc-50 rounded-xl border border-black/5 dark:bg-zinc-900/50 dark:border-white/5">
                 <p className="text-zinc-200 text-sm leading-relaxed break-words whitespace-pre-wrap select-text">
                   {currentItem.prompt}
                 </p>
@@ -235,7 +235,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
             </div>
 
             {/* Row 4: Tag indicators */}
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-zinc-500 font-medium bg-zinc-900/20 p-2.5 rounded-lg border border-white/5">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-zinc-500 font-medium bg-zinc-50 p-2.5 rounded-lg border border-black/5 dark:bg-zinc-900/20 dark:border-white/5">
               <span className="text-zinc-400">图片 {currentItem.model}</span>
               <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
               <span>{currentItem.aspectRatio}</span>
@@ -249,7 +249,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
 
             {/* Row 5: Action Group 1 */}
             <div className="space-y-1.5">
-              <button className="w-full h-10 px-4 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-white/5">
+              <button className="w-full h-10 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-black/10 dark:border-white/5">
                 <span className="flex items-center gap-2">
                   <Play size={14} className="text-blue-400" />
                   生成视频
@@ -257,7 +257,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                 <span className="text-[10px] text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded">快速</span>
               </button>
               
-              <button className="w-full h-10 px-4 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-white/5">
+              <button className="w-full h-10 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-black/10 dark:border-white/5">
                 <span className="flex items-center gap-2">
                   <Edit3 size={14} className="text-indigo-400" />
                   去画布编辑
@@ -265,7 +265,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                 <span className="text-[10px] text-zinc-400 font-bold">&gt;</span>
               </button>
 
-              <button className="w-full h-10 px-4 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-white/5">
+              <button className="w-full h-10 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-black/10 dark:border-white/5">
                 <span className="flex items-center gap-2">
                   <Image size={14} className="text-amber-400" />
                   用作参考图
@@ -276,12 +276,12 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
             {/* Row 6: Quick Enhancement Tools Grid */}
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-1.5">
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Sparkles size={13} className="text-emerald-400 shrink-0" />
                   <span className="truncate">智能超清</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center justify-between border border-white/5 text-left relative overflow-hidden">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center justify-between border border-black/10 dark:border-white/5 text-left relative overflow-hidden">
                   <span className="flex items-center gap-2 truncate">
                     <Move size={13} className="text-blue-400 shrink-0" />
                     <span className="truncate">多角度</span>
@@ -289,37 +289,37 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                   <span className="text-[8px] bg-sky-500 text-white px-1 rounded-full scale-90 origin-right">New</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Compass size={13} className="text-amber-400 shrink-0" />
                   <span className="truncate">超清</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Wand2 size={13} className="text-purple-400 shrink-0" />
                   <span className="truncate">智能改图</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Sparkles size={13} className="text-rose-400 shrink-0" />
                   <span className="truncate">细节修复</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Crop size={13} className="text-teal-400 shrink-0" />
                   <span className="truncate">局部重绘</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Move size={13} className="text-orange-400 shrink-0" />
                   <span className="truncate">扩图</span>
                 </button>
 
-                <button className="h-9 px-3 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5 text-left">
+                <button className="h-9 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5 text-left">
                   <Scissors size={13} className="text-pink-400 shrink-0" />
                   <span className="truncate">消除笔</span>
                 </button>
 
-                <button className="h-9 px-3 col-span-2 bg-zinc-900 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-white/5">
+                <button className="h-9 px-3 col-span-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs transition-all flex items-center gap-2 border border-black/10 dark:border-white/5">
                   <Video size={13} className="text-sky-400 shrink-0" />
                   <span>对口型</span>
                 </button>
@@ -327,18 +327,18 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
             </div>
 
             {/* Row 7: System Workflow items */}
-            <div className="space-y-1.5 pt-2 border-t border-white/5">
-              <button className="w-full h-10 px-4 bg-zinc-900/50 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-white/5">
+            <div className="space-y-1.5 pt-2 border-t border-black/5 dark:border-white/5">
+              <button className="w-full h-10 px-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 dark:bg-zinc-900/50 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-black/10 dark:border-white/5">
                 <span>重新编辑</span>
                 <span className="text-[10px] text-zinc-500">&gt;</span>
               </button>
 
-              <button className="w-full h-10 px-4 bg-zinc-900/50 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-white/5">
+              <button className="w-full h-10 px-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 dark:bg-zinc-900/50 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-black/10 dark:border-white/5">
                 <span>再次生成</span>
                 <span className="text-[10px] text-zinc-500">&gt;</span>
               </button>
 
-              <button className="w-full h-10 px-4 bg-zinc-900/50 hover:bg-zinc-800/80 text-zinc-300 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-white/5">
+              <button className="w-full h-10 px-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 dark:bg-zinc-900/50 dark:hover:bg-zinc-800/80 dark:text-zinc-300 rounded-xl text-xs font-medium transition-all flex items-center justify-between border border-black/10 dark:border-white/5">
                 <span>在生成页面定位</span>
                 <span className="text-[10px] text-zinc-500">&gt;</span>
               </button>

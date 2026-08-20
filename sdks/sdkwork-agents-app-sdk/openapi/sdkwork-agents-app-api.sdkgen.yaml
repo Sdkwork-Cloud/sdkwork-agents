@@ -44,7 +44,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -113,7 +113,7 @@ paths:
                 retryable: false
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -174,7 +174,7 @@ paths:
                 retryable: false
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -255,7 +255,7 @@ paths:
                 retryable: true
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -326,7 +326,7 @@ paths:
                 retryable: true
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -408,7 +408,7 @@ paths:
                 retryable: true
                 traceId: 00000000-0000-0000-0000-000000000000
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -440,25 +440,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProviderBindingListResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -494,31 +494,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProviderBindingResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '409':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -556,25 +556,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProviderBindingResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -611,25 +611,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentRuntimeExecutionResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -666,25 +666,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentRuntimeExecutionResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -719,7 +719,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -752,7 +752,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -785,7 +785,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -814,7 +814,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -849,7 +849,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -879,7 +879,7 @@ paths:
         '204':
           description: Workspace deleted
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -915,7 +915,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentWorkspaceResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -969,7 +969,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1002,7 +1002,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1036,7 +1036,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1065,7 +1065,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1100,7 +1100,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1125,7 +1125,7 @@ paths:
         '204':
           description: Project deleted
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1161,7 +1161,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1200,7 +1200,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1235,7 +1235,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1265,7 +1265,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1301,7 +1301,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentProjectCompositionSlotResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1332,7 +1332,7 @@ paths:
         '204':
           description: Project composition slot deleted
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1374,7 +1374,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1416,7 +1416,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1451,7 +1451,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1498,7 +1498,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProjectSessionSynchronizationResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1531,7 +1531,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1603,7 +1603,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionActivitySummaryListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1654,7 +1654,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1690,7 +1690,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1741,7 +1741,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentResourceUserStateListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1772,7 +1772,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1809,7 +1809,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1836,7 +1836,7 @@ paths:
         '204':
           description: Session deleted
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1874,7 +1874,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1904,7 +1904,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentResourceUserStateResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1939,7 +1939,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentResourceUserStateResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -1974,7 +1974,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentItemFeedbackListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2039,7 +2039,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionItemListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2078,7 +2078,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionItemSynchronizeResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2110,7 +2110,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionItemResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2149,7 +2149,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentItemFeedbackResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2184,7 +2184,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2226,7 +2226,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnStreamEvent'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2258,7 +2258,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2297,7 +2297,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2329,7 +2329,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2361,7 +2361,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2391,7 +2391,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClearAgentTurnInputQueueEntriesResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2427,7 +2427,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReorderAgentTurnInputQueueEntriesResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2463,7 +2463,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClaimNextAgentTurnInputQueueEntryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2500,7 +2500,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2531,7 +2531,7 @@ paths:
         '204':
           description: Queued Turn input deleted
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2568,7 +2568,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2605,7 +2605,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTurnInputQueueEntryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2651,7 +2651,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2688,7 +2688,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2720,7 +2720,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2758,7 +2758,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionClaimResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2797,7 +2797,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2836,7 +2836,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2875,7 +2875,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentInteractionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2908,7 +2908,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2945,7 +2945,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -2977,7 +2977,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3016,7 +3016,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3055,7 +3055,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionCheckpointResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3088,7 +3088,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3125,7 +3125,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3157,7 +3157,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3194,7 +3194,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3233,7 +3233,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3272,7 +3272,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSessionRuntimeBindingResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3310,7 +3310,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3346,7 +3346,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3377,7 +3377,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3414,7 +3414,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3452,7 +3452,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3490,7 +3490,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3528,7 +3528,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3566,7 +3566,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3611,7 +3611,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3643,7 +3643,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3682,7 +3682,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3721,7 +3721,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3755,7 +3755,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentTaskRunAttemptListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3787,25 +3787,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotListResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3841,31 +3841,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '409':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3896,25 +3896,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3951,25 +3951,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentCompositionSlotResponse'
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -3996,25 +3996,25 @@ paths:
         '204':
           description: Deleted managed agent composition slot
         '400':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '403':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         '404':
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4043,7 +4043,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentEngineCatalogListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4079,7 +4079,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppliedAgentModelConfigurationResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4115,7 +4115,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppliedAgentModelSelectionResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4152,7 +4152,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationSummaryListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4193,7 +4193,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4229,7 +4229,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentEngineConfigFileResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4270,7 +4270,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationStatusResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4311,7 +4311,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelConfigurationSummaryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4347,7 +4347,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MigratedModelConfigurationResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4380,7 +4380,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/McpServerMarketplaceListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4408,7 +4408,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MediaToolDirectoryResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4448,7 +4448,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MediaToolInvokeApiResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -4476,7 +4476,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ToolAssetListResponse'
         default:
-          description: RFC 9457 problem detail response
+          description: Problem detail response
           content:
             application/problem+json:
               schema:
@@ -6790,7 +6790,7 @@ components:
           type: boolean
     AgentModelProviderId:
       type: string
-      enum: [codex, claude-code, gemini, opencode, openclaw, hermes]
+      enum: [codex, claude-code, gemini, opencode, openclaw, hermes, mimo-code, rig]
     ApplyAgentModelConfigurationRequest:
       type: object
       additionalProperties: false
@@ -6809,6 +6809,11 @@ components:
           pattern: '^[A-Za-z0-9._-]+$'
         engineId:
           $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional configuration subject (user-created agent id). Defaults to the canonical engine agent.
         vendorCode:
           type: string
           minLength: 1
@@ -7134,6 +7139,11 @@ components:
           description: Saved custom configuration identity. Omit for catalog models.
         engineId:
           $ref: '#/components/schemas/AgentModelProviderId'
+        agentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional configuration subject (user-created agent id). Defaults to the canonical engine agent.
         modelId:
           type: string
           minLength: 1

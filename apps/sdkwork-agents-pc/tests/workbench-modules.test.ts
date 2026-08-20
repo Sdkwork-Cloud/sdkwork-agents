@@ -238,7 +238,7 @@ test('removes Presentation from the workbench application composition', () => {
   assert.doesNotMatch(moduleRegistrySource, /agents-pc-presentation|presentation:/);
 });
 
-test('loads Assets through the composed Drive SDK service', () => {
+test('loads Assets through the composed assets SDK service', () => {
   const assetsServiceSource = readFileSync(
     new URL(
       '../packages/sdkwork-agents-pc-assets/src/services/AssetsService.ts',
@@ -247,8 +247,8 @@ test('loads Assets through the composed Drive SDK service', () => {
     'utf8',
   );
 
-  assert.match(assetsServiceSource, /getDriveAppSdkClientWithSession/);
-  assert.match(assetsServiceSource, /drive\.assets\.list/);
+  assert.match(assetsServiceSource, /getAssetsAppSdkClientWithSession/);
+  assert.match(assetsServiceSource, /\.assets\.list/);
   assert.match(assetsServiceSource, /agentsDriveUploadService\.resolvePreviewUrl/);
   assert.doesNotMatch(assetsServiceSource, /new URL\(|import\.meta\.url/);
   assert.doesNotMatch(assetsServiceSource, /MOCK_|picsum|unsplash|mixkit/i);

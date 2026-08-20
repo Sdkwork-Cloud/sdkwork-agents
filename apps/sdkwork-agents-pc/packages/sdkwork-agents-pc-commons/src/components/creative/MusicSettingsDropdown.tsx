@@ -22,7 +22,7 @@ export const MusicSettingsDropdown: React.FC<MusicSettingsDropdownProps> = ({
     <div 
       ref={dropdownRef} 
       className={cn(
-        "absolute left-0 sm:left-[80px] w-[calc(100vw-32px)] sm:w-[380px] max-w-[380px] bg-[#222222] border border-white/10 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-4",
+        "absolute left-0 sm:left-[80px] w-[calc(100vw-32px)] sm:w-[380px] max-w-[380px] bg-white border border-black/10 rounded-2xl shadow-xl p-4 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-4 dark:bg-[#222222] dark:border-white/10 dark:shadow-2xl",
         musicSettingsPlacement === 'top' ? "bottom-full mb-2" : "top-full mt-2"
       )}
     >

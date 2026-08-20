@@ -1,0 +1,17 @@
+[package]
+name = "sdkwork-agents-tool-generations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generations MCP tool for sdkwork-agents, wrapping sdkwork-generations service."
+
+[lib]
+name = "sdkwork_agents_tool_generations"
+path = "src/lib.rs"
+
+[dependencies]
+sdkwork-agent-kernel.workspace = true
+sdkwork-agents-tool-contract.workspace = true
+sdkwork-agents-tool-cloudrouter.workspace = true
+cloudrouter-open-sdk.workspace = true
+serde_json.workspace = true

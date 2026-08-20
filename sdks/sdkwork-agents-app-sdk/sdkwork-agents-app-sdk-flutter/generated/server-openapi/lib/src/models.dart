@@ -4579,6 +4579,7 @@ class AppUpdateAgentSessionRequest {
 class ApplyAgentModelConfigurationRequest {
   final String configurationId;
   final String engineId;
+  final String? agentId;
   final String vendorCode;
   final String baseUrl;
   final String? apiKey;
@@ -4593,6 +4594,7 @@ class ApplyAgentModelConfigurationRequest {
   ApplyAgentModelConfigurationRequest({
     required this.configurationId,
     required this.engineId,
+    this.agentId,
     required this.vendorCode,
     required this.baseUrl,
     this.apiKey,
@@ -4621,6 +4623,7 @@ class ApplyAgentModelConfigurationRequest {
         }
         return value;
       })(),
+      agentId: json['agentId']?.toString(),
       vendorCode: (() {
         final value = json['vendorCode']?.toString();
         if (value == null) {
@@ -4674,6 +4677,7 @@ class ApplyAgentModelConfigurationRequest {
     return <String, dynamic>{
       'configurationId': configurationId,
       'engineId': engineId,
+      'agentId': agentId,
       'vendorCode': vendorCode,
       'baseUrl': baseUrl,
       'apiKey': apiKey,
@@ -5375,11 +5379,13 @@ class MigratedModelConfigurationResponse {
 class ApplyAgentModelSelectionRequest {
   final String? configurationId;
   final String engineId;
+  final String? agentId;
   final String modelId;
 
   ApplyAgentModelSelectionRequest({
     this.configurationId,
     required this.engineId,
+    this.agentId,
     required this.modelId
   });
 
@@ -5393,6 +5399,7 @@ class ApplyAgentModelSelectionRequest {
         }
         return value;
       })(),
+      agentId: json['agentId']?.toString(),
       modelId: (() {
         final value = json['modelId']?.toString();
         if (value == null) {
@@ -5407,6 +5414,7 @@ class ApplyAgentModelSelectionRequest {
     return <String, dynamic>{
       'configurationId': configurationId,
       'engineId': engineId,
+      'agentId': agentId,
       'modelId': modelId,
     };
   }

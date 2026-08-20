@@ -130,7 +130,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     <div 
       ref={dropdownRef}
       className={cn(
-        "absolute right-0 bg-[#1e1e1e] border border-white/10 rounded-xl shadow-2xl py-2 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col w-[calc(100vw-32px)] max-w-[380px] sm:w-[380px]",
+        "absolute right-0 bg-white border border-black/10 rounded-xl shadow-xl py-2 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col w-[calc(100vw-32px)] max-w-[380px] sm:w-[380px] dark:bg-[#1e1e1e] dark:border-white/10 dark:shadow-2xl",
         modelMenuPlacement === 'top' ? "bottom-full mb-2" : "top-full mt-2",
         isAgent ? "max-h-[70vh] sm:w-[420px] max-w-[420px]" : "max-h-[60vh]"
       )}
@@ -152,7 +152,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             </div>
           </div>
           <div className="px-4 pb-2 shrink-0">
-            <div className="flex bg-[#2a2a2a] rounded-xl p-1">
+            <div className="flex bg-zinc-100 rounded-xl p-1 dark:bg-[#2a2a2a]">
               <button 
                 onClick={() => setAgentModelTab('image')}
                 className={cn("flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-colors", agentModelTab === 'image' ? "bg-white/10 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200")}

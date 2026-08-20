@@ -18,7 +18,7 @@ export const GridLayout: React.FC<GridLayoutProps> = ({ message, onPreviewImage 
         <div 
           key={index} 
           onClick={() => onPreviewImage(message, index)}
-          className="relative aspect-square bg-[#1a1a1c] border border-white/5 rounded-xl overflow-hidden shadow-lg group/card transition-all duration-300 hover:scale-[1.01] hover:border-cyan-500/40 cursor-pointer"
+          className="relative aspect-square bg-white border border-black/5 rounded-xl overflow-hidden shadow-lg group/card transition-all duration-300 hover:scale-[1.01] hover:border-cyan-500/40 cursor-pointer dark:bg-[#1a1a1c] dark:border-white/5"
         >
           <img 
             src={url} 

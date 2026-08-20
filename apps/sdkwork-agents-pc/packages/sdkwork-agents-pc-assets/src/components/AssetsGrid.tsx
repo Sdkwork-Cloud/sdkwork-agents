@@ -15,7 +15,7 @@ interface AssetsGridProps {
 
 export const AssetsGrid: React.FC<AssetsGridProps> = ({ groups, activeFilter, onItemClick }) => {
   return (
-    <div className="flex-1 overflow-y-auto px-6 pb-6 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+    <div className="flex-1 overflow-y-auto px-6 pb-6 scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
       <div className="max-w-[1600px] mx-auto space-y-8">
         {groups.map((group, index) => {
           const filteredItems = group.items.filter(item => {
@@ -26,13 +26,13 @@ export const AssetsGrid: React.FC<AssetsGridProps> = ({ groups, activeFilter, on
 
           return (
             <div key={index} className="space-y-4">
-              <h3 className="text-sm font-semibold text-white tracking-wide">{group.date}</h3>
+              <h3 className="text-sm font-semibold text-zinc-800 dark:text-white tracking-wide">{group.date}</h3>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2 2xl:grid-cols-[repeat(12,1fr)] xl:grid-cols-[repeat(10,1fr)] lg:grid-cols-[repeat(8,1fr)]">
                 {filteredItems.map((item) => (
                   <div 
                     key={item.id} 
                     onClick={() => onItemClick(item)}
-                    className="aspect-square relative group rounded-xl overflow-hidden bg-zinc-800 cursor-pointer border border-transparent hover:border-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                    className="aspect-square relative group rounded-xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 cursor-pointer border border-transparent hover:border-black/10 dark:hover:border-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
                   >
                     <img 
                       src={item.imageUrl} 
