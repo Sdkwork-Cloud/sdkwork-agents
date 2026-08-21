@@ -142,16 +142,55 @@
             "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
           },
           {
-            "id": "pc-renderer",
-            "package": "@sdkwork/agents-pc",
-            "script": "vite",
-            "required": true,
-            "role": "client"
+            "id": "agents-browser",
+            "role": "client",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "bindEnv": "SDKWORK_AGENTS_WEB_DEV_INGRESS_BIND",
+            "runtimeTargets": [
+              "browser"
+            ],
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "required": true
           }
         ],
         "healthSurfaces": [
           "application.public-ingress",
           "application.task-worker-operations"
+        ],
+        "browserDeliveries": [
+          {
+            "id": "agents-adaptive-web",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "originMode": "same-origin",
+            "deliveryMode": "dev-server-proxy",
+            "clientProcessId": "agents-browser",
+            "apiSurfaceId": "application.public-ingress",
+            "preserveCanonicalPaths": true,
+            "tabletArchitecture": "pc-web",
+            "renderers": {
+              "pc-web": {
+                "applicationRoot": "apps/sdkwork-agents-pc",
+                "script": "dev:standalone",
+                "defaultPort": 5324,
+                "portEnv": "SDKWORK_AGENTS_PC_INTERNAL_DEV_PORT",
+                "env": {}
+              },
+              "h5": {
+                "applicationRoot": "apps/sdkwork-agents-h5",
+                "script": "dev:standalone",
+                "defaultPort": 5325,
+                "portEnv": "SDKWORK_AGENTS_H5_INTERNAL_DEV_PORT",
+                "env": {}
+              }
+            }
+          }
         ]
       },
       "standalone.test": {
@@ -170,11 +209,57 @@
             "required": true,
             "role": "worker",
             "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
+          },
+          {
+            "id": "agents-browser",
+            "role": "client",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "bindEnv": "SDKWORK_AGENTS_WEB_DEV_INGRESS_BIND",
+            "runtimeTargets": [
+              "browser"
+            ],
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "required": true
           }
         ],
         "healthSurfaces": [
           "application.public-ingress",
           "application.task-worker-operations"
+        ],
+        "browserDeliveries": [
+          {
+            "id": "agents-adaptive-web",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "originMode": "same-origin",
+            "deliveryMode": "dev-server-proxy",
+            "clientProcessId": "agents-browser",
+            "apiSurfaceId": "application.public-ingress",
+            "preserveCanonicalPaths": true,
+            "tabletArchitecture": "pc-web",
+            "renderers": {
+              "pc-web": {
+                "applicationRoot": "apps/sdkwork-agents-pc",
+                "script": "dev:standalone",
+                "defaultPort": 5324,
+                "portEnv": "SDKWORK_AGENTS_PC_INTERNAL_DEV_PORT",
+                "env": {}
+              },
+              "h5": {
+                "applicationRoot": "apps/sdkwork-agents-h5",
+                "script": "dev:standalone",
+                "defaultPort": 5325,
+                "portEnv": "SDKWORK_AGENTS_H5_INTERNAL_DEV_PORT",
+                "env": {}
+              }
+            }
+          }
         ]
       },
       "standalone.staging": {
@@ -224,10 +309,57 @@
         ]
       },
       "cloud.development": {
-        "processes": [],
+        "processes": [
+          {
+            "id": "agents-browser",
+            "role": "client",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "bindEnv": "SDKWORK_AGENTS_WEB_DEV_INGRESS_BIND",
+            "runtimeTargets": [
+              "browser"
+            ],
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "required": true
+          }
+        ],
         "healthSurfaces": [
           "application.public-ingress",
           "platform.api-gateway"
+        ],
+        "browserDeliveries": [
+          {
+            "id": "agents-adaptive-web",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "originMode": "same-origin",
+            "deliveryMode": "dev-server-proxy",
+            "clientProcessId": "agents-browser",
+            "apiSurfaceId": "application.public-ingress",
+            "preserveCanonicalPaths": true,
+            "tabletArchitecture": "pc-web",
+            "renderers": {
+              "pc-web": {
+                "applicationRoot": "apps/sdkwork-agents-pc",
+                "script": "dev:cloud",
+                "defaultPort": 5324,
+                "portEnv": "SDKWORK_AGENTS_PC_INTERNAL_DEV_PORT",
+                "env": {}
+              },
+              "h5": {
+                "applicationRoot": "apps/sdkwork-agents-h5",
+                "script": "dev:cloud",
+                "defaultPort": 5325,
+                "portEnv": "SDKWORK_AGENTS_H5_INTERNAL_DEV_PORT",
+                "env": {}
+              }
+            }
+          }
         ]
       },
       "cloud.test": {
@@ -246,12 +378,58 @@
             "required": true,
             "role": "worker",
             "bindEnv": "SDKWORK_AGENTS_TASK_WORKER_BIND"
+          },
+          {
+            "id": "agents-browser",
+            "role": "client",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "bindEnv": "SDKWORK_AGENTS_WEB_DEV_INGRESS_BIND",
+            "runtimeTargets": [
+              "browser"
+            ],
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "required": true
           }
         ],
         "healthSurfaces": [
           "application.public-ingress",
           "application.task-worker-operations",
           "platform.api-gateway"
+        ],
+        "browserDeliveries": [
+          {
+            "id": "agents-adaptive-web",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "originMode": "same-origin",
+            "deliveryMode": "dev-server-proxy",
+            "clientProcessId": "agents-browser",
+            "apiSurfaceId": "application.public-ingress",
+            "preserveCanonicalPaths": true,
+            "tabletArchitecture": "pc-web",
+            "renderers": {
+              "pc-web": {
+                "applicationRoot": "apps/sdkwork-agents-pc",
+                "script": "dev:cloud",
+                "defaultPort": 5324,
+                "portEnv": "SDKWORK_AGENTS_PC_INTERNAL_DEV_PORT",
+                "env": {}
+              },
+              "h5": {
+                "applicationRoot": "apps/sdkwork-agents-h5",
+                "script": "dev:cloud",
+                "defaultPort": 5325,
+                "portEnv": "SDKWORK_AGENTS_H5_INTERNAL_DEV_PORT",
+                "env": {}
+              }
+            }
+          }
         ]
       },
       "cloud.staging": {
