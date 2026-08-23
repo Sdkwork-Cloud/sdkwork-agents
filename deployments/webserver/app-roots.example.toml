@@ -1,0 +1,23 @@
+# Adaptive Web roots for sdkwork-agents (copy into runtime config when in-process).
+# Docker entrypoint generates /etc/sdkwork/webserver/module-app-roots/sdkwork-agents.toml
+
+[app_roots]
+tablet_surface = "pc"
+
+[app_roots.pc_static_by_environment]
+development = "apps/sdkwork-agents-pc/dist/dev"
+test = "apps/sdkwork-agents-pc/dist/test"
+staging = "apps/sdkwork-agents-pc/dist/staging"
+production = "apps/sdkwork-agents-pc/dist/prod"
+
+[app_roots.h5_static_by_environment]
+development = "apps/sdkwork-agents-h5/dist/dev"
+test = "apps/sdkwork-agents-h5/dist/test"
+staging = "apps/sdkwork-agents-h5/dist/staging"
+production = "apps/sdkwork-agents-h5/dist/prod"
+
+[app_roots.static_fallback_by_environment]
+development = "deployments/webserver/static"
+test = "deployments/webserver/static"
+staging = "deployments/webserver/static"
+production = "deployments/webserver/static"

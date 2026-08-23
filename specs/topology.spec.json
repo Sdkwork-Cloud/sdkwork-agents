@@ -515,7 +515,219 @@
   },
   "cloudPublicHosts": {
     "platform.api-gateway": {
-      "httpHost": "api.sdkwork.com"
+      "httpHost": "api.sdkwork.com",
+      "environments": {
+        "development": {
+          "httpHosts": [
+            "api-dev.sdkwork.com",
+            "api-dev.birdcoder.com",
+            "api-dev.dtupay.com",
+            "api-dev.sdkwork.cn",
+            "api-dev.birdcoder.cn",
+            "api-dev.dtupay.cn"
+          ]
+        },
+        "test": {
+          "httpHosts": [
+            "api-test.sdkwork.com",
+            "api-test.birdcoder.com",
+            "api-test.dtupay.com",
+            "api-test.sdkwork.cn",
+            "api-test.birdcoder.cn",
+            "api-test.dtupay.cn"
+          ]
+        },
+        "staging": {
+          "httpHosts": [
+            "api-staging.sdkwork.com",
+            "api-staging.birdcoder.com",
+            "api-staging.dtupay.com",
+            "api-staging.sdkwork.cn",
+            "api-staging.birdcoder.cn",
+            "api-staging.dtupay.cn"
+          ]
+        }
+      },
+      "httpHosts": [
+        "api.sdkwork.com",
+        "api.birdcoder.com",
+        "api.dtupay.com",
+        "api.sdkwork.cn",
+        "api.birdcoder.cn",
+        "api.dtupay.cn"
+      ]
+    },
+    "application.public-ingress": {
+      "httpHost": "agents.sdkwork.com",
+      "environments": {
+        "development": {
+          "httpHosts": [
+            "agents-dev.sdkwork.com",
+            "agents-dev.birdcoder.com",
+            "agents-dev.dtupay.com",
+            "agents-dev.sdkwork.cn",
+            "agents-dev.birdcoder.cn",
+            "agents-dev.dtupay.cn"
+          ]
+        },
+        "test": {
+          "httpHosts": [
+            "agents-test.sdkwork.com",
+            "agents-test.birdcoder.com",
+            "agents-test.dtupay.com",
+            "agents-test.sdkwork.cn",
+            "agents-test.birdcoder.cn",
+            "agents-test.dtupay.cn"
+          ]
+        },
+        "staging": {
+          "httpHosts": [
+            "agents-staging.sdkwork.com",
+            "agents-staging.birdcoder.com",
+            "agents-staging.dtupay.com",
+            "agents-staging.sdkwork.cn",
+            "agents-staging.birdcoder.cn",
+            "agents-staging.dtupay.cn"
+          ]
+        }
+      },
+      "httpHosts": [
+        "agents.sdkwork.com",
+        "agents.birdcoder.com",
+        "agents.dtupay.com",
+        "agents.sdkwork.cn",
+        "agents.birdcoder.cn",
+        "agents.dtupay.cn"
+      ]
+    },
+    "application.app-http": {
+      "httpHost": "agents-app.sdkwork.com",
+      "environments": {
+        "development": {
+          "httpHosts": [
+            "agents-app-dev.sdkwork.com",
+            "agents-app-dev.birdcoder.com",
+            "agents-app-dev.dtupay.com",
+            "agents-app-dev.sdkwork.cn",
+            "agents-app-dev.birdcoder.cn",
+            "agents-app-dev.dtupay.cn"
+          ]
+        },
+        "test": {
+          "httpHosts": [
+            "agents-app-test.sdkwork.com",
+            "agents-app-test.birdcoder.com",
+            "agents-app-test.dtupay.com",
+            "agents-app-test.sdkwork.cn",
+            "agents-app-test.birdcoder.cn",
+            "agents-app-test.dtupay.cn"
+          ]
+        },
+        "staging": {
+          "httpHosts": [
+            "agents-app-staging.sdkwork.com",
+            "agents-app-staging.birdcoder.com",
+            "agents-app-staging.dtupay.com",
+            "agents-app-staging.sdkwork.cn",
+            "agents-app-staging.birdcoder.cn",
+            "agents-app-staging.dtupay.cn"
+          ]
+        }
+      },
+      "httpHosts": [
+        "agents-app.sdkwork.com",
+        "agents-app.birdcoder.com",
+        "agents-app.dtupay.com",
+        "agents-app.sdkwork.cn",
+        "agents-app.birdcoder.cn",
+        "agents-app.dtupay.cn"
+      ]
+    },
+    "application.backend-http": {
+      "httpHost": "agents-admin.sdkwork.com",
+      "environments": {
+        "development": {
+          "httpHosts": [
+            "agents-admin-dev.sdkwork.com",
+            "agents-admin-dev.birdcoder.com",
+            "agents-admin-dev.dtupay.com",
+            "agents-admin-dev.sdkwork.cn",
+            "agents-admin-dev.birdcoder.cn",
+            "agents-admin-dev.dtupay.cn"
+          ]
+        },
+        "test": {
+          "httpHosts": [
+            "agents-admin-test.sdkwork.com",
+            "agents-admin-test.birdcoder.com",
+            "agents-admin-test.dtupay.com",
+            "agents-admin-test.sdkwork.cn",
+            "agents-admin-test.birdcoder.cn",
+            "agents-admin-test.dtupay.cn"
+          ]
+        },
+        "staging": {
+          "httpHosts": [
+            "agents-admin-staging.sdkwork.com",
+            "agents-admin-staging.birdcoder.com",
+            "agents-admin-staging.dtupay.com",
+            "agents-admin-staging.sdkwork.cn",
+            "agents-admin-staging.birdcoder.cn",
+            "agents-admin-staging.dtupay.cn"
+          ]
+        }
+      },
+      "httpHosts": [
+        "agents-admin.sdkwork.com",
+        "agents-admin.birdcoder.com",
+        "agents-admin.dtupay.com",
+        "agents-admin.sdkwork.cn",
+        "agents-admin.birdcoder.cn",
+        "agents-admin.dtupay.cn"
+      ]
+    },
+    "application.open-http": {
+      "httpHost": "agents-open.sdkwork.com",
+      "environments": {
+        "development": {
+          "httpHosts": [
+            "agents-open-dev.sdkwork.com",
+            "agents-open-dev.birdcoder.com",
+            "agents-open-dev.dtupay.com",
+            "agents-open-dev.sdkwork.cn",
+            "agents-open-dev.birdcoder.cn",
+            "agents-open-dev.dtupay.cn"
+          ]
+        },
+        "test": {
+          "httpHosts": [
+            "agents-open-test.sdkwork.com",
+            "agents-open-test.birdcoder.com",
+            "agents-open-test.dtupay.com",
+            "agents-open-test.sdkwork.cn",
+            "agents-open-test.birdcoder.cn",
+            "agents-open-test.dtupay.cn"
+          ]
+        },
+        "staging": {
+          "httpHosts": [
+            "agents-open-staging.sdkwork.com",
+            "agents-open-staging.birdcoder.com",
+            "agents-open-staging.dtupay.com",
+            "agents-open-staging.sdkwork.cn",
+            "agents-open-staging.birdcoder.cn",
+            "agents-open-staging.dtupay.cn"
+          ]
+        }
+      },
+      "httpHosts": [
+        "agents-open.sdkwork.com",
+        "agents-open.birdcoder.com",
+        "agents-open.dtupay.com",
+        "agents-open.sdkwork.cn",
+        "agents-open.birdcoder.cn",
+        "agents-open.dtupay.cn"
+      ]
     }
   }
 }

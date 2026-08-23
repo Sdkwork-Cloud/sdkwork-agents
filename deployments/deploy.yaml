@@ -1,6 +1,5 @@
 version: 2
 defaultProfile: cloud.production
-
 profiles:
   cloud.test:
     deployment:
@@ -17,19 +16,53 @@ profiles:
     install:
       layout: binary-package
     expose:
-      - domain: agents-test.sdkwork.com
-        tls: sdkwork.com
-        mode: web+api
-        web: adaptive
       - domain: agents-admin-test.sdkwork.com
         tls: sdkwork.com
         mode: api
-      - domain: agent-test.sdkwork.com
-        tls: sdkwork.com
-        mode: api
-      - domain: agents-app-test.sdkwork.com
-        tls: sdkwork.com
-        mode: api
+        aliases:
+          - agents-app-test.sdkwork.com
+          - agents-open-test.sdkwork.com
+          - agents-test.sdkwork.com
+      - domain: agents-admin-test.birdcoder.com
+        tls: birdcoder.com
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-test.birdcoder.com
+          - agents-open-test.birdcoder.com
+          - agents-test.birdcoder.com
+      - domain: agents-admin-test.dtupay.com
+        tls: dtupay.com
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-test.dtupay.com
+          - agents-open-test.dtupay.com
+          - agents-test.dtupay.com
+      - domain: agents-admin-test.sdkwork.cn
+        tls: sdkwork.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-test.sdkwork.cn
+          - agents-open-test.sdkwork.cn
+          - agents-test.sdkwork.cn
+      - domain: agents-admin-test.birdcoder.cn
+        tls: birdcoder.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-test.birdcoder.cn
+          - agents-open-test.birdcoder.cn
+          - agents-test.birdcoder.cn
+      - domain: agents-admin-test.dtupay.cn
+        tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-test.dtupay.cn
+          - agents-open-test.dtupay.cn
+          - agents-test.dtupay.cn
     packages: []
     overrides:
       topology:
@@ -42,7 +75,6 @@ profiles:
           platform: http://127.0.0.1:3900
       kubernetes:
         reference: deployments/kubernetes/
-
   cloud.staging:
     deployment:
       deploymentProfile: cloud
@@ -58,19 +90,53 @@ profiles:
     install:
       layout: binary-package
     expose:
-      - domain: agents-staging.sdkwork.com
-        tls: sdkwork.com
-        mode: web+api
-        web: adaptive
       - domain: agents-admin-staging.sdkwork.com
         tls: sdkwork.com
         mode: api
-      - domain: agent-staging.sdkwork.com
-        tls: sdkwork.com
-        mode: api
-      - domain: agents-app-staging.sdkwork.com
-        tls: sdkwork.com
-        mode: api
+        aliases:
+          - agents-app-staging.sdkwork.com
+          - agents-open-staging.sdkwork.com
+          - agents-staging.sdkwork.com
+      - domain: agents-admin-staging.birdcoder.com
+        tls: birdcoder.com
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-staging.birdcoder.com
+          - agents-open-staging.birdcoder.com
+          - agents-staging.birdcoder.com
+      - domain: agents-admin-staging.dtupay.com
+        tls: dtupay.com
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-staging.dtupay.com
+          - agents-open-staging.dtupay.com
+          - agents-staging.dtupay.com
+      - domain: agents-admin-staging.sdkwork.cn
+        tls: sdkwork.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-staging.sdkwork.cn
+          - agents-open-staging.sdkwork.cn
+          - agents-staging.sdkwork.cn
+      - domain: agents-admin-staging.birdcoder.cn
+        tls: birdcoder.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-staging.birdcoder.cn
+          - agents-open-staging.birdcoder.cn
+          - agents-staging.birdcoder.cn
+      - domain: agents-admin-staging.dtupay.cn
+        tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app-staging.dtupay.cn
+          - agents-open-staging.dtupay.cn
+          - agents-staging.dtupay.cn
     packages: []
     overrides:
       topology:
@@ -83,7 +149,6 @@ profiles:
           platform: http://127.0.0.1:3900
       kubernetes:
         reference: deployments/kubernetes/
-
   cloud.production:
     deployment:
       deploymentProfile: cloud
@@ -99,19 +164,53 @@ profiles:
     install:
       layout: binary-package
     expose:
-      - domain: agents.sdkwork.com
-        tls: sdkwork.com
-        mode: web+api
-        web: adaptive
       - domain: agents-admin.sdkwork.com
         tls: sdkwork.com
         mode: api
-      - domain: agent.sdkwork.com
-        tls: sdkwork.com
-        mode: api
-      - domain: agents-app.sdkwork.com
-        tls: sdkwork.com
-        mode: api
+        aliases:
+          - agents-app.sdkwork.com
+          - agents-open.sdkwork.com
+          - agents.sdkwork.com
+      - domain: agents-admin.birdcoder.com
+        tls: birdcoder.com
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app.birdcoder.com
+          - agents-open.birdcoder.com
+          - agents.birdcoder.com
+      - domain: agents-admin.dtupay.com
+        tls: dtupay.com
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app.dtupay.com
+          - agents-open.dtupay.com
+          - agents.dtupay.com
+      - domain: agents-admin.sdkwork.cn
+        tls: sdkwork.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app.sdkwork.cn
+          - agents-open.sdkwork.cn
+          - agents.sdkwork.cn
+      - domain: agents-admin.birdcoder.cn
+        tls: birdcoder.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app.birdcoder.cn
+          - agents-open.birdcoder.cn
+          - agents.birdcoder.cn
+      - domain: agents-admin.dtupay.cn
+        tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+        aliases:
+          - agents-app.dtupay.cn
+          - agents-open.dtupay.cn
+          - agents.dtupay.cn
     packages: []
     overrides:
       topology:
@@ -124,7 +223,6 @@ profiles:
           platform: http://127.0.0.1:3900
       kubernetes:
         reference: deployments/kubernetes/
-
   standalone.production:
     deployment:
       deploymentProfile: standalone
@@ -139,7 +237,55 @@ profiles:
       availabilityMode: single-instance
     install:
       layout: binary-package
-    expose: []
+    expose:
+      - tls: sdkwork.com
+        mode: web
+        web: adaptive
+        domain: agents-admin.sdkwork.com
+        aliases:
+          - agents-app.sdkwork.com
+          - agents-open.sdkwork.com
+          - agents.sdkwork.com
+      - tls: birdcoder.com
+        mode: web
+        web: adaptive
+        domain: agents-admin.birdcoder.com
+        aliases:
+          - agents-app.birdcoder.com
+          - agents-open.birdcoder.com
+          - agents.birdcoder.com
+      - tls: dtupay.com
+        mode: web
+        web: adaptive
+        domain: agents-admin.dtupay.com
+        aliases:
+          - agents-app.dtupay.com
+          - agents-open.dtupay.com
+          - agents.dtupay.com
+      - tls: sdkwork.cn
+        mode: web
+        web: adaptive
+        domain: agents-admin.sdkwork.cn
+        aliases:
+          - agents-app.sdkwork.cn
+          - agents-open.sdkwork.cn
+          - agents.sdkwork.cn
+      - tls: birdcoder.cn
+        mode: web
+        web: adaptive
+        domain: agents-admin.birdcoder.cn
+        aliases:
+          - agents-app.birdcoder.cn
+          - agents-open.birdcoder.cn
+          - agents.birdcoder.cn
+      - tls: dtupay.cn
+        mode: web
+        web: adaptive
+        domain: agents-admin.dtupay.cn
+        aliases:
+          - agents-app.dtupay.cn
+          - agents-open.dtupay.cn
+          - agents.dtupay.cn
     packages: []
     overrides:
       topology:
