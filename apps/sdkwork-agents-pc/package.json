@@ -20,7 +20,11 @@
     "stop": "pnpm exec sdkwork-app stop --root ../..",
     "test": "pnpm run test:agent-contracts",
     "check": "pnpm typecheck && pnpm test && pnpm build",
-    "verify": "pnpm check"
+    "verify": "pnpm check",
+    "build:dev": "node ../../../sdkwork-specs/tools/build-browser-client.mjs --app-root . --environment dev",
+    "build:test": "node ../../../sdkwork-specs/tools/build-browser-client.mjs --app-root . --environment test",
+    "build:staging": "node ../../../sdkwork-specs/tools/build-browser-client.mjs --app-root . --environment staging",
+    "build:prod": "node ../../../sdkwork-specs/tools/build-browser-client.mjs --app-root . --environment prod"
   },
   "dependencies": {
     "@sdkwork/auth-pc-react": "workspace:*",
