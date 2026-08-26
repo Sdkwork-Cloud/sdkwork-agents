@@ -1,0 +1,20 @@
+{
+  "environment": "test",
+  "deploymentProfile": "cloud",
+  "profileId": "cloud.test",
+  "runtimeTarget": "browser",
+  "browserOriginMode": "cross-origin",
+  "agents": {
+    "apiBaseUrl": "http://127.0.0.1:8095/app/v3/api",
+    "backendApiBaseUrl": "http://127.0.0.1:8095/backend/v3/api"
+  },
+  "appbase": {
+    "appApiBaseUrl": "http://127.0.0.1:8095",
+    "loginUrl": "http://127.0.0.1:8095"
+  },
+  "appApiBaseUrl": "https://api.test.invalid",
+  "backendApiBaseUrl": "https://api.test.invalid",
+  "driveAppApiBaseUrl": "https://api.test.invalid",
+  "appbaseAppApiBaseUrl": "https://api.test.invalid",
+  "deployAppApiBaseUrl": "https://api.test.invalid"
+}

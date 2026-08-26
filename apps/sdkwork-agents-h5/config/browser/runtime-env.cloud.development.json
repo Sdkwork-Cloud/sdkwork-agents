@@ -1,0 +1,20 @@
+{
+  "environment": "development",
+  "deploymentProfile": "cloud",
+  "profileId": "cloud.development",
+  "runtimeTarget": "browser",
+  "browserOriginMode": "cross-origin",
+  "agents": {
+    "apiBaseUrl": "http://127.0.0.1:8095/app/v3/api",
+    "backendApiBaseUrl": "http://127.0.0.1:8095/backend/v3/api"
+  },
+  "appbase": {
+    "appApiBaseUrl": "http://127.0.0.1:8095",
+    "loginUrl": "http://127.0.0.1:8095"
+  },
+  "appApiBaseUrl": "http://127.0.0.1:3900",
+  "backendApiBaseUrl": "http://127.0.0.1:3900",
+  "driveAppApiBaseUrl": "http://127.0.0.1:3900",
+  "appbaseAppApiBaseUrl": "http://127.0.0.1:3900",
+  "deployAppApiBaseUrl": "http://127.0.0.1:3900"
+}

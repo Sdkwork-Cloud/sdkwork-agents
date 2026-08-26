@@ -1,0 +1,12 @@
+{
+  "environment": "staging",
+  "deploymentProfile": "cloud",
+  "profileId": "cloud.staging",
+  "runtimeTarget": "browser",
+  "browserOriginMode": "cross-origin",
+  "appApiBaseUrl": "https://api.staging.invalid",
+  "backendApiBaseUrl": "https://api.staging.invalid",
+  "driveAppApiBaseUrl": "https://api.staging.invalid",
+  "appbaseAppApiBaseUrl": "https://api.staging.invalid",
+  "deployAppApiBaseUrl": "https://api.staging.invalid"
+}

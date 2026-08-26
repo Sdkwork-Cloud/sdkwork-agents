@@ -1,0 +1,20 @@
+{
+  "environment": "staging",
+  "deploymentProfile": "cloud",
+  "profileId": "cloud.staging",
+  "runtimeTarget": "browser",
+  "browserOriginMode": "cross-origin",
+  "agents": {
+    "apiBaseUrl": "http://127.0.0.1:8095/app/v3/api",
+    "backendApiBaseUrl": "http://127.0.0.1:8095/backend/v3/api"
+  },
+  "appbase": {
+    "appApiBaseUrl": "http://127.0.0.1:8095",
+    "loginUrl": "http://127.0.0.1:8095"
+  },
+  "appApiBaseUrl": "https://api.staging.invalid",
+  "backendApiBaseUrl": "https://api.staging.invalid",
+  "driveAppApiBaseUrl": "https://api.staging.invalid",
+  "appbaseAppApiBaseUrl": "https://api.staging.invalid",
+  "deployAppApiBaseUrl": "https://api.staging.invalid"
+}

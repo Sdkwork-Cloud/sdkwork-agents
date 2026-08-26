@@ -1,0 +1,12 @@
+{
+  "environment": "development",
+  "deploymentProfile": "cloud",
+  "profileId": "cloud.development",
+  "runtimeTarget": "browser",
+  "browserOriginMode": "cross-origin",
+  "appApiBaseUrl": "http://127.0.0.1:3900",
+  "backendApiBaseUrl": "http://127.0.0.1:3900",
+  "driveAppApiBaseUrl": "http://127.0.0.1:3900",
+  "appbaseAppApiBaseUrl": "http://127.0.0.1:3900",
+  "deployAppApiBaseUrl": "http://127.0.0.1:3900"
+}

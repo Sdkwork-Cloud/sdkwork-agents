@@ -1,0 +1,12 @@
+{
+  "environment": "test",
+  "deploymentProfile": "cloud",
+  "profileId": "cloud.test",
+  "runtimeTarget": "browser",
+  "browserOriginMode": "cross-origin",
+  "appApiBaseUrl": "https://api.test.invalid",
+  "backendApiBaseUrl": "https://api.test.invalid",
+  "driveAppApiBaseUrl": "https://api.test.invalid",
+  "appbaseAppApiBaseUrl": "https://api.test.invalid",
+  "deployAppApiBaseUrl": "https://api.test.invalid"
+}
