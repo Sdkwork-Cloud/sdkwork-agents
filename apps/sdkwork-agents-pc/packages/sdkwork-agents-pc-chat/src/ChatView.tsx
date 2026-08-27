@@ -30,7 +30,8 @@ import {
   chatModelPickerGroups,
   createChatModelPickerFallback,
   createCustomProviderModelGroup,
-  resolveChatDefaultModelId,
+  persistChatSelectedModelId,
+  resolveChatSelectedModelId,
 } from "./modelPicker/chatModelPickerCatalog";
 import type { ModelsPickerGroup } from "@sdkwork/models-pc-picker/model-picker-types";
 import type { AppliedCustomProvider } from "./components/CustomProviderDialog";
@@ -113,7 +114,10 @@ export const ChatView = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const [selectedModel, setSelectedModel] = useState(resolveChatDefaultModelId);
+  const [selectedModel, setSelectedModel] = useState(resolveChatSelectedModelId);
+  useEffect(() => {
+    persistChatSelectedModelId(selectedModel);
+  }, [selectedModel]);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [isCustomProviderOpen, setIsCustomProviderOpen] = useState(false);
   const [customProviderGroups, setCustomProviderGroups] = useState<ModelsPickerGroup[]>([]);

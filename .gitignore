@@ -62,4 +62,5 @@ Thumbs.db
 *.tsbuildinfo
 **/.cache/
 **/build/
-
+# Runtime-generated environment configuration
+**/public/runtime-env.json

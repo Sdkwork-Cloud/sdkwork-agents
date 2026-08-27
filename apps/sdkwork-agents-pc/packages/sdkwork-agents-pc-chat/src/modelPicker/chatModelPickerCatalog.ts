@@ -20,6 +20,9 @@ import type {
 /** Preferred chat default; falls back to the first catalog entry when absent. */
 export const CHAT_DEFAULT_MODEL_ID = 'gemini-3.6-flash';
 
+/** Persists the last chat-header model selection across refresh / revisit. */
+export const CHAT_SELECTED_MODEL_STORAGE_KEY = 'chat_selected_model';
+
 function createChatModelPickerOption(
   entry: MainstreamAgentModelCatalogEntry,
 ): ModelsPickerOption {
@@ -123,6 +126,53 @@ export function resolveChatDefaultModelId(): string {
     return CHAT_DEFAULT_MODEL_ID;
   }
   return chatModelPickerGroups[0]?.llms[0]?.id ?? CHAT_DEFAULT_MODEL_ID;
+}
+
+export function isChatModelIdKnown(
+  modelId: string,
+  groups: ModelsPickerGroup[] = chatModelPickerGroups,
+): boolean {
+  const normalized = modelId.trim();
+  if (!normalized) {
+    return false;
+  }
+  return groups.some((group) => group.llms.some((model) => model.id === normalized));
+}
+
+export function readStoredChatSelectedModelId(): string | null {
+  try {
+    const stored = globalThis.localStorage?.getItem(CHAT_SELECTED_MODEL_STORAGE_KEY)?.trim();
+    return stored || null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistChatSelectedModelId(modelId: string): void {
+  const normalized = modelId.trim();
+  if (!normalized) {
+    return;
+  }
+  try {
+    globalThis.localStorage?.setItem(CHAT_SELECTED_MODEL_STORAGE_KEY, normalized);
+  } catch {
+    // Ignore quota / private-mode failures; selection still works in-session.
+  }
+}
+
+/**
+ * Restores the last chat-header model when it is still present in the picker
+ * catalog (so ModelPicker can echo the correct label). Falls back to the
+ * preferred default when storage is empty, unavailable, or stale.
+ */
+export function resolveChatSelectedModelId(
+  groups: ModelsPickerGroup[] = chatModelPickerGroups,
+): string {
+  const stored = readStoredChatSelectedModelId();
+  if (stored && isChatModelIdKnown(stored, groups)) {
+    return stored;
+  }
+  return resolveChatDefaultModelId();
 }
 
 export function createChatModelPickerFallback(): ModelsPickerOption {
