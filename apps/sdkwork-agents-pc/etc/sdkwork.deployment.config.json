@@ -18,8 +18,12 @@
       "cloud.test",
       "cloud.staging",
       "cloud.production"
+<<<<<<< HEAD
     ],
     "output": "../public/runtime-env.json"
+=======
+    ]
+>>>>>>> __detached_merge_639234634045195749
   },
   "profiles": {
     "standalone.development": {
