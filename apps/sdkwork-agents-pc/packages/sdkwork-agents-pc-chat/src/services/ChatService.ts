@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../types';
+import { trimSessionTitle } from '../utils/sessionTitleUtils';
 import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 import { createSdkworkChatRequestContext } from '@sdkwork/agents-pc-core/session';
 
@@ -47,6 +48,12 @@ export interface ChatAgentPort {
   createAgent(agent: ChatAgentConfig): Promise<unknown>;
   updateAgent(agentId: string, patch: { model: string }): Promise<unknown>;
   resolveOrCreateSession(agentId: string, sessionId: string, title: string): Promise<string>;
+  createSession(agentId: string, title: string): Promise<{
+    id: string;
+    title: string;
+    updatedAt: string;
+    version: string;
+  }>;
   listSessions(agentId: string): Promise<Array<{
     id: string;
     title: string;
@@ -205,6 +212,17 @@ function canonicalSessionId(sessionId: string): string {
   return sessionId.startsWith('session.') ? sessionId : `session.${normalized}`;
 }
 
+function isPersistedServerSessionId(sessionId: string): boolean {
+  return sessionId.trim().startsWith('session.');
+}
+
+function rememberResolvedSessionId(sessionId: string): string {
+  const trimmed = sessionId.trim();
+  const canonical = canonicalSessionId(trimmed);
+  resolvedSessionIdByChatId.set(canonical, trimmed);
+  return trimmed;
+}
+
 // Maps the canonical local chat id to the server session id resolved for it.
 // `sessions.create` does not accept client-chosen ids (B12 context-selector
 // guard), so the first turn in a local chat must remember the server-generated
@@ -217,6 +235,9 @@ async function resolveSession(model: string, localSessionId: string): Promise<st
   const cached = resolvedSessionIdByChatId.get(canonical);
   if (cached) {
     return cached;
+  }
+  if (isPersistedServerSessionId(localSessionId)) {
+    return rememberResolvedSessionId(localSessionId);
   }
   const resolved = await requireChatAgentPort().resolveOrCreateSession(
     DEFAULT_CHAT_AGENT_ID,
@@ -244,6 +265,29 @@ function toChatSendFailure(error: unknown): ChatSendFailure {
 }
 
 export class ChatService {
+  /** Creates a server-backed session immediately (e.g. on "New chat"). */
+  static async createSession(model: string, title?: string): Promise<{
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: string;
+    messages: ChatMessage[];
+  }> {
+    await ensureChatAgent(model);
+    const created = await requireChatAgentPort().createSession(
+      DEFAULT_CHAT_AGENT_ID,
+      trimSessionTitle(title?.trim() || 'New chat'),
+    );
+    rememberResolvedSessionId(created.id);
+    return {
+      id: created.id,
+      title: created.title,
+      updatedAt: Date.parse(created.updatedAt) || Date.now(),
+      version: created.version,
+      messages: [],
+    };
+  }
+
   static async loadSessions(model: string): Promise<Array<{
     id: string;
     title: string;
@@ -263,6 +307,9 @@ export class ChatService {
     );
     // Lazy detail: transcripts and feedback load per selected session
     // (`loadSessionDetail`) instead of fanning out 2N+2 requests here.
+    for (const session of sessions) {
+      rememberResolvedSessionId(session.id);
+    }
     return sessions.map((session) => {
       const userState = userStateBySessionId.get(session.id);
       return {
@@ -275,7 +322,7 @@ export class ChatService {
         userStateVersion: userState?.version,
         messages: [],
       };
-    });
+    }).sort((left, right) => right.updatedAt - left.updatedAt);
   }
 
   /** Loads one session transcript (messages + feedback) on demand. */
@@ -343,7 +390,7 @@ export class ChatService {
 
   static async renameSession(sessionId: string, title: string, version: string) {
     return requireChatAgentPort().updateSession(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId), {
-      title,
+      title: trimSessionTitle(title),
       ...(version ? { expectedVersion: version } : {}),
     });
   }
@@ -356,10 +403,16 @@ export class ChatService {
   }
 
   static async deleteSession(sessionId: string): Promise<void> {
-    await requireChatAgentPort().deleteSession(DEFAULT_CHAT_AGENT_ID, canonicalSessionId(sessionId));
+    const canonical = canonicalSessionId(sessionId);
+    await requireChatAgentPort().deleteSession(DEFAULT_CHAT_AGENT_ID, canonical);
+    resolvedSessionIdByChatId.delete(canonical);
   }
 
   static async streamChat(options: ChatServiceOptions): Promise<void> {
+    if (!options.sessionId.trim()) {
+      options.onError?.({ message: 'A chat session is required.' });
+      return;
+    }
     if (options.signal?.aborted) {
       options.onError?.({ message: 'AbortError' });
       return;

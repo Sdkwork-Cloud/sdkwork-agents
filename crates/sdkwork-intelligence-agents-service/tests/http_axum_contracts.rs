@@ -5280,7 +5280,7 @@ async fn app_turn_stream_should_return_problem_detail_when_execution_fails_befor
         .as_str()
         .expect("problem detail should be a string");
     assert!(
-        detail.contains("temporarily unavailable"),
+        detail.contains("provider unavailable before first stream frame"),
         "unexpected problem: {problem}"
     );
 }

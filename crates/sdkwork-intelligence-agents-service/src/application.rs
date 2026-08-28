@@ -6892,6 +6892,28 @@ where
         }
     }
 
+    /// Replays stored assistant output through a live stream sink for
+    /// idempotent `?stream=true` requests. Live turns already pushed deltas
+    /// during execution; completed-turn replays must reconstruct them here.
+    fn replay_completed_turn_stream(
+        result: &mut TurnExecutionResult,
+        sink: &dyn TurnExecutionStreamSink,
+    ) {
+        if result.stream_deltas.is_empty() {
+            if let Some(content) = result
+                .assistant_output_item
+                .content
+                .as_deref()
+                .filter(|value| !value.is_empty())
+            {
+                result.stream_deltas.push(content.to_string());
+            }
+        }
+        for delta in &result.stream_deltas {
+            sink.push_delta(delta);
+        }
+    }
+
     fn replay_existing_turn(
         &self,
         command: &CreateTurnCommand,
@@ -7295,7 +7317,12 @@ where
                 ));
             }
             if existing_turn.status == AgentTurnStatus::Completed {
-                return self.replay_existing_turn(&command, session, existing_turn);
+                let mut result = self.replay_existing_turn(&command, session, existing_turn)?;
+                if let Some(sink) = stream_sink.as_ref() {
+                    sink.begin_turn(&result.session.session_id, &result.turn.turn_id);
+                    Self::replay_completed_turn_stream(&mut result, sink.as_ref());
+                }
+                return Ok(result);
             }
             if command.turn_mode == AgentTurnMode::Automation {
                 // Task-scheduler retry path: an attempt crashed or failed

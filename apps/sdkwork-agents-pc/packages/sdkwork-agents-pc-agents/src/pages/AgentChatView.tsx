@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { ChevronLeft, Bot, Copy, Check } from "lucide-react";
 
-import { Avatar } from "@sdkwork/agents-pc-commons";
+import { Avatar, MarkdownRenderer } from "@sdkwork/agents-pc-commons";
 
 import { LazyMessageInput } from "../components/LazyMessageInput";
 import { toast } from "../components/Toast";
@@ -251,7 +251,11 @@ export const AgentChatView: React.FC<AgentChatViewProps> = ({
                         : "border border-white/5 bg-[#262626] text-gray-100"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    {isUser ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <MarkdownRenderer content={message.content} />
+                    )}
                     <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-400">
                       <span>{formatTime(message.createdAt)}</span>
                       {!isUser ? (

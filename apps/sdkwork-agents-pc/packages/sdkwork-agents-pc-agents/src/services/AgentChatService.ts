@@ -12,6 +12,7 @@ import type { CreateAgentTurnRequest } from "@sdkwork/agents-pc-core/sdk/agentsA
 import { sha256Hash, uuid } from "@sdkwork/utils";
 
 import { resolveChatRuntimeModel } from "./RuntimeCatalogService";
+import { sortSessionItems } from "./sessionMessageOrdering";
 
 export interface ChatMessage {
   id: string;
@@ -116,7 +117,7 @@ export class AgentChatService {
     private readonly getClient: () => SdkworkAgentsAppClient = getAgentsAppSdkClientWithSession,
   ) {}
 
-  async createSession(agentId: string, title?: string): Promise<string> {
+  async createSessionSummary(agentId: string, title?: string): Promise<ChatSessionSummary> {
     const idempotencyKey = uuid();
     const normalizedTitle = title?.trim() || "Agent session";
     const session = await this.getClient().ai.agents.sessions.create(agentId, {
@@ -135,7 +136,18 @@ export class AgentChatService {
     if (!createdSessionId) {
       throw new Error("Chat session create did not return sessionId.");
     }
-    return createdSessionId;
+    return {
+      id: createdSessionId,
+      title: session.title ?? normalizedTitle,
+      updatedAt: session.updatedAt,
+      version: session.version,
+      projectId: session.projectId ?? undefined,
+    };
+  }
+
+  async createSession(agentId: string, title?: string): Promise<string> {
+    const summary = await this.createSessionSummary(agentId, title);
+    return summary.id;
   }
 
   async listSessions(agentId: string, pageSize = 10): Promise<string[]> {
@@ -416,9 +428,7 @@ export class AgentChatService {
   }
 
   private normalizeMessages(items: AgentSessionItemRecord[]): ChatMessage[] {
-    return items
-      .map(toChatMessage)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return sortSessionItems(items).map(toChatMessage);
   }
 }
 

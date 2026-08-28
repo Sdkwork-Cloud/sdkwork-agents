@@ -6,6 +6,7 @@ import {
 } from "@sdkwork/agents-pc-chat";
 import { cn } from "@sdkwork/agents-pc-commons";
 import { ChatService } from "./services/ChatService";
+import { bootstrapChatSessions } from './services/chatBootstrap';
 import { ProjectService } from "./services/ProjectService";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +15,8 @@ import {
   type AgentsDriveUploadPurpose,
 } from "@sdkwork/agents-pc-core/sdk/driveUploadService";
 import { uuid } from "@sdkwork/utils";
+import { trimSessionTitle } from './utils/sessionTitleUtils';
+import { reconcileTranscriptWithServer } from './utils/transcriptReconcile';
 
 import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
@@ -48,10 +51,10 @@ function resolveChatUploadPurpose(file: File): AgentsDriveUploadPurpose {
 export const ChatView = () => {
   const { t, i18n } = useTranslation("chat");
 
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    { id: "1", title: t("newChat"), messages: [], updatedAt: Date.now(), version: "" },
-  ]);
-  const [currentSessionId, setCurrentSessionId] = useState<string>("1");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string>("");
+  const [isSessionsBootstrapping, setIsSessionsBootstrapping] = useState(true);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [activeView, setActiveView] = useState<'chat' | 'library'>('chat');
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [activeProject, setActiveProject] = useState<ChatProject | null>(null);
@@ -66,6 +69,8 @@ export const ChatView = () => {
     }
   });
 
+  const [selectedModel, setSelectedModel] = useState(resolveChatSelectedModelId);
+
   useEffect(() => {
     void ProjectService.getProjects()
       .then(setProjects)
@@ -74,34 +79,55 @@ export const ChatView = () => {
 
   useEffect(() => {
     let active = true;
-    void ChatService.loadSessions(selectedModel)
-      .then((remoteSessions) => {
-        if (!active || remoteSessions.length === 0) return;
-        setSessions(remoteSessions);
-        setCurrentSessionId(remoteSessions[0].id);
-        // Lazy detail: load the transcript of the initially selected session.
-        void ChatService.loadSessionDetail(remoteSessions[0].id)
+    void (async () => {
+      try {
+        const bootstrapped = await bootstrapChatSessions(selectedModel, t("newChat"));
+        if (!active) return;
+
+        setSessions(bootstrapped.sessions);
+        setCurrentSessionId(bootstrapped.currentSessionId);
+
+        const initialSessionId = bootstrapped.currentSessionId;
+        const requestId = ++sessionDetailRequestRef.current;
+        void ChatService.loadSessionDetail(initialSessionId)
           .then((messages) => {
-            if (!active) return;
+            if (!active || sessionDetailRequestRef.current !== requestId) return;
             setSessions((prev) =>
-              prev.map((s) => s.id === remoteSessions[0].id ? { ...s, messages } : s),
+              prev.map((s) => {
+                if (s.id !== initialSessionId) {
+                  return s;
+                }
+                if (s.messages.length > 0) {
+                  return s;
+                }
+                return { ...s, messages };
+              }),
             );
           })
           .catch((error) => console.error("Chat transcript load failed", error));
-      })
-      .catch((error) => console.error("Chat history load failed", error));
+      } catch (error) {
+        console.error("Chat history load failed", error);
+        try {
+          const created = await ChatService.createSession(selectedModel, t("newChat"));
+          if (!active) return;
+          setSessions([created]);
+          setCurrentSessionId(created.id);
+        } catch (createError) {
+          console.error("Fallback session create failed", createError);
+        }
+      } finally {
+        if (active) {
+          setIsSessionsBootstrapping(false);
+        }
+      }
+    })();
     return () => {
       active = false;
     };
+  // Bootstrap once per page load via shared promise; Strict Mode cleanup uses `active`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem("chat_input_draft", input);
-    } catch {
-      // ignore
-    }
-  }, [input]);
   const [selectedMediaResources, setSelectedMediaResources] = useState<AgentsDriveMediaResource[]>([]);
   // Image previews are derived from the selected media so file attachments
   // never leak into the image preview strip.
@@ -113,8 +139,8 @@ export const ChatView = () => {
   );
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
-  const [selectedModel, setSelectedModel] = useState(resolveChatSelectedModelId);
   useEffect(() => {
     persistChatSelectedModelId(selectedModel);
   }, [selectedModel]);
@@ -141,8 +167,22 @@ export const ChatView = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const pinMutationsRef = useRef<Set<string>>(new Set());
   const feedbackMutationsRef = useRef<Set<string>>(new Set());
+  const sessionDetailRequestRef = useRef(0);
+  const streamCompletionRef = useRef(0);
 
-  const currentSession = sessions.find((s) => s.id === currentSessionId)!;
+  useEffect(() => {
+    try {
+      localStorage.setItem("chat_input_draft", input);
+    } catch {
+      // ignore
+    }
+  }, [input]);
+
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const isChatInputDisabled = isSessionsBootstrapping
+    || isCreatingSession
+    || !currentSessionId
+    || !currentSession;
 
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
@@ -151,12 +191,6 @@ export const ChatView = () => {
     const isAtBottom = scrollHeight - scrollTop - clientHeight <= 100;
     setShouldAutoScroll(isAtBottom);
   };
-
-  useEffect(() => {
-    if (sessions.length === 1 && sessions[0].messages.length === 0 && sessions[0].title !== t("newChat")) {
-      setSessions((prev) => [{ ...prev[0], title: t("newChat") }]);
-    }
-  }, [t, sessions]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -171,7 +205,6 @@ export const ChatView = () => {
     observer.observe(scrollContainer, {
       childList: true,
       subtree: true,
-      characterData: true
     });
 
     return () => observer.disconnect();
@@ -219,21 +252,21 @@ export const ChatView = () => {
   }, [input]);
 
   const handleNewChat = useCallback(() => {
-    const newSession: ChatSession = {
-      id: uuid(),
-      title: t("newChat"),
-      messages: [],
-      updatedAt: Date.now(),
-      version: "",
-    };
-    setSessions((prev) => [newSession, ...prev]);
-    setCurrentSessionId(newSession.id);
-    setActiveProject(null);
-    setActiveView('chat');
-    setIsArtifactOpen(false);
-    setShouldAutoScroll(true);
-    setSelectedMediaResources([]);
-  }, [t]);
+    if (isCreatingSession) return;
+    setIsCreatingSession(true);
+    void ChatService.createSession(selectedModel, t("newChat"))
+      .then((created) => {
+        setSessions((prev) => [created, ...prev]);
+        setCurrentSessionId(created.id);
+        setActiveProject(null);
+        setActiveView('chat');
+        setIsArtifactOpen(false);
+        setShouldAutoScroll(true);
+        setSelectedMediaResources([]);
+      })
+      .catch((error) => console.error("Failed to create chat session", error))
+      .finally(() => setIsCreatingSession(false));
+  }, [isCreatingSession, selectedModel, t]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -262,7 +295,8 @@ export const ChatView = () => {
   const handleRenameSession = async (id: string, newTitle: string) => {
     const session = sessions.find((item) => item.id === id);
     if (!session) return;
-    const updated = await ChatService.renameSession(id, newTitle, session.version);
+    const title = trimSessionTitle(newTitle);
+    const updated = await ChatService.renameSession(id, title, session.version);
     setSessions((prev) => prev.map((item) => item.id === id ? {
       ...item,
       title: updated.title,
@@ -386,10 +420,20 @@ export const ChatView = () => {
     // fetch the selected session's messages when they are not loaded yet.
     const session = sessions.find((s) => s.id === id);
     if (session && session.messages.length === 0) {
+      const requestId = ++sessionDetailRequestRef.current;
       void ChatService.loadSessionDetail(id)
         .then((messages) => {
+          if (sessionDetailRequestRef.current !== requestId) return;
           setSessions((prev) =>
-            prev.map((s) => (s.id === id ? { ...s, messages } : s)),
+            prev.map((s) => {
+              if (s.id !== id) {
+                return s;
+              }
+              if (s.messages.length > 0) {
+                return s;
+              }
+              return { ...s, messages };
+            }),
           );
         })
         .catch((error) => console.error("Chat transcript load failed", error));
@@ -398,10 +442,29 @@ export const ChatView = () => {
 
   const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    await ChatService.deleteSession(id);
-    setSessions((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await ChatService.deleteSession(id);
+    } catch (error) {
+      console.error("Chat session delete failed", error);
+      return;
+    }
+    const remaining = sessions.filter((s) => s.id !== id);
+    if (remaining.length === 0) {
+      try {
+        const created = await ChatService.createSession(selectedModel, t("newChat"));
+        setSessions([created]);
+        setCurrentSessionId(created.id);
+        setSelectedMediaResources([]);
+      } catch (error) {
+        console.error("Replacement session create failed", error);
+        setSessions([]);
+        setCurrentSessionId("");
+      }
+      return;
+    }
+    setSessions(remaining);
     if (currentSessionId === id) {
-      setCurrentSessionId(sessions.find((s) => s.id !== id)?.id || "");
+      setCurrentSessionId(remaining[0].id);
       setSelectedMediaResources([]);
     }
   };
@@ -419,6 +482,10 @@ export const ChatView = () => {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!currentSessionId) {
+      event.target.value = '';
+      return;
+    }
     const files: File[] = [];
     for (let index = 0; index < (event.target.files?.length ?? 0); index += 1) {
       const file = event.target.files?.item(index);
@@ -457,10 +524,17 @@ export const ChatView = () => {
   };
 
   const handleSend = async () => {
-    if ((!input.trim() && selectedMediaResources.length === 0) || isGenerating) return;
+    if (
+      isChatInputDisabled
+      || (!input.trim() && selectedMediaResources.length === 0)
+      || isGenerating
+    ) {
+      return;
+    }
 
     setShouldAutoScroll(true);
 
+    const activeSessionId = currentSessionId;
     const userMessage: ChatMessage = {
       id: uuid(),
       role: "user",
@@ -474,45 +548,51 @@ export const ChatView = () => {
     setSelectedMediaResources([]);
     setIsGenerating(true);
 
-    // Add user message
+    const modelMessageId = uuid();
+    setStreamingMessageId(modelMessageId);
+    const sessionBeforeSend = sessions.find((s) => s.id === activeSessionId);
+    const isFirstMessage = (sessionBeforeSend?.messages.length ?? 0) === 0;
+
     setSessions((prev) =>
       prev.map((s) => {
-        if (s.id === currentSessionId) {
-          // Auto-generate title for first message
-          const titleText = userMessage.text || t("imageChat");
-          const title =
-            s.messages.length === 0
-              ? titleText.slice(0, 30) + (titleText.length > 30 ? "..." : "")
-              : s.title;
-          return {
-            ...s,
-            title,
-            updatedAt: Date.now(),
-            messages: [...s.messages, userMessage],
-          };
+        if (s.id !== activeSessionId) {
+          return s;
         }
-        return s;
+        const titleText = userMessage.text || t("imageChat");
+        const title =
+          isFirstMessage
+            ? trimSessionTitle(titleText, 30)
+            : s.title;
+        return {
+          ...s,
+          title,
+          updatedAt: Date.now(),
+          messages: [
+            ...s.messages,
+            userMessage,
+            { id: modelMessageId, role: "model", text: "" },
+          ],
+        };
       }),
     );
 
-    // Add empty model message placeholder
-    const modelMessageId = uuid();
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === currentSessionId
-          ? {
-              ...s,
-              messages: [
-                ...s.messages,
-                { id: modelMessageId, role: "model", text: "" },
-              ],
-            }
-          : s,
-      ),
-    );
+    if (isFirstMessage && sessionBeforeSend) {
+      const titleText = userMessage.text || t("imageChat");
+      const newTitle = trimSessionTitle(titleText, 30);
+      void ChatService.renameSession(activeSessionId, newTitle, sessionBeforeSend.version)
+        .then((updated) => {
+          setSessions((prev) => prev.map((item) => item.id === activeSessionId ? {
+            ...item,
+            title: updated.title,
+            version: updated.version,
+            updatedAt: Date.parse(updated.updatedAt) || item.updatedAt,
+          } : item));
+        })
+        .catch((error) => console.error("Session title update failed", error));
+    }
 
-    const updatedSession = sessions.find((s) => s.id === currentSessionId)!;
-    const requestMessages = updatedSession.messages.concat(userMessage);
+    const updatedSession = sessionBeforeSend ?? sessions.find((s) => s.id === activeSessionId);
+    const requestMessages = [...(updatedSession?.messages ?? []), userMessage];
 
     // Abort previous generation if exist
     if (abortControllerRef.current) {
@@ -521,17 +601,18 @@ export const ChatView = () => {
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    const completionGeneration = ++streamCompletionRef.current;
 
     try {
       await ChatService.streamChat({
-        sessionId: currentSessionId,
+        sessionId: activeSessionId,
         model: selectedModel,
         messages: requestMessages,
         signal: abortController.signal,
         onMessageUpdate: (text) => {
           setSessions((prev) =>
             prev.map((s) => {
-              if (s.id === currentSessionId) {
+              if (s.id === activeSessionId) {
                 return {
                   ...s,
                   messages: s.messages.map((m) =>
@@ -546,7 +627,7 @@ export const ChatView = () => {
         onComplete: (completedMessage) => {
           if (completedMessage?.id) {
             setSessions((previous) => previous.map((session) =>
-              session.id === currentSessionId
+              session.id === activeSessionId
                 ? {
                     ...session,
                     messages: session.messages.map((message) =>
@@ -559,7 +640,23 @@ export const ChatView = () => {
             ));
           }
           setIsGenerating(false);
+          setStreamingMessageId(null);
           abortControllerRef.current = null;
+          const reconcileGeneration = completionGeneration;
+          void ChatService.loadSessionDetail(activeSessionId)
+            .then((serverMessages) => {
+              if (streamCompletionRef.current !== reconcileGeneration) return;
+              setSessions((previous) => previous.map((session) => {
+                if (session.id !== activeSessionId) {
+                  return session;
+                }
+                return {
+                  ...session,
+                  messages: reconcileTranscriptWithServer(session.messages, serverMessages),
+                };
+              }));
+            })
+            .catch((error) => console.error("Chat transcript reconcile failed", error));
         },
         onError: (failure) => {
           if (failure.message !== "AbortError") {
@@ -581,7 +678,7 @@ export const ChatView = () => {
             const errorText = `${translated}${hint}`.trim();
             setSessions((prev) =>
               prev.map((s) => {
-                if (s.id === currentSessionId) {
+                if (s.id === activeSessionId) {
                   return {
                     ...s,
                     messages: s.messages.map((m) =>
@@ -599,13 +696,14 @@ export const ChatView = () => {
             );
           }
           setIsGenerating(false);
+          setStreamingMessageId(null);
           abortControllerRef.current = null;
         },
       });
     } catch (e: any) {
       if (e.name !== "AbortError") {
         setIsGenerating(false);
-        abortControllerRef.current = null;
+        setStreamingMessageId(null);
       }
     }
   };
@@ -615,13 +713,16 @@ export const ChatView = () => {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       setIsGenerating(false);
+      setStreamingMessageId(null);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (!isChatInputDisabled) {
+        handleSend();
+      }
     }
   };
 
@@ -633,6 +734,7 @@ export const ChatView = () => {
         sessions={sessions}
         currentSessionId={currentSessionId}
         onNewChat={handleNewChat}
+        isNewChatDisabled={isCreatingSession}
         onSelectSession={handleSelectSession}
         onDeleteSession={handleDeleteSession}
         onRenameSession={handleRenameSession}
@@ -679,26 +781,33 @@ export const ChatView = () => {
               ref={scrollContainerRef}
               onScroll={handleScroll}
             >
-              <MessageList
-                messages={currentSession?.messages || []}
-                messagesEndRef={messagesEndRef}
-                onFeedback={handleMessageFeedback}
-                onOpenArtifact={(lang, code, mode) => {
-                  const finalMode =
-                    mode ||
-                    (["html", "svg", "xml", "md", "markdown"].includes(
-                      lang.toLowerCase(),
-                    )
-                      ? "preview"
-                      : "code");
-                  setArtifact({
-                    language: lang.toLowerCase(),
-                    code,
-                    mode: finalMode,
-                  });
-                  setIsArtifactOpen(true);
-                }}
-              />
+              {isSessionsBootstrapping ? (
+                <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+                  {t("loadingSessions")}
+                </div>
+              ) : (
+                <MessageList
+                  messages={currentSession?.messages || []}
+                  messagesEndRef={messagesEndRef}
+                  onFeedback={handleMessageFeedback}
+                  streamingMessageId={streamingMessageId}
+                  onOpenArtifact={(lang, code, mode) => {
+                    const finalMode =
+                      mode ||
+                      (["html", "svg", "xml", "md", "markdown"].includes(
+                        lang.toLowerCase(),
+                      )
+                        ? "preview"
+                        : "code");
+                    setArtifact({
+                      language: lang.toLowerCase(),
+                      code,
+                      mode: finalMode,
+                    });
+                    setIsArtifactOpen(true);
+                  }}
+                />
+              )}
             </div>
 
             <ChatInput
@@ -706,6 +815,7 @@ export const ChatView = () => {
               setInput={setInput}
               selectedImages={selectedImages}
               isGenerating={isGenerating}
+              inputDisabled={isChatInputDisabled}
               textareaRef={textareaRef}
               fileInputRef={fileInputRef}
               handleFileChange={handleFileChange}

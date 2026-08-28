@@ -231,6 +231,7 @@ pub async fn app_invoke_media_tool(
                 user_id: user_id.to_string(),
             },
             app_resource_id: format!("tool-call-direct-{user_id}"),
+            trace_id: context.trace_id.clone(),
         };
 
         // Run the synchronous pipeline on the blocking pool with a hard

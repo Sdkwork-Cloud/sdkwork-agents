@@ -17,8 +17,13 @@ use std::sync::Arc;
 
 use cloudrouter_open_sdk::models::{OpenAiChatCompletionRequest, OpenAiChatMessage};
 use cloudrouter_open_sdk::{SdkworkAiClient, SdkworkConfig};
-use sdkwork_agent_kernel::{HostProvider, KernelError, KernelResult, ModelRequest, ModelResponse, SecretRef};
-use sdkwork_agent_provider_rig::{ids, RigBackendConfig, RigBackendExecutor};
+use sdkwork_agent_kernel::{
+    HostProvider, KernelError, KernelResult, ModelDescriptor, ModelProvider, ModelRequest,
+    ModelResponse, ModelStreamChunk, ModelStreamSink, ProviderHealth, ProviderManifest, SecretRef,
+};
+use sdkwork_agent_provider_rig::{ids, RigBackendConfig, RigBackendExecutor, RigModelProvider};
+
+use crate::chat_stream::stream_chat_completion_blocking;
 
 /// Fallback model key sent when the turn carries no model id; the gateway
 /// account-pool router resolves it to the tenant's default account.
@@ -87,8 +92,6 @@ impl RigCloudRouterExecutor {
         })
     }
 
-    /// Applies credentials with the documented precedence: caller dual tokens
-    /// first (default), then the configured API key secret, then fail-closed.
     fn apply_credentials(
         &self,
         client: &SdkworkAiClient,
@@ -129,6 +132,50 @@ impl RigCloudRouterExecutor {
              llm.rig.api_key secret; neither was supplied",
         ))
     }
+
+    /// Resolves bearer credentials for the blocking stream client.
+    fn resolve_stream_credentials(
+        &self,
+        request: &ModelRequest,
+    ) -> KernelResult<(String, Option<String>)> {
+        if let Some(auth_token) = request
+            .auth_token
+            .as_deref()
+            .filter(|token| !token.trim().is_empty())
+        {
+            let access_token = request
+                .access_token
+                .as_deref()
+                .filter(|token| !token.trim().is_empty())
+                .map(str::to_string);
+            return Ok((auth_token.to_string(), access_token));
+        }
+        if let Some(secret_ref) = self
+            .config
+            .api_key_secret_ref
+            .as_deref()
+            .filter(|secret_ref| !secret_ref.trim().is_empty())
+        {
+            let secret = self
+                .host
+                .resolve_secret(SecretRef::new(secret_ref, "Rig cloud router API key"))?;
+            return Ok((secret.expose_value().to_string(), None));
+        }
+        Err(KernelError::provider_error(
+            "rig_cloudrouter_credentials_unavailable",
+            "RIG cloud router executor requires the caller auth token or a configured \
+             llm.rig.api_key secret; neither was supplied",
+        ))
+    }
+
+    fn stream_completion_request(
+        &self,
+        request: &ModelRequest,
+    ) -> OpenAiChatCompletionRequest {
+        let mut completion_request = build_chat_completion_request(request);
+        completion_request.stream = Some(true);
+        completion_request
+    }
 }
 
 impl RigBackendExecutor for RigCloudRouterExecutor {
@@ -167,6 +214,127 @@ impl RigBackendExecutor for RigCloudRouterExecutor {
         Ok(ModelResponse::text(request_id, ids::MODEL_PROVIDER_ID, content)
             .with_model_id(completion.model.clone())
             .with_finish_reason(finish_reason))
+    }
+}
+
+/// RIG model provider that adds live Cloud Router streaming on top of the
+/// standard invoke-only [`RigModelProvider`].
+#[derive(Clone)]
+pub struct RigCloudRouterModelProvider {
+    inner: RigModelProvider,
+    executor: Arc<RigCloudRouterExecutor>,
+}
+
+impl RigCloudRouterModelProvider {
+    pub fn new(
+        config: RigBackendConfig,
+        host: Arc<dyn HostProvider + Send + Sync>,
+    ) -> Self {
+        let executor = Arc::new(RigCloudRouterExecutor::new(config.clone(), host));
+        Self {
+            inner: RigModelProvider::with_executor(config, executor.clone()),
+            executor,
+        }
+    }
+
+    pub fn with_base_url(
+        config: RigBackendConfig,
+        host: Arc<dyn HostProvider + Send + Sync>,
+        base_url: impl Into<String>,
+    ) -> Self {
+        let executor = Arc::new(RigCloudRouterExecutor::with_base_url(
+            config.clone(),
+            host,
+            base_url,
+        ));
+        Self {
+            inner: RigModelProvider::with_executor(config, executor.clone()),
+            executor,
+        }
+    }
+}
+
+impl ModelProvider for RigCloudRouterModelProvider {
+    fn provider_manifest(&self) -> ProviderManifest {
+        self.inner.provider_manifest()
+    }
+
+    fn health(&self) -> ProviderHealth {
+        self.inner.health()
+    }
+
+    fn list_models(&self) -> Vec<ModelDescriptor> {
+        self.inner.list_models()
+    }
+
+    fn invoke(&self, request: ModelRequest) -> KernelResult<ModelResponse> {
+        self.inner.invoke(request)
+    }
+
+    fn stream(&self, request: ModelRequest) -> KernelResult<Vec<ModelStreamChunk>> {
+        let mut chunks = Vec::new();
+        self.stream_into(
+            request,
+            &mut CollectingModelStreamSink {
+                chunks: &mut chunks,
+            },
+        )?;
+        Ok(chunks)
+    }
+
+    fn stream_into(
+        &self,
+        request: ModelRequest,
+        sink: &mut dyn ModelStreamSink,
+    ) -> KernelResult<()> {
+        let model_request_id = request.model_request_id.clone();
+        let (auth_token, access_token) = self.executor.resolve_stream_credentials(&request)?;
+        let completion_request = self.executor.stream_completion_request(&request);
+        let mut sequence = 0u64;
+        let mut sink_error: Option<KernelError> = None;
+        stream_chat_completion_blocking(
+            self.executor.base_url(),
+            &auth_token,
+            access_token.as_deref(),
+            completion_request,
+            &mut |delta: &str| {
+                if sink_error.is_some() {
+                    return;
+                }
+                let chunk = ModelStreamChunk::output(&model_request_id, sequence, delta);
+                sequence += 1;
+                if let Err(error) = sink.push_chunk(chunk) {
+                    sink_error = Some(error);
+                }
+            },
+        )
+        .map_err(map_cloudrouter_kernel_error)?;
+        if let Some(error) = sink_error {
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn cancel(&self, model_request_id: &str) -> KernelResult<ModelResponse> {
+        self.inner.cancel(model_request_id)
+    }
+}
+
+struct CollectingModelStreamSink<'a> {
+    chunks: &'a mut Vec<ModelStreamChunk>,
+}
+
+impl ModelStreamSink for CollectingModelStreamSink<'_> {
+    fn push_chunk(&mut self, chunk: ModelStreamChunk) -> KernelResult<()> {
+        self.chunks.push(chunk);
+        Ok(())
+    }
+
+    fn push_event(
+        &mut self,
+        _event: sdkwork_agent_kernel::KernelEvent,
+    ) -> KernelResult<()> {
+        Ok(())
     }
 }
 
@@ -255,8 +423,8 @@ pub fn map_cloudrouter_kernel_error(error: cloudrouter_open_sdk::SdkworkError) -
         {
             "; 当前租户在账号池中未配置默认分组（Default）或分组下无可用账号"
         }
-        SdkworkError::HttpStatus { status, .. } if *status >= 500 => {
-            "; Cloud Router 账号池网关暂不可用，请稍后重试"
+        SdkworkError::HttpStatus { status, body } if *status >= 500 => {
+            crate::cloudrouter_http_error_hint(*status, body)
         }
         _ => "",
     };

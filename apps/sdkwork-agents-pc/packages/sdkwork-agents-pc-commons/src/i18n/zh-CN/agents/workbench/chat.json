@@ -54,6 +54,7 @@
   "cancel": "取消",
   "close": "关闭",
   "loading": "正在加载",
+  "loadingSessions": "正在加载对话…",
   "playground": {
     "modelPicker": {
       "vendorSection": "厂商",

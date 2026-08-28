@@ -10,6 +10,7 @@ sdkwork-agent-kernel.workspace = true
 sdkwork-agent-provider-rig.workspace = true
 sdkwork-agents-tool-contract.workspace = true
 cloudrouter-open-sdk.workspace = true
+reqwest.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 serde_json.workspace = true

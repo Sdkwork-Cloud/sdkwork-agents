@@ -25,6 +25,7 @@ dist/
 coverage/
 artifacts/
 **/artifacts/
+vendor/
 
 # SDKWork local runtime state
 .runtime/

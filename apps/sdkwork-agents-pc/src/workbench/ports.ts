@@ -13,6 +13,7 @@ export function configureAgentsWorkbenchPorts(): void {
     updateAgent: (agentId, patch) => agentService.updateAgent(agentId, patch),
     resolveOrCreateSession: (agentId, sessionId, title) =>
       agentChatService.resolveOrCreateNamedSession(agentId, sessionId, title),
+    createSession: (agentId, title) => agentChatService.createSessionSummary(agentId, title),
     listSessions: (agentId) => agentChatService.listSessionSummaries(agentId),
     updateSession: (agentId, sessionId, patch) =>
       agentChatService.updateSession(agentId, sessionId, patch),

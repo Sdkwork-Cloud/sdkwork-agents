@@ -11325,6 +11325,7 @@ name = "sdkwork-agents-tool-cloudrouter"
 version = "0.1.0"
 dependencies = [
  "cloudrouter-open-sdk",
+ "reqwest 0.12.28",
  "sdkwork-agent-kernel",
  "sdkwork-agent-provider-rig",
  "sdkwork-agents-tool-contract",
@@ -11468,7 +11469,15 @@ name = "sdkwork-api-assets-assembly"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.9",
+ "sdkwork-database-sqlx",
+ "sdkwork-drive-http",
+ "sdkwork-drive-workspace-service",
+ "sdkwork-routes-assets-app-api",
+ "sdkwork-routes-drive-app-api",
  "sdkwork-web-bootstrap",
+ "sdkwork-web-core",
+ "serde_json",
+ "sqlx",
  "tokio",
 ]
 
@@ -12120,6 +12129,24 @@ dependencies = [
  "sdkwork-routes-agents-http-shared",
  "sdkwork-web-contract",
  "tokio",
+ "tower 0.5.3",
+]
+
+[[package]]
+name = "sdkwork-routes-assets-app-api"
+version = "0.1.0"
+dependencies = [
+ "axum 0.8.9",
+ "chrono",
+ "sdkwork-drive-contract",
+ "sdkwork-drive-http",
+ "sdkwork-drive-workspace-service",
+ "sdkwork-routes-drive-app-api",
+ "sdkwork-utils-rust",
+ "sdkwork-web-core",
+ "serde",
+ "serde_json",
+ "sqlx",
  "tower 0.5.3",
 ]
 

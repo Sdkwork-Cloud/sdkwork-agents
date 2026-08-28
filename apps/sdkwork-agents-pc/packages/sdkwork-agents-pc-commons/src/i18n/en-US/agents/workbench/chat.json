@@ -54,6 +54,7 @@
   "cancel": "Cancel",
   "close": "Close",
   "loading": "Loading",
+  "loadingSessions": "Loading conversations…",
   "playground": {
     "modelPicker": {
       "vendorSection": "Vendors",

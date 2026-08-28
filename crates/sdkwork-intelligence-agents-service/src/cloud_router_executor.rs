@@ -11,6 +11,7 @@ use std::sync::{Arc, OnceLock};
 use cloudrouter_open_sdk::models::{OpenAiChatCompletionRequest, OpenAiChatMessage};
 use cloudrouter_open_sdk::SdkworkAiClient;
 use sdkwork_agent_kernel::KernelError;
+use sdkwork_agents_tool_cloudrouter::stream_chat_completion_blocking;
 
 use crate::domain::AgentSessionItemKind;
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
@@ -74,16 +75,32 @@ impl<T> CloudRouterFirstTurnExecutor<T> {
 /// through the cloud router SDK with the caller's dual tokens — intercepting
 /// them here would bypass the engine. Only engines without that capability
 /// (or unbound sessions) keep the direct account-pool shortcut.
-fn should_route_through_cloud_router(input: &TurnExecutionInput) -> bool {
-    let has_auth_token = input
+fn has_cloud_router_auth_token(input: &TurnExecutionInput) -> bool {
+    input
         .auth_token
         .as_deref()
-        .is_some_and(|token| !token.trim().is_empty());
-    if !has_auth_token {
+        .is_some_and(|token| !token.trim().is_empty())
+}
+
+fn should_route_through_cloud_router(input: &TurnExecutionInput) -> bool {
+    if !has_cloud_router_auth_token(input) {
         return false;
     }
     let binding_id = input.binding_id.as_deref().unwrap_or("");
     engine_key_for_binding_id(binding_id) != Some("rig")
+}
+
+/// Rig-bound sessions normally execute inside the RIG engine, but its
+/// in-process rust runtime buffers the full provider response before
+/// replaying stream frames. For live HTTP SSE turns we route through the
+/// blocking Cloud Router stream client instead so deltas reach the client
+/// as upstream chunks arrive.
+fn should_use_cloud_router_live_stream(input: &TurnExecutionInput) -> bool {
+    if !has_cloud_router_auth_token(input) {
+        return false;
+    }
+    let binding_id = input.binding_id.as_deref().unwrap_or("");
+    engine_key_for_binding_id(binding_id) == Some("rig")
 }
 
 impl<T> TurnExecutor for CloudRouterFirstTurnExecutor<T>
@@ -111,7 +128,13 @@ where
         prefer_stream: bool,
     ) -> TurnExecutionOutput {
         if should_route_through_cloud_router(input) {
-            complete_cloud_router_turn(input)
+            if prefer_stream {
+                complete_cloud_router_streaming_turn(input, None)
+            } else {
+                complete_cloud_router_turn(input)
+            }
+        } else if prefer_stream && should_use_cloud_router_live_stream(input) {
+            complete_cloud_router_streaming_turn(input, None)
         } else {
             self.fallback.complete_with_stream_preference(input, prefer_stream)
         }
@@ -122,10 +145,28 @@ where
         input: &TurnExecutionInput,
         sink: Arc<dyn TurnExecutionStreamSink>,
     ) -> TurnExecutionOutput {
-        if should_route_through_cloud_router(input) {
-            complete_cloud_router_turn(input)
+        if should_route_through_cloud_router(input) || should_use_cloud_router_live_stream(input) {
+            complete_cloud_router_streaming_turn(input, Some(sink.as_ref()))
         } else {
             self.fallback.complete_with_stream_sink(input, sink)
+        }
+    }
+}
+
+fn complete_cloud_router_streaming_turn(
+    input: &TurnExecutionInput,
+    sink: Option<&dyn TurnExecutionStreamSink>,
+) -> TurnExecutionOutput {
+    match execute_cloud_router_turn_streaming(input, sink) {
+        Ok(output) => output,
+        Err(error) => {
+            tracing::warn!(
+                session_id = %input.session.session_id,
+                turn_id = %input.turn_id,
+                error = %error,
+                "cloud router streaming turn execution failed"
+            );
+            inference_error_output(input, format!("cloud router turn failed: {error}"))
         }
     }
 }
@@ -140,8 +181,62 @@ fn complete_cloud_router_turn(input: &TurnExecutionInput) -> TurnExecutionOutput
                 error = %error,
                 "cloud router turn execution failed"
             );
-            inference_error_output(format!("cloud router turn failed: {error}"))
+            inference_error_output(input, format!("cloud router turn failed: {error}"))
         }
+    }
+}
+
+fn execute_cloud_router_turn_streaming(
+    input: &TurnExecutionInput,
+    sink: Option<&dyn TurnExecutionStreamSink>,
+) -> Result<TurnExecutionOutput, KernelError> {
+    let auth_token = input
+        .auth_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .ok_or_else(|| {
+            KernelError::validation("cloud router execution requires an auth token")
+        })?;
+    let request = build_chat_completion_request(input, true);
+    let access_token = input
+        .access_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty());
+    let mut on_delta = |delta: &str| {
+        if let Some(sink) = sink {
+            sink.push_delta(delta);
+        }
+    };
+    let streamed = stream_chat_completion_blocking(
+        &cloudrouter_base_url(),
+        auth_token,
+        access_token,
+        request,
+        &mut on_delta,
+    )
+    .map_err(cloud_router_error)?;
+    Ok(stream_output_from_cloud_router_stream(input, streamed))
+}
+
+fn stream_output_from_cloud_router_stream(
+    input: &TurnExecutionInput,
+    streamed: sdkwork_agents_tool_cloudrouter::CloudRouterChatStreamResult,
+) -> TurnExecutionOutput {
+    let output_tokens = estimate_tokens(&streamed.content);
+    TurnExecutionOutput {
+        model_request_id: Some(input.model_request_id.clone()),
+        finish_reason: streamed
+            .finish_reason
+            .or_else(|| Some("stop".to_string())),
+        content: streamed.content,
+        model_id: streamed.model,
+        provider_id: None,
+        provider_session_id: None,
+        input_tokens: estimate_tokens(&input.user_content),
+        output_tokens,
+        runtime_mode: RUNTIME_MODE_CLOUDROUTER,
+        stream_deltas: streamed.stream_deltas,
+        stream_events: Vec::new(),
     }
 }
 
@@ -156,7 +251,7 @@ fn execute_cloud_router_turn(
             KernelError::validation("cloud router execution requires an auth token")
         })?;
 
-    let request = build_chat_completion_request(input);
+    let request = build_chat_completion_request(input, false);
     let client = SdkworkAiClient::new_with_base_url(cloudrouter_base_url())
         .map_err(|error| {
             KernelError::provider_error("cloudrouter_client_unavailable", error.to_string())
@@ -217,7 +312,10 @@ fn execute_cloud_router_turn(
 /// `build_model_items` on the agent-engine path so both turn paths honor the
 /// same agent personality), followed by the `user`/`assistant` history and the
 /// current user content.
-fn build_chat_completion_request(input: &TurnExecutionInput) -> OpenAiChatCompletionRequest {
+fn build_chat_completion_request(
+    input: &TurnExecutionInput,
+    stream: bool,
+) -> OpenAiChatCompletionRequest {
     let mut messages: Vec<OpenAiChatMessage> = Vec::with_capacity(input.history.len() + 3);
     for (label, content) in [
         ("system", input.system_prompt.as_deref()),
@@ -260,7 +358,7 @@ fn build_chat_completion_request(input: &TurnExecutionInput) -> OpenAiChatComple
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_MODEL_KEY.to_string()),
         messages,
-        stream: Some(false),
+        stream: Some(stream),
         ..Default::default()
     }
 }
@@ -288,8 +386,8 @@ fn cloud_router_error(error: cloudrouter_open_sdk::SdkworkError) -> KernelError 
         {
             "; 当前租户在账号池中未配置默认分组（Default）或分组下无可用账号"
         }
-        SdkworkError::HttpStatus { status, .. } if *status >= 500 => {
-            "; Cloud Router 账号池网关暂不可用，请稍后重试"
+        SdkworkError::HttpStatus { status, body } if *status >= 500 => {
+            sdkwork_agents_tool_cloudrouter::cloudrouter_http_error_hint(*status, body)
         }
         _ => "",
     };
@@ -303,9 +401,9 @@ fn estimate_tokens(text: &str) -> u64 {
     (text.chars().count() / 4) as u64
 }
 
-fn inference_error_output(message: String) -> TurnExecutionOutput {
+fn inference_error_output(input: &TurnExecutionInput, message: String) -> TurnExecutionOutput {
     TurnExecutionOutput {
-        model_request_id: None,
+        model_request_id: Some(input.model_request_id.clone()),
         finish_reason: None,
         content: message,
         model_id: None,
@@ -392,7 +490,7 @@ mod tests {
     #[test]
     fn builds_openai_messages_from_turn_history() {
         let input = sample_input(Some("token"), Some("access"));
-        let request = build_chat_completion_request(&input);
+        let request = build_chat_completion_request(&input, false);
         assert_eq!(request.model, "rig.default-chat");
         assert_eq!(request.stream, Some(false));
         let roles: Vec<&str> = request.messages.iter().map(|m| m.role.as_str()).collect();
@@ -408,7 +506,7 @@ mod tests {
         let mut input = sample_input(Some("token"), Some("access"));
         input.system_prompt = Some("You are a helpful agent".to_string());
         input.welcome_message = Some("Hi! How can I help?".to_string());
-        let request = build_chat_completion_request(&input);
+        let request = build_chat_completion_request(&input, false);
         let roles: Vec<&str> = request.messages.iter().map(|m| m.role.as_str()).collect();
         assert_eq!(roles, vec!["system", "system", "user", "assistant", "user"]);
         assert_eq!(
@@ -425,7 +523,7 @@ mod tests {
     fn defaults_model_key_when_unset() {
         let mut input = sample_input(None, None);
         input.model_id = None;
-        let request = build_chat_completion_request(&input);
+        let request = build_chat_completion_request(&input, false);
         assert_eq!(request.model, "default");
     }
 
@@ -435,7 +533,7 @@ mod tests {
         impl TurnExecutor for RecordingFallback {
             fn complete(&self, input: &TurnExecutionInput) -> TurnExecutionOutput {
                 self.0.lock().unwrap().push(input.user_content.clone());
-                inference_error_output("fallback".to_string())
+                inference_error_output(input, "fallback".to_string())
             }
         }
         let fallback = RecordingFallback(std::sync::Mutex::new(Vec::new()));
@@ -445,6 +543,28 @@ mod tests {
         let output = executor.complete(&sample_input(None, None));
         assert!(output.content.contains("fallback"));
         assert_eq!(executor.fallback.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn streaming_request_sets_stream_flag() {
+        let input = sample_input(Some("token"), Some("access"));
+        let request = build_chat_completion_request(&input, true);
+        assert_eq!(request.stream, Some(true));
+    }
+
+    #[test]
+    fn rig_bound_session_uses_live_stream_shortcut_when_auth_present() {
+        let mut input = sample_input(Some("token"), Some("access"));
+        input.binding_id = Some("binding.rig".to_string());
+        assert!(!should_route_through_cloud_router(&input));
+        assert!(should_use_cloud_router_live_stream(&input));
+    }
+
+    #[test]
+    fn rig_bound_session_without_auth_does_not_use_live_stream_shortcut() {
+        let mut input = sample_input(None, None);
+        input.binding_id = Some("binding.rig".to_string());
+        assert!(!should_use_cloud_router_live_stream(&input));
     }
 
     #[test]

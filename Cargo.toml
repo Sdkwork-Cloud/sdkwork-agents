@@ -85,7 +85,7 @@ sdkwork-drive-uploader-service = { path = "../sdkwork-drive/crates/sdkwork-drive
 sdkwork-drive-object-runtime = { path = "../sdkwork-drive/crates/sdkwork-drive-object-runtime" }
 sdkwork-drive-workspace-service = { path = "../sdkwork-drive/crates/sdkwork-drive-workspace-service" }
 sdkwork-drive-storage-contract = { path = "../sdkwork-drive/crates/sdkwork-drive-storage-contract" }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 sdkwork-database-config = { path = "../sdkwork-database/crates/sdkwork-database-config" }
 sdkwork-database-sqlx = { path = "../sdkwork-database/crates/sdkwork-database-sqlx" }
 sdkwork-database-lifecycle = { path = "../sdkwork-database/crates/sdkwork-database-lifecycle" }

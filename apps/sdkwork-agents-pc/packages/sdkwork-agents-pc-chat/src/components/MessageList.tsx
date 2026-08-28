@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ChatMessage } from '@sdkwork/agents-pc-chat';
-import { ChatMessageItem } from './ChatMessageItem';
+import { ChatTurnRow } from './ChatTurnRow';
+import { groupMessagesIntoTurns } from '../utils/chatTurnGrouping';
+import './chat-turn-list.css';
 
 interface MessageListProps {
   messages: ChatMessage[];
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   onOpenArtifact: (lang: string, code: string, mode?: 'preview' | 'code') => void;
   onFeedback: (messageId: string, rating: 'up' | 'down' | undefined) => Promise<boolean>;
+  streamingMessageId?: string | null;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -16,14 +19,20 @@ export const MessageList: React.FC<MessageListProps> = ({
   messagesEndRef,
   onOpenArtifact,
   onFeedback,
+  streamingMessageId = null,
 }) => {
   const { t } = useTranslation('chat');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const feedback = Object.fromEntries(
-    messages
-      .filter((message) => message.feedback)
-      .map((message) => [message.id, message.feedback]),
-  ) as Record<string, 'up' | 'down'>;
+  const feedback = useMemo(
+    () => Object.fromEntries(
+      messages
+        .filter((message) => message.feedback)
+        .map((message) => [message.id, message.feedback]),
+    ) as Record<string, 'up' | 'down'>,
+    [messages],
+  );
+
+  const turns = useMemo(() => groupMessagesIntoTurns(messages), [messages]);
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -51,16 +60,17 @@ export const MessageList: React.FC<MessageListProps> = ({
   }
 
   return (
-    <div className="max-w-4xl mx-auto w-full pb-48 px-4 sm:px-6 pt-10 flex flex-col gap-10">
-      {messages.map((message) => (
-        <ChatMessageItem
-          key={message.id}
-          message={message}
+    <div className="chat-turn-list mx-auto w-full px-4 pb-48 pt-8 sm:px-6">
+      {turns.map((turn) => (
+        <ChatTurnRow
+          key={turn.id}
+          turn={turn}
           copiedId={copiedId}
           feedback={feedback}
           handleCopy={handleCopy}
           handleFeedback={handleFeedback}
           onOpenArtifact={onOpenArtifact}
+          streamingMessageId={streamingMessageId}
         />
       ))}
       <div ref={messagesEndRef} />
