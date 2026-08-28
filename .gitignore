@@ -65,3 +65,9 @@ Thumbs.db
 **/build/
 # Runtime-generated environment configuration
 **/public/runtime-env.json
+
+# SDKWork baseline ignore patterns (auto-appended)
+.pnpm-store/
+target/
+etc/**/*.local.*
+

@@ -6,6 +6,11 @@ import {
 } from "@sdkwork/agents-pc-chat";
 import { cn } from "@sdkwork/agents-pc-commons";
 import { ChatService } from "./services/ChatService";
+import {
+  createChatAgentScope,
+  DEFAULT_CHAT_AGENT_ID,
+  type ChatAgentScope,
+} from "./services/ChatService";
 import { bootstrapChatSessions } from './services/chatBootstrap';
 import { ProjectService } from "./services/ProjectService";
 import { useTranslation } from "react-i18next";
@@ -33,8 +38,10 @@ import {
   chatModelPickerGroups,
   createChatModelPickerFallback,
   createCustomProviderModelGroup,
-  persistChatSelectedModelId,
-  resolveChatSelectedModelId,
+  isChatModelIdKnown,
+  persistAgentChatSelectedModelId,
+  readStoredAgentChatSelectedModelId,
+  resolveAgentChatSelectedModelId,
 } from "./modelPicker/chatModelPickerCatalog";
 import type { ModelsPickerGroup } from "@sdkwork/models-pc-picker/model-picker-types";
 import type { AppliedCustomProvider } from "./components/CustomProviderDialog";
@@ -48,8 +55,36 @@ function resolveChatUploadPurpose(file: File): AgentsDriveUploadPurpose {
   return 'agent-chat-attachment';
 }
 
-export const ChatView = () => {
+export interface ChatViewProps {
+  /** Routes sessions and turns through a configured agent instead of agent.chat.default. */
+  agentId?: string;
+  agentName?: string;
+  welcomeMessage?: string;
+  agentSystemPrompt?: string;
+  agentModelId?: string;
+  /** Shows a back control for agent catalog surfaces. */
+  onBack?: () => void;
+}
+
+export const ChatView = ({
+  agentId,
+  agentName,
+  welcomeMessage,
+  agentSystemPrompt,
+  agentModelId,
+  onBack,
+}: ChatViewProps = {}) => {
   const { t, i18n } = useTranslation("chat");
+
+  const isAgentScopedChat = Boolean(agentId && agentId !== DEFAULT_CHAT_AGENT_ID);
+  const chatScope = useMemo<ChatAgentScope>(() => createChatAgentScope(
+    agentId ?? DEFAULT_CHAT_AGENT_ID,
+    {
+      title: agentName,
+      systemPrompt: agentSystemPrompt,
+      welcomeMessage,
+    },
+  ), [agentId, agentName, agentSystemPrompt, welcomeMessage]);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
@@ -69,7 +104,19 @@ export const ChatView = () => {
     }
   });
 
-  const [selectedModel, setSelectedModel] = useState(resolveChatSelectedModelId);
+  const [selectedModel, setSelectedModel] = useState(() =>
+    resolveAgentChatSelectedModelId(agentId, agentModelId),
+  );
+
+  useEffect(() => {
+    if (!isAgentScopedChat || !agentModelId) {
+      return;
+    }
+    const stored = readStoredAgentChatSelectedModelId(agentId!);
+    if (!stored && isChatModelIdKnown(agentModelId)) {
+      setSelectedModel(agentModelId);
+    }
+  }, [agentId, agentModelId, isAgentScopedChat]);
 
   useEffect(() => {
     void ProjectService.getProjects()
@@ -81,7 +128,7 @@ export const ChatView = () => {
     let active = true;
     void (async () => {
       try {
-        const bootstrapped = await bootstrapChatSessions(selectedModel, t("newChat"));
+        const bootstrapped = await bootstrapChatSessions(selectedModel, t("newChat"), chatScope);
         if (!active) return;
 
         setSessions(bootstrapped.sessions);
@@ -89,7 +136,7 @@ export const ChatView = () => {
 
         const initialSessionId = bootstrapped.currentSessionId;
         const requestId = ++sessionDetailRequestRef.current;
-        void ChatService.loadSessionDetail(initialSessionId)
+        void ChatService.loadSessionDetail(initialSessionId, chatScope)
           .then((messages) => {
             if (!active || sessionDetailRequestRef.current !== requestId) return;
             setSessions((prev) =>
@@ -108,7 +155,7 @@ export const ChatView = () => {
       } catch (error) {
         console.error("Chat history load failed", error);
         try {
-          const created = await ChatService.createSession(selectedModel, t("newChat"));
+          const created = await ChatService.createSession(selectedModel, t("newChat"), chatScope);
           if (!active) return;
           setSessions([created]);
           setCurrentSessionId(created.id);
@@ -142,8 +189,8 @@ export const ChatView = () => {
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
   useEffect(() => {
-    persistChatSelectedModelId(selectedModel);
-  }, [selectedModel]);
+    persistAgentChatSelectedModelId(agentId, selectedModel);
+  }, [selectedModel, agentId]);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [isCustomProviderOpen, setIsCustomProviderOpen] = useState(false);
   const [customProviderGroups, setCustomProviderGroups] = useState<ModelsPickerGroup[]>([]);
@@ -254,7 +301,7 @@ export const ChatView = () => {
   const handleNewChat = useCallback(() => {
     if (isCreatingSession) return;
     setIsCreatingSession(true);
-    void ChatService.createSession(selectedModel, t("newChat"))
+    void ChatService.createSession(selectedModel, t("newChat"), chatScope)
       .then((created) => {
         setSessions((prev) => [created, ...prev]);
         setCurrentSessionId(created.id);
@@ -296,7 +343,7 @@ export const ChatView = () => {
     const session = sessions.find((item) => item.id === id);
     if (!session) return;
     const title = trimSessionTitle(newTitle);
-    const updated = await ChatService.renameSession(id, title, session.version);
+    const updated = await ChatService.renameSession(id, title, session.version, chatScope);
     setSessions((prev) => prev.map((item) => item.id === id ? {
       ...item,
       title: updated.title,
@@ -318,6 +365,7 @@ export const ChatView = () => {
         id,
         pinned,
         session.userStateVersion,
+        chatScope,
       );
       setSessions((previous) => previous.map((item) => item.id === id ? {
         ...item,
@@ -360,6 +408,7 @@ export const ChatView = () => {
         messageId,
         rating,
         message.feedbackVersion,
+        chatScope,
       );
       setSessions((previous) => previous.map((item) => item.id === session.id ? {
         ...item,
@@ -421,7 +470,7 @@ export const ChatView = () => {
     const session = sessions.find((s) => s.id === id);
     if (session && session.messages.length === 0) {
       const requestId = ++sessionDetailRequestRef.current;
-      void ChatService.loadSessionDetail(id)
+      void ChatService.loadSessionDetail(id, chatScope)
         .then((messages) => {
           if (sessionDetailRequestRef.current !== requestId) return;
           setSessions((prev) =>
@@ -443,7 +492,7 @@ export const ChatView = () => {
   const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     try {
-      await ChatService.deleteSession(id);
+      await ChatService.deleteSession(id, chatScope);
     } catch (error) {
       console.error("Chat session delete failed", error);
       return;
@@ -472,7 +521,7 @@ export const ChatView = () => {
   const handleMoveSessionToProject = async (sessionId: string, project: ChatProject) => {
     const session = sessions.find((item) => item.id === sessionId);
     if (!session) return;
-    const updated = await ChatService.moveSession(sessionId, project.projectId, session.version);
+    const updated = await ChatService.moveSession(sessionId, project.projectId, session.version, chatScope);
     setSessions((previous) => previous.map((item) => item.id === sessionId ? {
       ...item,
       projectId: project.projectId,
@@ -579,7 +628,7 @@ export const ChatView = () => {
     if (isFirstMessage && sessionBeforeSend) {
       const titleText = userMessage.text || t("imageChat");
       const newTitle = trimSessionTitle(titleText, 30);
-      void ChatService.renameSession(activeSessionId, newTitle, sessionBeforeSend.version)
+      void ChatService.renameSession(activeSessionId, newTitle, sessionBeforeSend.version, chatScope)
         .then((updated) => {
           setSessions((prev) => prev.map((item) => item.id === activeSessionId ? {
             ...item,
@@ -608,6 +657,7 @@ export const ChatView = () => {
         sessionId: activeSessionId,
         model: selectedModel,
         messages: requestMessages,
+        scope: chatScope,
         signal: abortController.signal,
         onMessageUpdate: (text) => {
           setSessions((prev) =>
@@ -643,7 +693,7 @@ export const ChatView = () => {
           setStreamingMessageId(null);
           abortControllerRef.current = null;
           const reconcileGeneration = completionGeneration;
-          void ChatService.loadSessionDetail(activeSessionId)
+          void ChatService.loadSessionDetail(activeSessionId, chatScope)
             .then((serverMessages) => {
               if (streamCompletionRef.current !== reconcileGeneration) return;
               setSessions((previous) => previous.map((session) => {
@@ -774,6 +824,8 @@ export const ChatView = () => {
               setIsModelSelectorOpen={setIsModelSelectorOpen}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onManageCustomProvider={() => setIsCustomProviderOpen(true)}
+              agentTitle={isAgentScopedChat ? agentName : undefined}
+              onBack={onBack}
             />
 
             <div
@@ -791,6 +843,8 @@ export const ChatView = () => {
                   messagesEndRef={messagesEndRef}
                   onFeedback={handleMessageFeedback}
                   streamingMessageId={streamingMessageId}
+                  welcomeTitle={isAgentScopedChat ? agentName : undefined}
+                  welcomeDescription={isAgentScopedChat ? welcomeMessage : undefined}
                   onOpenArtifact={(lang, code, mode) => {
                     const finalMode =
                       mode ||

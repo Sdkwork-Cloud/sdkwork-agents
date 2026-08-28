@@ -19,6 +19,14 @@ import {
   type SdkworkAgentsPromptsAppClient,
 } from '@sdkwork/agents-pc-core/sdk/promptsAppSdkClient';
 import {
+  configureFeedsOpenSdkClientProvider,
+  type SdkworkFeedsClient,
+} from '@sdkwork/agents-pc-core/sdk/feedsOpenSdkClient';
+import {
+  configureSkillsAppSdkClientProvider,
+  type SdkworkSkillsAppClient,
+} from '@sdkwork/agents-pc-core/sdk/skillsAppSdkClient';
+import {
   configureAgentsTokenPlanRuntime,
   type AgentsTokenPlanRuntime,
 } from '@sdkwork/agents-pc-membership/runtime';
@@ -33,6 +41,10 @@ export interface AgentsWorkbenchRuntime extends AgentsHomeRuntime {
   getCommunityAppSdkClient?: () => SdkworkCommunityAppClient;
   /** Optional host-injected generations SDK client (portal/gateway sessions). */
   getGenerationsAppSdkClient?: () => SdkworkGenerationsAppClient;
+  /** Optional host-injected feeds open SDK client (portal api-assembly gateway). */
+  getFeedsOpenSdkClient?: () => SdkworkFeedsClient;
+  /** Optional host-injected skills app SDK client (portal/gateway sessions). */
+  getSkillsAppSdkClient?: () => SdkworkSkillsAppClient;
   tokenPlan?: AgentsTokenPlanRuntime;
 }
 
@@ -45,6 +57,12 @@ export function configureAgentsWorkbenchRuntime(runtime: AgentsWorkbenchRuntime)
   }
   if (runtime.getCommunityAppSdkClient) {
     configureCommunityAppSdkClientProvider(runtime.getCommunityAppSdkClient);
+  }
+  if (runtime.getFeedsOpenSdkClient) {
+    configureFeedsOpenSdkClientProvider(runtime.getFeedsOpenSdkClient);
+  }
+  if (runtime.getSkillsAppSdkClient) {
+    configureSkillsAppSdkClientProvider(runtime.getSkillsAppSdkClient);
   }
   configureAgentsTokenPlanRuntime(runtime.tokenPlan ?? null);
   configureAgentsWorkbenchPorts();

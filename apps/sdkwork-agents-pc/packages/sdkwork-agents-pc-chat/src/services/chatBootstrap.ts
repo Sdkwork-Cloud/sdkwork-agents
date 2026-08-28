@@ -1,11 +1,15 @@
-import { ChatService } from '../services/ChatService';
+import { ChatService, DEFAULT_CHAT_AGENT_SCOPE, type ChatAgentScope } from '../services/ChatService';
 
 export interface ChatBootstrapResult {
   sessions: Awaited<ReturnType<typeof ChatService.loadSessions>>;
   currentSessionId: string;
 }
 
-let bootstrapPromise: Promise<ChatBootstrapResult> | null = null;
+const bootstrapPromises = new Map<string, Promise<ChatBootstrapResult>>();
+
+function bootstrapCacheKey(scope: ChatAgentScope): string {
+  return scope.agentId;
+}
 
 /**
  * Ensures session bootstrap runs once per page load (React Strict Mode safe).
@@ -14,30 +18,38 @@ let bootstrapPromise: Promise<ChatBootstrapResult> | null = null;
 export function bootstrapChatSessions(
   model: string,
   newChatTitle: string,
+  scope?: ChatAgentScope,
 ): Promise<ChatBootstrapResult> {
-  if (!bootstrapPromise) {
-    bootstrapPromise = (async () => {
-      const remoteSessions = await ChatService.loadSessions(model);
-      if (remoteSessions.length === 0) {
-        const created = await ChatService.createSession(model, newChatTitle);
-        return {
-          sessions: [created],
-          currentSessionId: created.id,
-        };
-      }
-      return {
-        sessions: remoteSessions,
-        currentSessionId: remoteSessions[0].id,
-      };
-    })().catch((error) => {
-      bootstrapPromise = null;
-      throw error;
-    });
+  const resolvedScope = scope ?? DEFAULT_CHAT_AGENT_SCOPE;
+  const cacheKey = bootstrapCacheKey(resolvedScope);
+  const existing = bootstrapPromises.get(cacheKey);
+  if (existing) {
+    return existing;
   }
-  return bootstrapPromise;
+
+  const promise = (async () => {
+    const remoteSessions = await ChatService.loadSessions(model, resolvedScope);
+    if (remoteSessions.length === 0) {
+      const created = await ChatService.createSession(model, newChatTitle, resolvedScope);
+      return {
+        sessions: [created],
+        currentSessionId: created.id,
+      };
+    }
+    return {
+      sessions: remoteSessions,
+      currentSessionId: remoteSessions[0].id,
+    };
+  })().catch((error) => {
+    bootstrapPromises.delete(cacheKey);
+    throw error;
+  });
+
+  bootstrapPromises.set(cacheKey, promise);
+  return promise;
 }
 
 /** Test-only reset for isolated unit tests. */
 export function resetChatBootstrapForTests(): void {
-  bootstrapPromise = null;
+  bootstrapPromises.clear();
 }

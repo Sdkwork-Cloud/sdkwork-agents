@@ -12,6 +12,8 @@ interface MessageListProps {
   onOpenArtifact: (lang: string, code: string, mode?: 'preview' | 'code') => void;
   onFeedback: (messageId: string, rating: 'up' | 'down' | undefined) => Promise<boolean>;
   streamingMessageId?: string | null;
+  welcomeTitle?: string;
+  welcomeDescription?: string;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -20,6 +22,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   onOpenArtifact,
   onFeedback,
   streamingMessageId = null,
+  welcomeTitle,
+  welcomeDescription,
 }) => {
   const { t } = useTranslation('chat');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -51,9 +55,11 @@ export const MessageList: React.FC<MessageListProps> = ({
         <div className="w-16 h-16 bg-gradient-to-tr from-[#1890ff] to-[#096dd9] text-white rounded-2xl flex items-center justify-center mb-6 shadow-[#1890ff]/20 shadow-xl border border-[#1890ff]/30 ring-4 ring-[#1890ff]/10">
           <Sparkles size={32} className="text-white drop-shadow-md" />
         </div>
-        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">{t('howCanIHelp')}</h2>
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
+          {welcomeTitle ?? t('howCanIHelp')}
+        </h2>
         <p className="text-[15px] leading-relaxed text-gray-500 dark:text-gray-400 max-w-sm">
-          {t('welcomeDescription')}
+          {welcomeDescription ?? t('welcomeDescription')}
         </p>
       </div>
     );

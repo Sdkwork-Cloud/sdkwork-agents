@@ -3,11 +3,16 @@ export {
   callerScopeGrantsAgentManage,
   configureChatAgentPermissionScopeReader,
   configureChatAgentPort,
+  createChatAgentScope,
+  DEFAULT_CHAT_AGENT_ID,
+  DEFAULT_CHAT_AGENT_SCOPE,
+  isDefaultChatAgentScope,
 } from './services/ChatService';
 export type {
   ChatAgentConfig,
   ChatAgentPermissionScopeReader,
   ChatAgentPort,
+  ChatAgentScope,
   ChatServiceOptions,
 } from './services/ChatService';
 export { ProjectService, configureProjectPort } from './services/ProjectService';
@@ -20,4 +25,5 @@ export type {
   ProjectSettingsData,
 } from './services/ProjectService';
 export type { ChatMessage, ChatSession, MessageRole } from './types';
+export type { ChatViewProps } from './ChatView';
 export type { ChatPcSession } from './session';

@@ -1434,6 +1434,9 @@ importers:
 
   apps/sdkwork-agents-pc/packages/sdkwork-agents-pc-agents:
     dependencies:
+      '@sdkwork/agents-pc-chat':
+        specifier: workspace:*
+        version: link:../sdkwork-agents-pc-chat
       '@sdkwork/agents-pc-commons':
         specifier: workspace:*
         version: link:../sdkwork-agents-pc-commons
@@ -1575,9 +1578,6 @@ importers:
       react-markdown:
         specifier: 'catalog:'
         version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
-      react-syntax-highlighter:
-        specifier: ^16.1.1
-        version: 16.1.1(react@19.2.7)
       rehype-sanitize:
         specifier: ^6.0.0
         version: 6.0.0
