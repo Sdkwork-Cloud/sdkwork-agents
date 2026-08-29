@@ -56,9 +56,19 @@ fn invoke_speech_create(
     let client = CloudRouterMediaClient::from_env();
     let sdk = client.with_auth_token(auth_token)?;
     client.with_trace_id(&sdk, call.trace_id.as_deref());
-    let audio_url = run_sync(&call.tool_id, |runtime| {
+    let audio_bytes = run_sync(&call.tool_id, |runtime| {
         runtime.block_on(sdk.audio().create_speech(&request))
     })?;
+    if audio_bytes.is_empty() {
+        return Err(MediaToolError::ProviderError(
+            "speech synthesis returned no audio bytes".to_string(),
+        ));
+    }
+    use base64::Engine as _;
+    let audio_url = format!(
+        "data:audio/mpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&audio_bytes)
+    );
 
     let resource = MediaResource::provider_asset("audio", audio_url);
     Ok(MediaToolResult::succeeded_with_resource(

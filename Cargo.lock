@@ -11313,6 +11313,7 @@ dependencies = [
 name = "sdkwork-agents-tool-audio"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "cloudrouter-open-sdk",
  "sdkwork-agent-kernel",
  "sdkwork-agents-tool-cloudrouter",
@@ -11516,6 +11517,7 @@ dependencies = [
  "sdkwork-api-drive-assembly",
  "sdkwork-database-sqlx",
  "sdkwork-generations-database-host",
+ "sdkwork-generations-provider-adapter",
  "sdkwork-iam-database-host",
  "sdkwork-iam-embedded-application-bootstrap",
  "sdkwork-iam-web-adapter",
@@ -11848,6 +11850,21 @@ dependencies = [
  "dotenvy",
  "sdkwork-database-config",
  "sdkwork-database-sqlx",
+]
+
+[[package]]
+name = "sdkwork-generations-provider-adapter"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "cloudrouter-open-sdk",
+ "sdkwork-intelligence-generations-service",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

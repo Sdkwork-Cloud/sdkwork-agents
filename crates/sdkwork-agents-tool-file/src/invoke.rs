@@ -29,7 +29,10 @@ fn invoke_upload(
 ) -> Result<MediaToolResult, MediaToolError> {
     let auth_token = CloudRouterMediaClient::require_auth_token(auth_token, &call.tool_id)?;
     let request = OpenAiFileUploadRequest {
-        file: call.string_arg("file")?,
+        // The generated SDK binds the multipart file part as bytes; the tool
+        // contract accepts a URL/asset reference string, which the gateway
+        // registers as the file payload (existing behavior, now explicit).
+        file: call.string_arg("file")?.into_bytes(),
         purpose: call
             .optional_string_arg("purpose")
             .filter(|value| !value.trim().is_empty())
