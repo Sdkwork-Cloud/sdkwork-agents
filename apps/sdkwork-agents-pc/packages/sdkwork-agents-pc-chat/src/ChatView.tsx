@@ -674,6 +674,57 @@ export const ChatView = ({
             }),
           );
         },
+        onReasoning: (reasoning) => {
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id !== activeSessionId) return s;
+              return {
+                ...s,
+                messages: s.messages.map((m) =>
+                  m.id === modelMessageId
+                    ? { ...m, reasoning: (m.reasoning ?? '') + reasoning }
+                    : m,
+                ),
+              };
+            }),
+          );
+        },
+        onToolEvent: (event) => {
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id !== activeSessionId) return s;
+              return {
+                ...s,
+                messages: s.messages.map((m) => {
+                  if (m.id !== modelMessageId) return m;
+                  const toolCalls = m.toolCalls ? [...m.toolCalls] : [];
+                  if (event.phase === 'start') {
+                    toolCalls.push({
+                      id: event.toolCallId ?? `tool-${toolCalls.length}`,
+                      name: event.toolName,
+                      status: 'running',
+                      arguments: '',
+                    });
+                  } else if (event.phase === 'delta') {
+                    const last = toolCalls[toolCalls.length - 1];
+                    if (last && (event.toolCallId == null || last.id === event.toolCallId)) {
+                      last.arguments = `${last.arguments ?? ''}${event.delta ?? ''}`;
+                    }
+                  } else if (event.phase === 'stop') {
+                    const target = event.toolCallId
+                      ? toolCalls.find((call) => call.id === event.toolCallId)
+                      : toolCalls[toolCalls.length - 1];
+                    if (target) {
+                      target.status = 'completed';
+                      if (event.toolName) target.name = event.toolName;
+                    }
+                  }
+                  return { ...m, toolCalls };
+                }),
+              };
+            }),
+          );
+        },
         onComplete: (completedMessage) => {
           if (completedMessage?.id) {
             setSessions((previous) => previous.map((session) =>

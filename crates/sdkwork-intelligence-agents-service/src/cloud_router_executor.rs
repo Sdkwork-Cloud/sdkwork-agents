@@ -202,9 +202,9 @@ fn execute_cloud_router_turn_streaming(
         .access_token
         .as_deref()
         .filter(|token| !token.trim().is_empty());
-    let mut on_delta = |delta: &str| {
+    let mut on_delta = |delta: sdkwork_agents_tool_cloudrouter::CloudRouterStreamDelta| {
         if let Some(sink) = sink {
-            sink.push_delta(delta);
+            sink.push_delta(&delta.content);
         }
     };
     let streamed = stream_chat_completion_blocking(

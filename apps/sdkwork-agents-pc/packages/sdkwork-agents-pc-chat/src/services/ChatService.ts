@@ -1,4 +1,4 @@
-import type { ChatMessage } from '../types';
+import type { ChatMessage, ChatToolStreamEvent } from '../types';
 import { trimSessionTitle } from '../utils/sessionTitleUtils';
 import type { AgentsDriveMediaResource } from '@sdkwork/agents-pc-core/sdk/driveUploadService';
 import { createSdkworkChatRequestContext } from '@sdkwork/agents-pc-core/session';
@@ -49,6 +49,10 @@ export interface ChatServiceOptions {
   signal?: AbortSignal;
   scope?: ChatAgentScope;
   onMessageUpdate: (text: string) => void;
+  /** Reasoning/thinking delta streamed for the assistant message. */
+  onReasoning?: (reasoning: string) => void;
+  /** Tool/skill/MCP invocation lifecycle event for the assistant message. */
+  onToolEvent?: (event: ChatToolStreamEvent) => void;
   onComplete?: (message?: { id: string }) => void;
   onError?: (failure: ChatSendFailure) => void;
 }
@@ -148,6 +152,8 @@ export interface ChatAgentPort {
     media: AgentsDriveMediaResource[] | undefined,
     onDelta: (delta: string) => void,
     systemPrompt?: string,
+    onReasoning?: (reasoning: string) => void,
+    onToolEvent?: (event: ChatToolStreamEvent) => void,
   ): Promise<{ id: string; content: string }>;
 }
 
@@ -523,6 +529,8 @@ export class ChatService {
             latest.mediaResources,
             (delta) => options.onMessageUpdate(delta),
             systemPrompt,
+            (reasoning) => options.onReasoning?.(reasoning),
+            (event) => options.onToolEvent?.(event),
           )
         : await port.sendMessage(
             resolvedScope.agentId,

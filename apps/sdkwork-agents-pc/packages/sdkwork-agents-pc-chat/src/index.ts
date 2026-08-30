@@ -24,6 +24,6 @@ export type {
   ProjectPort,
   ProjectSettingsData,
 } from './services/ProjectService';
-export type { ChatMessage, ChatSession, MessageRole } from './types';
+export type { ChatMessage, ChatSession, ChatToolCall, ChatToolStreamEvent, MessageRole } from './types';
 export type { ChatViewProps } from './ChatView';
 export type { ChatPcSession } from './session';

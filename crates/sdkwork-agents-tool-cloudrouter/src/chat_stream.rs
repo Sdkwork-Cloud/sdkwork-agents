@@ -1,7 +1,7 @@
 //! Live OpenAI-compatible chat completion streaming against the Cloud Router gateway.
 //!
 //! Uses the blocking reqwest client so turn workers can incrementally parse upstream
-//! SSE without nesting Tokio runtimes inside `spawn_blocking` workers.
+//! SSE without nesting Tokio runtimes inside \`spawn_blocking\` workers.
 
 use std::io::Read;
 use std::sync::OnceLock;
@@ -20,23 +20,71 @@ const STREAM_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudRouterChatStreamResult {
     pub content: String,
+    /// Model reasoning/thinking text, kept separate from the visible answer so
+    /// callers can render it as a distinct (collapsible) reasoning block.
+    pub reasoning_content: String,
+    /// Accumulated OpenAI-compatible tool-call argument fragments (JSON), one
+    /// string per streamed tool-call argument delta.
+    pub tool_call_fragments: Vec<String>,
     pub stream_deltas: Vec<String>,
     pub model: Option<String>,
     pub finish_reason: Option<String>,
 }
 
-/// Extracts assistant text from one OpenAI-compatible `chat.completion.chunk` payload.
-pub fn extract_openai_stream_delta(chunk: &Value) -> Option<String> {
+/// One streamed \`chat.completion.chunk\` delta normalized for consumers. This is
+/// the unit delivered to the streaming callback so callers can distinguish the
+/// visible answer, the model reasoning, and tool-call arguments.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CloudRouterStreamDelta {
+    /// Visible answer text for this chunk (empty when the chunk is not text).
+    pub content: String,
+    /// Reasoning/thinking text for this chunk (empty when the chunk has none).
+    pub reasoning_content: String,
+    /// Serialized \`tool_calls\` array fragment for this chunk (empty when none).
+    pub tool_calls: String,
+}
+
+/// Extracts visible assistant text from one OpenAI-compatible chunk delta.
+pub fn extract_openai_stream_content(chunk: &Value) -> Option<String> {
     let choice = chunk.get("choices")?.as_array()?.first()?;
     let delta = choice.get("delta")?;
-    for key in ["content", "reasoning_content"] {
-        if let Some(content) = delta.get(key).and_then(Value::as_str) {
-            if !content.is_empty() {
-                return Some(content.to_string());
+    delta
+        .get("content")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Extracts reasoning/thinking text from one OpenAI-compatible chunk delta.
+pub fn extract_openai_stream_reasoning(chunk: &Value) -> Option<String> {
+    let choice = chunk.get("choices")?.as_array()?.first()?;
+    let delta = choice.get("delta")?;
+    for key in ["reasoning_content", "reasoning"] {
+        if let Some(reasoning) = delta.get(key).and_then(Value::as_str) {
+            if !reasoning.is_empty() {
+                return Some(reasoning.to_string());
             }
         }
     }
     None
+}
+
+/// Extracts the \`tool_calls\` array fragment (if any) from a chunk delta as JSON.
+fn extract_openai_stream_tool_calls(chunk: &Value) -> Option<String> {
+    let choice = chunk.get("choices")?.as_array()?.first()?;
+    let delta = choice.get("delta")?;
+    match delta.get("tool_calls") {
+        Some(Value::Array(items)) if !items.is_empty() => serde_json::to_string(items).ok(),
+        _ => None,
+    }
+}
+
+/// Builds a normalized streaming delta from one \`chat.completion.chunk\` payload.
+fn normalize_stream_delta(chunk: &Value) -> CloudRouterStreamDelta {
+    CloudRouterStreamDelta {
+        content: extract_openai_stream_content(chunk).unwrap_or_default(),
+        reasoning_content: extract_openai_stream_reasoning(chunk).unwrap_or_default(),
+        tool_calls: extract_openai_stream_tool_calls(chunk).unwrap_or_default(),
+    }
 }
 
 fn extract_finish_reason(chunk: &Value) -> Option<String> {
@@ -86,10 +134,12 @@ fn normalize_sse_buffer(buffer: &mut String) {
 fn consume_sse_data_line(
     data: &str,
     content: &mut String,
+    reasoning_content: &mut String,
+    tool_call_fragments: &mut Vec<String>,
     stream_deltas: &mut Vec<String>,
     model: &mut Option<String>,
     finish_reason: &mut Option<String>,
-    on_delta: &mut dyn FnMut(&str),
+    on_delta: &mut dyn FnMut(CloudRouterStreamDelta),
 ) {
     if data == "[DONE]" {
         return;
@@ -103,20 +153,33 @@ fn consume_sse_data_line(
     if let Some(reason) = extract_finish_reason(&chunk) {
         *finish_reason = Some(reason);
     }
-    if let Some(delta) = extract_openai_stream_delta(&chunk) {
-        content.push_str(&delta);
-        stream_deltas.push(delta.clone());
-        on_delta(&delta);
+    let delta = normalize_stream_delta(&chunk);
+    if !delta.content.is_empty() {
+        content.push_str(&delta.content);
+        stream_deltas.push(delta.content.clone());
+    }
+    if !delta.reasoning_content.is_empty() {
+        reasoning_content.push_str(&delta.reasoning_content);
+    }
+    if !delta.tool_calls.is_empty() {
+        tool_call_fragments.push(delta.tool_calls.clone());
+    }
+    if !(delta.content.is_empty() && delta.reasoning_content.is_empty() && delta.tool_calls.is_empty())
+    {
+        on_delta(delta);
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn consume_sse_buffer(
     buffer: &mut String,
     content: &mut String,
+    reasoning_content: &mut String,
+    tool_call_fragments: &mut Vec<String>,
     stream_deltas: &mut Vec<String>,
     model: &mut Option<String>,
     finish_reason: &mut Option<String>,
-    on_delta: &mut dyn FnMut(&str),
+    on_delta: &mut dyn FnMut(CloudRouterStreamDelta),
 ) {
     normalize_sse_buffer(buffer);
     while let Some(pos) = buffer.find("\n\n") {
@@ -133,6 +196,8 @@ fn consume_sse_buffer(
             consume_sse_data_line(
                 data.trim(),
                 content,
+                reasoning_content,
+                tool_call_fragments,
                 stream_deltas,
                 model,
                 finish_reason,
@@ -142,13 +207,16 @@ fn consume_sse_buffer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn flush_remaining_sse_events(
     buffer: &str,
     content: &mut String,
+    reasoning_content: &mut String,
+    tool_call_fragments: &mut Vec<String>,
     stream_deltas: &mut Vec<String>,
     model: &mut Option<String>,
     finish_reason: &mut Option<String>,
-    on_delta: &mut dyn FnMut(&str),
+    on_delta: &mut dyn FnMut(CloudRouterStreamDelta),
 ) {
     let mut tail = buffer.to_string();
     normalize_sse_buffer(&mut tail);
@@ -163,6 +231,8 @@ fn flush_remaining_sse_events(
         consume_sse_data_line(
             data.trim(),
             content,
+            reasoning_content,
+            tool_call_fragments,
             stream_deltas,
             model,
             finish_reason,
@@ -182,8 +252,9 @@ fn streaming_client() -> &'static Client {
     })
 }
 
-/// Streams one chat completion from the Cloud Router gateway, invoking `on_delta`
-/// for every provider text chunk as it is parsed from the upstream SSE body.
+/// Streams one chat completion from the Cloud Router gateway, invoking \`on_delta\`
+/// for every provider delta (visible text, reasoning, tool-call arguments) as it
+/// is parsed from the upstream SSE body.
 ///
 /// Fails closed: callers must not fall back to buffered completion when this
 /// returns an error.
@@ -192,7 +263,7 @@ pub fn stream_chat_completion_blocking(
     auth_token: &str,
     access_token: Option<&str>,
     mut request: OpenAiChatCompletionRequest,
-    on_delta: &mut dyn FnMut(&str),
+    on_delta: &mut dyn FnMut(CloudRouterStreamDelta),
 ) -> Result<CloudRouterChatStreamResult, SdkworkError> {
     request.stream = Some(true);
 
@@ -201,10 +272,7 @@ pub fn stream_chat_completion_blocking(
     headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-    let url = format!(
-        "{}/v1/chat/completions",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
     let client = streaming_client();
     let mut response = client
         .post(url)
@@ -223,6 +291,8 @@ pub fn stream_chat_completion_blocking(
 
     let mut buffer = String::new();
     let mut content = String::new();
+    let mut reasoning_content = String::new();
+    let mut tool_call_fragments = Vec::new();
     let mut stream_deltas = Vec::new();
     let mut model = None;
     let mut finish_reason = None;
@@ -242,6 +312,8 @@ pub fn stream_chat_completion_blocking(
         consume_sse_buffer(
             &mut buffer,
             &mut content,
+            &mut reasoning_content,
+            &mut tool_call_fragments,
             &mut stream_deltas,
             &mut model,
             &mut finish_reason,
@@ -253,6 +325,8 @@ pub fn stream_chat_completion_blocking(
         flush_remaining_sse_events(
             &buffer,
             &mut content,
+            &mut reasoning_content,
+            &mut tool_call_fragments,
             &mut stream_deltas,
             &mut model,
             &mut finish_reason,
@@ -269,6 +343,8 @@ pub fn stream_chat_completion_blocking(
 
     Ok(CloudRouterChatStreamResult {
         content,
+        reasoning_content,
+        tool_call_fragments,
         stream_deltas,
         model,
         finish_reason,
@@ -281,57 +357,148 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn extract_openai_stream_delta_reads_choice_delta_content() {
+    fn extract_openai_stream_content_reads_choice_delta_content() {
         let chunk = json!({
             "choices": [{ "delta": { "content": "hello" }, "index": 0 }],
             "object": "chat.completion.chunk"
         });
-        assert_eq!(
-            extract_openai_stream_delta(&chunk).as_deref(),
-            Some("hello")
-        );
+        assert_eq!(extract_openai_stream_content(&chunk).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn extract_openai_stream_reasoning_reads_reasoning_content() {
+        let chunk = json!({
+            "choices": [{ "delta": { "reasoning_content": "think" }, "index": 0 }],
+            "object": "chat.completion.chunk"
+        });
+        assert_eq!(extract_openai_stream_reasoning(&chunk).as_deref(), Some("think"));
+        assert_eq!(extract_openai_stream_content(&chunk).as_deref(), None);
+    }
+
+    #[test]
+    fn normalize_stream_delta_separates_reasoning_from_content() {
+        let delta = normalize_stream_delta(&json!({
+            "choices": [{ "delta": { "reasoning_content": "think", "content": "answer" } }]
+        }));
+        assert_eq!(delta.reasoning_content, "think");
+        assert_eq!(delta.content, "answer");
+        assert!(delta.tool_calls.is_empty());
     }
 
     #[test]
     fn consume_sse_buffer_invokes_on_delta_per_event() {
-        let mut deltas = Vec::new();
-        let mut on_delta = |delta: &str| deltas.push(delta.to_string());
+        struct Collected {
+            contents: Vec<String>,
+            reasonings: Vec<String>,
+        }
+        let mut collected = Collected {
+            contents: Vec::new(),
+            reasonings: Vec::new(),
+        };
+        let mut on_delta = |delta: CloudRouterStreamDelta| {
+            collected.contents.push(delta.content.clone());
+            collected.reasonings.push(delta.reasoning_content.clone());
+        };
         let mut buffer = String::from(
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n\
              data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
         );
         let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut tool_call_fragments = Vec::new();
         let mut stream_deltas = Vec::new();
         let mut model = None;
         let mut finish_reason = None;
         consume_sse_buffer(
             &mut buffer,
             &mut content,
+            &mut reasoning_content,
+            &mut tool_call_fragments,
             &mut stream_deltas,
             &mut model,
             &mut finish_reason,
             &mut on_delta,
         );
         assert_eq!(content, "Hello");
+        assert_eq!(reasoning_content, "");
         assert_eq!(stream_deltas, vec!["Hel".to_string(), "lo".to_string()]);
-        assert_eq!(deltas, stream_deltas);
+        assert_eq!(collected.contents, vec!["Hel".to_string(), "lo".to_string()]);
         assert!(buffer.is_empty());
     }
 
     #[test]
-    fn consume_sse_buffer_handles_crlf_delimited_events() {
-        let mut deltas = Vec::new();
-        let mut on_delta = |delta: &str| deltas.push(delta.to_string());
+    fn consume_sse_buffer_accumulates_reasoning_separately() {
+        let mut on_delta = |_: CloudRouterStreamDelta| {};
         let mut buffer = String::from(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\r\n\r\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"th\"}}]}\n\n\
+             data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n",
         );
         let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut tool_call_fragments = Vec::new();
         let mut stream_deltas = Vec::new();
         let mut model = None;
         let mut finish_reason = None;
         consume_sse_buffer(
             &mut buffer,
             &mut content,
+            &mut reasoning_content,
+            &mut tool_call_fragments,
+            &mut stream_deltas,
+            &mut model,
+            &mut finish_reason,
+            &mut on_delta,
+        );
+        assert_eq!(content, "Hi");
+        assert_eq!(reasoning_content, "th");
+        assert_eq!(stream_deltas, vec!["Hi".to_string()]);
+    }
+
+    #[test]
+    fn consume_sse_buffer_captures_tool_call_fragments() {
+        let mut on_delta = |_: CloudRouterStreamDelta| {};
+        let mut buffer = String::from(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"search\"}}]}}]}\n\n",
+        );
+        let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut tool_call_fragments = Vec::new();
+        let mut stream_deltas = Vec::new();
+        let mut model = None;
+        let mut finish_reason = None;
+        consume_sse_buffer(
+            &mut buffer,
+            &mut content,
+            &mut reasoning_content,
+            &mut tool_call_fragments,
+            &mut stream_deltas,
+            &mut model,
+            &mut finish_reason,
+            &mut on_delta,
+        );
+        assert_eq!(content, "");
+        assert!(stream_deltas.is_empty());
+        assert_eq!(tool_call_fragments.len(), 1);
+        assert!(tool_call_fragments[0].contains("search"));
+    }
+
+    #[test]
+    fn consume_sse_buffer_handles_crlf_delimited_events() {
+        let mut on_delta = |_: CloudRouterStreamDelta| {};
+        let mut buffer = String::from(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\r\n\r\n",
+        );
+        let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut tool_call_fragments = Vec::new();
+        let mut stream_deltas = Vec::new();
+        let mut model = None;
+        let mut finish_reason = None;
+        consume_sse_buffer(
+            &mut buffer,
+            &mut content,
+            &mut reasoning_content,
+            &mut tool_call_fragments,
             &mut stream_deltas,
             &mut model,
             &mut finish_reason,
@@ -339,18 +506,6 @@ mod tests {
         );
         assert_eq!(content, "Hi");
         assert_eq!(stream_deltas, vec!["Hi".to_string()]);
-    }
-
-    #[test]
-    fn extract_openai_stream_delta_reads_reasoning_content() {
-        let chunk = json!({
-            "choices": [{ "delta": { "reasoning_content": "think" }, "index": 0 }],
-            "object": "chat.completion.chunk"
-        });
-        assert_eq!(
-            extract_openai_stream_delta(&chunk).as_deref(),
-            Some("think")
-        );
     }
 
     #[test]
@@ -390,7 +545,8 @@ mod tests {
             }
             assert!(request.contains("POST /v1/chat/completions"));
             assert!(request.contains("stream"));
-            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n\
+            let body = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"th\"}}]}\n\n\
+                        data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n\
                         data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n\
                         data: [DONE]\n\n";
             let response = format!(
@@ -420,10 +576,12 @@ mod tests {
             "test-auth",
             None,
             request,
-            &mut |delta| deltas.push(delta.to_string()),
+            &mut |delta| deltas.push(delta),
         )
         .expect("stream should succeed");
         assert_eq!(result.content, "Hello");
-        assert_eq!(deltas, vec!["Hel".to_string(), "lo".to_string()]);
+        assert_eq!(result.reasoning_content, "th");
+        assert_eq!(result.stream_deltas, vec!["Hel".to_string(), "lo".to_string()]);
+        assert_eq!(deltas.len(), 3);
     }
 }

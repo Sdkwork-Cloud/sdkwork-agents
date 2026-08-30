@@ -30,9 +30,9 @@ export function configureAgentsWorkbenchPorts(): void {
     resolveMediaPreviewUrl: (driveUri) => agentsDriveUploadService.resolvePreviewUrl(driveUri),
     sendMessage: (agentId, sessionId, content, model, media, systemPrompt) =>
       agentChatService.sendMessage(agentId, sessionId, content, model, media, systemPrompt),
-    sendMessageStream: (agentId, sessionId, content, model, media, onDelta, systemPrompt) =>
+    sendMessageStream: (agentId, sessionId, content, model, media, onDelta, systemPrompt, onReasoning, onToolEvent) =>
       agentChatService.sendMessageStream(
-        agentId, sessionId, content, model, media, onDelta, systemPrompt,
+        agentId, sessionId, content, model, media, onDelta, systemPrompt, onReasoning, onToolEvent,
       ),
   });
   configureProjectPort({

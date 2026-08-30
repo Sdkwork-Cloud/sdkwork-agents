@@ -4,13 +4,6 @@
   "profileId": "cloud.staging",
   "runtimeTarget": "browser",
   "browserOriginMode": "cross-origin",
-<<<<<<< HEAD
-  "appApiBaseUrl": "https://api.staging.invalid",
-  "backendApiBaseUrl": "https://api.staging.invalid",
-  "driveAppApiBaseUrl": "https://api.staging.invalid",
-  "appbaseAppApiBaseUrl": "https://api.staging.invalid",
-  "deployAppApiBaseUrl": "https://api.staging.invalid"
-=======
   "appApiBaseUrl": "https://api-staging.sdkwork.com;https://api-staging.birdcoder.com;https://api-staging.dtupay.com;https://api-staging.sdkwork.cn;https://api-staging.birdcoder.cn;https://api-staging.dtupay.cn;https://api-staging.skubc.com;https://api-staging.skubc.cn;https://api-staging.zowalk.com;https://api-staging.zowalk.cn;https://api-staging.offer86.com;https://api-staging.offer86.cn;https://api-staging.86offer.com;https://api-staging.86offer.cn",
   "backendApiBaseUrl": "https://api-staging.sdkwork.com;https://api-staging.birdcoder.com;https://api-staging.dtupay.com;https://api-staging.sdkwork.cn;https://api-staging.birdcoder.cn;https://api-staging.dtupay.cn;https://api-staging.skubc.com;https://api-staging.skubc.cn;https://api-staging.zowalk.com;https://api-staging.zowalk.cn;https://api-staging.offer86.com;https://api-staging.offer86.cn;https://api-staging.86offer.com;https://api-staging.86offer.cn",
   "driveAppApiBaseUrl": "https://api-staging.sdkwork.com;https://api-staging.birdcoder.com;https://api-staging.dtupay.com;https://api-staging.sdkwork.cn;https://api-staging.birdcoder.cn;https://api-staging.dtupay.cn;https://api-staging.skubc.com;https://api-staging.skubc.cn;https://api-staging.zowalk.com;https://api-staging.zowalk.cn;https://api-staging.offer86.com;https://api-staging.offer86.cn;https://api-staging.86offer.com;https://api-staging.86offer.cn",
@@ -34,5 +27,4 @@
     "https://api-staging.86offer.com",
     "https://api-staging.86offer.cn"
   ]
->>>>>>> __detached_merge_639234634045195749
 }

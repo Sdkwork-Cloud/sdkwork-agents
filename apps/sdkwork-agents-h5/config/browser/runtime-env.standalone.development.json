@@ -16,11 +16,7 @@
   "backendApiBaseUrl": "/",
   "driveAppApiBaseUrl": "/",
   "appbaseAppApiBaseUrl": "/",
-<<<<<<< HEAD
-  "deployAppApiBaseUrl": "/"
-=======
   "deployAppApiBaseUrl": "/",
   "openApiBaseUrl": "/",
   "sdkBaseUrl": "/"
->>>>>>> __detached_merge_639234634045195749
 }

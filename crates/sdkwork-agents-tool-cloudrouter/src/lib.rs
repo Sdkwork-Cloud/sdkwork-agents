@@ -7,7 +7,7 @@ mod rig_executor;
 mod vendor;
 
 pub use chat_stream::{
-    extract_openai_stream_delta, stream_chat_completion_blocking, CloudRouterChatStreamResult,
+    CloudRouterChatStreamResult, CloudRouterStreamDelta, stream_chat_completion_blocking,
 };
 pub use client::{cloudrouter_http_error_hint, 
     cloudrouter_base_url, map_cloudrouter_error, run_sync, CloudRouterMediaClient,

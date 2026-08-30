@@ -189,7 +189,7 @@ pub fn shared_agent_engine_host() -> Option<Arc<AgentsAgentEngineHost>> {
     // A failed bootstrap must not be cached: engine availability can recover
     // (e.g. the provider directory becomes readable again) and a permanently
     // cached None would force a process restart to ever synchronize again.
-    let mut guard = AGENT_ENGINE_HOSTS
+    let guard = AGENT_ENGINE_HOSTS
         .lock()
         .expect("provider engine host mutex poisoned");
     if let Some(host) = guard.get(DEFAULT_AGENT_ENGINE_HOST_KEY) {
@@ -218,7 +218,7 @@ pub fn agent_engine_host_for(
     agent_id: &str,
 ) -> Option<Arc<AgentsAgentEngineHost>> {
     let key = agent_engine_host_key(tenant_id, agent_id);
-    let mut guard = AGENT_ENGINE_HOSTS
+    let guard = AGENT_ENGINE_HOSTS
         .lock()
         .expect("provider engine host mutex poisoned");
     if let Some(host) = guard.get(&key) {

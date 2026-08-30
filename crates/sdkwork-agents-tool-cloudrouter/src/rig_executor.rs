@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use cloudrouter_open_sdk::models::{OpenAiChatCompletionRequest, OpenAiChatMessage};
 use cloudrouter_open_sdk::{SdkworkAiClient, SdkworkConfig};
+use serde_json::Value;
 use sdkwork_agent_kernel::{
     HostProvider, KernelError, KernelResult, ModelDescriptor, ModelProvider, ModelRequest,
     ModelResponse, ModelStreamChunk, ModelStreamSink, ProviderHealth, ProviderManifest, SecretRef,
@@ -24,6 +25,7 @@ use sdkwork_agent_kernel::{
 use sdkwork_agent_provider_rig::{ids, RigBackendConfig, RigBackendExecutor, RigModelProvider};
 
 use crate::chat_stream::stream_chat_completion_blocking;
+use crate::chat_stream::CloudRouterStreamDelta;
 
 /// Fallback model key sent when the turn carries no model id; the gateway
 /// account-pool router resolves it to the tenant's default account.
@@ -292,18 +294,47 @@ impl ModelProvider for RigCloudRouterModelProvider {
         let completion_request = self.executor.stream_completion_request(&request);
         let mut sequence = 0u64;
         let mut sink_error: Option<KernelError> = None;
+        let mut emit_delta = |delta: CloudRouterStreamDelta| -> KernelResult<()> {
+            if !delta.reasoning_content.is_empty() {
+                sequence += 1;
+                let chunk = ModelStreamChunk::reasoning(
+                    &model_request_id,
+                    sequence,
+                    &delta.reasoning_content,
+                );
+                sink.push_chunk(chunk)?;
+            }
+            if !delta.content.is_empty() {
+                sequence += 1;
+                let chunk = ModelStreamChunk::output(&model_request_id, sequence, &delta.content);
+                sink.push_chunk(chunk)?;
+            }
+            if !delta.tool_calls.is_empty() {
+                for (tool_call_id, arguments) in
+                    extract_tool_call_argument_fragments(&delta.tool_calls)
+                {
+                    sequence += 1;
+                    let chunk = ModelStreamChunk::tool_arguments(
+                        &model_request_id,
+                        sequence,
+                        tool_call_id,
+                        arguments,
+                    );
+                    sink.push_chunk(chunk)?;
+                }
+            }
+            Ok(())
+        };
         stream_chat_completion_blocking(
             self.executor.base_url(),
             &auth_token,
             access_token.as_deref(),
             completion_request,
-            &mut |delta: &str| {
+            &mut |delta: CloudRouterStreamDelta| {
                 if sink_error.is_some() {
                     return;
                 }
-                let chunk = ModelStreamChunk::output(&model_request_id, sequence, delta);
-                sequence += 1;
-                if let Err(error) = sink.push_chunk(chunk) {
+                if let Err(error) = emit_delta(delta) {
                     sink_error = Some(error);
                 }
             },
@@ -432,6 +463,37 @@ pub fn map_cloudrouter_kernel_error(error: cloudrouter_open_sdk::SdkworkError) -
         "rig_cloudrouter_chat_completion_failed",
         format!("cloud router chat completion failed: {error}{hint}"),
     )
+}
+
+/// Parses a serialized OpenAI `tool_calls` array fragment into per-call
+/// argument deltas, deriving a stable `tool_call_id` from the provider `id`
+/// when present (falling back to `tool_call_{index}` for later deltas that
+/// omit the transient id). Emits only non-empty argument fragments so the
+/// kernel stream carries actual JSON argument deltas, not name-only notices.
+fn extract_tool_call_argument_fragments(serialized: &str) -> Vec<(String, String)> {
+    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(serialized) else {
+        return Vec::new();
+    };
+    let mut fragments = Vec::new();
+    for item in items {
+        let index = item.get("index").and_then(Value::as_u64).unwrap_or(0);
+        let id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("tool_call_{index}"));
+        let arguments = item
+            .get("function")
+            .and_then(|function| function.get("arguments"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if !arguments.is_empty() {
+            fragments.push((id, arguments));
+        }
+    }
+    fragments
 }
 
 #[cfg(test)]

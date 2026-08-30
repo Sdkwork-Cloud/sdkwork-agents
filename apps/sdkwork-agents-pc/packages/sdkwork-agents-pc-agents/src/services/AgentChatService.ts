@@ -1,4 +1,8 @@
-import { completeAgentTurn, completeAgentTurnStream } from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
+import {
+  completeAgentTurn,
+  completeAgentTurnStream,
+  type TurnRichToolEvent,
+} from "@sdkwork/agents-pc-core/sdk/agentsAppSdkClient";
 import {
   getAgentsAppSdkClientWithSession,
   type AgentItemFeedbackRecord,
@@ -366,13 +370,15 @@ export class AgentChatService {
     media: AgentsDriveMediaResource | AgentsDriveMediaResource[] | undefined,
     onDelta: (delta: string) => void,
     systemPrompt?: string,
+    onReasoning?: (reasoning: string) => void,
+    onToolEvent?: (event: TurnRichToolEvent) => void,
   ): Promise<ChatMessage> {
     const completion = await completeAgentTurnStream(
       this.getClient(),
       agentId,
       sessionId,
       await this.buildTurnBody(content, modelId, media, systemPrompt),
-      onDelta,
+      { onDelta, onReasoning, onToolEvent },
     );
     const assistantRecord = findAssistantOutput(completion.items);
     if (!assistantRecord) {
