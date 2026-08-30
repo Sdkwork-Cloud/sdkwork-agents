@@ -286,7 +286,8 @@
         "healthSurfaces": [
           "application.public-ingress",
           "application.task-worker-operations"
-        ]
+        ],
+        "browserDeliveries": []
       },
       "standalone.production": {
         "processes": [
@@ -309,6 +310,24 @@
         "healthSurfaces": [
           "application.public-ingress",
           "application.task-worker-operations"
+        ],
+        "browserDeliveries": [
+          {
+            "id": "agents-static-v1",
+            "applicationRoot": "apps/sdkwork-agents-pc",
+            "clientArchitectures": [
+              "pc-web",
+              "h5"
+            ],
+            "originMode": "same-origin",
+            "deliveryMode": "gateway-static",
+            "apiSurfaceId": "application.public-ingress",
+            "hostProcessId": "application.public-ingress",
+            "buildOutput": "apps/sdkwork-agents-pc/dist",
+            "runtimeRootEnv": "SDKWORK_AGENTS_PC_STATIC_ROOT",
+            "mountPath": "/",
+            "spaFallback": "/index.html"
+          }
         ]
       },
       "cloud.development": {
@@ -485,7 +504,8 @@
       },
       "standalone.demo": {
         "processes": [],
-        "healthSurfaces": []
+        "healthSurfaces": [],
+        "browserDeliveries": []
       },
       "cloud.demo": {
         "processes": [],

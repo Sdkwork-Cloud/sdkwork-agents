@@ -195,7 +195,7 @@
         }
       },
       {
-        "workspace": "sdkwork-prompts",
+        "workspace": "sdkwork-prompts-app-sdk",
         "role": "prompts-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
@@ -209,7 +209,7 @@
         }
       },
       {
-        "workspace": "sdkwork-documents",
+        "workspace": "sdkwork-documents-app-sdk",
         "role": "documents-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
@@ -223,7 +223,7 @@
         }
       },
       {
-        "workspace": "sdkwork-mcp",
+        "workspace": "sdkwork-mcp-app-sdk",
         "role": "mcp-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
@@ -243,7 +243,7 @@
         "generatedTransportImportPolicy": "forbidden"
       },
       {
-        "workspace": "sdkwork-drive",
+        "workspace": "sdkwork-drive-app-sdk",
         "role": "drive-uploader-file-storage",
         "required": true,
         "dependencyMode": "independent-capability-module",
