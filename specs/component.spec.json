@@ -125,7 +125,7 @@
     ],
     "sdkDependencies": [
       {
-        "workspace": "sdkwork-kernel",
+        "workspace": "sdkwork-agent-internal-sdk",
         "role": "agent-runtime-kernel",
         "required": true,
         "dependencyMode": "platform-kernel",
@@ -153,7 +153,7 @@
         "generatedTransportImportPolicy": "forbidden"
       },
       {
-        "workspace": "sdkwork-memory",
+        "workspace": "sdkwork-memory-app-sdk",
         "role": "memory-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
@@ -167,7 +167,7 @@
         }
       },
       {
-        "workspace": "sdkwork-knowledgebase",
+        "workspace": "sdkwork-knowledgebase-app-sdk",
         "role": "knowledgebase-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
@@ -181,7 +181,7 @@
         }
       },
       {
-        "workspace": "sdkwork-skills",
+        "workspace": "sdkwork-skills-app-sdk",
         "role": "skills-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
@@ -234,7 +234,7 @@
         "generatedTransportImportPolicy": "forbidden"
       },
       {
-        "workspace": "sdkwork-llm",
+        "workspace": "sdkwork-llm-app-sdk",
         "role": "llm-capability-module",
         "required": false,
         "dependencyMode": "independent-capability-module",
