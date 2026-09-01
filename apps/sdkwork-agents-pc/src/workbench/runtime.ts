@@ -30,9 +30,11 @@ import {
   configureAgentsTokenPlanRuntime,
   type AgentsTokenPlanRuntime,
 } from '@sdkwork/agents-pc-membership/runtime';
+import { configureChatBalancePort, type ChatBalancePort } from '@sdkwork/agents-pc-chat';
 import { configureAgentsWorkbenchPorts } from './ports';
 
 export { configureAgentsWorkbenchPorts } from './ports';
+export type { ChatBalancePort } from '@sdkwork/agents-pc-chat';
 
 export interface AgentsWorkbenchRuntime extends AgentsHomeRuntime {
   getMemoryAppSdkClient: () => SdkworkAgentsMemoryAppClient;
@@ -46,6 +48,12 @@ export interface AgentsWorkbenchRuntime extends AgentsHomeRuntime {
   /** Optional host-injected skills app SDK client (portal/gateway sessions). */
   getSkillsAppSdkClient?: () => SdkworkSkillsAppClient;
   tokenPlan?: AgentsTokenPlanRuntime;
+  /**
+   * Optional host-injected account balance reader. When configured, the chat
+   * surface warns the user above the composer once the account balance is
+   * insufficient and offers a direct link into the Token Plan purchase page.
+   */
+  balance?: ChatBalancePort;
 }
 
 export function configureAgentsWorkbenchRuntime(runtime: AgentsWorkbenchRuntime): void {
@@ -65,5 +73,6 @@ export function configureAgentsWorkbenchRuntime(runtime: AgentsWorkbenchRuntime)
     configureSkillsAppSdkClientProvider(runtime.getSkillsAppSdkClient);
   }
   configureAgentsTokenPlanRuntime(runtime.tokenPlan ?? null);
+  configureChatBalancePort(runtime.balance ?? null);
   configureAgentsWorkbenchPorts();
 }

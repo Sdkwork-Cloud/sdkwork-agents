@@ -27,6 +27,8 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
 import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
+import { ChatBalanceAlert } from "./components/ChatBalanceAlert";
+import { useChatBalanceAlert } from "./hooks/useChatBalanceAlert";
 import { ArtifactPanel } from "./components/ArtifactPanel";
 import { SettingsModal } from "./components/SettingsModal";
 import { CustomProviderDialog } from "./components/CustomProviderDialog";
@@ -188,6 +190,23 @@ export const ChatView = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
+  // Host-injected account balance (Cloud Router Token Bank). Inert when no
+  // balance port is configured, so standalone embeds keep working unchanged.
+  const {
+    insufficient: isBalanceInsufficient,
+    snapshot: balanceSnapshot,
+    refresh: refreshBalance,
+  } = useChatBalanceAlert();
+  const [isBalanceAlertDismissed, setIsBalanceAlertDismissed] = useState(false);
+
+  useEffect(() => {
+    // Re-arm the warning once the balance recovers, so a later shortfall is
+    // surfaced again instead of staying hidden behind an earlier dismissal.
+    if (!isBalanceInsufficient) {
+      setIsBalanceAlertDismissed(false);
+    }
+  }, [isBalanceInsufficient]);
+
   useEffect(() => {
     persistAgentChatSelectedModelId(agentId, selectedModel);
   }, [selectedModel, agentId]);
@@ -265,27 +284,28 @@ export const ChatView = ({
 
   // Parse for artifacts when generation completes
   useEffect(() => {
-    if (!isGenerating && currentSession?.messages?.length > 0) {
-      const lastMessage =
-        currentSession.messages[currentSession.messages.length - 1];
-      if (lastMessage.role === "model" && lastMessage.text) {
-        const regex =
-          /```(html|js|javascript|jsx|ts|typescript|tsx|css|json|markdown|md|svg|xml)\n([\s\S]*?)```/g;
-        let lastMatch;
-        let match;
-        while ((match = regex.exec(lastMessage.text)) !== null) {
-          lastMatch = match;
-        }
-        if (lastMatch) {
-          const lang = lastMatch[1].toLowerCase();
-          const code = lastMatch[2];
-          setArtifact({
-            language: lang,
-            code,
-            mode: ["html", "svg", "xml"].includes(lang) ? "preview" : "code",
-          });
-          setIsArtifactOpen(true);
-        }
+    if (!isGenerating || !currentSession || !currentSession.messages?.length) {
+      return;
+    }
+    const lastMessage =
+      currentSession.messages[currentSession.messages.length - 1];
+    if (lastMessage.role === "model" && lastMessage.text) {
+      const regex =
+        /```(html|js|javascript|jsx|ts|typescript|tsx|css|json|markdown|md|svg|xml)\n([\s\S]*?)```/g;
+      let lastMatch;
+      let match;
+      while ((match = regex.exec(lastMessage.text)) !== null) {
+        lastMatch = match;
+      }
+      if (lastMatch) {
+        const lang = lastMatch[1].toLowerCase();
+        const code = lastMatch[2];
+        setArtifact({
+          language: lang,
+          code,
+          mode: ["html", "svg", "xml"].includes(lang) ? "preview" : "code",
+        });
+        setIsArtifactOpen(true);
       }
     }
   }, [isGenerating, currentSession?.id]);
@@ -744,6 +764,8 @@ export const ChatView = ({
           setStreamingMessageId(null);
           abortControllerRef.current = null;
           const reconcileGeneration = completionGeneration;
+          // Generation consumed credits, so re-read the account balance.
+          refreshBalance();
           void ChatService.loadSessionDetail(activeSessionId, chatScope)
             .then((serverMessages) => {
               if (streamCompletionRef.current !== reconcileGeneration) return;
@@ -796,6 +818,9 @@ export const ChatView = ({
               }),
             );
           }
+          // A rejected request can still settle a preflight hold, so refresh
+          // the balance before the next attempt.
+          refreshBalance();
           setIsGenerating(false);
           setStreamingMessageId(null);
           abortControllerRef.current = null;
@@ -914,6 +939,13 @@ export const ChatView = ({
                 />
               )}
             </div>
+
+            {isBalanceInsufficient && !isBalanceAlertDismissed && (
+              <ChatBalanceAlert
+                onDismiss={() => setIsBalanceAlertDismissed(true)}
+                snapshot={balanceSnapshot}
+              />
+            )}
 
             <ChatInput
               input={input}

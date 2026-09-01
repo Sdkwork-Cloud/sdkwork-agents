@@ -21,5 +21,7 @@
   "closeSidebar": "Close sidebar",
   "openSidebar": "Open sidebar",
   "settings": "Settings",
-  "customProvider": "Custom LLM Provider"
+  "customProvider": "Custom LLM Provider",
+  "tokenPlan": "Buy Token Plan",
+  "close": "Close"
 }
