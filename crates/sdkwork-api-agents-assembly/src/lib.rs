@@ -7,7 +7,7 @@ mod contribution;
 mod generated;
 mod readiness;
 
-pub use bootstrap::{assemble_api_router, assemble_api_router_with_pool, ApiAssembly};
+pub use bootstrap::{assemble_api_router, ApiAssembly, assemble_api_router_with_pool, web_module, web_module_with_pool};
 pub use contribution::{
     assemble_app_api_contribution,
     assemble_app_api_contribution_with_provider_session_cwd_resolver,
