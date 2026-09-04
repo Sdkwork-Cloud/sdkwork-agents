@@ -164,8 +164,14 @@ pub trait TurnExecutor: Send + Sync {
 }
 
 /// Default managed-agent contract completer used in tests and local deployments.
-/// Maximum wall-clock time for one managed turn execution.
-pub const TURN_EXECUTION_TIMEOUT: Duration = Duration::from_secs(120);
+/// Maximum wall-clock time for one managed turn execution (30 minutes).
+///
+/// Coding-style turns legitimately stream for many minutes; the prior
+/// 120-second budget truncated them with "turn inference timed out". Stalled
+/// providers are still cut quickly by the HTTP client's read timeout and the
+/// gateway's per-frame idle timeout, so this ceiling only bounds worker
+/// occupancy for otherwise-healthy long turns.
+pub const TURN_EXECUTION_TIMEOUT: Duration = Duration::from_secs(1800);
 
 /// Run turn inference with a hard timeout.
 ///

@@ -13,8 +13,18 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
 
-/// Wall-clock bound for one streamed chat completion (matches turn execution budget).
-const STREAM_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// Wall-clock ceiling for one streamed chat completion (30 minutes).
+///
+/// Long agent/coding completions legitimately stream for minutes; the prior
+/// 120-second total truncated healthy streams. Stream health is enforced by
+/// the gateway's own first-frame/idle timeouts (30s each): a stalled upstream
+/// is cut by the gateway within seconds and the SSE body then ends, so this
+/// total only prevents an unbounded lease on the turn worker. (The blocking
+/// reqwest client has no per-read timeout; async-only `read_timeout` cannot
+/// be used here.)
+const STREAM_REQUEST_TIMEOUT: Duration = Duration::from_secs(1800);
+/// TCP connect bound for the gateway request.
+const STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Aggregated result from one streamed chat completion call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +255,7 @@ fn streaming_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         Client::builder()
+            .connect_timeout(STREAM_CONNECT_TIMEOUT)
             .timeout(STREAM_REQUEST_TIMEOUT)
             .pool_max_idle_per_host(8)
             .build()

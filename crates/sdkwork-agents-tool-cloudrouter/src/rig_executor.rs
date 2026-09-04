@@ -35,9 +35,11 @@ const DEFAULT_MODEL_KEY: &str = "default";
 /// abort the call before the HTTP exchange begins.
 const MIN_REQUEST_TIMEOUT_MS: u64 = 1_000;
 
-/// Maximum gateway request timeout (5min) — a hard ceiling above the turn
-/// execution budget, not a user-facing setting.
-const MAX_REQUEST_TIMEOUT_MS: u64 = 300_000;
+/// Maximum gateway request timeout (30min) — a hard ceiling aligned with the
+/// turn execution budget for long coding completions, not a user-facing
+/// setting. Stalled upstreams fail fast via read/idle timeouts long before
+/// this ceiling.
+const MAX_REQUEST_TIMEOUT_MS: u64 = 1_800_000;
 
 /// Cloud Router account-pool executor for the RIG agent engine.
 ///
@@ -85,7 +87,7 @@ impl RigCloudRouterExecutor {
         config.timeout_ms = request
             .timeout_ms
             .map(|timeout_ms| timeout_ms.clamp(MIN_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS))
-            .unwrap_or(120_000);
+            .unwrap_or(MAX_REQUEST_TIMEOUT_MS);
         SdkworkAiClient::new(config).map_err(|error| {
             KernelError::provider_error(
                 "rig_cloudrouter_client_unavailable",
