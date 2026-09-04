@@ -48,6 +48,8 @@ export interface ChatServiceOptions {
   messages: ChatMessage[];
   signal?: AbortSignal;
   scope?: ChatAgentScope;
+  /** Optional LLM wire protocol for the cloudrouter gateway (defaults to chat_completions). */
+  wireProtocol?: string;
   onMessageUpdate: (text: string) => void;
   /** Reasoning/thinking delta streamed for the assistant message. */
   onReasoning?: (reasoning: string) => void;
@@ -144,6 +146,8 @@ export interface ChatAgentPort {
     model: string,
     media?: AgentsDriveMediaResource[],
     systemPrompt?: string,
+    /** Optional LLM wire protocol for the cloudrouter gateway (defaults to chat_completions). */
+    wireProtocol?: string,
   ): Promise<{ id: string; content: string }>;
   /** Optional SSE streaming variant: deltas are delivered via `onDelta`. */
   sendMessageStream?(
@@ -156,6 +160,8 @@ export interface ChatAgentPort {
     systemPrompt?: string,
     onReasoning?: (reasoning: string) => void,
     onToolEvent?: (event: ChatToolStreamEvent) => void,
+    /** Optional LLM wire protocol for the cloudrouter gateway (defaults to chat_completions). */
+    wireProtocol?: string,
   ): Promise<{ id: string; content: string }>;
 }
 
@@ -534,6 +540,7 @@ export class ChatService {
             systemPrompt,
             (reasoning) => options.onReasoning?.(reasoning),
             (event) => options.onToolEvent?.(event),
+            options.wireProtocol,
           )
         : await port.sendMessage(
             resolvedScope.agentId,
@@ -542,6 +549,7 @@ export class ChatService {
             options.model,
             latest.mediaResources,
             systemPrompt,
+            options.wireProtocol,
           );
       if (options.signal?.aborted) {
         options.onError?.({ message: 'AbortError' });

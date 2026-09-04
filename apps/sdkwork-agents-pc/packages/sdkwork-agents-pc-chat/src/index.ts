@@ -35,6 +35,12 @@ export {
 export type { ChatBalancePort, ChatBalanceSnapshot } from './services/chatBalancePort';
 export { useChatBalanceAlert } from './hooks/useChatBalanceAlert';
 export type { ChatBalanceAlertState } from './hooks/useChatBalanceAlert';
+export {
+  readStoredWireProtocol,
+  useWireProtocol,
+  WIRE_PROTOCOL_OPTIONS,
+} from './hooks/useWireProtocol';
+export type { WireProtocolId } from './hooks/useWireProtocol';
 export { ChatBalanceAlert } from './components/ChatBalanceAlert';
 export type { ChatBalanceAlertProps } from './components/ChatBalanceAlert';
 export type { ChatMessage, ChatSession, ChatToolCall, ChatToolStreamEvent, MessageRole } from './types';

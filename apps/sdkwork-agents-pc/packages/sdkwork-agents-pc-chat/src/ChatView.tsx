@@ -29,6 +29,7 @@ import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
 import { ChatBalanceAlert } from "./components/ChatBalanceAlert";
 import { useChatBalanceAlert } from "./hooks/useChatBalanceAlert";
+import { useWireProtocol } from "./hooks/useWireProtocol";
 import { ArtifactPanel } from "./components/ArtifactPanel";
 import { SettingsModal } from "./components/SettingsModal";
 import { CustomProviderDialog } from "./components/CustomProviderDialog";
@@ -109,6 +110,9 @@ export const ChatView = ({
   const [selectedModel, setSelectedModel] = useState(() =>
     resolveAgentChatSelectedModelId(agentId, agentModelId),
   );
+
+  // Playground-wide LLM wire protocol (persisted in localStorage; see useWireProtocol).
+  const { wireProtocol, setWireProtocol } = useWireProtocol();
 
   useEffect(() => {
     if (!isAgentScopedChat || !agentModelId) {
@@ -678,6 +682,7 @@ export const ChatView = ({
         model: selectedModel,
         messages: requestMessages,
         scope: chatScope,
+        wireProtocol,
         signal: abortController.signal,
         onMessageUpdate: (text) => {
           setSessions((prev) =>
@@ -981,7 +986,11 @@ export const ChatView = ({
       )}
 
       {isSettingsOpen && (
-        <SettingsModal onClose={() => setIsSettingsOpen(false)} />
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          wireProtocol={wireProtocol}
+          onWireProtocolChange={setWireProtocol}
+        />
       )}
       {isCustomProviderOpen && (
         <CustomProviderDialog

@@ -18,6 +18,13 @@ import { sha256Hash, uuid } from "@sdkwork/utils";
 import { resolveChatRuntimeModel } from "./RuntimeCatalogService";
 import { sortSessionItems } from "./sessionMessageOrdering";
 
+/**
+ * LLM wire protocol used for the cloudrouter gateway invocation. Values mirror
+ * the backend `wireProtocol` enum on `CreateAgentTurnRequest`; omitting the
+ * field keeps the gateway default (`chat_completions`).
+ */
+export type AgentTurnWireProtocol = NonNullable<CreateAgentTurnRequest["wireProtocol"]>;
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -373,12 +380,13 @@ export class AgentChatService {
     modelId?: string,
     media?: AgentsDriveMediaResource | AgentsDriveMediaResource[],
     systemPrompt?: string,
+    wireProtocol?: AgentTurnWireProtocol,
   ): Promise<ChatMessage> {
     const completion = await completeAgentTurn(
       this.getClient(),
       agentId,
       sessionId,
-      await this.buildTurnBody(content, modelId, media, systemPrompt),
+      await this.buildTurnBody(content, modelId, media, systemPrompt, wireProtocol),
     );
     const assistantRecord = findAssistantOutput(completion.items);
     if (!assistantRecord) {
@@ -401,12 +409,13 @@ export class AgentChatService {
     systemPrompt?: string,
     onReasoning?: (reasoning: string) => void,
     onToolEvent?: (event: TurnRichToolEvent) => void,
+    wireProtocol?: AgentTurnWireProtocol,
   ): Promise<ChatMessage> {
     const completion = await completeAgentTurnStream(
       this.getClient(),
       agentId,
       sessionId,
-      await this.buildTurnBody(content, modelId, media, systemPrompt),
+      await this.buildTurnBody(content, modelId, media, systemPrompt, wireProtocol),
       { onDelta, onReasoning, onToolEvent },
     );
     const assistantRecord = findAssistantOutput(completion.items);
@@ -421,6 +430,7 @@ export class AgentChatService {
     modelId?: string,
     media?: AgentsDriveMediaResource | AgentsDriveMediaResource[],
     systemPrompt?: string,
+    wireProtocol?: AgentTurnWireProtocol,
   ): Promise<CreateAgentTurnRequest> {
     const mediaResources = media ? (Array.isArray(media) ? media : [media]) : [];
     const requestId = uuid();
@@ -453,6 +463,7 @@ export class AgentChatService {
       contentType,
       turnMode: "interactive" as const,
       ...(systemPrompt ? { systemPrompt: systemPrompt.trim() } : {}),
+      ...(wireProtocol ? { wireProtocol } : {}),
       ...(driveRefs.length > 0 ? { driveRefs } : {}),
       requestedAt: new Date().toISOString(),
       idempotencyKey: requestId,

@@ -28,11 +28,11 @@ export function configureAgentsWorkbenchPorts(): void {
       agentChatService.updateMessageFeedback(agentId, sessionId, messageId, patch),
     listMessages: (agentId, sessionId) => agentChatService.listMessages(agentId, sessionId),
     resolveMediaPreviewUrl: (driveUri) => agentsDriveUploadService.resolvePreviewUrl(driveUri),
-    sendMessage: (agentId, sessionId, content, model, media, systemPrompt) =>
-      agentChatService.sendMessage(agentId, sessionId, content, model, media, systemPrompt),
-    sendMessageStream: (agentId, sessionId, content, model, media, onDelta, systemPrompt, onReasoning, onToolEvent) =>
+    sendMessage: (agentId, sessionId, content, model, media, systemPrompt, wireProtocol) =>
+      agentChatService.sendMessage(agentId, sessionId, content, model, media, systemPrompt, wireProtocol),
+    sendMessageStream: (agentId, sessionId, content, model, media, onDelta, systemPrompt, onReasoning, onToolEvent, wireProtocol) =>
       agentChatService.sendMessageStream(
-        agentId, sessionId, content, model, media, onDelta, systemPrompt, onReasoning, onToolEvent,
+        agentId, sessionId, content, model, media, onDelta, systemPrompt, onReasoning, onToolEvent, wireProtocol,
       ),
   });
   configureProjectPort({
