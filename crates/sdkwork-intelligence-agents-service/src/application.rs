@@ -37,7 +37,8 @@ use crate::project::{
     AgentProjectRecord, AgentProjectStatus, AgentProjectVisibility,
 };
 use crate::provider_stream_items::{
-    project_terminal_provider_turn_items, terminal_provider_assistant_item_id,
+    project_terminal_provider_turn_items, reasoning_content_from_stream_events,
+    terminal_provider_assistant_item_id,
     MAX_PROVIDER_TURN_FACTS,
 };
 use crate::runtime_facade_bridge::{
@@ -7776,6 +7777,9 @@ where
             &command.session_id,
             &turn_id,
         )?;
+        let has_reasoning_fact = provider_item_facts
+            .iter()
+            .any(|fact| fact.kind == AgentSessionItemKind::Reasoning);
         let completion_model_id = completion
             .model_id
             .clone()
@@ -7891,6 +7895,47 @@ where
             redacted_by: None,
             retention_until: None,
         };
+        // Persist the streamed reasoning/thinking content as a durable
+        // Reasoning session item so the transcript keeps it after reload.
+        // Turn paths with a terminal provider reasoning snapshot (codex /
+        // provider sync) already carry a Reasoning fact — never duplicate it.
+        if !has_reasoning_fact {
+            let reasoning_content =
+                reasoning_content_from_stream_events(&completion.stream_events);
+            if !reasoning_content.trim().is_empty() {
+                completed_items.push(AgentSessionItemRecord {
+                    id: self.repository.next_id()?,
+                    item_id: format!("{ID_PREFIX_ITEM}{}", self.repository.next_id()?),
+                    tenant_id: command.tenant_id,
+                    organization_id: session.organization_id,
+                    session_id: command.session_id.clone(),
+                    kind: AgentSessionItemKind::Reasoning,
+                    content: Some(reasoning_content),
+                    content_type: "text/plain".to_string(),
+                    status: AgentSessionItemStatus::Completed,
+                    sequence: 0,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    model_id: Some(completion_model_id.clone()),
+                    provider_id: Some(completion.provider_id.clone().unwrap_or_default()),
+                    tool_name: None,
+                    tool_call_id: None,
+                    tool_arguments_json: None,
+                    tool_result_json: None,
+                    provider_payload_json: None,
+                    parent_item_id: Some(user_input_item.item_id.clone()),
+                    turn_id: Some(turn_id.clone()),
+                    created_by: session.owner_user_id,
+                    version: 0,
+                    created_at: command.requested_at.clone(),
+                    updated_at: command.requested_at.clone(),
+                    completed_at: Some(command.requested_at.clone()),
+                    redacted_at: None,
+                    redacted_by: None,
+                    retention_until: None,
+                });
+            }
+        }
         completed_items.push(assistant_output_item.clone());
 
         turn.response_item_id = Some(assistant_output_item.item_id.clone());

@@ -22,6 +22,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  /** Reasoning/thinking text for this assistant turn (collapsible block). */
+  reasoning?: string;
   createdAt: string;
   mediaResources?: AgentsDriveMediaResource[];
 }
@@ -114,6 +116,33 @@ function findAssistantOutput(
     }
   }
   return undefined;
+}
+
+/**
+ * Merges persisted `reasoning` session items into the adjacent assistant
+ * message's `reasoning` field so chat UIs render them as a collapsible
+ * thinking block instead of a standalone assistant bubble. This keeps the
+ * message list aligned with the user/assistant pairs the optimistic
+ * transcript produces (index-based server reconciliation depends on it).
+ */
+function mergeReasoningIntoAssistantMessages(
+  items: AgentSessionItemRecord[],
+): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  let pendingReasoning = "";
+  for (const item of items) {
+    if (item.kind === "reasoning") {
+      pendingReasoning += item.content ?? "";
+      continue;
+    }
+    const message = toChatMessage(item);
+    if (message.role === "assistant" && pendingReasoning.length > 0) {
+      message.reasoning = pendingReasoning;
+      pendingReasoning = "";
+    }
+    messages.push(message);
+  }
+  return messages;
 }
 
 export class AgentChatService {
@@ -434,7 +463,7 @@ export class AgentChatService {
   }
 
   private normalizeMessages(items: AgentSessionItemRecord[]): ChatMessage[] {
-    return sortSessionItems(items).map(toChatMessage);
+    return mergeReasoningIntoAssistantMessages(sortSessionItems(items));
   }
 }
 

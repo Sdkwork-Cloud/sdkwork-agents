@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use cloudrouter_open_sdk::models::{OpenAiChatCompletionRequest, OpenAiChatMessage};
 use cloudrouter_open_sdk::SdkworkAiClient;
-use sdkwork_agent_kernel::KernelError;
+use sdkwork_agent_kernel::{AgentStreamEvent, KernelError, ModelStreamChunk};
 use sdkwork_agents_tool_cloudrouter::stream_chat_completion_blocking;
 
 use crate::domain::AgentSessionItemKind;
@@ -202,9 +202,32 @@ fn execute_cloud_router_turn_streaming(
         .access_token
         .as_deref()
         .filter(|token| !token.trim().is_empty());
+    // Reasoning/thinking deltas follow the industry-standard separate channel:
+    // they surface as `agent.stream.message.delta` rich events with
+    // `kind: "reasoning"` so clients render a collapsible reasoning block,
+    // while the visible answer keeps flowing through the plain `delta` frames.
+    // The events are also collected into the output so the durable Turn
+    // completion can persist a Reasoning session item.
+    let mut reasoning_events: Vec<sdkwork_agent_kernel::KernelEvent> = Vec::new();
+    let mut reasoning_sequence: u64 = 0;
     let mut on_delta = |delta: sdkwork_agents_tool_cloudrouter::CloudRouterStreamDelta| {
-        if let Some(sink) = sink {
-            sink.push_delta(&delta.content);
+        if !delta.reasoning_content.is_empty() {
+            let chunk = ModelStreamChunk::reasoning(
+                input.model_request_id.clone(),
+                reasoning_sequence,
+                delta.reasoning_content.clone(),
+            );
+            reasoning_sequence += 1;
+            let event = AgentStreamEvent::from(&chunk).to_kernel_event();
+            if let Some(sink) = sink {
+                let _ = sink.push_event(&event);
+            }
+            reasoning_events.push(event);
+        }
+        if !delta.content.is_empty() {
+            if let Some(sink) = sink {
+                sink.push_delta(&delta.content);
+            }
         }
     };
     let streamed = stream_chat_completion_blocking(
@@ -215,12 +238,17 @@ fn execute_cloud_router_turn_streaming(
         &mut on_delta,
     )
     .map_err(cloud_router_error)?;
-    Ok(stream_output_from_cloud_router_stream(input, streamed))
+    Ok(stream_output_from_cloud_router_stream(
+        input,
+        streamed,
+        reasoning_events,
+    ))
 }
 
 fn stream_output_from_cloud_router_stream(
     input: &TurnExecutionInput,
     streamed: sdkwork_agents_tool_cloudrouter::CloudRouterChatStreamResult,
+    stream_events: Vec<sdkwork_agent_kernel::KernelEvent>,
 ) -> TurnExecutionOutput {
     let output_tokens = estimate_tokens(&streamed.content);
     TurnExecutionOutput {
@@ -236,7 +264,7 @@ fn stream_output_from_cloud_router_stream(
         output_tokens,
         runtime_mode: RUNTIME_MODE_CLOUDROUTER,
         stream_deltas: streamed.stream_deltas,
-        stream_events: Vec::new(),
+        stream_events,
     }
 }
 

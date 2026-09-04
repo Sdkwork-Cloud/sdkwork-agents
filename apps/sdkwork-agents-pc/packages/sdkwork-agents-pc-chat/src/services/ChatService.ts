@@ -132,6 +132,8 @@ export interface ChatAgentPort {
     id: string;
     role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
+    /** Reasoning/thinking text for this assistant turn (collapsible block). */
+    reasoning?: string;
     mediaResources?: AgentsDriveMediaResource[];
   }>>;
   resolveMediaPreviewUrl(driveUri: string): Promise<string>;
@@ -414,6 +416,7 @@ export class ChatService {
         id: message.id,
         role: message.role === 'assistant' ? 'model' : 'user',
         text: message.content,
+        reasoning: message.reasoning,
         images: mediaResources
           .filter((resource) => resource.kind === 'image' && resource.url)
           .map((resource) => resource.url as string),
