@@ -25,13 +25,54 @@ interface BotMessageItemProps {
   isStreaming?: boolean;
 }
 
-/** Collapsible "thinking"/"reasoning" block streamed from the runtime. */
-const ThinkingBlock: React.FC<{ content: string; streaming: boolean }> = ({
+/**
+ * Collapsible "thinking"/"reasoning" block streamed from the runtime.
+ *
+ * Interaction contract (industry-standard reasoning UX, mirroring
+ * DeepSeek/Kimi-style thinking panes):
+ * - While reasoning deltas stream in (`active`), the block auto-expands and
+ *   its capped-height body sticks to the bottom edge so the newest thinking
+ *   text stays visible while it streams.
+ * - When the reasoning phase ends (the first answer delta arrives, or the
+ *   stream finishes), the block auto-collapses so the visible answer can
+ *   stream below it without pushing the reasoning transcript into view.
+ * - A manual toggle always wins while the phase is active (the automatic
+ *   behavior only fires on phase transitions); it re-arms on the next
+ *   reasoning phase.
+ * - Reloaded transcripts render collapsed (streaming is not active).
+ */
+const ThinkingBlock: React.FC<{ content: string; streaming: boolean; active: boolean }> = ({
   content,
   streaming,
+  active,
 }) => {
   const { t: tCommon } = useTranslation('common');
   const [open, setOpen] = React.useState(false);
+  const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  const wasActiveRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (active) {
+      if (!wasActiveRef.current) {
+        // New reasoning phase: expand immediately so the streamed thinking
+        // text is visible while it arrives.
+        wasActiveRef.current = true;
+        setOpen(true);
+      }
+    } else if (wasActiveRef.current) {
+      // Reasoning phase ended: collapse so the answer streams into view.
+      wasActiveRef.current = false;
+      setOpen(false);
+    }
+  }, [active]);
+
+  // Keep the streaming reasoning body pinned to its bottom edge.
+  React.useEffect(() => {
+    if (active && open && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [content, active, open]);
+
   if (!content) return null;
   return (
     <div className="mb-2 overflow-hidden rounded-lg border border-gray-200/80 bg-gray-50/80 dark:border-gray-700/80 dark:bg-[#232323]">
@@ -42,12 +83,19 @@ const ThinkingBlock: React.FC<{ content: string; streaming: boolean }> = ({
         aria-expanded={open}
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        {streaming && <Loader2 size={12} className="animate-spin" />}
-        <span>{tCommon('thinking', { defaultValue: '深度思考' })}</span>
+        {active && <Loader2 size={12} className="animate-spin" />}
+        <span>
+          {active
+            ? tCommon('thinkingRunning', { defaultValue: '深度思考中…' })
+            : tCommon('thinking', { defaultValue: '深度思考' })}
+        </span>
       </button>
       {open && (
-        <div className="border-t border-gray-200/80 px-2.5 py-2 text-[13px] leading-[1.7] text-gray-600 dark:border-gray-700/80 dark:text-gray-300">
-          <MarkdownRenderer content={content} streaming={streaming} />
+        <div
+          ref={bodyRef}
+          className="max-h-64 overflow-y-auto border-t border-gray-200/80 px-2.5 py-2 text-[13px] leading-[1.7] text-gray-600 dark:border-gray-700/80 dark:text-gray-300"
+        >
+          <MarkdownRenderer content={content} streaming={active || streaming} />
         </div>
       )}
     </div>
@@ -102,12 +150,21 @@ export const BotMessageItem: React.FC<BotMessageItemProps> = ({
   isStreaming = false,
 }) => {
   const { t: tCommon } = useTranslation('common');
+  // Reasoning phase: the turn is streaming and no answer text has arrived
+  // yet, so every incoming delta is still reasoning/thinking content.
+  const reasoningActive = isStreaming && Boolean(message.reasoning) && !message.text;
   const showTypingIndicator = isStreaming && !message.text && !message.reasoning;
 
   return (
     <div className="chat-markdown-assistant group relative flex w-full min-w-0 items-start">
       <div className="relative flex w-full min-w-0 flex-col gap-1.5 text-[15px] leading-[1.75]">
-        {message.reasoning && <ThinkingBlock content={message.reasoning} streaming={isStreaming} />}
+        {message.reasoning && (
+          <ThinkingBlock
+            content={message.reasoning}
+            streaming={isStreaming}
+            active={reasoningActive}
+          />
+        )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="mb-1 flex max-w-full w-full flex-col gap-0 text-xs">
