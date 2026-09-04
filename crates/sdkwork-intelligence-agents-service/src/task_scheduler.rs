@@ -493,6 +493,7 @@ pub(crate) fn execute_task_run_claim(
         system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
     });
     match result {
         Ok(result) => scheduler_repository.complete_task_run(

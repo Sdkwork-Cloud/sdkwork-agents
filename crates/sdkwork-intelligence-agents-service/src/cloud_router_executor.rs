@@ -6,12 +6,13 @@
 //! upstream suppliers) selects the supplier for the requested model — no
 //! local provider binding or API key configuration is required.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use cloudrouter_open_sdk::models::{OpenAiChatCompletionRequest, OpenAiChatMessage};
-use cloudrouter_open_sdk::SdkworkAiClient;
 use sdkwork_agent_kernel::{AgentStreamEvent, KernelError, ModelStreamChunk};
-use sdkwork_agents_tool_cloudrouter::stream_chat_completion_blocking;
+use sdkwork_agents_tool_cloudrouter::{
+    create_llm_completion_blocking, stream_llm_completion_blocking, WireProtocol,
+};
 
 use crate::domain::AgentSessionItemKind;
 use crate::runtime_facade_bridge::engine_key_for_binding_id;
@@ -33,17 +34,6 @@ fn cloudrouter_base_url() -> String {
     // federated topology hosts this surface inside the cloudrouter gateway,
     // whose port varies per deployment profile) -> the platform proxy default.
     sdkwork_agents_tool_cloudrouter::cloudrouter_base_url()
-}
-
-fn blocking_runtime() -> &'static tokio::runtime::Runtime {
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(2)
-            .build()
-            .expect("cloud router executor tokio runtime")
-    })
 }
 
 /// Turn executor that routes non-rig chat turns through the cloudrouter
@@ -197,6 +187,7 @@ fn execute_cloud_router_turn_streaming(
         .ok_or_else(|| {
             KernelError::validation("cloud router execution requires an auth token")
         })?;
+    let protocol = resolve_wire_protocol(input)?;
     let request = build_chat_completion_request(input, true);
     let access_token = input
         .access_token
@@ -207,7 +198,8 @@ fn execute_cloud_router_turn_streaming(
     // `kind: "reasoning"` so clients render a collapsible reasoning block,
     // while the visible answer keeps flowing through the plain `delta` frames.
     // The events are also collected into the output so the durable Turn
-    // completion can persist a Reasoning session item.
+    // completion can persist a Reasoning session item. All four wire
+    // protocols normalize reasoning into the same delta channel.
     let mut reasoning_events: Vec<sdkwork_agent_kernel::KernelEvent> = Vec::new();
     let mut reasoning_sequence: u64 = 0;
     let mut on_delta = |delta: sdkwork_agents_tool_cloudrouter::CloudRouterStreamDelta| {
@@ -230,7 +222,8 @@ fn execute_cloud_router_turn_streaming(
             }
         }
     };
-    let streamed = stream_chat_completion_blocking(
+    let streamed = stream_llm_completion_blocking(
+        protocol,
         &cloudrouter_base_url(),
         auth_token,
         access_token,
@@ -243,6 +236,23 @@ fn execute_cloud_router_turn_streaming(
         streamed,
         reasoning_events,
     ))
+}
+
+/// Resolves the requested wire protocol for one turn. Blank/absent values
+/// fall back to the default chat completions protocol; unknown identifiers
+/// fail closed with a validation error instead of silently switching APIs.
+fn resolve_wire_protocol(input: &TurnExecutionInput) -> Result<WireProtocol, KernelError> {
+    let requested = input
+        .wire_protocol
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
+    WireProtocol::parse(requested).ok_or_else(|| {
+        KernelError::validation(format!(
+            "unknown wire protocol: {requested} (expected chat_completions, \
+             anthropic_messages, google_content, or openai_responses)"
+        ))
+    })
 }
 
 fn stream_output_from_cloud_router_stream(
@@ -279,52 +289,33 @@ fn execute_cloud_router_turn(
             KernelError::validation("cloud router execution requires an auth token")
         })?;
 
+    let protocol = resolve_wire_protocol(input)?;
     let request = build_chat_completion_request(input, false);
-    let client = SdkworkAiClient::new_with_base_url(cloudrouter_base_url())
-        .map_err(|error| {
-            KernelError::provider_error("cloudrouter_client_unavailable", error.to_string())
-        })?;
-    // Dual-token access per API_SPEC §819/§824: the gateway resolves the
-    // account route context from the auth token and carries the access token
-    // as the session access context. `set_access_token` runs first so the
-    // `Authorization` bearer set by `set_auth_token` below is never dropped
-    // by SDK header hygiene, keeping both tokens on the wire.
-    if let Some(access_token) = input.access_token.as_deref().filter(|t| !t.trim().is_empty()) {
-        client.set_access_token(access_token);
-    }
-    client.set_auth_token(auth_token);
+    let access_token = input
+        .access_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty());
+    // The blocking JSON pipeline issues the same dual-token headers as the
+    // streaming path (Authorization bearer + Access-Token) so every wire
+    // protocol shares one authentication shape.
+    let completion = create_llm_completion_blocking(
+        protocol,
+        &cloudrouter_base_url(),
+        auth_token,
+        access_token,
+        request,
+    )
+    .map_err(cloud_router_error)?;
 
-    let completion = blocking_runtime()
-        .block_on(client.chat().create(&request))
-        .map_err(cloud_router_error)?;
-
-    let choice = completion.choices.first().ok_or_else(|| {
-        KernelError::provider_error(
-            "cloudrouter_empty_response",
-            "cloud router returned no completion choices",
-        )
-    })?;
-    let content = choice
-        .message
-        .content
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            KernelError::provider_error(
-                "cloudrouter_empty_response",
-                "cloud router returned no assistant content",
-            )
-        })?;
-
+    let content = completion.content;
     let output_tokens = estimate_tokens(&content);
     Ok(TurnExecutionOutput {
         model_request_id: Some(input.model_request_id.clone()),
-        finish_reason: choice
+        finish_reason: completion
             .finish_reason
-            .clone()
             .or_else(|| Some("stop".to_string())),
         content,
-        model_id: Some(completion.model.clone()),
+        model_id: completion.model,
         provider_id: None,
         provider_session_id: None,
         input_tokens: estimate_tokens(&input.user_content),
@@ -512,7 +503,34 @@ mod tests {
             system_prompt: None,
             auth_token: auth_token.map(str::to_string),
             access_token: access_token.map(str::to_string),
+            wire_protocol: None,
         }
+    }
+
+    #[test]
+    fn resolve_wire_protocol_defaults_and_fails_closed() {
+        let mut input = sample_input(Some("token"), None);
+        assert_eq!(
+            resolve_wire_protocol(&input).unwrap(),
+            WireProtocol::ChatCompletions
+        );
+        input.wire_protocol = Some("anthropic_messages".to_string());
+        assert_eq!(
+            resolve_wire_protocol(&input).unwrap(),
+            WireProtocol::AnthropicMessages
+        );
+        input.wire_protocol = Some("google_content".to_string());
+        assert_eq!(
+            resolve_wire_protocol(&input).unwrap(),
+            WireProtocol::GoogleContent
+        );
+        input.wire_protocol = Some("openai_responses".to_string());
+        assert_eq!(
+            resolve_wire_protocol(&input).unwrap(),
+            WireProtocol::OpenAiResponses
+        );
+        input.wire_protocol = Some("bogus".to_string());
+        assert!(resolve_wire_protocol(&input).is_err());
     }
 
     #[test]

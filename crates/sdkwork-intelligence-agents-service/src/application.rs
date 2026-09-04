@@ -7737,6 +7737,7 @@ where
             system_prompt: command.system_prompt.clone(),
             auth_token: command.auth_token.clone(),
             access_token: command.access_token.clone(),
+            wire_protocol: command.wire_protocol.clone(),
         };
         let completion = if let Some(stream_sink) = stream_sink.as_ref() {
             stream_sink.begin_turn(&session.session_id, &turn_id);
@@ -11129,6 +11130,7 @@ mod task_tests {
             system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
             })
         });
         executor.wait_until_started();
@@ -11315,6 +11317,7 @@ mod task_tests {
             system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
         };
 
         // First attempt: provider failure marks the Turn Failed.

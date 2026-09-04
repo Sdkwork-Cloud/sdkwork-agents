@@ -4586,9 +4586,9 @@ class ApplyAgentModelConfigurationRequest {
   final String defaultModelId;
   final List<String> supportedModelIds;
   final List<String>? supportedProviderIds;
-  final int? inputContextTokens;
-  final int? outputContextTokens;
-  final int? toolCallRounds;
+  final String? inputContextTokens;
+  final String? outputContextTokens;
+  final String? toolCallRounds;
   final bool? supportsMultimodal;
 
   ApplyAgentModelConfigurationRequest({
@@ -4666,9 +4666,9 @@ class ApplyAgentModelConfigurationRequest {
             .whereType<String>()
             .toList();
       })(),
-      inputContextTokens: json['inputContextTokens'] is int ? json['inputContextTokens'] : null,
-      outputContextTokens: json['outputContextTokens'] is int ? json['outputContextTokens'] : null,
-      toolCallRounds: json['toolCallRounds'] is int ? json['toolCallRounds'] : null,
+      inputContextTokens: json['inputContextTokens']?.toString(),
+      outputContextTokens: json['outputContextTokens']?.toString(),
+      toolCallRounds: json['toolCallRounds']?.toString(),
       supportsMultimodal: json['supportsMultimodal'] is bool ? json['supportsMultimodal'] : null
     );
   }
@@ -4703,9 +4703,9 @@ class AppliedAgentModelConfigurationRecord {
   final String defaultModelId;
   final List<String> supportedModelIds;
   final List<String> supportedProviderIds;
-  final int? inputContextTokens;
-  final int? outputContextTokens;
-  final int? toolCallRounds;
+  final String? inputContextTokens;
+  final String? outputContextTokens;
+  final String? toolCallRounds;
   final bool supportsMultimodal;
   final bool apiKeyConfigured;
 
@@ -4805,9 +4805,9 @@ class AppliedAgentModelConfigurationRecord {
             .whereType<String>()
             .toList();
       })(),
-      inputContextTokens: json['inputContextTokens'] is int ? json['inputContextTokens'] : null,
-      outputContextTokens: json['outputContextTokens'] is int ? json['outputContextTokens'] : null,
-      toolCallRounds: json['toolCallRounds'] is int ? json['toolCallRounds'] : null,
+      inputContextTokens: json['inputContextTokens']?.toString(),
+      outputContextTokens: json['outputContextTokens']?.toString(),
+      toolCallRounds: json['toolCallRounds']?.toString(),
       supportsMultimodal: (() {
         final value = json['supportsMultimodal'];
         if (value is! bool) {
@@ -10260,6 +10260,7 @@ class CreateAgentTurnRequest {
   final String? runtimeBindingId;
   final String? requestedModelId;
   final String? accessModeId;
+  final String? wireProtocol;
   final String idempotencyKey;
   final String payloadHash;
   final String? clientRequestId;
@@ -10275,6 +10276,7 @@ class CreateAgentTurnRequest {
     this.runtimeBindingId,
     this.requestedModelId,
     this.accessModeId,
+    this.wireProtocol,
     required this.idempotencyKey,
     required this.payloadHash,
     this.clientRequestId,
@@ -10304,6 +10306,7 @@ class CreateAgentTurnRequest {
       runtimeBindingId: json['runtimeBindingId']?.toString(),
       requestedModelId: json['requestedModelId']?.toString(),
       accessModeId: json['accessModeId']?.toString(),
+      wireProtocol: json['wireProtocol']?.toString(),
       idempotencyKey: (() {
         final value = json['idempotencyKey']?.toString();
         if (value == null) {
@@ -10349,6 +10352,7 @@ class CreateAgentTurnRequest {
       'runtimeBindingId': runtimeBindingId,
       'requestedModelId': requestedModelId,
       'accessModeId': accessModeId,
+      'wireProtocol': wireProtocol,
       'idempotencyKey': idempotencyKey,
       'payloadHash': payloadHash,
       'clientRequestId': clientRequestId,
@@ -10989,7 +10993,7 @@ class AgentInteractionRequestData {
   final Map<String, dynamic>? proposedExecPolicyAmendment;
   final Map<String, dynamic>? proposedNetworkPolicyAmendment;
   final List<AgentInteractionQuestion>? questions;
-  final int? autoResolutionMs;
+  final String? autoResolutionMs;
   final bool? isBlocking;
   final String? question;
   final List<AgentInteractionQuestionOption>? options;
@@ -11053,7 +11057,7 @@ class AgentInteractionRequestData {
             .whereType<AgentInteractionQuestion>()
             .toList();
       })(),
-      autoResolutionMs: json['autoResolutionMs'] is int ? json['autoResolutionMs'] : null,
+      autoResolutionMs: json['autoResolutionMs']?.toString(),
       isBlocking: json['isBlocking'] is bool ? json['isBlocking'] : null,
       question: json['question']?.toString(),
       options: (() {
@@ -13134,7 +13138,7 @@ class MediaToolDirectoryEntry {
   final Map<String, dynamic>? outputSchema;
   final String? sideEffectLevel;
   final List<String>? policyCategories;
-  final int? timeoutMs;
+  final String? timeoutMs;
   final String? availability;
   final bool enabled;
   final bool? saveToDriveDefault;
@@ -13203,7 +13207,7 @@ class MediaToolDirectoryEntry {
             .whereType<String>()
             .toList();
       })(),
-      timeoutMs: json['timeoutMs'] is int ? json['timeoutMs'] : null,
+      timeoutMs: json['timeoutMs']?.toString(),
       availability: json['availability']?.toString(),
       enabled: (() {
         final value = json['enabled'];
@@ -13459,7 +13463,7 @@ class MediaToolConfigurationBody {
   final bool enabled;
   final bool? saveToDriveDefault;
   final Map<String, dynamic>? defaultArguments;
-  final int? expectedVersion;
+  final String? expectedVersion;
 
   MediaToolConfigurationBody({
     required this.enabled,
@@ -13479,7 +13483,7 @@ class MediaToolConfigurationBody {
       })(),
       saveToDriveDefault: json['saveToDriveDefault'] is bool ? json['saveToDriveDefault'] : null,
       defaultArguments: _sdkworkAsMap(json['defaultArguments']),
-      expectedVersion: json['expectedVersion'] is int ? json['expectedVersion'] : null
+      expectedVersion: json['expectedVersion']?.toString()
     );
   }
 

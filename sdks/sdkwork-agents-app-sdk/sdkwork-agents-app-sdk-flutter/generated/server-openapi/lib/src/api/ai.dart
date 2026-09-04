@@ -1084,7 +1084,7 @@ class AiApi {
   }
 
   /// List applied model configuration profiles
-  Future<ModelConfigurationSummaryListResponse?> agentsModelConfigurationsList([String? engineId]) async {
+  Future<ModelConfigurationSummaryListResponse?> getAgentsModelConfigurationsList([String? engineId]) async {
     final query = buildQueryString([
       QueryParameterSpec('engineId', engineId, 'form', true, false, null)
     ]);
@@ -1096,7 +1096,7 @@ class AiApi {
   }
 
   /// Get one applied model configuration profile
-  Future<ModelConfigurationSummaryResponse?> agentsModelConfigurationsGet(String engineId, String profileId) async {
+  Future<ModelConfigurationSummaryResponse?> getAgentsModelConfigurationsRetrieve(String engineId, String profileId) async {
     final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/${serializePathParameter(profileId, const PathParameterSpec('profileId', 'simple', false))}'));
     return (() {
       final map = sdkworkResponseAsMap(response);
@@ -1105,7 +1105,7 @@ class AiApi {
   }
 
   /// Read the provider-native configuration file with credentials masked
-  Future<AgentEngineConfigFileResponse?> agentsModelConfigurationsConfigFile(String engineId) async {
+  Future<AgentEngineConfigFileResponse?> getAgentsModelConfigurationsListConfigFile(String engineId) async {
     final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/config_file'));
     return (() {
       final map = sdkworkResponseAsMap(response);
@@ -1114,7 +1114,7 @@ class AiApi {
   }
 
   /// Read back the provider-native config state and detect drift
-  Future<ModelConfigurationStatusResponse?> agentsModelConfigurationsStatus(String engineId, String profileId) async {
+  Future<ModelConfigurationStatusResponse?> getAgentsModelConfigurationsRetrieveStatus(String engineId, String profileId) async {
     final response = await _client.get(ApiPaths.appPath('/ai/model_configurations/${serializePathParameter(engineId, const PathParameterSpec('engineId', 'simple', false))}/${serializePathParameter(profileId, const PathParameterSpec('profileId', 'simple', false))}/status'));
     return (() {
       final map = sdkworkResponseAsMap(response);

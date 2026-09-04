@@ -2315,6 +2315,7 @@ impl sdkwork_agents_runtime_facade::AgentsSessionFacade for HttpAgentsSessionFac
                 system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
             })
             .map_err(|error| {
                 sdkwork_agents_runtime_facade::RuntimeFacadeError::Handler(error.to_string())
@@ -4924,6 +4925,10 @@ struct AppCreateTurnBody {
     idempotency_key: String,
     payload_hash: String,
     client_request_id: Option<String>,
+    /// Optional LLM wire protocol override (`chat_completions` default,
+    /// `anthropic_messages`, `google_content`, `openai_responses`).
+    #[serde(default)]
+    wire_protocol: Option<String>,
     #[serde(default)]
     drive_refs: Vec<AgentItemDriveRefBody>,
     requested_at: String,
@@ -9441,6 +9446,16 @@ async fn app_create_turn(
             // bearer value is never persisted on the turn record.
             auth_token: extract_bearer_auth_token(&headers),
             access_token: extract_access_token(&headers),
+            // Fail closed on unknown protocol identifiers so a typo can never
+            // silently downgrade to a different provider API.
+            wire_protocol: body
+                .wire_protocol
+                .map(|value| {
+                    sdkwork_agents_tool_cloudrouter::WireProtocol::parse(&value)
+                        .map(|protocol| protocol.as_str().to_string())
+                        .ok_or_else(|| ApiProblem::validation("invalid wireProtocol"))
+                })
+                .transpose()?,
         };
         execute_turn_http_response(
             &state,
@@ -10955,6 +10970,7 @@ async fn backend_create_turn(
             // bearer value is never persisted on the turn record.
             auth_token: extract_bearer_auth_token(&headers),
             access_token: extract_access_token(&headers),
+            wire_protocol: None,
         };
         execute_turn_http_response(
             &state,

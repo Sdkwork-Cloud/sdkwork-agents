@@ -9715,6 +9715,15 @@ components:
           minLength: 1
           maxLength: 64
           pattern: ^[a-z][a-z0-9_-]*$
+        wireProtocol:
+          type: string
+          enum:
+          - chat_completions
+          - anthropic_messages
+          - google_content
+          - openai_responses
+          default: chat_completions
+          description: Optional LLM wire protocol for the cloudrouter gateway invocation (chat completions, Anthropic messages, Google content, or OpenAI responses).
         idempotencyKey:
           type: string
           minLength: 1

@@ -78,6 +78,10 @@ pub struct TurnExecutionInput {
     pub auth_token: Option<String>,
     /// Transient user access token for dual-token cloudrouter routing.
     pub access_token: Option<String>,
+    /// Optional LLM wire protocol override for the cloudrouter gateway
+    /// invocation (`chat_completions` default, `anthropic_messages`,
+    /// `google_content`, `openai_responses`). Transient — never persisted.
+    pub wire_protocol: Option<String>,
 }
 
 /// Output from one durable turn execution.
@@ -959,6 +963,7 @@ mod tests {
             system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
         });
         assert!(output.content.contains("Hello"));
         assert!(output.content.contains("Welcome"));
@@ -985,6 +990,7 @@ mod tests {
             system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
         });
         assert_eq!(output.runtime_mode, "managed-agent-provider-bound-v1");
         assert!(output.content.contains("canonical agent-engine"));
@@ -1053,6 +1059,7 @@ mod tests {
             system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
         });
         assert_eq!(output.content, "kernel reply");
         assert_eq!(output.runtime_mode, "managed-agent-kernel-model-v1");
@@ -1153,6 +1160,7 @@ mod tests {
             system_prompt: None,
             auth_token: None,
             access_token: None,
+            wire_protocol: None,
         }
     }
 

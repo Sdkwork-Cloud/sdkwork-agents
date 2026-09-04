@@ -935,6 +935,10 @@ pub struct CreateTurnCommand {
     /// never persisted). Paired with `auth_token` for dual-token access to
     /// the cloudrouter gateway (`Authorization: Bearer` + `Access-Token`).
     pub access_token: Option<String>,
+    /// Optional LLM wire protocol override for the cloudrouter gateway
+    /// invocation (`chat_completions` default, `anthropic_messages`,
+    /// `google_content`, `openai_responses`). Transient — never persisted.
+    pub wire_protocol: Option<String>,
 }
 
 /// Result of one completed Turn with its complete authoritative item set.
