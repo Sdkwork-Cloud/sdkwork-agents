@@ -185,12 +185,14 @@ pub use sql::{
     SQL_SELECT_AGENT_PROJECT_BY_WORKSPACE_NAME, SQL_SELECT_AGENT_PROJECT_COMPOSITION_SLOT,
     SQL_SELECT_AGENT_RESOURCE_USER_STATE, SQL_SELECT_AGENT_SESSION,
     SQL_SELECT_AGENT_SESSION_BY_CREATE_IDEMPOTENCY, SQL_SELECT_AGENT_SESSION_CHECKPOINT,
-    SQL_SELECT_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_SELECT_AGENT_SESSION_ITEM, SQL_SELECT_AGENT_SESSION_ITEM_ID_BY_TURN_AND_KIND,
+    SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING,
     SQL_SELECT_AGENT_SESSION_RUNTIME_BINDING_BY_PROVIDER_SESSION, SQL_SELECT_AGENT_TASK,
     SQL_SELECT_AGENT_TOOL_CONFIGURATION, SQL_SELECT_AGENT_TURN,
-    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_WORKSPACE,
-    SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING, SQL_SELECT_DEFAULT_AGENT_WORKSPACE,
-    SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT, SQL_SELECT_TURN_INPUT_QUEUE_ENTRY,
+    SQL_SELECT_AGENT_TURN_BY_IDEMPOTENCY, SQL_SELECT_AGENT_TURN_FOR_UPDATE,
+    SQL_SELECT_AGENT_WORKSPACE, SQL_SELECT_CURRENT_AGENT_SESSION_RUNTIME_BINDING,
+    SQL_SELECT_DEFAULT_AGENT_WORKSPACE, SQL_SELECT_TASK_SCHEDULER_METRICS_SNAPSHOT,
+    SQL_SELECT_TURN_INPUT_QUEUE_ENTRY, SQL_SELECT_TURN_STREAMING_CONTENT,
     SQL_UPDATE_AGENT_INTERACTION, SQL_UPDATE_AGENT_PROJECT,
     SQL_UPDATE_AGENT_PROJECT_COMPOSITION_SLOT, SQL_UPDATE_AGENT_SESSION,
     SQL_UPDATE_AGENT_SESSION_CHECKPOINT, SQL_UPDATE_AGENT_SESSION_ITEM,
@@ -2678,6 +2680,29 @@ pub trait AgentRepositoryAdapter: Send + Sync {
             message: "clear_turn_streaming_content requires an adapter override".to_string(),
         })
     }
+    /// Reads the retained streaming checkpoint of one Turn, if any.
+    fn read_turn_streaming_content_record(
+        &self,
+        _tenant_id: u64,
+        _organization_id: u64,
+        _turn_id: &str,
+    ) -> KernelResult<Option<String>> {
+        Err(KernelError::Internal {
+            message: "read_turn_streaming_content_record requires an adapter override".to_string(),
+        })
+    }
+    /// Promotes the streaming checkpoint of a failed/cancelled Turn into a
+    /// durable partial assistant-output item. Idempotent; the checkpoint value
+    /// stored in the adapter is authoritative for the promoted content.
+    fn append_interrupted_turn_output_record(
+        &self,
+        _item: AgentSessionItemRow,
+    ) -> KernelResult<Option<AgentSessionItemRow>> {
+        Err(KernelError::Internal {
+            message: "append_interrupted_turn_output_record requires an adapter override"
+                .to_string(),
+        })
+    }
     fn insert_turn_request_rows(
         &self,
         _turn: AgentTurnRow,
@@ -3808,6 +3833,28 @@ where
             .clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 
+    fn read_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<String>> {
+        self.adapter
+            .read_turn_streaming_content_record(tenant_id, organization_id, turn_id)
+    }
+
+    fn append_interrupted_turn_output(
+        &self,
+        record: AgentSessionItemRecord,
+    ) -> KernelResult<Option<AgentSessionItemRecord>> {
+        let item_row = AgentSessionItemRow::from_record(&record)?;
+        Ok(self
+            .adapter
+            .append_interrupted_turn_output_record(item_row)?
+            .map(|row| row.into_record())
+            .transpose()?)
+    }
+
     fn insert_turn_request(
         &self,
         turn: AgentTurnRecord,
@@ -4793,6 +4840,86 @@ async fn insert_session_item_in_transaction(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Promotes the streaming checkpoint of a failed/cancelled Turn into one
+/// durable partial assistant-output item. Runs inside an open transaction:
+/// the Turn row is locked `FOR UPDATE`, the checkpoint stored in the Turn row
+/// is authoritative for the promoted content, the promotion happens at most
+/// once per Turn, and the checkpoint is consumed atomically with the insert.
+#[cfg(feature = "postgres-sync")]
+async fn append_interrupted_turn_output_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: &AgentSessionItemRow,
+) -> Result<Option<AgentSessionItemRow>, sqlx::Error> {
+    let tenant_id = u64_to_i64(item.tenant_id, "item.tenant_id").map_err(transaction_error)?;
+    let organization_id =
+        u64_to_i64(item.organization_id, "item.organization_id").map_err(transaction_error)?;
+    let turn_id = item.turn_id.clone().ok_or_else(|| {
+        transaction_error(KernelError::validation(
+            "interrupted turn output requires a turn",
+        ))
+    })?;
+
+    let row = sqlx::query(SQL_SELECT_AGENT_TURN_FOR_UPDATE)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&turn_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| transaction_error(KernelError::not_found("turn not found")))?;
+    let checkpoint: Option<String> = row
+        .try_get("streaming_content")
+        .map_err(map_sqlx_error)
+        .map_err(transaction_error)?;
+    let turn = pg_row_to_agent_turn_row(row).map_err(transaction_error)?;
+    if turn.session_id != item.session_id {
+        return Err(transaction_error(KernelError::validation(
+            "interrupted turn output scope mismatch",
+        )));
+    }
+    if turn.status != AgentTurnStatus::Failed.as_db_code()
+        && turn.status != AgentTurnStatus::Cancelled.as_db_code()
+    {
+        // Not a promotable terminal state: nothing to do (idempotent no-op).
+        return Ok(None);
+    }
+    let Some(checkpoint) = checkpoint.filter(|content| !content.trim().is_empty()) else {
+        return Ok(None);
+    };
+
+    // Promote at most once per Turn: an existing assistant item wins.
+    let existing = sqlx::query(SQL_SELECT_AGENT_SESSION_ITEM_ID_BY_TURN_AND_KIND)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&item.session_id)
+        .bind(&turn_id)
+        .bind(AgentSessionItemKind::AssistantOutput.as_db_code())
+        .fetch_optional(&mut **tx)
+        .await?;
+    if existing.is_some() {
+        return Ok(None);
+    }
+
+    let mut promoted = item.clone();
+    let session = record_session_item_in_transaction(tx, &promoted, true).await?;
+    if session.agent_id != turn.agent_id || session.owner_user_id != turn.owner_user_id {
+        return Err(transaction_error(KernelError::validation(
+            "interrupted turn output does not belong to the Session agent and owner",
+        )));
+    }
+    promoted.sequence = session.last_item_sequence;
+    promoted.content = Some(checkpoint);
+    insert_session_item_in_transaction(tx, &promoted).await?;
+
+    // Consume the checkpoint atomically with the promotion.
+    sqlx::query(SQL_CLEAR_TURN_STREAMING_CONTENT)
+        .bind(tenant_id)
+        .bind(organization_id)
+        .bind(&turn_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(Some(promoted))
 }
 
 #[cfg(feature = "postgres-sync")]
@@ -8688,6 +8815,60 @@ impl AgentRepositoryAdapter for SyncPostgresAdapter {
                 turn_id
             )?;
             Ok(())
+        })
+    }
+
+    fn read_turn_streaming_content_record(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<String>> {
+        let tenant_id = u64_to_i64(tenant_id, "tenant_id")?;
+        let organization_id = u64_to_i64(organization_id, "organization_id")?;
+        self.with_pool(|pool| {
+            Ok(pg_query_optional!(
+                pool,
+                SQL_SELECT_TURN_STREAMING_CONTENT,
+                tenant_id,
+                organization_id,
+                turn_id
+            )?
+            .and_then(|row| {
+                row.try_get::<Option<String>, _>("streaming_content")
+                    .ok()
+                    .flatten()
+            }))
+        })
+    }
+
+    fn append_interrupted_turn_output_record(
+        &self,
+        item: AgentSessionItemRow,
+    ) -> KernelResult<Option<AgentSessionItemRow>> {
+        if item.kind != AgentSessionItemKind::AssistantOutput.as_db_code()
+            || item.status != AgentSessionItemStatus::Completed.as_db_code()
+            || item.sequence != 0
+            || item.content.is_some()
+            || item.turn_id.is_none()
+        {
+            return Err(KernelError::validation(
+                "interrupted turn output must be a completed, unsequenced assistant item without inline content",
+            ));
+        }
+        self.with_pool(|pool| {
+            let pg_pool = pool.pool().clone();
+            pool.run_kernel(async move {
+                retry_postgres_transaction(|| async {
+                    let item = item.clone();
+                    let mut tx = pg_pool.begin().await?;
+                    let outcome =
+                        append_interrupted_turn_output_in_transaction(&mut tx, &item).await?;
+                    tx.commit().await?;
+                    Ok(outcome)
+                })
+                .await
+            })
         })
     }
 

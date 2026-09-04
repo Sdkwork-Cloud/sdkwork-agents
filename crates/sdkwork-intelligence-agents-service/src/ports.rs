@@ -1859,6 +1859,28 @@ pub trait AgentRepository: Send + Sync {
         turn_id: &str,
     ) -> KernelResult<()>;
 
+    /// Reads the retained streaming checkpoint of one Turn, if any. Used as a
+    /// cheap pre-check before promoting an interrupted Turn's partial reply.
+    fn read_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<String>>;
+
+    /// Promotes the streaming checkpoint of a failed or cancelled Turn into a
+    /// durable partial assistant-output item so the partially generated reply
+    /// stays visible after reload (industry parity: Anthropic/OpenAI keep
+    /// partial content after interruptions). Idempotent: returns `Ok(None)`
+    /// when the Turn carries no checkpoint, is not in a failed/cancelled
+    /// terminal state, or already owns an assistant item. The persisted item's
+    /// content is taken from the Turn's checkpoint inside the store, not from
+    /// the caller-supplied record.
+    fn append_interrupted_turn_output(
+        &self,
+        record: AgentSessionItemRecord,
+    ) -> KernelResult<Option<AgentSessionItemRecord>>;
+
     /// Atomically persist a requested turn, its user-input item, any Drive
     /// references, and the corresponding session counter update.
     fn insert_turn_request(

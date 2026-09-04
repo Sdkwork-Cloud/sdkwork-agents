@@ -395,6 +395,15 @@ pub const SQL_APPEND_TURN_STREAMING_CONTENT: &str =
 pub const SQL_CLEAR_TURN_STREAMING_CONTENT: &str =
     "UPDATE ai_agent_turn SET streaming_content = NULL WHERE tenant_id = $1 AND organization_id = $2 AND turn_id = $3";
 #[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_TURN_STREAMING_CONTENT: &str =
+    "SELECT streaming_content FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND turn_id = $3 LIMIT 1";
+#[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_AGENT_TURN_FOR_UPDATE: &str =
+    "SELECT id, uuid, tenant_id, organization_id, turn_id, session_id, agent_id, owner_user_id, runtime_binding_id, client_request_id, idempotency_key, payload_hash, request_item_id, response_item_id, turn_mode, status, requested_model_id, provider_binding_id, model_id, provider_id, input_tokens, output_tokens, cached_tokens, finish_reason, error_code, error_detail, trace_id, attempt_count, max_attempts, next_retry_at::text AS next_retry_at, available_at::text AS available_at, lease_owner, lease_token, lease_expires_at::text AS lease_expires_at, fencing_token, version, created_at::text AS created_at, updated_at::text AS updated_at, started_at::text AS started_at, completed_at::text AS completed_at, cancel_requested_at::text AS cancel_requested_at, cancelled_at::text AS cancelled_at, retention_until::text AS retention_until, streaming_content FROM ai_agent_turn WHERE tenant_id = $1 AND organization_id = $2 AND turn_id = $3 LIMIT 1 FOR UPDATE";
+#[cfg(feature = "postgres-sync")]
+pub const SQL_SELECT_AGENT_SESSION_ITEM_ID_BY_TURN_AND_KIND: &str =
+    "SELECT item_id FROM ai_agent_session_item WHERE tenant_id = $1 AND organization_id = $2 AND session_id = $3 AND turn_id = $4 AND kind = $5 LIMIT 1";
+#[cfg(feature = "postgres-sync")]
 pub const SQL_UPDATE_AGENT_TURN_STATE: &str =
     "UPDATE ai_agent_turn SET response_item_id = $1, runtime_binding_id = $2, turn_mode = $3, status = $4, requested_model_id = $5, provider_binding_id = $6, model_id = $7, provider_id = $8, input_tokens = $9, output_tokens = $10, cached_tokens = $11, finish_reason = $12, error_code = $13, error_detail = $14, trace_id = $15, attempt_count = $16, max_attempts = $17, next_retry_at = $18::timestamptz, available_at = $19::timestamptz, lease_owner = $20, lease_token = $21, lease_expires_at = $22::timestamptz, fencing_token = $23, version = $24, updated_at = $25::timestamptz, started_at = $26::timestamptz, completed_at = $27::timestamptz, cancel_requested_at = $28::timestamptz, cancelled_at = $29::timestamptz, retention_until = $30::timestamptz WHERE tenant_id = $31 AND organization_id = $32 AND turn_id = $33 AND version = $34";
 #[cfg(feature = "postgres-sync")]

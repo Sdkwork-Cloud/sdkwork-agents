@@ -9,9 +9,10 @@ use crate::domain::{
     AgentBusinessRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord,
     AgentInteractionKind, AgentInteractionRecord, AgentItemDriveRefRecord, AgentItemFeedbackRecord,
     AgentProviderBindingRecord, AgentResourceType, AgentResourceUserStateRecord,
-    AgentSessionCheckpointRecord, AgentSessionItemRecord, AgentSessionItemStatus,
-    AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionRuntimeBindingStatus,
-    AgentTaskRecord, AgentToolAssetRecord, AgentToolConfigurationRecord,
+    AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord,
+    AgentSessionItemStatus, AgentSessionRecord, AgentSessionRuntimeBindingRecord,
+    AgentSessionRuntimeBindingStatus, AgentTaskRecord, AgentToolAssetRecord,
+    AgentToolConfigurationRecord,
 };
 use crate::id::{AgentBusinessIdGenerator, AgentIdGenerator};
 use crate::in_memory_pagination::{count_iterator, paginate_items, paginate_iterator};
@@ -486,7 +487,11 @@ pub struct InMemoryAgentRepository {
     task_index: RwLock<BTreeMap<TaskIndexKey, TaskPrimaryKey>>,
     task_runs: RwLock<HashMap<TaskRunPrimaryKey, AgentTaskRunRecord>>,
     task_run_attempts: RwLock<HashMap<TaskRunAttemptPrimaryKey, AgentTaskRunAttemptRecord>>,
+    turn_streaming_checkpoints: RwLock<HashMap<TurnStreamingCheckpointKey, String>>,
 }
+
+/// Streaming-checkpoint storage key: (tenant, organization, turn_id).
+type TurnStreamingCheckpointKey = (u64, u64, String);
 
 impl InMemoryAgentRepository {
     pub fn try_new() -> KernelResult<Self> {
@@ -539,6 +544,7 @@ impl InMemoryAgentRepository {
             task_index: RwLock::new(BTreeMap::new()),
             task_runs: RwLock::new(HashMap::new()),
             task_run_attempts: RwLock::new(HashMap::new()),
+            turn_streaming_checkpoints: RwLock::new(HashMap::new()),
         }
     }
 
@@ -3604,12 +3610,8 @@ impl AgentRepository for InMemoryAgentRepository {
         content: &str,
         updated_at: &str,
     ) -> KernelResult<()> {
-        // The in-memory repository is a dev/test store that does not survive
-        // restarts, so there is no durable checkpoint to write. Keeping the
-        // contract honest: the turn timestamp is advanced so reconciliation
-        // semantics match the durable adapter, and `content` is intentionally
-        // not retained (nothing to recover from in a process-local store).
-        let _ = content;
+        // The in-memory repository retains the checkpoint so interrupted-turn
+        // promotion behaves the same as the durable adapter in dev/test.
         let mut turns = self.turns.recovering_write();
         let mut matched = false;
         for (key, turn) in turns.iter_mut() {
@@ -3632,17 +3634,182 @@ impl AgentRepository for InMemoryAgentRepository {
         if !matched {
             return Err(KernelError::not_found("turn not found or not running"));
         }
+        self.turn_streaming_checkpoints.recovering_write().insert(
+            (tenant_id, organization_id, turn_id.to_string()),
+            content.to_string(),
+        );
         Ok(())
     }
 
     fn clear_turn_streaming_content(
         &self,
-        _tenant_id: u64,
-        _organization_id: u64,
-        _turn_id: &str,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
     ) -> KernelResult<()> {
-        // Nothing to clear in the in-memory store (see append above).
+        self.turn_streaming_checkpoints.recovering_write().remove(&(
+            tenant_id,
+            organization_id,
+            turn_id.to_string(),
+        ));
         Ok(())
+    }
+
+    fn read_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<String>> {
+        Ok(self
+            .turn_streaming_checkpoints
+            .recovering_read()
+            .get(&(tenant_id, organization_id, turn_id.to_string()))
+            .cloned())
+    }
+
+    fn append_interrupted_turn_output(
+        &self,
+        mut record: AgentSessionItemRecord,
+    ) -> KernelResult<Option<AgentSessionItemRecord>> {
+        if record.kind != AgentSessionItemKind::AssistantOutput
+            || record.status != AgentSessionItemStatus::Completed
+            || record.sequence != 0
+            || record.content.is_some()
+        {
+            return Err(KernelError::validation(
+                "interrupted turn output must be a completed, unsequenced assistant item without inline content",
+            ));
+        }
+        let turn_id = record
+            .turn_id
+            .clone()
+            .ok_or_else(|| KernelError::validation("interrupted turn output requires a turn"))?;
+        let turn_primary_key = (record.tenant_id, record.organization_id, turn_id.clone());
+        let session_primary_key = (
+            record.tenant_id,
+            record.organization_id,
+            record.session_id.clone(),
+        );
+
+        // Lock order matches complete_turn: turns, sessions, session_index,
+        // items, session_item_index.
+        let checkpoint = {
+            let turns = self.turns.recovering_read();
+            let turn = turns
+                .get(&turn_primary_key)
+                .ok_or_else(|| KernelError::not_found("turn not found"))?;
+            if turn.session_id != record.session_id
+                || turn.owner_user_id != record.created_by
+                || turn.turn_id != turn_id
+            {
+                return Err(KernelError::validation(
+                    "interrupted turn output scope mismatch",
+                ));
+            }
+            if !matches!(
+                turn.status,
+                AgentTurnStatus::Failed | AgentTurnStatus::Cancelled
+            ) {
+                // Not a promotable terminal state: nothing to do (idempotent).
+                return Ok(None);
+            }
+            self.turn_streaming_checkpoints
+                .recovering_read()
+                .get(&(
+                    record.tenant_id,
+                    record.organization_id,
+                    turn_id.to_string(),
+                ))
+                .cloned()
+        };
+        let Some(checkpoint) = checkpoint.filter(|content| !content.trim().is_empty()) else {
+            return Ok(None);
+        };
+
+        // Idempotency: an interrupted turn is promoted at most once.
+        {
+            let items = self.items.recovering_read();
+            let index = self.session_item_index.recovering_read();
+            let scope_start = (
+                record.tenant_id,
+                record.organization_id,
+                record.session_id.clone(),
+                0,
+                0,
+            );
+            let scope_end = (
+                record.tenant_id,
+                record.organization_id,
+                record.session_id.clone(),
+                u64::MAX,
+                u64::MAX,
+            );
+            if index
+                .range(scope_start..=scope_end)
+                .filter_map(|(_, primary_key)| items.get(primary_key))
+                .any(|item| {
+                    item.turn_id.as_deref() == Some(turn_id.as_str())
+                        && item.kind == AgentSessionItemKind::AssistantOutput
+                })
+            {
+                return Ok(None);
+            }
+        }
+
+        let mut sessions = self.sessions.recovering_write();
+        let mut session_index = self.session_index.recovering_write();
+        let mut items = self.items.recovering_write();
+        let mut item_index = self.session_item_index.recovering_write();
+        let existing_session = sessions
+            .get(&session_primary_key)
+            .cloned()
+            .ok_or_else(|| KernelError::not_found("active session not found"))?;
+        if !existing_session.status.is_active()
+            || existing_session.deleted_at.is_some()
+            || existing_session.owner_user_id != record.created_by
+        {
+            return Err(KernelError::not_found("active session not found"));
+        }
+        record.sequence = existing_session.last_item_sequence.saturating_add(1);
+        record.content = Some(checkpoint);
+        let primary_key = session_item_primary_key(&record);
+        if items.contains_key(&primary_key) {
+            return Err(KernelError::conflict("session item already exists"));
+        }
+        let index_key = session_item_index_key(&record);
+        if item_index.contains_key(&index_key) {
+            return Err(KernelError::conflict("session item sequence conflict"));
+        }
+        let mut updated_session = existing_session.clone();
+        updated_session.updated_by = record.created_by;
+        updated_session.record_item(
+            record.input_tokens,
+            record.output_tokens,
+            record.updated_at.clone(),
+        );
+        let previous_session_index_key = session_index_key(&existing_session);
+        let next_session_index_key = session_index_key(&updated_session);
+        items.insert(primary_key.clone(), record.clone());
+        item_index.insert(index_key, primary_key);
+        sessions.insert(session_primary_key.clone(), updated_session.clone());
+        session_index.remove(&previous_session_index_key);
+        session_index.insert(next_session_index_key, session_primary_key);
+        drop(sessions);
+        drop(session_index);
+        drop(items);
+        drop(item_index);
+        self.turn_streaming_checkpoints.recovering_write().remove(&(
+            record.tenant_id,
+            record.organization_id,
+            turn_id.to_string(),
+        ));
+        self.advance_session_activity(
+            &updated_session,
+            &record.updated_at,
+            SessionActivitySource::Session,
+        );
+        Ok(Some(record))
     }
 
     fn insert_turn_request(
@@ -6032,9 +6199,11 @@ fn agent_matches_list_query(record: &AgentBusinessRecord, query: &AgentListQuery
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_turn::AgentTurnMode;
     use crate::domain::{
         AgentBusinessStatus, AgentImplementationKind, AgentImplementationType,
-        AgentProviderBindingRecord, AgentVisibility,
+        AgentProviderBindingRecord, AgentSessionEntrySurface, AgentSessionKind, AgentSessionStatus,
+        AgentSessionTitleSource, AgentVisibility,
     };
     use crate::ports::{PaginationParams, ProviderBindingListQuery, MAX_PAGE_SIZE};
     use crate::validation::ID_PREFIX_ITEM;
@@ -7364,5 +7533,284 @@ mod tests {
             Some(value) => std::env::set_var(key, value),
             None => std::env::remove_var(key),
         }
+    }
+
+    fn interrupted_turn_fixture() -> (InMemoryAgentRepository, AgentTurnRecord) {
+        let repository = InMemoryAgentRepository::new();
+        let session = AgentSessionRecord {
+            id: 9001,
+            session_id: "session.promote".to_string(),
+            tenant_id: 100_001,
+            organization_id: 0,
+            agent_id: "agent.alpha".to_string(),
+            owner_user_id: 100,
+            project_id: None,
+            session_kind: AgentSessionKind::Assistant,
+            entry_surface: AgentSessionEntrySurface::Pc,
+            source_module: None,
+            source_context_kind: None,
+            source_context_id: None,
+            parent_session_id: None,
+            forked_from_turn_id: None,
+            title: None,
+            title_source: AgentSessionTitleSource::Provider,
+            status: AgentSessionStatus::Active,
+            item_count: 0,
+            last_item_sequence: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            idempotency_key: None,
+            payload_hash: None,
+            created_by: 100,
+            updated_by: 100,
+            version: 1,
+            created_at: "2026-09-04T00:00:00Z".to_string(),
+            updated_at: "2026-09-04T00:00:00Z".to_string(),
+            last_item_at: None,
+            closed_at: None,
+            archived_at: None,
+            archived_by: None,
+            deleted_at: None,
+            deleted_by: None,
+            retention_until: None,
+        };
+        repository
+            .insert_session(session.clone())
+            .expect("session insert should succeed");
+
+        let turn = AgentTurnRecord {
+            id: 9101,
+            turn_id: "turn.promote".to_string(),
+            tenant_id: 100_001,
+            organization_id: 0,
+            session_id: session.session_id.clone(),
+            agent_id: session.agent_id.clone(),
+            owner_user_id: session.owner_user_id,
+            runtime_binding_id: None,
+            client_request_id: None,
+            idempotency_key: "idem.promote".to_string(),
+            payload_hash: "hash.promote".to_string(),
+            request_item_id: "item.request.promote".to_string(),
+            response_item_id: None,
+            turn_mode: AgentTurnMode::Interactive,
+            status: AgentTurnStatus::Requested,
+            requested_model_id: Some("model.promote".to_string()),
+            provider_binding_id: None,
+            model_id: None,
+            provider_id: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            cached_tokens: 0,
+            finish_reason: None,
+            error_code: None,
+            error_detail: None,
+            trace_id: None,
+            attempt_count: 0,
+            max_attempts: 3,
+            next_retry_at: None,
+            available_at: "2026-09-04T00:00:00Z".to_string(),
+            lease_owner: None,
+            lease_token: None,
+            lease_expires_at: None,
+            fencing_token: 0,
+            version: 0,
+            created_at: "2026-09-04T00:00:00Z".to_string(),
+            updated_at: "2026-09-04T00:00:00Z".to_string(),
+            started_at: None,
+            completed_at: None,
+            cancel_requested_at: None,
+            cancelled_at: None,
+            retention_until: None,
+        };
+        let user_input_item = AgentSessionItemRecord {
+            id: 9201,
+            item_id: turn.request_item_id.clone(),
+            tenant_id: turn.tenant_id,
+            organization_id: turn.organization_id,
+            session_id: turn.session_id.clone(),
+            kind: AgentSessionItemKind::UserInput,
+            content: Some("hello".to_string()),
+            content_type: "text/plain".to_string(),
+            status: AgentSessionItemStatus::Completed,
+            sequence: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            model_id: None,
+            provider_id: None,
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            provider_payload_json: None,
+            parent_item_id: None,
+            turn_id: Some(turn.turn_id.clone()),
+            created_by: turn.owner_user_id,
+            version: 0,
+            created_at: "2026-09-04T00:00:00Z".to_string(),
+            updated_at: "2026-09-04T00:00:00Z".to_string(),
+            completed_at: Some("2026-09-04T00:00:00Z".to_string()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
+        };
+        repository
+            .insert_turn_request(turn.clone(), user_input_item, Vec::new())
+            .expect("turn request insert should succeed");
+        (repository, turn)
+    }
+
+    fn partial_output_record(turn: &AgentTurnRecord) -> AgentSessionItemRecord {
+        AgentSessionItemRecord {
+            id: 9301,
+            item_id: "item.partial.promote".to_string(),
+            tenant_id: turn.tenant_id,
+            organization_id: turn.organization_id,
+            session_id: turn.session_id.clone(),
+            kind: AgentSessionItemKind::AssistantOutput,
+            content: None,
+            content_type: "text/plain".to_string(),
+            status: AgentSessionItemStatus::Completed,
+            sequence: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            model_id: turn.model_id.clone(),
+            provider_id: turn.provider_id.clone(),
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            provider_payload_json: None,
+            parent_item_id: Some(turn.request_item_id.clone()),
+            turn_id: Some(turn.turn_id.clone()),
+            created_by: turn.owner_user_id,
+            version: 0,
+            created_at: "2026-09-04T00:01:00Z".to_string(),
+            updated_at: "2026-09-04T00:01:00Z".to_string(),
+            completed_at: Some("2026-09-04T00:01:00Z".to_string()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
+        }
+    }
+
+    #[test]
+    fn in_memory_repository_promotes_interrupted_turn_output_once() {
+        let (repository, mut turn) = interrupted_turn_fixture();
+        turn.mark_running("2026-09-04T00:00:30Z");
+        let running_turn = repository
+            .update_turn_state(turn, 0)
+            .expect("running state update should succeed");
+        repository
+            .append_turn_streaming_content(
+                running_turn.tenant_id,
+                running_turn.organization_id,
+                &running_turn.turn_id,
+                "partial answer so far",
+                "2026-09-04T00:00:40Z",
+            )
+            .expect("streaming checkpoint should be accepted while running");
+        let mut failed_turn_input = running_turn;
+        failed_turn_input.mark_failed(
+            "turn_inference_failed",
+            "managed turn inference failed",
+            "2026-09-04T00:01:00Z",
+        );
+        let failed_turn = repository
+            .update_turn_state(failed_turn_input, 1)
+            .expect("failed state update should succeed");
+
+        let promoted = repository
+            .append_interrupted_turn_output(partial_output_record(&failed_turn))
+            .expect("promotion should not error");
+        let promoted = promoted.expect("checkpointed turn output should promote");
+
+        assert_eq!(promoted.kind, AgentSessionItemKind::AssistantOutput);
+        assert_eq!(
+            promoted.content.as_deref(),
+            Some("partial answer so far"),
+            "promoted content must come from the turn checkpoint"
+        );
+        assert_eq!(promoted.sequence, 2, "sequence follows the request item");
+        assert_eq!(
+            promoted.parent_item_id.as_deref(),
+            Some(failed_turn.request_item_id.as_str())
+        );
+        assert_eq!(
+            repository
+                .read_turn_streaming_content(
+                    failed_turn.tenant_id,
+                    failed_turn.organization_id,
+                    &failed_turn.turn_id,
+                )
+                .expect("checkpoint read should not error"),
+            None,
+            "checkpoint must be consumed by the promotion"
+        );
+
+        // Idempotent: a second promotion for the same turn is a no-op.
+        let replay = repository
+            .append_interrupted_turn_output(partial_output_record(&failed_turn))
+            .expect("replay should not error");
+        assert!(replay.is_none(), "promotion must happen at most once");
+
+        let items = repository
+            .list_session_items_by_turn(
+                failed_turn.tenant_id,
+                failed_turn.organization_id,
+                &failed_turn.session_id,
+                &failed_turn.turn_id,
+                50,
+            )
+            .expect("turn item listing should not error");
+        let assistant_items = items
+            .iter()
+            .filter(|item| item.kind == AgentSessionItemKind::AssistantOutput)
+            .count();
+        assert_eq!(assistant_items, 1, "exactly one partial assistant item");
+    }
+
+    #[test]
+    fn in_memory_repository_skips_promotion_without_checkpoint() {
+        let (repository, mut turn) = interrupted_turn_fixture();
+        turn.mark_running("2026-09-04T00:00:30Z");
+        let running_turn = repository
+            .update_turn_state(turn, 0)
+            .expect("running state update should succeed");
+        let mut failed_turn_input = running_turn;
+        failed_turn_input.mark_failed("turn_inference_failed", "failed", "2026-09-04T00:01:00Z");
+        let failed_turn = repository
+            .update_turn_state(failed_turn_input, 1)
+            .expect("failed state update should succeed");
+
+        let promoted = repository
+            .append_interrupted_turn_output(partial_output_record(&failed_turn))
+            .expect("promotion should not error");
+        assert!(promoted.is_none(), "no checkpoint means nothing to promote");
+    }
+
+    #[test]
+    fn in_memory_repository_skips_promotion_for_running_turn() {
+        let (repository, mut turn) = interrupted_turn_fixture();
+        turn.mark_running("2026-09-04T00:00:30Z");
+        let running_turn = repository
+            .update_turn_state(turn, 0)
+            .expect("running state update should succeed");
+        repository
+            .append_turn_streaming_content(
+                running_turn.tenant_id,
+                running_turn.organization_id,
+                &running_turn.turn_id,
+                "still streaming",
+                "2026-09-04T00:00:40Z",
+            )
+            .expect("streaming checkpoint should be accepted while running");
+
+        let promoted = repository
+            .append_interrupted_turn_output(partial_output_record(&running_turn))
+            .expect("promotion should not error");
+        assert!(
+            promoted.is_none(),
+            "running turns are never promoted (only failed/cancelled terminal states)"
+        );
     }
 }

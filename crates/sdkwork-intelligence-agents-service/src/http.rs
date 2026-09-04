@@ -1033,6 +1033,23 @@ impl AgentRepository for DynAgentRepository {
             .clear_turn_streaming_content(tenant_id, organization_id, turn_id)
     }
 
+    fn read_turn_streaming_content(
+        &self,
+        tenant_id: u64,
+        organization_id: u64,
+        turn_id: &str,
+    ) -> KernelResult<Option<String>> {
+        self.0
+            .read_turn_streaming_content(tenant_id, organization_id, turn_id)
+    }
+
+    fn append_interrupted_turn_output(
+        &self,
+        record: crate::domain::AgentSessionItemRecord,
+    ) -> KernelResult<Option<crate::domain::AgentSessionItemRecord>> {
+        self.0.append_interrupted_turn_output(record)
+    }
+
     fn insert_turn_request(
         &self,
         turn: crate::agent_turn::AgentTurnRecord,

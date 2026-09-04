@@ -6849,6 +6849,9 @@ where
             );
             match self.repository.update_turn_state(turn, expected_version) {
                 Ok(record) => {
+                    // Preserve the partially generated reply for reload when
+                    // the reconciled Turn streamed anything (best effort).
+                    let _ = self.persist_interrupted_turn_output(&record, occurred_at);
                     self.emit_turn_audit_event(
                         AgentAuditAction::TurnFailed,
                         &record,
@@ -7599,6 +7602,68 @@ where
             stream_sink,
         );
     }
+    /// Promotes an interrupted Turn's streaming checkpoint into a durable
+    /// partial assistant-output item so the partially generated reply stays
+    /// visible in the session transcript after reload (industry parity:
+    /// Anthropic/OpenAI keep partial content after interruptions). Must be
+    /// called only after the Turn has durably reached a failed/cancelled
+    /// terminal state — completion can then never double-write an assistant
+    /// item for the same Turn. Promotion is best-effort: repository errors are
+    /// swallowed by callers and must never mask the original Turn outcome.
+    fn persist_interrupted_turn_output(
+        &self,
+        turn: &AgentTurnRecord,
+        occurred_at: &str,
+    ) -> KernelResult<()> {
+        // Fast path: nothing streamed, nothing to promote.
+        match self.repository.read_turn_streaming_content(
+            turn.tenant_id,
+            turn.organization_id,
+            &turn.turn_id,
+        )? {
+            Some(content) if !content.trim().is_empty() => {}
+            _ => return Ok(()),
+        }
+        let partial = AgentSessionItemRecord {
+            id: self.repository.next_id()?,
+            item_id: format!("{ID_PREFIX_ITEM}{}", self.repository.next_id()?),
+            tenant_id: turn.tenant_id,
+            organization_id: turn.organization_id,
+            session_id: turn.session_id.clone(),
+            kind: AgentSessionItemKind::AssistantOutput,
+            // The repository takes the authoritative content from the Turn's
+            // streaming checkpoint inside its own write transaction.
+            content: None,
+            content_type: "text/plain".to_string(),
+            status: AgentSessionItemStatus::Completed,
+            sequence: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            model_id: turn
+                .model_id
+                .clone()
+                .or_else(|| turn.requested_model_id.clone()),
+            provider_id: turn.provider_id.clone(),
+            tool_name: None,
+            tool_call_id: None,
+            tool_arguments_json: None,
+            tool_result_json: None,
+            provider_payload_json: None,
+            parent_item_id: Some(turn.request_item_id.clone()),
+            turn_id: Some(turn.turn_id.clone()),
+            created_by: turn.owner_user_id,
+            version: 0,
+            created_at: occurred_at.to_string(),
+            updated_at: occurred_at.to_string(),
+            completed_at: Some(occurred_at.to_string()),
+            redacted_at: None,
+            redacted_by: None,
+            retention_until: None,
+        };
+        let _ = self.repository.append_interrupted_turn_output(partial)?;
+        Ok(())
+    }
+
     /// Executes a committed Turn request through the provider and persists
     /// the authoritative outcome.
     ///
@@ -7702,6 +7767,9 @@ where
             };
             turn.mark_failed(error_code, error_detail, command.requested_at.clone());
             let failed_turn = self.repository.update_turn_state(turn, 1)?;
+            // Preserve the partially generated reply for reload (industry
+            // parity: partial content survives interruptions).
+            let _ = self.persist_interrupted_turn_output(&failed_turn, &command.requested_at);
             self.emit_turn_audit_event(
                 AgentAuditAction::TurnFailed,
                 &failed_turn,
@@ -7762,6 +7830,10 @@ where
                 let cancelled_turn = self
                     .repository
                     .update_turn_state(current_turn, expected_version)?;
+                // Preserve the partially generated reply for reload (industry
+                // parity: partial content survives user-initiated stops).
+                let _ =
+                    self.persist_interrupted_turn_output(&cancelled_turn, &command.requested_at);
                 self.emit_turn_audit_event(
                     AgentAuditAction::TurnCancelled,
                     &cancelled_turn,
