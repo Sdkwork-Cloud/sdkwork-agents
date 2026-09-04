@@ -8,6 +8,15 @@
   color: inherit;
 }
 
+/* Muted tone variant: smaller, grayer text for secondary streams such as
+   reasoning/thinking transcripts, so they read as subordinate to the answer.
+   Declared after .chat-markdown so the override wins without relying on
+   bundler CSS ordering. */
+.chat-markdown--muted {
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
 .chat-markdown-streaming .chat-md-stream-cursor {
   display: inline-block;
   width: 2px;

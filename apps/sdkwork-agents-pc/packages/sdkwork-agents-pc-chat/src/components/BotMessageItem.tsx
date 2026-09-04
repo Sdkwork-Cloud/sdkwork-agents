@@ -93,9 +93,9 @@ const ThinkingBlock: React.FC<{ content: string; streaming: boolean; active: boo
       {open && (
         <div
           ref={bodyRef}
-          className="max-h-64 overflow-y-auto border-t border-gray-200/80 px-2.5 py-2 text-[13px] leading-[1.7] text-gray-600 dark:border-gray-700/80 dark:text-gray-300"
+          className="max-h-64 overflow-y-auto border-t border-gray-200/80 px-2.5 py-2"
         >
-          <MarkdownRenderer content={content} streaming={active || streaming} />
+          <MarkdownRenderer content={content} streaming={active || streaming} muted />
         </div>
       )}
     </div>

@@ -55,6 +55,7 @@ const MarkdownRendererImplComponent: React.FC<MarkdownRendererProps> = ({
   content,
   onOpenArtifact,
   streaming = false,
+  muted = false,
 }) => {
   const markdown = useMemo(
     () => prepareChatMarkdownSource(content, streaming),
@@ -209,7 +210,11 @@ const MarkdownRendererImplComponent: React.FC<MarkdownRendererProps> = ({
   return (
     <div
       className={cn(
-        'markdown-body chat-markdown text-gray-800 dark:text-gray-200',
+        'markdown-body chat-markdown',
+        muted && 'chat-markdown--muted',
+        muted
+          ? 'text-gray-500 dark:text-gray-400'
+          : 'text-gray-800 dark:text-gray-200',
         streaming && 'chat-markdown-streaming',
       )}
     >

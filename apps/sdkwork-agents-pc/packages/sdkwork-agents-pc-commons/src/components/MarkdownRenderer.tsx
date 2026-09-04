@@ -10,7 +10,16 @@ export type { MarkdownRendererProps } from './MarkdownRenderer.types';
 
 function plainTextMarkdown(props: MarkdownRendererProps): ReactNode {
   return (
-    <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{props.content}</div>
+    <div
+      className={cn(
+        'whitespace-pre-wrap',
+        props.muted
+          ? 'text-xs text-gray-500 dark:text-gray-400'
+          : 'text-gray-800 dark:text-gray-200',
+      )}
+    >
+      {props.content}
+    </div>
   );
 }
 
