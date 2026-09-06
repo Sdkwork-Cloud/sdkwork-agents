@@ -39,6 +39,13 @@ profiles:
           - agents-app-test.dtupay.com
           - agents-open-test.dtupay.com
           - agents-test.dtupay.com
+      - domain: agents-admin-test.noaper.com
+        tls: noaper.com
+        mode: api
+        aliases:
+          - agents-app-test.noaper.com
+          - agents-open-test.noaper.com
+          - agents-test.noaper.com
       - domain: agents-admin-test.sdkwork.cn
         tls: sdkwork.cn
         mode: web+api
@@ -63,6 +70,13 @@ profiles:
           - agents-app-test.dtupay.cn
           - agents-open-test.dtupay.cn
           - agents-test.dtupay.cn
+      - domain: agents-admin-test.noaper.cn
+        tls: noaper.cn
+        mode: api
+        aliases:
+          - agents-app-test.noaper.cn
+          - agents-open-test.noaper.cn
+          - agents-test.noaper.cn
       - domain: agents-admin-test.skubc.com
         tls: skubc.com
         mode: api
@@ -169,6 +183,13 @@ profiles:
           - agents-app-staging.dtupay.com
           - agents-open-staging.dtupay.com
           - agents-staging.dtupay.com
+      - domain: agents-admin-staging.noaper.com
+        tls: noaper.com
+        mode: api
+        aliases:
+          - agents-app-staging.noaper.com
+          - agents-open-staging.noaper.com
+          - agents-staging.noaper.com
       - domain: agents-admin-staging.sdkwork.cn
         tls: sdkwork.cn
         mode: web+api
@@ -193,6 +214,13 @@ profiles:
           - agents-app-staging.dtupay.cn
           - agents-open-staging.dtupay.cn
           - agents-staging.dtupay.cn
+      - domain: agents-admin-staging.noaper.cn
+        tls: noaper.cn
+        mode: api
+        aliases:
+          - agents-app-staging.noaper.cn
+          - agents-open-staging.noaper.cn
+          - agents-staging.noaper.cn
       - domain: agents-admin-staging.skubc.com
         tls: skubc.com
         mode: api
@@ -299,6 +327,13 @@ profiles:
           - agents-app.dtupay.com
           - agents-open.dtupay.com
           - agents.dtupay.com
+      - domain: agents-admin.noaper.com
+        tls: noaper.com
+        mode: api
+        aliases:
+          - agents-app.noaper.com
+          - agents-open.noaper.com
+          - agents.noaper.com
       - domain: agents-admin.sdkwork.cn
         tls: sdkwork.cn
         mode: web+api
@@ -323,6 +358,13 @@ profiles:
           - agents-app.dtupay.cn
           - agents-open.dtupay.cn
           - agents.dtupay.cn
+      - domain: agents-admin.noaper.cn
+        tls: noaper.cn
+        mode: api
+        aliases:
+          - agents-app.noaper.cn
+          - agents-open.noaper.cn
+          - agents.noaper.cn
       - domain: agents-admin.skubc.com
         tls: skubc.com
         mode: api
@@ -430,6 +472,14 @@ profiles:
           - agents-app.dtupay.com
           - agents-open.dtupay.com
           - agents.dtupay.com
+      - tls: noaper.com
+        mode: web
+        web: adaptive
+        domain: agents-admin.noaper.com
+        aliases:
+          - agents-app.noaper.com
+          - agents-open.noaper.com
+          - agents.noaper.com
       - tls: sdkwork.cn
         mode: web
         web: adaptive
@@ -454,6 +504,14 @@ profiles:
           - agents-app.dtupay.cn
           - agents-open.dtupay.cn
           - agents.dtupay.cn
+      - tls: noaper.cn
+        mode: web
+        web: adaptive
+        domain: agents-admin.noaper.cn
+        aliases:
+          - agents-app.noaper.cn
+          - agents-open.noaper.cn
+          - agents.noaper.cn
       - tls: skubc.com
         mode: web
         web: adaptive

@@ -35,11 +35,11 @@ effective(<profile>.<environment>) =
 
 | Environment | File | Hosts | Example | Listeners |
 | --- | --- | ---: | --- | --- |
-| development | `server.development.toml` | 56 | `agents-dev.sdkwork.com` | 80 |
-| test | `server.test.toml` | 56 | `agents-test.sdkwork.com` | 80 |
-| staging | `server.staging.toml` | 56 | `agents-staging.sdkwork.com` | 80 |
+| development | `server.development.toml` | 64 | `agents-dev.sdkwork.com` | 80 |
+| test | `server.test.toml` | 64 | `agents-test.sdkwork.com` | 80 |
+| staging | `server.staging.toml` | 64 | `agents-staging.sdkwork.com` | 80 |
 | demo | `server.demo.toml` | 56 | `agents-demo.sdkwork.com` | 80 |
-| production | `server.production.toml` | 56 | `agents.sdkwork.com` | 443 ssl + 80 |
+| production | `server.production.toml` | 64 | `agents.sdkwork.com` | 443 ssl + 80 |
 
 Surfaces: application.public-ingress, application.app-http, application.backend-http, application.open-http.
 

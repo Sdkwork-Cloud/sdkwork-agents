@@ -4,7 +4,7 @@
   "mode": "apply",
   "standardProfile": "sdkwork-v3",
   "sdkgenPath": "E:/sdkwork-space/sdkwork-sdk-generator/bin/sdkgen.js",
-  "startedAt": "2026-09-04T13:46:39.159Z",
+  "startedAt": "2026-09-06T16:32:07.050Z",
   "families": [
     {
       "key": "app",
@@ -80,13 +80,13 @@
         }
       ],
       "version": "0.1.0",
-      "fingerprint": "e4f2a413c94ebcb202e2efbaf0b953ef18000203984f1b7f1f11c8fb4a10d3f2",
+      "fingerprint": "5a0e73c93fb527427ca8bf43f4f569e9d49d720e98445cf6d828f71e356c2ebc",
       "fingerprints": {
-        "typescript": "e4f2a413c94ebcb202e2efbaf0b953ef18000203984f1b7f1f11c8fb4a10d3f2",
-        "flutter": "883f26f170dea37cff6674526f839722d701b3bb206cf7ac104bd80964ee87f0"
+        "typescript": "5a0e73c93fb527427ca8bf43f4f569e9d49d720e98445cf6d828f71e356c2ebc",
+        "flutter": "af12415039263f399540bf3b1c5f94f4e7f43b27c53f2611e1e7f50fe26ad9b4"
       },
       "hasChanges": false,
-      "riskLevel": "medium",
+      "riskLevel": "high",
       "generated": true,
       "languages": [
         {
@@ -95,9 +95,9 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-typescript/generated/server-openapi",
           "packageName": "@sdkwork/agents-app-sdk",
           "version": "0.1.0",
-          "fingerprint": "e4f2a413c94ebcb202e2efbaf0b953ef18000203984f1b7f1f11c8fb4a10d3f2",
+          "fingerprint": "5a0e73c93fb527427ca8bf43f4f569e9d49d720e98445cf6d828f71e356c2ebc",
           "hasChanges": false,
-          "riskLevel": "medium",
+          "riskLevel": "high",
           "generated": true
         },
         {
@@ -106,13 +106,13 @@
           "output": "sdks/sdkwork-agents-app-sdk/sdkwork-agents-app-sdk-flutter/generated/server-openapi",
           "packageName": "sdkwork_agents_app_sdk",
           "version": "0.1.0",
-          "fingerprint": "883f26f170dea37cff6674526f839722d701b3bb206cf7ac104bd80964ee87f0",
+          "fingerprint": "af12415039263f399540bf3b1c5f94f4e7f43b27c53f2611e1e7f50fe26ad9b4",
           "hasChanges": false,
-          "riskLevel": "medium",
+          "riskLevel": "high",
           "generated": true
         }
       ]
     }
   ],
-  "finishedAt": "2026-09-04T13:46:41.700Z"
+  "finishedAt": "2026-09-06T16:32:13.765Z"
 }

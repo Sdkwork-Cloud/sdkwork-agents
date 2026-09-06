@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { ActivateAgentProviderBindingRequest, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentEngineCatalog, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentModelProviderId, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionItemSynchronizationResult, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentWorkspaceRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, MediaToolDirectoryEntry, MediaToolInvokeBody, MediaToolInvokeResponse, MigrateModelConfigurationRequest, ModelConfigurationSummaryRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, ToolAssetView, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
+import type { ActivateAgentProviderBindingRequest, AgentCallRecord, AgentCompositionSlotKind, AgentCompositionSlotRecord, AgentEngineCatalog, AgentInteractionKind, AgentInteractionRecord, AgentInteractionStatus, AgentItemFeedbackRecord, AgentModelProviderId, AgentProjectCompositionSlotRecord, AgentProjectMutationRequest, AgentProjectRecord, AgentProjectStatus, AgentProviderBindingRecord, AgentRecord, AgentResourceUserStateRecord, AgentRuntimeExecutionRecord, AgentSessionCheckpointRecord, AgentSessionItemKind, AgentSessionItemRecord, AgentSessionItemStatus, AgentSessionItemSynchronizationResult, AgentSessionRecord, AgentSessionRuntimeBindingRecord, AgentSessionStatus, AgentTaskRecord, AgentTaskRunAttemptRecord, AgentTaskRunRecord, AgentTaskStateChangeRequest, AgentTurnInputQueueEntry, AgentTurnRecord, AgentTurnStreamEvent, AgentUsageRecord, AgentUsageSummary, AgentVersionRecord, AgentWebhookDelivery, AgentWebhookSubscription, AgentWebhookSubscriptionCreated, AgentWorkspaceMutationRequest, AgentWorkspaceRecord, AgentWorkspaceStatus, AnswerAgentInteractionRequest, AppliedAgentModelConfigurationRecord, AppliedAgentModelSelectionRecord, ApplyAgentModelConfigurationRequest, ApplyAgentModelSelectionRequest, ApproveAgentInteractionRequest, AppUpdateAgentSessionRequest, CancelAgentTaskRequest, CancelAgentTaskRunRequest, CancelAgentTurnRequest, ChangeAgentSessionRuntimeBindingStatusRequest, ClaimAgentInteractionRequest, ClaimNextAgentTurnInputQueueEntryRequest, ClaimNextAgentTurnInputQueueEntryResult, CloseAgentSessionRequest, CreateAgentCallRequest, CreateAgentCompositionSlotRequest, CreateAgentInteractionRequest, CreateAgentPreviewResponseRequest, CreateAgentProjectCompositionSlotRequest, CreateAgentProjectRequest, CreateAgentPromptOptimizationRequest, CreateAgentProviderBindingRequest, CreateAgentRequest, CreateAgentSessionCheckpointRequest, CreateAgentSessionRequest, CreateAgentSessionRuntimeBindingRequest, CreateAgentTaskRequest, CreateAgentTurnInputQueueEntryRequest, CreateAgentTurnRequest, CreateAgentVersionRequest, CreateAgentWorkspaceRequest, CreateWebhookSubscriptionRequest, EnsureDefaultAgentWorkspaceRequest, ExecuteAgentTaskRequest, FailAgentTurnInputQueueEntryRequest, ImportAgentProjectRequest, Int64String, InvalidateAgentSessionCheckpointRequest, McpServerMarketplaceRecord, MediaToolDirectoryEntry, MediaToolInvokeBody, MediaToolInvokeResponse, MigrateModelConfigurationRequest, ModelConfigurationSummaryRecord, PageInfo, ProjectSessionSynchronizationResult, ReorderAgentTurnInputQueueEntriesRequest, ReplaceAgentTaskRequest, ResolveAgentInteractionRequest, RestoreAgentRequest, RestoreAgentSessionCheckpointRequest, RetryAgentTaskRunRequest, RetryAgentTurnInputQueueEntryRequest, SdkWorkPageData, SessionActivitySummary, ToolAssetView, UpdateAgentCompositionSlotRequest, UpdateAgentItemFeedbackRequest, UpdateAgentProjectCompositionSlotRequest, UpdateAgentProjectRequest, UpdateAgentRequest, UpdateAgentSessionRuntimeBindingRequest, UpdateAgentSessionUserStateRequest, UpdateAgentTurnInputQueueEntryRequest, UpdateAgentWorkspaceRequest } from '../types';
 
 
 export class AiAgentsAssetsApi {
@@ -1014,6 +1014,195 @@ export class AiAgentsWorkspacesApi {
   }
 }
 
+export interface AiAgentsWebhooksListParams {
+  page?: number;
+  pageSize?: number;
+}
+
+export class AiAgentsWebhooksApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Register a webhook subscription */
+  async create(body: CreateWebhookSubscriptionRequest, requestOptions?: ApiRequestOptions): Promise<AgentWebhookSubscriptionCreated> {
+    return this.client.request<AgentWebhookSubscriptionCreated>(appApiPath(`/ai/webhooks`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** List webhook subscriptions */
+  async list(params?: AiAgentsWebhooksListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentWebhookSubscription[]; }> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentWebhookSubscription[]; }>(appendQueryString(appApiPath(`/ai/webhooks`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Retrieve one webhook subscription */
+  async retrieve(webhookId: string, requestOptions?: ApiRequestOptions): Promise<AgentWebhookSubscription> {
+    return this.client.request<AgentWebhookSubscription>(appApiPath(`/ai/webhooks/${serializePathParameter(webhookId, { name: 'webhookId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+
+/** Delete a webhook subscription */
+  async delete(webhookId: string, requestOptions?: ApiRequestOptions): Promise<void> {
+    return this.client.request<void>(appApiPath(`/ai/webhooks/${serializePathParameter(webhookId, { name: 'webhookId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'DELETE' as any });
+  }
+
+/** Send a signed test delivery */
+  async test(webhookId: string, requestOptions?: ApiRequestOptions): Promise<AgentWebhookDelivery> {
+    return this.client.request<AgentWebhookDelivery>(appApiPath(`/ai/webhooks/${serializePathParameter(webhookId, { name: 'webhookId', style: 'simple', explode: false })}/test`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, sdkworkUnwrapKind: 'item' });
+  }
+}
+
+export interface AiAgentsUsageRecordsListParams {
+  agentId?: unknown;
+  sessionId?: string;
+  modelId?: string;
+  from_?: string;
+  to?: string;
+  cursor?: string;
+  pageSize?: number;
+}
+
+export class AiAgentsUsageRecordsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List usage records */
+  async list(params?: AiAgentsUsageRecordsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentUsageRecord[]; }> {
+    const query = buildQueryString([
+      { name: 'agentId', value: params?.agentId, style: 'form', explode: true, allowReserved: false },
+      { name: 'sessionId', value: params?.sessionId, style: 'form', explode: true, allowReserved: false },
+      { name: 'modelId', value: params?.modelId, style: 'form', explode: true, allowReserved: false },
+      { name: 'from', value: params?.from_, style: 'form', explode: true, allowReserved: false },
+      { name: 'to', value: params?.to, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentUsageRecord[]; }>(appendQueryString(appApiPath(`/ai/usage/records`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+}
+
+export interface AiAgentsUsageSummaryRetrieveParams {
+  agentId?: unknown;
+  sessionId?: string;
+  modelId?: string;
+  from_?: string;
+  to?: string;
+}
+
+export class AiAgentsUsageSummaryApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Aggregate usage totals */
+  async retrieve(params?: AiAgentsUsageSummaryRetrieveParams, requestOptions?: ApiRequestOptions): Promise<AgentUsageSummary> {
+    const query = buildQueryString([
+      { name: 'agentId', value: params?.agentId, style: 'form', explode: true, allowReserved: false },
+      { name: 'sessionId', value: params?.sessionId, style: 'form', explode: true, allowReserved: false },
+      { name: 'modelId', value: params?.modelId, style: 'form', explode: true, allowReserved: false },
+      { name: 'from', value: params?.from_, style: 'form', explode: true, allowReserved: false },
+      { name: 'to', value: params?.to, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<AgentUsageSummary>(appendQueryString(appApiPath(`/ai/usage/summary`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+}
+
+export class AiAgentsUsageApi {
+  public readonly summary: AiAgentsUsageSummaryApi;
+  public readonly records: AiAgentsUsageRecordsApi;
+
+  constructor(client: HttpClient) {
+    this.summary = new AiAgentsUsageSummaryApi(client);
+    this.records = new AiAgentsUsageRecordsApi(client);
+  }
+
+}
+
+export interface AiAgentsVersionsListParams {
+  cursor?: string;
+  pageSize?: number;
+}
+
+export class AiAgentsVersionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List agent versions */
+  async list(agentId: string, params?: AiAgentsVersionsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentVersionRecord[]; }> {
+    const query = buildQueryString([
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentVersionRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/versions`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Snapshot the current agent definition as a version */
+  async create(agentId: string, body: CreateAgentVersionRequest, requestOptions?: ApiRequestOptions): Promise<AgentVersionRecord> {
+    return this.client.request<AgentVersionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/versions`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Retrieve one agent version */
+  async retrieve(agentId: string, versionId: string, requestOptions?: ApiRequestOptions): Promise<AgentVersionRecord> {
+    return this.client.request<AgentVersionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/versions/${serializePathParameter(versionId, { name: 'versionId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+
+/** Activate an agent version */
+  async activate(agentId: string, versionId: string, requestOptions?: ApiRequestOptions): Promise<AgentVersionRecord> {
+    return this.client.request<AgentVersionRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/versions/${serializePathParameter(versionId, { name: 'versionId', style: 'simple', explode: false })}/activate`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, sdkworkUnwrapKind: 'item' });
+  }
+}
+
+export interface AiAgentsCallsListParams {
+  status?: 'queued' | 'running' | 'completed' | 'failed';
+  cursor?: string;
+  pageSize?: number;
+}
+
+export class AiAgentsCallsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** List structured agent calls */
+  async list(agentId: string, params?: AiAgentsCallsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageData & { items: AgentCallRecord[]; }> {
+    const query = buildQueryString([
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageData & { items: AgentCallRecord[]; }>(appendQueryString(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/calls`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Execute one structured agent call */
+  async create(agentId: string, body: CreateAgentCallRequest, requestOptions?: ApiRequestOptions): Promise<AgentCallRecord> {
+    return this.client.request<AgentCallRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/calls`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Retrieve one structured agent call */
+  async retrieve(agentId: string, executionId: string, requestOptions?: ApiRequestOptions): Promise<AgentCallRecord> {
+    return this.client.request<AgentCallRecord>(appApiPath(`/ai/agents/${serializePathParameter(agentId, { name: 'agentId', style: 'simple', explode: false })}/calls/${serializePathParameter(executionId, { name: 'executionId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+}
+
 export class AiAgentsPromptOptimizationsApi {
   private client: HttpClient;
 
@@ -1088,6 +1277,10 @@ export class AiAgentsApi {
   public readonly providerBindings: AiAgentsProviderBindingsApi;
   public readonly previewResponses: AiAgentsPreviewResponsesApi;
   public readonly promptOptimizations: AiAgentsPromptOptimizationsApi;
+  public readonly calls: AiAgentsCallsApi;
+  public readonly versions: AiAgentsVersionsApi;
+  public readonly usage: AiAgentsUsageApi;
+  public readonly webhooks: AiAgentsWebhooksApi;
   public readonly workspaces: AiAgentsWorkspacesApi;
   public readonly projects: AiAgentsProjectsApi;
   public readonly projectCompositionSlots: AiAgentsProjectCompositionSlotsApi;
@@ -1119,6 +1312,10 @@ export class AiAgentsApi {
     this.providerBindings = new AiAgentsProviderBindingsApi(client);
     this.previewResponses = new AiAgentsPreviewResponsesApi(client);
     this.promptOptimizations = new AiAgentsPromptOptimizationsApi(client);
+    this.calls = new AiAgentsCallsApi(client);
+    this.versions = new AiAgentsVersionsApi(client);
+    this.usage = new AiAgentsUsageApi(client);
+    this.webhooks = new AiAgentsWebhooksApi(client);
     this.workspaces = new AiAgentsWorkspacesApi(client);
     this.projects = new AiAgentsProjectsApi(client);
     this.projectCompositionSlots = new AiAgentsProjectCompositionSlotsApi(client);
