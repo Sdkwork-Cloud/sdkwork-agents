@@ -25,6 +25,7 @@ dist/
 coverage/
 artifacts/
 **/artifacts/
+vendor/
 
 # SDKWork local runtime state
 .runtime/
@@ -62,4 +63,12 @@ Thumbs.db
 *.tsbuildinfo
 **/.cache/
 **/build/
+# Runtime-generated environment configuration
+**/public/runtime-env.json
+
+# SDKWork baseline ignore patterns (auto-appended)
+.pnpm-store/
+target/
+etc/**/*.local.*
+/bin/
 
