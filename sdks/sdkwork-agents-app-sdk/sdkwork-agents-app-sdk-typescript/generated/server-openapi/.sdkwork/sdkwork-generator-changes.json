@@ -9,36 +9,30 @@
     "protocol": "http",
     "packageName": "@sdkwork/agents-app-sdk"
   },
-  "changeFingerprint": "ee4dacc40f57bf406e2a8da0ade7ee9fb5faf3ff0f15da8bd9dd60e69b32f113",
+  "changeFingerprint": "e4f2a413c94ebcb202e2efbaf0b953ef18000203984f1b7f1f11c8fb4a10d3f2",
   "changes": {
     "createdGeneratedFiles": [],
     "updatedGeneratedFiles": [
+      "src/types/agent-turn-input-queue-entry.ts",
+      "src/types/create-agent-turn-request.ts"
+    ],
+    "unchangedGeneratedFiles": [
       "bin/publish-core.mjs",
+      "bin/publish.ps1",
+      "bin/publish.sh",
+      "bin/sdk-gen.bat",
+      "bin/sdk-gen.sh",
       "CHANGELOG.md",
+      "LICENSE",
       "package.json",
       "README.md",
       "sdkwork-sdk.json",
       "src/api/ai.ts",
       "src/api/base.ts",
-      "src/http/client.ts",
-      "src/types/agent-model-provider-id.ts",
-      "src/types/agent-turn-input-queue-entry.ts",
-      "src/types/apply-agent-model-configuration-request.ts",
-      "src/types/apply-agent-model-selection-request.ts",
-      "src/types/create-agent-session-request.ts",
-      "src/types/create-agent-turn-input-queue-entry-request.ts",
-      "src/types/create-agent-turn-request.ts",
-      "src/types/update-agent-turn-input-queue-entry-request.ts"
-    ],
-    "unchangedGeneratedFiles": [
-      "bin/publish.ps1",
-      "bin/publish.sh",
-      "bin/sdk-gen.bat",
-      "bin/sdk-gen.sh",
-      "LICENSE",
       "src/api/index.ts",
       "src/api/paths.ts",
       "src/auth/index.ts",
+      "src/http/client.ts",
       "src/http/index.ts",
       "src/index.ts",
       "src/sdk.ts",
@@ -79,6 +73,7 @@
       "src/types/agent-item-feedback-response.ts",
       "src/types/agent-list-response.ts",
       "src/types/agent-management-profile.ts",
+      "src/types/agent-model-provider-id.ts",
       "src/types/agent-project-composition-slot-list-response.ts",
       "src/types/agent-project-composition-slot-record.ts",
       "src/types/agent-project-composition-slot-response.ts",
@@ -156,6 +151,8 @@
       "src/types/applied-agent-model-configuration-response.ts",
       "src/types/applied-agent-model-selection-record.ts",
       "src/types/applied-agent-model-selection-response.ts",
+      "src/types/apply-agent-model-configuration-request.ts",
+      "src/types/apply-agent-model-selection-request.ts",
       "src/types/approve-agent-interaction-request.ts",
       "src/types/cancel-agent-task-request.ts",
       "src/types/cancel-agent-task-run-request.ts",
@@ -177,8 +174,10 @@
       "src/types/create-agent-provider-binding-request.ts",
       "src/types/create-agent-request.ts",
       "src/types/create-agent-session-checkpoint-request.ts",
+      "src/types/create-agent-session-request.ts",
       "src/types/create-agent-session-runtime-binding-request.ts",
       "src/types/create-agent-task-request.ts",
+      "src/types/create-agent-turn-input-queue-entry-request.ts",
       "src/types/create-agent-workspace-request.ts",
       "src/types/drive-asset-view.ts",
       "src/types/ensure-default-agent-workspace-request.ts",
@@ -237,6 +236,7 @@
       "src/types/update-agent-request.ts",
       "src/types/update-agent-session-runtime-binding-request.ts",
       "src/types/update-agent-session-user-state-request.ts",
+      "src/types/update-agent-turn-input-queue-entry-request.ts",
       "src/types/update-agent-workspace-request.ts",
       "tsconfig.json"
     ],
@@ -246,94 +246,35 @@
       "custom/build-runtime.mjs",
       "custom/README.md"
     ],
-    "backedUpFiles": [
-      "CHANGELOG.md",
-      "package.json",
-      "README.md",
-      "sdkwork-sdk.json",
-      "src/http/client.ts",
-      "src/types/agent-model-provider-id.ts",
-      "src/types/agent-turn-input-queue-entry.ts",
-      "src/types/apply-agent-model-configuration-request.ts",
-      "src/types/apply-agent-model-selection-request.ts",
-      "src/types/create-agent-session-request.ts",
-      "src/types/create-agent-turn-input-queue-entry-request.ts",
-      "src/types/create-agent-turn-request.ts",
-      "src/types/update-agent-turn-input-queue-entry-request.ts"
-    ]
+    "backedUpFiles": []
   },
   "impact": {
     "schemaVersion": 1,
     "areas": [
-      "api-surface",
-      "models",
-      "runtime",
-      "build-metadata",
-      "publish-workflow",
-      "documentation"
+      "models"
     ],
     "details": [
       {
-        "area": "api-surface",
-        "paths": [
-          "src/api/ai.ts",
-          "src/api/base.ts",
-          "src/http/client.ts"
-        ]
-      },
-      {
         "area": "models",
         "paths": [
-          "src/types/agent-model-provider-id.ts",
           "src/types/agent-turn-input-queue-entry.ts",
-          "src/types/apply-agent-model-configuration-request.ts",
-          "src/types/apply-agent-model-selection-request.ts",
-          "src/types/create-agent-session-request.ts",
-          "src/types/create-agent-turn-input-queue-entry-request.ts",
-          "src/types/create-agent-turn-request.ts",
-          "src/types/update-agent-turn-input-queue-entry-request.ts"
-        ]
-      },
-      {
-        "area": "runtime",
-        "paths": [
-          "src/http/client.ts"
-        ]
-      },
-      {
-        "area": "build-metadata",
-        "paths": [
-          "package.json",
-          "sdkwork-sdk.json"
-        ]
-      },
-      {
-        "area": "publish-workflow",
-        "paths": [
-          "bin/publish-core.mjs"
-        ]
-      },
-      {
-        "area": "documentation",
-        "paths": [
-          "CHANGELOG.md",
-          "README.md"
+          "src/types/create-agent-turn-request.ts"
         ]
       }
     ],
     "requiresVerification": true,
-    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata, publish-workflow, documentation. Verification is required."
+    "summary": "Detected impact areas: models. Verification is required."
   },
   "verificationPlan": {
     "shouldRun": true,
     "runPhase": "now",
-    "summary": "Detected impact areas: api-surface, models, runtime, build-metadata, publish-workflow, documentation. Verification is required. Run the required verification commands now against the generated SDK output.",
+    "summary": "Detected impact areas: models. Verification is required. Run the required verification commands now against the generated SDK output.",
     "steps": [
       {
         "id": "check",
         "title": "Unified package check",
         "required": true,
-        "rationale": "Validate the generated package with the unified publish helper. Triggered by: api-surface, models, runtime, build-metadata, publish-workflow, documentation.",
+        "rationale": "Validate the generated package with the unified publish helper. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -351,7 +292,7 @@
         "id": "build",
         "title": "Unified package build",
         "required": true,
-        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: api-surface, models, runtime, build-metadata, publish-workflow, documentation.",
+        "rationale": "Run the full package build because this language uses a lighter check path than the final build. Triggered by: models.",
         "workingDirectory": "E:\\sdkwork-space\\sdkwork-agents\\sdks\\sdkwork-agents-app-sdk\\sdkwork-agents-app-sdk-typescript\\generated\\server-openapi",
         "command": "node",
         "args": [
@@ -369,14 +310,12 @@
   },
   "executionDecision": {
     "schemaVersion": 1,
-    "riskLevel": "high",
+    "riskLevel": "medium",
     "nextAction": "verify",
     "requiresManualReview": false,
     "applyRequiresExpectedFingerprint": false,
     "summary": "Changes have been applied. Run the required verification plan now.",
     "reasons": [
-      "backed-up-generated-files",
-      "manual-review-required",
       "verification-required"
     ]
   },

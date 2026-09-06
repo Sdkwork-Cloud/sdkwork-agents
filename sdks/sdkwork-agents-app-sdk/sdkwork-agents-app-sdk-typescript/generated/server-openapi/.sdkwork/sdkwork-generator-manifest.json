@@ -44,7 +44,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "79e936d5a6d0521efa767a301218286e80283cfd5764713d23c74da115eb614d"
+      "sha256": "faf5e002ba742d2bb374cb5f2ec462e3d4568cb993e801d00fe0b46e7b68f1f4"
     },
     {
       "path": "sdkwork-sdk.json",
@@ -52,7 +52,7 @@
     },
     {
       "path": "src/api/ai.ts",
-      "sha256": "4a4bdd92729b75f80b4fc138df508f3921d3d38c820e96a29beaa6bae511b40c"
+      "sha256": "9aaaaa042157a27dbe411af3c78922cd24f52a264f6089b603e420d3eacd1583"
     },
     {
       "path": "src/api/base.ts",
@@ -188,7 +188,7 @@
     },
     {
       "path": "src/types/agent-interaction-request-data.ts",
-      "sha256": "854009d5378729be63b7f5b24647d0f799a2b090c60f641239b2764c2ad7f2ae"
+      "sha256": "6be300b318e98dff019c5afa08f7504590ae5c29f71ffd1e789744588f3e2a1d"
     },
     {
       "path": "src/types/agent-interaction-request-kind.ts",
@@ -536,7 +536,7 @@
     },
     {
       "path": "src/types/applied-agent-model-configuration-record.ts",
-      "sha256": "3a242f9053b89b9e60c46556d800c66a1760f5ff1ea3ddfeb2fb4d08bb4b5ff4"
+      "sha256": "96eac2c3174461dfe2977212146be638dc12344ae523e92aa3eae4901cb0722c"
     },
     {
       "path": "src/types/applied-agent-model-configuration-response.ts",
@@ -660,7 +660,7 @@
     },
     {
       "path": "src/types/create-agent-turn-request.ts",
-      "sha256": "724037a61a3106b6d72e542c75cc74f352bfb8799a5140341d39e15be965d9a0"
+      "sha256": "5b79055572618236c7c597e3cbf75931862be208c3f1be1028050f540f26ea97"
     },
     {
       "path": "src/types/create-agent-workspace-request.ts",
@@ -904,7 +904,7 @@
     },
     {
       "path": "tsconfig.json",
-      "sha256": "7c8a6c2b00fb208ec28e1e6045194487d1b3e563d6c44cef4783fd4fe0e8ffad"
+      "sha256": "35f6f0baf03ca4245339f0a532b02c6b0c8e64d66852a2f77d38ae063b2024b8"
     }
   ],
   "scaffoldFiles": [
